@@ -41,18 +41,18 @@ body is neither.
 
 ## What is in the contract
 
-| Group                     | Covers                                                                                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                          |
-| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                               |
-| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                            |
-| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                              |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`     |
-| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
-| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                          |
-| Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
-| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, and moves: start, list, poll, cancel   |
-| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                    |
+| Group                     | Covers                                                                                                                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                                                                           |
+| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                |
+| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                             |
+| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                                                                               |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                      |
+| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                 |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                                                           |
+| Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials, the command stream and its acknowledgement, event batches |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, and moves: start, list, poll, cancel                                                    |
+| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                     |
 
 ### What is deliberately not in it
 
@@ -181,6 +181,26 @@ the new code. An unrecognised code fails `ProblemSchema`, so the thin client rai
 `malformed_identifier` (see "Additive within a major" above). Move to this release before relying
 on the service to send it.
 
+### Remote usage and the designation
+
+`GET /v1/remote/usage` answers where the caller's account stands against each published
+remote-access limit this period. It takes a bearer or the person's own browser session and
+always answers for the caller's own account. Each entry carries `limit` and `used` already in
+its `unit`, and a `fraction` the server computed: render it, never recompute it, so a page can
+never round differently from the service that enforces the limit. `enforceable: false` means
+`used` is the period's peak rather than a figure for now, and such a limit frees as soon as the
+usage ends. An account that used nothing gets zeroes, never a 404. Nothing in it is money.
+
+`GET /v1/orgs/{orgId}/remote/designation` reads which instance the organization keeps always
+available, with every field nullable so "nobody holds it" is a state. `cooldownUntil` says when
+it may next change, before anybody tries. No route withdraws a designation.
+
+`RemoteStatusSchema` may echo the `instanceId` it is about, so answers read concurrently can be
+matched to their instance. Each close report in `POST /v1/remote/events` may name its span
+(`openedAt` beside `at`), the requests in that span and the bytes each way. Byte counts are
+base-10 strings (`ByteCountSchema`), because a long window can move more bytes than a JavaScript
+number holds exactly. A batch without these fields is accepted as before.
+
 ### Hosted communities
 
 The service starts a community on a Community server and hands ownership to a person through
@@ -216,7 +236,8 @@ that server's single-use owner claim; it never owns one itself.
   transform, and Zod cannot express a transform's output in JSON Schema. Call
   `z.toJSONSchema(schema, { io: 'input' })` (or pass `unrepresentable: 'any'`) for the
   communities shapes, or the conversion throws. The same holds for `OffersResponseSchema`, whose
-  `interval` is tolerant for the same reason.
+  `interval` is tolerant, and for `RemoteUsageResponseSchema`, whose `unit` and `state` are
+  tolerant, for the same reason.
 
 Every link to a community is a runtime value.
 

@@ -96,6 +96,16 @@ import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+  registerTestHomes,
+} from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 // Build a minimal Express app with just the agents router
 const app = express();
@@ -164,6 +174,95 @@ describe('Agents Routes', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+  });
+
+  describe('a checkout of an agent`s repo reads and writes the HOME (DOR-2355)', () => {
+    // A managed checkout (or a git worktree) of Ana's repo carries a committed
+    // `.dork/` of its own. An editor opened on it must show and change Ana,
+    // never that copy (spec `agent-home-desk` §3.2 row 9).
+    const HOME = '/agents/ana';
+    const CHECKOUT = '/ws/ana-fix';
+    const stale: AgentManifest = { ...mockManifest, name: 'stale-copy' };
+    const atHome: AgentManifest = { ...mockManifest, name: 'ana' };
+
+    beforeEach(() => {
+      registerTestHomes([HOME], { managed: { [CHECKOUT]: HOME } });
+      mockReadManifest.mockImplementation(async (dir: string) =>
+        dir === HOME ? atHome : dir === CHECKOUT ? stale : null
+      );
+    });
+
+    it('GET answers with the home manifest and convention files', async () => {
+      const res = await request(testServer).get('/api/agents/current').query({ path: CHECKOUT });
+
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe('ana');
+      expect(mockReadManifest).not.toHaveBeenCalledWith(CHECKOUT);
+      expect(mockReadConventionFile).toHaveBeenCalledWith(HOME, expect.anything());
+      expect(mockReadConventionFile).not.toHaveBeenCalledWith(CHECKOUT, expect.anything());
+    });
+
+    it('PATCH writes the home, never the checkout`s copy', async () => {
+      const res = await request(testServer)
+        .patch('/api/agents/current')
+        .query({ path: CHECKOUT })
+        .send({ displayName: 'Ana' });
+
+      expect(res.status).toBe(200);
+      expect(mockWriteManifest).toHaveBeenCalledWith(HOME, expect.anything());
+      expect(mockWriteManifest).not.toHaveBeenCalledWith(CHECKOUT, expect.anything());
+    });
+
+    it('finds an agent registered through a symlinked agents folder (the boundary answers realpaths)', async () => {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agents-route-link-')));
+      try {
+        fs.mkdirSync(path.join(scratch, 'real', 'ana'), { recursive: true });
+        fs.symlinkSync(path.join(scratch, 'real'), path.join(scratch, 'agents'));
+        const registered = path.join(scratch, 'agents', 'ana');
+        const real = path.join(scratch, 'real', 'ana');
+        registerTestHomes([registered]);
+        vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue(real);
+        mockReadManifest.mockImplementation(async (dir: string) =>
+          dir === registered ? atHome : null
+        );
+
+        const get = await request(testServer)
+          .get('/api/agents/current')
+          .query({ path: registered });
+        expect(get.status).toBe(200);
+        expect(get.body.name).toBe('ana');
+
+        const patch = await request(testServer)
+          .patch('/api/agents/current')
+          .query({ path: registered })
+          .send({ displayName: 'Ana' });
+        expect(patch.status).toBe(200);
+        expect(mockWriteManifest).toHaveBeenCalledWith(registered, expect.anything());
+      } finally {
+        vi.mocked(validateBoundaryOrDorkHome).mockImplementation(async (p: string) => p);
+        fs.rmSync(scratch, { recursive: true, force: true });
+      }
+    });
+
+    it('a folder that is no agent`s home is nobody, whatever `.dork/` it carries', async () => {
+      mockReadManifest.mockResolvedValue(stale);
+
+      const get = await request(testServer)
+        .get('/api/agents/current')
+        .query({ path: '/somewhere/else' });
+      expect(get.status).toBe(200);
+      expect(get.body).toBeNull();
+
+      const patch = await request(testServer)
+        .patch('/api/agents/current')
+        .query({ path: '/somewhere/else' })
+        .send({ displayName: 'Hijack' });
+      expect(patch.status).toBe(404);
+      expect(mockWriteManifest).not.toHaveBeenCalled();
     });
   });
 

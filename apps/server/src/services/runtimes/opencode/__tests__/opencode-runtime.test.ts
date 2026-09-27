@@ -62,6 +62,15 @@ import {
   assistantMessage,
   messageUpdated,
 } from './opencode-sse-fixtures.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../providers/check-dependencies.js', () => ({
   checkOpenCodeDependencies: vi.fn(),
@@ -2744,7 +2753,6 @@ describe('OpenCodeRuntime', () => {
 
       beforeEach(() => {
         setWorkingCopyOwnerPort({
-          isRegisteredAgent: () => true,
           ownerOf: (dir) =>
             path.dirname(dir) === path.dirname(WORKTREE)
               ? { owner: dir === WORKTREE ? DIRECTORY : null }

@@ -1,4 +1,4 @@
-/** Complete operation discovery and exact named-agent grant reconciliation. */
+/** Complete operation discovery and exact named-agent and every-agent grant reconciliation. */
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import {
@@ -14,7 +14,9 @@ import {
   eq,
   inArray,
   isNull,
+  or,
   type Db,
+  type DbTransaction,
 } from '@dorkos/db';
 import {
   ConnectorReconciliationApplyRequestSchema,
@@ -30,6 +32,17 @@ import {
   type ConnectorReconciliationPreview,
   type ConnectorReconciliationPreviewRequest,
 } from '@dorkos/shared/connector-schemas';
+import {
+  everyAgentGrantSubject,
+  replaceEveryAgentGrants,
+  revokeEveryAgentGrants,
+} from './every-agent-grants.js';
+import {
+  recordEveryAgentChange,
+  type EveryAgentActivitySink,
+  type EveryAgentChange,
+  type EveryAgentChangeWriter,
+} from './every-agent-activity.js';
 import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
 import type { ConnectorRegistry } from './registry.js';
 import type { ManagedAuthoritySyncService } from './resources/managed-authority-sync-service.js';
@@ -44,7 +57,8 @@ export type ConnectorReconciliationErrorCode =
   | 'operations_unsupported'
   | 'catalog_incomplete'
   | 'preview_stale'
-  | 'invalid_selection';
+  | 'invalid_selection'
+  | 'every_agent_unavailable';
 
 /** A secret-free, typed reconciliation refusal. */
 export class ConnectorReconciliationError extends Error {
@@ -86,6 +100,10 @@ export interface ConnectorReconciliationServiceOptions {
     ManagedAuthoritySyncService,
     'stageAgentGrantReplacement' | 'deliverAgentGrantReplacement'
   >;
+  /** Activity trail for every-agent changes; absent in a process that has none. */
+  readonly activity?: EveryAgentActivitySink;
+  /** Who is changing a grant right now, as honestly as DorkOS can say. */
+  readonly writer?: () => EveryAgentChangeWriter;
   /** Injectable clock for expiry tests. */
   readonly now?: () => Date;
   /** Injectable id source for deterministic tests. */
@@ -128,6 +146,61 @@ function operationIdentity(operation: DiscoveredOperation): string {
   ].join('\n');
 }
 
+interface EveryAgentState {
+  readonly operationRevisionIds: readonly string[];
+  readonly classifications: EveryAgentChange['after'];
+}
+
+function readEveryAgentState(tx: DbTransaction, connectionId: string): EveryAgentState {
+  const rows = tx
+    .select({
+      id: connectionOperationGrants.operationRevisionId,
+      classification: connectorOperationRevisions.capabilityClassification,
+    })
+    .from(connectionOperationGrants)
+    .innerJoin(
+      connectorOperationRevisions,
+      eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
+    )
+    .where(
+      and(
+        eq(connectionOperationGrants.connectionId, connectionId),
+        everyAgentGrantSubject(),
+        isNull(connectionOperationGrants.revokedAt)
+      )
+    )
+    .all();
+  return {
+    operationRevisionIds: [...new Set(rows.map((row) => row.id))].sort(),
+    classifications: [...new Set(rows.map((row) => row.classification))].sort(),
+  };
+}
+
+/** The Activity-worthy difference, or undefined when nothing changed. */
+function describeEveryAgentChange(
+  tx: DbTransaction,
+  connectionId: string,
+  before: EveryAgentState
+): EveryAgentChange | undefined {
+  const after = readEveryAgentState(tx, connectionId);
+  if (after.operationRevisionIds.join('\n') === before.operationRevisionIds.join('\n')) {
+    return undefined;
+  }
+  const connection = tx
+    .select({ toolkit: connections.toolkit, label: connections.label })
+    .from(connections)
+    .where(eq(connections.id, connectionId))
+    .get();
+  return {
+    connectionId,
+    toolkit: connection?.toolkit ?? 'account',
+    label: connection?.label ?? connectionId,
+    before: before.classifications,
+    after: after.classifications,
+    operationCount: after.operationRevisionIds.length,
+  };
+}
+
 /** SQLite-backed complete-catalog preview and atomic named-agent grant service. */
 export class ConnectorReconciliationService {
   private readonly db: Db;
@@ -140,6 +213,8 @@ export class ConnectorReconciliationService {
         'stageAgentGrantReplacement' | 'deliverAgentGrantReplacement'
       >
     | undefined;
+  private readonly activity: EveryAgentActivitySink | undefined;
+  private readonly writer: () => EveryAgentChangeWriter;
   private readonly now: () => Date;
   private readonly createId: () => string;
   private readonly maxPages: number;
@@ -153,6 +228,9 @@ export class ConnectorReconciliationService {
     this.bootEpoch = options.bootEpoch;
     this.listAgents = options.listAgents;
     this.managedAuthority = options.managedAuthority;
+    this.activity = options.activity;
+    this.writer =
+      options.writer ?? (() => ({ actorType: 'user', actorLabel: 'Someone on this computer' }));
     this.now = options.now ?? (() => new Date());
     this.createId = options.createId ?? ulid;
     this.maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
@@ -217,7 +295,9 @@ export class ConnectorReconciliationService {
       .where(
         and(
           eq(connectionOperationGrants.connectionId, request.connectionId),
-          eq(connectionOperationGrants.subjectType, 'agent'),
+          // Every-agent revisions are re-verified exactly like named-agent ones,
+          // so a revision the provider no longer offers shows as unsupported.
+          or(eq(connectionOperationGrants.subjectType, 'agent'), everyAgentGrantSubject()),
           isNull(connectionOperationGrants.revokedAt),
           eq(connectorOperationRevisions.providerInstanceId, context.providerInstanceId),
           eq(connectorOperationRevisions.toolkit, context.toolkit)
@@ -366,7 +446,14 @@ export class ConnectorReconciliationService {
     });
 
     return ConnectorReconciliationPreviewSchema.parse(
-      this.readPreview(previewId, request.connectionId, agents, candidateIds, createdAt)
+      this.readPreview(
+        previewId,
+        request.connectionId,
+        agents,
+        candidateIds,
+        createdAt,
+        context.mode !== 'managed'
+      )
     );
   }
 
@@ -531,6 +618,22 @@ export class ConnectorReconciliationService {
           );
         }
       }
+      if (request.everyAgent) {
+        // Hosted authority keys grants per named agent and has no owner-wide
+        // subject, so a managed connection cannot honor "every agent" yet.
+        if (provider.mode === 'managed') {
+          throw new ConnectorReconciliationError(
+            'every_agent_unavailable',
+            'Every agent isn’t available for apps connected through your DorkOS account yet. Pick the agents one by one.'
+          );
+        }
+        if (request.everyAgent.operationRevisionIds.some((id) => !supported.has(id))) {
+          throw new ConnectorReconciliationError(
+            'invalid_selection',
+            'The selected action was not part of this complete permission review.'
+          );
+        }
+      }
 
       const consumed = tx
         .update(connectorReconciliationPreviews)
@@ -631,6 +734,18 @@ export class ConnectorReconciliationService {
             .run();
         }
       }
+      let everyAgentChange: EveryAgentChange | undefined;
+      if (request.everyAgent) {
+        const before = readEveryAgentState(tx, preview.connectionId);
+        replaceEveryAgentGrants(tx, {
+          connectionId: preview.connectionId,
+          operationRevisionIds: request.everyAgent.operationRevisionIds,
+          createdBy: ownerRow.ownerId,
+          now,
+          createId: this.createId,
+        });
+        everyAgentChange = describeEveryAgentChange(tx, preview.connectionId, before);
+      }
       if (provider.mode !== 'managed' || managedCommandIds.length === 0) {
         tx.update(connections)
           .set({ grantReconciliationStatus: 'ready', updatedAt: now })
@@ -640,8 +755,10 @@ export class ConnectorReconciliationService {
       return {
         connectionId: preview.connectionId,
         managedCommandIds,
+        everyAgentChange,
       };
     });
+    if (response.everyAgentChange) await this.record(response.everyAgentChange);
     const results = [];
     for (const commandId of response.managedCommandIds) {
       results.push(await this.managedAuthority!.deliverAgentGrantReplacement(commandId, signal));
@@ -659,7 +776,55 @@ export class ConnectorReconciliationService {
       authoritySync:
         failed?.authoritySync ?? (pending ? { status: 'pending' } : { status: 'ready' }),
       grants: request.grants,
+      ...(request.everyAgent ? { everyAgent: request.everyAgent } : {}),
     });
+  }
+
+  /**
+   * Stop sharing one connection with every agent. Taking access away needs no
+   * reviewed catalog, so unlike {@link apply} this works while the provider is
+   * unavailable or its configuration changed; it still requires the owner.
+   *
+   * @param owner - The verified connection owner.
+   * @param connectionId - The connection that stops being shared.
+   * @returns How many shared actions ended; zero when it was not shared.
+   */
+  async revokeEveryAgent(
+    owner: ConnectorOwnerAuthority,
+    connectionId: string
+  ): Promise<{ connectionId: string; revokedCount: number }> {
+    const expected = ownerColumns(owner);
+    const row = this.db
+      .select({
+        ownerKind: connectorProviderInstances.ownerKind,
+        ownerId: connectorProviderInstances.ownerId,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(and(eq(connections.id, connectionId), isNull(connections.removedAt)))
+      .get();
+    if (!row || row.ownerKind !== expected.ownerKind || row.ownerId !== expected.ownerId) {
+      throw new ConnectorReconciliationError('connection_not_found', 'Connection not found.');
+    }
+    const now = this.now().toISOString();
+    const result = this.db.transaction((tx) => {
+      const before = readEveryAgentState(tx, connectionId);
+      const revokedCount = revokeEveryAgentGrants(tx, [connectionId], now);
+      return {
+        revokedCount,
+        change: revokedCount > 0 ? describeEveryAgentChange(tx, connectionId, before) : undefined,
+      };
+    });
+    if (result.change) await this.record(result.change);
+    return { connectionId, revokedCount: result.revokedCount };
+  }
+
+  private async record(change: EveryAgentChange): Promise<void> {
+    if (!this.activity) return;
+    await recordEveryAgentChange(this.activity, this.writer(), change);
   }
 
   private resolveOwnedConnection(owner: ConnectorOwnerAuthority, connectionId: string) {
@@ -675,6 +840,7 @@ export class ConnectorReconciliationService {
         enabled: connections.enabled,
         reconciliationStatus: connections.grantReconciliationStatus,
         custody: connectorProviderInstances.custody,
+        mode: connectorProviderInstances.mode,
         providerStatus: connectorProviderInstances.status,
         ownerKind: connectorProviderInstances.ownerKind,
         ownerId: connectorProviderInstances.ownerId,
@@ -712,7 +878,8 @@ export class ConnectorReconciliationService {
     connectionId: string,
     agents: ConnectorReconciliationAgent[],
     candidateIds: string[],
-    createdAt: Date
+    createdAt: Date,
+    everyAgentAvailable: boolean
   ) {
     const connection = this.resolveConnectionView(connectionId);
     const supportedById = new Map(
@@ -762,6 +929,25 @@ export class ConnectorReconciliationService {
           operationRevisionIds: operationRevisionIds.sort(),
         }))
         .sort((a, b) => a.agentId.localeCompare(b.agentId)),
+      everyAgent: {
+        available: everyAgentAvailable,
+        operationRevisionIds: everyAgentAvailable
+          ? this.db
+              .select({ id: connectionOperationGrants.operationRevisionId })
+              .from(connectionOperationGrants)
+              .where(
+                and(
+                  eq(connectionOperationGrants.connectionId, connectionId),
+                  everyAgentGrantSubject(),
+                  isNull(connectionOperationGrants.revokedAt)
+                )
+              )
+              .all()
+              .map((row) => row.id)
+              .filter((id) => candidateIds.includes(id))
+              .sort()
+          : [],
+      },
       catalogComplete: true as const,
       createdAt: createdAt.toISOString(),
       expiresAt: new Date(createdAt.getTime() + this.previewTtlMs).toISOString(),
@@ -806,6 +992,13 @@ export class ConnectorReconciliationService {
   }
 
   private assertUniqueSelections(request: ConnectorReconciliationApplyRequest): void {
+    const everyAgentIds = request.everyAgent?.operationRevisionIds ?? [];
+    if (new Set(everyAgentIds).size !== everyAgentIds.length) {
+      throw new ConnectorReconciliationError(
+        'invalid_selection',
+        'Each selected action may appear only once for every agent.'
+      );
+    }
     const agentIds = new Set<string>();
     for (const selection of request.grants) {
       if (agentIds.has(selection.agentId)) {

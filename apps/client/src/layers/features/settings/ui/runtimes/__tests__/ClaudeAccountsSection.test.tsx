@@ -140,8 +140,22 @@ describe('ClaudeAccountsSection', () => {
       resolvedAccount: HOME,
       inherited: true,
       accounts: [
-        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
-        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        {
+          id: 'personal',
+          path: HOME,
+          label: 'Personal',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
       ],
     });
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
@@ -157,7 +171,16 @@ describe('ClaudeAccountsSection', () => {
     const transport = renderSection({
       resolvedAccount: WORK,
       inherited: false,
-      accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true }],
+      accounts: [
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+      ],
     });
     await waitFor(() => expect(screen.getByTestId('claude-account-row')).toBeInTheDocument());
 
@@ -175,7 +198,16 @@ describe('ClaudeAccountsSection', () => {
     renderSection({
       resolvedAccount: WORK,
       inherited: false,
-      accounts: [{ id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true }],
+      accounts: [
+        {
+          id: 'personal',
+          path: HOME,
+          label: 'Personal',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+      ],
     });
 
     await waitFor(() =>
@@ -190,7 +222,16 @@ describe('ClaudeAccountsSection', () => {
     const transport = renderSection({
       resolvedAccount: HOME,
       inherited: true,
-      accounts: [{ id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true }],
+      accounts: [
+        {
+          id: 'personal',
+          path: HOME,
+          label: 'Personal',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+      ],
     });
     await waitFor(() => expect(screen.getByText('Personal')).toBeInTheDocument());
 
@@ -204,11 +245,13 @@ describe('ClaudeAccountsSection', () => {
       runtimes: {
         claudeCode: {
           accounts: [
-            { id: 'personal', path: HOME, label: 'Personal' },
+            { id: 'personal', path: HOME, label: 'Personal', color: null },
             // The new account's stable reference, minted from its folder name
             // because the operator typed only whitespace for a label.
-            { id: 'claude2', path: WORK, label: null },
+            { id: 'claude2', path: WORK, label: null, color: null },
           ],
+          // What the screen showed, so the server removes only those it drops.
+          accountsSeen: ['personal'],
         },
       },
     });
@@ -226,8 +269,22 @@ describe('ClaudeAccountsSection', () => {
       accounts: [
         // Two labels that slugify to the SAME id, only one of which has been
         // assigned one yet.
-        { id: null, path: HOME, label: 'Acme Corp', isAccountRoot: true },
-        { id: 'acme-corp', path: WORK, label: 'ACME corp', isAccountRoot: true },
+        {
+          id: null,
+          path: HOME,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'ACME corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
       ],
     });
     await waitFor(() => expect(screen.getAllByTestId('claude-account-row')).toHaveLength(2));
@@ -287,7 +344,16 @@ describe('ClaudeAccountsSection', () => {
     renderSection({
       resolvedAccount: HOME,
       inherited: true,
-      accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true }],
+      accounts: [
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+      ],
     });
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
 
@@ -304,8 +370,22 @@ describe('ClaudeAccountsSection', () => {
       resolvedAccount: WORK,
       inherited: false,
       accounts: [
-        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
-        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        {
+          id: 'personal',
+          path: HOME,
+          label: 'Personal',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
       ],
     });
     await waitFor(() => expect(screen.getAllByTestId('claude-account-row')).toHaveLength(2));
@@ -320,7 +400,8 @@ describe('ClaudeAccountsSection', () => {
     expect(transport.updateConfig).toHaveBeenCalledWith({
       runtimes: {
         claudeCode: {
-          accounts: [{ id: 'personal', path: HOME, label: 'Personal' }],
+          accounts: [{ id: 'personal', path: HOME, label: 'Personal', color: null }],
+          accountsSeen: ['personal', 'acme-corp'],
           defaultAccount: null,
         },
       },
@@ -333,8 +414,23 @@ describe('ClaudeAccountsSection', () => {
       resolvedAccount: WORK,
       inherited: false,
       accounts: [
-        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
-        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        {
+          id: 'personal',
+          path: HOME,
+          label: 'Personal',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+        // A color the operator stored, so the write must carry it back unchanged.
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#12ab9f',
+          colorIsDefault: false,
+          isAccountRoot: true,
+        },
       ],
     });
     await waitFor(() => expect(screen.getByText('Personal')).toBeInTheDocument());
@@ -343,7 +439,12 @@ describe('ClaudeAccountsSection', () => {
 
     expect(transport.updateConfig).toHaveBeenCalledTimes(1);
     expect(transport.updateConfig).toHaveBeenCalledWith({
-      runtimes: { claudeCode: { accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp' }] } },
+      runtimes: {
+        claudeCode: {
+          accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', color: '#12ab9f' }],
+          accountsSeen: ['personal', 'acme-corp'],
+        },
+      },
     });
   });
 
@@ -354,7 +455,16 @@ describe('ClaudeAccountsSection', () => {
       // `isAccountRoot` is the STRUCTURAL check (spec D4): a folder that really
       // exists but holds no `projects/` reports false, so the copy must not
       // claim the folder is missing.
-      accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: false }],
+      accounts: [
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: false,
+        },
+      ],
     });
 
     await waitFor(() =>
@@ -368,7 +478,16 @@ describe('ClaudeAccountsSection', () => {
     renderSection({
       resolvedAccount: HOME,
       inherited: true,
-      accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true }],
+      accounts: [
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+      ],
     });
 
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
@@ -388,8 +507,22 @@ describe('ClaudeAccountsSection', () => {
       resolvedAccount: HOME,
       inherited: true,
       accounts: [
-        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
-        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        {
+          id: 'personal',
+          path: HOME,
+          label: 'Personal',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
       ],
     });
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());

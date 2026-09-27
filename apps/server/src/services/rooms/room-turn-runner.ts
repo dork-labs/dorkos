@@ -531,7 +531,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // claude-code the tools still LOOKED available and refused every call as
       // `UNIDENTIFIED_CALLER`, which is how two agents went silent in one room on
       // 2026-09-16. Every runtime now resolves identity through
-      // `resolveIdentityAnchor` (`core/agent-identity/identity-anchor.ts`): a
+      // `resolveAgentHome` (`core/agent-identity/agent-home.ts`): a
       // worktree anchors to the agent the worktree manager handed it to — a
       // record, never a prefix or a name match — and when this turn names its
       // agent, as it does below and on `roomTurn`, anything else is refused
@@ -876,6 +876,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         clientId: ROOM_CLIENT_ID,
         content: prompt,
         cwd: request.cwd,
+        // The agent this turn is dispatched AS, in the runtime-neutral field
+        // every named-agent dispatch uses (spec `agent-home-desk` §4.1).
+        forAgent: request.agentPath,
         roomContext,
         // Routing metadata, never prompt context: the room, the acting member and
         // this turn's id, so a `control_ui` the turn takes lands on the ROOM's

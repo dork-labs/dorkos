@@ -17,7 +17,7 @@ import { editToolFilePath, isEditFamilyTool } from '@dorkos/shared/diff-tools';
 import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
 import { editBaselineStore } from '../../../diff/index.js';
-import type { IdentityAnchor } from '../../../core/agent-identity/index.js';
+import type { HomeResolution } from '../../../core/agent-identity/index.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -86,7 +86,7 @@ export interface McpServerLaunch {
    * turn is for. The SAME anchor feeds the approval gate, so the gate and the
    * caller the tool runs as cannot disagree.
    */
-  identity?: IdentityAnchor;
+  identity?: HomeResolution;
 }
 
 /** Builds the per-query MCP server configs for one session's turn. */

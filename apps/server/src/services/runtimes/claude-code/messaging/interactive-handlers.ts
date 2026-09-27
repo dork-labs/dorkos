@@ -9,7 +9,7 @@ import { QuestionItemSchema, UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/s
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import {
   createInSessionContextResolver,
-  resolveIdentityAnchor,
+  resolveAgentHome,
 } from '../../../core/agent-identity/index.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
@@ -1027,7 +1027,7 @@ export function createCanUseTool(
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
   resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(
-    resolveIdentityAnchor(session.cwd)
+    resolveAgentHome(session.cwd)
   )
 ): (
   toolName: string,

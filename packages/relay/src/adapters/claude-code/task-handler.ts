@@ -442,6 +442,9 @@ export async function handleTasksMessage(
     const eventStream = deps.agentManager.sendMessage(sessionId, prompt, {
       permissionMode,
       cwd: effectiveCwd,
+      // Whose turn this is, so the runtime reads identity from that agent's
+      // home wherever the run stands (spec `agent-home-desk` §3.2 row 12).
+      ...(payload.forAgent ? { forAgent: payload.forAgent } : {}),
       ...executionSettings,
       // Only a scheduled fire, for the reason `unattended` above gives: a person
       // who pressed Run now is watching and can answer a card in the turn.

@@ -19,6 +19,7 @@ export type { ScanEvent, ScanProgress, UnifiedScanOptions } from './discovery/ty
 // What `MeshCore.onAgentAdopted` hands its callbacks — the server's agent-created
 // seam takes exactly this shape (DOR-1042).
 export type { AdoptedAgent } from './mesh-discovery.js';
+export { InsideRoomFilesError } from './mesh-discovery.js';
 export { UNIFIED_EXCLUDE_PATTERNS } from './discovery/types.js';
 
 // Strategies

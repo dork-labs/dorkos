@@ -11,7 +11,6 @@ import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { useRelayEnabledState, useRelayEventStream } from '@/layers/entities/relay';
 import { MessagingConnections, ActivityFeed, RelayHealthBar } from '@/layers/features/relay';
 import { ClaimFeed } from '@/layers/features/connections';
-import { CommunityConnections } from '@/layers/features/community-connections';
 
 /**
  * Where people and platforms reach your agents.
@@ -39,8 +38,6 @@ export function MessagingRegion() {
           Where people and platforms reach your agents.
         </p>
       </header>
-
-      <CommunityConnections />
 
       {relay.isLoading ? (
         <div className="space-y-3" aria-label="Loading Messaging">

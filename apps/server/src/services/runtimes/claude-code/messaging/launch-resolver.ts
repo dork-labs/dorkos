@@ -40,15 +40,16 @@
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
-import { readManifest } from '@dorkos/shared/manifest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
 import {
-  anchorPath,
+  homeOf,
   createInSessionContextResolver,
+  readHomeManifest,
   resolveAgentTokenEnv,
-  resolveIdentityAnchor,
+  resolveAgentHome,
+  turnAgentOf,
 } from '../../../core/agent-identity/index.js';
 import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
@@ -163,15 +164,14 @@ export async function resolveLaunch(args: {
   const statusEvents: StreamEvent[] = [];
 
   // **Who this launch acts as, resolved from who the turn is FOR and where it
-  // stands — never from a path prefix** (DOR-2091). A turn in a room with files
-  // runs in the agent's WORKTREE, which hosts no registered agent, so the exact
-  // `getByPath(effectiveCwd)` this used to be minted no token and left every
-  // DorkOS tool to refuse the agent as `UNIDENTIFIED_CALLER`. The anchor maps a
-  // worktree to the agent the worktree manager handed it to, and when a room
+  // stands — never from a path prefix, and never from a `.dork/` the folder
+  // happens to carry** (DOR-2091, DOR-2355). A turn may stand in a room
+  // worktree, a git worktree of the agent's own repo or a managed checkout;
+  // each resolves to the registered home it belongs to, and when a server path
   // names the turn's agent it must be that agent or nobody. See
-  // `core/agent-identity/identity-anchor.ts` for the whole rule.
-  const forAgent = messageOpts?.roomTurn?.agentPath;
-  const turnAgentPath = anchorPath(resolveIdentityAnchor(effectiveCwd, forAgent));
+  // `core/agent-identity/agent-home.ts` for the whole rule.
+  const forAgent = turnAgentOf(messageOpts);
+  const turnAgentPath = homeOf(resolveAgentHome(effectiveCwd, forAgent));
   // Stamp agent last_seen_at when a message is dispatched
   const meshAgent = turnAgentPath ? opts.meshCore?.getByPath(turnAgentPath) : undefined;
   const meshAgentId = meshAgent?.id;
@@ -180,12 +180,16 @@ export async function resolveLaunch(args: {
   }
 
   // Load the agent manifest for the settings a launch is pinned to (its account,
-  // below). What its permissions hide is resolved separately, off the file.
-  let manifest: Awaited<ReturnType<typeof readManifest>> | null = null;
-  try {
-    manifest = await readManifest(effectiveCwd);
-  } catch {
-    // No manifest found -- the launch inherits the server defaults
+  // below) — from the HOME, never the folder the turn stands in, whose
+  // committed `.dork/` may be a stale branch's (spec `agent-home-desk` I1).
+  // What its permissions hide is resolved separately, off the file.
+  let manifest: Awaited<ReturnType<typeof readHomeManifest>> | null = null;
+  if (turnAgentPath) {
+    try {
+      manifest = await readHomeManifest(turnAgentPath);
+    } catch {
+      // No manifest found -- the launch inherits the server defaults
+    }
   }
 
   // Slash commands must reach the CLI as the bare prompt — it only parses a
@@ -221,8 +225,8 @@ export async function resolveLaunch(args: {
   // the token above is minted for the agent: login on refuses every room verb
   // again, and login off hands them to the operator with the cross-check never
   // run. The directory the turn actually launches in is the honest fallback.
-  const toolIdentity = resolveIdentityAnchor(session.cwd ?? effectiveCwd, forAgent);
-  const toolAgentPath = anchorPath(toolIdentity);
+  const toolIdentity = resolveAgentHome(session.cwd ?? effectiveCwd, forAgent);
+  const toolAgentPath = homeOf(toolIdentity);
   // What a Blocked permission hides from this agent (spec `agent-permissions`
   // D15), resolved against the SAME cwd the tool server keys the session's
   // identity on, for the reason the agent-to-agent flag above gives. The list
@@ -234,7 +238,7 @@ export async function resolveLaunch(args: {
   // The four switchable tool-doc blocks follow the same resolution: a Blocked
   // area's docs go with its tools.
   const toolConfig = toolDocGates(toolVisibility.blockedAreas);
-  const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig, {
+  const baseAppend = await buildSystemPromptAppend(turnAgentPath, effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
       !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath)),
       isRelayEnabled()

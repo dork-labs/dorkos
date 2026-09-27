@@ -8,7 +8,16 @@ import { NotifyBudget } from '../../relay/notify-budget.js';
 import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
 import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { createCanUseTool } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
-import { resolveIdentityAnchor, setWorkingCopyOwnerPort } from '../agent-identity/index.js';
+import { resolveAgentHome, setWorkingCopyOwnerPort } from '../agent-identity/index.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => true) }));
 
@@ -1033,7 +1042,6 @@ describe('relay_notify_user, by identity anchor', () => {
 
     beforeEach(() => {
       setWorkingCopyOwnerPort({
-        isRegisteredAgent: () => true,
         ownerOf: (dir) =>
           dir.startsWith(`${WORKTREES}/`)
             ? { owner: dir === ANA_WORKTREE ? '/agents/ana' : null }
@@ -1073,7 +1081,7 @@ describe('relay_notify_user, by identity anchor', () => {
       const identity = resolveSenderIdentity(
         deps,
         ANA_WORKTREE,
-        resolveIdentityAnchor(ANA_WORKTREE, '/agents/ben')
+        resolveAgentHome(ANA_WORKTREE, '/agents/ben')
       );
       expect(identity.agentId).toBeUndefined();
 

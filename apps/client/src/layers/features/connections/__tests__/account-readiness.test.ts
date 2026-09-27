@@ -19,6 +19,7 @@ const READY: ConnectorConnectionSummary = {
   subscriptionCount: 0,
   usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
   warnings: [],
+  everyAgent: null,
 };
 
 describe('account readiness', () => {

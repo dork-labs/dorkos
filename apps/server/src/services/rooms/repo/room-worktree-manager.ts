@@ -785,8 +785,8 @@ export class RoomWorktreeManager {
   /**
    * Whether `dir` is one of this install's room working copies, and whose.
    *
-   * The rooms domain's half of `resolveIdentityAnchor`
-   * (`core/agent-identity/identity-anchor.ts`, DOR-2091). A working copy is
+   * The rooms domain's half of `resolveAgentHome`
+   * (`core/agent-identity/agent-home.ts`, DOR-2091). A working copy is
    * recognized by WHERE it is — a direct child of some room's `worktrees/`
    * directory, as the store lays them out — and that recognition only ever
    * narrows: it decides that a directory is some agent's, never which. Which

@@ -28,6 +28,14 @@ import { EFFORT_LEVELS } from './constants.js';
 // inlines, and the `.openapi()` prototype patch would land on one instance while
 // the registry asked the other. See `harness-ids.ts` for the measurement.
 import { HARNESS_IDS } from './harness-ids.js';
+import {
+  ACCOUNT_COLOR_PATTERN,
+  ACCOUNT_ID_PATTERN,
+  IMPLICIT_ACCOUNT_ID,
+  isAbsoluteAccountPath,
+  isAccountColor,
+  resolveAccountColor,
+} from './account-identity.js';
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
@@ -1103,6 +1111,16 @@ export type RawMcpServerConfig = z.infer<typeof RawMcpServerConfigSchema>;
  * operator-controlled place instead of silently breaking every agent pointing at
  * it. An id that is no longer registered degrades to the next tier of the launch
  * ladder rather than failing a launch.
+ *
+ * **A row keeps fields it does not know**, but not through this schema. The
+ * registry is a shared contract with flow (marketplace `specs/flow-cli-core`
+ * §1.1a: "readers ignore fields they do not know; writers preserve them"), and
+ * a parse strips them. The object stays closed on purpose: the config
+ * disclosure and write-policy guards classify every leaf of the schema and
+ * refuse an open catchall, which a loose object would put on every row. So the
+ * one writer that parses rows, `applyConfigPatch`, carries each row's unknown
+ * fields across itself (`planClaudeAccountWrite`), and every reader reads the
+ * stored row, not a parse of it.
  */
 export const ClaudeCodeAccountSchema = z.object({
   /**
@@ -1115,6 +1133,14 @@ export const ClaudeCodeAccountSchema = z.object({
   path: z.string().min(1),
   /** What the operator calls this account; `null` when they have not named it. */
   label: z.string().nullable(),
+  /**
+   * The color DorkOS draws this account's dot and badge in, as lowercase
+   * `#rrggbb`. `null` means the default for the account's position in the
+   * registry (resolved at read time, never stored), so an absent or `null`
+   * color follows the palette if it changes. A value that is not lowercase
+   * `#rrggbb` reads as `null` rather than failing the whole config.
+   */
+  color: z.string().regex(ACCOUNT_COLOR_PATTERN).nullable().default(null).catch(null),
 });
 
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
@@ -1152,6 +1178,12 @@ export function slugifyAccountId(value: string): string {
  * registries and for the settings UI that registers a new account, so an id
  * minted by either is minted by the same rule.
  *
+ * `default` is always taken (contract §1.1a): it names the runtime's default
+ * account, so a label "Default" or a folder called `default` mints
+ * `default-2`. The `'0.65.0'` migration reaches this function, so that rule
+ * applies to an install minting its ids for the first time; `'0.87.0'` renames
+ * a row an earlier build already minted as `default`.
+ *
  * @param opts - The account being named and the ids already in use.
  * @param opts.label - The operator's name for the account, if they gave one.
  * @param opts.path - The account's config directory (its basename is the fallback).
@@ -1173,6 +1205,7 @@ export function claudeAccountId(opts: {
       .pop() ?? '';
   const base = slugifyAccountId(opts.label ?? '') || slugifyAccountId(basename) || 'account';
   const taken = new Set(opts.taken);
+  taken.add(IMPLICIT_ACCOUNT_ID);
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) {
     const candidate = `${base}-${n}`;
@@ -1338,6 +1371,116 @@ export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void 
 }
 
 /**
+ * Why a registry row was read differently from how it is stored (contract
+ * §1.1a). Each is logged once by the reader's caller.
+ *
+ * - `row-invalid`: the entry is not an object; skipped.
+ * - `path-invalid`: `path` is missing or not absolute; skipped.
+ * - `id-duplicate`: an earlier listed row already has this id; skipped.
+ * - `id-reserved`: the id is `default`, which names the default account;
+ *   listed, but not routable until the config migration renames it.
+ * - `id-invalid`: the id fails {@link ACCOUNT_ID_PATTERN} (a hand edit);
+ *   listed, but it has no usage file and cannot be routed.
+ * - `color-invalid`: `color` is not lowercase `#rrggbb`; read as `null`.
+ */
+export type ClaudeAccountReadWarningCode =
+  'row-invalid' | 'path-invalid' | 'id-duplicate' | 'id-reserved' | 'id-invalid' | 'color-invalid';
+
+/** One thing the registry reader noticed about a stored row. */
+export interface ClaudeAccountReadWarning {
+  /** What was wrong. */
+  code: ClaudeAccountReadWarningCode;
+  /** The row's position in the STORED array. */
+  index: number;
+  /** One line naming the row and what the reader did about it. */
+  message: string;
+}
+
+/** One stored registry row as the read rules classify it. */
+export interface ClaudeAccountRowView {
+  /** The row's position in the stored array. */
+  index: number;
+  /** The stored row with a minted id filled in when it had none; `null` when not an object. */
+  row: Record<string, unknown> | null;
+  /** True when the read rules list this row (it can be seen and edited). */
+  listed: boolean;
+}
+
+/**
+ * Apply the contract's read rules (§1.1a) to a stored `accounts` value, in the
+ * contract's order.
+ *
+ * 1. Mint a missing id on EVERY object row, in array order, with every id
+ *    already present reserved first (`backfillMissingAccountIds`). Minting
+ *    happens before anything is skipped, because skipping first would shift
+ *    later ids and flow and DorkOS would write different ledger files.
+ * 2. Skip a row that is not an object, or whose `path` is missing or not
+ *    absolute.
+ * 3. Of two remaining rows sharing an id, keep the first.
+ *
+ * The single classification both the reader and the write path use, so a row
+ * the settings screen was never shown is exactly a row the write path keeps.
+ *
+ * @param value - The stored `runtimes.claudeCode.accounts` value, any shape.
+ * @returns Every stored row with its verdict, and the warnings for the skipped ones.
+ */
+export function classifyClaudeAccountRows(value: unknown): {
+  rows: ClaudeAccountRowView[];
+  warnings: ClaudeAccountReadWarning[];
+} {
+  const minted = backfillMissingAccountIds(value);
+  if (!Array.isArray(minted)) return { rows: [], warnings: [] };
+  const warnings: ClaudeAccountReadWarning[] = [];
+  const seen = new Set<string>();
+  const rows = minted.map((entry, index): ClaudeAccountRowView => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      warnings.push({
+        code: 'row-invalid',
+        index,
+        message: `Claude account ${index + 1} is not an object, so it was skipped.`,
+      });
+      return { index, row: null, listed: false };
+    }
+    const row = entry as Record<string, unknown>;
+    const id = row.id as string;
+    if (!isAbsoluteAccountPath(row.path)) {
+      warnings.push({
+        code: 'path-invalid',
+        index,
+        message: `Claude account "${id}" has no absolute path, so it was skipped.`,
+      });
+      return { index, row, listed: false };
+    }
+    if (seen.has(id)) {
+      warnings.push({
+        code: 'id-duplicate',
+        index,
+        message: `Claude account "${id}" repeats an earlier account's id, so it was skipped.`,
+      });
+      return { index, row, listed: false };
+    }
+    seen.add(id);
+    return { index, row, listed: true };
+  });
+  return { rows, warnings };
+}
+
+/** One registry row as a READER sees it, with its display color resolved. */
+export type ReadClaudeAccount = ClaudeCodeAccount & {
+  /** The color to draw it in: the stored color, else the default for its position. */
+  color: string;
+  /** True when {@link ReadClaudeAccount.color} is the positional default, not a stored choice. */
+  colorIsDefault: boolean;
+  /**
+   * The id this row had before the `'0.87.0'` migration renamed it (only ever
+   * `default`), until the account reconcile has moved every reference to it.
+   */
+  renamedFrom?: string;
+  /** Any other field the stored row carries, kept as stored. */
+  [field: string]: unknown;
+};
+
+/**
  * The Claude account settings as every READER should see them, healed.
  *
  * The launch ladder, the `GET /api/config` block and the root-set scan all read
@@ -1347,32 +1490,69 @@ export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void 
  * healed only on parse leaves the ladder's top two rungs inert on every
  * un-migrated install, because a hint is matched by an id no stored row has.
  *
+ * The registry follows the contract's read rules (§1.1a, see
+ * {@link classifyClaudeAccountRows}): ids minted over every row first, then a
+ * row with no absolute path skipped, then the first of two rows sharing an id
+ * kept. A listed row whose id is `default` or fails {@link ACCOUNT_ID_PATTERN}
+ * stays listed with a warning; a bad `color` reads as `null`. Each row's color
+ * is resolved by its position among the LISTED rows, so a skipped hand edit
+ * never shifts the colors the operator sees. A missing or non-string `label`
+ * reads as `null`.
+ *
  * Read-time only, by design. Nothing here writes: the migration remains the sole
  * writer of the settled shape, and a reader that heals cannot corrupt a file it
- * never touches.
+ * never touches. Nothing here logs either (this module is pure): the caller logs
+ * `warnings`.
  *
  * @param raw - The stored `runtimes.claudeCode` block, or anything at all.
- * @returns The default account and the registry, with ids and the rename applied.
+ * @returns The default account, the listed registry, and what the reader noticed.
  */
 export function readClaudeAccountSettings(raw: unknown): {
   defaultAccount: string | null;
-  accounts: ClaudeCodeAccount[];
+  accounts: ReadClaudeAccount[];
+  warnings: ClaudeAccountReadWarning[];
 } {
   const healed = healClaudeAccountRename(raw);
   const block =
     healed && typeof healed === 'object' ? (healed as Record<string, unknown>) : undefined;
   const defaultAccount = typeof block?.defaultAccount === 'string' ? block.defaultAccount : null;
-  const rows = backfillMissingAccountIds(block?.accounts);
-  const accounts = Array.isArray(rows)
-    ? rows.filter(
-        (row): row is ClaudeCodeAccount =>
-          !!row &&
-          typeof row === 'object' &&
-          typeof (row as ClaudeCodeAccount).id === 'string' &&
-          typeof (row as ClaudeCodeAccount).path === 'string'
-      )
-    : [];
-  return { defaultAccount, accounts };
+  const { rows, warnings } = classifyClaudeAccountRows(block?.accounts);
+  const accounts: ReadClaudeAccount[] = [];
+  for (const { index, row, listed } of rows) {
+    if (!listed || !row) continue;
+    const id = row.id as string;
+    if (id === IMPLICIT_ACCOUNT_ID) {
+      warnings.push({
+        code: 'id-reserved',
+        index,
+        message: `Claude account "${id}" uses the reserved id "default", so it is listed but not routable until it is renamed.`,
+      });
+    } else if (!ACCOUNT_ID_PATTERN.test(id)) {
+      warnings.push({
+        code: 'id-invalid',
+        index,
+        message: `Claude account "${id}" has an id that is not lowercase words joined by hyphens, so it is listed but not routable.`,
+      });
+    }
+    const stored = row.color;
+    if (stored !== undefined && stored !== null && !isAccountColor(stored)) {
+      warnings.push({
+        code: 'color-invalid',
+        index,
+        message: `Claude account "${id}" has a color that is not lowercase #rrggbb, so it uses the default.`,
+      });
+    }
+    const colorIsDefault = !isAccountColor(stored);
+    accounts.push({
+      ...row,
+      id,
+      path: row.path as string,
+      label: typeof row.label === 'string' ? row.label : null,
+      color: resolveAccountColor(colorIsDefault ? null : (stored as string), accounts.length),
+      colorIsDefault,
+    });
+  }
+  return { defaultAccount, accounts, warnings };
 }
 
 /**
@@ -1425,6 +1605,26 @@ export const ClaudeCodeAccountsSchema = z.preprocess(
     });
   })
 );
+
+/**
+ * The ids of the Claude accounts a writer was SHOWN, sent beside
+ * `runtimes.claudeCode.accounts` in a config PATCH as
+ * `runtimes.claudeCode.accountsSeen` (spec `claude-account-fleet` D1).
+ *
+ * Not a setting: the write path takes it out of the patch before merging, and
+ * nothing stores it. It exists because a PATCH replaces the account array, and
+ * flow can add an account while the settings screen is open. Without it, a row
+ * the screen never saw would read as one the operator removed. With it, the
+ * server removes only a stored row whose id is in this list and that the patch
+ * left out; every other stored row is kept. A patch naming `accounts` without
+ * this list is a full replace of the listed rows, as before (the CLI's
+ * `dorkos config set` and the `config_patch` tool); rows the read rules skip
+ * are kept either way.
+ */
+export const ClaudeAccountsSeenSchema = z.array(z.string());
+
+/** The patch key {@link ClaudeAccountsSeenSchema} travels under, inside `runtimes.claudeCode`. */
+export const CLAUDE_ACCOUNTS_SEEN_KEY = 'accountsSeen';
 
 /**
  * The model a NEW session on one runtime starts on, or `null` to let that

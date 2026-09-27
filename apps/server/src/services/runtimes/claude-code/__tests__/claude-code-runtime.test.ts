@@ -151,6 +151,12 @@ describe('ClaudeCodeRuntime', () => {
     }));
     const mod = await import('../claude-code-runtime.js');
     agentManager = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
+    // Every scratch folder counts as a registered home here, so this suite's
+    // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+    // Wired on the module instance the runtime just loaded (`resetModules`).
+    const { registerEveryFolderAsHome } =
+      await import('../../../core/agent-identity/__tests__/agent-home-fixture.js');
+    registerEveryFolderAsHome();
   });
 
   afterEach(async () => {
@@ -342,7 +348,6 @@ describe('ClaudeCodeRuntime', () => {
         const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
         const { setWorkingCopyOwnerPort } = await import('../../../core/agent-identity/index.js');
         setWorkingCopyOwnerPort({
-          isRegisteredAgent: () => true,
           ownerOf: (dir) => (dir === WORKTREE ? { owner: ANA } : null),
         });
         const principals: ConnectorRuntimePrincipalPort = {
@@ -1438,8 +1443,9 @@ describe('ClaudeCodeRuntime', () => {
 
       expect(buildSystemPromptAppend).toHaveBeenCalledTimes(1);
       const callArgs = (buildSystemPromptAppend as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(typeof callArgs[0]).toBe('string'); // cwd
-      expect(callArgs[1]).toEqual(
+      expect(typeof callArgs[0]).toBe('string'); // home
+      expect(typeof callArgs[1]).toBe('string'); // cwd
+      expect(callArgs[2]).toEqual(
         expect.objectContaining({
           tasks: expect.any(Boolean),
           relay: expect.any(Boolean),

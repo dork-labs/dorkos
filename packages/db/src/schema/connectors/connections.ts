@@ -122,13 +122,21 @@ export const connectorOperationRevisions = sqliteTable(
   ]
 );
 
-/** Explicit grant of one immutable operation revision to an agent or session. */
+/**
+ * Explicit grant of one immutable operation revision to an agent, a session, or
+ * every agent the connection's owner has (ADR 260926-192625).
+ *
+ * An `every_agent` row carries the fixed subject id {@link EVERY_AGENT_GRANT_SUBJECT_ID}
+ * and a null `agent_id`, so removing one agent (which revokes by `agent_id`)
+ * never touches it, while revoking by `connection_id` (disconnect) always does.
+ */
 export const connectionOperationGrants = sqliteTable(
   'connection_operation_grants',
   {
     id: text('id').primaryKey(),
-    subjectType: text('subject_type', { enum: ['agent', 'session'] }).notNull(),
+    subjectType: text('subject_type', { enum: ['agent', 'session', 'every_agent'] }).notNull(),
     subjectId: text('subject_id').notNull(),
+    /** The one agent a row speaks for; null only on an `every_agent` row. */
     agentId: text('agent_id'),
     connectionId: text('connection_id')
       .notNull()
@@ -154,6 +162,9 @@ export const connectionOperationGrants = sqliteTable(
     ),
   ]
 );
+
+/** The one subject id every owner-wide `every_agent` grant row carries. */
+export const EVERY_AGENT_GRANT_SUBJECT_ID = 'every_agent';
 
 /** Canonical stable replacement for legacy agent account attachments. */
 export const agentConnectionAttachments = sqliteTable(

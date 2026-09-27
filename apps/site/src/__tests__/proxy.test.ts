@@ -169,7 +169,15 @@ describe('proxy accounts hand-over', () => {
 
   afterEach(() => {
     env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = undefined;
+    env.DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET = undefined;
+    env.VERCEL_ENV = undefined;
+    env.VERCEL = undefined;
   });
+
+  /** The request headers Next.js will send on the rewrite, when the proxy overrode them. */
+  function overriddenHeaders(response: Response): string[] | null {
+    return response.headers.get('x-middleware-override-headers')?.split(',') ?? null;
+  }
 
   describe('with the variable unset', () => {
     it('serves account pages locally, with the region cookie as before', () => {
@@ -215,6 +223,74 @@ describe('proxy accounts hand-over', () => {
         request('/api/auth/device/code', { 'content-type': 'application/json' }, 'POST')
       );
       expect(rewriteTarget(response)).toBe(`${SERVICE}/api/auth/device/code`);
+    });
+
+    it('tells the service who a proxied caller is, with the shared secret (DOR-2443)', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      env.DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET = 'k'.repeat(40);
+      env.VERCEL_ENV = 'production';
+      env.VERCEL = '1';
+      const response = proxy(
+        request('/api/auth/device/code', { 'x-real-ip': '198.51.100.7' }, 'POST')
+      );
+      expect(rewriteTarget(response)).toBe(`${SERVICE}/api/auth/device/code`);
+      expect(response.headers.get('x-middleware-request-x-dorkos-client-address')).toBe(
+        '198.51.100.7'
+      );
+      expect(response.headers.get('x-middleware-request-x-dorkos-proxy-secret')).toBe(
+        'k'.repeat(40)
+      );
+    });
+
+    it('proxies exactly as before when the secret is unset', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      env.VERCEL_ENV = 'production';
+      const response = proxy(
+        request('/api/auth/device/code', { 'x-real-ip': '198.51.100.7' }, 'POST')
+      );
+      expect(rewriteTarget(response)).toBe(`${SERVICE}/api/auth/device/code`);
+      expect(overriddenHeaders(response)).toBeNull();
+    });
+
+    it('drops a caller’s own copy of either header before proxying', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      const response = proxy(
+        request(
+          '/api/auth/device/token',
+          { 'x-dorkos-client-address': '203.0.113.9', 'x-dorkos-proxy-secret': 'guess' },
+          'POST'
+        )
+      );
+      expect(rewriteTarget(response)).toBe(`${SERVICE}/api/auth/device/token`);
+      const kept = overriddenHeaders(response);
+      expect(kept).not.toBeNull();
+      expect(kept).not.toContain('x-dorkos-client-address');
+      expect(kept).not.toContain('x-dorkos-proxy-secret');
+    });
+
+    it('vouches for nothing when only VERCEL_ENV says Vercel (a pulled .env.local)', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      env.DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET = 'k'.repeat(40);
+      env.VERCEL_ENV = 'production';
+      const response = proxy(
+        request('/api/auth/device/code', { 'x-real-ip': '198.51.100.7' }, 'POST')
+      );
+      expect(overriddenHeaders(response)).toBeNull();
+    });
+
+    it('never puts the secret on a redirect of an account API path', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      env.DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET = 'k'.repeat(40);
+      env.VERCEL_ENV = 'production';
+      env.VERCEL = '1';
+      // A navigation to an email link: an account API path, redirected, not proxied.
+      const response = proxy(
+        request('/api/auth/verify-email?token=t', { 'x-real-ip': '198.51.100.7' })
+      );
+      expect(response.status).toBe(307);
+      for (const [name, value] of response.headers) {
+        expect(value, name).not.toContain('k'.repeat(40));
+      }
     });
 
     it('leaves managed connections and the rest of the site alone', () => {

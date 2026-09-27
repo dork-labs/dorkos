@@ -46,6 +46,11 @@ import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.j
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import { logger } from '../lib/logger.js';
+import {
+  homeOf,
+  readHomeManifest,
+  resolveAgentHome,
+} from '../services/core/agent-identity/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
@@ -179,15 +184,21 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
   const router = Router();
 
   // GET /api/agents/current?path=/path/to/project
-  // Returns the agent manifest for the given directory, or null
+  // Returns the agent manifest for the home the given directory resolves to,
+  // or null when no agent lives there. A worktree or managed checkout of an
+  // agent's repo answers with the agent's HOME values, never the committed
+  // `.dork/` copy it carries (spec `agent-home-desk` §3.2 row 9).
   router.get('/current', async (req, res) => {
     try {
       const rawPath = req.query.path as string;
       if (!rawPath) {
         return res.status(400).json({ error: 'path query parameter required' });
       }
-      const agentPath = await validateBoundaryOrDorkHome(rawPath);
-      const manifest = await readManifest(agentPath);
+      const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
+      if (!agentPath) {
+        return res.json(null);
+      }
+      const manifest = await readHomeManifest(agentPath);
       if (!manifest) {
         return res.json(null);
       }
@@ -539,7 +550,13 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       if (!rawPath) {
         return res.status(400).json({ error: 'path query parameter required' });
       }
-      const agentPath = await validateBoundaryOrDorkHome(rawPath);
+      // Written to the home the path resolves to — the same one GET answered
+      // from — so an editor opened on a worktree or checkout changes the agent,
+      // never the branch's committed copy (spec `agent-home-desk` §3.2 row 9).
+      const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
+      if (!agentPath) {
+        return res.status(404).json({ error: 'No agent registered at this path' });
+      }
 
       // Manifest guards + write live in the shared agent-updater service so the
       // `update_agent` MCP tool enforces the exact same rules (ADR-0043 sync
@@ -578,10 +595,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       if (!rawPath) {
         return res.status(400).json({ error: 'path query parameter required' });
       }
-      const agentPath = await validateBoundaryOrDorkHome(rawPath);
-
-      const manifest = await readManifest(agentPath);
-      if (!manifest) {
+      const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
+      const manifest = agentPath ? await readHomeManifest(agentPath) : null;
+      if (!agentPath || !manifest) {
         return res.status(404).json({ error: 'No agent registered at this path' });
       }
 

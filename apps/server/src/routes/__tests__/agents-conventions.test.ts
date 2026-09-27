@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
 
@@ -86,6 +86,15 @@ import express from 'express';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createAgentsRouter } from '../agents.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const app = express();
 app.use(express.json());

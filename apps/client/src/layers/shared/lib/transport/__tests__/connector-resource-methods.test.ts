@@ -65,6 +65,9 @@ describe('connector resource transport methods', () => {
 
     await setup().getSessionConnectorConnections('session/a');
     expect(lastCall()[0].endsWith('/connectors/sessions/session%2Fa/connections')).toBe(true);
+
+    await setup().getEveryAgentConnectorGrants();
+    expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/every-agent-grants');
   });
 
   it('uses owner-only agent request routes and forwards the exact decision body', async () => {

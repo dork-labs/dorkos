@@ -26,9 +26,18 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
   resolveAgentTokenEnv,
-  resolveIdentityAnchor,
+  resolveAgentHome,
 } from '../../../../core/agent-identity/index.js';
 import { capabilityMcpTools } from '../capability-mcp-tools.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -67,7 +76,7 @@ async function callTool(registry: CapabilityRegistry, agentPath: string | undefi
   const [projected] = capabilityMcpTools(
     registry,
     'in-session',
-    createInSessionContextResolver(resolveIdentityAnchor(agentPath))
+    createInSessionContextResolver(resolveAgentHome(agentPath))
   );
   return (
     projected as unknown as { handler: (args: unknown, extra: unknown) => Promise<unknown> }

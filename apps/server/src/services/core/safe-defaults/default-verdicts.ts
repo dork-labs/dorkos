@@ -231,6 +231,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.claudeCode.accounts[].id',
   'runtimes.claudeCode.accounts[].path',
   'runtimes.claudeCode.accounts[].label',
+  // A display color, `null` meaning the default for its position: it only
+  // changes how an account is drawn (DOR-2379).
+  'runtimes.claudeCode.accounts[].color',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,

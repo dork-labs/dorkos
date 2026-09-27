@@ -8,6 +8,7 @@ import {
   connections,
   createDb,
   eq,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
   ne,
   runMigrations,
   sessionMessageAcceptanceReceipts,
@@ -907,6 +908,60 @@ describe('ConnectorAgentRequestService', () => {
         status: 'granted',
         grantedOperationRevisionIds: ['revision-read'],
       });
+    });
+
+    /** Share the account with every agent, the way the page's "Every agent" save does. */
+    function shareWithEveryAgent(revisionIds: string[]): void {
+      for (const operationRevisionId of revisionIds) {
+        db.insert(connectionOperationGrants)
+          .values({
+            id: `every-${operationRevisionId}`,
+            subjectType: 'every_agent',
+            subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+            agentId: null,
+            connectionId: 'connection-1',
+            operationRevisionId,
+            createdBy: 'local_install:install-1',
+            createdAt: NOW.toISOString(),
+          })
+          .run();
+      }
+    }
+
+    it('counts an "Every agent" grant as this agent\'s access, as the execution check does', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      shareWithEveryAgent(['revision-read']);
+      const before = db.select().from(connectionOperationGrants).all();
+
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+
+      expect(resolved).toMatchObject({
+        status: 'granted',
+        grantedOperationRevisionIds: ['revision-read'],
+        notGrantedOperations: ['gmail.draft'],
+      });
+      expect(db.select().from(connectionOperationGrants).all()).toEqual(before);
+    });
+
+    it('does not count "Every agent" on a managed account, which the server never honours', async () => {
+      db.update(connectorProviderInstances)
+        .set({ mode: 'managed', custody: 'managed' })
+        .where(eq(connectorProviderInstances.id, 'provider-1'))
+        .run();
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      shareWithEveryAgent(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
     });
 
     it('counts only live grants: a revoked one is not access', async () => {

@@ -143,6 +143,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.repo.worktreeReapDays',
       'rooms.responseGate',
       'rooms.turnLimitsEnabled',
+      'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',
@@ -403,6 +404,16 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
     ).toEqual(['runtimes.claudeCode.accounts[].label', 'runtimes.claudeCode.accounts[].path']);
   });
 
+  it('keeps the whole account row operator-only, color included (DOR-2379)', () => {
+    // A color is cosmetic, but `accounts` is written as a whole array: a write
+    // that could set a color could also add or repoint an account.
+    expect(
+      findOperatorOnlyPaths({
+        runtimes: { claudeCode: { accounts: [{ id: 'a', color: '#000000' }] } },
+      })
+    ).toEqual(['runtimes.claudeCode.accounts[].color', 'runtimes.claudeCode.accounts[].id']);
+  });
+
   it('names only the element fields the patch actually writes', () => {
     expect(
       findOperatorOnlyPaths({ connectors: { rawMcpServers: [{ url: 'https://evil.test/mcp' }] } })
@@ -427,6 +438,7 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
       'connectors.rawMcpServers[].url',
     ]);
     expect(findOperatorOnlyPaths({ runtimes: { claudeCode: { accounts: [] } } })).toEqual([
+      'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',

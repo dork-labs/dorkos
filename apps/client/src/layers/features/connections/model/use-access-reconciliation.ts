@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
   ConnectorReconciliationApplyResponse,
+  ConnectorReconciliationEveryAgentSelection,
   ConnectorReconciliationGrantSelection,
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
@@ -24,6 +25,15 @@ function acceptedExactGrants(
       }))
       .sort((left, right) => left.agentId.localeCompare(right.agentId));
   return JSON.stringify(normalize(expected)) === JSON.stringify(normalize(actual));
+}
+
+/** True when both every-agent sets are absent, or both hold exactly the same revisions. */
+function sameRevisionSet(
+  expected: readonly string[] | undefined,
+  actual: readonly string[] | undefined
+): boolean {
+  if (expected === undefined || actual === undefined) return expected === actual;
+  return JSON.stringify([...expected].sort()) === JSON.stringify([...actual].sort());
 }
 
 /** Options for {@link useAccessReconciliation}. */
@@ -95,20 +105,30 @@ export function useAccessReconciliation({
     load();
   };
 
-  /** Write exactly these replacement sets against the loaded snapshot. */
-  const apply = (changed: ConnectorReconciliationGrantSelection[]) => {
-    if (!preview || changed.length === 0) return;
+  /**
+   * Write exactly these replacement sets against the loaded snapshot, and the
+   * complete every-agent set when one is given (an empty set stops sharing).
+   */
+  const apply = (
+    changed: ConnectorReconciliationGrantSelection[],
+    everyAgent?: ConnectorReconciliationEveryAgentSelection
+  ) => {
+    if (!preview || (changed.length === 0 && !everyAgent)) return;
     if (Date.parse(preview.expiresAt) <= Date.now()) {
       setNeedsRefresh(true);
       return;
     }
     applyMutation.mutate(
-      { previewId: preview.previewId, grants: changed },
+      { previewId: preview.previewId, grants: changed, ...(everyAgent && { everyAgent }) },
       {
         onSuccess: (result) => {
           if (
             result.connectionId !== preview.connection.connectionId ||
-            !acceptedExactGrants(changed, result.grants)
+            !acceptedExactGrants(changed, result.grants) ||
+            !sameRevisionSet(
+              everyAgent?.operationRevisionIds,
+              result.everyAgent?.operationRevisionIds
+            )
           ) {
             setNeedsRefresh(true);
             previewMutation.reset();
@@ -140,7 +160,12 @@ export function useAccessReconciliation({
       if (
         result.data.connection.connectionId !== connectionId ||
         saveOutcome.connectionId !== connectionId ||
-        !acceptedExactGrants(expectedGrants, canonicalGrants)
+        !acceptedExactGrants(expectedGrants, canonicalGrants) ||
+        (saveOutcome.everyAgent !== undefined &&
+          !sameRevisionSet(
+            saveOutcome.everyAgent.operationRevisionIds,
+            result.data.connection.everyAgent?.operationRevisionIds ?? []
+          ))
       ) {
         setNeedsRefresh(true);
         setSaveOutcome(null);

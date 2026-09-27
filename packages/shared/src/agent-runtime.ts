@@ -583,6 +583,19 @@ export interface RuntimeCapabilities {
   supportsPlugins: boolean;
 
   /**
+   * Whether this runtime can run sessions on more than one registered billing
+   * account (spec `claude-account-fleet` §6 R). Required, so a new runtime has
+   * to decide rather than inherit an answer.
+   *
+   * The UI shows the account chip, dots and badge only for a session whose
+   * runtime declares this AND has two or more registered accounts. Usage bars
+   * and the out-of-usage banner do not depend on it: every runtime records
+   * usage for its one ambient `default` account. Only Claude Code has an
+   * account registry today, so it is the only runtime that declares `true`.
+   */
+  supportsAccounts: boolean;
+
+  /**
    * Structured permission-mode capability. `supported: false, values: []`
    * means the runtime does not expose a permission-mode picker at all.
    */
@@ -859,6 +872,17 @@ export interface MessageOpts extends SessionSettings {
      */
     aheadOfMain?: number | null;
   };
+  /**
+   * The home of the agent this turn is dispatched AS, when a server path names
+   * one (a room, a relay binding, a scheduled task). Server-derived, never from
+   * a client.
+   *
+   * Runtimes resolve the turn's identity against it (spec `agent-home-desk`
+   * §3.1): a folder that resolves to a different agent's home is refused, and
+   * a folder that resolves to no home carries this agent's identity. It
+   * generalises `roomTurn.agentPath`, which runtimes read when this is absent.
+   */
+  forAgent?: string;
   /**
    * Title to assign the session on its first turn, skipping auto-generation.
    * Useful for sessions with a known purpose (e.g. Tasks- or relay-initiated runs).

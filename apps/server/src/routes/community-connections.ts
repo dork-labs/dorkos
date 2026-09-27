@@ -87,7 +87,12 @@ export function resolveCommunityOwner(req: Request, res: Response): string | nul
 
 function failure(res: Response, error: unknown): void {
   if (error instanceof RemotePairingBusyError) {
-    res.status(409).json({ error: 'This pairing is still finishing. Try again in a moment.' });
+    // Coded so a client can tell "another check of this connection is in
+    // flight" (keep waiting) from a real refusal: every open window polls.
+    res.status(409).json({
+      code: 'PAIRING_BUSY',
+      error: 'This pairing is still finishing. Try again in a moment.',
+    });
   } else if (error instanceof RemoteCommunitySelectionRequiredError) {
     res.status(409).json({
       code: 'COMMUNITY_SELECTION_REQUIRED',

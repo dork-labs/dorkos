@@ -18,6 +18,7 @@
  * @module services/mesh/agent-path-lookup
  */
 import { logger } from '../../lib/logger.js';
+import { homeOf, resolveAgentHome } from '../core/agent-identity/agent-home.js';
 
 /**
  * The subset of `MeshCore` this module needs. Structural rather than a
@@ -60,9 +61,14 @@ export function setAgentPathLookup(next: AgentPathLookup | undefined): void {
  */
 export function resolveAgentIdForPath(cwd: string | undefined): string | undefined {
   if (!cwd || !lookup) return undefined;
+  // Through the home resolver, so a session in a worktree or managed checkout
+  // of an agent's repo is attributed to that agent (spec `agent-home-desk`
+  // §3.2 row 11). No home is no agent — never a prefix match.
+  const home = homeOf(resolveAgentHome(cwd));
+  if (!home) return undefined;
 
   try {
-    return lookup.getByPath(cwd)?.id;
+    return lookup.getByPath(home)?.id;
   } catch (err) {
     logger.debug('[Mesh] Could not resolve the agent for a session directory', {
       cwd,

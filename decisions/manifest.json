@@ -6655,6 +6655,25 @@
         "apps/server/src/services/session/message-dispatcher.ts",
         "apps/server/src/services/runtimes/shared/room-context-block.ts"
       ]
+    },
+    {
+      "id": "260926-192625",
+      "slug": "every-agent-grants-cover-future-agents",
+      "title": "An owner may give every agent, including agents added later, access to one connection",
+      "status": "accepted",
+      "created": "2026-09-26",
+      "specSlug": "connections-one-list",
+      "supersedes": null,
+      "affects": [
+        "packages/db/src/schema/connectors/connections.ts",
+        "apps/server/src/services/connectors/every-agent-grants.ts",
+        "apps/server/src/services/connectors/execution/authorization-service.ts",
+        "apps/server/src/services/connectors/execution/access-query-service.ts",
+        "apps/server/src/services/connectors/reconciliation-service.ts",
+        "apps/server/src/services/connectors/resources/operator-query-service.ts",
+        "apps/server/src/services/connectors/every-agent-activity.ts",
+        "apps/server/src/services/connectors/management-review-context.ts"
+      ]
     }
   ]
 }

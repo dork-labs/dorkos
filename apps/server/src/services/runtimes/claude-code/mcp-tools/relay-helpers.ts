@@ -15,9 +15,9 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../../../lib/logger.js';
 import {
-  anchorPath,
-  resolveIdentityAnchor,
-  type IdentityAnchor,
+  homeOf,
+  resolveAgentHome,
+  type HomeResolution,
 } from '../../../core/agent-identity/index.js';
 
 /** Sender identity injected on the external `/mcp` surface (no per-session context). */
@@ -80,15 +80,15 @@ export interface SenderIdentity {
  *
  * @param deps - Tool dependencies, for the Mesh registry lookup
  * @param cwd - The session's working directory, when known
- * @param anchor - Whose identity the session carries; defaults to the anchor of
- *   `cwd` itself
+ * @param anchor - Whose identity the session carries; defaults to the home
+ *   `cwd` resolves to
  */
 export function resolveSenderIdentity(
   deps: McpToolDeps,
   cwd: string | undefined,
-  anchor: IdentityAnchor = resolveIdentityAnchor(cwd)
+  anchor: HomeResolution = resolveAgentHome(cwd)
 ): SenderIdentity {
-  const agentPath = anchorPath(anchor);
+  const agentPath = homeOf(anchor);
   if (agentPath && deps.meshCore) {
     const identity = deps.meshCore.getSubjectByPath(agentPath);
     if (identity) return identity;

@@ -731,6 +731,8 @@ export interface DispatchMessageOpts {
    * routing metadata that never reaches a prompt (spec `room-canvas` §5.3).
    */
   roomTurn?: MessageOpts['roomTurn'];
+  /** The home of the agent this turn is dispatched as — see {@link MessageOpts.forAgent}. */
+  forAgent?: string;
   /** Background the caller attached to this turn; the person never sees it. */
   seedContext?: string;
   /**
@@ -964,6 +966,7 @@ interface DispatchPlan {
     | 'context'
     | 'roomContext'
     | 'roomTurn'
+    | 'forAgent'
     | 'seedContext'
     | 'approvalVerdict'
     | 'systemPromptAppend'
@@ -1245,6 +1248,7 @@ function launchDispatch(
       ...(turn.context ? { context: turn.context } : {}),
       ...(turn.roomContext ? { roomContext: turn.roomContext } : {}),
       ...(turn.roomTurn ? { roomTurn: turn.roomTurn } : {}),
+      ...(turn.forAgent !== undefined ? { forAgent: turn.forAgent } : {}),
       ...(turn.seedContext ? { seedContext: turn.seedContext } : {}),
       ...(turn.approvalVerdict ? { approvalVerdict: turn.approvalVerdict } : {}),
       ...(turn.systemPromptAppend !== undefined

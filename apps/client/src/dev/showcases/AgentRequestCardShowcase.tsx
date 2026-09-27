@@ -82,6 +82,7 @@ function account(connectionId: string, label: string): ConnectorConnectionSummar
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
     warnings: [],
+    everyAgent: null,
   };
 }
 
@@ -110,6 +111,7 @@ function preview(connectionId: string): ConnectorReconciliationPreview {
     agents: [{ agentId: 'dorkbot', displayName: 'DorkBot' }],
     currentGrants: [],
     catalogComplete: true,
+    everyAgent: { available: true, operationRevisionIds: [] },
     createdAt: '2026-09-26T00:00:00.000Z',
     expiresAt: '2099-09-26T00:00:00.000Z',
   };

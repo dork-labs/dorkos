@@ -76,9 +76,11 @@ import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
 import {
-  anchorPath,
+  homeOf,
   resolveAgentTokenEnv,
-  resolveIdentityAnchor,
+  resolveAgentHome,
+  turnAgentOf,
+  type AgentHome,
 } from '../../core/agent-identity/index.js';
 import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
@@ -579,12 +581,13 @@ export class CodexRuntime implements AgentRuntime {
     this.persistSessionMetadata(sessionId);
 
     // Which registered agent does this turn act as? Everything below that
-    // mints, injects or names a tool is gated on the answer. Anchored rather
-    // than read off `cwd` (DOR-2091): a turn in a room with files stands in the
-    // agent's worktree, which hosts no agent, and the anchor is the agent the
-    // worktree was handed to — and nobody when a room names a different agent.
-    // `cwd` stays where the thread runs; `agentPath` is whose identity it has.
-    const agentPath = this.identityPathFor(cwd, opts?.roomTurn?.agentPath);
+    // mints, injects or names a tool is gated on the answer, and the agent's
+    // context is read from it. Resolved to a home rather than read off `cwd`
+    // (DOR-2091, DOR-2355): a turn may stand in a room worktree, a worktree of
+    // the agent's own repo or a managed checkout, none of which is the home —
+    // and it is nobody when the turn names a different agent. `cwd` stays where
+    // the thread runs; `agentPath` is whose identity it has.
+    const agentPath = this.identityPathFor(cwd, turnAgentOf(opts));
     const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
 
     const controller = new AbortController();
@@ -697,7 +700,7 @@ export class CodexRuntime implements AgentRuntime {
       // outside the gate because it changes while the thread runs.
       const neutralContextSelection = this.contextGate.select(
         sessionId,
-        await buildAgentContextAppend(cwd)
+        await buildAgentContextAppend(agentPath, cwd)
       );
 
       // The room verbs, and ONLY when this turn actually carries them — gated on
@@ -1198,8 +1201,8 @@ export class CodexRuntime implements AgentRuntime {
    * @param cwd - Where the turn stands.
    * @param forAgent - The agent a room turn is for, when a room dispatched it.
    */
-  private identityPathFor(cwd: string, forAgent: string | undefined): string | undefined {
-    return anchorPath(resolveIdentityAnchor(cwd, forAgent));
+  private identityPathFor(cwd: string, forAgent: string | undefined): AgentHome | undefined {
+    return homeOf(resolveAgentHome(cwd, forAgent));
   }
 
   /**

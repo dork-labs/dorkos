@@ -19,10 +19,10 @@
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
-import { readManifest } from '@dorkos/shared/manifest';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { homeOf, readHomeManifest, resolveAgentHome } from '../../core/agent-identity/index.js';
 import { reportUsageEvent } from '../../core/usage-reporter.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { getWorkspaceManager } from '../../workspace/index.js';
@@ -91,7 +91,9 @@ export function isSessionLaunchRefusal(
  * Choose the runtime type for a newly-created session.
  *
  * Priority: explicit `body.runtime` hint > agent-manifest `runtime` field
- * (read from `<cwd>/.dork/agent.json`) > server default runtime type.
+ * (read from the HOME the verified agent path or the cwd resolves to — never
+ * from a `.dork/` a worktree or checkout carries, spec `agent-home-desk` I1) >
+ * server default runtime type.
  *
  * Subsequent `POST /:id/messages` calls for the same `sessionId` do NOT
  * re-run this — `persistSessionRuntime` is first-write-wins, so the row
@@ -109,13 +111,14 @@ async function resolveRuntimeTypeForNewSession(opts: {
 }): Promise<string> {
   if (opts.runtimeHint) return opts.runtimeHint;
 
-  // Look for an agent manifest in the provided agentPath or cwd. Fall back
-  // silently when no manifest exists or the read fails — a missing manifest
-  // is not an error on the hot path.
-  const manifestDir = opts.agentPath ?? opts.cwd;
+  // Look for an agent manifest in the home the agentPath or cwd resolves to;
+  // a folder that is no agent's home reads nothing. Fall back silently when no
+  // manifest exists or the read fails — a missing manifest is not an error on
+  // the hot path.
+  const manifestDir = homeOf(resolveAgentHome(opts.agentPath ?? opts.cwd));
   if (manifestDir) {
     try {
-      const manifest = await readManifest(manifestDir);
+      const manifest = await readHomeManifest(manifestDir);
       // The manifest names a runtime PREFERENCE — honor it only when that
       // runtime is registered in this process. Unlike the explicit body hint
       // (which 400s when unknown), an unregistered manifest runtime soft-falls
@@ -378,3 +381,6 @@ export async function dispatchSessionMessage(
 
   return result;
 }
+
+/** @internal Exported for testing only. */
+export { resolveRuntimeTypeForNewSession as _resolveRuntimeTypeForNewSession };

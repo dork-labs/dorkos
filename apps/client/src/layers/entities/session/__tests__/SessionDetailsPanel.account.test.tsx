@@ -25,8 +25,22 @@ const ACCOUNTS: Partial<ServerConfig> = {
     resolvedAccount: '/Users/dev/.claude',
     inherited: true,
     accounts: [
-      { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
-      { id: 'acme-corp', path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
+      {
+        id: 'personal',
+        path: '/Users/dev/.claude',
+        label: 'Personal',
+        color: '#3b82f6',
+        colorIsDefault: true,
+        isAccountRoot: true,
+      },
+      {
+        id: 'acme-corp',
+        path: '/Users/dev/.claude2',
+        label: 'Acme Corp',
+        color: '#3b82f6',
+        colorIsDefault: true,
+        isAccountRoot: true,
+      },
     ],
   },
 };
@@ -73,7 +87,14 @@ describe('SessionDetailsPanel — the account a session belongs to (DOR-1970)', 
         resolvedAccount: '/Users/dev/.claude',
         inherited: true,
         accounts: [
-          { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+          {
+            id: 'personal',
+            path: '/Users/dev/.claude',
+            label: 'Personal',
+            color: '#3b82f6',
+            colorIsDefault: true,
+            isAccountRoot: true,
+          },
         ],
       },
     });

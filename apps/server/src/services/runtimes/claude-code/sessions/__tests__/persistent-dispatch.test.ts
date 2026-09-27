@@ -108,7 +108,7 @@ vi.mock('../../../../core/agent-identity/index.js', async () => ({
   createInSessionContextResolver: () => () => Promise.resolve(undefined),
   // The launch anchors identity through these (DOR-2091); the pure rule is
   // wanted as-is, so it comes straight from its own module.
-  ...(await import('../../../../core/agent-identity/identity-anchor.js')),
+  ...(await import('../../../../core/agent-identity/agent-home.js')),
 }));
 // One warm process at a time, so warming a second session reclaims the first's
 // pump through the registry WITHOUT telling PersistentDispatch — the stale-bundle

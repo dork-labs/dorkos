@@ -22,6 +22,16 @@ import { resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import { SessionStore } from '../sessions/session-store.js';
 import { TranscriptReader } from '../sessions/transcript-reader.js';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+  registerTestHomes,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 /** Every account the config resolvers can see, so the probe order is fixed. */
 const ACTIVE = '/staged/claude-active';
@@ -138,6 +148,36 @@ describe('D8 env-lock call sites', () => {
 
       expect(readManifest).toHaveBeenCalledWith('/work');
       expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: 'account-b' });
+    });
+
+    it("reads the pin from the agent's HOME, never from a checkout's own `.dork/` (DOR-2355)", async () => {
+      // Purpose: a session in a managed checkout (or a worktree) of an agent's
+      // repo bills the account its HOME pins; the checkout's committed copy may
+      // name another account entirely (spec `agent-home-desk` §3.2 row 3).
+      registerTestHomes(['/agents/ana'], { managed: { '/ws/ana-fix': '/agents/ana' } });
+      vi.mocked(readManifest).mockImplementation(async (dir: string) =>
+        dir === '/agents/ana'
+          ? ({ account: 'account-home' } as never)
+          : ({ account: 'stale' } as never)
+      );
+      const runtime = runtimeWithProbe(undefined);
+
+      await runtime.accountRootForSession('first-turn', '/ws/ana-fix');
+
+      expect(readManifest).toHaveBeenCalledWith('/agents/ana');
+      expect(readManifest).not.toHaveBeenCalledWith('/ws/ana-fix');
+      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: 'account-home' });
+    });
+
+    it('pins nothing for a folder that is no agent`s home, whatever it carries', async () => {
+      registerTestHomes([]);
+      vi.mocked(readManifest).mockResolvedValue({ account: 'stale' } as never);
+      const runtime = runtimeWithProbe(undefined);
+
+      await runtime.accountRootForSession('first-turn', '/somewhere/else');
+
+      expect(readManifest).not.toHaveBeenCalled();
+      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: undefined });
     });
 
     it('still answers when the agent manifest cannot be read', async () => {

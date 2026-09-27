@@ -228,10 +228,12 @@ import {
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReconciliationPreviewRequestSchema,
   ConnectorReconciliationPreviewSchema,
+  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorUsagePageSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
   ConnectorAgentConnectionsSchema,
+  ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
   ConnectorAppConnectionsSchema,
@@ -1367,6 +1369,10 @@ const RuntimeCapabilitiesSchema = z.object({
   supportsQuestionPrompt: z.boolean(),
   supportsPlugins: z.boolean().openapi({
     description: 'Whether this runtime can load plugins.',
+  }),
+  supportsAccounts: z.boolean().openapi({
+    description:
+      'Whether this runtime can run sessions on more than one registered billing account. The account chip, dots and badge show only when this is true and two or more accounts are registered.',
   }),
   permissionModes: z
     .object({
@@ -3831,6 +3837,21 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
+  path: '/api/connectors/every-agent-grants',
+  tags: ['Connectors'],
+  summary: 'Read what every agent, including a new one, inherits',
+  description:
+    'Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.',
+  responses: {
+    200: {
+      description: 'Connections every agent can use, and at which level',
+      content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
   path: '/api/connectors/sessions/{sessionId}/connections',
   tags: ['Connectors'],
   summary: 'Read effective connector access for one session',
@@ -3972,6 +3993,26 @@ registry.registerPath({
     },
     409: {
       description: 'The connection must be reconciled before it can be edited',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/connectors/connections/{connectionId}/every-agent',
+  tags: ['Connectors'],
+  summary: 'Stop sharing one connection with every agent',
+  description:
+    'Owner only. Ends the every-agent grant at once, for every agent. Needs no permission review, so it works while the service is unavailable.',
+  request: { params: z.object({ connectionId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'How many shared actions ended',
+      content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

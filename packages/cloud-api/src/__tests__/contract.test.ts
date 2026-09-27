@@ -828,3 +828,158 @@ describe('the remote-access additions', () => {
     ).toBe(true);
   });
 });
+
+describe('the remote meter read', () => {
+  const ceiling = {
+    ceiling: 'example_hours',
+    limit: 10,
+    used: 2,
+    unit: 'hours',
+    fraction: 0.2,
+    alertFraction: 0.5,
+    state: 'clear',
+    enforceable: true,
+    provenance: { source: 'x', measuredAt: null },
+  };
+
+  it('is published as a route beside the rest of /v1/remote', () => {
+    expect(V1_ROUTES.remoteUsage).toBe('/v1/remote/usage');
+  });
+
+  it('carries exactly the fields a person needs to see how close they are, and no money', () => {
+    expect(Object.keys(contract.RemoteCeilingSchema.shape).sort()).toEqual([
+      'alertFraction',
+      'ceiling',
+      'enforceable',
+      'fraction',
+      'limit',
+      'provenance',
+      'state',
+      'unit',
+      'used',
+    ]);
+    const all = [
+      ...Object.keys(contract.RemoteUsageResponseSchema.shape),
+      ...Object.keys(contract.RemoteCeilingSchema.shape),
+    ];
+    expect(all.filter((field) => /micro|amount|price|cost|currency/i.test(field))).toEqual([]);
+  });
+
+  it('parses an account that used nothing, because zeroes are an answer and never a 404', () => {
+    const fresh = {
+      orgId: 'org_x',
+      period: '2026-09',
+      ceilings: [{ ...ceiling, used: 0, fraction: 0 }],
+    };
+    expect(contract.RemoteUsageResponseSchema.safeParse(fresh).success).toBe(true);
+  });
+
+  it('lets the fraction pass 1, and takes a month key and nothing else', () => {
+    const over = { orgId: 'org_x', period: '2026-09', ceilings: [{ ...ceiling, fraction: 1.4 }] };
+    expect(contract.RemoteUsageResponseSchema.safeParse(over).success).toBe(true);
+    for (const period of ['2026-9', '2026-00', '2026-13', '2026-09-01', 'September']) {
+      expect(
+        contract.RemoteUsageResponseSchema.safeParse({ ...over, period }).success,
+        period
+      ).toBe(false);
+    }
+  });
+
+  it('reads a unit or state added later as unrecognised, so one entry cannot fail the report', () => {
+    const later = {
+      orgId: 'org_x',
+      period: '2026-09',
+      ceilings: [{ ...ceiling, unit: 'minutes', state: 'throttled' }, ceiling],
+    };
+    const parsed = contract.RemoteUsageResponseSchema.parse(later);
+    expect(parsed.ceilings[0]?.unit).toBe(contract.UNRECOGNISED);
+    expect(parsed.ceilings[0]?.state).toBe(contract.UNRECOGNISED);
+    expect(parsed.ceilings[1]?.unit).toBe('hours');
+    expect(contract.RemoteCeilingSchema.safeParse({ ...ceiling, unit: 3 }).success).toBe(false);
+  });
+
+  it('reads an unknown limit name as a valid entry, because the name is not an enum', () => {
+    expect(
+      contract.RemoteCeilingSchema.safeParse({ ...ceiling, ceiling: 'a_limit_added_later' }).success
+    ).toBe(true);
+  });
+});
+
+describe('the designation read', () => {
+  it('parses "nobody holds it" as a state rather than an error', () => {
+    expect(
+      contract.RemoteDesignationStatusSchema.safeParse({
+        instanceId: null,
+        effectiveAt: null,
+        cooldownUntil: null,
+      }).success
+    ).toBe(true);
+  });
+
+  it('reads the same answer the POST gives', () => {
+    const answer = {
+      instanceId: 'inst_x',
+      effectiveAt: '2026-09-15T12:00:00.000Z',
+      cooldownUntil: '2026-10-15T12:00:00.000Z',
+    };
+    expect(contract.RemoteDesignationSchema.safeParse(answer).success).toBe(true);
+    expect(contract.RemoteDesignationStatusSchema.safeParse(answer).success).toBe(true);
+  });
+
+  it('adds no way to withdraw a designation', () => {
+    // Withdrawal is a product question, not a contract one. The request stays
+    // one instance, never a null.
+    expect(contract.RemoteDesignationRequestSchema.safeParse({ instanceId: null }).success).toBe(
+      false
+    );
+  });
+});
+
+describe('the status echo', () => {
+  it('accepts the instance identifier, and a status without one', () => {
+    const status = {
+      mode: 'managed',
+      state: 'open',
+      address: 'example-instance.remote.invalid',
+      alwaysAvailable: false,
+    };
+    expect(contract.RemoteStatusSchema.safeParse(status).success).toBe(true);
+    expect(contract.RemoteStatusSchema.parse({ ...status, instanceId: 'inst_x' }).instanceId).toBe(
+      'inst_x'
+    );
+  });
+});
+
+describe('the remote event batch spans', () => {
+  const today = {
+    instanceId: 'inst_x',
+    activity: [{ at: '2026-09-15T12:05:00.000Z', requests: 3 }],
+    closeReports: [{ at: '2026-09-15T12:20:00.000Z', reason: 'idle', wakeId: null }],
+  };
+
+  it('still accepts a batch shaped like today`s, with none of the new fields', () => {
+    expect(contract.RemoteEventBatchSchema.safeParse(today).success).toBe(true);
+  });
+
+  it('accepts a close report that names its span, its requests and its bytes', () => {
+    const report = {
+      ...today.closeReports[0],
+      openedAt: '2026-09-15T12:00:00.000Z',
+      requests: 7,
+      bytesIn: '18446744073709551617',
+      bytesOut: '0',
+    };
+    const parsed = contract.RemoteEventBatchSchema.parse({ ...today, closeReports: [report] });
+    // Past 2^64, and exactly the digits sent: a string loses nothing.
+    expect(parsed.closeReports[0]?.bytesIn).toBe('18446744073709551617');
+  });
+
+  it('carries byte counts as base-10 strings, never numbers', () => {
+    for (const bad of [1024, '-1', '01', '1.5', '1e6', '']) {
+      expect(contract.ByteCountSchema.safeParse(bad).success, String(bad)).toBe(false);
+    }
+    expect(contract.ByteCountSchema.safeParse('0').success).toBe(true);
+    expect(contract.ByteCountSchema.safeParse('9'.repeat(30)).success).toBe(true);
+    expect(contract.ByteCountSchema.safeParse('9'.repeat(31)).success).toBe(false);
+  });
+});

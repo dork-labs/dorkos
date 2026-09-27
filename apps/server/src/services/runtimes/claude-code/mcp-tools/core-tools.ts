@@ -1,6 +1,6 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { readManifest } from '@dorkos/shared/manifest';
+import { homeOf, readHomeManifest, resolveAgentHome } from '../../../core/agent-identity/index.js';
 import { env } from '../../../../env.js';
 import { SERVER_VERSION } from '../../../../lib/version.js';
 import type { McpToolDeps } from './types.js';
@@ -126,8 +126,11 @@ export function createGetSessionCountHandler(deps: McpToolDeps) {
 export function createGetAgentHandler(deps: McpToolDeps) {
   return async (args: { agent_id?: string; cwd?: string }) => {
     try {
-      const resolvedCwd = resolveAgentCwd(deps, args);
-      const manifest = await readManifest(resolvedCwd);
+      // The folder resolved to the home it belongs to before anything is read:
+      // a worktree or checkout of an agent's repo answers with the agent, and a
+      // `.dork/` committed anywhere else answers nothing (spec `agent-home-desk`).
+      const home = homeOf(resolveAgentHome(resolveAgentCwd(deps, args)));
+      const manifest = home ? await readHomeManifest(home) : null;
       if (!manifest) {
         return structuredJsonContent({
           agent: null,

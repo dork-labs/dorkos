@@ -306,6 +306,11 @@ import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
 import {
+  createEveryAgentArrivalReaction,
+  createEveryAgentEndedRecorder,
+  setOnEveryAgentEnded,
+} from './services/connectors/every-agent-activity.js';
+import {
   startSkillsWatcher,
   startTurnEndReprojection,
   type SkillsWatcherHandle,
@@ -346,8 +351,10 @@ import {
   initAgentIdentityService,
   getAgentIdentityService,
   ensureInSessionAgentIdentity,
-  anchorPath,
-  resolveIdentityAnchor,
+  homeOf,
+  resolveAgentHome,
+  canonicalDir,
+  setAgentHomeRegistry,
   setWorkingCopyOwnerPort,
   createCapabilityAttributionObserver,
   createCapabilityGateAuditObserver,
@@ -416,6 +423,7 @@ import {
   resolveWorkspaceRoot,
   setWorkspaceManager,
   setWorkspaceRoot,
+  type WorkspaceStore,
 } from './services/workspace/index.js';
 import {
   createRoomSubsystem,
@@ -1031,6 +1039,10 @@ async function start() {
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
+  // Sharing with every agent that ends as a side effect (a disconnect, a move
+  // to a DorkOS account) is recorded too, so every change to it leaves a
+  // trace. Set here, before any provider registers, so boot-time changes count.
+  setOnEveryAgentEnded(createEveryAgentEndedRecorder(activityService));
   // Records a change to an agent's permissions that was made by editing its
   // settings file rather than through DorkOS. The last-seen values live in
   // DorkOS's own data directory, never the agent's.
@@ -1503,31 +1515,37 @@ async function start() {
   // not the managed layer is enabled: which checkouts exist on disk is true
   // either way, and that honesty is the whole point of the /workspaces page.
   setWorkspaceRoot(resolveWorkspaceRoot({ dorkHome, config: workspaceConfig }));
+  // The managed checkouts' owners, read by the home resolver (§3.1 source 3).
+  // Unset while the managed layer is off, where no checkout has an owner.
+  let managedWorkspaces: WorkspaceStore | undefined;
   if (workspaceConfig.enabled) {
-    const { service: workspaceService, reconciler: workspaceReconciler } = createWorkspaceSubsystem(
-      {
-        db,
-        dorkHome,
-        config: workspaceConfig,
-        listAttachedSessions: async (workspacePath) => {
-          try {
-            // Aggregate across every registered runtime (ADR-0310) — a workspace
-            // may hold Codex or OpenCode sessions, not just the default runtime's.
-            const { sessions } = await aggregateSessionList({
-              runtimes: runtimeRegistry.listRuntimes(),
-              projectDir: workspacePath,
-            });
-            return sessions.map((s) => ({
-              sessionId: s.id,
-              cwd: s.cwd ?? workspacePath,
-              title: s.title,
-            }));
-          } catch {
-            return [];
-          }
-        },
-      }
-    );
+    const {
+      service: workspaceService,
+      reconciler: workspaceReconciler,
+      store: workspaceStore,
+    } = createWorkspaceSubsystem({
+      db,
+      dorkHome,
+      config: workspaceConfig,
+      listAttachedSessions: async (workspacePath) => {
+        try {
+          // Aggregate across every registered runtime (ADR-0310) — a workspace
+          // may hold Codex or OpenCode sessions, not just the default runtime's.
+          const { sessions } = await aggregateSessionList({
+            runtimes: runtimeRegistry.listRuntimes(),
+            projectDir: workspacePath,
+          });
+          return sessions.map((s) => ({
+            sessionId: s.id,
+            cwd: s.cwd ?? workspacePath,
+            title: s.title,
+          }));
+        } catch {
+          return [];
+        }
+      },
+    });
+    managedWorkspaces = workspaceStore;
     setWorkspaceManager(workspaceService);
     workspaceReconciler.start();
     logger.info('[Workspace] WorkspaceManager registered');
@@ -1801,12 +1819,29 @@ async function start() {
   // in one acts as the agent the manager handed it to, not as nobody — which,
   // with login on, refused every DorkOS tool the agent called, and with login
   // off fell through to the operator. The manager's own record, never a path
-  // prefix; see `core/agent-identity/identity-anchor.ts`.
-  setWorkingCopyOwnerPort({
-    ownerOf: (dir) => roomWorktrees.ownerOf(dir),
-    // Read per call off the live registry (assigned later in boot), so an agent
-    // unregistered after its tree was handed out stops anchoring at once.
-    isRegisteredAgent: (agentPath) => meshCore?.getByPath(agentPath) !== undefined,
+  // prefix; see `core/agent-identity/agent-home.ts`.
+  setWorkingCopyOwnerPort({ ownerOf: (dir) => roomWorktrees.ownerOf(dir) });
+  // Which folders are agent homes, for every identity read (spec
+  // `agent-home-desk` §3.1). Each lookup is read per call off the live
+  // registry (assigned later in boot), so an agent unregistered a moment ago is
+  // nobody's home at once and nothing is cached across a registration.
+  setAgentHomeRegistry({
+    isRegisteredHome: (dir) => meshCore?.getByPath(dir) !== undefined,
+    listRegisteredHomes: () => meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
+    // Canonically: a checkout path may be stored realpath'd while the turn
+    // names it through a symlink, or the other way round.
+    managedWorkspaceOwner: (dir) => {
+      const target = canonicalDir(dir);
+      const owned = managedWorkspaces
+        ?.list()
+        .find(
+          (ws) =>
+            ws.owner?.kind === 'agent' &&
+            (path.resolve(ws.path) === dir || canonicalDir(ws.path) === target)
+        );
+      return owned?.owner?.ref ?? null;
+    },
+    roomsDir: path.join(dorkHome, 'rooms'),
   });
   // The other half of a turn running somewhere new: session storage is derived
   // per working directory (ADR-0310), so a room turn's conversation is filed
@@ -2074,6 +2109,8 @@ async function start() {
       // ADR-0043: the reconciler rebuilds the DB from files by walking the
       // managed agents home dir (DorkBot + installed agents) every pass.
       agentsHomeDir: path.join(dorkHome, 'agents'),
+      // A room's files are never an agent's home (spec `agent-home-desk` §3.3).
+      roomFilesDir: path.join(dorkHome, 'rooms'),
       logger,
     });
     logger.info('[Mesh] MeshCore initialized');
@@ -2939,6 +2976,13 @@ async function start() {
         displayName: agent.displayName ?? agent.name,
       })),
     managedAuthority: managedConnectorAuthority,
+    activity: activityService,
+    // With login off DorkOS cannot tell the app from a program on this
+    // computer, so the trail says exactly that rather than "You".
+    writer: () =>
+      configManager.get('auth')?.enabled === true
+        ? { actorType: 'user', actorLabel: 'Your signed-in account' }
+        : { actorType: 'user', actorLabel: 'Someone on this computer' },
   });
   const connectorUsage = new ConnectorUsageStore(db);
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
@@ -3410,8 +3454,8 @@ async function start() {
         // refused session has no manifest and contributes nothing.
         managed: (() => {
           const agentDir = launch?.identity
-            ? anchorPath(launch.identity)
-            : anchorPath(resolveIdentityAnchor(session.cwd));
+            ? homeOf(launch.identity)
+            : homeOf(resolveAgentHome(session.cwd));
           return agentDir && agentMcpServerService
             ? toSdkMcpServers(agentMcpServerService.injectableServersForCwd(agentDir))
             : {};
@@ -4020,6 +4064,10 @@ async function start() {
   // after the seat and in that order deliberately: "tangerines joined your team"
   // is a line about a member of the room, so the roster is settled before the
   // room says so (team-room-home spec D5.1).
+  const announceEveryAgentInheritance = createEveryAgentArrivalReaction({
+    activity: activityService,
+    everyAgentGrants: () => connectorOperatorQueries.everyAgentGrants(connectorOwner),
+  });
   // Set once the permission service exists, below. Every arrival path
   // (create, the register route, the mesh_register tool, a discovery scan)
   // reaches the listener, so this is where an arriving folder's own
@@ -4035,6 +4083,12 @@ async function start() {
     // its folder's settings until the screened ones are in its file.
     await onArrival(agent.id);
     joinTeamRoom(teamRoomDeps, agent.path);
+    // Every arrival path funnels here, so this is where an agent that inherits
+    // apps shared with every agent is announced — never silently (ADR
+    // 260926-192625). A failure must not fail the arrival.
+    await announceEveryAgentInheritance(agent).catch((err: unknown) =>
+      logger.warn('[Connectors] Could not record every-agent inheritance', { err })
+    );
     momentDetectors.agentCreated(agent);
     // Migrate anything this agent's project still keeps in the old shape, then
     // watch its `.agents/skills/` — NOW rather than at the next restart. Boot

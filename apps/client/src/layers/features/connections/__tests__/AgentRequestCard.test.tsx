@@ -93,6 +93,7 @@ function account(connectionId: string): ConnectorConnectionSummary {
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
     warnings: [],
+    everyAgent: null,
   };
 }
 
@@ -126,6 +127,7 @@ function preview(
     agents: [{ agentId: 'agent-bo', displayName: 'Bo' }],
     currentGrants: grants,
     catalogComplete: true,
+    everyAgent: { available: true, operationRevisionIds: [] },
     createdAt: '2026-09-26T00:00:00.000Z',
     expiresAt: '2099-09-26T01:00:00.000Z',
   };
@@ -593,5 +595,45 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     expect(screen.getByText('Bo can already do this.')).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'Read' })).not.toBeInTheDocument();
     expect(screen.getByText('Read and write')).toBeInTheDocument();
+  });
+});
+
+describe('AgentRequestCard — access through "Every agent"', () => {
+  it('recognises access every agent already has and answers with it, writing nothing', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([account('connection-1')]);
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
+      ...preview(),
+      everyAgent: { available: true, operationRevisionIds: ['read-v1'] },
+    });
+    vi.mocked(transport.resolveConnectorAgentRequest).mockResolvedValue({
+      ...REQUEST,
+      status: 'granted',
+    } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    expect(
+      await screen.findByText('Bo can already do this, because every agent can.')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Allow' }));
+    await waitFor(() =>
+      expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
+        decision: 'current_access',
+        connectionId: 'connection-1',
+      })
+    );
+    expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
+  });
+
+  it('ignores an "Every agent" grant the server would not honour', async () => {
+    const transport = transportWith([account('connection-1')]);
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
+      ...preview(),
+      everyAgent: { available: false, operationRevisionIds: ['read-v1'] },
+    });
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+    await screen.findByRole('heading', { name: 'Let Bo use Gmail?' });
+    await screen.findByRole('button', { name: 'Allow' });
+    expect(screen.queryByText(/because every agent can/)).not.toBeInTheDocument();
   });
 });

@@ -439,6 +439,11 @@ export interface TriggerTurnOpts {
    */
   roomTurn?: MessageOpts['roomTurn'];
   /**
+   * The home of the agent this turn is dispatched as, when a server path names
+   * one — handed to the runtime beside `roomTurn` ({@link MessageOpts.forAgent}).
+   */
+  forAgent?: string;
+  /**
    * Background the caller attached to this turn — the agent reads it, the person
    * never sees it. Passed straight to the assembler, which renders it into the
    * neutral bag as a `seed_context` entry; `content` is untouched.
@@ -806,6 +811,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // runtime draws here, and passing it always is what makes the clearing
         // path exist at all.
         roomTurn,
+        ...(opts.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
         ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
         ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),

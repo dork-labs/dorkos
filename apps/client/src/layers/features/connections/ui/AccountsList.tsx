@@ -1,6 +1,6 @@
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
-import { useConnectorConnections } from '@/layers/entities/connectors';
+import { serviceName, useConnectorConnections } from '@/layers/entities/connectors';
 
 import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { connectionStatusLabel, FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
@@ -93,7 +93,7 @@ export function AccountRow({
   onOpenDetail: (connectionId: string) => void;
 }) {
   const Icon = SERVICE_ICONS[connection.toolkit.toLowerCase()] ?? FALLBACK_SERVICE_ICON;
-  const service = connection.toolkit.charAt(0).toUpperCase() + connection.toolkit.slice(1);
+  const service = serviceName(connection.toolkit);
   const healthy =
     connection.lifecycle === 'connected' &&
     connection.authenticationStatus === 'active' &&
@@ -119,8 +119,10 @@ export function AccountRow({
             </Badge>
           </span>
           <span className="text-muted-foreground mt-0.5 block text-xs">
-            {connection.agentCount} {connection.agentCount === 1 ? 'agent' : 'agents'} ·{' '}
-            {connection.mode === 'managed' ? 'Managed' : 'Your account'}
+            {connection.everyAgent
+              ? 'Every agent'
+              : `${connection.agentCount} ${connection.agentCount === 1 ? 'agent' : 'agents'}`}{' '}
+            · {connection.mode === 'managed' ? 'Managed' : 'Your account'}
           </span>
         </span>
         <ChevronRight className="text-muted-foreground size-4 shrink-0" aria-hidden />

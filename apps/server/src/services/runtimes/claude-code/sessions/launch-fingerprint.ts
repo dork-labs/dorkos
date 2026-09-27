@@ -221,7 +221,7 @@ export interface AccountPin {
  * Who the process was launched to act as, if anyone.
  *
  * Only the TOKEN's identity is pinned, not the in-session tool server's
- * (DOR-2091). Both are resolved per launch through `resolveIdentityAnchor`, from
+ * (DOR-2091). Both are resolved per launch through `resolveAgentHome`, from
  * the same worktree-owner record and against the same turn's agent, so they can
  * differ only when `session.cwd` and the launch directory differ. On a room turn
  * each is then either that turn's agent or refused, never a different agent, so

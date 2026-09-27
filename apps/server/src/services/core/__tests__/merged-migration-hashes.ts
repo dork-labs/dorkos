@@ -94,7 +94,19 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   // preferring a `null` `defaultAccount` over the operator's stored
   // `activeAccount`, which destroyed a billing choice permanently. Once this
   // merges, the key is frozen and a further change of mind opens `'0.66.0'`.
-  '0.65.0': 'e113dd9a0495980f',
+  // Repinned a second time for DOR-2379 (spec `claude-account-fleet` D1), and
+  // not for a body change: the table slice and `migrateClaudeAccountRegistry`
+  // are untouched. What moved is `claudeAccountId` in
+  // `packages/shared/src/config-schema.ts`, which the running app shares and
+  // this key reaches, so no new key could carry the change (the guard's own
+  // "declaration the running app shares" case). It now treats `default` as
+  // taken (contract `flow-cli-core` §1.1a, revision 6d).
+  // WHO ran the old behavior: every install that has run this key. Only a row
+  // whose label or folder slugified to exactly `default` minted differently,
+  // and it got `default`. What they get instead: `'0.87.0'` renames that row to
+  // `default-N` and marks it `renamedFrom: 'default'`. An install running this
+  // key from now on mints `default-2` directly, and `'0.87.0'` finds nothing.
+  '0.65.0': 'b5368a5695097c85',
   '0.66.0': '719826021e47d7bd',
   '0.67.0': '892aacc2b5582bae',
   '0.68.0': '8fa4a4507a93cf79',
@@ -137,4 +149,5 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.84.0': '42abae4d2caa0d7c',
   '0.85.0': 'dda1230dbd5048cb',
   '0.86.0': 'a0c8d3f5dac0c28a',
+  '0.87.0': 'b53ec4cf76db3d21',
 };

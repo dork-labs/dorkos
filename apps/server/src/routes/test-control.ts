@@ -41,6 +41,7 @@ import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oaut
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import { getRemoteConnectionStore } from '../services/communities/remote/state.js';
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
+import type { SyncFromDiskResult } from '@dorkos/mesh';
 
 /**
  * Control routes for TestModeRuntime. Only mounted when DORKOS_TEST_RUNTIME=true.
@@ -888,7 +889,7 @@ testControlRouter.post('/seed-agent', async (req, res) => {
   // swallowed throw would hand back the same `{ ok: true }` as a working seed
   // and put the hole straight back.
   const meshCore = req.app.locals.meshCore as
-    { syncFromDisk(path: string): Promise<'synced' | 'no-manifest' | 'duplicate-id'> } | undefined;
+    { syncFromDisk(path: string): Promise<SyncFromDiskResult> } | undefined;
   if (!meshCore) {
     return res.status(500).json({
       error:
@@ -900,7 +901,7 @@ testControlRouter.post('/seed-agent', async (req, res) => {
   // forward a rejected handler promise to the generic error handler on its
   // own, which answers 500 with no mention of seeding — a diagnosis-free 500
   // in the one route whose entire job is diagnosis.
-  let outcome: 'synced' | 'no-manifest' | 'duplicate-id';
+  let outcome: SyncFromDiskResult;
   try {
     outcome = await meshCore.syncFromDisk(agentDir);
   } catch (err) {

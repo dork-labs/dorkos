@@ -43,6 +43,7 @@ import {
   RemoteCommunityLookupRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunityPairingService,
+  RemotePairingBusyError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
 } from '../../services/communities/remote/pairing-service.js';
@@ -132,6 +133,30 @@ describe('local connection route authority and public projection', () => {
     } finally {
       await new Promise<void>((resolve) => selectionServer.close(() => resolve()));
       await rm(selectionDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('codes a concurrent check of one pairing as busy, so a client keeps waiting', async () => {
+    const busyDirectory = await mkdtemp(join(tmpdir(), 'busy-'));
+    const busyService = new RemoteCommunityPairingService(new RemoteConnectionStore(busyDirectory));
+    vi.spyOn(busyService, 'poll').mockRejectedValue(new RemotePairingBusyError());
+    const busyApp = express();
+    busyApp.use(express.json());
+    busyApp.use('/api/community-connections', createCommunityConnectionsRouter(busyService));
+    const busyServer = busyApp.listen(0, '127.0.0.1');
+    await once(busyServer, 'listening');
+    try {
+      const response = await request(busyServer)
+        .post('/api/community-connections/ref-busy/poll')
+        .set('x-test-author', 'author-a');
+      expect(response.status).toBe(409);
+      expect(response.body).toEqual({
+        code: 'PAIRING_BUSY',
+        error: 'This pairing is still finishing. Try again in a moment.',
+      });
+    } finally {
+      await new Promise<void>((resolve) => busyServer.close(() => resolve()));
+      await rm(busyDirectory, { recursive: true, force: true });
     }
   });
 

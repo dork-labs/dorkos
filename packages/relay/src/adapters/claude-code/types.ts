@@ -200,6 +200,12 @@ export interface AgentRuntimeLike {
     opts?: TurnExecutionSettings & {
       permissionMode?: PermissionMode;
       cwd?: string;
+      /**
+       * The home of the agent the turn is dispatched as. Mirrors
+       * `MessageOpts.forAgent`: identity is read from that home, and a `cwd`
+       * resolving to another agent's home is refused.
+       */
+      forAgent?: string;
       systemPromptAppend?: string;
       /**
        * Nobody can answer a DorkOS approval card inside this turn. Mirrors

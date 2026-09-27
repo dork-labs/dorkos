@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { TriangleAlert } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { Badge, Button, Checkbox, Label } from '@/layers/shared/ui';
 import {
@@ -109,12 +110,22 @@ export function AgentChecklist({
           announces a new one as it appears. */}
       <div aria-live="polite" className="space-y-1">
         {decision.removedAgentIds.map((agentId) => (
-          <p key={agentId} id={`${baseId}-${agentId}-loss`} className="text-warning px-2 text-xs">
+          <p
+            key={agentId}
+            id={`${baseId}-${agentId}-loss`}
+            className="text-foreground flex items-start gap-1.5 px-2 text-xs"
+          >
+            <TriangleAlert className="text-status-warning-dot mt-0.5 size-3 shrink-0" aria-hidden />
             {nameOf(agentId)} will lose access to {serviceName}.
           </p>
         ))}
         {decision.downgradedAgentIds.map((agentId) => (
-          <p key={agentId} id={`${baseId}-${agentId}-loss`} className="text-warning px-2 text-xs">
+          <p
+            key={agentId}
+            id={`${baseId}-${agentId}-loss`}
+            className="text-foreground flex items-start gap-1.5 px-2 text-xs"
+          >
+            <TriangleAlert className="text-status-warning-dot mt-0.5 size-3 shrink-0" aria-hidden />
             {nameOf(agentId)} will lose write access.
           </p>
         ))}

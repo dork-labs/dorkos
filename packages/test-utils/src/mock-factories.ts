@@ -641,6 +641,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsManagedMcpServers: true,
           supportsQuestionPrompt: true,
           supportsPlugins: true,
+          supportsAccounts: true,
           permissionModes: {
             supported: true,
             // The mode a claude-code session runs when nothing is stored for it
@@ -716,6 +717,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsMcp: false,
           supportsQuestionPrompt: false,
           supportsPlugins: false,
+          supportsAccounts: false,
           permissionModes: {
             supported: true,
             default: 'default',
@@ -761,6 +763,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsMcp: false,
           supportsQuestionPrompt: false,
           supportsPlugins: false,
+          supportsAccounts: false,
           permissionModes: {
             supported: true,
             default: 'default',
@@ -1282,6 +1285,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getAgentConnectorConnections: vi
       .fn()
       .mockImplementation((agentId: string) => Promise.resolve({ agentId, connections: [] })),
+    getEveryAgentConnectorGrants: vi.fn().mockResolvedValue({ connections: [] }),
     getSessionConnectorConnections: vi.fn(),
     getAccessibleConnectorConnections: vi.fn().mockResolvedValue({ connections: [] }),
     getAccessibleConnectorOperations: vi
@@ -1294,6 +1298,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getOperatorConnectorUsage: vi.fn().mockResolvedValue({ items: [] }),
     previewConnectorReconciliation: vi.fn(),
     applyConnectorReconciliation: vi.fn(),
+    stopSharingConnectorWithEveryAgent: vi.fn(),
     createConnectorManagementReview: vi.fn(),
     getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
     getConnectorManagementReview: vi.fn(),

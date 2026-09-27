@@ -6,6 +6,7 @@
  * @module entities/connectors/lib/connection-impact
  */
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
+import { serviceName } from './access-copy';
 
 /** One connected app, as a confirmation lists it. */
 export interface ImpactApp {
@@ -13,24 +14,12 @@ export interface ImpactApp {
   connectionId: string;
   /** "Gmail (work)": the service name with the account's label. */
   name: string;
-  /** How many agents may use this app today. */
+  /** How many agents may use this app today by name. */
   agentCount: number;
+  /** Whether every agent may use it, including agents added later (DOR-2420). */
+  everyAgent: boolean;
   /** Whether the app is switched on. A paused app is not in use either way. */
   active: boolean;
-}
-
-/**
- * Title-case a toolkit slug the same way the account rows name it.
- *
- * The same one-liner lives in `features/connections` (`AccountsList.tsx` and
- * `providerName` in `lib/presentation.ts`). It is repeated here on purpose for
- * now: an entity cannot import from a feature, and DOR-2420 is already moving
- * a shared `serviceName` into this slice (`lib/access-copy.ts`). Once that
- * lands, this and the feature copies should all call it rather than a fourth
- * helper being added here and colliding with that move.
- */
-function serviceName(toolkit: string): string {
-  return toolkit.charAt(0).toUpperCase() + toolkit.slice(1);
 }
 
 /**
@@ -43,6 +32,7 @@ export function toImpactApp(connection: ConnectorConnectionSummary): ImpactApp {
     connectionId: connection.connectionId,
     name: `${serviceName(connection.toolkit)} (${connection.label})`,
     agentCount: connection.agentCount,
+    everyAgent: connection.everyAgent !== null,
     active: connection.lifecycle === 'connected',
   };
 }

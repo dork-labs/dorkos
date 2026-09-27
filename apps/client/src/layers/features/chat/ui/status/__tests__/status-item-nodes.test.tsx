@@ -257,6 +257,7 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  supportsAccounts: true,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,

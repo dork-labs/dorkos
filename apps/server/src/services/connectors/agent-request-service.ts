@@ -60,6 +60,7 @@ import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
 import { sessionPath } from '@dorkos/shared/session-link';
+import { everyAgentGrantSubject } from './every-agent-grants.js';
 import type {
   PreparedPrivateSessionMessage,
   PrivateSessionMessageSourceAdapter,
@@ -1363,20 +1364,9 @@ export class ConnectorAgentRequestService {
     const connection = this.requireRequestConnection(owner, request, connectionId);
     const now = this.now().toISOString();
     const finalized = this.options.db.transaction((tx) => {
-      const live = tx
-        .select({ id: connectionOperationGrants.operationRevisionId })
-        .from(connectionOperationGrants)
-        .where(
-          and(
-            eq(connectionOperationGrants.subjectType, 'agent'),
-            eq(connectionOperationGrants.subjectId, request.agentId),
-            eq(connectionOperationGrants.connectionId, connection.id),
-            isNull(connectionOperationGrants.revokedAt)
-          )
-        )
-        .all()
-        .map((grant) => grant.id)
-        .sort();
+      const live = [
+        ...liveAgentRevisionIds(tx, request.agentId, connection.id, connection.mode),
+      ].sort();
       if (live.length === 0) {
         throw new ConnectorAgentRequestError(
           'selection_invalid',
@@ -2245,18 +2235,51 @@ function hasExactLiveGrants(tx: DbTransaction, request: ConnectorAgentRequest): 
   ) {
     return false;
   }
-  const live = tx
-    .select({ id: connectionOperationGrants.operationRevisionId })
-    .from(connectionOperationGrants)
-    .where(
-      and(
-        eq(connectionOperationGrants.subjectType, 'agent'),
-        eq(connectionOperationGrants.subjectId, request.agentId),
-        eq(connectionOperationGrants.connectionId, request.resolvedConnectionId),
-        isNull(connectionOperationGrants.revokedAt)
+  const mode = tx
+    .select({ mode: connectorProviderInstances.mode })
+    .from(connectorProviderInstances)
+    .where(eq(connectorProviderInstances.id, connection.providerInstanceId))
+    .get()?.mode;
+  // Every granted revision must still be live for this agent. Access added
+  // since (another grant, "Every agent") changes nothing the follow-up relies
+  // on; a revision taken away does, and refuses it.
+  const liveIds = liveAgentRevisionIds(
+    tx,
+    request.agentId,
+    request.resolvedConnectionId,
+    mode ?? 'managed'
+  );
+  return selected.every((id) => liveIds.has(id));
+}
+
+/**
+ * The operation revisions one agent can use on one account right now: its own
+ * live grants, plus the owner's "Every agent" grant where the server honours
+ * one (not on a managed account, exactly as `hasGrant` reads it).
+ */
+function liveAgentRevisionIds(
+  tx: Db | DbTransaction,
+  agentId: string,
+  connectionId: string,
+  mode: 'managed' | 'byo'
+): Set<string> {
+  const named = and(
+    eq(connectionOperationGrants.subjectType, 'agent'),
+    eq(connectionOperationGrants.subjectId, agentId)
+  );
+  const subject = mode === 'managed' ? named : or(named, everyAgentGrantSubject());
+  return new Set(
+    tx
+      .select({ id: connectionOperationGrants.operationRevisionId })
+      .from(connectionOperationGrants)
+      .where(
+        and(
+          subject,
+          eq(connectionOperationGrants.connectionId, connectionId),
+          isNull(connectionOperationGrants.revokedAt)
+        )
       )
-    )
-    .all();
-  const liveIds = new Set(live.map((grant) => grant.id));
-  return liveIds.size === selected.length && selected.every((id) => liveIds.has(id));
+      .all()
+      .map((grant) => grant.id)
+  );
 }

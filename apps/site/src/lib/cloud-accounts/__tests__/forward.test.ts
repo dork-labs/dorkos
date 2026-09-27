@@ -5,6 +5,10 @@ import {
   decideCloudAccountsForward,
   isCloudAccountPath,
   parseCloudAccountsOrigin,
+  PROXIED_ADDRESS_HEADER,
+  PROXY_SECRET_HEADER,
+  proxiedRequestHeaders,
+  usableProxySecret,
   type ForwardableRequest,
 } from '../forward';
 
@@ -223,5 +227,98 @@ describe('cloudAccountsForwarding', () => {
     expect(cloudAccountsForwarding(undefined)).toBe(false);
     expect(cloudAccountsForwarding('nonsense')).toBe(false);
     expect(cloudAccountsForwarding(SERVICE)).toBe(true);
+  });
+});
+
+describe('proxiedRequestHeaders', () => {
+  const SECRET = 'k'.repeat(40);
+  const on = { secret: SECRET, onVercel: true };
+
+  it('reports the caller’s platform-set address, with the secret, on Vercel', () => {
+    const out = proxiedRequestHeaders(
+      new Headers({ 'x-real-ip': '198.51.100.7', accept: '*/*' }),
+      on
+    );
+    expect(out?.get(PROXIED_ADDRESS_HEADER)).toBe('198.51.100.7');
+    expect(out?.get(PROXY_SECRET_HEADER)).toBe(SECRET);
+    expect(out?.get('accept')).toBe('*/*');
+  });
+
+  it('changes nothing when the secret is unset, or too short to be one', () => {
+    const headers = new Headers({ 'x-real-ip': '198.51.100.7' });
+    expect(proxiedRequestHeaders(headers, { secret: undefined, onVercel: true })).toBeNull();
+    expect(proxiedRequestHeaders(headers, { secret: '', onVercel: true })).toBeNull();
+    expect(proxiedRequestHeaders(headers, { secret: 'k'.repeat(31), onVercel: true })).toBeNull();
+  });
+
+  it('accepts a secret of exactly the minimum length, and trims a pasted newline', () => {
+    const headers = new Headers({ 'x-real-ip': '198.51.100.7' });
+    const exact = 'k'.repeat(32);
+    expect(
+      proxiedRequestHeaders(headers, { secret: exact, onVercel: true })?.get(PROXY_SECRET_HEADER)
+    ).toBe(exact);
+    expect(
+      proxiedRequestHeaders(headers, { secret: `  ${exact}\n`, onVercel: true })?.get(
+        PROXY_SECRET_HEADER
+      )
+    ).toBe(exact);
+  });
+
+  it('treats a secret a header cannot carry as unset, instead of failing every request', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const headers = new Headers({ 'x-real-ip': '198.51.100.7' });
+    for (const bad of [`${'k'.repeat(20)}\n${'k'.repeat(20)}`, `${'k'.repeat(40)}\u201c`]) {
+      expect(usableProxySecret(bad)).toBeNull();
+      expect(() => proxiedRequestHeaders(headers, { secret: bad, onVercel: true })).not.toThrow();
+      expect(proxiedRequestHeaders(headers, { secret: bad, onVercel: true })).toBeNull();
+    }
+    expect(error.mock.calls.length).toBeGreaterThan(0);
+    for (const call of error.mock.calls) {
+      expect(call).toEqual([
+        'DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET has characters a header cannot carry; not sending it.',
+      ]);
+    }
+  });
+
+  it('vouches for nothing off Vercel, where the address header is whatever the caller sent', () => {
+    const headers = new Headers({ 'x-real-ip': '198.51.100.7' });
+    expect(proxiedRequestHeaders(headers, { secret: SECRET, onVercel: false })).toBeNull();
+  });
+
+  it('vouches for nothing when there is no single address to report', () => {
+    for (const headers of [
+      new Headers(),
+      new Headers({ 'x-real-ip': 'not-an-address' }),
+      new Headers({ 'x-forwarded-for': '198.51.100.7, 10.0.0.1' }),
+    ]) {
+      expect(proxiedRequestHeaders(headers, on)).toBeNull();
+    }
+  });
+
+  it('always strips a copy of either header the caller sent itself', () => {
+    const spoofed = new Headers({
+      [PROXIED_ADDRESS_HEADER]: '203.0.113.9',
+      [PROXY_SECRET_HEADER]: 'guess',
+    });
+    for (const options of [
+      { secret: undefined, onVercel: false },
+      { secret: SECRET, onVercel: false },
+      { secret: SECRET, onVercel: true },
+    ]) {
+      const out = proxiedRequestHeaders(spoofed, options);
+      expect(out?.has(PROXIED_ADDRESS_HEADER)).toBe(false);
+      expect(out?.has(PROXY_SECRET_HEADER)).toBe(false);
+    }
+    // And with a real address to report, the site's value replaces the caller's.
+    spoofed.set('x-real-ip', '198.51.100.7');
+    const out = proxiedRequestHeaders(spoofed, on);
+    expect(out?.get(PROXIED_ADDRESS_HEADER)).toBe('198.51.100.7');
+    expect(out?.get(PROXY_SECRET_HEADER)).toBe(SECRET);
+  });
+
+  it('does not change the headers it was given', () => {
+    const headers = new Headers({ 'x-real-ip': '198.51.100.7' });
+    proxiedRequestHeaders(headers, on);
+    expect(headers.has(PROXY_SECRET_HEADER)).toBe(false);
   });
 });

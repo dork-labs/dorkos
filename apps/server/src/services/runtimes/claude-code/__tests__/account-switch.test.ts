@@ -53,7 +53,7 @@ describe('claudeAccountsChanged', () => {
         {
           claudeCode: {
             defaultAccount: null,
-            accounts: [{ id: 'acct-4', path: '/Users/dev/.claude2', label: null }],
+            accounts: [{ id: 'acct-4', path: '/Users/dev/.claude2', label: null, color: null }],
           },
         }
       )
@@ -66,7 +66,7 @@ describe('claudeAccountsChanged', () => {
         {
           claudeCode: {
             defaultAccount: null,
-            accounts: [{ id: 'acct-5', path: '/Users/dev/.claude2', label: null }],
+            accounts: [{ id: 'acct-5', path: '/Users/dev/.claude2', label: null, color: null }],
           },
         },
         { claudeCode: { defaultAccount: null, accounts: [] } }
@@ -82,13 +82,13 @@ describe('claudeAccountsChanged', () => {
         {
           claudeCode: {
             defaultAccount: '/Users/dev/.claude2',
-            accounts: [{ id: 'acme', path: '/Users/dev/.claude2', label: 'Acme' }],
+            accounts: [{ id: 'acme', path: '/Users/dev/.claude2', label: 'Acme', color: null }],
           },
         },
         {
           claudeCode: {
             defaultAccount: '/Users/dev/.claude2',
-            accounts: [{ id: 'acme', path: '/Users/dev/.claude2', label: 'Acme' }],
+            accounts: [{ id: 'acme', path: '/Users/dev/.claude2', label: 'Acme', color: null }],
           },
         }
       )

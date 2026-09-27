@@ -106,6 +106,31 @@ describe('handleTasksMessage execution settings (DOR-1615/DOR-1347)', () => {
     );
   });
 
+  it("hands the runtime the task's agent as the turn's agent, and nothing when it has none (DOR-2355)", async () => {
+    await handleTasksMessage(
+      'sub',
+      envelopeFor(basePayload({ forAgent: '/agents/ana' })),
+      undefined,
+      Date.now(),
+      config,
+      deps
+    );
+    expect(vi.mocked(agentManager.sendMessage).mock.calls[0]![2]).toMatchObject({
+      forAgent: '/agents/ana',
+    });
+
+    vi.mocked(agentManager.sendMessage).mockClear();
+    await handleTasksMessage(
+      'sub',
+      envelopeFor(basePayload()),
+      undefined,
+      Date.now(),
+      config,
+      deps
+    );
+    expect(vi.mocked(agentManager.sendMessage).mock.calls[0]![2]).not.toHaveProperty('forAgent');
+  });
+
   it('carries a model on its own, with no effort invented alongside it', async () => {
     await handleTasksMessage(
       'sub',
