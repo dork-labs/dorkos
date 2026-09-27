@@ -894,8 +894,18 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           : {}),
         // Run at LAUNCH — immediately, or when a turn queued behind this
         // session's running one is released — never at placement (§5.9, §6.1).
+        // Its files section, which carries the turn-start refresh's outcome and
+        // the counts measured after it, replaces the one placement measured, so
+        // the model is told about the files as they are when it starts (I8).
         ...(request.prepareLaunch !== undefined
-          ? { prepareLaunch: () => request.prepareLaunch!(sessionId) }
+          ? {
+              prepareLaunch: async () => {
+                const launched = await request.prepareLaunch!(sessionId);
+                return launched.files
+                  ? { roomContext: { ...roomContext, files: launched.files } }
+                  : {};
+              },
+            }
           : {}),
         roomContext,
         // Routing metadata, never prompt context: the room, the acting member and

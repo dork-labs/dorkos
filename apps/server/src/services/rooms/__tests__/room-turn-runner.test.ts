@@ -1152,6 +1152,54 @@ describe('createSessionRoomTurnRunner', () => {
     expect(launchedOn).toEqual(['sess-bound']);
   });
 
+  it('puts the files section the launch step measured into the room context it launches with', async () => {
+    // The turn-start refresh runs at launch (spec `agent-home-desk` §6.1): its
+    // outcome and fresh counts must replace what placement measured, or the
+    // model is told about files that are no longer on disk (I8).
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    const launched = {
+      worktreePath: '/dork/rooms/r1/worktrees/ana-1',
+      branch: 'room/ana-1',
+      repoPath: '/dork/rooms/r1/repo',
+      behind: 0,
+      ahead: 0,
+      refresh: { kind: 'refreshed' as const, from: 'a', to: 'b', paths: ['ROOM.md'] },
+    };
+
+    await createSessionRoomTurnRunner().run(
+      request({
+        agentPath: '/repo/ana',
+        sessionId: 'sess-bound',
+        prepareLaunch: () => Promise.resolve({ files: launched }),
+      })
+    );
+
+    const call = triggered[triggered.length - 1]!;
+    const merged = (await call.prepareLaunch!()) as { roomContext?: Record<string, unknown> };
+    expect(merged.roomContext?.files).toEqual(launched);
+    // Everything else in the context is what the turn was accepted with.
+    expect(merged.roomContext).toMatchObject({ room: expect.anything() });
+  });
+
+  it('launches with the accepted room context when the launch step has no files to report', async () => {
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    await createSessionRoomTurnRunner().run(
+      request({ agentPath: '/repo/ana', prepareLaunch: () => Promise.resolve({}) })
+    );
+
+    const call = triggered[triggered.length - 1]!;
+    await expect(call.prepareLaunch!()).resolves.toEqual({});
+  });
+
   describe('an OpenCode session that stood in the room’s copy (spec `agent-home-desk` §8.1)', () => {
     // OpenCode routes every session call by the folder the session was created
     // in and cannot move it, so a room session from before room turns moved

@@ -68,6 +68,7 @@ import type { AuthorRegistry } from '../author-registry.js';
 import { RoomError } from '../room-errors.js';
 import type { RoomSessionLedger } from '../session-bindings/room-session-ledger.js';
 import type { RoomWorktreeManager } from './room-worktree-manager.js';
+import { launchFiles, type RoomWorktreeRefreshDeps } from './room-worktree-refresh.js';
 
 /** Where one room turn stands, and what it may reach. */
 export interface RoomTurnPlace {
@@ -215,15 +216,30 @@ export async function sessionStandsInRoomCopy(
 
 /** What {@link roomTurnLaunchStep} needs, injected so a test needs no server. */
 export interface RoomTurnLaunchDeps {
-  /** Every session `room_sessions` holds for this (room, agent). */
+  /**
+   * Every session bound to this (room, agent): the id `room_sessions` holds,
+   * and every retired id that still resolves to it — an app-resumed turn on
+   * any of them is granted the same copy.
+   */
   boundSessionIds(): readonly string[];
   /**
    * Whether a turn is running on that session right now, by every authority
-   * that knows (`isTurnInFlight` in the message dispatcher).
+   * that knows (`isTurnInFlight` in the message dispatcher). A read that throws
+   * counts as running: the safe answer is to leave the copy alone.
    */
   isTurnInFlight(sessionId: string): Promise<boolean>;
-  /** The worktree manager's legacy clean-up. */
-  worktrees: Pick<RoomWorktreeManager, 'retireLegacyPlumbing'>;
+  /** The worktree manager's legacy clean-up, and where a copy's git is. */
+  worktrees: Pick<RoomWorktreeManager, 'retireLegacyPlumbing' | 'refreshTarget'>;
+  /** Names for the commits that moved on `main` — see `RoomWorktreeRefreshDeps`. */
+  describeCommits: RoomWorktreeRefreshDeps['describeCommits'];
+  /** Forget diff baselines for these files in these sessions. */
+  forgetBaselines(sessionIds: readonly string[], absPaths: readonly string[]): void;
+}
+
+/** What a room turn's launch step hands back to be merged into the turn. */
+export interface RoomTurnLaunch {
+  /** The files section as the turn launches, refresh outcome included. */
+  files?: RoomContextFiles;
 }
 
 /**
@@ -235,34 +251,51 @@ export interface RoomTurnLaunchDeps {
  * **Nothing touches the agent's copy while another session bound to this
  * (room, agent) has a turn in flight.** That turn was granted the same copy and
  * may be writing in it. The check is made before any git call; a busy answer
- * skips this launch's step entirely, and the next launch asks again.
+ * skips this launch's step entirely (the copy is held `busy`, and the files
+ * section says nothing about a refresh it did not attempt), and the next launch
+ * asks again. The refresh asks once more right before its one write.
  *
- * Today the step retires what DorkOS used to write into the copy; spec task T5
- * adds the turn-start refresh here.
+ * Otherwise: retire what DorkOS used to write into the copy, then bring it up
+ * to date with `main` when nothing in it could be lost (`room-worktree-refresh.ts`),
+ * and hand back the files section as it now stands.
  *
  * @param deps - The reads above.
- * @param turn - The room, the agent's copy of its files, and the agent's home.
+ * @param turn - The room, the agent's copy, its home, and the files section
+ *   placement measured.
  * @returns The launch step, which resolves to what to merge into the turn.
  */
 export function roomTurnLaunchStep(
   deps: RoomTurnLaunchDeps,
-  turn: { roomId: string; worktree: string; agentPath: string }
-): (sessionId: string) => Promise<Record<string, never>> {
+  turn: { roomId: string; worktree: string; agentPath: string; files: RoomContextFiles | null }
+): (sessionId: string) => Promise<RoomTurnLaunch> {
   return async (sessionId) => {
-    for (const bound of deps.boundSessionIds()) {
-      if (bound === sessionId) continue;
-      if (await deps.isTurnInFlight(bound)) {
-        logger.debug(
-          '[rooms] another session of this agent in this room is running; not touching its copy',
-          {
-            roomId: turn.roomId,
-          }
-        );
-        return {};
+    const others = deps.boundSessionIds().filter((bound) => bound !== sessionId);
+    const idle = async (): Promise<boolean> => {
+      for (const bound of others) {
+        const running = await deps.isTurnInFlight(bound).catch(() => true);
+        if (running) return false;
       }
+      return true;
+    };
+    const busy: RoomTurnLaunch = turn.files
+      ? { files: { ...turn.files, refresh: { kind: 'held', reason: 'busy', moved: null } } }
+      : {};
+    if (!(await idle())) {
+      logger.debug(
+        '[rooms] another session of this agent in this room is running; not touching its copy',
+        { roomId: turn.roomId }
+      );
+      return busy;
     }
     await deps.worktrees.retireLegacyPlumbing(turn.roomId, turn.worktree, turn.agentPath);
-    return {};
+    const target = deps.worktrees.refreshTarget(turn.roomId, turn.worktree);
+    if (!turn.files || !target) return {};
+    const files = await launchFiles(target, turn.files, {
+      stillIdle: idle,
+      describeCommits: deps.describeCommits,
+      forgetMoved: (absPaths) => deps.forgetBaselines([sessionId, ...others], absPaths),
+    });
+    return { files };
   };
 }
 

@@ -4,6 +4,7 @@ covers:
   - 'feat(connections): find an app by its one line when searching (DOR-2464)'
   - 'fix(connections): brands’ own logos, logos for every connected app, and a monthly refresh (DOR-2464)'
   - 'fix(connections): no logo request for apps the catalog says have none, background refresh (DOR-2464)'
+  - 'fix(connectors): keep hosted catalog search reaching Composio (DOR-2464)'
 ---
 
 ### Added

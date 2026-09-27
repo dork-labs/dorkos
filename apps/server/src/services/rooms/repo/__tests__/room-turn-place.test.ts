@@ -560,9 +560,14 @@ describe('roomTurnLaunchStep', () => {
             retired.push(`${roomId}:${worktree}`);
             return Promise.resolve({ removed: 0, blockRemoved: false });
           },
+          // No room files section to refresh in these cases; the refresh itself
+          // is pinned over real git in `room-worktree-refresh.test.ts`.
+          refreshTarget: () => null,
         },
+        describeCommits: () => new Map(),
+        forgetBaselines: () => {},
       },
-      { roomId: 'r1', worktree: '/w/ana', agentPath: '/agents/ana' }
+      { roomId: 'r1', worktree: '/w/ana', agentPath: '/agents/ana', files: null }
     );
     return { step, retired, busy };
   }

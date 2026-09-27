@@ -119,6 +119,7 @@ import { RoomError } from '../room-errors.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
 import { AGENT_WORKSPACE_HARNESSES } from '../../harness/project-agent-workspace.js';
 import type { RoomRepoStore } from './room-repo-store.js';
+import type { RoomWorktreeRefreshTarget } from './room-worktree-refresh.js';
 import {
   addWorktree,
   aheadBehind,
@@ -454,6 +455,29 @@ export class RoomWorktreeManager {
       this.creating.set(key, resolution);
     }
     return resolution;
+  }
+
+  /**
+   * Everything the turn-start refresh needs to find a copy's git (spec
+   * `agent-home-desk` §6.1): the copy, the room's shared checkout, the room home
+   * the git pin and ceiling hang off, and the copy's own branch — all from the
+   * room's layout, never from anything written inside the copy.
+   *
+   * @param roomId - The room.
+   * @param worktree - The copy, as {@link ensureWorktree} returned it.
+   * @returns The target, or `null` when the room id names no directory.
+   */
+  refreshTarget(roomId: string, worktree: string): RoomWorktreeRefreshTarget | null {
+    try {
+      return {
+        worktree,
+        repo: this.deps.store.repoPath(roomId),
+        ceiling: this.deps.store.homeDir(roomId),
+        branch: roomWorktreeBranch(path.basename(worktree)),
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**

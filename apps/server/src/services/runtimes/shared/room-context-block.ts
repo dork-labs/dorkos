@@ -89,6 +89,7 @@ import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { defuseUntrustedText, fenceUntrustedBlock, mintFenceNonce } from './untrusted-fence.js';
+import { movedQuoted, refreshLines } from './room-files-refresh-lines.js';
 
 /** What the fence markers are called, on both the opening and closing line. */
 const FENCE_LABEL = 'UNTRUSTED ROOM MESSAGES';
@@ -530,11 +531,13 @@ function commits(count: number): string {
 /**
  * The room's files, and what this agent has to do about them (spec §3.7).
  *
- * **Three lines at most, and the third is the only one that changes.** The two
- * standing lines are where the agent's copy is and how work gets out of it;
- * they are the same on every turn, which is what makes them cheap to keep and
- * safe to rely on. The live line is the numbers, and it is silent when both are
- * zero — a turn that starts in step with the room needs no sentence saying so.
+ * **Two standing lines, then the live ones.** The standing lines are where the
+ * agent's copy is and how work gets out of it; they are the same on every turn,
+ * which is what makes them cheap to keep and safe to rely on. Then what the
+ * turn-start refresh did (`room-files-refresh-lines.ts`, spec `agent-home-desk`
+ * §6.3) — anything a member wrote that it refers to is quoted inside the fence
+ * — and last the numbers, silent when both are zero: a turn that starts in step
+ * with the room needs no sentence saying so.
  *
  * **The turn does not stand in the copy** (spec `agent-home-desk` §5.3). It runs
  * in the agent's own folder and reaches the copy through a folder grant, so the
@@ -574,6 +577,7 @@ function filesLines(files: RoomContextFiles): string[] {
     `Sync before you edit: \`git -C "${worktree}" merge main\`. When a change is ready, commit it ` +
       'in your copy, then use the tool whose name ends in `merge_to_room_main` — whatever you ' +
       'have not committed is left behind.',
+    ...refreshLines(files, worktree),
   ];
   // **`null` says nothing, and that is the point.** It means git could not be
   // asked, not that the branch is level — and "0" would be the second of those.
@@ -1330,6 +1334,10 @@ function fenced(data: RoomContextData, nonce: string): string | null {
   // document title mistaken for a message is the misreading the nonced heading
   // exists to stop.
   if (data.canvas) quoted.push(...canvasQuoted(data.canvas, nonce));
+  // What moved on the room's `main` while the agent's copy was held: commit
+  // subjects and file names are members' words, so they are quoted here and
+  // only referred to from the files section (spec `agent-home-desk` §6.3).
+  if (data.files) quoted.push(...movedQuoted(data.files, nonce));
   if (data.channelTail && data.channelTail.length > 0) {
     quoted.push(
       `--- ${nonce} ${CHANNEL_TAIL_MARK} ---`,
