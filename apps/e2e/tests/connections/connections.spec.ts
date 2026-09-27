@@ -252,7 +252,7 @@ async function connectGmail(
 
   // Polling reaches the scripted instant success.
   await expect(dialog.getByText('Gmail is connected')).toBeVisible({ timeout: 15_000 });
-  await expect(dialog.getByText('No agent can use it until you choose access.')).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Who can use Gmail?' })).toBeVisible();
 
   if (opts?.proveReloadResume) {
     await page.reload();
@@ -260,7 +260,8 @@ async function connectGmail(
     await expect(dialog.getByText('Gmail is connected')).toBeVisible({ timeout: 15_000 });
   }
 
-  await dialog.getByRole('button', { name: 'Choose agents' }).click();
+  // The exact per-action editor stays one link away from the simple card.
+  await dialog.getByRole('button', { name: 'Choose exact actions' }).click();
   const access = page.getByRole('dialog', { name: 'Choose agent access' });
   await expect(access).toBeVisible();
   await page.keyboard.press('Escape');

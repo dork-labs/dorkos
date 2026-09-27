@@ -204,6 +204,23 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'connectionaccesscard',
+    title: 'ConnectionAccessCard',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: [
+      'access',
+      'who can use it',
+      'agents',
+      'grant',
+      'allow',
+      'read',
+      'write',
+      'account',
+      'chat card',
+    ],
+  },
+  {
     id: 'accountsregion',
     title: 'AccountsRegion',
     page: 'home-inbox',

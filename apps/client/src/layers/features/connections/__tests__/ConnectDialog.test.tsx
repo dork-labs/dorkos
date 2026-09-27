@@ -10,6 +10,7 @@ import type {
   ConnectorCatalogProviderRoute,
   ConnectorCatalogService,
 } from '@dorkos/shared/connector-resource-schemas';
+import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectDialog } from '../ui/ConnectDialog';
@@ -76,6 +77,24 @@ const gmail: ConnectorCatalogService = {
       ],
     },
   ],
+};
+
+const CONNECTED_PREVIEW: ConnectorReconciliationPreview = {
+  previewId: 'preview-1',
+  connection: {
+    connectionId: 'connection-1' as never,
+    toolkit: 'gmail',
+    label: 'work',
+    status: 'active',
+    custody: 'managed',
+    reconciliationStatus: 'ready',
+  },
+  candidates: [],
+  agents: [{ agentId: 'agent-a', displayName: 'Ada' }],
+  currentGrants: [],
+  catalogComplete: true,
+  createdAt: '2026-09-06T00:00:00.000Z',
+  expiresAt: '2099-09-06T01:00:00.000Z',
 };
 
 function renderDialog(
@@ -170,6 +189,7 @@ describe('ConnectDialog', () => {
       expiresAt: '2026-09-06T01:00:00.000Z',
       completedAt: '2026-09-06T00:01:00.000Z',
     });
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(CONNECTED_PREVIEW);
     const { chooseAccess } = renderDialog(transport);
 
     expect(screen.getAllByText('Composio holds the service connection in its vault.')).toHaveLength(
@@ -185,9 +205,34 @@ describe('ConnectDialog', () => {
       )
     );
     expect(await screen.findByText('Gmail is connected')).toBeInTheDocument();
-    expect(screen.getByText(/No agent can use it/i)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Choose agents/i }));
+    expect(await screen.findByRole('heading', { name: 'Who can use Gmail?' })).toBeInTheDocument();
+    expect(transport.previewConnectorReconciliation).toHaveBeenCalledWith({
+      connectionId: 'connection-1',
+    });
+    await user.click(await screen.findByRole('button', { name: 'Choose exact actions' }));
     expect(chooseAccess).toHaveBeenCalledWith('connection-1');
+  });
+
+  it('lets the owner skip choosing agents, which ends the saved connection flow', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'connected',
+      connectionId: 'connection-1' as never,
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+      completedAt: '2026-09-06T00:01:00.000Z',
+    });
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(CONNECTED_PREVIEW);
+    const { chooseAccess } = renderDialog(transport, gmail, null, 'flow-1');
+
+    await user.click(await screen.findByRole('button', { name: 'Skip' }));
+    expect(chooseAccess).not.toHaveBeenCalled();
+    expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('connect-auth-dialog')).not.toBeInTheDocument();
   });
 
   it('keeps account fields on the hosted owner page and out of the local dialog', async () => {
