@@ -38,6 +38,7 @@ import {
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useConfig, useConfigSync } from '@/layers/entities/config';
 import { useAgentsSync } from '@/layers/entities/mesh';
+import { useConnectorAgentRequestsSync } from '@/layers/entities/connectors';
 import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
@@ -330,6 +331,9 @@ export function AppShell() {
   // staying in one window meant the list quietly lied.
   useAgentsSync();
   useConfigSync();
+  // Live agent requests for apps (DOR-2415): a request answered in one window,
+  // on the Connections page or in a room retires its chat card everywhere.
+  useConnectorAgentRequestsSync();
   // Remote access, live and audible — the two halves that must happen exactly
   // once for the whole app (DOR-1743). `useTunnelSync` refreshes the config
   // read from other tabs and from the server's `tunnel_status` stream, which

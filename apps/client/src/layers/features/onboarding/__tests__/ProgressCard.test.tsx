@@ -119,9 +119,7 @@ async function renderCard(
     staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/connections',
-    validateSearch: zodValidator(
-      mergeDialogSearch(z.object({ region: z.enum(['messaging', 'accounts']).optional() }))
-    ),
+    validateSearch: zodValidator(mergeDialogSearch(z.object({ app: z.string().optional() }))),
     component: () => <div data-testid="connections-route" />,
   });
   const router = createRouter({
@@ -260,16 +258,15 @@ describe('ProgressCard', () => {
     });
   });
 
-  it('"Connect a service" deep-links to the Accounts region of the Connections page', async () => {
+  it('"Connect a service" lands on the Connections page', async () => {
     const harness = await renderCard();
 
     fireEvent.click(screen.getByText('Connect a service'));
 
-    // The row lands on /connections and scrolls to the Accounts region — the
-    // `region` search param is what the page reads to pick which half to show.
+    // The page is one list of apps, so the row lands on it with no panel open.
     expect(await screen.findByTestId('connections-route')).toBeTruthy();
     await waitFor(() => expect(harness.router.state.location.pathname).toBe('/connections'));
-    expect((harness.router.state.location.search as { region?: string }).region).toBe('accounts');
+    expect((harness.router.state.location.search as { app?: string }).app).toBeUndefined();
   });
 
   it('dismiss button calls onDismiss', async () => {

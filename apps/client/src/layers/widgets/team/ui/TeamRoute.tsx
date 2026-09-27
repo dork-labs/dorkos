@@ -167,7 +167,7 @@ function TeamRouteBody() {
                         useProfileStore.getState().openProfileDocked(projectPath);
                       }}
                       onOpenChat={(projectPath) => setDir(projectPath)}
-                      onOpenAdapterCatalog={() => openConnections('messaging')}
+                      onOpenAdapterCatalog={() => openConnections()}
                       onGoToDiscovery={() =>
                         void navigate({
                           to: '/team',

@@ -187,6 +187,17 @@ export interface AgentSession {
    */
   lastSubscriptionUsage?: UsageStatus;
   /**
+   * Whether this turn already reported a usage limit (spec
+   * `claude-account-fleet` D4: one limit status per turn). Reset at turn start.
+   */
+  limitReportedThisTurn?: boolean;
+  /**
+   * The window a `rejected` `rate_limit_event` named during this turn, whether
+   * or not extra usage covered it, so a `rate_limit` error that follows reports
+   * that window rather than a guess. Reset at turn start.
+   */
+  rejectedLimitThisTurn?: { window: string; resetsAt: string | null };
+  /**
    * The SDK's running usage totals as of this session's last `result`, keyed by
    * model: the baseline a turn's own usage is the difference from, because
    * `result.modelUsage` is a running total, not one turn's figure (see

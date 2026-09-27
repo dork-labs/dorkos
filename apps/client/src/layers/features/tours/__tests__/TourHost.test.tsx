@@ -178,11 +178,11 @@ describe('TourHost', () => {
     expect(harness.actions).toEqual([]);
   });
 
-  it('takes the messaging tour to the page that surface now lives on', async () => {
+  it('takes the chat app tour to the Connections page', async () => {
     mockRunningDefinition = TOUR_DEFINITIONS.relay; // route: /connections
     const harness = await renderHost();
-    // The tour's only step is anchored inside the Messaging region, so landing
-    // anywhere else would spotlight nothing.
+    // The tour's only step is anchored on the page's one list of apps, so
+    // landing anywhere else would spotlight nothing.
     await waitFor(() => expect(harness.router.state.location.pathname).toBe('/connections'));
   });
 

@@ -26,6 +26,7 @@ import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync
 import { ChannelComposer } from './ChannelComposer';
 import { RoomFlow, RoomHistorySkeleton } from './RoomFlow';
 import { RoomApprovalCards } from './RoomApprovalCards';
+import { RoomAgentRequests } from './RoomAgentRequests';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
 import { RoomThreadSplit } from './RoomThreadSplit';
@@ -402,6 +403,7 @@ export function RoomSurface({
       {/* A request this room's own turn raised, at the live end of the room
           where that turn is (spec `agent-permissions` D7). */}
       <RoomApprovalCards roomId={room.id} />
+      <RoomAgentRequests roomId={room.id} />
       <RoomLiveLane
         room={room}
         entries={entries}

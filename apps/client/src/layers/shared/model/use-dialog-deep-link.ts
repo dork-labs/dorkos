@@ -106,8 +106,8 @@ export type SettingsDeepLinkTarget = SettingsTabTarget | SettingsRouteTarget;
  * them.
  */
 const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
-  channels: { kind: 'route', path: '/connections', search: { region: 'messaging' } },
-  integrations: { kind: 'route', path: '/connections', search: { region: 'messaging' } },
+  channels: { kind: 'route', path: '/connections' },
+  integrations: { kind: 'route', path: '/connections' },
   security: { kind: 'tab', tab: 'access', section: 'security' },
   account: { kind: 'tab', tab: 'access', section: 'account' },
   advanced: 'danger',
@@ -466,19 +466,25 @@ export function isDualSignalDialog(panel: UiPanelId): panel is UiPanelId & DualS
   return Object.hasOwn(DIALOG_SEARCH_PARAMS, panel);
 }
 
+/** Where on the Connections page to land. */
+interface OpenConnectionsOptions {
+  /** A connected app's id (a connection or a chat app) whose side panel opens. */
+  app?: string;
+}
+
 /**
- * Go to the Connections page, at one of its two halves.
+ * Go to the Connections page, optionally with one app's side panel open.
  *
- * Replaces the `?relay=open` dialog hook. The messaging surface is a page now,
- * so "open it" is a navigation, not an open flag — and the region is a scroll
- * target rather than a tab, because both halves are always rendered.
+ * Replaces the `?relay=open` dialog hook. The page is one list of apps, so
+ * "open it" is a navigation, not an open flag, and the only place worth
+ * naming is one app's panel (`?app=`).
  */
-export function useOpenConnections(): (region?: 'messaging' | 'accounts') => void {
+export function useOpenConnections(): (options?: OpenConnectionsOptions) => void {
   const navigate = useSafeNavigate();
   return useCallback(
-    (region?: 'messaging' | 'accounts') => {
+    (options?: OpenConnectionsOptions) => {
       if (!navigate) return;
-      navigate({ to: '/connections', search: { region } as never });
+      navigate({ to: '/connections', search: (options?.app ? { app: options.app } : {}) as never });
     },
     [navigate]
   );

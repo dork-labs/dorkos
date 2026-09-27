@@ -78,14 +78,37 @@ export interface InstallerTestHarness {
 }
 
 /**
+ * The extension manager both the plugin install flow and the uninstall flow
+ * hold: the union of what each of them calls.
+ */
+export type HarnessExtensionManager = ConstructorParameters<
+  typeof PluginInstallFlow
+>[0]['extensionManager'] &
+  ConstructorParameters<typeof UninstallFlow>[0]['extensionManager'];
+
+/** Optional overrides for {@link buildInstallerForTests}. */
+export interface InstallerTestOptions {
+  /**
+   * Use this extension manager instead of the stub, for a test that needs the
+   * real approval bookkeeping (a real `ExtensionManager`). The `extensionEnable`
+   * and `extensionDisable` spies are then not wired to anything.
+   */
+  extensionManager?: HarnessExtensionManager;
+}
+
+/**
  * Wire a full {@link MarketplaceInstaller} with real collaborators rooted at
  * the supplied temp `dorkHome` (see the module header for what is stubbed).
  *
  * @param dorkHome - Temp data directory every install writes under.
+ * @param options - Collaborators to use instead of the stubs.
  * @returns The installer plus the stub spies and the two collaborators tests
  *   reach for directly.
  */
-export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
+export function buildInstallerForTests(
+  dorkHome: string,
+  options: InstallerTestOptions = {}
+): InstallerTestHarness {
   const logger = noopLogger;
 
   // Marketplace cache + source manager — both just need a dorkHome. They are
@@ -128,7 +151,7 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
   const extensionEnable = vi.fn().mockResolvedValue({ extension: {}, reloadRequired: false });
   const extensionDisable = vi.fn().mockResolvedValue(undefined);
   const extensionCompiler = { compile: extensionCompile };
-  const extensionManager = {
+  const extensionManager: HarnessExtensionManager = options.extensionManager ?? {
     get: vi.fn().mockReturnValue(undefined),
     enable: extensionEnable,
     disable: extensionDisable,

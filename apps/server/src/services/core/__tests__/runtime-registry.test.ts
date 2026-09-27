@@ -12,6 +12,10 @@ import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
+import {
+  SessionLimitStore,
+  setSessionLimitStore,
+} from '../../session/fleet/session-limit-store.js';
 import type { TurnOrigin } from '../../session/index.js';
 
 // Minimal mock runtime for testing
@@ -1436,6 +1440,32 @@ describe('RuntimeRegistry', () => {
     function allRows() {
       return db.select().from(sessionMetadata).all();
     }
+
+    it('moves a stored usage limit, even for a session with no settings row (D4)', async () => {
+      const limits = new SessionLimitStore(db);
+      setSessionLimitStore(limits);
+      try {
+        limits.upsert({
+          sessionId: 'old',
+          limit: {
+            accountId: 'work',
+            window: 'five_hour',
+            resetsAt: null,
+            since: '2026-09-26T10:00:00.000Z',
+            plan: { mode: 'ask' },
+          },
+          scope: 'account',
+          accountPath: '/accounts/work',
+        });
+
+        await registry.rekeySessionSettings('old', 'new');
+
+        expect(limits.get('old')).toBeUndefined();
+        expect(limits.get('new')?.limit.window).toBe('five_hour');
+      } finally {
+        setSessionLimitStore(undefined);
+      }
+    });
 
     it('moves the whole row, identity columns included', async () => {
       await registry.persistSessionRuntime('old', 'test-mode', A_PERSON, '/agent/path');

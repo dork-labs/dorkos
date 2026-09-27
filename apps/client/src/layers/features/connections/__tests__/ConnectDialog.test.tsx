@@ -5,8 +5,12 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ConnectorAuthenticationSetup } from '@dorkos/shared/connector-provider';
 import type {
+  ConnectorAuthenticationSetup,
+  ConnectorProviderStatus,
+} from '@dorkos/shared/connector-provider';
+import type {
+  ConnectorAppConnections,
   ConnectorCatalogProviderRoute,
   ConnectorCatalogService,
 } from '@dorkos/shared/connector-resource-schemas';
@@ -14,6 +18,18 @@ import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-sc
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectDialog } from '../ui/ConnectDialog';
+
+/** The providers read's answer: these statuses, and (unless given) nothing set up for new apps. */
+function providersFrom(
+  // Loose on purpose: these fixtures carry only the fields the dialog reads.
+  providers: readonly Partial<ConnectorProviderStatus>[],
+  appConnections: ConnectorAppConnections = {
+    ways: [],
+    newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+  }
+) {
+  return vi.fn().mockResolvedValue({ providers, appConnections });
+}
 
 afterEach(cleanup);
 
@@ -330,7 +346,7 @@ describe('ConnectDialog', () => {
     // The pre-DOR-1798 case: the DorkOS-account route answers but cannot sign in to apps.
     renderDialog(
       createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue([
+        getConnectorProviders: providersFrom([
           {
             type: 'composio',
             configured: false,
@@ -521,7 +537,7 @@ describe('ConnectDialog', () => {
     it('asks how DorkOS reaches apps once, then goes straight to sign-in after a key works', async () => {
       const user = userEvent.setup();
       const transport = createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+        getConnectorProviders: providersFrom(statuses),
         putConnectorCredential: vi
           .fn()
           .mockResolvedValue({ ...statuses[0], configured: true, registered: true }),
@@ -586,7 +602,7 @@ describe('ConnectDialog', () => {
 
     it('says in one line why the step shows when a linked DorkOS account cannot connect apps', async () => {
       const transport = createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+        getConnectorProviders: providersFrom(statuses),
       });
       vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
         services: [builtInGmail],
@@ -614,7 +630,7 @@ describe('ConnectDialog', () => {
     it('says to try again, not to set up, when a working way could not be reached', async () => {
       const user = userEvent.setup();
       const transport = createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+        getConnectorProviders: providersFrom(statuses),
       });
       const way = {
         kind: 'own_key' as const,
@@ -644,7 +660,7 @@ describe('ConnectDialog', () => {
 
     it('keeps a route’s real reason when an unrelated catalog warning arrives beside it', async () => {
       const transport = createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+        getConnectorProviders: providersFrom(statuses),
       });
       const way = {
         kind: 'own_key' as const,
@@ -692,7 +708,7 @@ describe('ConnectDialog', () => {
 
     it('names the DorkOS account, not Composio, when that account cannot reach the app', async () => {
       const transport = createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+        getConnectorProviders: providersFrom(statuses),
       });
       const way = {
         kind: 'dorkos_account' as const,

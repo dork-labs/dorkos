@@ -100,6 +100,8 @@ export interface ManagedConnectorProviderExecutionContext {
   agentId: string;
   attemptIndex: number;
   grantScopeVersion: number;
+  /** Which hosted scope `grantScopeVersion` names (DOR-2439). */
+  grantSubject?: 'agent' | 'every_agent';
   attribution: ManagedConnectorExecutionAttribution;
 }
 
@@ -302,6 +304,9 @@ export class ManagedCloudConnectorProvider implements ConnectorProvider {
       attemptIndex: context.attemptIndex,
       managedConnectionId: command.externalAccountRef,
       agentId: context.agentId,
+      // The named-agent scope stays implicit so the request keeps the exact
+      // bytes an older hosted service already accepts.
+      ...(context.grantSubject === 'every_agent' ? { grantSubject: 'every_agent' } : {}),
       grantScopeVersion: context.grantScopeVersion,
       attribution: context.attribution,
       revision: {

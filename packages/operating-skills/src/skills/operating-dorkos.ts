@@ -48,15 +48,15 @@ Use \`list_capabilities\` to discover instance capabilities, narrowing by \`doma
 The generic catalog is not the inventory of accounts granted to this agent.
 Use the supplied current CLI invocation for CLI examples below, never a PATH lookup.
 
-## Connections: Accounts and Messaging
+## Connections: one list of apps
 
-Accounts let you act on services; Messaging connects Slack/Telegram conversations.
+One list of apps you act on (Gmail) and chat apps people reach you in (Slack, Telegram).
 Use injected tools ending in \`connectors.list_granted_connections\` (OpenCode:
 \`connectors_list_granted_connections\`) to discover your current account access.
 Then call \`list_granted_operations\` with its returned \`connectionId\`; choose the
 exact operation, immutable revision, input schema, and execution classification.
 A profile lookup cannot list messages. Do not invent filters or describe errors as results.
-Access can change between turns: consult the fresh Accounts context and re-list before use.
+Access can change between turns: consult the fresh account context and re-list before use.
 If access is missing, \`request_connection\` asks the owner for what the task needs;
 \`get_connection_request\` checks your request. These never expose other accounts.
 Do not inspect shell configuration, credentials, or generic MCP registries to infer access.

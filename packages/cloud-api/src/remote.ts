@@ -535,7 +535,36 @@ export const ByteCountSchema = z
   .describe('A count of bytes, as a base-10 integer string. Parse it with BigInt, never Number.');
 
 /**
+ * The request header that names one `POST /v1/remote/events` batch.
+ *
+ * Every batch carries it, and the service refuses a batch without it with
+ * `malformed_request`. A batch retried after a lost acknowledgement reuses its
+ * key; a batch with new contents gets a new one. A key whose batch the service
+ * already accepted from the same instance (the one the request's API key
+ * belongs to) is answered `200` with an `accepted` count of zero: the batch was
+ * already applied, and nothing in it is counted again. A batch that was refused
+ * or failed was not accepted, so a retry with its key is applied as new.
+ *
+ * A header rather than a body field so the body stays exactly what instances
+ * already send: a new required body field would refuse every one of them.
+ */
+export const REMOTE_EVENTS_IDEMPOTENCY_HEADER = 'Idempotency-Key' as const;
+
+/** The value of {@link REMOTE_EVENTS_IDEMPOTENCY_HEADER}. */
+export const RemoteEventBatchKeySchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .describe(
+    'The Idempotency-Key header of a POST /v1/remote/events batch: an opaque string the instance chooses, one per batch, at most 200 characters. Reuse it to retry the same batch. A key whose batch was already accepted from the same instance is answered { accepted: 0 } and counts nothing again; a batch that was refused or failed was not accepted, so its retry is applied as new.'
+  );
+
+/**
  * `POST /v1/remote/events` — batched activity from an instance.
+ *
+ * The request carries the batch's key in the
+ * {@link REMOTE_EVENTS_IDEMPOTENCY_HEADER} header ({@link RemoteEventBatchKeySchema}),
+ * not in this body.
  *
  * Each close report names the span it covers: `openedAt` beside the existing
  * `at` (when the tunnel closed), the requests that crossed it in that span, and
@@ -576,9 +605,13 @@ export const RemoteEventBatchSchema = z
       )
       .describe('Why and when the tunnel closed itself, and what crossed it while it was open.'),
   })
-  .describe('Batched activity, close reports and window counters from one instance.');
+  .describe(
+    'Batched activity, close reports and window counters from one instance. The request names the batch in its Idempotency-Key header.'
+  );
 
 /** How many events were accepted. */
 export const RemoteEventBatchResponseSchema = z
   .object({ accepted: z.number().int().nonnegative() })
-  .describe('How many of the reported events the server accepted.');
+  .describe(
+    'How many of the reported events the server accepted. Zero for a batch whose Idempotency-Key was already accepted from the same instance, and for an empty batch, so zero alone does not say which.'
+  );

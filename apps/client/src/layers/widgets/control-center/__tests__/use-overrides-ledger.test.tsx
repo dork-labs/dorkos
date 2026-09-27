@@ -172,7 +172,7 @@ describe('useOverridesLedger', () => {
     result.current.rows.find((r) => r.kind === 'task')?.onOpen?.();
     expect(navigate).toHaveBeenCalledWith({ to: '/tasks' });
     result.current.rows.find((r) => r.kind === 'binding')?.onOpen?.();
-    expect(openConnections).toHaveBeenCalledWith('messaging');
+    expect(openConnections).toHaveBeenCalledWith({ app: 'slack' });
 
     // Every deep link closes the modal flyout BEFORE it navigates — a link that
     // left it open lands the person on a page still locked behind

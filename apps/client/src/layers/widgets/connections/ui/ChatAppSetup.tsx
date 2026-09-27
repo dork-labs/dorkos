@@ -1,24 +1,23 @@
 import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { useAdapterCatalog, useRelayEnabledState } from '@/layers/entities/relay';
 import { AdapterSetupWizard } from '@/layers/features/relay';
-import { useOpenConnections } from '@/layers/shared/model';
 
 /**
  * Connect a chat app picked from the app list: straight into its own setup
  * (paste the bot token, then who answers), never the one-time step that sets
  * up how DorkOS reaches apps — chat apps are built in and need none of that.
  *
- * When the chat app cannot be added from here (chat apps are turned off, or it
- * allows one setup and already has it), the page's chat section says why and
- * shows the one already set up, so the choice goes there instead.
+ * The list only offers a chat app that can be added (chat apps are on, and it
+ * allows another setup), so the one refusal left is the chat app list not
+ * having arrived yet, which says so rather than doing nothing.
  *
- * @returns `open(type)` for the list's chat buttons, and the setup dialog to render.
+ * @returns `open(type)` for the list's chat rows, and the setup dialog to render.
  */
 export function useChatAppSetup() {
   const relay = useRelayEnabledState();
   const catalog = useAdapterCatalog(relay.enabled);
-  const openConnections = useOpenConnections();
   const [manifest, setManifest] = useState<AdapterManifest | null>(null);
 
   const open = useCallback(
@@ -30,9 +29,9 @@ export function useChatAppSetup() {
         setManifest(entry.manifest);
         return;
       }
-      openConnections('messaging');
+      toast.error('Chat apps aren’t ready yet. Try again in a moment.');
     },
-    [catalog.data, openConnections, relay.enabled]
+    [catalog.data, relay.enabled]
   );
 
   const dialog = manifest ? (

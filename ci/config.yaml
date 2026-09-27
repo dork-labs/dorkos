@@ -103,7 +103,8 @@ collect:
   # backfilled ledger entries (#1135, #1246, #1391) get live verdicts.
   backfill_from: '2026-08-12'
   # Queue builds a day whose test reports are downloaded for flaky-test-runs.
-  # Each costs about nine requests (two listings, seven artifacts).
+  # Each costs about twelve requests (two listings, ten artifacts: six browser
+  # shards and four vitest shards).
   artifact_builds_per_day: 10
   review_workflow: claude-code-review.yml
   # Playwright's JSON reporter counts flaky tests (failed, then passed on the
@@ -141,16 +142,24 @@ collect:
 # (the SLO and trigger rule 8) reads each gate against the smaller of the two,
 # because that is the deadline that actually fires. A browser shard's
 # timeout-minutes is 45, the outermost rung of browser-test.yml's ladder, which
-# is built never to fire; Playwright's own globalTimeout stops the suite at 30.
-# Measured against 45, a shard at 29 minutes read as 65% used when it was 97%.
+# is built never to fire; Playwright's own globalTimeout stops the suite first
+# (25 minutes at six shards; it was 30 at three). Measured against 45, a
+# three-way shard at 29 minutes read as 65% used when it was 97%.
 #
 # The job's duration includes about 2.5 minutes of setup before Playwright
 # starts, so the ratio reads that much high. That is the safe side for a
 # tripwire. The number is checked against playwright.config.ts's derivation and
 # the workflow's shard count by ruler.test.ts, so it cannot drift silently.
+#
+# Readers apply this to every day they read, not only to days after it
+# changed, so when it drops (30 to 25 on 2026-09-27, ledger 260919-175503) the
+# `headroom` window reads the days before the change against the new, tighter
+# number until the window rolls past it: about 1.1-1.2 for up to 7 days, from
+# three-shard runs that never ran under 25. That is the ruler, not a
+# regression.
 deadlines:
   - gate: wf.browser-test.browser-shard
-    minutes: 30
+    minutes: 25
     source: apps/e2e/playwright.config.ts globalTimeout in CI, derived per shard from E2E_SHARD_TOTAL
 
 # The quarantine lane (plan §4.9 L1): a test data has classified flaky runs and

@@ -56,6 +56,11 @@ interface ConnectDialogProps {
    * or hands a request-bound connection back to its request.
    */
   onChooseAccess: (connectionId: string) => void;
+  /**
+   * The person finished a standalone connection (the access step done or
+   * skipped); the page opens the new app's panel next, where "Try it" waits.
+   */
+  onConnected?: (connectionId: string) => void;
 }
 
 function authenticationGuidance(
@@ -92,7 +97,11 @@ function authenticationAction(
   return route?.authKind === 'none' ? 'Check connection' : 'Continue';
 }
 
-/** Durable service authentication flow with provider disclosure before authorization. */
+/**
+ * Durable service authentication flow with provider disclosure before
+ * authorization. The page mounts it only while it is open; a sign-in left
+ * open in the address shows as a "Connecting" row in the list instead.
+ */
 export function ConnectDialog({
   service,
   flowId,
@@ -100,6 +109,7 @@ export function ConnectDialog({
   onFlowIdChange,
   onClose,
   onChooseAccess,
+  onConnected,
 }: ConnectDialogProps) {
   const [open, setOpen] = useState(Boolean(service || flowId));
   const [label, setLabel] = useState('');
@@ -169,19 +179,8 @@ export function ConnectDialog({
     }
   };
 
-  const terminal =
-    activeFlow?.state === 'connected' ||
-    activeFlow?.state === 'failed' ||
-    activeFlow?.state === 'expired' ||
-    activeFlow?.state === 'start_unknown';
-
   return (
     <>
-      {!open && flowId && !terminal && (
-        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-          Resume {serviceName} connection
-        </Button>
-      )}
       <ResponsiveDialog
         open={open}
         onOpenChange={(next) => {
@@ -388,8 +387,14 @@ export function ConnectDialog({
                   mode="page"
                   connectionId={activeFlow.connectionId}
                   serviceName={serviceName}
-                  onSkip={finish}
-                  onFinished={finish}
+                  onSkip={() => {
+                    finish();
+                    onConnected?.(activeFlow.connectionId);
+                  }}
+                  onFinished={() => {
+                    finish();
+                    onConnected?.(activeFlow.connectionId);
+                  }}
                   onEditExactActions={(connectionId) => {
                     onChooseAccess(connectionId);
                     finish();

@@ -43,6 +43,26 @@ export function useConnectorAgentRequests(state?: 'pending' | 'resolved') {
   return useQuery<ConnectorAgentRequestItem[]>({
     queryKey: connectorKeys.agentRequestList(state),
     queryFn: () => transport.getConnectorAgentRequests(state),
+    // Every reader draws its own quiet fallback (the page's error state, a
+    // room's empty section for someone who is not the owner), so no toast.
+    meta: { suppressErrorToast: true },
+  });
+}
+
+/**
+ * Read every request one conversation's agent raised, for the cards drawn in
+ * that conversation's transcript. Answered ones are included: a card stays in
+ * the transcript as the record of what was decided.
+ *
+ * @param sessionId - The conversation; `null` reads nothing.
+ */
+export function useSessionConnectorAgentRequests(sessionId: string | null) {
+  const transport = useTransport();
+  return useQuery<ConnectorAgentRequestItem[]>({
+    queryKey: connectorKeys.sessionAgentRequests(sessionId ?? ''),
+    queryFn: () => transport.getConnectorAgentRequests(undefined, sessionId ?? ''),
+    enabled: Boolean(sessionId),
+    meta: { suppressErrorToast: true },
   });
 }
 
@@ -70,8 +90,12 @@ export function useResolveConnectorAgentRequest() {
     meta: { suppressErrorToast: true },
     onSuccess: (result, { requestId }) => {
       queryClient.setQueryData(connectorKeys.agentRequest(requestId), result);
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequestList('pending') });
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequestList('resolved') });
+      // Every list, including each conversation's, so the page's Needs you strip and the
+      // chat and room cards agree the moment the answer lands.
+      void queryClient.invalidateQueries({
+        queryKey: connectorKeys.agentRequests(),
+        predicate: (query) => query.queryKey[3] !== requestId,
+      });
       void queryClient.invalidateQueries({ queryKey: connectorKeys.connections() });
     },
   });
@@ -122,9 +146,12 @@ export function useConnectorAgentRequestAuthentication(
       state === 'expired' ||
       state === 'start_unknown'
     ) {
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequest(requestId) });
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequestList('pending') });
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequestList('resolved') });
+      // Every request read, each conversation's list included, but not this
+      // sign-in's own poll, which has already reached its answer.
+      void queryClient.invalidateQueries({
+        queryKey: connectorKeys.agentRequests(),
+        predicate: (candidate) => candidate.queryKey[4] !== 'authentication-flow',
+      });
     }
   }, [query.data?.state, queryClient, requestId]);
 

@@ -5,6 +5,7 @@ import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider'
 import { cloudStatusKey } from '@/layers/features/cloud-link';
 import {
   appCount,
+  useConnectorAppConnections,
   useConnectorConnections,
   useConnectorProviders,
   type ImpactApp,
@@ -52,6 +53,7 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
     staleTime: 30_000,
   });
   const providers = useConnectorProviders();
+  const appConnections = useConnectorAppConnections();
   const connections = useConnectorConnections();
 
   if (providers.isPending || connections.isPending) {
@@ -99,6 +101,12 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
     return <Skeleton className="h-16 rounded-lg" aria-label="Checking your DorkOS account" />;
   }
 
+  // Which way new apps go through, marked only when there is a choice to see:
+  // with one way set up, it is the only one, and the marker would say nothing.
+  const newAppsWay =
+    appConnections.data?.newApps.status === 'ready' ? appConnections.data.newApps.way : null;
+  const markNewApps = (showAccount ? 1 : 0) + keyRows.length > 1;
+
   const addWays = (
     <AddWays keys={keysToAdd} offerAccount={accountToAdd} onManageAccount={onManageAccount} />
   );
@@ -141,6 +149,7 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
             retrying={cloud.isFetching}
             onRetry={() => void cloud.refetch()}
             apps={apps.dorkosAccount}
+            usedForNewApps={markNewApps && newAppsWay?.kind === 'dorkos_account'}
             onManageAccount={onManageAccount}
           />
         )}
@@ -149,6 +158,9 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
             key={status.providerInstanceId}
             status={status}
             apps={apps.byKeyInstance[status.providerInstanceId] ?? []}
+            usedForNewApps={
+              markNewApps && newAppsWay?.kind === 'own_key' && newAppsWay.type === status.type
+            }
           />
         ))}
       </ul>
@@ -166,6 +178,7 @@ function AccountWayRow({
   retrying,
   onRetry,
   apps,
+  usedForNewApps,
   onManageAccount,
 }: {
   linked: boolean;
@@ -173,6 +186,7 @@ function AccountWayRow({
   retrying: boolean;
   onRetry: () => void;
   apps: readonly ImpactApp[];
+  usedForNewApps: boolean;
   onManageAccount: () => void;
 }) {
   const status: WayStatus = linked
@@ -190,6 +204,7 @@ function AccountWayRow({
           : `${appCount(apps.length)} connected`
       }
       status={status}
+      usedForNewApps={usedForNewApps}
       actions={
         <>
           {checkFailed && (

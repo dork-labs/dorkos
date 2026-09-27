@@ -12,8 +12,8 @@ name: browser-test
 # that keeps it that way.
 #
 # TWO JOBS, AND THE SECOND ONE IS THE CHECK (DOR-1363). `browser-shard` is a
-# three-way matrix that runs a third of the suite each; `browser-test` is a
-# fan-in gate that needs all three and fails if any of them did not pass. The
+# six-way matrix that runs a sixth of the suite each; `browser-test` is a
+# fan-in gate that needs every shard and fails if any of them did not pass. The
 # reasoning for both the split and the shape is on those jobs.
 #
 # THE SUITE RUNS IN THE MERGE QUEUE ONLY; THE PR GETS A PASS-THROUGH CONTEXT
@@ -173,9 +173,47 @@ jobs:
     # a `browser-test` context at all.
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
-    # THREE SHARDS, AND HERE IS THE ARITHMETIC THAT PICKED THREE (DOR-1363).
+    # SIX SHARDS, AND HERE IS THE ARITHMETIC THAT PICKED SIX (2026-09-27,
+    # ledger ci/ledger/260919-175503-browser-suite-six-shards.md).
     #
-    # Measured on four consecutive main runs on 2026-08-19 (32251346554,
+    # The suite outgrew three. Over 30 green queue runs (2026-09-26/27, 90
+    # shard jobs) a three-way shard ran its suite step p50 25.3 / p95 27.4 /
+    # max 28.5 minutes against Playwright's 30-minute `globalTimeout`, and the
+    # job p95 was 30.0 — the steward's `headroom` read 0.969 (n=1208). What a
+    # shard costs, measured on those jobs and on their JSON reports:
+    #
+    #   * everything outside the suite step (checkout, pnpm, browser cache,
+    #     turbo build, uploads): p50 2.5, p95 2.9 min
+    #   * boot inside the step, suite start to first test (webServer legs
+    #     + global-setup): 3.0-5.1 min
+    #   * test time: 52.7 min in all (shard-timings.json medians, 512 tests),
+    #     divided by the balanced cut below; at p95 a shard runs ~1.25x its
+    #     estimate (slow runners, and the cut is only as good as its weights)
+    #
+    #   shards   job p95 ≈ 8 + 1.25 × 52.7/N   deadline (derived)   p95/deadline
+    #     3        ~30 (measured 30.0)          30 (stale inputs)      0.97 ← was
+    #     5        ~21.2                        30                     0.71
+    #     6        ~19.0                        25                     0.76
+    #     7        ~17.4                        25                     0.70
+    #     8        ~16.2                        25                     0.65
+    #
+    # The deadline is playwright.config.ts's derivation with its inputs
+    # re-measured (see there); with those, three shards would have derived 40.
+    # Because the deadline follows the shard count, p95/deadline lands between
+    # 0.65 and 0.76 anywhere from five to eight shards: the ratio does not pick
+    # the count. Wall time does. At six the job is ~17 min p50 / ~19 p95, level
+    # with the vitest `test-shard` jobs (p50 14.8, p95 17.9) that the queue
+    # also waits on, so this stops being the queue's long pole; a seventh or
+    # eighth shard buys under three minutes the queue cannot use, and every
+    # shard re-pays the ~8 fixed minutes.
+    #
+    # The price, stated plainly: three more jobs per queue build and per canary
+    # round, and about +24 job-minutes per queue build (3 × 8 fixed; the test
+    # time only moves between runners) — about +45 per merged PR at the ~1.8
+    # queue builds each one costs today, against 555 in total.
+    #
+    # WHY THREE, ORIGINALLY (DOR-1363). Measured on four consecutive main runs
+    # on 2026-08-19 (32251346554,
     # 32259784745, 32272418644, 32281755292):
     #
     #   * the `playwright test` step took 40m33s / 41m45s / 42m43s / 43m11s
@@ -205,7 +243,9 @@ jobs:
     # mirror that hung for an hour on 2026-08-19 (see the install step) and the
     # live marketplace registry the site leg fetches. At three, overhead is ~25%
     # of a shard's wall time; at six it is ~40% and the runner bill has doubled
-    # for a six-minute gain.
+    # for a six-minute gain. That was right for a 41-minute suite; by September
+    # the suite had grown to ~58 minutes of boot and tests, and the numbers
+    # above replace it.
     #
     # THE CUT IS BY MEASURED DURATION, NOT TEST COUNT. Playwright's own
     # `--shard` splits by test count in `projects` order, which put every
@@ -221,10 +261,10 @@ jobs:
       # other shard the moment one fails, and a cancelled job uploads nothing —
       # which is precisely the output-less failure DOR-1110 exists to prevent,
       # just moved from the timeout to the matrix. One shard going red must still
-      # leave the other two free to report their own results.
+      # leave the others free to report their own results.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6]
     # THE OUTERMOST RUNG OF A LADDER, AND IT MUST NEVER BE THE ONE THAT FIRES
     # (DOR-1110). A job that hits `timeout-minutes` is CANCELLED, not failed: the
     # suite step is killed mid-write and every later step is skipped, so no
@@ -237,11 +277,11 @@ jobs:
     # one leaves output behind when it fires. The numbers are per SHARD, derived
     # from the measurements above:
     #
-    #   ~16m  a healthy shard (DERIVED: ~2m30s of webServer boot + a third of the
-    #         ~38m of test execution). Not yet measured on CI at three shards —
-    #         the first green run on main is what turns this into a measurement,
-    #         and if it lands far off, this comment is what gets corrected.
-    #    30m  playwright.config.ts `globalTimeout` — Playwright stops itself and
+    #  ~14m  a healthy shard's suite step (DERIVED: ~4.5m of boot + a sixth of
+    #         ~53m of tests; ~16m at p95, ~19m for the whole job at p95). At
+    #         three shards the measured step was p50 25.3m, p95 27.4m, which is
+    #         what put this ladder's first rung within reach of healthy runs.
+    #    25m  playwright.config.ts `globalTimeout` — Playwright stops itself and
     #         flushes every reporter, so the job fails WITH a named report. It is
     #         derived from the shard count rather than typed in; see that file.
     #    35m  the suite step's own `timeout-minutes` — a hung Playwright that
@@ -255,7 +295,11 @@ jobs:
     # minutes of headroom on a bad day — the innermost rung was one slow runner
     # away from firing on a perfectly healthy suite. Sharding restores the
     # margin, and deriving `globalTimeout` from the shard count is what stops it
-    # silently going stale again the next time this matrix changes size.
+    # silently going stale again the next time this matrix changes size. It
+    # does NOT stop it going stale as the suite grows: the derivation's two
+    # inputs are measurements, and by September 2026 they were 41 and 4 against
+    # a real 58 and 5. Re-measure them whenever this matrix changes (the
+    # method is on the constants in playwright.config.ts).
     timeout-minutes: 45
     env:
       # Belt and braces on where the server keeps data. Both Express legs now
@@ -473,12 +517,12 @@ jobs:
       # and `--shard` below is never absent here, so no shard ever refreshes a
       # description. This job has no non-sharded full pass to set the opt-in
       # on instead (`pull_request` skips the matrix entirely, `merge_group`
-      # always runs all three), so the shard check is what actually keeps
+      # always runs every shard), so the shard check is what actually keeps
       # descriptions out of CI's reach, not the absence of the env var.
       #
       # `timeout-minutes` here is the middle rung of the ladder described on the
       # job's own timeout (DOR-1110). It sits ABOVE playwright.config.ts's
-      # `globalTimeout` (30m per shard) so Playwright normally stops itself first
+      # `globalTimeout` (25m per shard at six shards) so Playwright normally stops itself first
       # and flushes its reporters, and BELOW the job's ceiling (45m) so that a
       # Playwright which somehow hangs without honouring its own deadline fails
       # this STEP rather than cancelling the JOB — the difference being that a
@@ -565,7 +609,7 @@ jobs:
       #
       # `overwrite: true` because artifact names are unique per RUN, not per
       # attempt: v4 answers 409 Conflict when the name already exists, so "Re-run
-      # all jobs" after a flake would fail three green shards at their upload
+      # all jobs" after a flake would fail every green shard at their upload
       # step. A re-run is meant to replace the attempt it repeats.
       #
       # TWO ATTEMPTS, because the artifact service sometimes answers 403 at
@@ -671,12 +715,12 @@ jobs:
   #   2. Prove the suite actually executed — see the step's own comment. That
   #      question can only be answered here, because assertion 2 of the script is
   #      "every spec file on disk appears in the report" and no single shard
-  #      contains them all. The script takes the three shard reports and asserts
+  #      contains them all. The script takes every shard's report and asserts
   #      against their union.
   #
   # It needs neither Node nor the browser: a checkout for the script, `jq` (on
-  # every ubuntu-latest image) and the three uploaded reports. That is why it
-  # costs seconds rather than re-paying the setup a fourth time.
+  # every ubuntu-latest image) and the uploaded shard reports. That is why it
+  # costs seconds rather than re-paying the setup once more.
   browser-test:
     needs: browser-shard
     if: ${{ always() }}

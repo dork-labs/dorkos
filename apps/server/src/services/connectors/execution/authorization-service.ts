@@ -7,12 +7,11 @@ import {
   connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connectorProviderInstances,
-  sessionConnectionOverrides,
   and,
   desc,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
   eq,
   isNull,
-  or,
   type Db,
 } from '@dorkos/db';
 import { stableStringify } from '@dorkos/shared/capabilities';
@@ -39,7 +38,7 @@ import {
   type ServerPrincipalProof,
 } from '../principal/server-principal.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
-import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { agentGrantScope } from './agent-grant-scope.js';
 
 const CLASSIFICATION_BY_CAPABILITY = {
   'connectors.execute_read': 'read',
@@ -94,8 +93,13 @@ export interface AuthorizedConnectorExecution {
   readonly executionConfigGeneration: number;
   /** Usage payer derived from server-owned provider configuration. */
   readonly payer: 'operator_byo' | 'dorkos_managed';
-  /** Latest applied hosted agent-grant scope, present only for managed execution. */
+  /** Latest applied hosted grant scope, present only for managed execution. */
   readonly managedGrantScopeVersion?: number;
+  /**
+   * Which hosted grant scope `managedGrantScopeVersion` names: the agent's own,
+   * or the owner-wide every-agent scope (DOR-2439). Managed execution only.
+   */
+  readonly managedGrantSubject?: 'agent' | 'every_agent';
   /** Private hosted revision identity derived from the granted local immutable revision. */
   readonly managedHostedRevisionId?: string;
 }
@@ -315,7 +319,8 @@ export class ConnectorExecutionAuthorizationService {
         'The operation does not belong to this connection.'
       );
     }
-    if (!this.hasGrant(actor.agentId, actor.sessionId, input.target, row.providerMode)) {
+    const granted = this.matchingGrants(actor.agentId, actor.sessionId, input.target);
+    if (!granted.named && !granted.everyAgent) {
       return refuse(
         'CONNECTOR_GRANT_REQUIRED',
         'This agent is not granted the selected operation.'
@@ -347,10 +352,12 @@ export class ConnectorExecutionAuthorizationService {
       );
     }
     const argumentsValue = this.validateArguments(row.inputSchemaJson, input.target.arguments);
-    const managedGrantScopeVersion =
+    const managedGrant =
       row.providerMode === 'managed'
-        ? this.readAppliedManagedGrantScopeVersion(row.externalAccountRef, actor.agentId)
+        ? this.appliedManagedGrant(row.externalAccountRef, actor.agentId, granted)
         : undefined;
+    const managedGrantScopeVersion = managedGrant?.scopeVersion;
+    const managedGrantSubject = managedGrant?.subject;
     if (row.providerMode === 'managed' && managedGrantScopeVersion === undefined) {
       return refuse(
         'CONNECTOR_MANAGED_AUTHORITY_PENDING',
@@ -377,6 +384,7 @@ export class ConnectorExecutionAuthorizationService {
       providerInstanceId: row.providerInstanceId,
       executionConfigGeneration: row.executionConfigGeneration,
       managedGrantScopeVersion,
+      managedGrantSubject,
       hostedRevisionId: managedHostedRevisionId?.success ? managedHostedRevisionId.data : undefined,
       operationRevisionId: row.operationRevisionId,
       arguments: argumentsValue,
@@ -404,6 +412,7 @@ export class ConnectorExecutionAuthorizationService {
       executionConfigGeneration: row.executionConfigGeneration,
       payer: row.providerMode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       ...(managedGrantScopeVersion === undefined ? {} : { managedGrantScopeVersion }),
+      ...(managedGrantSubject === undefined ? {} : { managedGrantSubject }),
       ...(managedHostedRevisionId?.success
         ? { managedHostedRevisionId: managedHostedRevisionId.data }
         : {}),
@@ -412,9 +421,36 @@ export class ConnectorExecutionAuthorizationService {
     return authorized;
   }
 
+  /**
+   * The hosted scope that authorizes this managed call: the agent's own grant
+   * when it has one hosted authority has applied, otherwise "every agent"
+   * (DOR-2439) when that is what grants it and hosted authority has applied it.
+   */
+  private appliedManagedGrant(
+    managedConnectionId: string,
+    agentId: string,
+    granted: { readonly named: boolean; readonly everyAgent: boolean }
+  ): { subject: 'agent' | 'every_agent'; scopeVersion: number } | undefined {
+    const named = granted.named
+      ? this.readAppliedManagedGrantScopeVersion(managedConnectionId, 'agent_grants', agentId)
+      : undefined;
+    if (named !== undefined) return { subject: 'agent', scopeVersion: named };
+    const everyAgent = granted.everyAgent
+      ? this.readAppliedManagedGrantScopeVersion(
+          managedConnectionId,
+          'every_agent_grants',
+          EVERY_AGENT_GRANT_SUBJECT_ID
+        )
+      : undefined;
+    return everyAgent === undefined
+      ? undefined
+      : { subject: 'every_agent', scopeVersion: everyAgent };
+  }
+
   private readAppliedManagedGrantScopeVersion(
     managedConnectionId: string,
-    agentId: string
+    scopeKind: 'agent_grants' | 'every_agent_grants',
+    subjectId: string
   ): number | undefined {
     return this.db
       .select({ scopeVersion: connectorManagedAuthorityOutbox.scopeVersion })
@@ -422,8 +458,8 @@ export class ConnectorExecutionAuthorizationService {
       .where(
         and(
           eq(connectorManagedAuthorityOutbox.managedConnectionId, managedConnectionId),
-          eq(connectorManagedAuthorityOutbox.scopeKind, 'agent_grants'),
-          eq(connectorManagedAuthorityOutbox.subjectId, agentId),
+          eq(connectorManagedAuthorityOutbox.scopeKind, scopeKind),
+          eq(connectorManagedAuthorityOutbox.subjectId, subjectId),
           eq(connectorManagedAuthorityOutbox.state, 'applied')
         )
       )
@@ -539,77 +575,40 @@ export class ConnectorExecutionAuthorizationService {
   }
 
   /**
-   * Resolve the one grant that authorizes this exact revision, in a fixed order:
-   *
-   * 1. A session override for this connection decides alone. `detached`, another
-   *    agent's override, or one awaiting reconciliation denies; `attached` allows
-   *    only the session's own grants. Neither the agent's grants nor an
-   *    every-agent grant can widen a session the owner scoped by hand.
-   * 2. With no override, a named-agent grant or an every-agent grant for the
-   *    exact revision allows (ADR 260926-192625). There is no per-agent
-   *    exclusion from an every-agent grant; "Only agents I pick" is that choice.
-   *
-   * An every-agent grant never counts on a managed connection: hosted authority
-   * keys grants per named agent and cannot see an owner-wide subject, so the
-   * write path refuses one there and this read ignores any that exist.
+   * Which live grants allow this agent this exact revision right now. Which
+   * grants count (a session override deciding alone, then the agent's own and
+   * "Every agent") is `agentGrantScope`, the one definition the agent request
+   * service shares. `named` covers the agent's own and its session's grants,
+   * `everyAgent` the owner-wide grant.
    */
-  private hasGrant(
+  private matchingGrants(
     agentId: string,
     sessionId: string | undefined,
-    target: ConnectorExecutionTarget,
-    providerMode: ExecutionRow['providerMode']
-  ): boolean {
-    const namedAgent = and(
-      eq(connectionOperationGrants.subjectType, 'agent'),
-      eq(connectionOperationGrants.subjectId, agentId)
-    );
-    let subjectScope =
-      providerMode === 'managed' ? namedAgent : or(namedAgent, everyAgentGrantSubject());
-    if (sessionId) {
-      const override = this.db
-        .select({
-          state: sessionConnectionOverrides.state,
-          agentId: sessionConnectionOverrides.agentId,
-          needsReconciliation: sessionConnectionOverrides.needsReconciliation,
-        })
-        .from(sessionConnectionOverrides)
-        .where(
-          and(
-            eq(sessionConnectionOverrides.sessionId, sessionId),
-            eq(sessionConnectionOverrides.connectionId, target.connectionId)
-          )
+    target: ConnectorExecutionTarget
+  ): { named: boolean; everyAgent: boolean } {
+    const scope = agentGrantScope(this.db, {
+      agentId,
+      sessionId,
+      connectionId: target.connectionId,
+    });
+    if (scope.kind === 'denied') return { named: false, everyAgent: false };
+    const subjects = this.db
+      .select({ subjectType: connectionOperationGrants.subjectType })
+      .from(connectionOperationGrants)
+      .where(
+        and(
+          eq(connectionOperationGrants.connectionId, target.connectionId),
+          eq(connectionOperationGrants.operationRevisionId, target.operationRevisionId),
+          isNull(connectionOperationGrants.revokedAt),
+          scope.subject
         )
-        .get();
-      if (
-        override &&
-        (override.agentId !== agentId ||
-          override.needsReconciliation ||
-          override.state === 'detached')
-      ) {
-        return false;
-      }
-      if (override?.state === 'attached') {
-        subjectScope = and(
-          eq(connectionOperationGrants.subjectType, 'session'),
-          eq(connectionOperationGrants.subjectId, sessionId),
-          eq(connectionOperationGrants.agentId, agentId)
-        );
-      }
-    }
-    return Boolean(
-      this.db
-        .select({ id: connectionOperationGrants.id })
-        .from(connectionOperationGrants)
-        .where(
-          and(
-            eq(connectionOperationGrants.connectionId, target.connectionId),
-            eq(connectionOperationGrants.operationRevisionId, target.operationRevisionId),
-            isNull(connectionOperationGrants.revokedAt),
-            subjectScope
-          )
-        )
-        .get()
-    );
+      )
+      .all()
+      .map((row) => row.subjectType);
+    return {
+      named: subjects.some((subject) => subject !== 'every_agent'),
+      everyAgent: subjects.includes('every_agent'),
+    };
   }
 
   private validateArguments(

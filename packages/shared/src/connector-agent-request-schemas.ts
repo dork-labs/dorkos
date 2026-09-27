@@ -16,9 +16,23 @@ export type ConnectorAgentRequestAuthenticationInput = z.infer<
   typeof ConnectorAgentRequestAuthenticationInputSchema
 >;
 
-/** Explicit owner decision for one agent request. */
+/**
+ * Explicit owner decision for one agent request.
+ *
+ * - `denied` answers no and grants nothing.
+ * - `approved` writes exactly the chosen operation revisions (a subset of what
+ *   the agent asked for) as the agent's access to one account, replacing what
+ *   it held there. The Connections page's exact-action review sends it.
+ * - `current_access` writes nothing. It answers the request with the access
+ *   the agent ALREADY holds on one account, which the owner has just given it
+ *   through the shared "who can use it" card (the chat card sends it). That
+ *   card only ever raises one agent's access, so answering this way can never
+ *   lower access or touch another agent. The server refuses it when the agent
+ *   holds nothing live on that account.
+ */
 export const ConnectorAgentRequestDecisionSchema = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('denied') }).strict(),
+  z.object({ decision: z.literal('current_access'), connectionId: ConnectionIdSchema }).strict(),
   z
     .object({
       decision: z.literal('approved'),

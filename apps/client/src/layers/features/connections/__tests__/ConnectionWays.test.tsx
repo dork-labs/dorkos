@@ -5,11 +5,25 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
+import type {
+  ConnectorAppConnections,
+  ConnectorConnectionSummary,
+} from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectionWays } from '../ui/ConnectionWays';
+
+/** The providers read's answer: these statuses, and (unless given) nothing set up for new apps. */
+function providersFrom(
+  providers: ConnectorProviderStatus[],
+  appConnections: ConnectorAppConnections = {
+    ways: [],
+    newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+  }
+) {
+  return vi.fn().mockResolvedValue({ providers, appConnections });
+}
 
 afterEach(cleanup);
 
@@ -76,7 +90,7 @@ describe('ConnectionWays', () => {
   it('with nothing set up, points at the Connections page and still lets you add a key here', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport({
-      getConnectorProviders: vi.fn().mockResolvedValue([provider(), nango]),
+      getConnectorProviders: providersFrom([provider(), nango]),
     });
     vi.mocked(transport.putConnectorCredential).mockResolvedValue(
       provider({ configured: true, registered: true })
@@ -105,12 +119,10 @@ describe('ConnectionWays', () => {
         getCloudStatus: vi
           .fn()
           .mockResolvedValue({ linked: true, accountLabel: 'me', lastHeartbeatAt: null }),
-        getConnectorProviders: vi
-          .fn()
-          .mockResolvedValue([
-            provider({ configured: true, registered: true, keyKind: 'project' }),
-            nango,
-          ]),
+        getConnectorProviders: providersFrom([
+          provider({ configured: true, registered: true, keyKind: 'project' }),
+          nango,
+        ]),
         getConnectorConnections: vi.fn().mockResolvedValue({
           connections: [
             connection({ connectionId: 'm1' as never, mode: 'managed', payer: 'dorkos_managed' }),
@@ -138,10 +150,51 @@ describe('ConnectionWays', () => {
     expect(screen.getByRole('button', { name: 'Add another way' })).toBeInTheDocument();
   });
 
+  it('marks the way new apps use, only when there is more than one way', async () => {
+    const composioReady = { kind: 'own_key' as const, type: 'composio', status: 'ready' as const };
+    renderWays(
+      createMockTransport({
+        getCloudStatus: vi
+          .fn()
+          .mockResolvedValue({ linked: true, accountLabel: 'me', lastHeartbeatAt: null }),
+        getConnectorProviders: providersFrom(
+          [provider({ configured: true, registered: true }), nango],
+          {
+            ways: [
+              { kind: 'dorkos_account', type: 'dorkos-managed', status: 'ready' },
+              composioReady,
+            ],
+            newApps: { status: 'ready', way: composioReady },
+          }
+        ),
+      })
+    );
+
+    const key = await screen.findByTestId('connection-way-composio');
+    await waitFor(() => expect(within(key).getByText('Used for new apps')).toBeInTheDocument());
+    const account = screen.getByTestId('connection-way-dorkos-account');
+    expect(within(account).queryByText('Used for new apps')).toBeNull();
+  });
+
+  it('leaves the marker off when only one way is set up', async () => {
+    const composioReady = { kind: 'own_key' as const, type: 'composio', status: 'ready' as const };
+    renderWays(
+      createMockTransport({
+        getConnectorProviders: providersFrom(
+          [provider({ configured: true, registered: true }), nango],
+          { ways: [composioReady], newApps: { status: 'ready', way: composioReady } }
+        ),
+      })
+    );
+
+    await screen.findByTestId('connection-way-composio');
+    expect(screen.queryByText('Used for new apps')).toBeNull();
+  });
+
   it('shows a refused key with the server’s reason', async () => {
     renderWays(
       createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue([
+        getConnectorProviders: providersFrom([
           provider(),
           {
             ...nango,
@@ -160,9 +213,10 @@ describe('ConnectionWays', () => {
   it('Remove… names every app that stops and the button carries the count', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport({
-      getConnectorProviders: vi
-        .fn()
-        .mockResolvedValue([provider({ configured: true, registered: true }), nango]),
+      getConnectorProviders: providersFrom([
+        provider({ configured: true, registered: true }),
+        nango,
+      ]),
       getConnectorConnections: vi.fn().mockResolvedValue({
         connections: [
           connection({ connectionId: 'b1' as never, toolkit: 'notion', label: 'team' }),
@@ -197,9 +251,10 @@ describe('ConnectionWays', () => {
   it('Change key asks first, names the apps it pauses, then saves over the old key', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport({
-      getConnectorProviders: vi
-        .fn()
-        .mockResolvedValue([provider({ configured: true, registered: true }), nango]),
+      getConnectorProviders: providersFrom([
+        provider({ configured: true, registered: true }),
+        nango,
+      ]),
       getConnectorConnections: vi.fn().mockResolvedValue({
         connections: [
           connection({}),
@@ -241,9 +296,10 @@ describe('ConnectionWays', () => {
   it('Change key backs out cleanly: keeping the key saves nothing', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport({
-      getConnectorProviders: vi
-        .fn()
-        .mockResolvedValue([provider({ configured: true, registered: true }), nango]),
+      getConnectorProviders: providersFrom([
+        provider({ configured: true, registered: true }),
+        nango,
+      ]),
       getConnectorConnections: vi.fn().mockResolvedValue({ connections: [connection({})] }),
     });
     renderWays(transport);
@@ -258,9 +314,10 @@ describe('ConnectionWays', () => {
     const user = userEvent.setup();
     renderWays(
       createMockTransport({
-        getConnectorProviders: vi
-          .fn()
-          .mockResolvedValue([provider({ configured: true, registered: true }), nango]),
+        getConnectorProviders: providersFrom([
+          provider({ configured: true, registered: true }),
+          nango,
+        ]),
       })
     );
     const row = await screen.findByTestId('connection-way-composio');
@@ -273,12 +330,10 @@ describe('ConnectionWays', () => {
     const user = userEvent.setup();
     renderWays(
       createMockTransport({
-        getConnectorProviders: vi
-          .fn()
-          .mockResolvedValue([
-            provider({ configured: true, registered: false, error: 'Invalid API key' }),
-            nango,
-          ]),
+        getConnectorProviders: providersFrom([
+          provider({ configured: true, registered: false, error: 'Invalid API key' }),
+          nango,
+        ]),
         getConnectorConnections: vi.fn().mockResolvedValue({ connections: [connection({})] }),
       })
     );
@@ -293,7 +348,7 @@ describe('ConnectionWays', () => {
   it('groups apps by the exact key instance, not by kind', async () => {
     renderWays(
       createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue([
+        getConnectorProviders: providersFrom([
           provider({ configured: true, registered: true }),
           // A second key of the same kind and custody (test mode's scripted one).
           provider({
@@ -326,7 +381,7 @@ describe('ConnectionWays', () => {
   it('keeps apps whose key was removed visible, and says how to bring them back', async () => {
     renderWays(
       createMockTransport({
-        getConnectorProviders: vi.fn().mockResolvedValue([provider(), nango]),
+        getConnectorProviders: providersFrom([provider(), nango]),
         getConnectorConnections: vi.fn().mockResolvedValue({ connections: [connection({})] }),
       })
     );
@@ -340,9 +395,10 @@ describe('ConnectionWays', () => {
     const user = userEvent.setup();
     const handlers = renderWays(
       createMockTransport({
-        getConnectorProviders: vi
-          .fn()
-          .mockResolvedValue([provider({ configured: true, registered: true }), nango]),
+        getConnectorProviders: providersFrom([
+          provider({ configured: true, registered: true }),
+          nango,
+        ]),
       })
     );
     await user.click(await screen.findByRole('button', { name: 'Add another way' }));
@@ -359,7 +415,7 @@ describe('ConnectionWays', () => {
     renderWays(
       createMockTransport({
         getCloudStatus: cloudRead,
-        getConnectorProviders: vi.fn().mockResolvedValue([provider(), nango]),
+        getConnectorProviders: providersFrom([provider(), nango]),
       })
     );
 

@@ -118,7 +118,7 @@ describe('connector management routes', () => {
     await request(app)
       .get('/api/connectors/agent-requests?state=pending')
       .expect(200, { requests: [] });
-    expect(agentRequests.listForOwner).toHaveBeenCalledWith(OWNER, 'pending');
+    expect(agentRequests.listForOwner).toHaveBeenCalledWith(OWNER, 'pending', undefined);
 
     await request(app)
       .post('/api/connectors/agent-requests/request%2Fa/decision')
@@ -136,6 +136,39 @@ describe('connector management routes', () => {
       .set('Authorization', 'Bearer machine')
       .expect(403);
     expect(agentRequests.listForOwner).toHaveBeenCalledTimes(1);
+  });
+
+  it("narrows agent requests to one conversation's session for its chat cards", async () => {
+    const app = fixtureTarget.mount(buildApp());
+    await request(app)
+      .get('/api/connectors/agent-requests?sessionId=session-a')
+      .expect(200, { requests: [] });
+    expect(agentRequests.listForOwner).toHaveBeenCalledWith(OWNER, undefined, 'session-a');
+
+    await request(app).get('/api/connectors/agent-requests?sessionId=').expect(400);
+  });
+
+  it('forwards a decision that answers with the access the agent already holds', async () => {
+    const app = fixtureTarget.mount(buildApp());
+    await request(app)
+      .post('/api/connectors/agent-requests/request-a/decision')
+      .send({ decision: 'current_access', connectionId: 'connection-a' })
+      .expect(200);
+    expect(agentRequests.resolve).toHaveBeenCalledWith(
+      OWNER,
+      'request-a',
+      { decision: 'current_access', connectionId: 'connection-a' },
+      expect.any(AbortSignal)
+    );
+
+    await request(app)
+      .post('/api/connectors/agent-requests/request-a/decision')
+      .send({
+        decision: 'current_access',
+        connectionId: 'connection-a',
+        operationRevisionIds: ['x'],
+      })
+      .expect(400);
   });
 
   it('keeps request authentication behind the owner and exact request boundary', async () => {
