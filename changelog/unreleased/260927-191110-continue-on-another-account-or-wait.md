@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(sessions): continue on another account or wait when a session runs out of usage (DOR-2382)'
+  - 'fix(sessions): never let a stale plan or state overwrite a newer decision (DOR-2382)'
 ---
 
 ### Added
