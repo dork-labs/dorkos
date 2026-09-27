@@ -119,6 +119,8 @@ describe('packaging', () => {
     // Publish: tsc never removes an output whose source is gone and `files`
     // ships all of dist/, so a stale file would ride along (it did, in 0.87.0).
     expect(manifest.scripts?.prepublishOnly).toBe('pnpm run clean && pnpm run build');
+    // …and `clean` really empties dist/, or the publish step above cleans nothing.
+    expect(manifest.scripts?.clean).toMatch(/rmSync\('dist',\{recursive:true,force:true\}\)/);
     // Build: several turbo processes build this package at once (every e2e leg
     // runs its own `turbo run build`) while a Vite dev server is already
     // resolving imports from dist/. A build that deletes dist/ first leaves the
