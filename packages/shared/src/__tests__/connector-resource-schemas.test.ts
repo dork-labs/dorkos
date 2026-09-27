@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ConnectorAuthoritySyncStateSchema,
   ConnectorAuthenticationFlowStateSchema,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
@@ -183,5 +184,26 @@ describe('connector resource schemas', () => {
         ],
       })
     ).toMatchObject({ sessionId: 'session-1' });
+  });
+
+  it('carries a pending reason only together with its retry time', () => {
+    const retryAt = '2026-09-27T12:48:00.000Z';
+    expect(ConnectorAuthoritySyncStateSchema.safeParse({ status: 'pending' }).success).toBe(true);
+    expect(
+      ConnectorAuthoritySyncStateSchema.safeParse({
+        status: 'pending',
+        reason: 'DorkOS’s servers had a problem.',
+        retryAt,
+      }).success
+    ).toBe(true);
+    expect(
+      ConnectorAuthoritySyncStateSchema.safeParse({
+        status: 'pending',
+        reason: 'DorkOS’s servers had a problem.',
+      }).success
+    ).toBe(false);
+    expect(
+      ConnectorAuthoritySyncStateSchema.safeParse({ status: 'pending', retryAt }).success
+    ).toBe(false);
   });
 });

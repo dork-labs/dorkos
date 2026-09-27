@@ -60,13 +60,23 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const FAILURE_LOG_INTERVAL_MS = 15 * 60_000;
 
 /** Plain reason stored while the hosted side has not finished signing an account out. */
-const CLEANUP_PENDING_REASON = 'DorkOS’s servers haven’t finished signing this account out.';
+const CLEANUP_PENDING_REASON = 'DorkOS’s servers haven’t finished disconnecting this account.';
+/** Plain reason stored while the hosted side holds any other change as still pending. */
+const HOSTED_PENDING_REASON = 'DorkOS’s servers haven’t finished this change yet.';
+/**
+ * The generic text an earlier version stored for every retryable failure. It
+ * says nothing a person can use, so a reader treats a row carrying it as having
+ * no reason at all.
+ */
+export const LEGACY_PENDING_REASON = 'Managed connection synchronization is pending.';
 
 /** Why one delivery attempt did not settle, in terms a log line and a reason can use. */
 interface DeliveryFailure {
   readonly code: ManagedConnectorCloudErrorCode | 'timeout' | 'interrupted' | 'local_error';
   /** HTTP status of the hosted response, when there was one. */
   readonly status?: number;
+  /** The thrown error's class name, for a failure that happened on this computer. */
+  readonly errorName?: string;
 }
 
 type ManagedAuthorityRejectionCode = Extract<
@@ -823,6 +833,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .map((row) => row.commandId);
     if (commandIds.length === 0) return 0;
     const compactedAt = this.now().toISOString();
+    for (const commandId of commandIds) this.failureLog.delete(commandId);
     return this.options.db
       .update(connectorManagedAuthorityOutbox)
       .set({ requestJson: '{}', compactedAt, updatedAt: compactedAt })
@@ -1036,8 +1047,10 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       );
     }
     const command = ManagedConnectorAuthorityCommandSchema.parse(JSON.parse(row.requestJson));
-    // A hung hosted request must not hold this command (or the whole recovery
-    // pass) forever; the deadline covers the read and any repeat together.
+    // A hung hosted request must not hold this command forever; the deadline
+    // covers the read and any repeat together. A recovery pass delivers its
+    // batch one command at a time, so a pass of 50 hung commands still takes up
+    // to 50 × 30s before the next pass can start, but it always ends.
     const deadline = this.timeoutSignal(REQUEST_TIMEOUT_MS);
     const requestSignal = AbortSignal.any([signal, deadline]);
     try {
@@ -1066,20 +1079,24 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   /**
    * Whether the hosted side only moves this command forward when the same
    * command is sent again; reading its status never does. That holds for a
-   * pending event subscription, and for a disconnect whose credential cleanup
-   * is still pending (the POST that owned the cleanup died, or a concurrent
-   * claim won): there is no hosted sweeper to finish it. Repeating the exact command is safe: the
-   * hosted handler matches it by id and request hash and, for a disconnect,
-   * retries cleanup under its own lease (`applyManagedAuthorityCommand` and
-   * `finishDisconnectCleanup` in `apps/site/src/lib/connectors/managed/authority-service.ts`).
+   * pending event subscription, for a resume the hosted side still holds as
+   * pending, and for a disconnect whose credential cleanup is still pending
+   * (the POST that owned the cleanup died, or a concurrent claim won): there is
+   * no hosted sweeper to finish either lifecycle change. Repeating the exact
+   * command is safe: the hosted handler matches it by id and request hash, then
+   * retries a disconnect's cleanup under its own lease, or re-checks a resume's
+   * account and settles it only while it is still pending
+   * (`applyManagedAuthorityCommand` and `finishDisconnectCleanup` in
+   * `apps/site/src/lib/connectors/managed/authority-service.ts`).
    */
   private progressesOnlyWhenRepeated(
     command: ManagedConnectorAuthorityCommand,
     status: ManagedConnectorAuthorityCommandStatus
   ): boolean {
     if (command.kind === 'set_event_subscription') return status.state === 'pending';
+    if (command.kind !== 'set_connection_lifecycle') return false;
+    if (command.lifecycle === 'active') return status.state === 'pending';
     return (
-      command.kind === 'set_connection_lifecycle' &&
       command.lifecycle === 'disconnected' &&
       status.state === 'applied' &&
       status.externalCleanup === 'pending'
@@ -1094,7 +1111,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     if (signal.aborted) return { code: 'interrupted' };
     if (deadline.aborted) return { code: 'timeout' };
     if (isManagedCloudError(error)) return { code: error.code, status: error.status };
-    return { code: 'local_error' };
+    return { code: 'local_error', errorName: error instanceof Error ? error.name : typeof error };
   }
 
   private recordStatus(
@@ -1132,8 +1149,10 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       const safeReason =
         state === 'rejected'
           ? this.rejectionReason(status.state === 'rejected' ? status.rejectionCode : undefined)
-          : cleanupPending && current
-            ? CLEANUP_PENDING_REASON
+          : state === 'pending'
+            ? cleanupPending
+              ? CLEANUP_PENDING_REASON
+              : HOSTED_PENDING_REASON
             : null;
       const nextAttemptAt = state === 'pending' ? this.nextAttempt(row, now) : null;
       const updated = tx
@@ -1221,9 +1240,10 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         externalCleanup: 'not_required',
       };
     }
-    if (state === 'pending' && safeReason) {
-      this.logUnsettled(row, { code: 'cleanup_pending' }, nextAttemptAt, 'info');
-    } else if (state !== 'pending') {
+    if (state === 'pending') {
+      const code = safeReason === CLEANUP_PENDING_REASON ? 'cleanup_pending' : 'hosted_pending';
+      this.logUnsettled(row, { code }, nextAttemptAt, 'info');
+    } else {
       this.failureLog.delete(row.commandId);
     }
     return {
@@ -1302,7 +1322,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
    */
   private logUnsettled(
     row: typeof connectorManagedAuthorityOutbox.$inferSelect,
-    failure: { readonly code: string; readonly status?: number },
+    failure: { readonly code: string; readonly status?: number; readonly errorName?: string },
     nextAttemptAt: string | null,
     level: 'warn' | 'info'
   ): void {
@@ -1315,6 +1335,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     const context = {
       code: failure.code,
       ...(failure.status === undefined ? {} : { status: failure.status }),
+      ...(failure.errorName === undefined ? {} : { errorName: failure.errorName }),
       commandId: row.commandId,
       scopeKind: row.scopeKind,
       attempt: row.attemptCount + 1,
@@ -1328,7 +1349,10 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         context
       );
     } else {
-      logger.info('[Connectors] Managed account sign-out still finishing; retrying', context);
+      logger.info(
+        '[Connectors] Managed authority command still pending on the hosted side; retrying',
+        context
+      );
     }
   }
 

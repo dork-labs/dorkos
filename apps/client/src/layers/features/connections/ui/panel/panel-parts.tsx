@@ -78,7 +78,12 @@ export function PanelFix({
         </span>
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={onAction} disabled={pending}>
+        <Button
+          size="sm"
+          onClick={onAction}
+          disabled={pending}
+          className="h-auto min-h-8 max-w-full whitespace-normal"
+        >
           {pending && <Spinner size="xs" />}
           {action}
         </Button>

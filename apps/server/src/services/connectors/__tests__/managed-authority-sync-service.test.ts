@@ -3,7 +3,7 @@ import { stableStringify } from '@dorkos/shared/capabilities';
 import { ConnectorSubscriptionStore } from '../events/subscription-store.js';
 import { ConnectorSubscriptionService } from '../events/subscription-service.js';
 import { ConnectorEventGrantService } from '../events/grant-service.js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionOperationGrants,
   connections,
@@ -638,6 +638,10 @@ describe('ManagedAuthoritySyncService', () => {
     });
   });
   describe('a disconnect whose hosted sign-out stalls', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     function disconnect(sync = service()) {
       return sync.transition({
         connectionId: CONNECTION_ID,
@@ -678,7 +682,7 @@ describe('ManagedAuthoritySyncService', () => {
         const first = outbox();
         expect(first).toMatchObject({
           state: 'pending',
-          safeReason: 'DorkOS’s servers haven’t finished signing this account out.',
+          safeReason: 'DorkOS’s servers haven’t finished disconnecting this account.',
         });
 
         // The hosted row reads applied with cleanup pending: reading alone never
@@ -693,7 +697,7 @@ describe('ManagedAuthoritySyncService', () => {
             externalCleanup: 'pending',
             authoritySync: {
               status: 'pending',
-              reason: 'DorkOS’s servers haven’t finished signing this account out.',
+              reason: 'DorkOS’s servers haven’t finished disconnecting this account.',
               retryAt: expect.any(String),
             },
           });
@@ -717,6 +721,56 @@ describe('ManagedAuthoritySyncService', () => {
         expect(db.select().from(connectorManagedAuthorityOutbox).all()).toHaveLength(1);
       }
     );
+
+    it('sends a resume the hosted side still holds as pending again until it applies', async () => {
+      {
+        db.update(connections).set({ enabled: false }).run();
+        const states: Array<'pending' | 'applied'> = ['pending', 'pending', 'applied'];
+        cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+          submitted.push(command);
+          return statusFor(command, states.shift()!);
+        });
+        cloud.readConnectorAuthorityCommand = vi.fn(async () =>
+          statusFor(submitted[0]!, 'pending')
+        );
+        const sync = service();
+        const resume = () =>
+          sync.transition({
+            connectionId: CONNECTION_ID,
+            managedConnectionId: MANAGED_CONNECTION_ID,
+            lifecycle: 'active',
+            providerInstanceId: PROVIDER_ID,
+            executionConfigGeneration: 1,
+            owner: OWNER,
+            signal: new AbortController().signal,
+          });
+
+        await expect(resume()).resolves.toMatchObject({
+          applied: false,
+          authoritySync: {
+            status: 'pending',
+            reason: 'DorkOS’s servers haven’t finished this change yet.',
+          },
+        });
+        const first = outbox();
+        expect(first.safeReason).toBe('DorkOS’s servers haven’t finished this change yet.');
+
+        // Reading alone never settles a pending resume, so the exact command
+        // goes out again (an owner's own retry is a new command, not this path).
+        clock = Date.parse(first.nextAttemptAt!) + 1;
+        await sync.recoverPending(new AbortController().signal);
+        expect(submitted).toHaveLength(2);
+        expect(submitted[1]).toEqual(submitted[0]);
+        expect(outbox().state).toBe('pending');
+
+        clock = Date.parse(outbox().nextAttemptAt!) + 1;
+        await sync.recoverPending(new AbortController().signal);
+        expect(submitted).toHaveLength(3);
+        expect(submitted[2]).toEqual(submitted[0]);
+        expect(outbox()).toMatchObject({ state: 'applied', safeReason: null });
+        expect(db.select().from(connections).get()?.enabled).toBe(true);
+      }
+    });
 
     it('does not send again once the hosted read says cleanup settled', async () => {
       cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
@@ -761,7 +815,13 @@ describe('ManagedAuthoritySyncService', () => {
 
     it('stores a plain reason and retry time, and logs a stalled command without flooding', async () => {
       const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-      const serverError = () => Object.assign(cloudError('request_failed'), { status: 500 });
+      // The hosted text rides in the message and the cause; none of it may
+      // reach the stored row, the returned state or the log line.
+      const serverError = () =>
+        Object.assign(cloudError('request_failed', 'private hosted detail'), {
+          status: 500,
+          cause: new Error('private hosted cause'),
+        });
       cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
         throw serverError();
       });
@@ -782,7 +842,9 @@ describe('ManagedAuthoritySyncService', () => {
         reason: 'DorkOS’s servers had a problem.',
         retryAt: stored.nextAttemptAt,
       });
-      expect(JSON.stringify(stored)).not.toContain('private hosted detail');
+      for (const seen of [stored, result, warn.mock.calls]) {
+        expect(JSON.stringify(seen)).not.toMatch(/private hosted (detail|cause)/);
+      }
       expect(warn).toHaveBeenCalledTimes(1);
       expect(warn.mock.calls[0]![1]).toMatchObject({
         code: 'request_failed',
@@ -811,6 +873,21 @@ describe('ManagedAuthoritySyncService', () => {
       clock += 15 * 60_000;
       await sync.recoverPending(new AbortController().signal);
       expect(warn).toHaveBeenCalledTimes(3);
+    });
+
+    it('logs the class of a failure on this computer, never its message', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw new TypeError('private local detail');
+      });
+      await expect(disconnect()).resolves.toMatchObject({
+        authoritySync: {
+          status: 'pending',
+          reason: 'Something went wrong on this computer during the last try.',
+        },
+      });
+      expect(warn.mock.calls[0]![1]).toMatchObject({ code: 'local_error', errorName: 'TypeError' });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('private local detail');
     });
 
     it('gives up on a hung hosted request so recovery keeps running', async () => {

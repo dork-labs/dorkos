@@ -836,6 +836,14 @@ describe('ConnectorOperatorQueryService', () => {
         authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
       },
     });
+    // The generic text an earlier version stored says nothing; it is no reason.
+    db.update(connectorManagedAuthorityOutbox)
+      .set({ safeReason: 'Managed connection synchronization is pending.' })
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
+      .run();
+    expect((await service.getConnection(OWNER, 'connection-a')).connection.authoritySync).toEqual({
+      status: 'pending',
+    });
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
       connections: [{ access: 'disabled', dominatingReason: 'authority_sync_required' }],
     });

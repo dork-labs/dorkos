@@ -105,6 +105,9 @@ function listData(yours: YourAppRow[], owned: string[]): AppListData {
   };
 }
 
+/** When the stalled-disconnect demo says it tries again: a few minutes after the page loads. */
+const STALLED_RETRY_AT = new Date(Date.now() + 4 * 60_000).toISOString();
+
 /** A playground server for the panels: the fixtures, answered as the real one would. */
 function panelTransport(connection: ConnectorConnectionSummary): Transport {
   const base = createPlaygroundTransport();
@@ -314,8 +317,21 @@ export function ConnectionsShowcases() {
               authoritySync: {
                 status: 'pending',
                 reason: 'DorkOS’s servers had a problem.',
-                retryAt: new Date(Date.now() + 4 * 60_000).toISOString(),
+                retryAt: STALLED_RETRY_AT,
               },
+            })}
+          >
+            <AccountPanelDemo />
+          </PanelFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Disconnect refused</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PanelFrame
+            connection={mockConnection({
+              lifecycle: 'disconnected',
+              externalCleanup: 'pending',
+              authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
             })}
           >
             <AccountPanelDemo />

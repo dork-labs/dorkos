@@ -260,6 +260,51 @@ describe('AccountPanel', () => {
     await waitFor(() => expect(transport.disconnectConnectorConnection).toHaveBeenCalledTimes(2));
   });
 
+  it('shows a refused sign-out as refused, with its reason, and never says it keeps trying', async () => {
+    renderPanel(
+      transportFor(
+        summary({
+          lifecycle: 'disconnected',
+          externalCleanup: 'pending',
+          authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+        })
+      )
+    );
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('Disconnecting didn’t finish. Agents already can’t use Gmail.');
+    expect(fix).toHaveTextContent('This instance is no longer linked.');
+    expect(fix).not.toHaveTextContent(/keeps trying|Still finishing|Trying again/);
+    expect(within(fix).getByRole('button', { name: 'Try disconnecting again' })).toBeEnabled();
+  });
+
+  it('believes a refusal from "Finish disconnecting" even when nothing was stored', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({ lifecycle: 'disconnected', externalCleanup: 'pending' })
+    );
+    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({
+      connectionId: 'c-1' as never,
+      lifecycle: 'disconnected',
+      authenticationStatus: 'active',
+      authoritySync: {
+        status: 'failed',
+        reason: 'Link this installation before finishing account disconnection.',
+      },
+      externalCleanup: 'pending',
+    });
+    renderPanel(transport);
+
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Finish disconnecting' }));
+    await waitFor(() =>
+      expect(fix).toHaveTextContent(
+        'Link this installation before finishing account disconnection.'
+      )
+    );
+    expect(fix).not.toHaveTextContent(/keeps trying|Still finishing/);
+    expect(within(fix).getByRole('button', { name: 'Try disconnecting again' })).toBeEnabled();
+  });
+
   it('asks before disconnecting, naming who loses access, then closes', async () => {
     const user = userEvent.setup();
     const transport = transportFor(summary());

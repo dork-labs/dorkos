@@ -59,6 +59,7 @@ import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
 import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';
+import { LEGACY_PENDING_REASON } from './managed-authority-sync-service.js';
 
 const CatalogCursorSchema = z
   .object({ offset: z.number().int().nonnegative(), queryHash: z.string().length(64) })
@@ -1093,7 +1094,9 @@ export class ConnectorOperatorQueryService {
       // Say why it is waiting: the account's own lifecycle first (a stalled
       // disconnect), then whichever explained command tries again soonest.
       const explained = pending
-        .filter((row) => row.safeReason && row.nextAttemptAt)
+        .filter(
+          (row) => row.safeReason && row.safeReason !== LEGACY_PENDING_REASON && row.nextAttemptAt
+        )
         .sort(
           (a, b) =>
             Number(b.scopeKind === 'connection_lifecycle') -

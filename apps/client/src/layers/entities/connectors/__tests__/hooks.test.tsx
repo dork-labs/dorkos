@@ -149,11 +149,29 @@ describe('useConnectorConnection', () => {
     vi.useRealTimers();
   });
 
-  function detailWith(externalCleanup: 'pending' | 'complete') {
+  function detailWith(
+    externalCleanup: 'pending' | 'complete',
+    authoritySync: { status: 'pending' } | { status: 'failed'; reason: string } = {
+      status: 'pending',
+    }
+  ) {
     return {
-      connection: { lifecycle: 'disconnected', externalCleanup },
+      connection: { lifecycle: 'disconnected', externalCleanup, authoritySync },
     } as unknown as Awaited<ReturnType<Transport['getConnectorConnection']>>;
   }
+
+  it('does not re-read a sign-out that was refused: nothing is retrying', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue(
+      detailWith('pending', { status: 'failed', reason: 'This instance is no longer linked.' })
+    );
+    const { wrapper } = createWrapper(transport);
+    const { result } = renderHook(() => useConnectorConnection('c-1'), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
+  });
 
   it('re-reads a disconnected account while its sign-out is pending, and stops once it settles', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

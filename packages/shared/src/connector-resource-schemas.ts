@@ -212,7 +212,10 @@ export const ConnectorAuthoritySyncStateSchema = z.discriminatedUnion('status', 
       /** When DorkOS tries again; present exactly when `reason` is. */
       retryAt: z.string().datetime().optional(),
     })
-    .strict(),
+    .strict()
+    .refine((state) => (state.reason === undefined) === (state.retryAt === undefined), {
+      message: 'A pending reason and its retry time come together or not at all.',
+    }),
   z.object({ status: z.literal('failed'), reason: z.string().min(1).max(1_000) }).strict(),
 ]);
 /** Durable local-to-managed synchronization state shown to an owner. */

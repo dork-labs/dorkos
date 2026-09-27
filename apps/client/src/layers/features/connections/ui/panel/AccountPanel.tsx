@@ -1,6 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
-import type { ConnectorConnectionDetail } from '@dorkos/shared/connector-resource-schemas';
+import type {
+  ConnectorConnectionDetail,
+  ConnectorLifecycleResult,
+} from '@dorkos/shared/connector-resource-schemas';
 import {
   useConnectorCatalog,
   useConnectorConnection,
@@ -132,7 +135,7 @@ function AccountPanelBody({
           removing={remove.isPending}
           onFinishDisconnecting={() => disconnect.mutate({ connectionId, input: undefined })}
           finishing={disconnect.isPending}
-          triedToFinish={disconnect.isSuccess}
+          lastTry={disconnect.data}
         />
       ) : connection.lifecycle === 'paused' ? (
         <PanelFix
@@ -209,7 +212,7 @@ function DisconnectedFix({
   removing,
   onFinishDisconnecting,
   finishing,
-  triedToFinish,
+  lastTry,
 }: {
   detail: ConnectorConnectionDetail;
   appName: string;
@@ -219,41 +222,54 @@ function DisconnectedFix({
   removing: boolean;
   onFinishDisconnecting: () => void;
   finishing: boolean;
-  /** "Finish disconnecting" ran in this panel and came back. */
-  triedToFinish: boolean;
+  /** What the last "Finish disconnecting" in this panel came back with, if it ran. */
+  lastTry: ConnectorLifecycleResult | undefined;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const cleanup = detail.connection.externalCleanup;
   const cleanedUp = cleanup === 'complete' || cleanup === 'not_required';
-  if (cleanup === 'failed') {
-    return (
-      <PanelFix
-        message={`Disconnecting didn’t finish. Agents already can’t use ${appName}.`}
-        action="Try disconnecting again"
-        pending={finishing}
-        onAction={onFinishDisconnecting}
-      />
-    );
-  }
   if (!cleanedUp) {
-    // Still pending: DorkOS keeps trying on its own. Say why it is waiting and
-    // when it tries next; the button asks for a try right now.
-    const sync = detail.connection.authoritySync;
+    // A refusal from the last try outranks the stored state: it is fresher,
+    // and some refusals (an unlinked instance) leave nothing stored at all.
+    const sync =
+      lastTry?.authoritySync.status === 'failed'
+        ? lastTry.authoritySync
+        : detail.connection.authoritySync;
+    if (cleanup === 'failed' || sync.status === 'failed') {
+      // Nothing is retrying on its own here, so never say it is.
+      return (
+        <PanelFix
+          message={`Disconnecting didn’t finish. Agents already can’t use ${appName}.`}
+          detail={sync.status === 'failed' ? sync.reason : undefined}
+          action="Try disconnecting again"
+          pending={finishing}
+          onAction={onFinishDisconnecting}
+        />
+      );
+    }
+    // Pending: DorkOS keeps trying on its own. Say why it is waiting and when
+    // it tries next; the button asks for a try right now. The stored state can
+    // lag the last try (another pass held the request), so either counts.
+    const waiting = [detail.connection.authoritySync, lastTry?.authoritySync].filter(
+      (state) => state?.status === 'pending'
+    );
+    const explained = waiting.find((state) => state?.status === 'pending' && state.reason);
+    const stillFinishing = waiting.length > 0 && lastTry !== undefined;
     const why =
-      sync.status === 'pending' && sync.reason && sync.retryAt
-        ? `${sync.reason} ${retryLine(sync.retryAt)}`
-        : triedToFinish
+      explained?.status === 'pending' && explained.reason && explained.retryAt
+        ? `${explained.reason} ${retryLine(explained.retryAt)}`
+        : stillFinishing
           ? 'DorkOS keeps trying on its own.'
           : undefined;
     return (
       <PanelFix
         message={
-          triedToFinish
+          stillFinishing
             ? `Still finishing disconnecting ${appName}. Agents already can’t use it.`
             : `Disconnecting didn’t finish. Agents already can’t use ${appName}.`
         }
         detail={why}
-        action={triedToFinish ? 'Try again now' : 'Finish disconnecting'}
+        action={stillFinishing ? 'Try again now' : 'Finish disconnecting'}
         pending={finishing}
         onAction={onFinishDisconnecting}
       />
