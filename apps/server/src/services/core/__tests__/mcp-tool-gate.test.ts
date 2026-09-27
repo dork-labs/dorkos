@@ -334,9 +334,12 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // leave, the external count does not move (none of them was ever there),
       // and what is left is the hand-registered surface that really is still
       // hand-registered.
-      expect(registeredByServer['in-session']).toHaveLength(42);
-      expect(registeredByServer.external).toHaveLength(40);
-      expect(declaredNames).toHaveLength(42);
+      //
+      // 42 -> 43 (and 40 -> 41 external) for `accounts_usage` (spec
+      // `claude-account-fleet` D2), registered on both servers.
+      expect(registeredByServer['in-session']).toHaveLength(43);
+      expect(registeredByServer.external).toHaveLength(41);
+      expect(declaredNames).toHaveLength(43);
     });
 
     it('names exactly two tools destructive', () => {

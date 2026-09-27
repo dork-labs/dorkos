@@ -49,6 +49,8 @@
     "seats/members.json": "MemberListResponseSchema",
     "seats/invitation.json": "InvitationSchema",
     "seats/agent.json": "AgentSchema",
+    "seats/agent-pending-claim.json": "AgentSchema",
+    "seats/agent-approved-claim.json": "AgentSchema",
     "seats/agent-claim-request.json": "AgentClaimRequestSchema",
     "seats/seat.json": "SeatSchema",
     "seats/grants.json": "GrantListResponseSchema",

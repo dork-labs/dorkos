@@ -11,10 +11,15 @@ import {
 } from '@/layers/shared/ui';
 import {
   cardDecision,
+  everyAgentDecision,
   heldAccess,
   initialCardLevel,
+  initialEveryAgentLevel,
+  initialWhoCanUse,
   type CardAccessLevel,
   type CardDecision,
+  type EveryAgentDecision,
+  type WhoCanUse,
 } from '../../lib/access-card-selection';
 import {
   revisionIdsForAccessLevel,
@@ -25,7 +30,11 @@ import { AccessCardFrame } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
 import { AgentChecklist } from './AgentChecklist';
-import { joinNames, LEVEL_LABELS } from './access-labels';
+import { LEVEL_LABELS } from './access-labels';
+import { EveryAgentWarning } from './EveryAgentWarning';
+import { savedSummary } from './saved-summary';
+import { StopSharingFallback } from './StopSharingFallback';
+import { WhoCanUseChoice } from './WhoCanUseChoice';
 
 interface SharedCardProps {
   /** The app's display name, e.g. "Gmail". */
@@ -101,37 +110,6 @@ export function ConnectionAccessCard(props: ConnectionAccessCardProps) {
   );
 }
 
-/** Who the saved change reaches, including anyone who lost access, for the confirmed-save line. */
-function savedSummary(
-  props: ConnectionAccessCardProps,
-  preview: ConnectorReconciliationPreview,
-  picked: ReadonlySet<string>,
-  level: CardAccessLevel | null,
-  decision: CardDecision
-): string {
-  const nameOf = (agentId: string) =>
-    preview.agents.find((agent) => agent.agentId === agentId)?.displayName ?? 'The agent';
-  if (props.mode === 'agent') {
-    const name = nameOf(props.agentId);
-    return level === 'read-write'
-      ? `${name} can read and write in ${props.serviceName}.`
-      : `${name} can read ${props.serviceName}.`;
-  }
-  const kept = preview.agents
-    .filter((agent) => picked.has(agent.agentId))
-    .map((agent) => agent.displayName);
-  const removed = decision.removedAgentIds.map(nameOf);
-  const lines = [
-    kept.length > 0
-      ? `${joinNames(kept)} can use ${props.serviceName}.`
-      : `No agent can use ${props.serviceName}.`,
-  ];
-  const downgraded = decision.downgradedAgentIds.map(nameOf);
-  if (downgraded.length > 0) lines.push(`${joinNames(downgraded)} can now only read.`);
-  if (removed.length > 0) lines.push(`${joinNames(removed)} can no longer use it.`);
-  return lines.join(' ');
-}
-
 /** The access question for one known account. */
 function AccessStep(
   props: ConnectionAccessCardProps & { connectionId: string; onChangeAccount?: () => void }
@@ -139,6 +117,7 @@ function AccessStep(
   const titleId = useId();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [level, setLevel] = useState<CardAccessLevel | null>('read');
+  const [who, setWho] = useState<WhoCanUse>('picked');
   const [levelTouched, setLevelTouched] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const { data: meshAgents } = useRegisteredAgents(undefined, props.mode === 'page');
@@ -160,10 +139,15 @@ function AccessStep(
               .map((agent) => agent.agentId)
               .filter((agentId) => (current[agentId] ?? []).length > 0);
       setPicked(new Set(props.mode === 'agent' ? [props.agentId] : subjects));
+      // The chat's one-agent card never offers "every agent" (DOR-2420).
+      const startWho = props.mode === 'page' ? initialWhoCanUse(preview) : 'picked';
+      setWho(startWho);
       setLevel(
-        initialCardLevel(
-          subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
-        )
+        startWho === 'every'
+          ? initialEveryAgentLevel(preview)
+          : initialCardLevel(
+              subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
+            )
       );
       setLevelTouched(false);
     },
@@ -176,7 +160,12 @@ function AccessStep(
       preview
         ? cardDecision(preview, {
             // One-agent mode decides for that agent only; nobody else is ever written.
-            scope: fixedAgentId ? [fixedAgentId] : preview.agents.map((agent) => agent.agentId),
+            // "Every agent" hides the checklist, so it writes no named agent either.
+            scope: fixedAgentId
+              ? [fixedAgentId]
+              : who === 'every'
+                ? []
+                : preview.agents.map((agent) => agent.agentId),
             picked,
             level,
             levelTouched: fixedAgentId !== null || levelTouched,
@@ -184,7 +173,14 @@ function AccessStep(
             allowDowngrade: fixedAgentId === null,
           })
         : { changes: [], removedAgentIds: [], downgradedAgentIds: [], needsLevel: false },
-    [preview, picked, level, levelTouched, fixedAgentId]
+    [preview, picked, level, levelTouched, fixedAgentId, who]
+  );
+  const every = useMemo<EveryAgentDecision>(
+    () =>
+      preview && fixedAgentId === null
+        ? everyAgentDecision(preview, { who, level, levelTouched })
+        : { needsLevel: false },
+    [preview, fixedAgentId, who, level, levelTouched]
   );
 
   const agentName =
@@ -229,6 +225,12 @@ function AccessStep(
             onRetry={access.refresh}
             isRetrying={access.isLoading}
           />
+          {props.mode === 'page' && (
+            <StopSharingFallback
+              connectionId={props.connectionId}
+              serviceName={props.serviceName}
+            />
+          )}
           {props.onEditExactActions && (
             <ExactActionsLink onClick={() => props.onEditExactActions?.(props.connectionId)} />
           )}
@@ -236,7 +238,21 @@ function AccessStep(
       ) : outcome ? (
         <AccessOutcome
           access={access}
-          savedDetail={preview ? savedSummary(props, preview, picked, level, decision) : undefined}
+          savedDetail={
+            preview
+              ? savedSummary({
+                  mode: props.mode,
+                  ...(props.mode === 'agent' && { agentId: props.agentId }),
+                  serviceName: props.serviceName,
+                  preview,
+                  picked,
+                  level,
+                  decision,
+                  who,
+                  every,
+                })
+              : undefined
+          }
         />
       ) : preview ? (
         <AccessEditor
@@ -244,6 +260,8 @@ function AccessStep(
           preview={preview}
           picked={picked}
           setPicked={setPicked}
+          who={who}
+          setWho={setWho}
           decision={decision}
           level={level}
           setLevel={(next) => {
@@ -292,8 +310,13 @@ function AccessStep(
                 </Button>
               )}
               <Button
-                onClick={() => access.apply(decision.changes)}
-                disabled={decision.changes.length === 0 || decision.needsLevel || access.isSaving}
+                onClick={() => access.apply(decision.changes, every.everyAgent)}
+                disabled={
+                  (decision.changes.length === 0 && !every.everyAgent) ||
+                  decision.needsLevel ||
+                  every.needsLevel ||
+                  access.isSaving
+                }
               >
                 {access.isSaving ? 'Saving…' : props.mode === 'page' ? 'Save' : 'Allow'}
               </Button>
@@ -310,6 +333,8 @@ function AccessEditor({
   preview,
   picked,
   setPicked,
+  who,
+  setWho,
   decision,
   level,
   setLevel,
@@ -321,6 +346,8 @@ function AccessEditor({
   preview: ConnectorReconciliationPreview;
   picked: Set<string>;
   setPicked: (next: Set<string>) => void;
+  who: WhoCanUse;
+  setWho: (next: WhoCanUse) => void;
   decision: CardDecision;
   level: CardAccessLevel | null;
   setLevel: (next: CardAccessLevel) => void;
@@ -346,11 +373,11 @@ function AccessEditor({
     <ExactActionsLink onClick={() => props.onEditExactActions?.(props.connectionId)} />
   );
 
-  let who: ReactNode;
+  let whoView: ReactNode;
   if (props.mode === 'agent') {
     const agent = preview.agents.find((candidate) => candidate.agentId === props.agentId);
     const held = heldAccess(preview.candidates, current[props.agentId] ?? []);
-    who = !agent ? (
+    whoView = !agent ? (
       <p role="alert" className="text-destructive text-sm">
         This agent isn’t registered on this computer, so it can’t be given access.
       </p>
@@ -361,14 +388,16 @@ function AccessEditor({
     ) : held === level ? (
       <p className="text-muted-foreground text-sm">{agent.displayName} can already do this.</p>
     ) : null;
+  } else if (who === 'every') {
+    whoView = null;
   } else if (preview.agents.length === 0) {
-    who = (
+    whoView = (
       <p className="text-muted-foreground text-sm">
         You don’t have any agents yet. Add one, then choose who can use {props.serviceName}.
       </p>
     );
   } else {
-    who = (
+    whoView = (
       <AgentChecklist
         preview={preview}
         serviceName={props.serviceName}
@@ -391,7 +420,14 @@ function AccessEditor({
 
   return (
     <div className="space-y-4">
-      {who}
+      {props.mode === 'page' && (
+        <WhoCanUseChoice
+          value={who}
+          onChange={setWho}
+          everyAgentAvailable={preview.everyAgent.available}
+        />
+      )}
+      {whoView}
       {nothingToGrant ? (
         <p className="text-muted-foreground text-sm">
           {props.serviceName} has no actions agents can use yet.
@@ -421,15 +457,24 @@ function AccessEditor({
             )}
             {level === null && (
               <p className="text-muted-foreground text-xs">
-                Your agents have different access. Pick one to give it to every ticked agent.
+                {who === 'every'
+                  ? preview.everyAgent.operationRevisionIds.length > 0
+                    ? 'Every agent has exact actions chosen now. Pick a level to replace them.'
+                    : 'Pick what every agent can do.'
+                  : 'Your agents have different access. Pick one to give it to every ticked agent.'}
               </p>
+            )}
+            {props.mode === 'page' && who === 'every' && (
+              <EveryAgentWarning preview={preview} level={level} serviceName={props.serviceName} />
             )}
           </div>
         )
       )}
       {(props.mode === 'page' || exactActionsLink) && (
         <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">
-          {props.mode === 'page' && <span>Agents you leave out can still ask you in chat.</span>}
+          {props.mode === 'page' && who === 'picked' && (
+            <span>Agents you leave out can still ask you in chat.</span>
+          )}
           {exactActionsLink}
         </div>
       )}

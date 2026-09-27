@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
 import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 import {
@@ -59,6 +60,10 @@ export interface ArrivalConfirmProps {
   canSubmit: boolean;
   /** True while the create request is in flight — disables the primary action. */
   isCreating: boolean;
+  /** What this agent inherits from apps shared with every agent, shown before Create. */
+  inheritance?: ReactNode;
+  /** True while that inheritance is still unknown; holds Create until it is. */
+  isCheckingInheritance?: boolean;
   /** Create the agent as offered, in one click. */
   onCreate: () => void;
   /** Open the naming step first, pre-filled from the offer. */
@@ -94,6 +99,8 @@ export function ArrivalConfirm({
   resolvedDirectory,
   canSubmit,
   isCreating,
+  inheritance,
+  isCheckingInheritance = false,
   onCreate,
   onCustomize,
   onNotNow,
@@ -196,10 +203,17 @@ export function ArrivalConfirm({
             can take a moment.
           </p>
         )}
+        {inheritance}
         <Button
           size="lg"
           onClick={onCreate}
-          disabled={isCreating || !canSubmit || isCheckingOffer || offerRefusal !== undefined}
+          disabled={
+            isCreating ||
+            !canSubmit ||
+            isCheckingOffer ||
+            isCheckingInheritance ||
+            offerRefusal !== undefined
+          }
           data-testid="arrival-create"
         >
           {isCreating ? 'Creating…' : `Create ${displayName}`}

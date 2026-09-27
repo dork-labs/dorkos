@@ -414,7 +414,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         const impact = page.getByRole('alertdialog', { name: 'Disconnect this account?' });
         await expect(
           impact.getByText(
-            '1 agents, 0 sessions, and 0 subscriptions will lose access. 0 pending deliveries will stop.',
+            '1 agent, 0 sessions, and 0 subscriptions will lose access. 0 pending deliveries will stop.',
             { exact: true }
           )
         ).toBeVisible();

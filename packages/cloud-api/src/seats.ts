@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IdSchema, TimestampSchema, pageOf } from './primitives.js';
+import { IdSchema, TimestampSchema, pageOf, tolerantEnum } from './primitives.js';
 
 /** Whether an organization is one person`s own or a shared one. */
 export const OrgKindSchema = z
@@ -100,7 +100,33 @@ export const InvitationListResponseSchema = pageOf(
   'A page of an organization`s invitations.'
 );
 
-/** An agent identity an organization has registered. */
+/** How far a claim to an agent identity has got. */
+export const AgentClaimStatusSchema = z
+  .enum(['pending', 'approved', 'rejected', 'expired'])
+  .describe('How far a claim to an agent identity has got.');
+
+/** How far a claim to an agent identity has got. */
+export type AgentClaimStatus = z.infer<typeof AgentClaimStatusSchema>;
+
+/**
+ * An agent identity an organization has registered.
+ *
+ * `claimStatus` and `pendingClaimId` let a person's page find what is waiting
+ * for them. Without them, the approval route could only be reached by the
+ * machine that asserted the claim, because only it saw the claim id.
+ *
+ * An identity can hold several claims at once, one per instance that asserted
+ * it, so `claimStatus` summarises them by precedence: `pending` when any claim
+ * waits, otherwise `approved` when one stands, otherwise the status of the most
+ * recent claim that ended. `pendingClaimId` names one waiting claim (the oldest)
+ * and appears only while `claimStatus` is `pending`; more may be waiting behind
+ * it. An identity has at most one approved claim: approving one settles the
+ * identity, and the others stop waiting.
+ *
+ * `claimStatus` is tolerant: a status added in a later release reads as
+ * `unrecognised` rather than failing the whole agent list. Generate its JSON
+ * Schema with `{ io: 'input' }`.
+ */
 export const AgentSchema = z
   .object({
     id: IdSchema,
@@ -114,6 +140,14 @@ export const AgentSchema = z
     imageUrl: z.string().url().optional(),
     createdAt: TimestampSchema,
     retiredAt: TimestampSchema.optional(),
+    claimStatus: tolerantEnum(AgentClaimStatusSchema)
+      .optional()
+      .describe(
+        'Where this identity`s claims stand, by precedence: pending when any claim waits, otherwise approved when one stands, otherwise the most recent ended claim. A status this release does not know reads as unrecognised. Absent from an older service, or when no claim was ever asserted.'
+      ),
+    pendingClaimId: IdSchema.optional().describe(
+      'One claim waiting for a person`s approval (the oldest), as the `claimId` `POST /v1/agents/{agentId}/claims/{claimId}/approve` takes. Present only while `claimStatus` is `pending`; more may be waiting.'
+    ),
   })
   .describe('An agent identity an organization has registered.');
 
@@ -167,7 +201,7 @@ export const AgentClaimSchema = z
     claimId: IdSchema,
     agentId: IdSchema,
     instanceId: IdSchema,
-    status: z.enum(['pending', 'approved', 'rejected', 'expired']),
+    status: AgentClaimStatusSchema,
     createdAt: TimestampSchema,
     approvedAt: TimestampSchema.nullable(),
   })

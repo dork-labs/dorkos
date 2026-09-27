@@ -14,6 +14,7 @@ import {
 } from './tool-exposure.js';
 import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
 import { getCoreTools } from './core-tools.js';
+import { getAccountTools } from './account-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
@@ -238,6 +239,7 @@ export function handRegisteredInSessionToolSet(
 
   const raw: SdkMcpTool[] = [
     ...getCoreTools(deps),
+    ...getAccountTools(deps),
     ...getTasksTools(deps, resolveTaskProvenance),
     ...getRelayTools(deps, relayIdentity, resolveInboundBudget),
     ...getAdapterTools(deps),

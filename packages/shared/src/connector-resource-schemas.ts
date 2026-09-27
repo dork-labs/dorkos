@@ -210,6 +210,23 @@ export const ConnectorUsageCountsSchema = z.discriminatedUnion('status', [
 /** Usage counts that stay honest when the usage read is unavailable. */
 export type ConnectorUsageCounts = z.infer<typeof ConnectorUsageCountsSchema>;
 
+/**
+ * The owner-wide "every agent" grant on one connection (ADR 260926-192625):
+ * the exact reviewed revisions every agent gets, including agents added later,
+ * and their read/write/destructive classifications.
+ */
+export const ConnectorEveryAgentAccessSchema = z
+  .object({
+    operationRevisionIds: z
+      .array(z.string().min(1).max(200))
+      .min(1)
+      .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
+    classifications: z.array(ConnectorOperationClassificationSchema).min(1).max(3),
+  })
+  .strict();
+/** The owner-wide "every agent" grant on one connection. */
+export type ConnectorEveryAgentAccess = z.infer<typeof ConnectorEveryAgentAccessSchema>;
+
 /** Owner-visible summary of one stable connection. */
 export const ConnectorConnectionSummarySchema = z
   .object({
@@ -229,6 +246,8 @@ export const ConnectorConnectionSummarySchema = z
     custody: z.enum(['managed', 'self-host', 'external']),
     payer: ConnectorPayerSchema,
     agentCount: z.number().int().nonnegative(),
+    /** The every-agent grant, or null when only named agents have access. */
+    everyAgent: ConnectorEveryAgentAccessSchema.nullable(),
     subscriptionCount: z.number().int().nonnegative(),
     usage: ConnectorUsageCountsSchema,
     warnings: z.array(ConnectorPublicWarningSchema).max(50),
@@ -386,6 +405,8 @@ export const ConnectorDisconnectImpactSchema = z
   .object({
     connectionId: ConnectionIdSchema,
     affectedAgentCount: z.number().int().nonnegative(),
+    /** True when disconnecting also ends an every-agent grant, so every agent loses access. */
+    everyAgent: z.boolean(),
     affectedSessionCount: z.number().int().nonnegative(),
     affectedSubscriptionCount: z.number().int().nonnegative(),
     pendingDeliveryCount: z.number().int().nonnegative(),
@@ -406,6 +427,8 @@ export const ConnectorAgentConnectionSchema = z
     operationRevisionIds: z
       .array(z.string().min(1).max(200))
       .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
+    /** True when some of this access comes from the connection's every-agent grant. */
+    everyAgent: z.boolean(),
     authoritySync: ConnectorAuthoritySyncStateSchema,
   })
   .strict();
@@ -421,6 +444,30 @@ export const ConnectorAgentConnectionsSchema = z
   .strict();
 /** Owner-visible connection grants for one exact agent. */
 export type ConnectorAgentConnections = z.infer<typeof ConnectorAgentConnectionsSchema>;
+
+/** One connection whose every-agent grant a new agent inherits. */
+export const ConnectorEveryAgentGrantSchema = z
+  .object({
+    connectionId: ConnectionIdSchema,
+    toolkit: z.string().min(1).max(200),
+    label: z.string().min(1).max(200),
+    lifecycle: z.enum(['connected', 'paused']),
+    access: ConnectorEveryAgentAccessSchema,
+  })
+  .strict();
+/** One connection whose every-agent grant a new agent inherits. */
+export type ConnectorEveryAgentGrant = z.infer<typeof ConnectorEveryAgentGrantSchema>;
+
+/**
+ * Everything any agent of this owner inherits from every-agent grants — the
+ * answer to "what will a new agent get?". There is no per-agent exclusion, so
+ * the answer is the same for every agent, including one that does not exist yet.
+ */
+export const ConnectorEveryAgentGrantsSchema = z
+  .object({ connections: z.array(ConnectorEveryAgentGrantSchema).max(500) })
+  .strict();
+/** Everything any agent of this owner inherits from every-agent grants. */
+export type ConnectorEveryAgentGrants = z.infer<typeof ConnectorEveryAgentGrantsSchema>;
 
 /** Effective owner-visible connection access for one exact session. */
 export const ConnectorSessionEffectiveAccessSchema = z

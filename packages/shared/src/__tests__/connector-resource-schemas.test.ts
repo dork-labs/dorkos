@@ -124,6 +124,7 @@ describe('connector resource schemas', () => {
       custody: 'managed',
       payer: 'operator_byo',
       agentCount: 1,
+      everyAgent: null,
       subscriptionCount: 0,
       usage: { status: 'available', logicalOperationCount: 2, attemptCount: 3 },
       warnings: [],

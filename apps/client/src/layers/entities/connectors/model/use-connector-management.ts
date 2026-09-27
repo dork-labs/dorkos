@@ -5,6 +5,7 @@ import type {
   ConnectorAgentRequestDecision,
 } from '@dorkos/shared/connector-agent-request-schemas';
 import type {
+  ConnectorEveryAgentRevokeResponse,
   ConnectorAgentRequestItem,
   ConnectorManagementReviewDecision,
   ConnectorManagementReviewDecisionResult,
@@ -173,6 +174,22 @@ export function useApplyConnectorReconciliation() {
     ConnectorReconciliationApplyRequest
   >({
     mutationFn: (input) => transport.applyConnectorReconciliation(input),
+    meta: { suppressErrorToast: true },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.connections() });
+    },
+  });
+}
+
+/**
+ * Stop sharing one connection with every agent, at once and without a
+ * permission review, then refresh every connection read that shows it.
+ */
+export function useStopSharingWithEveryAgent() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation<ConnectorEveryAgentRevokeResponse, Error, { connectionId: string }>({
+    mutationFn: ({ connectionId }) => transport.stopSharingConnectorWithEveryAgent(connectionId),
     meta: { suppressErrorToast: true },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: connectorKeys.connections() });

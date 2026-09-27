@@ -1285,6 +1285,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getAgentConnectorConnections: vi
       .fn()
       .mockImplementation((agentId: string) => Promise.resolve({ agentId, connections: [] })),
+    getEveryAgentConnectorGrants: vi.fn().mockResolvedValue({ connections: [] }),
     getSessionConnectorConnections: vi.fn(),
     getAccessibleConnectorConnections: vi.fn().mockResolvedValue({ connections: [] }),
     getAccessibleConnectorOperations: vi
@@ -1297,6 +1298,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getOperatorConnectorUsage: vi.fn().mockResolvedValue({ items: [] }),
     previewConnectorReconciliation: vi.fn(),
     applyConnectorReconciliation: vi.fn(),
+    stopSharingConnectorWithEveryAgent: vi.fn(),
     createConnectorManagementReview: vi.fn(),
     getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
     getConnectorManagementReview: vi.fn(),

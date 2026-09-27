@@ -482,6 +482,51 @@ export type ConnectorReconciliationGrantSelection = z.infer<
   typeof ConnectorReconciliationGrantSelectionSchema
 >;
 
+/**
+ * Complete replacement set for the owner-wide "every agent" grant on one
+ * connection (ADR 260926-192625). It covers every agent the owner has, including
+ * agents added later, for exactly these reviewed revisions. An empty list turns
+ * "every agent" off.
+ */
+export const ConnectorReconciliationEveryAgentSelectionSchema = z
+  .object({
+    operationRevisionIds: z.array(z.string().min(1)),
+  })
+  .strict();
+/** Complete replacement set for the owner-wide "every agent" grant on one connection. */
+export type ConnectorReconciliationEveryAgentSelection = z.infer<
+  typeof ConnectorReconciliationEveryAgentSelectionSchema
+>;
+
+/**
+ * The every-agent grant as a reconciliation snapshot sees it. `available` is
+ * false where "every agent" cannot be offered for this connection (a connection
+ * through a DorkOS account today), and then `operationRevisionIds` is empty.
+ */
+export const ConnectorReconciliationEveryAgentStateSchema = z
+  .object({
+    available: z.boolean(),
+    operationRevisionIds: z.array(z.string().min(1)),
+  })
+  .strict();
+/** The every-agent grant as a reconciliation snapshot sees it. */
+export type ConnectorReconciliationEveryAgentState = z.infer<
+  typeof ConnectorReconciliationEveryAgentStateSchema
+>;
+
+/** Result of stopping sharing one connection with every agent. */
+export const ConnectorEveryAgentRevokeResponseSchema = z
+  .object({
+    connectionId: ConnectionIdSchema,
+    /** Shared actions that ended; zero when the connection was not shared. */
+    revokedCount: z.number().int().nonnegative(),
+  })
+  .strict();
+/** Result of stopping sharing one connection with every agent. */
+export type ConnectorEveryAgentRevokeResponse = z.infer<
+  typeof ConnectorEveryAgentRevokeResponseSchema
+>;
+
 /** One current agent included in a server-owned reconciliation snapshot. */
 export const ConnectorReconciliationAgentSchema = z
   .object({
@@ -509,6 +554,7 @@ export const ConnectorReconciliationPreviewSchema = z
     candidates: z.array(ConnectorReconciliationCandidateSchema),
     agents: z.array(ConnectorReconciliationAgentSchema),
     currentGrants: z.array(ConnectorReconciliationGrantSelectionSchema),
+    everyAgent: ConnectorReconciliationEveryAgentStateSchema,
     catalogComplete: z.literal(true),
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
@@ -522,6 +568,8 @@ export const ConnectorReconciliationApplyRequestSchema = z
   .object({
     previewId: z.string().min(1),
     grants: z.array(ConnectorReconciliationGrantSelectionSchema),
+    /** Replaces the every-agent grant when present; leaves it untouched when absent. */
+    everyAgent: ConnectorReconciliationEveryAgentSelectionSchema.optional(),
   })
   .strict();
 /** Owner request to atomically consume a reconciliation preview. */
@@ -540,6 +588,7 @@ export const ConnectorReconciliationApplyResponseSchema = z
       z.object({ status: z.literal('failed'), reason: z.string().min(1).max(1_000) }).strict(),
     ]),
     grants: z.array(ConnectorReconciliationGrantSelectionSchema),
+    everyAgent: ConnectorReconciliationEveryAgentSelectionSchema.optional(),
   })
   .strict();
 /** Exact grant state written after a reconciliation preview is consumed. */
@@ -823,6 +872,12 @@ export const ConnectorManagementReviewContextSchema = z.discriminatedUnion('kind
       kind: z.literal('disconnect'),
       connection: ConnectorManagementReviewConnectionContextSchema,
       affectedAgentCount: z.number().int().nonnegative(),
+      /**
+       * True when the connection is shared with every agent, so disconnecting
+       * takes it from every agent, not only the counted ones. Absent on a
+       * review stored before every-agent grants existed, when it was false.
+       */
+      everyAgent: z.boolean().default(false),
       affectedOperations: z.array(ConnectorManagementReviewOperationContextSchema),
     })
     .strict(),
@@ -840,6 +895,13 @@ export const ConnectorManagementReviewContextSchema = z.discriminatedUnion('kind
       connection: ConnectorManagementReviewConnectionContextSchema,
       agent: ConnectorManagementReviewAgentContextSchema,
       affectedOperations: z.array(ConnectorManagementReviewOperationContextSchema),
+      /**
+       * Actions the agent KEEPS after this removal, because the connection
+       * shares them with every agent (ADR 260926-192625). Removing one agent
+       * cannot take these away; only turning off "every agent" can. Absent on a
+       * review stored before every-agent grants existed, when it was empty.
+       */
+      keptThroughEveryAgent: z.array(ConnectorManagementReviewOperationContextSchema).default([]),
     })
     .strict(),
   z
@@ -1055,4 +1117,20 @@ export function encodeConnectorReviewAction(action: ConnectorReviewAction): stri
 /** Decode and validate a persisted connector review action. */
 export function decodeConnectorReviewAction(payload: string): ConnectorReviewAction {
   return ConnectorReviewActionSchema.parse(JSON.parse(payload));
+}
+
+/**
+ * A service's display name from its toolkit id when no catalog name is at
+ * hand: `gmail` → `Gmail`, `google_calendar` → `Google Calendar`. The one rule
+ * for this, shared so the app and the server's Activity entries name an app
+ * the same way. Prefer the catalog's own `displayName` when you have it.
+ *
+ * @param toolkit - A toolkit id such as `google_calendar`.
+ */
+export function serviceNameFromToolkit(toolkit: string): string {
+  return toolkit
+    .split(/[._-]/u)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
