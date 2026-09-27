@@ -1,6 +1,7 @@
 ---
 covers:
   - 'Show usage and context the moment a session opens (DOR-2385)'
+  - 'fix(sessions): keep turn readings and per-token usage honest (DOR-2385)'
 ---
 
 ### Changed
