@@ -15,7 +15,7 @@ Accepted. Written after the fact on 2026-07-26; the decision was made in code du
 
 **Amended by
 [260926-172251](260926-172251-an-agents-identity-comes-from-its-home-and-its-desk-is-its-home-or-a-private-copy.md)
-(proposed); this record stays `accepted`.** The working directory remains the lookup key, and no
+(accepted; shipped in #2188 and #2197); this record stays `accepted`.** The working directory remains the lookup key, and no
 token is presented, but it is resolved to the agent's registered **home** before anything is read: a
 git worktree of that home, or a `managed` workspace it owns, resolves to the home, and nothing
 identity-bearing is read from the working directory itself. The sentence "Anything running in that

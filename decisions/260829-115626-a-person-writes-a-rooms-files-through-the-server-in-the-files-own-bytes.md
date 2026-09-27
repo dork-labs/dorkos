@@ -17,7 +17,7 @@ Accepted. Shipped 2026-08-29 (DOR-1600, DOR-1601). This record carries the amend
 
 **Extended by
 [260926-172252](260926-172252-people-change-a-rooms-files-through-the-server.md)
-(proposed); this record stays `accepted`.** The same write path now covers every text file, new files
+(accepted; shipped in #2167 and #2177); this record stays `accepted`.** The same write path now covers every text file, new files
 and folders, uploads, renames, deletes and saving a chat attachment, and each commit posts a quiet
 room entry. Retired: "It is markdown-first: other text types are read-only for now" and the Negative
 bullet "Editing is markdown-only today". Everything else here — the server as the only writer, no
