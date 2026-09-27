@@ -111,4 +111,20 @@ describe('UsageBar', () => {
     await userEvent.hover(bar);
     expect(await screen.findByRole('tooltip')).toHaveTextContent('72% · resets Sun 9am');
   });
+
+  it.each([
+    ['no share reported', at(null, null)],
+    ['no window at all', null],
+  ])('says unknown in words in the compact form with %s', (_case, entry) => {
+    const { container } = renderWith(
+      <UsageBar window={entry} label="This week" compact now={NOW} />
+    );
+    const bar = screen.getByRole('img', { name: 'This week usage unknown' });
+    expect(within(bar).getByText('unknown')).toBeVisible();
+    expect(container.querySelector('[data-slot="usage-track"]')).toHaveAttribute(
+      'data-tone',
+      'unknown'
+    );
+    expect(container.querySelector('[data-slot="usage-fill"]')).toBeNull();
+  });
 });

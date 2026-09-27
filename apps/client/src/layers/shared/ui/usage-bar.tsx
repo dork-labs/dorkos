@@ -187,8 +187,14 @@ export function UsageBar({
         <span className="text-muted-foreground truncate text-xs">{label}</span>
         <Tooltip>
           <TooltipTrigger asChild>
-            <span role="img" aria-label={sentence} className="block w-[110px] shrink-0">
+            <span
+              role="img"
+              aria-label={sentence}
+              className="flex w-[110px] shrink-0 items-center gap-1.5"
+            >
               <Track entry={entry} vertical={false} className="h-1.5 w-full rounded-full" />
+              {/* Unknown says so in words too, never only as an empty track (Q6). */}
+              {unknown && <span className="text-2xs text-muted-foreground shrink-0">unknown</span>}
             </span>
           </TooltipTrigger>
           <TooltipContent>{valueText}</TooltipContent>

@@ -88,6 +88,23 @@ describe('useAccountIdentityGate', () => {
     expect(result.current).toBe(false);
   });
 
+  it('stays closed for Claude Code with two accounts when it does not declare supportsAccounts', async () => {
+    const base = createMockTransport();
+    const real = await base.getCapabilities();
+    const transport = transportWith(2, {
+      getCapabilities: async () => ({
+        ...real,
+        capabilities: {
+          ...real.capabilities,
+          'claude-code': { ...real.capabilities['claude-code']!, supportsAccounts: false },
+        },
+      }),
+    });
+    const { result, settled } = renderGate('claude-code', transport);
+    await settled();
+    expect(result.current).toBe(false);
+  });
+
   it('stays closed while capabilities load', async () => {
     const transport = transportWith(2, {
       getCapabilities: () => new Promise(() => {}),
