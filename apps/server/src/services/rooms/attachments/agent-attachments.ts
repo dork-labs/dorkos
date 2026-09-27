@@ -31,6 +31,7 @@
  * @module server/services/rooms/attachments/agent-attachments
  */
 import fs from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import { ulid } from 'ulidx';
 import { BoundaryError, validateBoundary } from '../../../lib/boundary.js';
@@ -39,6 +40,7 @@ import { logger } from '../../../lib/logger.js';
 import { sniffImageContentType } from '../../identity/image-sniff.js';
 import { RoomError } from '../room-errors.js';
 import { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
+import { SAFE_ROOM_ID } from '../repo/room-repo-store.js';
 import { sanitizeAttachmentName, storedExtension } from './attachment-paths.js';
 import type { AttachmentRowStore } from './attachment-row-store.js';
 import type { RoomAttachmentStore } from './room-attachment-store.js';
@@ -62,7 +64,7 @@ export interface AgentAttachmentRequest {
   /** The agent's own working directory. Relative paths resolve against it. */
   cwd: string;
   /**
-   * The agent's own copies of rooms' files, from {@link ownRoomCopies}.
+   * The agent's own copy of the destination room's files, from {@link ownRoomCopy}.
    * Absolute paths really inside one of them are attachable too.
    */
   ownCopies?: readonly string[];
@@ -93,28 +95,37 @@ function isWithin(root: string, target: string): boolean {
 }
 
 /**
- * The agent's own copies of rooms' files: every
- * `<roomsDir>/<room>/worktrees/<name>-<digest>` whose digest is the agent's
- * home's, spelled under the rooms directory's real path. A named file must
- * REALLY be inside that spelling, so a copy folder swapped for a symlink to
- * someone else's contains nothing: its target's real path is elsewhere.
+ * The agent's own copy of ONE room's files — the folder a turn in that room is
+ * granted to write — by the exact name the worktree manager gives it
+ * (`RoomWorktreeManager.slugFor`, from the same author label a room turn is
+ * placed with), spelled under the rooms directory's real path. `null` when it
+ * does not exist.
+ *
+ * Exact, never a suffix match: a copy in another room (one the agent has left,
+ * say) or a folder someone named with the agent's digest is not this one. A
+ * named file must REALLY be inside the spelling returned, so a copy folder
+ * swapped for a symlink to someone else's contains nothing.
  *
  * @param roomsDir - The rooms directory.
- * @param agentPath - The agent's home, from its verified identity.
+ * @param roomId - The room being posted to.
+ * @param agent - The posting agent's home and label, from its verified identity.
  */
-export async function ownRoomCopies(roomsDir: string, agentPath: string): Promise<string[]> {
-  const suffix = `-${RoomWorktreeManager.digestFor(agentPath)}`;
+export async function ownRoomCopy(
+  roomsDir: string,
+  roomId: string,
+  agent: { agentPath: string; agentName: string }
+): Promise<string | null> {
+  if (!SAFE_ROOM_ID.test(roomId)) return null;
   const realRooms = await fs.realpath(roomsDir).catch(() => null);
-  if (!realRooms) return [];
-  const copies: string[] = [];
-  for (const room of await fs.readdir(realRooms).catch(() => [] as string[])) {
-    const worktrees = path.join(realRooms, room, 'worktrees');
-    for (const name of await fs.readdir(worktrees).catch(() => [] as string[])) {
-      if (!name.endsWith(suffix)) continue;
-      copies.push(path.join(worktrees, name));
-    }
-  }
-  return copies;
+  if (!realRooms) return null;
+  const copy = path.join(
+    realRooms,
+    roomId,
+    'worktrees',
+    RoomWorktreeManager.slugFor(agent.agentName, agent.agentPath)
+  );
+  const stat = await fs.lstat(copy).catch(() => null);
+  return stat?.isDirectory() ? copy : null;
 }
 
 /**
@@ -180,16 +191,29 @@ async function readOwnFile(
     throw new RoomError('ATTACHMENT_UNREADABLE', `${label} could not be opened.`);
   }
 
-  const stat = await fs.stat(resolved).catch(() => null);
-  if (!stat) throw new RoomError('ATTACHMENT_UNREADABLE', `There is no file at ${named}.`);
-  if (stat.isDirectory()) {
-    throw new RoomError('ATTACHMENT_UNREADABLE', `${label} is a folder, not a file.`);
+  // One open, never followed through a symlink, and every later question asked
+  // of THAT descriptor: the path cannot be swapped between the check and the read.
+  const handle = await fs
+    .open(resolved, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
+    .catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') {
+        throw new RoomError('ATTACHMENT_UNREADABLE', `There is no file at ${named}.`);
+      }
+      throw new RoomError('ATTACHMENT_UNREADABLE', `${label} is not a file you can attach.`);
+    });
+  let bytes: Buffer | null;
+  try {
+    const stat = await handle.stat();
+    if (stat.isDirectory()) {
+      throw new RoomError('ATTACHMENT_UNREADABLE', `${label} is a folder, not a file.`);
+    }
+    if (!stat.isFile()) {
+      throw new RoomError('ATTACHMENT_UNREADABLE', `${label} is not a file you can attach.`);
+    }
+    bytes = await handle.readFile().catch(() => null);
+  } finally {
+    await handle.close().catch(() => undefined);
   }
-  if (!stat.isFile()) {
-    throw new RoomError('ATTACHMENT_UNREADABLE', `${label} is not a file you can attach.`);
-  }
-
-  const bytes = await fs.readFile(resolved).catch(() => null);
   if (!bytes) throw new RoomError('ATTACHMENT_UNREADABLE', `${label} could not be read.`);
   return { bytes, name: label };
 }

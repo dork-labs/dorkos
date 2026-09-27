@@ -189,7 +189,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import {
   discardStagedAttachments,
-  ownRoomCopies,
+  ownRoomCopy,
   stageAgentAttachments,
 } from './attachments/agent-attachments.js';
 import { resolveDorkHome } from '../../lib/dork-home.js';
@@ -766,7 +766,8 @@ export const roomsDomain: CapabilityDomain = {
         // Inside `answering`, because resolving WHO is calling can itself refuse
         // — a login-on install that could name nobody — and a refusal a model
         // gets as a stack trace is a refusal it cannot act on.
-        const authorId = answering(() => callerAuthor(rooms, context).id);
+        const author = answering(() => callerAuthor(rooms, context));
+        const authorId = author.id;
         // Staged BEFORE the entry, and bound inside its transaction below, so
         // the message and its files land together or neither does. A refusal
         // here leaves no bytes, no rows and no entry (spec §4).
@@ -781,15 +782,22 @@ export const roomsDomain: CapabilityDomain = {
             : await answeringAsync(async () => {
                 // A room turn stands in the agent's home and is granted its
                 // copy of the room's files (spec `agent-home-desk`), so a file
-                // it made there is its own too. Found from the VERIFIED
-                // identity, never from the path the agent named.
+                // it made there is its own too. Only THIS room's copy, named
+                // exactly as a turn here is placed: from the VERIFIED author
+                // (its home and label), never from the path the agent named.
                 const roomsDir = path.join(resolveDorkHome(), 'rooms');
-                const agentPath = context.identity?.agentPath;
+                const copy =
+                  author.kind === 'agent'
+                    ? await ownRoomCopy(roomsDir, input.roomId, {
+                        agentPath: author.naturalKey,
+                        agentName: author.displayName,
+                      })
+                    : null;
                 return stageAgentAttachments({
                   roomId: input.roomId,
                   authorId,
                   cwd: requireAgentCwd(context),
-                  ownCopies: agentPath ? await ownRoomCopies(roomsDir, agentPath) : [],
+                  ownCopies: copy ? [copy] : [],
                   roomsDir,
                   paths: named,
                   store: getRoomAttachmentStore(),
