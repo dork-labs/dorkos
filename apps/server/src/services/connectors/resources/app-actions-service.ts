@@ -149,6 +149,9 @@ export class ConnectorAppActionsService {
     owner: ConnectorOwnerAuthority,
     input: { providerInstanceId: ConnectorProviderInstanceId; toolkit: string }
   ): Promise<ConnectorAppActions> {
+    // Read once, before the way is resolved: anything that drops the way
+    // after this point makes this call's provider and reads stale.
+    const epoch = this.epochOf(input.providerInstanceId);
     const provider = this.ownedProvider(owner, input.providerInstanceId);
     const generation = provider && this.registry.providerExecutionConfigGeneration(provider);
     if (!provider || generation === undefined) {
@@ -164,10 +167,13 @@ export class ConnectorAppActionsService {
 
     const target: ListTarget = { ...input, generation };
     const key = keyOf(target);
-    const kept = this.kept.get(key) ?? (await this.readKept(key, target));
+    const kept = this.kept.get(key) ?? (await this.readKept(key, target, epoch));
+    // The way was removed or replaced while its copy was read: ask again, so
+    // the answer comes from the way as it is now.
+    if (this.epochOf(input.providerInstanceId) !== epoch) return this.list(owner, input);
     if (kept) {
       if (!this.isFresh(kept)) {
-        void this.refresh(key, provider, target, kept).catch((error: unknown) =>
+        void this.refresh(key, provider, target, kept, epoch).catch((error: unknown) =>
           logger.debug('[ConnectorAppActions] background refresh failed', {
             toolkit: input.toolkit,
             error: error instanceof Error ? error.message : String(error),
@@ -176,7 +182,7 @@ export class ConnectorAppActionsService {
       }
       return present(kept);
     }
-    return present(await this.refresh(key, provider, target, undefined));
+    return present(await this.refresh(key, provider, target, undefined, epoch));
   }
 
   /** The same owned-and-available check a sign-in makes before it starts. */
@@ -203,7 +209,7 @@ export class ConnectorAppActionsService {
 
   /**
    * Wait until every listing and disk step now in progress has finished. For
-   * shutdown and for deterministic tests; list() never needs it.
+   * deterministic tests; list() never needs it.
    */
   async idle(): Promise<void> {
     await Promise.allSettled([...this.inFlight.values(), ...this.diskQueues.values()]);
@@ -240,11 +246,11 @@ export class ConnectorAppActionsService {
     key: string,
     provider: ConnectorProvider,
     target: ListTarget,
-    previous: KeptActions | undefined
+    previous: KeptActions | undefined,
+    epoch: number
   ): Promise<KeptActions> {
     const running = this.inFlight.get(key);
     if (running) return running;
-    const epoch = this.epochOf(target.providerInstanceId);
     // The body reads its own promise only after an await, once it is set here.
     const slot: { task?: Promise<KeptActions> } = {};
     slot.task = (async () => {
@@ -253,7 +259,8 @@ export class ConnectorAppActionsService {
       // nothing for it then.
       if (
         this.inFlight.get(key) !== slot.task ||
-        this.epochOf(target.providerInstanceId) !== epoch
+        this.epochOf(target.providerInstanceId) !== epoch ||
+        this.registry.resolveProviderInstance(target.providerInstanceId) !== provider
       ) {
         return next;
       }
@@ -384,8 +391,11 @@ export class ConnectorAppActionsService {
     return path.join(this.directory, `${key}.json`);
   }
 
-  private async readKept(key: string, target: ListTarget): Promise<KeptActions | undefined> {
-    const epoch = this.epochOf(target.providerInstanceId);
+  private async readKept(
+    key: string,
+    target: ListTarget,
+    epoch: number
+  ): Promise<KeptActions | undefined> {
     const parsed = await this.onDisk(target.providerInstanceId, async () => {
       try {
         return KeptActionsSchema.safeParse(JSON.parse(await readFile(this.fileOf(key), 'utf-8')));

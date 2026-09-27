@@ -432,6 +432,26 @@ describe('ConnectorAppActionsService', () => {
     expect(slugs(await list())).toEqual(['GMAIL_FROM_SECOND']);
   });
 
+  it('answers from the new way when it is replaced while the kept copy is being read', async () => {
+    const dorkHome = tempHome();
+    const before = service(fakeProvider().provider, dorkHome);
+    await before.list();
+    await before.subject.idle();
+
+    // A restart: the copy is only on disk, so the next list() has to read it.
+    const first = fakeProvider();
+    const { subject, registry, list } = service(first.provider, dorkHome);
+    const pending = list();
+    // The read is under way; the way is replaced with the same setup.
+    const second = replacement('GMAIL_FROM_SECOND');
+    registry.register(second.provider, 'digest-1');
+
+    expect(slugs(await pending)).toEqual(['GMAIL_FROM_SECOND']);
+    expect(first.listOperationSchemas).not.toHaveBeenCalled();
+    await subject.idle();
+    expect(slugs(await list())).toEqual(['GMAIL_FROM_SECOND']);
+  });
+
   it('shares one listing between callers who ask at the same time', async () => {
     const { provider, listOperationSchemas } = fakeProvider();
     const { list } = service(provider);
