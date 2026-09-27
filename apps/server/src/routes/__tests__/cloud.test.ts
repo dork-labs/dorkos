@@ -156,6 +156,23 @@ describe('cloud routes', () => {
       expect(res.body.balance.owedMicro).toBe('0');
     });
 
+    it('relays the unit each response names, so the client can render its amounts', async () => {
+      const denomination = { currency: 'XTS', microPerCredit: '250' };
+      mockPlan.readPlanOverview.mockResolvedValue({
+        entitlements: { planId: 'pl_opaque_0000', denomination },
+        balance: { owedMicro: '0', denomination },
+      });
+      mockPlan.readUsage.mockResolvedValue({ rows: [], denomination });
+      mockPlan.readNudge.mockResolvedValue({ savingMicro: '0', denomination });
+      const plan = (await request(server).get('/api/cloud/plan').expect(200)).body;
+      expect(plan.entitlements.denomination).toEqual(denomination);
+      expect(plan.balance.denomination).toEqual(denomination);
+      const usage = (await request(server).get('/api/cloud/usage').expect(200)).body;
+      expect(usage.usage.denomination).toEqual(denomination);
+      const nudge = (await request(server).get('/api/cloud/nudge').expect(200)).body;
+      expect(nudge.nudge.denomination).toEqual(denomination);
+    });
+
     it('answers 502 without echoing a body when the service is unwell', async () => {
       mockPlan.readPlanOverview.mockRejectedValue(new Error('boom'));
       const res = await request(server).get('/api/cloud/plan').expect(502);

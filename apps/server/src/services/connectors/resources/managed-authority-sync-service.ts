@@ -21,7 +21,9 @@ import {
   lte,
   or,
   sessionConnectionOverrides,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
   type Db,
+  type SQL,
 } from '@dorkos/db';
 import {
   ManagedConnectorAuthorityCommandSchema,
@@ -37,6 +39,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import type { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type {
   ConnectorManagedLifecyclePort,
   ConnectorManagedLifecycleSyncResult,
@@ -89,6 +92,15 @@ export interface ManagedAgentGrantReplacementInput {
   readonly owner: ConnectorOwnerAuthority;
   /** Request cancellation signal. */
   readonly signal: AbortSignal;
+}
+
+/** Input for replacing one managed connection's complete every-agent grant set. */
+export interface ManagedEveryAgentGrantReplacementInput extends Omit<
+  ManagedAgentGrantReplacementInput,
+  'agentId'
+> {
+  /** Recorded author of newly inserted local rows. */
+  readonly createdBy: string;
 }
 
 /** Construction dependencies for the durable authority outbox. */
@@ -154,6 +166,45 @@ function isManagedCloudError(error: unknown): error is ManagedConnectorCloudErro
       'request_failed',
       'invalid_response',
     ].includes(error.code)
+  );
+}
+
+/** One selected hosted revision paired with its local immutable revision id. */
+interface OrderedRevision {
+  readonly revision: ManagedConnectorOperationSelector;
+  readonly id: string;
+}
+
+function selectorKey(revision: ManagedConnectorOperationSelector): string {
+  return `${revision.hostedRevisionId}\0${revision.operationSlug}\0${revision.toolkitVersion}\0${revision.schemaHash}`;
+}
+
+/**
+ * Pair, deduplicate-check and canonically order one complete selection, so the
+ * same set always produces the same command bytes.
+ */
+function orderedSelection(input: {
+  readonly revisions: readonly ManagedConnectorOperationSelector[];
+  readonly operationRevisionIds: readonly string[];
+}): OrderedRevision[] {
+  if (input.revisions.length !== input.operationRevisionIds.length) {
+    throw new ManagedAuthoritySyncError(
+      'connection_unavailable',
+      'The managed action selection changed. Refresh and try again.'
+    );
+  }
+  const byIdentity = new Map<string, OrderedRevision>();
+  input.revisions.forEach((revision, index) => {
+    byIdentity.set(selectorKey(revision), { revision, id: input.operationRevisionIds[index]! });
+  });
+  if (byIdentity.size !== input.revisions.length) {
+    throw new ManagedAuthoritySyncError(
+      'connection_unavailable',
+      'The managed action selection contains duplicate actions.'
+    );
+  }
+  return [...byIdentity.values()].sort((a, b) =>
+    selectorKey(a.revision).localeCompare(selectorKey(b.revision))
   );
 }
 
@@ -420,33 +471,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     tx: ConnectorDbTransaction,
     input: Omit<ManagedAgentGrantReplacementInput, 'signal'>
   ): string {
-    if (input.revisions.length !== input.operationRevisionIds.length) {
-      throw new ManagedAuthoritySyncError(
-        'connection_unavailable',
-        'The managed action selection changed. Refresh and try again.'
-      );
-    }
-    const byIdentity = new Map<
-      string,
-      { revision: ManagedConnectorOperationSelector; id: string }
-    >();
-    input.revisions.forEach((revision, index) => {
-      byIdentity.set(
-        `${revision.hostedRevisionId}\0${revision.operationSlug}\0${revision.toolkitVersion}\0${revision.schemaHash}`,
-        { revision, id: input.operationRevisionIds[index]! }
-      );
-    });
-    if (byIdentity.size !== input.revisions.length) {
-      throw new ManagedAuthoritySyncError(
-        'connection_unavailable',
-        'The managed action selection contains duplicate actions.'
-      );
-    }
-    const ordered = [...byIdentity.values()].sort((a, b) =>
-      `${a.revision.hostedRevisionId}\0${a.revision.operationSlug}\0${a.revision.toolkitVersion}\0${a.revision.schemaHash}`.localeCompare(
-        `${b.revision.hostedRevisionId}\0${b.revision.operationSlug}\0${b.revision.toolkitVersion}\0${b.revision.schemaHash}`
-      )
-    );
+    const ordered = orderedSelection(input);
     const now = this.now().toISOString();
     const selectedIds = new Set(ordered.map((entry) => entry.id));
     const existing = tx
@@ -506,7 +531,77 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     });
   }
 
-  /** Deliver one already committed grant command. */
+  /**
+   * Stage one complete owner-wide every-agent replacement (ADR 260926-192625,
+   * DOR-2439) and its hosted command in the caller's transaction.
+   *
+   * Close-first, exactly like a named-agent replacement: a revision left out
+   * stops at once, and a newly shared one stays off until hosted authority
+   * applies the command. An empty selection ends the sharing.
+   */
+  stageEveryAgentGrantReplacement(
+    tx: ConnectorDbTransaction,
+    input: Omit<ManagedEveryAgentGrantReplacementInput, 'signal'>
+  ): string {
+    const ordered = orderedSelection(input);
+    const now = this.now().toISOString();
+    const selectedIds = new Set(ordered.map((entry) => entry.id));
+    const existing = tx
+      .select({
+        id: connectionOperationGrants.id,
+        operationRevisionId: connectionOperationGrants.operationRevisionId,
+        revokedAt: connectionOperationGrants.revokedAt,
+      })
+      .from(connectionOperationGrants)
+      .where(
+        and(
+          everyAgentGrantSubject(),
+          eq(connectionOperationGrants.connectionId, input.connectionId)
+        )
+      )
+      .all();
+    for (const grant of existing) {
+      if (selectedIds.has(grant.operationRevisionId)) {
+        selectedIds.delete(grant.operationRevisionId);
+      } else if (grant.revokedAt === null) {
+        tx.update(connectionOperationGrants)
+          .set({ revokedAt: now })
+          .where(eq(connectionOperationGrants.id, grant.id))
+          .run();
+      }
+    }
+    for (const operationRevisionId of selectedIds) {
+      tx.insert(connectionOperationGrants)
+        .values({
+          id: this.createId(),
+          subjectType: 'every_agent',
+          subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+          agentId: null,
+          connectionId: input.connectionId,
+          operationRevisionId,
+          createdBy: input.createdBy,
+          createdAt: now,
+          revokedAt: now,
+        })
+        .run();
+    }
+    return this.appendCommandInTransaction(tx, {
+      scopeKind: 'every_agent_grants',
+      subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+      connectionId: input.connectionId,
+      managedConnectionId: input.managedConnectionId,
+      providerInstanceId: input.providerInstanceId,
+      executionConfigGeneration: input.executionConfigGeneration,
+      owner: input.owner,
+      command: (base) => ({
+        ...base,
+        kind: 'replace_every_agent_grants',
+        revisions: ordered.map((entry) => entry.revision),
+      }),
+    });
+  }
+
+  /** Deliver one already committed grant command, named-agent or every-agent. */
   deliverAgentGrantReplacement(
     commandId: string,
     signal: AbortSignal
@@ -709,7 +804,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   }
 
   private appendCommand(input: {
-    scopeKind: 'agent_grants' | 'connection_lifecycle' | 'event_subscription';
+    scopeKind:
+      'agent_grants' | 'every_agent_grants' | 'connection_lifecycle' | 'event_subscription';
     subjectId: string;
     connectionId: ConnectionId;
     managedConnectionId: string;
@@ -729,7 +825,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   private appendCommandInTransaction(
     tx: ConnectorDbTransaction,
     input: {
-      scopeKind: 'agent_grants' | 'connection_lifecycle' | 'event_subscription';
+      scopeKind:
+        'agent_grants' | 'every_agent_grants' | 'connection_lifecycle' | 'event_subscription';
       subjectId: string;
       connectionId: ConnectionId;
       managedConnectionId: string;
@@ -1012,6 +1109,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       if (committed && state === 'applied') {
         if (command.kind === 'replace_agent_grants') {
           this.activateCurrentAgentGrants(tx, row, command);
+        } else if (command.kind === 'replace_every_agent_grants') {
+          this.activateCurrentEveryAgentGrants(tx, row, command);
         } else if (command.kind === 'set_event_subscription') {
           tx.update(connectorEventSubscriptions)
             .set({ enabled: command.enabled, updatedAt: now })
@@ -1204,7 +1303,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         binding.authenticationStatus === 'active'
       );
     }
-    if (command.kind === 'replace_agent_grants') {
+    if (command.kind === 'replace_agent_grants' || command.kind === 'replace_every_agent_grants') {
       return binding.lifecycleState === 'connected' && binding.enabled;
     }
     if (command.lifecycle === 'disconnected')
@@ -1227,12 +1326,33 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     row: typeof connectorManagedAuthorityOutbox.$inferSelect,
     command: Extract<ManagedConnectorAuthorityCommand, { kind: 'replace_agent_grants' }>
   ): void {
-    const identities = new Set(
-      command.revisions.map(
-        (revision) =>
-          `${revision.hostedRevisionId}\0${revision.operationSlug}\0${revision.toolkitVersion}\0${revision.schemaHash}`
-      )
+    this.activateCurrentGrants(
+      tx,
+      row,
+      command.revisions,
+      and(
+        eq(connectionOperationGrants.subjectType, 'agent'),
+        eq(connectionOperationGrants.subjectId, command.agentId)
+      )!
     );
+  }
+
+  private activateCurrentEveryAgentGrants(
+    tx: ConnectorDbTransaction,
+    row: typeof connectorManagedAuthorityOutbox.$inferSelect,
+    command: Extract<ManagedConnectorAuthorityCommand, { kind: 'replace_every_agent_grants' }>
+  ): void {
+    this.activateCurrentGrants(tx, row, command.revisions, everyAgentGrantSubject()!);
+  }
+
+  /** Open exactly the applied revisions of one still-current grant command. */
+  private activateCurrentGrants(
+    tx: ConnectorDbTransaction,
+    row: typeof connectorManagedAuthorityOutbox.$inferSelect,
+    revisions: readonly ManagedConnectorOperationSelector[],
+    subject: SQL
+  ): void {
+    const identities = new Set(revisions.map(selectorKey));
     const revisionIds = tx
       .select({
         id: connectorOperationRevisions.id,
@@ -1256,8 +1376,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         .set({ revokedAt: null })
         .where(
           and(
-            eq(connectionOperationGrants.subjectType, 'agent'),
-            eq(connectionOperationGrants.subjectId, command.agentId),
+            subject,
             eq(connectionOperationGrants.connectionId, row.connectionId),
             inArray(connectionOperationGrants.operationRevisionId, revisionIds)
           )
@@ -1274,7 +1393,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .where(
         and(
           eq(connectorManagedAuthorityOutbox.connectionId, row.connectionId),
-          eq(connectorManagedAuthorityScopes.scopeKind, 'agent_grants')
+          inArray(connectorManagedAuthorityScopes.scopeKind, ['agent_grants', 'every_agent_grants'])
         )
       )
       .all()

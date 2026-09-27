@@ -79,7 +79,7 @@ describe('CloudLinkPanel', () => {
 
     // Pending: the code and the activation link are shown.
     expect(screen.getByText('WXYZ7890')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /open dorkos\.ai\/activate/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /open the approval page/i })).toBeInTheDocument();
 
     // Poll fires → linked. Same panel instance updates in place.
     await flush(2500);
@@ -239,7 +239,7 @@ describe('CloudLinkPanel', () => {
     renderPanel(transport);
 
     await user.click(await screen.findByRole('button', { name: /link this instance/i }));
-    await user.click(await screen.findByRole('button', { name: /open dorkos\.ai\/activate/i }));
+    await user.click(await screen.findByRole('button', { name: /open the approval page/i }));
 
     expect(openSpy).toHaveBeenCalledTimes(1);
     const openedUrl = new URL(openSpy.mock.calls[0][0] as string);
@@ -330,5 +330,165 @@ describe('CloudLinkPanel', () => {
 
     await user.click(await screen.findByRole('button', { name: /link this instance/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t reach the dorkos cloud/i);
+  });
+  describe('pending: time left on the code', () => {
+    /** Start a link whose code expires `msLeft` from now, under fake timers. */
+    async function startPending(msLeft: number, verificationUri = 'https://dorkos.ai/activate') {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-27T12:00:00Z'));
+      const transport = createMockTransport();
+      vi.mocked(transport.startCloudLink).mockResolvedValue({
+        userCode: 'WXYZ7890',
+        verificationUri,
+        expiresAt: new Date(Date.now() + msLeft).toISOString(),
+      });
+      // The server keeps reporting pending, so the countdown is the only thing moving.
+      vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
+      renderPanel(transport);
+      await flush();
+      vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'pending' });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /link this instance/i }));
+      });
+      await flush();
+      return transport;
+    }
+
+    const visible = () => screen.getByTestId('cloud-link-expiry');
+
+    it('counts down from expiresAt beside the waiting line', async () => {
+      await startPending(4 * 60_000 + 12_000);
+
+      expect(screen.getByRole('status')).toHaveTextContent('Waiting for you to approve.');
+      expect(visible()).toHaveTextContent('This code expires in 4:12.');
+
+      await flush(1000);
+      expect(visible()).toHaveTextContent('This code expires in 4:11.');
+
+      await flush(71_000);
+      expect(visible()).toHaveTextContent('This code expires in 3:00.');
+    });
+
+    it('switches to "less than a minute" under 60 seconds, and stays there at zero', async () => {
+      await startPending(61_000);
+      expect(visible()).toHaveTextContent('This code expires in 1:01.');
+
+      await flush(1000);
+      expect(visible()).toHaveTextContent('This code expires in 1:00.');
+
+      await flush(1000);
+      expect(visible()).toHaveTextContent('This code expires in less than a minute.');
+
+      // Past zero the server, not the clock, says the code expired.
+      await flush(120_000);
+      expect(visible()).toHaveTextContent('This code expires in less than a minute.');
+    });
+
+    it('hides the ticking sentence from screen readers and announces only at thresholds', async () => {
+      await startPending(7 * 60_000 + 30_000);
+      const status = screen.getByRole('status');
+      const spoken = () => status.querySelector('.sr-only')?.textContent?.trim();
+
+      // The ticking sentence is hidden AND outside the live region, so its
+      // per-second changes are not mutations of the region.
+      expect(visible()).toHaveAttribute('aria-hidden');
+      expect(status).not.toContainElement(visible());
+
+      // Entry: the region exists first and the sentence arrives on the first
+      // tick, so it is a change a screen reader announces.
+      expect(status).toHaveTextContent('Waiting for you to approve.');
+      expect(spoken()).toBeUndefined();
+      await flush(1000);
+      expect(spoken()).toBe('This code expires in about 7 minutes.');
+
+      // The visible clock moves every second; the spoken sentence does not.
+      await flush(1000);
+      expect(visible()).toHaveTextContent('This code expires in 7:28.');
+      expect(spoken()).toBe('This code expires in about 7 minutes.');
+      await flush(147_000);
+      expect(visible()).toHaveTextContent('This code expires in 5:01.');
+      expect(spoken()).toBe('This code expires in about 7 minutes.');
+
+      // Threshold one: five minutes left.
+      await flush(2000);
+      expect(spoken()).toBe('This code expires in less than 5 minutes.');
+      await flush(200_000);
+      expect(spoken()).toBe('This code expires in less than 5 minutes.');
+
+      // Threshold two: the last minute.
+      await flush(40_000);
+      expect(spoken()).toBe('This code expires in less than a minute.');
+    });
+
+    it('skips the five-minute announcement for a code that starts with less', async () => {
+      await startPending(3 * 60_000 + 30_000);
+      const spoken = () =>
+        screen.getByRole('status').querySelector('.sr-only')?.textContent?.trim();
+
+      await flush(1000);
+      expect(spoken()).toBe('This code expires in about 3 minutes.');
+      await flush(140_000);
+      expect(spoken()).toBe('This code expires in about 3 minutes.');
+      await flush(10_000);
+      expect(spoken()).toBe('This code expires in less than a minute.');
+    });
+
+    it('leaves the countdown out when expiresAt is unreadable', async () => {
+      vi.useFakeTimers();
+      const transport = createMockTransport();
+      vi.mocked(transport.startCloudLink).mockResolvedValue({
+        userCode: 'WXYZ7890',
+        verificationUri: 'https://dorkos.ai/activate',
+        expiresAt: 'not a date',
+      });
+      vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
+      renderPanel(transport);
+      await flush();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /link this instance/i }));
+      });
+      await flush();
+
+      expect(screen.getByRole('status')).toHaveTextContent('Waiting for you to approve.');
+      expect(screen.queryByTestId('cloud-link-expiry')).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).not.toHaveTextContent(/expires/i);
+    });
+
+    it.each([
+      // mailto: is a scheme the shared opener WOULD dispatch, so only the panel's
+      // own http(s) check stands between it and the browser.
+      ['a scheme other than http(s)', 'mailto:someone@example.com'],
+      ['a URL that will not parse', 'not a url at all'],
+    ])('says so when the approval page will not open: %s', async (_label, verificationUri) => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      await startPending(900_000, verificationUri);
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /open the approval page/i }));
+      });
+
+      expect(openSpy).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'We could not open the approval page. Copy the code and open it in your browser.'
+      );
+      // The code the sentence points at is still on screen, with its copy button.
+      expect(screen.getByText('WXYZ7890')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /copy code/i })).toBeInTheDocument();
+      openSpy.mockRestore();
+    });
+
+    it('shows no error when the approval page opens', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+      await startPending(900_000);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /open the approval page/i }));
+      });
+
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      openSpy.mockRestore();
+    });
   });
 });

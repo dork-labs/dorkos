@@ -83,6 +83,8 @@ export const NOTIFICATION_KINDS = [
   'update.installed',
   /** The daily digest. */
   'report.daily',
+  /** A Claude account hit a hard usage limit; one per account, window and reset. */
+  'account.limited',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */

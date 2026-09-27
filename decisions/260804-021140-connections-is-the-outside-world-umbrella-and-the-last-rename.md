@@ -14,6 +14,13 @@ superseded-by: null
 
 Accepted. **Supersedes the Integration half of ADR 260726-193526** ("Channel" means a conversation; Relay's integrations are called "Integrations"). The Channel half of that ADR — bare "channel" means a conversation — still stands and is not touched here. **Confirms** the Connections surface named in ADR 260729-234626 (Direct connections are the front door).
 
+**One clause is retired by** [260927-033250](260927-033250-connections-is-one-list-of-apps.md)
+(The Connections page is one list of apps, not two regions): "one page (`/connections`), two named
+regions with distinct verbs and distinct consent stories" — Messaging and Accounts. The page is one
+list of apps now; chat apps carry a small "Chat" tag, and the Positive bullet about the two regions
+reads as history. Everything else here still governs: Connections is the single umbrella, the four
+retired nouns stay out of user-facing copy, and the product ↔ architecture split below stands.
+
 Implementation note (2026-09-07): the white-label Connections programme later replaced the
 provider-owned `ConnectedAccount` as a public identity with the DorkOS-owned `ConnectionId`. That
 contract and storage migration is outside this display-language decision. The Connections umbrella,

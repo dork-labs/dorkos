@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -10,10 +10,12 @@ import {
   Skeleton,
 } from '@/layers/shared/ui';
 import {
+  agentHeldAccess,
   cardDecision,
   everyAgentDecision,
   heldAccess,
   initialCardLevel,
+  levelForRequest,
   initialEveryAgentLevel,
   initialWhoCanUse,
   type CardAccessLevel,
@@ -26,12 +28,13 @@ import {
   selectionsFromPreview,
 } from '../../lib/reconciliation-selection';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
-import { AccessCardFrame } from './AccessCardFrame';
+import { AccessCardFrame, type AccessCardVariant } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
 import { AgentChecklist } from './AgentChecklist';
 import { LEVEL_LABELS } from './access-labels';
 import { EveryAgentWarning } from './EveryAgentWarning';
+import { RequestedActions } from './RequestedActions';
 import { savedSummary } from './saved-summary';
 import { StopSharingFallback } from './StopSharingFallback';
 import { WhoCanUseChoice } from './WhoCanUseChoice';
@@ -45,6 +48,8 @@ interface SharedCardProps {
   onFinished?: () => void;
   /** Open the exact per-action editor for this account. Hidden when omitted. */
   onEditExactActions?: (connectionId: string) => void;
+  /** A framed card of its own, or one section of a panel (see {@link AccessCardVariant}). */
+  variant?: AccessCardVariant;
   /** Extra classes for the card's outer frame. */
   className?: string;
 }
@@ -75,6 +80,20 @@ export interface AgentAccessCardProps extends SharedCardProps {
   toolkit: string;
   /** A known account; skips the account question. */
   connectionId?: string;
+  /**
+   * Called once this agent's access is live on an account: after a save the
+   * server confirmed and finished applying, or straight away when the agent
+   * already holds what is picked. The chat card answers the agent's request
+   * with it. When set, "Allow" stays pressable for an agent that can already
+   * do this, since the question still needs an answer.
+   */
+  onAllowed?: (connectionId: string) => void;
+  /**
+   * What the agent asked for, when a request opened the card: the level starts
+   * on the one that covers it, and the card shows the reason and the actions
+   * asked for, and says plainly what a level leaves out.
+   */
+  request?: { readonly reason: string; readonly operations: readonly string[] };
 }
 
 /** Props for {@link ConnectionAccessCard}. */
@@ -142,13 +161,22 @@ function AccessStep(
       // The chat's one-agent card never offers "every agent" (DOR-2420).
       const startWho = props.mode === 'page' ? initialWhoCanUse(preview) : 'picked';
       setWho(startWho);
-      setLevel(
+      const heldLevel =
         startWho === 'every'
           ? initialEveryAgentLevel(preview)
-          : initialCardLevel(
-              subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
-            )
-      );
+          : props.mode === 'agent'
+            ? // Counts an "Every agent" grant: the question is what THIS agent can do.
+              initialCardLevel([agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed))])
+            : initialCardLevel(
+                subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
+              );
+      // A request starts on the level that covers what the agent asked for, and
+      // never below what it already holds.
+      const asked =
+        props.mode === 'agent' && props.request
+          ? levelForRequest(preview.candidates, props.request.operations).level
+          : null;
+      setLevel(asked === 'read-write' || heldLevel === 'read-write' ? 'read-write' : heldLevel);
       setLevelTouched(false);
     },
   });
@@ -183,6 +211,32 @@ function AccessStep(
     [preview, fixedAgentId, who, level, levelTouched]
   );
 
+  // What the agent can do today, its own grant and "Every agent" together.
+  const heldNow =
+    preview && fixedAgentId
+      ? agentHeldAccess(preview, fixedAgentId, props.mode === 'agent' && Boolean(props.onAllowed))
+      : 'none';
+  const onAllowed = props.mode === 'agent' ? props.onAllowed : undefined;
+  // Nothing to write, but the agent already holds access here: Allow answers
+  // with it rather than sitting disabled over a question that needs an answer.
+  const allowAsHeld =
+    onAllowed !== undefined &&
+    preview !== undefined &&
+    // Nothing to write, or the picked level is already covered (through
+    // "Every agent", say), so writing a grant of its own would add nothing.
+    (decision.changes.length === 0 || heldNow === level || heldNow === 'read-write') &&
+    !decision.needsLevel &&
+    heldNow !== 'none' &&
+    preview.agents.some((agent) => agent.agentId === fixedAgentId);
+  const allowedReported = useRef(false);
+  useEffect(() => {
+    if (!access.saved || !onAllowed || allowedReported.current) return;
+    allowedReported.current = true;
+    onAllowed(props.connectionId);
+    // Keyed on the outcome itself, not on `saved`: every answer the server
+    // gives re-checks, so only a confirmed, applied save ever reports.
+  }, [access.saveOutcome, access.saved, onAllowed, props.connectionId]);
+
   const agentName =
     props.mode === 'agent'
       ? preview?.agents.find((agent) => agent.agentId === props.agentId)?.displayName
@@ -209,7 +263,9 @@ function AccessStep(
       titleId={titleId}
       toolkit={connection?.toolkit ?? (props.mode === 'agent' ? props.toolkit : undefined)}
       title={title}
-      subtitle={subtitle}
+      // Embedded in a panel that already names the account, the line would repeat it.
+      subtitle={props.variant === 'embedded' ? undefined : subtitle}
+      variant={props.variant}
       className={props.className}
     >
       {access.isLoading ? (
@@ -310,12 +366,17 @@ function AccessStep(
                 </Button>
               )}
               <Button
-                onClick={() => access.apply(decision.changes, every.everyAgent)}
+                onClick={() =>
+                  allowAsHeld
+                    ? onAllowed?.(props.connectionId)
+                    : access.apply(decision.changes, every.everyAgent)
+                }
                 disabled={
-                  (decision.changes.length === 0 && !every.everyAgent) ||
-                  decision.needsLevel ||
-                  every.needsLevel ||
-                  access.isSaving
+                  !allowAsHeld &&
+                  ((decision.changes.length === 0 && !every.everyAgent) ||
+                    decision.needsLevel ||
+                    every.needsLevel ||
+                    access.isSaving)
                 }
               >
                 {access.isSaving ? 'Saving…' : props.mode === 'page' ? 'Save' : 'Allow'}
@@ -364,7 +425,7 @@ function AccessEditor({
   // The chat's one-agent answer only offers levels at or above what it holds.
   const levels =
     props.mode === 'agent' &&
-    heldAccess(preview.candidates, current[props.agentId] ?? []) === 'read-write'
+    agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed)) === 'read-write'
       ? offered.filter((option) => option === 'read-write')
       : offered;
   const nothingToGrant = readWriteIds.length === 0;
@@ -377,6 +438,8 @@ function AccessEditor({
   if (props.mode === 'agent') {
     const agent = preview.agents.find((candidate) => candidate.agentId === props.agentId);
     const held = heldAccess(preview.candidates, current[props.agentId] ?? []);
+    const effective = agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed));
+    const covered = effective === level || (effective === 'read-write' && level === 'read');
     whoView = !agent ? (
       <p role="alert" className="text-destructive text-sm">
         This agent isn’t registered on this computer, so it can’t be given access.
@@ -387,6 +450,10 @@ function AccessEditor({
       </p>
     ) : held === level ? (
       <p className="text-muted-foreground text-sm">{agent.displayName} can already do this.</p>
+    ) : covered ? (
+      <p className="text-muted-foreground text-sm">
+        {agent.displayName} can already do this, because every agent can.
+      </p>
     ) : null;
   } else if (who === 'every') {
     whoView = null;
@@ -425,6 +492,19 @@ function AccessEditor({
           value={who}
           onChange={setWho}
           everyAgentAvailable={preview.everyAgent.available}
+        />
+      )}
+      {props.mode === 'agent' && props.request && (
+        <RequestedActions
+          agentName={
+            preview.agents.find((agent) => agent.agentId === props.agentId)?.displayName ??
+            'The agent'
+          }
+          toolkit={props.toolkit}
+          reason={props.request.reason}
+          operations={props.request.operations}
+          candidates={preview.candidates}
+          level={level}
         />
       )}
       {whoView}

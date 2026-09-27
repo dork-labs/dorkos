@@ -6,24 +6,35 @@
  * plumbing. Both sections belong to `features/connections` and are composed
  * here (sibling UI composition); this file only wires them to the two places
  * they send people: Settings › Access for the DorkOS account link, and the
- * Connections page for the apps themselves.
+ * Connections page for the apps themselves. Every chat app's message history
+ * (with delivery health and messages that reached no one) folds in under the
+ * chat app settings, since it is about all of them at once.
  *
  * @module features/settings/ui/tabs/ConnectionsTab
  */
 import { ChatAppSettings, ConnectionWays } from '@/layers/features/connections';
+import { ActivityFeed, RelayHealthBar } from '@/layers/features/relay';
+import { useRelayEnabled } from '@/layers/entities/relay';
 import { useDeepLinkScroll, useOpenConnections, useSettingsDeepLink } from '@/layers/shared/model';
-import { Button, useNavigationLayout } from '@/layers/shared/ui';
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  useNavigationLayout,
+} from '@/layers/shared/ui';
 
 /** Settings › Connections. */
 export function ConnectionsTab() {
   const settings = useSettingsDeepLink();
   const navigation = useNavigationLayout();
   const openConnections = useOpenConnections();
+  const relayEnabled = useRelayEnabled();
   useDeepLinkScroll(settings.section);
 
   const openConnectionsPage = () => {
     settings.close();
-    openConnections('accounts');
+    openConnections();
   };
 
   return (
@@ -63,6 +74,17 @@ export function ConnectionsTab() {
           Chat apps
         </h3>
         <ChatAppSettings />
+        {relayEnabled && (
+          <Collapsible>
+            <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-ring rounded-md text-sm font-medium">
+              Message history
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-3 pt-3">
+              <RelayHealthBar enabled />
+              <ActivityFeed enabled />
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </section>
     </div>
   );

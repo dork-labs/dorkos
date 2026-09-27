@@ -1257,7 +1257,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Connectors (connector-completion spec §Detailed Design 5). Reads default
     // to honest-empty; writes default to unstubbed vi.fn() so a test that
     // exercises them must state what the server would answer.
-    getConnectorProviders: vi.fn().mockResolvedValue([]),
+    getConnectorProviders: vi.fn().mockResolvedValue({
+      providers: [],
+      appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
+    }),
     putConnectorCredential: vi.fn(),
     deleteConnectorCredential: vi.fn(),
     getConnectorCatalog: vi.fn().mockResolvedValue({ services: [], warnings: [] }),

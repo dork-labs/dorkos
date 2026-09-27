@@ -49,7 +49,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
 
       await harness.gotoConnections(page);
       const connections = new ConnectionsPage(page);
-      const access = await connections.openAccess('Gmail (work)');
+      const access = await connections.openAccess('Gmail', 'work');
       const agent = access.getByRole('group', { name: new RegExp(seeded.agentName) });
       await agent.getByRole('button', { name: 'Read', exact: true }).click();
       await access.getByRole('button', { name: 'Save access' }).click();
@@ -121,7 +121,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         .getByRole('button', { name: 'Manage', exact: true })
         .click();
       await expect(page).toHaveURL(/\/connections/);
-      const removal = await connections.openAccess('Gmail (work)');
+      const removal = await connections.openAccess('Gmail', 'work');
       const removedAgent = removal.getByRole('group', { name: new RegExp(seeded.agentName) });
       await removedAgent.getByRole('button', { name: 'No access', exact: true }).click();
       await removal.getByRole('button', { name: 'Save access' }).click();
@@ -217,19 +217,23 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
     }) => {
       const initialId = await harness.connectWorkAccountViaApi(request);
       await harness.gotoConnections(page);
-      const detail = page.getByTestId('connection-detail');
-      const row = (id: string) => page.getByTestId(`connection-row-${id}`);
+      const connections = new ConnectionsPage(page);
+      const panel = connections.panel;
+      const row = (id: string) => page.getByTestId(`app-row-${id}`);
+      const openRow = async (id: string) => {
+        await row(id).getByRole('button').first().click();
+        await expect(panel).toBeVisible();
+      };
       const disconnect = async (id: string) => {
-        await row(id).getByRole('button').click();
-        await detail.getByRole('button', { name: 'Disconnect', exact: true }).click();
-        const confirmation = page.getByRole('alertdialog', { name: 'Disconnect this account?' });
+        await openRow(id);
+        const more = await connections.openMore();
+        await more.getByRole('button', { name: 'Disconnect…' }).click();
+        const confirmation = page.getByRole('alertdialog', { name: 'Disconnect Gmail?' });
         await confirmation.getByRole('button', { name: 'Disconnect', exact: true }).click();
-        await expect(detail).toBeHidden();
-        await expect(
-          page
-            .getByRole('region', { name: 'Disconnected accounts', exact: true })
-            .getByTestId(`connection-row-${id}`)
-        ).toBeVisible();
+        await expect(panel).toBeHidden();
+        // Still a row, greyed and saying so: disconnected is a state, not gone.
+        await expect(row(id)).toHaveAttribute('data-tone', 'off');
+        await expect(row(id)).toContainText('Disconnected');
         const result = await request.get(`${harness.apiUrl}/api/connectors/connections/${id}`);
         expect(result.ok()).toBe(true);
         expect(await result.json()).toMatchObject({
@@ -237,23 +241,23 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         });
       };
 
-      await expect(
-        page
-          .getByRole('region', { name: 'Connected accounts', exact: true })
-          .getByTestId(`connection-row-${initialId}`)
-      ).toBeVisible();
+      await expect(row(initialId)).toHaveAttribute('data-tone', 'ready');
       await disconnect(initialId);
       await page.screenshot({
         path: test.info().outputPath('disconnected-accounts-desktop.png'),
         fullPage: true,
       });
-      await row(initialId).getByRole('button').click();
+      await openRow(initialId);
       const initiated = page.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
           response.url().endsWith(`/connections/${initialId}/reconnect`)
       );
-      await detail.getByRole('button', { name: 'Reconnect', exact: true }).click();
+      // The one fix sits on top of a disconnected app's panel.
+      await panel
+        .getByTestId('app-panel-fix')
+        .getByRole('button', { name: 'Connect again', exact: true })
+        .click();
       const initiation = await initiated;
       expect(initiation.ok()).toBe(true);
       const { flowId } = (await initiation.json()) as { flowId: string };
@@ -270,11 +274,11 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       await expect(auth.getByRole('heading', { name: 'Who can use Gmail?' })).toBeVisible();
       await auth.getByRole('button', { name: 'Skip' }).click();
       await expect(auth).toBeHidden();
-      await expect(
-        page
-          .getByRole('region', { name: 'Connected accounts', exact: true })
-          .getByTestId(`connection-row-${completed.connectionId}`)
-      ).toBeVisible();
+      // Finishing a connect opens the app's panel, where "Try it" waits.
+      await expect(panel).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+      await expect(row(completed.connectionId)).toHaveAttribute('data-tone', 'ready');
       await disconnect(completed.connectionId);
 
       const removePath = `**/api/connectors/connections/${completed.connectionId}/remove`;
@@ -285,33 +289,25 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
           body: JSON.stringify({ error: 'Synthetic removal failure' }),
         })
       );
-      await row(completed.connectionId).getByRole('button').click();
-      await detail.getByTestId('remove-account').click();
-      let confirmation = page.getByRole('alertdialog', {
-        name: 'Remove this account from Accounts?',
-      });
+      await openRow(completed.connectionId);
+      await panel.getByTestId('remove-account').click();
+      let confirmation = page.getByRole('alertdialog', { name: 'Remove Gmail from your apps?' });
       const failed = page.waitForResponse((response) =>
         response.url().endsWith(`/connections/${completed.connectionId}/remove`)
       );
-      await confirmation.getByRole('button', { name: 'Remove from Accounts', exact: true }).click();
+      await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
       expect((await failed).status()).toBe(503);
-      await expect(detail.getByRole('alert')).toContainText(
-        'Check the account’s current status before trying again.'
+      await expect(panel.getByRole('alert')).toContainText(
+        'Check the app’s current state before trying again.'
       );
+      // The panel's address is in the URL, so a reload comes back to it.
       await page.reload();
-      await expect(
-        page
-          .getByRole('region', { name: 'Disconnected accounts', exact: true })
-          .getByTestId(`connection-row-${completed.connectionId}`)
-      ).toBeVisible();
-      await row(completed.connectionId).getByRole('button').click();
-      await detail.getByTestId('remove-account').click();
-      confirmation = page.getByRole('alertdialog', { name: 'Remove this account from Accounts?' });
-      await expect(confirmation).toContainText('past usage and activity will remain');
+      await expect(panel).toBeVisible();
+      await panel.getByTestId('remove-account').click();
+      confirmation = page.getByRole('alertdialog', { name: 'Remove Gmail from your apps?' });
+      await expect(confirmation).toContainText('What agents did with it stays on record');
       await page.setViewportSize({ width: 390, height: 844 });
-      await expect(
-        confirmation.getByRole('button', { name: 'Remove from Accounts', exact: true })
-      ).toBeVisible();
+      await expect(confirmation.getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
       ).toBe(true);
@@ -322,14 +318,12 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       const removed = page.waitForResponse((response) =>
         response.url().endsWith(`/connections/${completed.connectionId}/remove`)
       );
-      await confirmation.getByRole('button', { name: 'Remove from Accounts', exact: true }).click();
+      await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
       expect((await removed).status()).toBe(204);
-      await expect(detail).toBeHidden();
+      await expect(panel).toBeHidden();
       await expect(row(completed.connectionId)).toHaveCount(0);
       await page.reload();
-      await expect(
-        page.getByRole('heading', { name: 'Connected accounts', exact: true })
-      ).toBeVisible();
+      await expect(connections.allApps).toBeVisible();
       await expect(row(completed.connectionId)).toHaveCount(0);
       const inventory = await request.get(`${harness.apiUrl}/api/connectors/connections`);
       expect(inventory.ok()).toBe(true);
@@ -378,16 +372,18 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         });
         await harness.gotoConnections(page);
         const connections = new ConnectionsPage(page);
-        await connections.account('Gmail (work)').getByRole('button').click();
-        const detail = page.getByTestId('connection-detail');
-        await detail.getByLabel('Label', { exact: true }).fill('renamed');
-        await detail.getByRole('button', { name: 'Save', exact: true }).click();
-        await expect(detail.getByRole('heading', { name: 'Gmail (renamed)' })).toBeVisible();
-        await expect(
-          detail.getByText('1 logical operations, 1 attempts.', { exact: true })
-        ).toBeVisible();
-        await detail.getByRole('button', { name: 'Pause', exact: true }).click();
-        await expect(detail.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+        const panel = await connections.openPanel('Gmail', 'work');
+        const recently = panel.getByRole('region', { name: 'Recently' });
+        await expect(recently.getByRole('listitem')).toHaveCount(1);
+        let more = await connections.openMore();
+        await more.getByLabel('Name', { exact: true }).fill('renamed');
+        await more.getByRole('button', { name: 'Save', exact: true }).click();
+        // The panel's header names the account by its new name.
+        await expect(panel.getByText('renamed', { exact: true })).toBeVisible();
+        await more.getByRole('button', { name: /^Pause/ }).click();
+        // Paused, the one fix moves to the top of the panel.
+        const fix = panel.getByTestId('app-panel-fix');
+        await expect(fix.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
         await expect
           .poll(async () => {
             const response = await request.get(
@@ -401,25 +397,22 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         const paused = await execute();
         expect(paused.status()).toBe(409);
         expect(await paused.json()).toMatchObject({ code: 'CONNECTOR_NOT_EXECUTABLE' });
-        await detail.getByRole('button', { name: 'Resume', exact: true }).click();
-        await expect(detail.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+        await fix.getByRole('button', { name: 'Resume', exact: true }).click();
+        await expect(fix).toHaveCount(0);
         const resumed = await execute();
         expect(resumed.status(), await resumed.text()).toBe(200);
         await harness.gotoConnections(page);
-        await connections.account('Gmail (renamed)').getByRole('button').click();
+        await connections.openPanel('Gmail', 'renamed');
+        await expect(recently.getByRole('listitem')).toHaveCount(2);
+        more = await connections.openMore();
+        await more.getByRole('button', { name: 'Disconnect…' }).click();
+        const impact = page.getByRole('alertdialog', { name: 'Disconnect Gmail?' });
+        // Who loses access, by name; a zero is never read out.
         await expect(
-          detail.getByText('2 logical operations, 2 attempts.', { exact: true })
-        ).toBeVisible();
-        await detail.getByRole('button', { name: 'Disconnect', exact: true }).click();
-        const impact = page.getByRole('alertdialog', { name: 'Disconnect this account?' });
-        await expect(
-          impact.getByText(
-            '1 agent, 0 sessions, and 0 subscriptions will lose access. 0 pending deliveries will stop.',
-            { exact: true }
-          )
+          impact.getByText(`${seeded.agentName} will lose access.`, { exact: true })
         ).toBeVisible();
         await impact.getByRole('button', { name: 'Disconnect', exact: true }).click();
-        await expect(detail).toBeHidden();
+        await expect(panel).toBeHidden();
         const after = await request.get(
           `${harness.apiUrl}/api/connectors/connections/${connectionId}`
         );
@@ -509,7 +502,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         connectionId,
       });
       await harness.gotoConnections(page);
-      const row = page.getByTestId(`connector-review-row-${review.reviewRequestId}`);
+      const row = page.getByTestId(`needs-you-review-${review.reviewRequestId}`);
       await row.focus();
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL(new RegExp(`review=${review.reviewRequestId}`));

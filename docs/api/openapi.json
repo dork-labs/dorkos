@@ -13061,7 +13061,8 @@
           "agent.unreachable",
           "signin.required",
           "update.installed",
-          "report.daily"
+          "report.daily",
+          "account.limited"
         ]
       },
       "NotificationTier": {
@@ -26767,7 +26768,8 @@
                   "required": [
                     "providers",
                     "appConnections"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }

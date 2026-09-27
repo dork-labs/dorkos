@@ -709,11 +709,12 @@ export function buildBridgeBlockedNotice(reason: BridgeBlockedReason): RoomEntry
   const text =
     reason === 'reply_off'
       ? 'This answer was not sent to the chat because replying is turned off for this connection. ' +
-        'Turn on "Reply" for it in Connections › Messaging to let answers through.'
+        'Turn on "Reply" for it on the Connections page, under the chat app\'s "Who answers", ' +
+        'to let answers through.'
       : reason === 'initiate_off'
         ? 'This message was not sent to the chat because starting a message there is turned off for ' +
-          'this connection. Turn on "Start conversations" for it in Connections › Messaging to let ' +
-          'the agent reach out first.'
+          'this connection. Turn on "Start conversations" for it on the Connections page, under the ' +
+          'chat app\'s "Who answers", to let the agent reach out first.'
         : // lost_provenance — the server restarted mid-turn (§6.6).
           'This answer lost its provenance (the server restarted mid-turn) and was treated as a ' +
           'new conversation. It stayed here.';

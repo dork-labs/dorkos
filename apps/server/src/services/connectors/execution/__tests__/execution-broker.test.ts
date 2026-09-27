@@ -330,6 +330,7 @@ describe('ConnectorExecutionBroker', () => {
       agentId: 'agent-a',
       attemptIndex: 1,
       grantScopeVersion: 4,
+      grantSubject: 'agent',
       hostedRevisionId: '10000000-0000-4000-8000-000000000001',
       attribution: { surface: 'mcp', actorKind: 'agent', actorId: 'agent-a' },
     });

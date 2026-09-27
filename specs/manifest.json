@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260927-155808",
+      "slug": "connection-app-details",
+      "title": "Connections: app logos, descriptions, actions and a kept app list",
+      "created": "2026-09-27",
+      "status": "ideation",
+      "project": "DorkOS Connections"
+    },
+    {
       "id": "260926-193136",
       "slug": "local-workspace-lifecycle",
       "title": "Local workspace reconciler lifecycle pilot",
@@ -15,7 +23,7 @@
       "slug": "connections-one-list",
       "title": "Connections, one list",
       "created": "2026-09-26",
-      "status": "ideation",
+      "status": "implemented",
       "project": "DorkOS Connections",
       "linearIssue": "DOR-2418"
     },
@@ -784,7 +792,7 @@
       "slug": "connections-redesign",
       "title": "Connections redesign — catalog-first, honest custody, chat front door, try-it-now",
       "created": "2026-07-30",
-      "status": "specified",
+      "status": "superseded",
       "project": "Connections Redesign — Direct First"
     },
     {

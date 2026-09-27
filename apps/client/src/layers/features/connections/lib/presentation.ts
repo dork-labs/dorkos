@@ -6,7 +6,6 @@
  * @module features/connections/lib/presentation
  */
 import type { LucideIcon } from 'lucide-react';
-import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import {
   Cable,
   Calendar,
@@ -54,32 +53,4 @@ export function providerName(type: string): string {
   const known = PROVIDER_NAMES[type];
   if (known) return known;
   return type.charAt(0).toUpperCase() + type.slice(1);
-}
-
-/**
- * The one way an account is named everywhere on this surface: the service's
- * display name with the label in parentheses — "Gmail (work)".
- *
- * @param serviceName - The service's display name (or slug when unknown).
- * @param label - The account's user-facing label.
- */
-export function accountDisplayName(serviceName: string, label: string): string {
-  return label ? `${serviceName} (${label})` : serviceName;
-}
-
-/**
- * User-facing state for one canonical stable connection.
- *
- * @param connection - Current lifecycle, authentication, reconciliation, and sync truth.
- * @returns The most actionable account state without treating pending work as ready.
- */
-export function connectionStatusLabel(connection: ConnectorConnectionSummary): string {
-  if (connection.lifecycle === 'disconnected') return 'Disconnected';
-  if (connection.lifecycle === 'paused') return 'Paused';
-  if (connection.authenticationStatus === 'pending') return 'Sign-in pending';
-  if (connection.authenticationStatus !== 'active') return 'Sign-in needed';
-  if (connection.reconciliationStatus !== 'ready') return 'Review needed';
-  if (connection.authoritySync.status === 'pending') return 'Syncing';
-  if (connection.authoritySync.status === 'failed') return 'Sync failed';
-  return 'Ready';
 }

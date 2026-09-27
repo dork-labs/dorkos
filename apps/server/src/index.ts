@@ -59,7 +59,10 @@ import { TaskStore } from './services/tasks/task-store.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
-import { wireLiveChangeBroadcasts } from './services/core/streams/live-change-broadcasts.js';
+import {
+  connectorAgentRequestsChangedAnnouncer,
+  wireLiveChangeBroadcasts,
+} from './services/core/streams/live-change-broadcasts.js';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
 import { WebPushChannel } from './services/notifications/channels/web-push.js';
@@ -527,6 +530,8 @@ import {
   setMessageQueueStore,
   setSessionEventStore,
   setStagedContextStore,
+  SessionLimitStore,
+  setSessionLimitStore,
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
@@ -1037,6 +1042,11 @@ async function start() {
   // the person "Added context for the next reply" on a stream that survives a
   // restart, so what that receipt points at has to survive one too (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
+
+  // A session's usage limit, kept so a restart or an idle eviction does not
+  // turn a limited session back into a merely failed one (spec
+  // claude-account-fleet D4).
+  setSessionLimitStore(new SessionLimitStore(db));
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read
@@ -3338,6 +3348,10 @@ async function start() {
         },
         nudge: nudgePrivateSession,
       },
+      // A request a room's own turn raised is answered in that room; the
+      // binding follows a session's rekey, so it is read when a card is read.
+      roomForSession: (sessionId) => roomStore.sessionLedger.bindingForSession(sessionId)?.roomId,
+      onChanged: connectorAgentRequestsChangedAnnouncer(eventFanOut),
     });
     void connectorAgentRequests.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Could not recover agent service requests', logError(error));

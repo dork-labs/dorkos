@@ -551,6 +551,14 @@ describe('the seat reconciliation additions', () => {
     ).toBe(true);
   });
 
+  it('names exactly two hosted grant subjects: one agent, or every agent of the owner', () => {
+    expect(contract.ConnectionGrantSubjectSchema.options).toEqual(['agent', 'every_agent']);
+    expect(contract.ConnectionGrantSubjectSchema.safeParse('every_agent').success).toBe(true);
+    // No wildcard or owner-chosen subject: anything else is refused.
+    expect(contract.ConnectionGrantSubjectSchema.safeParse('*').success).toBe(false);
+    expect(contract.ConnectionGrantSubjectSchema.safeParse('owner').success).toBe(false);
+  });
+
   it('lets a grant list say what zero rows resolves to', () => {
     // Zero stored rows means the organization's default, not an empty
     // permission set — and `effective` is the only way an interface can show it.
@@ -1105,5 +1113,47 @@ describe('the hostnames a tunnel credential serves', () => {
     expect(description).toContain('idempotencyKey');
     expect(description).toContain('not a credential id');
     expect(description).toContain('/v1/remote/credentials/issue');
+  });
+});
+
+describe('the key that names a remote event batch', () => {
+  /** A published example, parsed from `fixtures/v1`. */
+  const fixture = (rel: string): unknown =>
+    JSON.parse(
+      readFileSync(path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'v1', rel), 'utf8')
+    );
+
+  it('is the Idempotency-Key header, published by name', () => {
+    expect(contract.REMOTE_EVENTS_IDEMPOTENCY_HEADER).toBe('Idempotency-Key');
+  });
+
+  it('accepts an opaque key of one to 200 characters', () => {
+    for (const key of ['b', 'batch-0001', 'k'.repeat(200)]) {
+      expect(contract.RemoteEventBatchKeySchema.safeParse(key).success, key).toBe(true);
+    }
+  });
+
+  it('refuses an empty key and one longer than 200 characters', () => {
+    expect(contract.RemoteEventBatchKeySchema.safeParse('').success).toBe(false);
+    expect(contract.RemoteEventBatchKeySchema.safeParse('k'.repeat(201)).success).toBe(false);
+  });
+
+  it('keeps the key out of the batch body, so no instance already sending it is refused', () => {
+    // The key is transport: the body grows no field for it, and the published
+    // batch examples still parse exactly as they did.
+    const shape = Object.keys(contract.RemoteEventBatchSchema.shape);
+    for (const field of ['batchId', 'idempotencyKey', 'key']) {
+      expect(shape, field).not.toContain(field);
+    }
+    for (const file of ['remote/events-batch.json', 'remote/events-batch-spans.json']) {
+      expect(contract.RemoteEventBatchSchema.safeParse(fixture(file)).success, file).toBe(true);
+    }
+  });
+
+  it('tells a reader of the schemas how a repeated key is answered', () => {
+    expect(contract.RemoteEventBatchKeySchema.description).toContain('{ accepted: 0 }');
+    expect(contract.RemoteEventBatchKeySchema.description).toContain('already accepted');
+    expect(contract.RemoteEventBatchSchema.description).toContain('Idempotency-Key');
+    expect(contract.RemoteEventBatchResponseSchema.description).toContain('Idempotency-Key');
   });
 });

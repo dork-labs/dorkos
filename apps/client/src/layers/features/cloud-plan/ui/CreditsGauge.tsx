@@ -1,7 +1,10 @@
 import { FieldCard, FieldCardContent, Progress } from '@/layers/shared/ui';
-import { formatMicro, remainingFraction } from '../lib/micro';
+import { formatCharge, formatPosition } from '@dork-labs/cloud-api/display';
+import { isReadableDenomination, withCreditUnit } from '../lib/credits';
+import { remainingFraction } from '../lib/remaining-fraction';
 import { useCloudPlan, useCloudUsage } from '../model/use-cloud-plan';
 import { useLocalSpend } from '../model/use-local-spend';
+import { UnreadableFigures } from './UnreadableFigures';
 
 /**
  * The credits gauge — what is left, where it went, and what this machine spent
@@ -16,6 +19,14 @@ import { useLocalSpend } from '../model/use-local-spend';
  * 3. The local spend view, which is the runtimes' own reporting and NOT the
  *    bill. On credits the DorkOS figure is the authoritative one, so the two are
  *    never added together and the local one says what it is.
+ *
+ * Every Cloud figure is rendered by `@dork-labs/cloud-api/display` in the unit
+ * the response served: what is left and what was granted are positions
+ * (rounded down), and what each agent spent, and the total, are charges
+ * (rounded half away from zero, `<1` for a sliver). The total is the service's
+ * exact sum rounded once, never the sum of the rounded rows, so it may differ
+ * from them by a credit or two. A response without a unit shows the
+ * "couldn't read" line instead of a number.
  */
 export function CreditsGauge() {
   // As in PlanCard: the panel owns the loading state, so this only ever runs
@@ -31,8 +42,15 @@ export function CreditsGauge() {
     balance === null
       ? null
       : remainingFraction(balance.allowance.remainingMicro, balance.allowance.grantedMicro);
+  const balanceUnit = balance?.denomination;
+  const remaining = formatPosition(balance?.allowance.remainingMicro, balanceUnit);
+  const granted = withCreditUnit(formatPosition(balance?.allowance.grantedMicro, balanceUnit));
   const rows = usage?.available ? usage.usage.rows : [];
-  const total = usage?.available ? formatMicro(usage.usage.totals.dorkosPriceMicro) : null;
+  const usageUnit = usage?.available ? usage.usage.denomination : undefined;
+  const usageReadable = isReadableDenomination(usageUnit);
+  const total = usage?.available
+    ? withCreditUnit(formatCharge(usage.usage.totals.dorkosPriceMicro, usageUnit))
+    : null;
 
   return (
     <FieldCard>
@@ -42,23 +60,32 @@ export function CreditsGauge() {
         {balance !== null && fraction !== null && (
           <div className="space-y-1">
             <Progress value={fraction * 100} />
-            <p className="text-muted-foreground text-xs">
-              {formatMicro(balance.allowance.remainingMicro)} of{' '}
-              {formatMicro(balance.allowance.grantedMicro)} left in this period
-            </p>
+            {!isReadableDenomination(balanceUnit) ? (
+              <UnreadableFigures />
+            ) : (
+              remaining !== null &&
+              granted !== null && (
+                <p className="text-muted-foreground text-xs">
+                  {remaining} of {granted} left in this period
+                </p>
+              )
+            )}
           </div>
         )}
 
         {rows.length > 0 && (
           <div className="space-y-2">
             <p className="text-sm font-medium">Where the credits went</p>
+            {!usageReadable && <UnreadableFigures />}
             <ul className="space-y-1 text-sm">
               {rows.map((row) => (
                 <li key={row.key} className="flex items-baseline justify-between gap-4">
                   <span className="truncate">{row.displayName}</span>
-                  <span className="text-muted-foreground shrink-0 tabular-nums">
-                    {formatMicro(row.dorkosPriceMicro)}
-                  </span>
+                  {usageReadable && (
+                    <span className="text-muted-foreground shrink-0 tabular-nums">
+                      {formatCharge(row.dorkosPriceMicro, usageUnit)}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

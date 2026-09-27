@@ -631,8 +631,7 @@ export class ConnectorOperatorQueryService {
     return ConnectorDisconnectImpactSchema.parse({
       connectionId,
       affectedAgentCount: new Set(agents.flatMap((row) => (row.agentId ? [row.agentId] : []))).size,
-      // The same managed rule as the summary: hosted authority never honors it.
-      everyAgent: owned.mode !== 'managed' && this.everyAgentAccess(connectionId) !== null,
+      everyAgent: this.everyAgentAccess(connectionId) !== null,
       affectedSessionCount: new Set(sessions.map((row) => row.sessionId)).size,
       affectedSubscriptionCount: subscriptions.length,
       pendingDeliveryCount: pendingDeliveries,
@@ -681,7 +680,8 @@ export class ConnectorOperatorQueryService {
       .all();
     // Every agent inherits the owner's every-agent grants, so they belong in
     // this agent's effective access exactly as the authorization check counts
-    // them: connections that are not managed, no per-agent exclusion.
+    // them: on every connection, managed ones included (DOR-2439), with no
+    // per-agent exclusion.
     const inherited = this.db
       .select({
         connectionId: connections.id,
@@ -707,7 +707,6 @@ export class ConnectorOperatorQueryService {
           everyAgentGrantSubject(),
           isNull(connectionOperationGrants.revokedAt),
           isNull(connections.removedAt),
-          eq(connectorProviderInstances.mode, 'byo'),
           eq(connectorProviderInstances.ownerKind, owned.ownerKind),
           eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
@@ -771,7 +770,6 @@ export class ConnectorOperatorQueryService {
         and(
           isNull(connections.removedAt),
           eq(connections.lifecycleState, 'connected'),
-          eq(connectorProviderInstances.mode, 'byo'),
           eq(connectorProviderInstances.ownerKind, owned.ownerKind),
           eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
@@ -1028,7 +1026,7 @@ export class ConnectorOperatorQueryService {
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       agentCount: new Set(grants.flatMap((grant) => (grant.agentId ? [grant.agentId] : []))).size,
-      everyAgent: row.mode === 'managed' ? null : this.everyAgentAccess(row.connectionId),
+      everyAgent: this.everyAgentAccess(row.connectionId),
       subscriptionCount: subscriptions.length,
       usage,
       warnings: [],

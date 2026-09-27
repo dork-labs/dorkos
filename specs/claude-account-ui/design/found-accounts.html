@@ -1,0 +1,191 @@
+<h2>DorkOS finds Claude accounts already on your computer</h2>
+<p class="subtitle">
+  A new user with several accounts shouldn't have to type folder paths. DorkOS can spot account
+  folders (like <code>~/.claude2</code>) and offer to add them. Nothing is added without a click. A
+  folder that looks company-managed is flagged, not hidden: you decide. How should it offer them?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-card {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 6px 12px;
+    margin-top: 8px;
+    color: #18181b;
+  }
+  .ax-h {
+    font-weight: 600;
+    font-size: 13px;
+    margin: 4px 0;
+  }
+  .ax-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-row:last-child {
+    border-bottom: 0;
+  }
+  .ax-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .ax-grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .ax-path {
+    font:
+      11px ui-monospace,
+      Menlo,
+      monospace;
+    color: #71717a;
+  }
+  .ax-muted {
+    color: #71717a;
+  }
+  .ax-btn {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    border: 1px solid #d4d4d8;
+    background: #fff;
+    color: #18181b;
+    white-space: nowrap;
+  }
+  .ax-btn.p {
+    background: #18181b;
+    color: #fff;
+    border-color: #18181b;
+  }
+  .ax-found {
+    background: #fafafa;
+    border: 1px dashed #d4d4d8;
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin: 8px 0 4px;
+  }
+  .ax-flag {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
+  .ax-note {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: #1e3a8a;
+    margin-top: 8px;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A "Found on this computer" list under your accounts</h3>
+      <p>
+        It sits right where you manage accounts, and each folder gets its own Add button. It
+        disappears once everything is added or dismissed.
+      </p>
+      <div class="ax">
+        <div class="ax-card">
+          <div class="ax-h">Claude accounts</div>
+          <div class="ax-row">
+            <span class="ax-dot" style="background: #2563eb"></span>
+            <div class="ax-grow">
+              <b>Main</b> <span class="ax-muted">default</span>
+              <div class="ax-path">~/.claude</div>
+            </div>
+          </div>
+          <div class="ax-row">
+            <span class="ax-dot" style="background: #16a34a"></span>
+            <div class="ax-grow">
+              <b>Claude3</b>
+              <div class="ax-path">~/.claude3</div>
+            </div>
+          </div>
+          <div class="ax-found">
+            <div class="ax-muted" style="margin-bottom: 2px">Found on this computer</div>
+            <div class="ax-row">
+              <div class="ax-grow">
+                <b>.claude2</b> <span class="ax-muted">· used 2 days ago</span>
+                <div class="ax-path">~/.claude2</div>
+              </div>
+              <span class="ax-btn p">Add</span><span class="ax-btn">Dismiss</span>
+            </div>
+            <div class="ax-row">
+              <div class="ax-grow">
+                <b>.claude4</b> <span class="ax-muted">· used today</span>
+                <div class="ax-path">~/.claude4</div>
+              </div>
+              <span class="ax-btn p">Add</span><span class="ax-btn">Dismiss</span>
+            </div>
+            <div class="ax-row">
+              <div class="ax-grow">
+                <b>.claude-ab1</b> <span class="ax-flag">managed by an organization</span>
+                <div class="ax-path">~/.claude-ab1</div>
+              </div>
+              <span class="ax-btn">Add</span><span class="ax-btn">Dismiss</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>One notice at the top that opens a picker</h3>
+      <p>
+        It's quieter: one line and one button. The folders appear in a small dialog with checkboxes.
+        It's one extra click, but the accounts list stays clean.
+      </p>
+      <div class="ax">
+        <div class="ax-note">
+          <b>3 more Claude accounts found on this computer.</b>
+          <span class="ax-btn" style="margin-left: 6px">Review…</span>
+          <span class="ax-muted" style="margin-left: 4px">Dismiss</span>
+        </div>
+        <div class="ax-card">
+          <div class="ax-h">Claude accounts</div>
+          <div class="ax-row">
+            <span class="ax-dot" style="background: #2563eb"></span>
+            <div class="ax-grow">
+              <b>Main</b> <span class="ax-muted">default</span>
+              <div class="ax-path">~/.claude</div>
+            </div>
+          </div>
+          <div class="ax-row">
+            <span class="ax-dot" style="background: #16a34a"></span>
+            <div class="ax-grow">
+              <b>Claude3</b>
+              <div class="ax-path">~/.claude3</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 14px">
+  <b>My pick: A.</b> The found folders sit exactly where you'd add them, and you can add one without
+  leaving the page. A company-managed folder shows a flag and a plain (not highlighted) Add button,
+  so adding it is a deliberate choice. Dismissed folders stay hidden.
+</p>

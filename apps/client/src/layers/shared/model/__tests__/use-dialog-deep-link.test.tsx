@@ -184,7 +184,7 @@ describe('resolveDeepLinkTarget', () => {
     const routeTarget: SettingsRouteTarget = {
       kind: 'route',
       path: '/connections',
-      search: { region: 'messaging' },
+      search: { app: 'telegram-1' },
     };
     const mapWithRoute: Record<string, SettingsTab | SettingsRouteTarget> = {
       integrations: routeTarget,
@@ -260,7 +260,6 @@ describe('useSettingsDeepLink', () => {
       await waitFor(() => {
         expect(harness.readPathname()).toBe('/connections');
       });
-      expect(harness.readSearch().region).toBe('messaging');
     }
   );
 
@@ -838,21 +837,22 @@ describe('the profile opener capture', () => {
 // useOpenConnections — the navigation that replaced ?relay=open
 // ─────────────────────────────────────────────────────────────
 describe('useOpenConnections', () => {
-  it('navigates to the page, at the half it was asked for', async () => {
+  it('opens one app’s side panel when asked', async () => {
     const harness = buildHarness('/');
     const { result } = renderHook(() => useOpenConnections(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
 
     await act(async () => {
-      result.current('messaging');
+      result.current({ app: 'telegram-1' });
     });
 
     await waitFor(() => {
-      expect(harness.readSearch().region).toBe('messaging');
+      expect(harness.readPathname()).toBe('/connections');
     });
+    expect(harness.readSearch().app).toBe('telegram-1');
   });
 
-  it('leaves the region unset when none is asked for', async () => {
+  it('lands on the list with no panel open when none is asked for', async () => {
     const harness = buildHarness('/');
     const { result } = renderHook(() => useOpenConnections(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -862,7 +862,8 @@ describe('useOpenConnections', () => {
     });
 
     await waitFor(() => {
-      expect(harness.readSearch().region).toBeUndefined();
+      expect(harness.readPathname()).toBe('/connections');
     });
+    expect(harness.readSearch().app).toBeUndefined();
   });
 });

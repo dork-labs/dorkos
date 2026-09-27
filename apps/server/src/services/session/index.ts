@@ -192,6 +192,11 @@ export {
   setStagedContextStore,
 } from './staged-context-store.js';
 export type { StagedContextEntry } from './staged-context-store.js';
+export {
+  SessionLimitStore,
+  getSessionLimitStore,
+  setSessionLimitStore,
+} from './fleet/session-limit-store.js';
 export type {
   TriggerCommandIntentDeps,
   TriggerCommandIntentOpts,

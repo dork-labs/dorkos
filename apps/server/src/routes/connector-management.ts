@@ -38,6 +38,14 @@ const ReviewListQuerySchema = z
   .object({ state: z.enum(['pending', 'resolved']).optional() })
   .strict();
 
+/** Agent requests list by lifecycle group and, for one conversation's cards, by session. */
+const AgentRequestListQuerySchema = z
+  .object({
+    state: z.enum(['pending', 'resolved']).optional(),
+    sessionId: z.string().min(1).optional(),
+  })
+  .strict();
+
 /** Dependencies for the connector owner-management HTTP boundary. */
 export interface ConnectorOwnerBoundaryDeps {
   /** Resolve the current deployment's owner from verified server state. */
@@ -329,10 +337,10 @@ export function createConnectorManagementRouter(deps: ConnectorManagementRouterD
     if (!owner) return;
     const requests = requireAgentRequests(res);
     if (!requests) return;
-    const query = parseBody(ReviewListQuerySchema, req.query, res);
+    const query = parseBody(AgentRequestListQuerySchema, req.query, res);
     if (!query) return;
     try {
-      res.json({ requests: requests.listForOwner(owner, query.state) });
+      res.json({ requests: requests.listForOwner(owner, query.state, query.sessionId) });
     } catch (error) {
       sendManagementError(res, error);
     }

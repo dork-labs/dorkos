@@ -662,7 +662,7 @@ describe('CommandPaletteDialog', () => {
     searchThen('Connections');
     const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
+    expect(mockOpenConnections).toHaveBeenCalledWith();
   });
 
   it('navigates to /agents when Mesh Network is selected', () => {

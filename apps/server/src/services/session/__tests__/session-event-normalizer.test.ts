@@ -227,6 +227,34 @@ describe('toRawSessionEvent', () => {
       },
     },
     {
+      name: 'limit-only session_status → status_change carrying the usage limit (D4)',
+      input: {
+        type: 'session_status',
+        data: {
+          sessionId: 's1',
+          limit: {
+            accountId: 'work',
+            window: 'seven_day',
+            resetsAt: null,
+            since: '2026-09-26T10:00:00.000Z',
+            plan: { mode: 'ask' },
+          },
+        },
+      },
+      expected: {
+        type: 'status_change',
+        status: {
+          limit: {
+            accountId: 'work',
+            window: 'seven_day',
+            resetsAt: null,
+            since: '2026-09-26T10:00:00.000Z',
+            plan: { mode: 'ask' },
+          },
+        },
+      },
+    },
+    {
       name: 'streaming session_status → status_change carrying ONLY outputTokens (no fabricated 0s)',
       input: { type: 'session_status', data: { sessionId: 's1', outputTokens: 20 } },
       // Only outputTokens is present, so contextUsage carries only that field —

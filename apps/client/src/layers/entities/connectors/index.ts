@@ -12,7 +12,7 @@
 export { connectorKeys } from './api/query-keys';
 
 // --- Query hooks ---
-export { useConnectorProviders } from './model/use-connector-providers';
+export { useConnectorProviders, useConnectorAppConnections } from './model/use-connector-providers';
 export {
   useConfigureConnectionEventSource,
   useConnectionEventDefinitions,
@@ -50,6 +50,7 @@ export {
   useConnectorManagementReviews,
   useConnectorManagementReview,
   useConnectorAgentRequests,
+  useSessionConnectorAgentRequests,
   useConnectorAgentRequest,
   useConnectorAgentRequestAuthentication,
   useResolveConnectorAgentRequest,
@@ -60,6 +61,7 @@ export {
   useStopSharingWithEveryAgent,
   useConnectorReviewAuthentication,
 } from './model/use-connector-management';
+export { useConnectorAgentRequestsSync } from './model/use-connector-agent-requests-sync';
 
 // --- Shared DTO types, re-exported for feature layers ---
 export type {
