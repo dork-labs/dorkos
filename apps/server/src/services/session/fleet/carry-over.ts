@@ -212,6 +212,12 @@ async function pointAtNewSession(
       current = readStoredLimit(source.sessionId);
     }
   }
+  if (current) {
+    logger.warn('[carry-over] could not point the old session at the new one after 3 tries', {
+      sourceSessionId: source.sessionId,
+      newSessionId,
+    });
+  }
 }
 
 /**

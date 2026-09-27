@@ -346,23 +346,14 @@ export async function continueSession(
  *   Defaults to the advisor's own preference (on when it chose to wait), else off.
  * @throws {ContinueError} With the status the route answers.
  */
-export function waitForReset(
+export async function waitForReset(
   sessionId: string,
   opts: { autoResume?: boolean }
 ): Promise<LimitPlan> {
-  return decidingAgainOnChange(() => waitOnce(sessionId, opts));
-}
-
-async function waitOnce(sessionId: string, opts: { autoResume?: boolean }): Promise<LimitPlan> {
+  // Decide once and tell the advisor once; only the local write is retried.
   const stored = await requireLimit(sessionId);
   const current = stored.limit.plan;
-  if (current.mode === 'continued') {
-    throw new ContinueError(
-      409,
-      'ALREADY_MOVED',
-      'This work already continued in another session.'
-    );
-  }
+  if (current.mode === 'continued') throw alreadyMoved();
   if (inFlight.has(episodeKey(stored))) {
     throw new ContinueError(409, 'MOVING', 'This work is already moving to another account.');
   }
@@ -381,14 +372,11 @@ async function waitOnce(sessionId: string, opts: { autoResume?: boolean }): Prom
     if (!held) throw new ContinueError(503, 'FLOW_UNREACHABLE', FLOW_UNREACHABLE_MESSAGE);
   }
   clearClaimedHandoff(stored.sessionId);
-  const plan: LimitPlan = {
-    mode: 'waiting',
-    resumeAt,
-    autoResume,
-    ...keptCarryOver(current),
-  };
-  const written = await writePlan(stored, plan);
-  return written?.limit.plan ?? plan;
+  return writeAfterDeciding(stored, (latest) => {
+    // Anything but a move still yields to the person's wait.
+    if (latest.limit.plan.mode === 'continued') throw alreadyMoved();
+    return { mode: 'waiting', resumeAt, autoResume, ...keptCarryOver(latest.limit.plan) };
+  });
 }
 
 /**
@@ -398,11 +386,7 @@ async function waitOnce(sessionId: string, opts: { autoResume?: boolean }): Prom
  * @param sessionId - The session.
  * @throws {ContinueError} With the status the route answers.
  */
-export function cancelAutoContinue(sessionId: string): Promise<LimitPlan> {
-  return decidingAgainOnChange(() => cancelOnce(sessionId));
-}
-
-async function cancelOnce(sessionId: string): Promise<LimitPlan> {
+export async function cancelAutoContinue(sessionId: string): Promise<LimitPlan> {
   const stored = await requireLimit(sessionId);
   if (stored.limit.plan.mode !== 'auto') {
     throw new ContinueError(409, 'NOT_HANDING_OFF', 'There is no handoff to cancel.');
@@ -413,9 +397,40 @@ async function cancelOnce(sessionId: string): Promise<LimitPlan> {
     if (!cancelled) throw new ContinueError(503, 'FLOW_UNREACHABLE', FLOW_UNREACHABLE_MESSAGE);
   }
   clearClaimedHandoff(stored.sessionId);
-  const plan: LimitPlan = { mode: 'ask' };
-  const written = await writePlan(stored, plan);
-  return written?.limit.plan ?? plan;
+  // A plan that is no longer `auto` (the 10-minute fallback already asked
+  // again, or the move was reported) means the cancel has nothing left to do:
+  // it succeeded, and the current plan is the answer.
+  return writeAfterDeciding(stored, (latest) =>
+    latest.limit.plan.mode === 'auto' ? { mode: 'ask' } : null
+  );
+}
+
+function alreadyMoved(): ContinueError {
+  return new ContinueError(409, 'ALREADY_MOVED', 'This work already continued in another session.');
+}
+
+/**
+ * Write the plan `next` decides from the latest read, re-reading after a
+ * compare-and-set miss (up to 3 tries). Nothing outside this process is
+ * called again. `next` answering `null` keeps the current plan.
+ */
+async function writeAfterDeciding(
+  read: StoredSessionLimit,
+  next: (latest: StoredSessionLimit) => LimitPlan | null
+): Promise<LimitPlan> {
+  let latest: StoredSessionLimit | undefined = read;
+  for (let attempt = 1; ; attempt++) {
+    if (!latest || latest.limit.since !== read.limit.since) throw noLimit();
+    const plan = next(latest);
+    if (plan === null) return latest.limit.plan;
+    try {
+      const written = await writePlan(latest, plan);
+      return written?.limit.plan ?? plan;
+    } catch (err) {
+      if (!(err instanceof PlanChangedError) || attempt >= 3) throw err;
+      latest = readStoredLimit(read.sessionId);
+    }
+  }
 }
 
 /**

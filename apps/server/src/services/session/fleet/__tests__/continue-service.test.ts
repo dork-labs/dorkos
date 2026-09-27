@@ -354,6 +354,27 @@ describe('without an advisor', () => {
     expect(runtime.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('still points the old session at the new one when a plan write lands during the launch', async () => {
+    await limitedSession('src-1');
+    vi.mocked(dispatchSessionMessage).mockImplementationOnce(async () => {
+      const row = store.get('src-1')!;
+      store.update('src-1', row.limit.since, {
+        plan: { mode: 'waiting', resumeAt: null, autoResume: false },
+      });
+      return {
+        accepted: true,
+        canonicalId: 'new-1',
+        outcome: { kind: 'started', messageId: 'm' },
+        queued: false,
+        queuePosition: 0,
+      } as never;
+    });
+    expect(await continueSession('src-1', { account: 'spare' }, deps)).toEqual({
+      sessionId: 'new-1',
+    });
+    expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' });
+  });
+
   it('answers a second continue with the session the first one started', async () => {
     await limitedSession('src-1');
     const first = await continueSession('src-1', { account: 'spare' }, deps);
@@ -909,6 +930,37 @@ describe('a session the advisor claims', () => {
     expect((await refusal(continueSession('src-1', { account: 'spare' }, deps))).status).toBe(503);
     expect((await refusal(waitForReset('src-1', {}))).status).toBe(503);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('tells the advisor about a wait once, even when the local write loses a race', async () => {
+    const wait = vi.fn(async () => {
+      // Something else rewrites the plan while the advisor is answering.
+      const row = store.get('src-1')!;
+      store.update('src-1', row.limit.since, {
+        plan: { mode: 'waiting', resumeAt: null, autoResume: false },
+      });
+    });
+    advise({ claims: async () => true, wait });
+    await limitedSession('src-1');
+    expect(await waitForReset('src-1', { autoResume: true })).toMatchObject({
+      mode: 'waiting',
+      resumeAt: RESETS,
+      autoResume: true,
+    });
+    expect(wait).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers a cancel that raced the 10-minute fallback as done, asking the advisor once', async () => {
+    const cancelAuto = vi.fn(async () => {
+      // The fallback put the plan back to ask while flow was cancelling.
+      const row = store.get('src-1')!;
+      store.update('src-1', row.limit.since, { plan: { mode: 'ask' }, state: 'limited' });
+    });
+    advise({ claims: async () => true, move: async () => undefined, cancelAuto });
+    await limitedSession('src-1');
+    await continueSession('src-1', { account: 'spare' }, deps);
+    expect(await cancelAutoContinue('src-1')).toEqual({ mode: 'ask' });
+    expect(cancelAuto).toHaveBeenCalledTimes(1);
   });
 
   it('asks a newly registered advisor to claim a row nobody claimed', async () => {
