@@ -79,7 +79,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await fs.chmod(filePath, 0o644).catch(() => {});
+  await fs.chmod(path.join(root, 'digest'), 0o755).catch(() => {});
   await fs.rm(root, { recursive: true, force: true });
 });
 
@@ -106,13 +106,13 @@ describe('renameScheduleAccount', () => {
   it('re-runs cleanly after being cut short between the row and the file', async () => {
     await writeSchedule('default');
     const id = store.fileSync.upsertFromFile(definition('default')).id;
-    await fs.chmod(filePath, 0o444);
+    await fs.chmod(path.join(root, 'digest'), 0o555);
     await expect(renameScheduleAccount(db, 'default', 'default-2', notOwned)).rejects.toThrow();
     // The row and its approval moved together; the file did not.
     expect(row(id).account).toBe('default-2');
     expect(await fileAccount()).toBe('default');
 
-    await fs.chmod(filePath, 0o644);
+    await fs.chmod(path.join(root, 'digest'), 0o755);
     expect(await renameScheduleAccount(db, 'default', 'default-2', notOwned)).toEqual({
       rows: 0,
       files: 1,
@@ -184,5 +184,24 @@ describe('renameScheduleAccount', () => {
     expect(row(id).account).toBe('default');
     expect(parseContentKey(row(id).approvedContentKey!)?.account).toBe('default');
     expect(await fs.readFile(filePath, 'utf8')).toBe(before);
+  });
+
+  it('writes through a symlinked SKILL.md: the link stays a link and its target changes', async () => {
+    const real = path.join(root, 'real-skill.md');
+    await writeSchedule('default');
+    await fs.rename(filePath, real);
+    await fs.symlink(real, filePath);
+    const id = store.fileSync.upsertFromFile(definition('default')).id;
+
+    expect(await renameScheduleAccount(db, 'default', 'default-2', notOwned)).toEqual({
+      rows: 1,
+      files: 1,
+    });
+    expect((await fs.lstat(filePath)).isSymbolicLink()).toBe(true);
+    expect(await fileAccount()).toBe('default-2');
+    expect(row(id).account).toBe('default-2');
+    expect((await fs.readdir(path.dirname(filePath))).filter((n) => n.endsWith('.tmp'))).toEqual(
+      []
+    );
   });
 });

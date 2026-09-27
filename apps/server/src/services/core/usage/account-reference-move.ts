@@ -93,7 +93,7 @@ export async function moveAccountReferences(
       if (!(await manifestReachable(agent.projectPath))) {
         warnOnce(
           `agent-unreachable:${agent.id}`,
-          '[account-usage] skipped an agent whose folder is missing or unreadable while moving a renamed account; its manifest still names the old id',
+          "[account-usage] skipped an agent whose folder is missing or unreadable while moving a renamed account; its manifest still names the old id, and once the rename marker drops `default` means this computer's own sign-in",
           { agentId: agent.id, projectPath: agent.projectPath }
         );
         continue;

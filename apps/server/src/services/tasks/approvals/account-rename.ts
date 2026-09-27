@@ -22,6 +22,7 @@
  *
  * @module services/tasks/approvals/account-rename
  */
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -116,6 +117,38 @@ export function rewriteScheduleAccountInPlace(
   );
 }
 
+/**
+ * Replace a file's contents so a crash leaves the old file or the new one,
+ * never half of one: a temp file in the same folder, `fsync`, then `rename`
+ * over the target, keeping its mode. A symlink is resolved first and the real
+ * file replaced, so the link itself stays a link.
+ *
+ * @param filePath - The file to replace (a symlink is followed).
+ * @param content - Its new contents.
+ */
+async function replaceFileAtomically(filePath: string, content: string): Promise<void> {
+  const target = await fs.realpath(filePath);
+  const { mode } = await fs.stat(target);
+  const tmp = path.join(
+    path.dirname(target),
+    `.${path.basename(target)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+  );
+  const handle = await fs.open(tmp, 'wx', mode & 0o7777);
+  try {
+    await handle.writeFile(content);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await fs.chmod(tmp, mode & 0o7777);
+    await fs.rename(tmp, target);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
+}
+
 /** Whether an installed package owns a schedule's file (never written by DorkOS). */
 export type ScheduleOwnershipCheck = (schedule: {
   filePath: string;
@@ -206,7 +239,7 @@ export async function renameScheduleAccount(
     if (fileAccount(content) !== from) continue;
     const edited = rewriteScheduleAccountInPlace(content, from, to);
     if (edited !== null) {
-      await fs.writeFile(filePath, edited);
+      await replaceFileAtomically(filePath, edited);
       files++;
       continue;
     }
