@@ -52,6 +52,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/chat/live-turn-visibility.ts"
   : >"$root/apps/e2e/tests/chat/runtime-capability-parity.ts"
   : >"$root/apps/e2e/tests/chat/session-read-state.ts"
+  : >"$root/apps/e2e/tests/connections/chat-connect-card.ts"
   : >"$root/apps/e2e/tests/connections/event-notifications.ts"
   : >"$root/apps/e2e/tests/connections/owner-management.ts"
   : >"$root/apps/e2e/tests/conversation/ask-anywhere.ts"
@@ -106,13 +107,16 @@ make_workspace() {
     { "title": "connections/event-notifications.ts", "file": "connections/event-notifications.ts",
       "specs": [ { "title": "the event-notifications module's suite runs", "file": "connections/event-notifications.ts",
                    "tests": [ { "status": "expected" } ] } ] },
+    { "title": "connections/chat-connect-card.ts", "file": "connections/chat-connect-card.ts",
+      "specs": [ { "title": "the chat-connect-card module's suite runs", "file": "connections/chat-connect-card.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
     { "title": "settings", "file": "settings/auth-login.spec.ts", "specs": [],
       "suites": [ { "title": "Auth", "file": "settings/auth-login.spec.ts",
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
   "config": { "shard": null },
-  "stats": { "expected": 15, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 16, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -197,7 +201,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '15 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '16 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"
@@ -272,7 +276,7 @@ check 'a report naming a deleted spec is refused' "$tmp/staleReport" 1 'do not e
 # The Connections helpers register tests from plain .ts files. Their successful
 # report entries above must not become exemptions: missing, skipped, and deleted
 # variants must all remain failures.
-for module in owner-management event-notifications; do
+for module in owner-management event-notifications chat-connect-card; do
   for mode in missing skipped deleted; do
     root="$tmp/${module}Module-$mode"
     make_workspace "$root"
@@ -451,7 +455,7 @@ check 'a missing quarantine list is refused, never assumed empty' "$tmp/qMissing
 
 make_workspace "$tmp/qEmpty"
 : >"$tmp/qEmpty/quarantine.txt"
-check 'an empty lane changes nothing' "$tmp/qEmpty" 0 '15 test(s) executed' \
+check 'an empty lane changes nothing' "$tmp/qEmpty" 0 '16 test(s) executed' \
   --quarantined "$tmp/qEmpty/quarantine.txt"
 
 # The tally check must keep working WHILE the lane is absorbing. It used to be
@@ -543,7 +547,7 @@ check 'a stats block with no numbers is refused, not skipped past' \
 make_workspace "$tmp/sharded"
 make_shards "$tmp/sharded" 3
 sharded=$tmp/sharded/apps/e2e/test-results
-check 'a healthy three-shard run passes' "$tmp/sharded" 0 '15 test(s) executed' \
+check 'a healthy three-shard run passes' "$tmp/sharded" 0 '16 test(s) executed' \
   "$sharded/shard-1.json" "$sharded/shard-2.json" "$sharded/shard-3.json"
 
 # And it must still be the same ASSERTION, not just the same total: a spec absent
