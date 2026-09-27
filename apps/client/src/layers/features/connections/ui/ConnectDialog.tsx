@@ -37,6 +37,7 @@ import {
   signInLine,
   wayName,
 } from '../lib/connect-route';
+import { AppActions } from './AppActions';
 import { FirstConnectStep } from './FirstConnectStep';
 import { ConnectionAccessCard } from './access/ConnectionAccessCard';
 
@@ -219,7 +220,15 @@ export function ConnectDialog({
                 isRetrying={lookup.isFetching}
               />
             ) : firstConnect ? (
-              <FirstConnectStep reason={firstConnectReason(appConnections, resolvedService)} />
+              <>
+                <FirstConnectStep reason={firstConnectReason(appConnections, resolvedService)} />
+                <AppActions
+                  toolkit={serviceSlug}
+                  appName={serviceName}
+                  providerInstanceId={null}
+                  level={null}
+                />
+              </>
             ) : !activeFlow ? (
               <>
                 <div className="space-y-1.5">
@@ -274,6 +283,13 @@ export function ConnectDialog({
                     </p>
                   </div>
                 ) : null}
+
+                <AppActions
+                  toolkit={serviceSlug}
+                  appName={serviceName}
+                  providerInstanceId={route?.providerInstanceId ?? null}
+                  level={null}
+                />
 
                 {showProviders && (
                   <fieldset className="space-y-2">

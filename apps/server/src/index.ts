@@ -142,6 +142,7 @@ import { ConnectorReconciliationService } from './services/connectors/reconcilia
 import { ConnectorAuthenticationFlowService } from './services/connectors/resources/authentication-flow-service.js';
 import { ConnectorLifecycleService } from './services/connectors/resources/lifecycle-service.js';
 import { ConnectorOperatorQueryService } from './services/connectors/resources/operator-query-service.js';
+import { ConnectorAppActionsService } from './services/connectors/resources/app-actions-service.js';
 import { ManagedAuthoritySyncService } from './services/connectors/resources/managed-authority-sync-service.js';
 import { ManagedCloudConnectorProvider } from './services/connectors/providers/managed/managed-cloud.js';
 import { legacyDefaultProviderInstanceId } from './services/connectors/legacy-connection-migration.js';
@@ -3177,6 +3178,10 @@ async function start() {
         : undefined;
     }
   );
+  const connectorAppActions = new ConnectorAppActionsService({
+    registry: connectorRegistry,
+    dorkHome,
+  });
   const connectorOperatorQueries = new ConnectorOperatorQueryService({
     db,
     registry: connectorRegistry,
@@ -3891,6 +3896,7 @@ async function start() {
       query: connectorOperatorQueries,
       authentication: connectorAuthenticationFlows,
       lifecycle: connectorLifecycle,
+      actions: connectorAppActions,
       resolveOwner: () => connectorOwner,
       loginEnabled: () => configManager.get('auth').enabled,
     })

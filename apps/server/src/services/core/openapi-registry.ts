@@ -241,6 +241,8 @@ import {
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
   ConnectorConnectionPatchSchema,
+  ConnectorAppActionsQuerySchema,
+  ConnectorAppActionsSchema,
   ConnectorDisconnectImpactSchema,
   ConnectorLifecycleResultSchema,
   ConnectorReconnectRequestSchema,
@@ -3758,6 +3760,44 @@ registry.registerPath({
     },
     404: {
       description: 'Connection absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/apps/{toolkit}/actions',
+  tags: ['Connectors'],
+  summary: 'List what an app lets agents do through one configured way',
+  description:
+    'Owner only. Returns every action the app offers at one exact service version, each with ' +
+    'the safety classification the grant review stores and execution enforces. The list is ' +
+    'kept for 24 hours and served at once while it refreshes. A way that cannot list trusted ' +
+    'actions answers `unlisted`; a list that stopped part way says `complete: false`.',
+  request: {
+    params: z.object({ toolkit: z.string().min(1).max(200) }),
+    query: ConnectorAppActionsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'The app’s actions, or an honest unlisted answer',
+      content: { 'application/json': { schema: ConnectorAppActionsSchema } },
+    },
+    400: {
+      description: 'Invalid app id or query',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Only the owner can read this, from the DorkOS app',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'The named way of reaching apps is not set up',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: 'The service could not list the app’s actions just now',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

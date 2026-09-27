@@ -7,6 +7,7 @@ import {
 } from '@dorkos/shared/connector-provider';
 import { ConnectionIdSchema } from '@dorkos/shared/connector-schemas';
 import {
+  ConnectorAppActionsQuerySchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorConnectionPatchSchema,
   ConnectorReconnectRequestSchema,
@@ -16,6 +17,10 @@ import {
   resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,
 } from './connector-management.js';
+import {
+  ConnectorAppActionsError,
+  type ConnectorAppActionsService,
+} from '../services/connectors/resources/app-actions-service.js';
 import {
   ConnectorAuthenticationFlowError,
   type ConnectorAuthenticationFlowService,
@@ -37,6 +42,8 @@ const CatalogQuerySchema = z
   })
   .strict();
 
+const ToolkitParamSchema = z.string().min(1).max(200);
+
 /** Dependencies for the canonical provider-neutral Connections resource boundary. */
 export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps {
   /** Account-free catalog and owner-scoped resource reads. */
@@ -57,6 +64,8 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
     ConnectorLifecycleService,
     'rename' | 'pause' | 'resume' | 'disconnect' | 'remove'
   >;
+  /** What an app lets agents do, read on demand and kept. */
+  readonly actions: Pick<ConnectorAppActionsService, 'list'>;
 }
 
 function owner(req: Request, res: Response, deps: ConnectorResourcesRouterDeps) {
@@ -91,6 +100,12 @@ function sendResourceError(res: Response, error: unknown): void {
           ? 409
           : 422;
     res.status(status).json({ error: error.message, code: error.code });
+    return;
+  }
+  if (error instanceof ConnectorAppActionsError) {
+    res
+      .status(error.code === 'provider_not_found' ? 404 : 502)
+      .json({ error: error.message, code: error.code });
     return;
   }
   if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {
@@ -136,6 +151,19 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
           })
         )
       );
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
+  router.get('/apps/:toolkit/actions', async (req, res) => {
+    const operator = owner(req, res, deps);
+    if (!operator) return;
+    try {
+      const toolkit = ToolkitParamSchema.parse(req.params.toolkit);
+      const query = ConnectorAppActionsQuerySchema.parse(req.query);
+      res.set('Cache-Control', 'private, no-store');
+      res.json(await deps.actions.list({ providerInstanceId: query.providerInstanceId, toolkit }));
     } catch (error) {
       sendResourceError(res, error);
     }

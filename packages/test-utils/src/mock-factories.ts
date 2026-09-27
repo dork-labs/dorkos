@@ -1283,6 +1283,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     pauseConnectorConnection: vi.fn(),
     resumeConnectorConnection: vi.fn(),
     getConnectorDisconnectImpact: vi.fn(),
+    getConnectorAppActions: vi.fn(),
     disconnectConnectorConnection: vi.fn(),
     removeConnectorConnection: vi.fn(),
     getAgentConnectorConnections: vi

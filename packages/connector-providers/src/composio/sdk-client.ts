@@ -18,6 +18,7 @@ import type {
 import type {
   ConnectorCatalogPageRequest,
   ConnectorOperationClassification,
+  ConnectorOperationPage,
   ConnectorOperationPageRequest,
   ConnectorOperationRevision,
   ConnectorProviderExecuteResult,
@@ -76,7 +77,7 @@ export interface ComposioOperationClient {
   ): Promise<{
     status: 'ok';
     page: {
-      operations: Omit<ConnectorOperationRevision, 'id' | 'discoveredAt'>[];
+      operations: ConnectorOperationPage['operations'];
       nextCursor?: string;
       truncated: boolean;
     };
@@ -300,7 +301,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
   ): Promise<{
     status: 'ok';
     page: {
-      operations: Omit<ConnectorOperationRevision, 'id' | 'discoveredAt'>[];
+      operations: ConnectorOperationPage['operations'];
       nextCursor?: string;
       truncated: boolean;
     };
@@ -363,6 +364,8 @@ export class ComposioSdkClient implements ComposioOperationClient {
           capabilityClassification: classification,
           retryPolicy: 'never' as const,
           inputSchema,
+          ...(item.name.trim() !== '' && { displayName: item.name.trim().slice(0, 200) }),
+          important: item.tags.includes('important'),
         };
       });
       return {

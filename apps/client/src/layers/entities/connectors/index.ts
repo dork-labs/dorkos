@@ -25,6 +25,7 @@ export {
   useConnectorCatalog,
   useConnectorConnections,
   useConnectorConnection,
+  useConnectorAppActions,
   useConnectorDisconnectImpact,
   useAgentConnectorConnections,
   useEveryAgentConnectorGrants,

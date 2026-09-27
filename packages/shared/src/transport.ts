@@ -247,6 +247,7 @@ import type {
   ConnectorConnectionDetail,
   ConnectorConnectionListResource,
   ConnectorConnectionPatch,
+  ConnectorAppActions,
   ConnectorDisconnectImpact,
   ConnectorLifecycleResult,
   ConnectorProvidersResource,
@@ -3115,6 +3116,13 @@ export interface Transport
 
   /** Read the exact local authority affected by disconnecting one connection. */
   getConnectorDisconnectImpact(connectionId: string): Promise<ConnectorDisconnectImpact>;
+
+  /**
+   * Read what one app lets agents do through one configured way: every action
+   * with the safety classification the grant review enforces, or `unlisted`
+   * when that way cannot list trusted actions.
+   */
+  getConnectorAppActions(toolkit: string, providerInstanceId: string): Promise<ConnectorAppActions>;
 
   /** Disconnect one stable connection with local close-first semantics. */
   disconnectConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult>;

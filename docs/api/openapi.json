@@ -29805,6 +29805,183 @@
         }
       }
     },
+    "/api/connectors/apps/{toolkit}/actions": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "List what an app lets agents do through one configured way",
+        "description": "Owner only. Returns every action the app offers at one exact service version, each with the safety classification the grant review stores and execution enforces. The list is kept for 24 hours and served at once while it refreshes. A way that cannot list trusted actions answers `unlisted`; a list that stopped part way says `complete: false`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "toolkit",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "providerInstanceId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The app’s actions, or an honest unlisted answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "listed"
+                          ]
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "toolkitVersion": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "actions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "operationSlug": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "displayName": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "capabilityClassification": {
+                                "type": "string",
+                                "enum": [
+                                  "read",
+                                  "write",
+                                  "destructive"
+                                ]
+                              },
+                              "important": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "operationSlug",
+                              "capabilityClassification",
+                              "important"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 2000
+                        },
+                        "complete": {
+                          "type": "boolean"
+                        },
+                        "fetchedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "toolkit",
+                        "toolkitVersion",
+                        "actions",
+                        "complete",
+                        "fetchedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unlisted"
+                          ]
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "toolkit"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid app id or query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the owner can read this, from the DorkOS app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The named way of reaching apps is not set up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The service could not list the app’s actions just now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/connections/{connectionId}/disconnect-impact": {
       "get": {
         "tags": [

@@ -1,4 +1,5 @@
 import type {
+  ConnectorOperationClassification,
   ConnectorReconciliationCandidate,
   ConnectorReconciliationGrantSelection,
   ConnectorReconciliationPreview,
@@ -43,18 +44,32 @@ export function changedGrantSelections(
   });
 }
 
+/**
+ * Whether a quick access level includes an action of this safety
+ * classification: "Read" is `read` only, "Read and write" adds `write`, and
+ * no level includes `destructive`, which is only ever allowed one action at a
+ * time. The one rule every level preset, and every screen describing one,
+ * reads from.
+ *
+ * @param classification - The action's stored safety classification.
+ * @param level - The quick access level.
+ */
+export function levelIncludes(
+  classification: ConnectorOperationClassification,
+  level: 'none' | 'read' | 'read-write'
+): boolean {
+  if (level === 'none') return false;
+  return classification === 'read' || (level === 'read-write' && classification === 'write');
+}
+
 /** Exact supported revision IDs selected by a quick access level. */
 export function revisionIdsForAccessLevel(
   candidates: ConnectorReconciliationCandidate[],
   level: 'none' | 'read' | 'read-write'
 ): string[] {
-  if (level === 'none') return [];
   return candidates
     .filter(
-      (candidate) =>
-        candidate.supported &&
-        (candidate.capabilityClassification === 'read' ||
-          (level === 'read-write' && candidate.capabilityClassification === 'write'))
+      (candidate) => candidate.supported && levelIncludes(candidate.capabilityClassification, level)
     )
     .map((candidate) => candidate.operationRevisionId)
     .sort();
