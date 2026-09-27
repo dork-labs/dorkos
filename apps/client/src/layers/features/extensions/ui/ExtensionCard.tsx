@@ -93,7 +93,7 @@ export function ExtensionCard({
           {/* Incompatible message */}
           {isIncompatible && manifest.minHostVersion && (
             <p className="text-muted-foreground text-sm">
-              Requires DorkOS &gt;= {manifest.minHostVersion}
+              Needs DorkOS {manifest.minHostVersion} or newer
             </p>
           )}
 
