@@ -14,9 +14,9 @@
       "slug": "local-workspace-lifecycle",
       "title": "Local workspace reconciler lifecycle pilot",
       "created": "2026-09-26",
-      "status": "specified",
+      "status": "implemented",
       "project": "Maintenance",
-      "linearIssue": "DOR-2347"
+      "linearIssue": "DOR-2428"
     },
     {
       "id": "260926-183346",
