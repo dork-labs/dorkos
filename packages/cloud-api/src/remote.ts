@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { IdSchema, SecretValueSchema, TimestampSchema } from './primitives.js';
+import { IdSchema, SecretValueSchema, TimestampSchema, tolerantEnum } from './primitives.js';
 import { HandleSchema } from './seats.js';
 
 /**
@@ -27,6 +27,9 @@ export const RemoteStateSchema = z
  */
 export const RemoteStatusSchema = z
   .object({
+    instanceId: IdSchema.optional().describe(
+      'The instance this status is about, echoed from the request so an answer can be matched to its instance. Absent from an older service.'
+    ),
     mode: RemoteModeSchema,
     state: RemoteStateSchema,
     address: z.string().describe('The address this instance is reachable at.'),
@@ -188,6 +191,134 @@ export const RemoteDesignationSchema = z
     cooldownUntil: TimestampSchema.describe('Until when the designation cannot be changed again.'),
   })
   .describe('The accepted designation, and when it may next be changed.');
+
+/**
+ * `GET /v1/orgs/{orgId}/remote/designation` — which instance the organization
+ * keeps always available, if any.
+ *
+ * The same fields the `POST` answers, each nullable, so "nobody holds it" is a
+ * state rather than a 404. An organization whose designated instance was
+ * unlinked has none until somebody names another; that is a normal state.
+ * `cooldownUntil` says when the designation may next change, so a page can say
+ * so before anybody tries. There is no route that withdraws a designation.
+ */
+export const RemoteDesignationStatusSchema = z
+  .object({
+    instanceId: IdSchema.nullable().describe(
+      'The designated instance, or null when the organization has none.'
+    ),
+    effectiveAt: TimestampSchema.nullable().describe(
+      'When the current designation took effect, or null when there is none.'
+    ),
+    cooldownUntil: TimestampSchema.nullable().describe(
+      'Until when the designation cannot be changed, or null when it can be changed now.'
+    ),
+  })
+  .describe(
+    'Which instance an organization keeps always available, if any, and when that may next change.'
+  );
+
+/** Which instance an organization keeps always available, if any. */
+export type RemoteDesignationStatus = z.infer<typeof RemoteDesignationStatusSchema>;
+
+/** What a remote-usage figure is counted in: hours, gigabytes, or a count. */
+export const RemoteCeilingUnitSchema = z
+  .enum(['hours', 'GB', 'count'])
+  .describe('What a remote-usage figure is counted in: hours, gigabytes, or a plain count.');
+
+/** Where an account stands against one fair-use limit. */
+export const RemoteCeilingStateSchema = z
+  .enum(['clear', 'alert', 'reached'])
+  .describe(
+    'Where an account stands against one limit: well within it, past the warning point, or at it.'
+  );
+
+/**
+ * Where one account stands against one published remote-access limit, this
+ * period.
+ *
+ * The server converts and the server divides. `limit` and `used` are already in
+ * `unit`, and `fraction` is on the wire, so no two clients can round a
+ * percentage differently from the service that enforces it. It is a fair-use
+ * report, not a bill: nothing here is money.
+ *
+ * `unit` and `state` are tolerant: a value added in a later release reads as
+ * `unrecognised`, so one new unit on one entry cannot fail the whole report.
+ * Generate the JSON Schema with `{ io: 'input' }`.
+ */
+export const RemoteCeilingSchema = z
+  .object({
+    ceiling: z
+      .string()
+      .describe(
+        'Which limit, as a server-supplied mechanism name. Render the rest of the entry; a name this client does not know is still a valid entry.'
+      ),
+    limit: z.number().nonnegative().describe('The published limit, in `unit`.'),
+    used: z.number().nonnegative().describe('What the account has used this period, in `unit`.'),
+    unit: tolerantEnum(RemoteCeilingUnitSchema).describe(
+      'What `limit` and `used` are counted in. A unit this release does not know reads as unrecognised.'
+    ),
+    fraction: z
+      .number()
+      .nonnegative()
+      .describe('`used / limit`, as the server computed it. May exceed 1. Never recompute it.'),
+    alertFraction: z
+      .number()
+      .nonnegative()
+      .describe('The fraction at which the published copy says a warning fires.'),
+    state: tolerantEnum(RemoteCeilingStateSchema).describe(
+      'Where the account stands against this limit. A state this release does not know reads as unrecognised.'
+    ),
+    enforceable: z
+      .boolean()
+      .describe(
+        'False when `used` is the period`s high-water mark rather than a figure for now. Such a limit frees as soon as the usage ends, so do not present the peak as a present count.'
+      ),
+    provenance: z
+      .object({
+        source: z
+          .string()
+          .describe('How the limit was arrived at, as a server-supplied string. Render it.'),
+        measuredAt: TimestampSchema.nullable().describe(
+          'When it was measured, or null when nothing measured it.'
+        ),
+      })
+      .describe('Where this limit came from.'),
+  })
+  .describe('Where one account stands against one published remote-access limit, this period.');
+
+/** Where one account stands against one published remote-access limit. */
+export type RemoteCeiling = z.infer<typeof RemoteCeilingSchema>;
+
+/**
+ * `GET /v1/remote/usage` — where the caller's account stands against every
+ * published remote-access limit this period.
+ *
+ * A bearer token or the person's own browser session, and always the caller's
+ * own account: nothing in the request names another. An account that has used
+ * nothing gets 200 and zeroes, never a 404.
+ *
+ * Beside `/v1/remote/**` rather than under `/v1/usage` on purpose: these figures
+ * are reachability counted per period and are not money, where `/v1/usage` is
+ * inference for a window, denominated in money and credits.
+ */
+export const RemoteUsageResponseSchema = z
+  .object({
+    orgId: IdSchema.describe(
+      'The account the figures were counted against, in the same space as `/v1/orgs`.'
+    ),
+    period: z
+      .string()
+      .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be YYYY-MM')
+      .describe('The service`s own period, a calendar month in UTC, as YYYY-MM.'),
+    ceilings: z.array(RemoteCeilingSchema),
+  })
+  .describe(
+    'Where the caller`s account stands against every published remote-access limit this period. An account that used nothing gets zeroes, never a 404.'
+  );
+
+/** Where the caller's account stands against every published remote-access limit. */
+export type RemoteUsageResponse = z.infer<typeof RemoteUsageResponseSchema>;
 
 /**
  * `POST /v1/remote/credentials/issue` — an instance asks for a tunnel
@@ -378,7 +509,29 @@ export const RemoteCommandAckResponseSchema = z
   .object({ acknowledged: z.number().int().nonnegative() })
   .describe('How many command leases the server settled.');
 
-/** `POST /v1/remote/events` — batched activity from an instance. */
+/**
+ * A count of bytes, as a base-10 integer string.
+ *
+ * A string for the reason amounts are: a long window moves more bytes than a
+ * JavaScript number holds exactly, and a string cannot silently lose digits.
+ * Parse it with `BigInt`, never `Number`. Its length is bounded far beyond
+ * anything a window can move, so a runaway value is refused.
+ */
+export const ByteCountSchema = z
+  .string()
+  .max(30)
+  .regex(/^(0|[1-9][0-9]*)$/, 'must be a non-negative base-10 integer with no leading zeros')
+  .describe('A count of bytes, as a base-10 integer string. Parse it with BigInt, never Number.');
+
+/**
+ * `POST /v1/remote/events` — batched activity from an instance.
+ *
+ * Each close report names the span it covers: `openedAt` beside the existing
+ * `at` (when the tunnel closed), the requests that crossed it in that span, and
+ * the bytes in each direction. All four are optional, so a batch from an
+ * instance that predates them is accepted as it always was, at lower
+ * precision. `activity[].requests` is unchanged and still a running counter.
+ */
 export const RemoteEventBatchSchema = z
   .object({
     instanceId: IdSchema,
@@ -386,8 +539,31 @@ export const RemoteEventBatchSchema = z
       .array(z.object({ at: TimestampSchema, requests: z.number().int().nonnegative() }))
       .describe('Windowed request counters.'),
     closeReports: z
-      .array(z.object({ at: TimestampSchema, reason: z.string(), wakeId: IdSchema.nullable() }))
-      .describe('Why and when the tunnel closed itself.'),
+      .array(
+        z.object({
+          at: TimestampSchema.describe('When the tunnel closed.'),
+          reason: z.string(),
+          wakeId: IdSchema.nullable(),
+          openedAt: TimestampSchema.optional().describe(
+            'When the tunnel this report closes was opened, so the report names a span. Absent from an older instance.'
+          ),
+          requests: z
+            .number()
+            .int()
+            .nonnegative()
+            .optional()
+            .describe(
+              'How many requests crossed the tunnel between `openedAt` and `at`. Scoped to this span, unlike the running `activity[].requests`.'
+            ),
+          bytesIn: ByteCountSchema.optional().describe(
+            'Bytes received through the tunnel in this span.'
+          ),
+          bytesOut: ByteCountSchema.optional().describe(
+            'Bytes sent through the tunnel in this span.'
+          ),
+        })
+      )
+      .describe('Why and when the tunnel closed itself, and what crossed it while it was open.'),
   })
   .describe('Batched activity, close reports and window counters from one instance.');
 

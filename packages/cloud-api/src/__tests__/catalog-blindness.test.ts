@@ -182,6 +182,8 @@ const MECHANISM_ENUMS: Record<string, string> = {
   CustomAddressStatusSchema: 'where a hostname is in its setup',
   CertificateStateSchema: 'where a certificate is in its issuance',
   RemoteCommandOutcomeSchema: 'what an instance did with a command it leased',
+  RemoteCeilingUnitSchema: 'what a usage figure is counted in, not what anybody bought',
+  RemoteCeilingStateSchema: 'where an account stands against a limit, not which limit it has',
   HostedCommunityStateSchema: 'the Community server`s own lifecycle, not what anybody bought',
   HostedCommunityHoldReasonSchema: 'which way out of a hold to offer; names no allowance',
   CommunityNameUnavailableReasonSchema: 'why a short name cannot be used right now',
