@@ -15,7 +15,7 @@
       "slug": "connections-one-list",
       "title": "Connections, one list",
       "created": "2026-09-26",
-      "status": "ideation",
+      "status": "implemented",
       "project": "DorkOS Connections",
       "linearIssue": "DOR-2418"
     },
@@ -784,7 +784,7 @@
       "slug": "connections-redesign",
       "title": "Connections redesign — catalog-first, honest custody, chat front door, try-it-now",
       "created": "2026-07-30",
-      "status": "specified",
+      "status": "superseded",
       "project": "Connections Redesign — Direct First"
     },
     {

@@ -8,8 +8,10 @@ import {
   connections,
   createDb,
   eq,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
   ne,
   runMigrations,
+  sessionConnectionOverrides,
   sessionMessageAcceptanceReceipts,
   type Db,
 } from '@dorkos/db';
@@ -765,6 +767,568 @@ describe('ConnectorAgentRequestService', () => {
         revokedAt: null,
       },
     ]);
+  });
+
+  describe('answering with the access the agent already holds', () => {
+    /** Give the agent live grants the way the shared access card's save would. */
+    function grantLive(revisionIds: string[], connectionId = 'connection-1'): void {
+      for (const operationRevisionId of revisionIds) {
+        db.insert(connectionOperationGrants)
+          .values({
+            id: `grant-${operationRevisionId}`,
+            subjectType: 'agent',
+            subjectId: 'agent-1',
+            agentId: 'agent-1',
+            connectionId,
+            operationRevisionId,
+            createdBy: 'local_install:install-1',
+            createdAt: NOW.toISOString(),
+          })
+          .run();
+      }
+    }
+
+    it('resolves with exactly the live grants and writes none, even beyond what was asked', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      // Read and write from the card: more than the two operations requested.
+      grantLive(['revision-read', 'revision-draft', 'revision-delete']);
+      const before = db.select().from(connectionOperationGrants).all();
+
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+
+      expect(resolved).toMatchObject({
+        status: 'granted',
+        connectionId: CONNECTION_ID,
+        grantedOperationRevisionIds: ['revision-delete', 'revision-draft', 'revision-read'],
+      });
+      expect(db.select().from(connectionOperationGrants).all()).toEqual(before);
+      expect(
+        db
+          .select()
+          .from(connectorReviewRequests)
+          .where(eq(connectorReviewRequests.state, 'approved'))
+          .all()
+      ).toHaveLength(1);
+    });
+
+    it('refuses when the agent holds nothing on that account, and leaves the request pending', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+      expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
+    });
+
+    it("does not count another agent's access as this agent's", async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      db.insert(connectionOperationGrants)
+        .values({
+          id: 'grant-other',
+          subjectType: 'agent',
+          subjectId: 'agent-2',
+          agentId: 'agent-2',
+          connectionId: 'connection-1',
+          operationRevisionId: 'revision-read',
+          createdBy: 'local_install:install-1',
+          createdAt: NOW.toISOString(),
+        })
+        .run();
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
+    it('refuses a foreign owner and an account of another service', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+      db.update(connections)
+        .set({ toolkit: 'slack' })
+        .where(eq(connections.id, 'connection-1'))
+        .run();
+
+      await expect(
+        requests.resolve({ kind: 'local_install', installationId: 'foreign' }, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'request_not_found' });
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
+    it('waits for a managed account to finish applying the agent’s access', async () => {
+      db.update(connectorProviderInstances)
+        .set({ mode: 'managed', custody: 'managed' })
+        .where(eq(connectorProviderInstances.id, 'provider-1'))
+        .run();
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'authority_sync_failed' });
+      expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
+    });
+
+    it('resumes the live held call with the granted result', async () => {
+      const requests = service({ liveHoldMs: 5_000 });
+      const created = await requests.create(principal(), INPUT);
+      const held = requests.waitForResolution(principal(), created.requestId);
+      await Promise.resolve();
+      grantLive(['revision-read']);
+
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+
+      await expect(held).resolves.toMatchObject({
+        status: 'granted',
+        grantedOperationRevisionIds: ['revision-read'],
+      });
+    });
+
+    /** Share the account with every agent, the way the page's "Every agent" save does. */
+    function shareWithEveryAgent(revisionIds: string[]): void {
+      for (const operationRevisionId of revisionIds) {
+        db.insert(connectionOperationGrants)
+          .values({
+            id: `every-${operationRevisionId}`,
+            subjectType: 'every_agent',
+            subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+            agentId: null,
+            connectionId: 'connection-1',
+            operationRevisionId,
+            createdBy: 'local_install:install-1',
+            createdAt: NOW.toISOString(),
+          })
+          .run();
+      }
+    }
+
+    it('counts an "Every agent" grant as this agent\'s access, as the execution check does', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      shareWithEveryAgent(['revision-read']);
+      const before = db.select().from(connectionOperationGrants).all();
+
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+
+      expect(resolved).toMatchObject({
+        status: 'granted',
+        grantedOperationRevisionIds: ['revision-read'],
+        notGrantedOperations: ['gmail.draft'],
+      });
+      expect(db.select().from(connectionOperationGrants).all()).toEqual(before);
+    });
+
+    it('does not count "Every agent" on a managed account, which the server never honours', async () => {
+      db.update(connectorProviderInstances)
+        .set({ mode: 'managed', custody: 'managed' })
+        .where(eq(connectorProviderInstances.id, 'provider-1'))
+        .run();
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      shareWithEveryAgent(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
+    /** Scope this session's use of the account by hand, as Connections does. */
+    function overrideSession(
+      state: 'attached' | 'detached',
+      options: { agentId?: string; needsReconciliation?: boolean } = {}
+    ): void {
+      db.insert(sessionConnectionOverrides)
+        .values({
+          sessionId: 'session-1',
+          agentId: options.agentId ?? 'agent-1',
+          connectionId: 'connection-1',
+          state,
+          needsReconciliation: options.needsReconciliation ?? false,
+          updatedAt: NOW.toISOString(),
+        })
+        .run();
+    }
+
+    /** A grant this session holds on its own, used only under an `attached` override. */
+    function grantSession(operationRevisionId: string): void {
+      db.insert(connectionOperationGrants)
+        .values({
+          id: `session-grant-${operationRevisionId}`,
+          subjectType: 'session',
+          subjectId: 'session-1',
+          agentId: 'agent-1',
+          connectionId: 'connection-1',
+          operationRevisionId,
+          createdBy: 'local_install:install-1',
+          createdAt: NOW.toISOString(),
+        })
+        .run();
+    }
+
+    it.each([
+      ['detached', 'detached', {}],
+      ["another agent's", 'attached', { agentId: 'agent-2' }],
+      ['awaiting reconciliation', 'attached', { needsReconciliation: true }],
+    ] as const)(
+      'refuses when this chat has the account turned off (%s override), as execution would',
+      async (_label, state, options) => {
+        const requests = service();
+        const created = await requests.create(principal(), INPUT);
+        grantLive(['revision-read']);
+        grantSession('revision-read');
+        overrideSession(state, options);
+
+        await expect(
+          requests.resolve(OWNER, created.requestId, {
+            decision: 'current_access',
+            connectionId: CONNECTION_ID,
+          })
+        ).rejects.toMatchObject({ code: 'session_access_off' });
+        expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
+      }
+    );
+
+    it("never counts another chat's own grant under an attached override", async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      overrideSession('attached');
+      db.insert(connectionOperationGrants)
+        .values({
+          id: 'other-session-grant',
+          subjectType: 'session',
+          subjectId: 'session-2',
+          agentId: 'agent-1',
+          connectionId: 'connection-1',
+          operationRevisionId: 'revision-read',
+          createdBy: 'local_install:install-1',
+          createdAt: NOW.toISOString(),
+        })
+        .run();
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
+    it("counts only the session's own grants under an attached override", async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read', 'revision-draft']);
+      overrideSession('attached');
+
+      // The agent's own grants do not reach a chat scoped by hand.
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+
+      grantSession('revision-read');
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).resolves.toMatchObject({ grantedOperationRevisionIds: ['revision-read'] });
+    });
+
+    describe('the follow-up rechecks the recorded access before it starts', () => {
+      /** Answer with read access, then stop at the moment before the follow-up is claimed. */
+      async function answeredFollowUp() {
+        const queue = new MessageQueueStore(db);
+        const source = new ConnectorAgentRequestSourceAdapter(db, authority, 'boot-a');
+        const acceptance = new PrivateSessionMessageAcceptanceService(
+          db,
+          queue,
+          [source],
+          'boot-a',
+          () => clock
+        );
+        const requests = service({
+          resume: {
+            accept: (ref) => {
+              acceptance.accept(ref);
+            },
+            nudge: (sessionId) => nudges.push(sessionId),
+          },
+        });
+        const created = await requests.create(principal(), INPUT);
+        grantLive(['revision-read']);
+        await requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        });
+        clock = new Date(NOW.getTime() + 11 * 60_000);
+        await requests.reconcile();
+        const receiptId = db.select().from(sessionMessageAcceptanceReceipts).get()!.id;
+        const prepared = await acceptance.prepare(receiptId);
+        return { claim: () => acceptance.claim(receiptId, prepared), prepared };
+      }
+
+      it('refuses when a granted revision was revoked since', async () => {
+        const followUp = await answeredFollowUp();
+        db.update(connectionOperationGrants)
+          .set({ revokedAt: clock.toISOString() })
+          .where(eq(connectionOperationGrants.operationRevisionId, 'revision-read'))
+          .run();
+        expect(() => followUp.claim()).toThrow(
+          expect.objectContaining({ code: 'authority_expired' })
+        );
+      });
+
+      it('refuses when the pinned revision was replaced by a newer one', async () => {
+        const followUp = await answeredFollowUp();
+        db.insert(connectorOperationRevisions)
+          .values({
+            id: 'revision-read-2',
+            providerInstanceId: 'provider-1',
+            toolkit: 'gmail',
+            operationSlug: 'gmail.read',
+            toolkitVersion: '2',
+            schemaHash: 'hash-revision-read-2',
+            capabilityClassification: 'read',
+            retryPolicy: 'never',
+            providerRevisionRef: 'hosted-revision-read-2',
+            inputSchemaJson: '{}',
+            discoveredAt: NOW.toISOString(),
+          })
+          .run();
+        db.update(connectionOperationGrants)
+          .set({ revokedAt: clock.toISOString() })
+          .where(eq(connectionOperationGrants.operationRevisionId, 'revision-read'))
+          .run();
+        grantLive(['revision-read-2']);
+        expect(() => followUp.claim()).toThrow(
+          expect.objectContaining({ code: 'authority_expired' })
+        );
+      });
+
+      it('goes ahead when access was only added since, and names only what was recorded', async () => {
+        const followUp = await answeredFollowUp();
+        grantLive(['revision-draft']);
+        expect(followUp.claim().content).toContain('revision-read');
+        expect(followUp.prepared.content).not.toContain('revision-draft');
+      });
+
+      it('refuses when this chat has since had the account turned off', async () => {
+        const followUp = await answeredFollowUp();
+        overrideSession('detached');
+        expect(() => followUp.claim()).toThrow(
+          expect.objectContaining({ code: 'authority_expired' })
+        );
+      });
+    });
+
+    it('counts only live grants: a revoked one is not access', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read', 'revision-draft']);
+      db.update(connectionOperationGrants)
+        .set({ revokedAt: NOW.toISOString() })
+        .where(eq(connectionOperationGrants.operationRevisionId, 'revision-draft'))
+        .run();
+
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+      expect(resolved).toMatchObject({ grantedOperationRevisionIds: ['revision-read'] });
+
+      // Every grant revoked: nothing live, so nothing to answer with.
+      const second = await requests.create(principal(), { ...INPUT, reason: 'Another look' });
+      db.update(connectionOperationGrants)
+        .set({ revokedAt: NOW.toISOString() })
+        .where(eq(connectionOperationGrants.operationRevisionId, 'revision-read'))
+        .run();
+      await expect(
+        requests.resolve(OWNER, second.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
+    it('tells the agent what it asked for and was not given', async () => {
+      const queue = new MessageQueueStore(db);
+      const source = new ConnectorAgentRequestSourceAdapter(db, authority, 'boot-a');
+      const acceptance = new PrivateSessionMessageAcceptanceService(
+        db,
+        queue,
+        [source],
+        'boot-a',
+        () => clock
+      );
+      const requests = service({
+        resume: {
+          accept: (ref) => {
+            acceptance.accept(ref);
+          },
+          nudge: (sessionId) => nudges.push(sessionId),
+        },
+      });
+      const created = await requests.create(principal(), INPUT);
+      // Asked to read and draft; the owner allowed reading only.
+      grantLive(['revision-read']);
+
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+      expect(resolved).toMatchObject({ notGrantedOperations: ['gmail.draft'] });
+
+      // No live call is holding it any more, so the answer rides a follow-up.
+      clock = new Date(NOW.getTime() + 11 * 60_000);
+      await requests.reconcile();
+      const content = (
+        await acceptance.prepare(db.select().from(sessionMessageAcceptanceReceipts).get()!.id)
+      ).content;
+      expect(content).toContain('did not allow everything you asked for: gmail.draft');
+      expect(content).not.toContain('Continue the original request');
+    });
+
+    it('says "continue" only when everything asked for was allowed', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read', 'revision-draft']);
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+      expect(resolved).toMatchObject({ notGrantedOperations: [] });
+    });
+
+    it('treats a retry for another account as a different answer', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: 'connection-other' as ConnectionId,
+        })
+      ).rejects.toMatchObject({ code: 'request_already_resolved' });
+    });
+
+    it('does not pass an exact-action approval off as a current-access answer', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'approved',
+        connectionId: CONNECTION_ID,
+        operationRevisionIds: ['revision-read'],
+        eventScopes: [],
+      });
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'request_already_resolved' });
+    });
+
+    it('answers the same decision twice idempotently and refuses a different later one', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+      const decision = { decision: 'current_access', connectionId: CONNECTION_ID } as const;
+
+      await requests.resolve(OWNER, created.requestId, decision);
+      await expect(requests.resolve(OWNER, created.requestId, decision)).resolves.toMatchObject({
+        status: 'granted',
+      });
+      await expect(
+        requests.resolve(OWNER, created.requestId, { decision: 'denied' })
+      ).rejects.toMatchObject({ code: 'request_already_resolved' });
+    });
+  });
+
+  it('announces every change so open windows re-read their request lists', async () => {
+    const onChanged = vi.fn();
+    const requests = service({ onChanged });
+
+    const created = await requests.create(principal(), INPUT);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    // Reusing the same unresolved intent is not a change.
+    await requests.create(principal(), INPUT);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+
+    await requests.resolve(OWNER, created.requestId, { decision: 'denied' });
+    expect(onChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it("names the room a request's turn belongs to, for the owner only", async () => {
+    const requests = service({
+      roomForSession: (sessionId) => (sessionId === 'session-1' ? 'room-1' : undefined),
+    });
+    const created = await requests.create(principal(), INPUT);
+
+    expect(requests.getForOwner(OWNER, created.requestId)).toMatchObject({ roomId: 'room-1' });
+    // The room is an owner-side fact; the agent's own status never carries it.
+    expect(created).not.toHaveProperty('roomId');
+  });
+
+  it('never hands the agent a link into DorkOS', async () => {
+    const requests = service();
+    const created = await requests.create(principal(), INPUT);
+    expect(JSON.stringify(created)).not.toMatch(/https?:\/\//);
+    expect(created).not.toHaveProperty('openUrl');
+  });
+
+  it("lists only one conversation's requests when asked for its session", async () => {
+    const requests = service();
+    await requests.create(principal(), INPUT);
+    await requests.create(principal({ canonicalSessionId: 'session-2' }), {
+      ...INPUT,
+      reason: 'Something else',
+    });
+
+    expect(requests.listForOwner(OWNER, undefined, 'session-2')).toMatchObject([
+      { sessionId: 'session-2', reason: 'Something else' },
+    ]);
+    expect(requests.listForOwner(OWNER)).toHaveLength(2);
   });
 
   it('resumes a live held request with the real result and leaves no fallback claim', async () => {

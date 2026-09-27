@@ -255,12 +255,12 @@ function buildRouter() {
   });
   // The empty-state CTAs navigate to the Connections page now (DOR-857/858), so
   // the harness registers that route to let the navigation resolve and the
-  // assertions read the landing pathname + region.
+  // assertions read the landing pathname.
   const connectionsRoute = createRoute({
     staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/connections',
-    validateSearch: zodValidator(z.object({ region: z.string().optional() })),
+    validateSearch: zodValidator(z.object({ app: z.string().optional() })),
     component: RouteSlot,
   });
   return createRouter({
@@ -284,11 +284,6 @@ function readSettingsTab(): string | undefined {
 /** The path the router is currently on. */
 function readPathname(): string {
   return router.state.location.pathname;
-}
-
-/** The Connections region the URL currently points to, or `undefined`. */
-function readConnectionsRegion(): string | undefined {
-  return (router.state.location.search as { region?: string }).region;
 }
 
 function renderTabWithoutRouter(agent: AgentManifest = baseAgent) {
@@ -322,20 +317,19 @@ describe('IntegrationsTab', () => {
     it('State A: shows relay-off message and CTA when relay is disabled', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      expect(view.getByText('Messaging is off')).toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Open Messaging settings' })).toBeInTheDocument();
+      expect(view.getByText('Chat apps are off')).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Open Connections' })).toBeInTheDocument();
     });
 
-    // Messaging lives on the Connections page now (DOR-857), so the CTA lands
-    // there, in the messaging region — not on a Settings tab. Asserting the
-    // landing path + region is what keeps a CTA from silently going nowhere,
-    // the way "Open Relay settings" used to open the Advanced tab (DOR-858).
-    it('State A: the CTA lands on the Connections page, messaging region', async () => {
+    // Chat apps live on the Connections page (DOR-857, one list since
+    // DOR-2418), so the CTA lands there, not on a Settings tab. Asserting the
+    // landing path is what keeps a CTA from silently going nowhere, the way
+    // "Open Relay settings" used to open the Advanced tab (DOR-858).
+    it('State A: the CTA lands on the Connections page', async () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      fireEvent.click(view.getByRole('button', { name: 'Open Messaging settings' }));
+      fireEvent.click(view.getByRole('button', { name: 'Open Connections' }));
       await waitFor(() => expect(readPathname()).toBe('/connections'));
-      expect(readConnectionsRegion()).toBe('messaging');
     });
 
     it('State B: shows no-adapters message when relay is on but catalog is empty', () => {
@@ -345,12 +339,11 @@ describe('IntegrationsTab', () => {
       expect(view.getByRole('button', { name: 'Add a connection' })).toBeInTheDocument();
     });
 
-    it('State B: the CTA lands on the Connections page, messaging region', async () => {
+    it('State B: the CTA lands on the Connections page', async () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
       fireEvent.click(view.getByRole('button', { name: 'Add a connection' }));
       await waitFor(() => expect(readPathname()).toBe('/connections'));
-      expect(readConnectionsRegion()).toBe('messaging');
     });
 
     describe('in an isolated preview without a router', () => {
@@ -363,7 +356,7 @@ describe('IntegrationsTab', () => {
         const view = renderTabWithoutRouter();
 
         expect(() =>
-          fireEvent.click(view.getByRole('button', { name: 'Open Messaging settings' }))
+          fireEvent.click(view.getByRole('button', { name: 'Open Connections' }))
         ).not.toThrow();
 
         expect(useAppStore.getState().settingsOpen).toBe(false);
@@ -461,7 +454,7 @@ describe('IntegrationsTab', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
       expect(view.queryByText('Add connection')).not.toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Open Messaging settings' })).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Open Connections' })).toBeInTheDocument();
     });
   });
 

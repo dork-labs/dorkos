@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useConnectorConnections } from '@/layers/entities/connectors';
 import {
   Button,
@@ -8,12 +8,13 @@ import {
   RadioGroupItem,
   Skeleton,
 } from '@/layers/shared/ui';
+import { usableAccounts } from '../../lib/account-readiness';
 import { AccessCardFrame } from './AccessCardFrame';
 import type { AgentAccessCardProps } from './ConnectionAccessCard';
 
 /**
  * Fixed-agent mode without a known account: find it, and ask which one when
- * there are two. Once one is known, hands off to `renderAccess`.
+ * there are two. Only accounts an agent can use right now are offered. Once one is known, hands off to `renderAccess`.
  */
 export function AccountChoice({
   props,
@@ -24,16 +25,22 @@ export function AccountChoice({
 }) {
   const titleId = useId();
   const query = useConnectorConnections();
-  const accounts = (query.data?.connections ?? []).filter(
-    (connection) => connection.toolkit === props.toolkit && connection.lifecycle !== 'disconnected'
-  );
+  // Only accounts an agent could use right now: a paused or signed-out account
+  // can't be given to one, so offering it would be an Allow that cannot land.
+  const accounts = usableAccounts(query.data?.connections ?? [], props.toolkit);
   const [picked, setPicked] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<string | null>(null);
 
+  // The account the question is about, once there is one. It is held, not
+  // re-derived: a save changes the account list (a moved catalog, a pending
+  // sync), and re-deciding then would unmount the question mid-answer.
+  const [settled, setSettled] = useState<{ id: string; picked: boolean } | null>(null);
   const only = accounts.length === 1 ? accounts[0].connectionId : null;
-  const connectionId = only ?? chosen;
-  if (connectionId) {
-    return renderAccess(connectionId, only ? undefined : () => setChosen(null));
+  const current = settled ?? (only ? { id: only, picked: false } : null);
+  useEffect(() => {
+    if (!settled && only) setSettled({ id: only, picked: false });
+  }, [settled, only]);
+  if (current) {
+    return renderAccess(current.id, current.picked ? () => setSettled(null) : undefined);
   }
 
   const title = `Which ${props.serviceName} account?`;
@@ -55,7 +62,7 @@ export function AccountChoice({
         />
       ) : accounts.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          No {props.serviceName} account is connected yet.
+          No {props.serviceName} account is ready to use yet.
         </p>
       ) : (
         <RadioGroup
@@ -97,7 +104,10 @@ export function AccountChoice({
           </Button>
         )}
         {accounts.length > 1 && (
-          <Button disabled={!picked} onClick={() => setChosen(picked)}>
+          <Button
+            disabled={!picked}
+            onClick={() => picked && setSettled({ id: picked, picked: true })}
+          >
             Continue
           </Button>
         )}

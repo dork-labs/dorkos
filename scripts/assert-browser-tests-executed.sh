@@ -257,6 +257,7 @@ REGISTERED_MODULES=(
   'chat/live-turn-visibility.ts'
   'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'
+  'connections/chat-connect-card.ts'
   'connections/event-notifications.ts'
   'connections/owner-management.ts'
   'conversation/ask-anywhere.ts'

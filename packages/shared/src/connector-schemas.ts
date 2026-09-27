@@ -11,6 +11,13 @@ import { z } from 'zod';
 
 /** Maximum complete operation set supported by the provider discovery safety ceiling. */
 export const CONNECTOR_OPERATION_SELECTION_LIMIT = 100_000;
+
+/**
+ * How long a sign-in flow stays open before it expires, unless a server is
+ * configured otherwise. Shared so the app can stop asking a person to finish a
+ * sign-in that can no longer be finished.
+ */
+export const CONNECTOR_AUTHENTICATION_FLOW_TTL_MS = 15 * 60 * 1_000;
 /** Maximum event scopes one owner review can validate and apply atomically. */
 export const CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT = 32;
 
@@ -715,6 +722,12 @@ export const ConnectorAgentRequestStatusSchema = z.discriminatedUnion('status', 
     connectionId: ConnectionIdSchema,
     grantedOperationRevisionIds: z.array(z.string().min(1)),
     grantedEvents: z.array(z.string().min(1)),
+    /**
+     * Operations the agent asked for that the owner did not allow. Empty when
+     * everything asked for was allowed; the agent works within the rest and
+     * says what it could not do.
+     */
+    notGrantedOperations: z.array(z.string().min(1)).optional(),
   }).strict(),
   ConnectorAgentRequestBaseSchema.extend({ status: z.literal('denied') }).strict(),
   ConnectorAgentRequestBaseSchema.extend({ status: z.literal('expired') }).strict(),
@@ -730,6 +743,12 @@ export const ConnectorAgentRequestItemSchema = ConnectorAgentRequestStatusSchema
     .object({
       agent: z.object({ id: z.string().min(1), displayName: z.string().min(1) }).strict(),
       sessionId: z.string().min(1),
+      /**
+       * The room whose turn raised the request, when a room's agent asked. Read
+       * through the room-session binding when the request is read, so it
+       * follows a session's rekey. The room shows the card to its owner.
+       */
+      roomId: z.string().min(1).optional(),
     })
     .strict()
 );

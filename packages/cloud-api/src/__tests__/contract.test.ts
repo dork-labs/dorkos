@@ -1107,3 +1107,45 @@ describe('the hostnames a tunnel credential serves', () => {
     expect(description).toContain('/v1/remote/credentials/issue');
   });
 });
+
+describe('the key that names a remote event batch', () => {
+  /** A published example, parsed from `fixtures/v1`. */
+  const fixture = (rel: string): unknown =>
+    JSON.parse(
+      readFileSync(path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'v1', rel), 'utf8')
+    );
+
+  it('is the Idempotency-Key header, published by name', () => {
+    expect(contract.REMOTE_EVENTS_IDEMPOTENCY_HEADER).toBe('Idempotency-Key');
+  });
+
+  it('accepts an opaque key of one to 200 characters', () => {
+    for (const key of ['b', 'batch-0001', 'k'.repeat(200)]) {
+      expect(contract.RemoteEventBatchKeySchema.safeParse(key).success, key).toBe(true);
+    }
+  });
+
+  it('refuses an empty key and one longer than 200 characters', () => {
+    expect(contract.RemoteEventBatchKeySchema.safeParse('').success).toBe(false);
+    expect(contract.RemoteEventBatchKeySchema.safeParse('k'.repeat(201)).success).toBe(false);
+  });
+
+  it('keeps the key out of the batch body, so no instance already sending it is refused', () => {
+    // The key is transport: the body grows no field for it, and the published
+    // batch examples still parse exactly as they did.
+    const shape = Object.keys(contract.RemoteEventBatchSchema.shape);
+    for (const field of ['batchId', 'idempotencyKey', 'key']) {
+      expect(shape, field).not.toContain(field);
+    }
+    for (const file of ['remote/events-batch.json', 'remote/events-batch-spans.json']) {
+      expect(contract.RemoteEventBatchSchema.safeParse(fixture(file)).success, file).toBe(true);
+    }
+  });
+
+  it('tells a reader of the schemas how a repeated key is answered', () => {
+    expect(contract.RemoteEventBatchKeySchema.description).toContain('{ accepted: 0 }');
+    expect(contract.RemoteEventBatchKeySchema.description).toContain('already accepted');
+    expect(contract.RemoteEventBatchSchema.description).toContain('Idempotency-Key');
+    expect(contract.RemoteEventBatchResponseSchema.description).toContain('Idempotency-Key');
+  });
+});

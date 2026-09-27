@@ -167,7 +167,7 @@ export const DORKBOT_TOUR_LINES = {
   /** The offer line for each occasion tour, shown as a chip in the session. */
   offers: {
     tasks: 'I put that on the schedule. Want to see where your scheduled work lives?',
-    relay: 'Your first integration is set up. Want to see where your integrations live?',
+    relay: 'Your first chat app is set up. Want to see where your apps live?',
     mesh: "That's two agents now. Want to see your fleet?",
   },
   /** The on-demand general tour: the composer, then the tabs above it. */
@@ -182,10 +182,10 @@ export const DORKBOT_TOUR_LINES = {
     tasksList:
       'Here it is. Every scheduled task lands in this list, with its next run and its history.',
   },
-  /** The Relay occasion tour, fired on the first integration made. */
+  /** The Relay occasion tour, fired on the first chat app set up. */
   relay: {
     relayIntegrations:
-      'Right here. Every integration you add shows up in this list, so you can check on it or add more.',
+      'Right here. Every app you connect shows up in this list, so you can check on it or add more.',
   },
   /** The Mesh occasion tour, fired when a second agent joins the fleet. */
   mesh: {

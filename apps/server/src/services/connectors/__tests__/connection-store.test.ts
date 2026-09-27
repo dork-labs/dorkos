@@ -156,28 +156,37 @@ describe('ConnectionStore lifecycle and cleanup', () => {
       .get()!;
     expect(unchanged.executionConfigGeneration).toBe(first.executionConfigGeneration);
 
-    db.update(connections)
-      .set({ grantReconciliationStatus: 'ready' })
-      .where(eq(connections.id, connection.id))
-      .run();
+    // A new connection starts ready: nobody holds access on it yet.
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
+    // With nothing granted, a key change leaves nothing stale to re-check.
     registry.register(provider, 'digest-b');
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
+
+    // A revoked grant is no access at all: still nothing to re-check.
+    grantRead(db, connection.id, NOW);
+    registry.register(provider, 'digest-r');
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
+
+    // The same grant made live again (one row per subject and revision).
+    db.update(connectionOperationGrants)
+      .set({ revokedAt: null })
+      .where(eq(connectionOperationGrants.connectionId, connection.id))
+      .run();
+    registry.register(provider, 'digest-c');
     const changed = db
       .select()
       .from(connectorProviderInstances)
       .where(eq(connectorProviderInstances.id, provider.instanceId))
       .get()!;
-    expect(changed.executionConfigGeneration).toBe(first.executionConfigGeneration + 1);
-    expect(changed.executionConfigDigest).toBe('digest-b');
+    expect(changed.executionConfigGeneration).toBe(first.executionConfigGeneration + 3);
+    expect(changed.executionConfigDigest).toBe('digest-c');
     expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe(
       'migration_needs_reconcile'
     );
   });
 
   it('fences existing authority when the explicit provider deployment mode changes', () => {
-    db.update(connections)
-      .set({ grantReconciliationStatus: 'ready' })
-      .where(eq(connections.id, connection.id))
-      .run();
+    grantRead(db, connection.id);
     const before = db
       .select({ generation: connectorProviderInstances.executionConfigGeneration })
       .from(connectorProviderInstances)
@@ -397,3 +406,23 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * Give one named agent the read revision on a connection, as an owner save
+ * would, optionally already revoked.
+ */
+function grantRead(db: Db, connectionId: string, revokedAt: string | null = null): void {
+  db.insert(connectionOperationGrants)
+    .values({
+      id: `grant-${connectionId}-${revokedAt ? 'revoked' : 'live'}`,
+      subjectType: 'agent',
+      subjectId: 'agent-a',
+      agentId: 'agent-a',
+      connectionId,
+      operationRevisionId: 'revision-1',
+      createdBy: 'test',
+      createdAt: NOW,
+      revokedAt,
+    })
+    .run();
+}

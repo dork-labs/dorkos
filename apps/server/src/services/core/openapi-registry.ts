@@ -236,7 +236,7 @@ import {
   ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
-  ConnectorAppConnectionsSchema,
+  ConnectorProvidersResourceSchema,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
@@ -3563,10 +3563,7 @@ registry.registerPath({
       description: 'Provider setup statuses',
       content: {
         'application/json': {
-          schema: z.object({
-            providers: z.array(ConnectorProviderStatusSchema),
-            appConnections: ConnectorAppConnectionsSchema,
-          }),
+          schema: ConnectorProvidersResourceSchema,
         },
       },
     },

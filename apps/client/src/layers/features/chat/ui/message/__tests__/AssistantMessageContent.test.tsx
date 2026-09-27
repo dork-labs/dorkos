@@ -70,6 +70,23 @@ vi.mock('@/layers/features/approvals', () => ({
   ),
 }));
 
+// Mock the connections feature's chat card: it reads owner requests through
+// the query/transport providers, none of which this file is about. The stub
+// shows which call it was handed and keeps the fallback it would draw.
+vi.mock('@/layers/features/connections', async () => {
+  const { isConnectionRequestTool } = await vi.importActual<
+    typeof import('@/layers/features/connections/lib/agent-request-call')
+  >('@/layers/features/connections/lib/agent-request-call');
+  return {
+    isConnectionRequestTool,
+    ChatAgentRequest: ({ sessionId, input }: { sessionId: string; input?: string }) => (
+      <div data-testid="chat-agent-request" data-session-id={sessionId}>
+        {input}
+      </div>
+    ),
+  };
+});
+
 // Mock MessageContext. `allowsDenyReason` is read through a hoisted mutable
 // holder rather than baked into the return value, so a test can set what the
 // transcript would have resolved from capabilities without re-mocking the
@@ -462,5 +479,36 @@ describe('AssistantMessageContent — images and unknown parts (ADR 260901-13565
 
     expect(screen.getByText('Only this.')).toBeInTheDocument();
     expect(screen.queryByTestId('tool-call-card')).not.toBeInTheDocument();
+  });
+});
+
+describe('AssistantMessageContent — an agent asking for an app (DOR-2415)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('draws the owner card where the agent asked, never folded into a run of tool calls', () => {
+    const tool = (toolCallId: string, toolName: string, input = '{}') => ({
+      type: 'tool_call' as const,
+      toolCallId,
+      toolName,
+      input,
+      status: 'complete' as const,
+    });
+    const parts = [
+      tool('tc-1', 'Read'),
+      tool('tc-2', 'Grep'),
+      tool('tc-3', 'mcp__dorkos__connectors.request_connection', '{"serviceSlug":"gmail"}'),
+      tool('tc-4', 'Glob'),
+      tool('tc-5', 'Read'),
+    ];
+
+    render(<AssistantMessageContent message={makeMessage(parts)} />);
+
+    const card = screen.getByTestId('chat-agent-request');
+    expect(card).toHaveAttribute('data-session-id', 'test-session');
+    expect(card).toHaveTextContent('{"serviceSlug":"gmail"}');
+    // The four ordinary calls stay plain tool cards; the request is not one.
+    expect(screen.getAllByTestId('tool-call-card')).toHaveLength(4);
   });
 });

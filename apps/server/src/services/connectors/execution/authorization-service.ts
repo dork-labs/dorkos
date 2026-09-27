@@ -7,12 +7,10 @@ import {
   connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connectorProviderInstances,
-  sessionConnectionOverrides,
   and,
   desc,
   eq,
   isNull,
-  or,
   type Db,
 } from '@dorkos/db';
 import { stableStringify } from '@dorkos/shared/capabilities';
@@ -39,7 +37,7 @@ import {
   type ServerPrincipalProof,
 } from '../principal/server-principal.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
-import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { agentGrantScope } from './agent-grant-scope.js';
 
 const CLASSIFICATION_BY_CAPABILITY = {
   'connectors.execute_read': 'read',
@@ -539,19 +537,9 @@ export class ConnectorExecutionAuthorizationService {
   }
 
   /**
-   * Resolve the one grant that authorizes this exact revision, in a fixed order:
-   *
-   * 1. A session override for this connection decides alone. `detached`, another
-   *    agent's override, or one awaiting reconciliation denies; `attached` allows
-   *    only the session's own grants. Neither the agent's grants nor an
-   *    every-agent grant can widen a session the owner scoped by hand.
-   * 2. With no override, a named-agent grant or an every-agent grant for the
-   *    exact revision allows (ADR 260926-192625). There is no per-agent
-   *    exclusion from an every-agent grant; "Only agents I pick" is that choice.
-   *
-   * An every-agent grant never counts on a managed connection: hosted authority
-   * keys grants per named agent and cannot see an owner-wide subject, so the
-   * write path refuses one there and this read ignores any that exist.
+   * Whether one grant authorizes this exact revision. Which grants count (a
+   * session override deciding alone, then the agent's own and "Every agent")
+   * is `agentGrantScope`, the one definition the agent request service shares.
    */
   private hasGrant(
     agentId: string,
@@ -559,43 +547,13 @@ export class ConnectorExecutionAuthorizationService {
     target: ConnectorExecutionTarget,
     providerMode: ExecutionRow['providerMode']
   ): boolean {
-    const namedAgent = and(
-      eq(connectionOperationGrants.subjectType, 'agent'),
-      eq(connectionOperationGrants.subjectId, agentId)
-    );
-    let subjectScope =
-      providerMode === 'managed' ? namedAgent : or(namedAgent, everyAgentGrantSubject());
-    if (sessionId) {
-      const override = this.db
-        .select({
-          state: sessionConnectionOverrides.state,
-          agentId: sessionConnectionOverrides.agentId,
-          needsReconciliation: sessionConnectionOverrides.needsReconciliation,
-        })
-        .from(sessionConnectionOverrides)
-        .where(
-          and(
-            eq(sessionConnectionOverrides.sessionId, sessionId),
-            eq(sessionConnectionOverrides.connectionId, target.connectionId)
-          )
-        )
-        .get();
-      if (
-        override &&
-        (override.agentId !== agentId ||
-          override.needsReconciliation ||
-          override.state === 'detached')
-      ) {
-        return false;
-      }
-      if (override?.state === 'attached') {
-        subjectScope = and(
-          eq(connectionOperationGrants.subjectType, 'session'),
-          eq(connectionOperationGrants.subjectId, sessionId),
-          eq(connectionOperationGrants.agentId, agentId)
-        );
-      }
-    }
+    const scope = agentGrantScope(this.db, {
+      agentId,
+      sessionId,
+      connectionId: target.connectionId,
+      providerMode,
+    });
+    if (scope.kind === 'denied') return false;
     return Boolean(
       this.db
         .select({ id: connectionOperationGrants.id })
@@ -605,7 +563,7 @@ export class ConnectorExecutionAuthorizationService {
             eq(connectionOperationGrants.connectionId, target.connectionId),
             eq(connectionOperationGrants.operationRevisionId, target.operationRevisionId),
             isNull(connectionOperationGrants.revokedAt),
-            subjectScope
+            scope.subject
           )
         )
         .get()

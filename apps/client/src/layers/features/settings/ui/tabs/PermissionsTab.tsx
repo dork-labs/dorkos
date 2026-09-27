@@ -101,10 +101,10 @@ export function PermissionsTab() {
           className="h-auto p-0 text-sm"
           onClick={() => {
             close();
-            void navigate({ to: '/connections', search: { region: 'accounts' } });
+            void navigate({ to: '/connections' });
           }}
         >
-          Connections → Accounts
+          Connections
         </Button>
         .
       </p>

@@ -71,8 +71,7 @@ type ProfileRowPhase = 'closed' | 'open' | 'saving' | 'error';
  * behind it. While the profile is still empty, a "Tell DorkBot about your work"
  * row follows and expands the shared role picker inline (spec
  * `user-profile-onboarding` §ProgressCard items). The "Connect a service"
- * row deep-links to the Accounts region of the Connections page
- * (`/connections?region=accounts`).
+ * row links to the Connections page (`/connections`).
  */
 export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
@@ -179,7 +178,7 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
     {
       icon: Plug,
       label: 'Connect a service',
-      onClick: () => openConnections('accounts'),
+      onClick: () => openConnections(),
     },
   ];
 

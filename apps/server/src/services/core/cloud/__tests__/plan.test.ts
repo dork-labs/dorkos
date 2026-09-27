@@ -12,6 +12,10 @@ import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance.jso
 import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-free.json' with { type: 'json' };
 import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-by-model.json' with { type: 'json' };
 import nudgeFixture from '@dork-labs/cloud-api/fixtures/v1/billing/nudge.json' with { type: 'json' };
+import denominatedBalanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance-denominated.json' with { type: 'json' };
+import denominatedEntitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-denominated.json' with { type: 'json' };
+import denominatedUsageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-denominated.json' with { type: 'json' };
+import denominatedNudgeFixture from '@dork-labs/cloud-api/fixtures/v1/billing/nudge-denominated.json' with { type: 'json' };
 import seatFixture from '@dork-labs/cloud-api/fixtures/v1/seats/seat.json' with { type: 'json' };
 import seatRequiredFixture from '@dork-labs/cloud-api/fixtures/v1/problem/person-seat-required.json' with { type: 'json' };
 
@@ -58,6 +62,26 @@ describe('the plan reads', () => {
     expect(overview?.entitlements.planDisplayName).toBe(entitlementsFixture.planDisplayName);
     expect(overview?.entitlements.limits.remoteAccess).toBe('byo');
     expect(overview?.balance?.allowance.remainingMicro).toBe('1250000');
+  });
+
+  // The client renders every amount in the unit the response names, and shows
+  // "couldn't read" without one. These reads parse through the contract's
+  // schemas, so a schema that did not know `denomination` would strip it here
+  // and every figure downstream would go dark. Each read must carry it through.
+  it('carries the served denomination through every amount-bearing read, unchanged', async () => {
+    stubFetch({
+      '/v1/entitlements': { status: 200, body: denominatedEntitlementsFixture },
+      '/v1/balance': { status: 200, body: denominatedBalanceFixture },
+      '/v1/usage': { status: 200, body: denominatedUsageFixture },
+      '/v1/nudge': { status: 200, body: denominatedNudgeFixture },
+    });
+    const overview = await readPlanOverview();
+    expect(overview?.entitlements.denomination).toEqual(
+      denominatedEntitlementsFixture.denomination
+    );
+    expect(overview?.balance?.denomination).toEqual(denominatedBalanceFixture.denomination);
+    expect((await readUsage('seat'))?.denomination).toEqual(denominatedUsageFixture.denomination);
+    expect((await readNudge())?.denomination).toEqual(denominatedNudgeFixture.denomination);
   });
 
   it('keeps an entitlement whose balance the service does not serve', async () => {
