@@ -24,6 +24,7 @@ import path from 'node:path';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { isSameOrInside } from '@dorkos/shared/directory-grants';
 import { logger } from '../../lib/logger.js';
+import { assertOwnDesk, DeskNotOwnError } from '../core/agent-identity/index.js';
 import { resolveSessionCwd, type ResolveSessionCwdRequest } from './resolve-session-cwd.js';
 import { logResolvedCwd, type ResolvedCwd } from './session-cwd-rung.js';
 
@@ -38,8 +39,9 @@ export interface RoomSessionTurnPlace {
   /**
    * True when this session was created standing in the agent's copy and its
    * runtime cannot move it (an OpenCode session from before room turns moved
-   * home, spec §8.1). Such a session keeps running in its copy, with no grants.
-   * The room's own next turn starts the room a fresh session at home.
+   * home, spec §8.1). Such a session takes no more turns — its transcript stays
+   * readable — and the room's own next turn starts the room a fresh session at
+   * home.
    */
   standsInCopy?: boolean;
 }
@@ -72,12 +74,34 @@ export interface RoomSessionPlacePort {
   ): Promise<RoomSessionTurnPlace>;
 }
 
+/**
+ * The sentence a person sees when an app-resumed room conversation cannot take
+ * another turn because its runtime keeps it inside the room's files.
+ */
+export const ROOM_SESSION_MOVED_MESSAGE =
+  "This conversation started inside the room's files before an update and can't continue " +
+  "here. Carry on in the room, where the agent's next turn starts fresh in its own folder.";
+
+/** Why a room-bound session's turn must not start, with the sentence to show. */
+export interface RoomSessionRefusal {
+  /**
+   * `ROOM_SESSION_MOVED` — the session's runtime keeps it inside the room's
+   * files; `DESK_NOT_OWN` — the message named a folder that is not the room's
+   * agent's own.
+   */
+  code: 'ROOM_SESSION_MOVED' | 'DESK_NOT_OWN';
+  /** Shown as-is. */
+  message: string;
+}
+
 /** What {@link resolveSessionCwdWithRoom} answers: a directory, and for a room session its grants. */
 export type ResolvedSessionPlace = ResolvedCwd & {
   /** The room's folders this turn may reach; present only for a room-bound session at home. */
   additionalDirectories?: DirectoryGrant[];
   /** The agent the room says this session is, for identity. */
   forAgent?: string;
+  /** Present when this turn must not start; the caller refuses it before anything runs. */
+  refusal?: RoomSessionRefusal;
 };
 
 /**
@@ -92,11 +116,14 @@ export type ResolvedSessionPlace = ResolvedCwd & {
  * - a `cwd` naming the agent's copy of the room's files, or a folder inside it →
  *   replaced by the home (the client resends the directory it last showed, and
  *   before this change that was the copy). Logged at debug;
- * - an OpenCode session created in the copy (it cannot move) → kept in its copy,
- *   with no grants; the room's next turn starts the room a fresh one at home;
+ * - an OpenCode session created in the copy (it cannot move) → refused with
+ *   `ROOM_SESSION_MOVED`: no turn stands in a room's files, and its transcript
+ *   stays readable; the room's next turn starts the room a fresh one at home;
  * - a `cwd` naming the home → the home, with the grants;
- * - any other `cwd` → that directory, explicitly, with no grants: the grants
- *   are computed for a turn standing at home.
+ * - any other `cwd` → that directory, explicitly, with no grants, when it is
+ *   the agent's own desk (a private copy of its own project); refused with
+ *   `DESK_NOT_OWN` when it is not — another agent's folder, a room's, or any
+ *   folder that is no copy of the agent's own.
  *
  * `forAgent` is the room's agent in every case.
  *
@@ -123,13 +150,16 @@ export async function resolveSessionCwdWithRoom(
   }
   const placed = await place.placeTurn(roomId, agentPath, agentName, req.sessionId);
   if (placed.standsInCopy) {
-    const resolved: ResolvedSessionPlace = {
+    logger.info('[cwd] an app-resumed room session stands in the room’s files; not continuing it', {
+      sessionId: req.sessionId,
+      roomId,
+    });
+    return {
       cwd: placed.cwd,
       rung: 'explicit',
       forAgent: agentPath,
+      refusal: { code: 'ROOM_SESSION_MOVED', message: ROOM_SESSION_MOVED_MESSAGE },
     };
-    logResolvedCwd(resolved, { sessionId: req.sessionId, roomId });
-    return resolved;
   }
   let named = req.cwd;
   if (
@@ -154,6 +184,16 @@ export async function resolveSessionCwdWithRoom(
           forAgent: agentPath,
         }
       : { cwd: named, rung: 'explicit', forAgent: agentPath };
+  if (resolved.rung === 'explicit') {
+    // **The desk guard** (spec `agent-home-desk` §3.4, I3): a named folder is
+    // the room's agent's own, or the turn does not start.
+    try {
+      assertOwnDesk(agentPath, resolved.cwd, 'home');
+    } catch (err) {
+      if (!(err instanceof DeskNotOwnError)) throw err;
+      return { ...resolved, refusal: { code: 'DESK_NOT_OWN', message: err.message } };
+    }
+  }
   logResolvedCwd(resolved, { sessionId: req.sessionId, roomId });
   return resolved;
 }

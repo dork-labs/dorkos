@@ -4,6 +4,7 @@ import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 import { GIT } from '../../config/constants.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import { internalGitArgs } from '../../lib/git-safety.js';
+import { isInsideRoomsDir } from './agent-identity/index.js';
 
 /**
  * Git repository status via `git status --porcelain=v1`.
@@ -18,9 +19,17 @@ const execFileAsync = promisify(execFile);
 /**
  * Get git status for a working directory.
  *
+ * **Never inside the rooms directory** (spec `agent-home-desk` I3). A room's
+ * shared git settings are written by every agent in the room, and `git status`
+ * can run a program they name (a clean filter). The rooms domain reads its own
+ * repositories through `room-repo-git.ts`, which audits those settings first;
+ * this general reader — the per-turn context and `GET /api/git/status` — answers
+ * "not a repository" there without running git at all.
+ *
  * @param cwd - Directory to check (must be inside a git repo)
  */
 export async function getGitStatus(cwd: string): Promise<GitStatusResponse | GitStatusError> {
+  if (isInsideRoomsDir(cwd)) return { error: 'not_git_repo' as const };
   try {
     await validateBoundary(cwd);
   } catch (err) {

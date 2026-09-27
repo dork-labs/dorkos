@@ -29,7 +29,9 @@
  * main` in a linked worktree write (measured against real git with everything
  * else in `.git` made read-only, `__tests__/room-turn-place.test.ts`), and no
  * more. The server's own git never reads config an agent can write, for the
- * reasons `room-repo-git.ts` gives. What stays true for every runtime (§5.2): a
+ * reasons `room-repo-git.ts` gives — and when a shell that is not sandboxed
+ * writes a program into `repo/.git/config` anyway, the server refuses the room
+ * (`ROOM_REPO_CONFIG_UNSAFE`) rather than run it. What stays true for every runtime (§5.2): a
  * shell that is not sandboxed can write anywhere its permission mode allows,
  * this folder included.
  *
@@ -312,7 +314,7 @@ export function roomSessionPlace(deps: RoomSessionPlaceDeps): RoomSessionPlacePo
     async placeTurn(roomId, agentPath, agentName, sessionId) {
       const place = await resolveRoomTurnPlace(deps.worktrees(), roomId, agentPath, agentName);
       // An OpenCode session created standing in the copy cannot be moved home
-      // (§8.1): it keeps running where its runtime keeps it, with no grants.
+      // (§8.1). The caller refuses its turn: no turn stands in a room's files.
       if (sessionId !== undefined && place.worktree !== null && deps.sessionRuntime) {
         const runtime = await deps.sessionRuntime(sessionId).catch(() => null);
         if (

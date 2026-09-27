@@ -327,6 +327,17 @@ function nearestGitAncestor(dir: string): string | null {
   }
 }
 
+/**
+ * Whether `target` is the rooms directory or anywhere inside it — a room's
+ * shared files, its agents' copies, its canvas (spec `agent-home-desk` I3).
+ * No turn ever stands there. `false` when no rooms directory is wired.
+ *
+ * @param target - An absolute folder.
+ */
+export function isInsideRoomsDir(target: string): boolean {
+  return insideRoomsDir(path.resolve(target));
+}
+
 function insideRoomsDir(target: string): boolean {
   const roomsDir = registry?.roomsDir;
   if (!roomsDir) return false;

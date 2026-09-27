@@ -497,7 +497,10 @@ The git grants are folders, and two are shared (amended in T4, DOR-2410): write 
 `repo/.git/objects/` lets an agent overwrite a loose object — git does not re-hash on read, so
 `main`'s content can change without a commit — and `refs/heads/room/` plus its reflog folder let one
 agent move or erase another agent's `room/<slug>` branch. Neither executes code; closing them needs a
-per-agent object store and per-agent refs, which is follow-up work.
+per-agent object store and per-agent refs, which is follow-up work. A shell that is not sandboxed can
+also write `repo/.git/config` (a plain `git config` in a copy lands there); the server audits it
+before every git command in the room and refuses with `ROOM_REPO_CONFIG_UNSAFE` — never runs — any
+filter, diff or merge driver, include, fsmonitor or credential helper it defines.
 
 ### 5.3 The room context block
 
@@ -909,6 +912,10 @@ records the request, in temp config directories. The operator's real sign-in was
   them. So **the next turn of that (room, agent) must start a fresh opencode session** when the bound
   one's directory is a room worktree, and **`extraDirs` must be kept for opencode, fed from the
   frozen list**, so the old session stays listed. The room log carries the conversation either way.
+  Picking that old session up in the app is refused before launch (`ROOM_SESSION_MOVED`, `409`)
+  with a sentence pointing back to the room: no turn stands in a room's files, and its transcript
+  stays readable. Every app launch is also refused (`DESK_NOT_OWN`) when its folder is inside the
+  rooms directory, whatever named it.
 
 ### 8.2 ADR status
 
