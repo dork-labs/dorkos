@@ -12,6 +12,7 @@
  */
 import type { Query, SDKControlGetUsageResponse } from '@anthropic-ai/claude-agent-sdk';
 import type { UsageStatus } from '@dorkos/shared/types';
+import { modelWindowKey, type LedgerWindowObservation } from '@dorkos/shared/account-usage';
 
 /** One utilization window from the SDK's `rate_limits` payload. */
 interface RateLimitWindow {
@@ -69,11 +70,70 @@ export function mapSdkUsageResponse(response: SDKControlGetUsageResponse): Usage
   };
 }
 
+/** The SDK `rate_limits` windows recorded account-wide, by their SDK key. */
+const LEDGER_WINDOW_KEYS = [
+  'five_hour',
+  'seven_day',
+  'seven_day_oauth_apps',
+  'seven_day_opus',
+  'seven_day_sonnet',
+] as const;
+
+/**
+ * Map the SDK's structured `/usage` response to usage-ledger readings (shared
+ * contract §1.2, the `sdk_usage` row): every present `rate_limits` window under
+ * its SDK key, and each `model_scoped[]` bucket under
+ * {@link modelWindowKey}(`display_name`). `usedPct` is the SDK's 0-100 figure
+ * as given, `status` is null, and a window with no utilization is skipped (an
+ * entry needs a percentage or a status). `rate_limits_available: false` maps to
+ * nothing.
+ *
+ * @param response - The SDK's structured `/usage` control response.
+ * @param now - When the reading was taken.
+ */
+export function mapSdkUsageWindows(
+  response: SDKControlGetUsageResponse,
+  now: Date
+): LedgerWindowObservation[] {
+  if (!response.rate_limits_available || !response.rate_limits) return [];
+  const limits = response.rate_limits;
+  const observedAt = now.toISOString();
+  const out: LedgerWindowObservation[] = [];
+  const push = (key: string | null, window: RateLimitWindow | null | undefined) => {
+    if (key === null || !window) return;
+    if (typeof window.utilization !== 'number') return;
+    out.push({
+      key,
+      usedPct: window.utilization,
+      resetsAt: window.resets_at ?? null,
+      status: null,
+      observedAt,
+      source: 'sdk_usage',
+    });
+  };
+  for (const key of LEDGER_WINDOW_KEYS) push(key, limits[key]);
+  for (const bucket of limits.model_scoped ?? []) {
+    push(modelWindowKey(bucket.display_name), bucket);
+  }
+  return out;
+}
+
+/** One usage call's answer: the session's binding window, and the account's readings. */
+export interface SubscriptionUsageReading {
+  /** The binding window for the session's status item, or `undefined` with no plan limits. */
+  status: UsageStatus | undefined;
+  /** Every window as a usage-ledger reading ({@link mapSdkUsageWindows}). */
+  observations: LedgerWindowObservation[];
+  /** The plan the SDK reported (`pro`, `max`, …), or `null`. */
+  subscriptionType: string | null;
+}
+
 /**
  * Fetch the current subscription utilization from a live query, bounded by a
  * timeout so a stuck control channel can never hang the stream. Must be called
  * while the subprocess is still alive (i.e. before the prompt's input stream is
- * closed). Returns `undefined` for non-subscription sessions.
+ * closed). A non-subscription session answers with no `status` and no
+ * observations.
  *
  * @param query - The active SDK query.
  * @param timeoutMs - Max time to wait for the control response.
@@ -81,7 +141,7 @@ export function mapSdkUsageResponse(response: SDKControlGetUsageResponse): Usage
 export async function fetchSubscriptionUsage(
   query: Pick<Query, 'usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET'>,
   timeoutMs: number
-): Promise<UsageStatus | undefined> {
+): Promise<SubscriptionUsageReading> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const response = await Promise.race([
@@ -90,7 +150,11 @@ export async function fetchSubscriptionUsage(
         timer = setTimeout(() => reject(new Error('get_usage timed out')), timeoutMs);
       }),
     ]);
-    return mapSdkUsageResponse(response);
+    return {
+      status: mapSdkUsageResponse(response),
+      observations: mapSdkUsageWindows(response, new Date()),
+      subscriptionType: response.subscription_type ?? null,
+    };
   } finally {
     if (timer) clearTimeout(timer);
   }

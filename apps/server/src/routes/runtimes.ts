@@ -49,6 +49,8 @@ import {
   assessOllamaModels,
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/providers/ollama-catalog.js';
+import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
+import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { logger } from '../lib/logger.js';
 import { isLocalCaller } from '../lib/caller-authority.js';
 
@@ -465,6 +467,23 @@ router.post('/opencode/provider/credential', async (req, res) => {
 });
 
 // --- Generic per-runtime connect (Claude, Codex) ---------------------------
+
+/**
+ * GET /api/runtimes/:runtime/accounts/usage — how much of each of this
+ * runtime's accounts is used, from the usage store's memory (spec
+ * `claude-account-fleet` D2). Registered accounts in registry order, the
+ * machine-wide `default` when it stands alone, then folders that are neither.
+ * Any runtime slug that keeps a ledger; anything else is a 400.
+ */
+router.get('/:runtime/accounts/usage', (req, res) => {
+  const runtime = req.params.runtime;
+  if (!(LEDGER_RUNTIMES as readonly string[]).includes(runtime)) {
+    return res.status(400).json({ error: `Unknown runtime "${runtime}".` });
+  }
+  const store = getAccountUsageStore();
+  if (!store) return res.status(503).json({ error: 'Account usage is not available yet.' });
+  res.json({ accounts: store.list(runtime as LedgerRuntime) });
+});
 
 /**
  * GET /api/runtimes/:type/credential — whether this runtime's own key is already

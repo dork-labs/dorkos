@@ -232,6 +232,7 @@ import type {
   ConnectorProgramExecutionRequest,
   ConnectorReconciliationApplyRequest,
   ConnectorReconciliationApplyResponse,
+  ConnectorEveryAgentRevokeResponse,
   ConnectorReconciliationPreview,
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
@@ -239,6 +240,7 @@ import type {
 import type { SearchQuery, SearchResponse } from './search-schemas.js';
 import type {
   ConnectorAgentConnections,
+  ConnectorEveryAgentGrants,
   ConnectorAuthenticationFlowCreateRequest,
   ConnectorAuthenticationFlowState,
   ConnectorCatalogResourcePage,
@@ -3121,6 +3123,12 @@ export interface Transport
   /** Read the current exact connection grants for one owned agent. */
   getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections>;
 
+  /**
+   * Read what every agent, including one not created yet, inherits from the
+   * owner's every-agent grants.
+   */
+  getEveryAgentConnectorGrants(): Promise<ConnectorEveryAgentGrants>;
+
   /** Read effective connector access for one canonical session. */
   getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections>;
 
@@ -3161,6 +3169,14 @@ export interface Transport
   applyConnectorReconciliation(
     input: ConnectorReconciliationApplyRequest
   ): Promise<ConnectorReconciliationApplyResponse>;
+
+  /**
+   * Stop sharing one connection with every agent, at once and without a
+   * permission review (owner only).
+   */
+  stopSharingConnectorWithEveryAgent(
+    connectionId: string
+  ): Promise<ConnectorEveryAgentRevokeResponse>;
 
   /** Submit a strict connector management action for an owner decision. */
   createConnectorManagementReview(

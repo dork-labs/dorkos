@@ -11,6 +11,7 @@ import {
   useConnectorConnections,
   usePreviewConnectorReconciliation,
   useResolveConnectorAgentRequest,
+  serviceName,
 } from '@/layers/entities/connectors';
 import {
   Badge,
@@ -44,14 +45,6 @@ interface AgentRequestsProps {
   onCloseRequest?: () => void;
   /** Open the existing owner authentication flow for this exact service. */
   onConnectService?: (service: ConnectorCatalogService) => void;
-}
-
-function serviceName(slug: string): string {
-  return slug
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
 }
 
 function operationName(slug: string): string {

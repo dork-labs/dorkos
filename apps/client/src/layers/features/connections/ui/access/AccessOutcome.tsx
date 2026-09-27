@@ -72,7 +72,7 @@ export function AccessOutcome({
   if (access.needsReconciliation) {
     return (
       <div className="border-warning/30 bg-warning/5 flex items-start gap-3 rounded-lg border p-4">
-        <ShieldAlert className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+        <ShieldAlert className="text-status-warning-dot mt-0.5 size-4 shrink-0" aria-hidden />
         <div>
           <p data-testid="connector-access-outcome" className="text-sm font-medium">
             Access needs review
@@ -88,7 +88,7 @@ export function AccessOutcome({
     return (
       <div className="border-warning/30 bg-warning/5 space-y-3 rounded-lg border p-4">
         <div className="flex items-start gap-3">
-          <Clock3 className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+          <Clock3 className="text-status-warning-dot mt-0.5 size-4 shrink-0" aria-hidden />
           <div>
             <p data-testid="connector-access-outcome" className="text-sm font-medium">
               Access update pending

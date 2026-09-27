@@ -303,6 +303,11 @@ import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
 import {
+  createEveryAgentArrivalReaction,
+  createEveryAgentEndedRecorder,
+  setOnEveryAgentEnded,
+} from './services/connectors/every-agent-activity.js';
+import {
   startSkillsWatcher,
   startTurnEndReprojection,
   type SkillsWatcherHandle,
@@ -497,6 +502,17 @@ import {
   formatFirstRunTelemetryNotice,
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
+import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
+import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
+import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
+import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
+import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
+import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
+import {
+  claudeDefaultAccountFolder,
+  dropClaudeAccountRenameMarkers,
+} from './services/runtimes/claude-code/claude-config-dir.js';
+import { machineDefaultCodexHome } from './services/runtimes/codex/codex-home.js';
 import {
   initObservability,
   shutdownObservability,
@@ -545,6 +561,7 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
+let accountUsageStore: AccountUsageStore | undefined;
 // The relay's DEFAULT runtime — what answers a relay message that names no
 // runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
 // agent-to-agent send to a mesh agent). The relay carries every registered
@@ -872,6 +889,34 @@ async function start() {
   // an apply that never happened.
   initClaudeAccountApplier(() => void applyClaudeAccountChange());
 
+  // Per-account usage for every runtime (spec `claude-account-fleet` D2, §6 R):
+  // the ledger files under `<dorkHome>/runtimes/<runtime>/usage/` are its
+  // persistence, shared with flow. Built right after config so the first turn
+  // already records into it. `default` resolves from config and the OS home
+  // only (the two helpers below), never from this process's environment.
+  accountUsageStore = new AccountUsageStore({
+    dorkHome,
+    readConfig: () => readConfigFile(configManager.path),
+    resolveDefaultRoot: (runtime, config) =>
+      runtime === 'claude-code'
+        ? claudeDefaultAccountFolder(config)
+        : runtime === 'codex'
+          ? { path: machineDefaultCodexHome(), warnings: [] }
+          : { path: null, warnings: [] },
+    broadcast: (usage) => eventFanOut.broadcast('account_usage', usage),
+  });
+  await accountUsageStore.load().catch((err: unknown) => {
+    logger.warn('[DorkOS] account usage store failed to load; usage starts empty', {
+      err: String(err),
+    });
+  });
+  setAccountUsageStore(accountUsageStore);
+  // An in-app account change is reconciled at once; `flow accounts add` and hand
+  // edits never reach onChange, which is why the store's 60 s scan reconciles too.
+  configManager.onChange((change) => {
+    if (change.sections.includes('runtimes')) void accountUsageStore?.reconcileAccounts();
+  });
+
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
   // initLogger was already called above with defaults — re-init with config values.
   const loggingConfig = configManager.get('logging');
@@ -1036,6 +1081,10 @@ async function start() {
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
+  // Sharing with every agent that ends as a side effect (a disconnect, a move
+  // to a DorkOS account) is recorded too, so every change to it leaves a
+  // trace. Set here, before any provider registers, so boot-time changes count.
+  setOnEveryAgentEnded(createEveryAgentEndedRecorder(activityService));
   // Records a change to an agent's permissions that was made by editing its
   // settings file rather than through DorkOS. The last-seen values live in
   // DorkOS's own data directory, never the agent's.
@@ -2339,6 +2388,50 @@ async function start() {
   // once and never grown — see `setAgentSessionSources` above.
   frozenWorktrees = await frozenRoomWorktrees(dorkHome).catch(() => []);
 
+  // Carry any Claude account the '0.87.0' config migration renamed (a row called
+  // `default`, now `default-N`) through to its references: agent manifests,
+  // schedules with their approvals, and schedule files (spec
+  // `claude-account-fleet` §6 R). Wired once the agent registry and the task
+  // tables exist, and run at once, before any schedule file watcher starts, so
+  // a sync never reads a file halfway through the move.
+  if (accountUsageStore) {
+    const mesh = meshCore;
+    accountUsageStore.setReferenceMover({
+      move: (renames) =>
+        moveAccountReferences(renames, {
+          agents: mesh
+            ? {
+                list: () =>
+                  mesh.list().map((agent) => ({
+                    id: agent.id,
+                    account: agent.account,
+                    projectPath: mesh.getProjectPath(agent.id) ?? undefined,
+                  })),
+                setAccount: async (agentId, account) => {
+                  await mesh.update(agentId, { account });
+                },
+              }
+            : undefined,
+          renameScheduleAccount: (from, to) =>
+            renameScheduleAccount(db, from, to, (schedule) =>
+              isPackageOwned(
+                schedule.filePath,
+                packageOwnershipContext(
+                  dorkHome,
+                  schedule.agentId ? mesh?.getProjectPath(schedule.agentId) : undefined
+                )
+              )
+            ),
+        }),
+      dropMarkers: async (ids) => {
+        dropClaudeAccountRenameMarkers(configManager, ids);
+      },
+    });
+    // Fresh, not the one a config write or the scan may have in flight: that one
+    // started without the mover.
+    await accountUsageStore.reconcileAccounts({ fresh: true });
+  }
+
   // Open #team, the room the home tab renders, and seat every registered agent
   // in it (team-room-home spec D3.1).
   //
@@ -2988,6 +3081,13 @@ async function start() {
         displayName: agent.displayName ?? agent.name,
       })),
     managedAuthority: managedConnectorAuthority,
+    activity: activityService,
+    // With login off DorkOS cannot tell the app from a program on this
+    // computer, so the trail says exactly that rather than "You".
+    writer: () =>
+      configManager.get('auth')?.enabled === true
+        ? { actorType: 'user', actorLabel: 'Your signed-in account' }
+        : { actorType: 'user', actorLabel: 'Someone on this computer' },
   });
   const connectorUsage = new ConnectorUsageStore(db);
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
@@ -4062,6 +4162,10 @@ async function start() {
   // after the seat and in that order deliberately: "tangerines joined your team"
   // is a line about a member of the room, so the roster is settled before the
   // room says so (team-room-home spec D5.1).
+  const announceEveryAgentInheritance = createEveryAgentArrivalReaction({
+    activity: activityService,
+    everyAgentGrants: () => connectorOperatorQueries.everyAgentGrants(connectorOwner),
+  });
   // Set once the permission service exists, below. Every arrival path
   // (create, the register route, the mesh_register tool, a discovery scan)
   // reaches the listener, so this is where an arriving folder's own
@@ -4077,6 +4181,12 @@ async function start() {
     // its folder's settings until the screened ones are in its file.
     await onArrival(agent.id);
     joinTeamRoom(teamRoomDeps, agent.path);
+    // Every arrival path funnels here, so this is where an agent that inherits
+    // apps shared with every agent is announced — never silently (ADR
+    // 260926-192625). A failure must not fail the arrival.
+    await announceEveryAgentInheritance(agent).catch((err: unknown) =>
+      logger.warn('[Connectors] Could not record every-agent inheritance', { err })
+    );
     momentDetectors.agentCreated(agent);
     // Migrate anything this agent's project still keeps in the old shape, then
     // watch its `.agents/skills/` — NOW rather than at the next restart. Boot
@@ -5370,6 +5480,14 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  if (accountUsageStore) {
+    accountUsageStore.stop();
+    await accountUsageStore.flush().catch((err: unknown) => {
+      logger.warn('[DorkOS] account usage flush failed at shutdown', { err: String(err) });
+    });
+    setAccountUsageStore(undefined);
+    accountUsageStore = undefined;
+  }
   legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
   remoteCommunitySubscriptions = undefined;

@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import {
   cardDecision,
+  everyAgentCanDelete,
+  everyAgentCanWrite,
+  everyAgentDecision,
+  initialEveryAgentLevel,
   heldAccess,
   initialCardLevel,
+  initialWhoCanUse,
   rankAgents,
 } from '../lib/access-card-selection';
+import { everyAgentWriteWarning } from '../ui/access/access-labels';
 
 function candidate(id: string, classification: 'read' | 'write' | 'destructive', supported = true) {
   return {
@@ -42,6 +48,7 @@ function preview(
     ],
     agents,
     currentGrants,
+    everyAgent: { available: true, operationRevisionIds: [] },
     catalogComplete: true,
     createdAt: '2026-09-06T00:00:00.000Z',
     expiresAt: '2099-09-06T00:00:00.000Z',
@@ -217,5 +224,108 @@ describe('cardDecision', () => {
       downgradedAgentIds: [],
       needsLevel: false,
     });
+  });
+});
+
+describe('everyAgentDecision (DOR-2420)', () => {
+  const withEvery = (
+    everyAgent: ConnectorReconciliationPreview['everyAgent']
+  ): ConnectorReconciliationPreview => ({ ...preview([]), everyAgent });
+  const off = withEvery({ available: true, operationRevisionIds: [] });
+
+  it('sends the chosen preset for every agent, and nothing when it already holds it', () => {
+    expect(everyAgentDecision(off, { who: 'every', level: 'read', levelTouched: false })).toEqual({
+      everyAgent: { operationRevisionIds: ['read'] },
+      needsLevel: false,
+    });
+    expect(
+      everyAgentDecision(off, { who: 'every', level: 'read-write', levelTouched: true })
+    ).toEqual({ everyAgent: { operationRevisionIds: ['read', 'send'] }, needsLevel: false });
+    const reading = withEvery({ available: true, operationRevisionIds: ['read'] });
+    expect(initialWhoCanUse(reading)).toBe('every');
+    expect(
+      everyAgentDecision(reading, { who: 'every', level: 'read', levelTouched: true })
+    ).toEqual({
+      needsLevel: false,
+    });
+  });
+
+  it('stops sharing only when it is shared now, and never writes when unavailable', () => {
+    expect(everyAgentDecision(off, { who: 'picked', level: 'read', levelTouched: false })).toEqual({
+      needsLevel: false,
+    });
+    expect(initialWhoCanUse(off)).toBe('picked');
+    expect(
+      everyAgentDecision(withEvery({ available: true, operationRevisionIds: ['read'] }), {
+        who: 'picked',
+        level: 'read',
+        levelTouched: false,
+      })
+    ).toEqual({ everyAgent: { operationRevisionIds: [] }, needsLevel: false });
+    expect(
+      everyAgentDecision(withEvery({ available: false, operationRevisionIds: [] }), {
+        who: 'every',
+        level: 'read-write',
+        levelTouched: true,
+      })
+    ).toEqual({ needsLevel: false });
+  });
+
+  it('leaves an exact-actions set alone until the level is touched, and asks for a level when mixed', () => {
+    const exact = withEvery({ available: true, operationRevisionIds: ['delete'] });
+    expect(everyAgentDecision(exact, { who: 'every', level: null, levelTouched: false })).toEqual({
+      needsLevel: false,
+    });
+    // Even with a level on the switch, an untouched exact set is never overwritten.
+    expect(everyAgentDecision(exact, { who: 'every', level: 'read', levelTouched: false })).toEqual(
+      {
+        needsLevel: false,
+      }
+    );
+    expect(everyAgentDecision(exact, { who: 'every', level: 'read', levelTouched: true })).toEqual({
+      everyAgent: { operationRevisionIds: ['read'] },
+      needsLevel: false,
+    });
+    expect(everyAgentDecision(off, { who: 'every', level: null, levelTouched: false })).toEqual({
+      needsLevel: true,
+    });
+  });
+
+  it('names what write access lets every agent do, per app', () => {
+    expect(everyAgentWriteWarning('gmail', 'Gmail')).toBe(
+      'Every agent — including ones you add later — could send email as you.'
+    );
+    expect(everyAgentWriteWarning('asana', 'Asana')).toBe(
+      'Every agent — including ones you add later — could make changes in Asana as you.'
+    );
+    expect(everyAgentWriteWarning('gmail', 'Gmail', true)).toBe(
+      'Every agent — including ones you add later — could send and delete email as you.'
+    );
+    expect(everyAgentWriteWarning('asana', 'Asana', true)).toBe(
+      'Every agent — including ones you add later — could make changes and delete things in Asana as you.'
+    );
+  });
+
+  it('never starts on Read, or hides the warning, while every agent can write or delete', () => {
+    const exact = withEvery({ available: true, operationRevisionIds: ['read', 'send', 'delete'] });
+    expect(initialEveryAgentLevel(exact)).toBeNull();
+    expect(everyAgentCanWrite(exact, null)).toBe(true);
+    expect(everyAgentCanWrite(exact, 'read')).toBe(false);
+    // Delete is only ever held, never chosen: the card's levels leave it out.
+    expect(everyAgentCanDelete(exact, null)).toBe(true);
+    expect(everyAgentCanDelete(exact, 'read-write')).toBe(false);
+    expect(
+      everyAgentCanDelete(
+        withEvery({ available: true, operationRevisionIds: ['read', 'send'] }),
+        null
+      )
+    ).toBe(false);
+    const reading = withEvery({ available: true, operationRevisionIds: ['read'] });
+    expect(initialEveryAgentLevel(reading)).toBe('read');
+    expect(everyAgentCanWrite(reading, null)).toBe(false);
+    expect(initialEveryAgentLevel(off)).toBe('read');
+    expect(
+      initialEveryAgentLevel(withEvery({ available: true, operationRevisionIds: ['read', 'send'] }))
+    ).toBe('read-write');
   });
 });

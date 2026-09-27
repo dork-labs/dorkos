@@ -47,6 +47,7 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
     | 'getConnection'
     | 'disconnectImpact'
     | 'agentConnections'
+    | 'everyAgentGrants'
     | 'sessionConnections'
   >;
   /** Restart-safe provider authentication flows. */
@@ -264,6 +265,16 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
           deps.query.getConnection(operator, req.params.connectionId, signal)
         )
       );
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
+  router.get('/every-agent-grants', (req, res) => {
+    const operator = owner(req, res, deps);
+    if (!operator) return;
+    try {
+      res.json(deps.query.everyAgentGrants(operator));
     } catch (error) {
       sendResourceError(res, error);
     }

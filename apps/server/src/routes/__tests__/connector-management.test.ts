@@ -27,6 +27,7 @@ describe('connector management routes', () => {
   const reconciliation = {
     preview: vi.fn(),
     apply: vi.fn(),
+    revokeEveryAgent: vi.fn(),
   };
   const agentRequests = {
     listForOwner: vi.fn(),
@@ -50,6 +51,10 @@ describe('connector management routes', () => {
     reviews.resolve.mockResolvedValue({ review: { reviewRequestId: 'review-a' } });
     reconciliation.preview.mockResolvedValue({ previewId: 'preview-a' });
     reconciliation.apply.mockResolvedValue({ connectionId: 'connection-a' });
+    reconciliation.revokeEveryAgent.mockResolvedValue({
+      connectionId: 'connection-a',
+      revokedCount: 2,
+    });
     agentRequests.listForOwner.mockReturnValue([]);
     agentRequests.getForOwner.mockReturnValue({ requestId: 'request-a' });
     agentRequests.resolve.mockResolvedValue({ requestId: 'request-a', status: 'denied' });
@@ -270,6 +275,80 @@ describe('connector management routes', () => {
       .expect(403);
     expect(reviews.list).not.toHaveBeenCalled();
     expect(reconciliation.preview).not.toHaveBeenCalled();
+  });
+
+  it('lets only the owner turn on "every agent" (ADR 260926-192625)', async () => {
+    const body = {
+      previewId: 'preview-a',
+      grants: [],
+      everyAgent: { operationRevisionIds: ['read-v1'] },
+    };
+    const program = fixtureTarget.mount(
+      buildApp({
+        user: { userId: 'user-a', credential: 'api-key', credentialId: 'credential-a' },
+        loginEnabled: true,
+      })
+    );
+    await request(program)
+      .post('/api/connectors/reconciliation/apply')
+      .set('Authorization', 'Bearer verified')
+      .send(body)
+      .expect(403);
+    await request(fixtureTarget.mount(buildApp()))
+      .post('/api/connectors/reconciliation/apply')
+      .set('X-DorkOS-Agent', 'agent-a')
+      .send(body)
+      .expect(403);
+    await request(fixtureTarget.mount(buildApp()))
+      .post('/api/connectors/reconciliation/apply')
+      .set('x-dorkos-approval', 'approval-token')
+      .send(body)
+      .expect(403);
+    // A review is the path an agent or program can start; it has no every-agent action.
+    await request(fixtureTarget.mount(buildApp()))
+      .post('/api/connectors/reviews')
+      .send({
+        action: {
+          version: 1,
+          kind: 'set_every_agent_access',
+          connectionId: 'connection-a',
+          operationRevisionIds: ['read-v1'],
+        },
+        idempotencyKey: 'every-agent-a',
+      })
+      .expect(400);
+    expect(reconciliation.apply).not.toHaveBeenCalled();
+    expect(reviews.create).not.toHaveBeenCalled();
+
+    await request(fixtureTarget.mount(buildApp()))
+      .post('/api/connectors/reconciliation/apply')
+      .send(body)
+      .expect(200);
+    expect(reconciliation.apply).toHaveBeenCalledWith(OWNER, body, expect.any(AbortSignal));
+  });
+
+  it('lets only the owner stop sharing with every agent, with no preview', async () => {
+    await request(fixtureTarget.mount(buildApp()))
+      .delete('/api/connectors/connections/connection-a/every-agent')
+      .set('X-DorkOS-Agent', 'agent-a')
+      .expect(403);
+    await request(
+      fixtureTarget.mount(
+        buildApp({
+          user: { userId: 'user-a', credential: 'api-key', credentialId: 'credential-a' },
+          loginEnabled: true,
+        })
+      )
+    )
+      .delete('/api/connectors/connections/connection-a/every-agent')
+      .set('Authorization', 'Bearer verified')
+      .expect(403);
+    expect(reconciliation.revokeEveryAgent).not.toHaveBeenCalled();
+
+    await request(fixtureTarget.mount(buildApp()))
+      .delete('/api/connectors/connections/connection-a/every-agent')
+      .expect(200, { connectionId: 'connection-a', revokedCount: 2 });
+    expect(reconciliation.revokeEveryAgent).toHaveBeenCalledWith(OWNER, 'connection-a');
   });
 
   it('allows owner decisions from the app without accepting owner selectors', async () => {

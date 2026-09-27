@@ -29,6 +29,7 @@ describe('AgentConnectionAccessList', () => {
           authenticationStatus: 'active',
           reconciliationStatus: 'ready',
           operationRevisionIds: ['operation-1'],
+          everyAgent: false,
           authoritySync: { status: 'pending' },
         },
       ],

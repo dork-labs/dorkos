@@ -147,6 +147,17 @@ function ReconciliationEditor({
         </p>
       </div>
 
+      {/* The levels below are what each agent has by name. Sharing with every
+          agent adds to them, so "No access" here is not the whole answer. */}
+      {preview.everyAgent.operationRevisionIds.length > 0 && (
+        <p data-testid="exact-editor-every-agent" className="bg-muted/40 rounded-lg p-3 text-sm">
+          Every agent also has {preview.everyAgent.operationRevisionIds.length}{' '}
+          {preview.everyAgent.operationRevisionIds.length === 1 ? 'action' : 'actions'} here through
+          “Every agent”, including agents you add later. The levels below are only what each agent
+          has by name. To take that away, stop sharing this account with every agent.
+        </p>
+      )}
+
       {preview.agents.length === 0 ? (
         <p className="bg-muted/40 rounded-lg p-4 text-sm">
           Register an agent before granting account access.

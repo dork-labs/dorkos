@@ -225,6 +225,11 @@ export const GENERIC_EVENTS = [
   // happened," not silently dropped once past the cap. No UI subscribes yet.
   'relay_chat_unclaimed_burst',
   'task_run_failed',
+  // How much of one account is used changed (spec `claude-account-fleet` D2):
+  // payload `AccountUsage`, throttled per account on the server. No surface
+  // subscribes yet (the usage UI track reads it); listed so it reaches dispatch
+  // instead of being silently dropped once one does.
+  'account_usage',
   // A task definition changed (created, edited, deleted). The standing
   // unattended-autonomy banner reads it: a task dialled up to Full autonomy has
   // to raise the banner as the form closes, not on the next page load.

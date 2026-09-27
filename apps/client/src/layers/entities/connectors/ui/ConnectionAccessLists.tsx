@@ -5,6 +5,7 @@ import {
   useSessionConnectorConnections,
 } from '../model/use-connector-resources';
 import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
+import { serviceName } from '../lib/access-copy';
 
 const SESSION_ACCESS_COPY = {
   inherited: 'Inherited from agent',
@@ -22,10 +23,6 @@ const DOMINATING_REASON_COPY = {
   reconciliation_required: 'The account access needs review.',
   authority_sync_required: 'Account access has not finished updating.',
 } as const;
-
-function serviceName(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 
 /** Canonical account grants shown from one agent profile. */
 export function AgentConnectionAccessList({
@@ -99,6 +96,7 @@ export function AgentConnectionAccessList({
                   <p className="text-muted-foreground text-xs">
                     {connection.operationRevisionIds.length} approved{' '}
                     {connection.operationRevisionIds.length === 1 ? 'action' : 'actions'}
+                    {connection.everyAgent && ' · given to every agent'}
                   </p>
                 </div>
                 <Badge size="xs" variant={usable ? 'secondary' : 'outline'}>

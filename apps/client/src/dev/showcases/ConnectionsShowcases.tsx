@@ -29,6 +29,7 @@ function mockAccount(over: Partial<ConnectorConnectionSummary>): ConnectorConnec
     custody: 'managed',
     payer: 'dorkos_managed',
     agentCount: 2,
+    everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 12, attemptCount: 12 },
     warnings: [],

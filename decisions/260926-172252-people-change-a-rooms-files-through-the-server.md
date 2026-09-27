@@ -1,7 +1,7 @@
 ---
 id: 260926-172252
 title: People change a room's files through the server, one named commit and one quiet entry each
-status: proposed
+status: accepted
 created: 2026-09-26
 spec: agent-home-desk
 superseded-by: null
@@ -12,7 +12,7 @@ amends: [260829-115626]
 
 ## Status
 
-Proposed (spec `agent-home-desk`). It extends **260829-115626**, which stays `accepted`: the same
+Accepted (spec `agent-home-desk`). It extends **260829-115626**, which stays `accepted`: the same
 write path now covers every text file, new files, uploads, renames, deletes and saving a chat
 attachment into the room's files. Retired there: "It is markdown-first: other text types are read-only
 for now" and the Negative bullet "Editing is markdown-only today". Binary files stay read-only in the

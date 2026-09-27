@@ -422,8 +422,24 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
       </dl>
       {context.kind === 'disconnect' && (
         <p data-testid="connector-review-impact" className="text-sm font-medium">
-          This will remove this account from {context.affectedAgentCount}{' '}
-          {context.affectedAgentCount === 1 ? 'agent' : 'agents'}.
+          {context.everyAgent
+            ? 'This will remove this account from every agent. It is shared with every agent now.'
+            : `This will remove this account from ${context.affectedAgentCount} ${
+                context.affectedAgentCount === 1 ? 'agent' : 'agents'
+              }.`}
+        </p>
+      )}
+      {context.kind === 'remove_agent_access' && context.keptThroughEveryAgent.length > 0 && (
+        <p
+          role="note"
+          data-testid="connector-review-every-agent-kept"
+          className="bg-muted/40 rounded-lg p-3 text-sm"
+        >
+          {context.agent.displayName} keeps {context.keptThroughEveryAgent.length}{' '}
+          {context.keptThroughEveryAgent.length === 1 ? 'action' : 'actions'} on{' '}
+          {context.connection.label}, because this account is shared with every agent. Approving
+          removes only what was given to {context.agent.displayName} by name. To take it all away,
+          stop sharing {context.connection.label} with every agent in Connections.
         </p>
       )}
       {operations.length > 0 && (

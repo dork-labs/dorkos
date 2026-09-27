@@ -42,7 +42,9 @@ export function presentManagementReview(review: ConnectorManagementReviewItem): 
     case 'disconnect':
       return {
         title: `Disconnect ${context.connection.label}`,
-        summary: `${context.affectedAgentCount} affected ${context.affectedAgentCount === 1 ? 'agent' : 'agents'}`,
+        summary: context.everyAgent
+          ? 'Every agent loses access'
+          : `${context.affectedAgentCount} affected ${context.affectedAgentCount === 1 ? 'agent' : 'agents'}`,
         approveLabel: 'Approve disconnect',
       };
     case 'set_agent_access':
@@ -54,7 +56,10 @@ export function presentManagementReview(review: ConnectorManagementReviewItem): 
     case 'remove_agent_access':
       return {
         title: `Remove access for ${context.agent.displayName}`,
-        summary: context.connection.label,
+        summary:
+          context.keptThroughEveryAgent.length > 0
+            ? `${context.connection.label} · still shared with every agent`
+            : context.connection.label,
         approveLabel: 'Approve removal',
       };
   }

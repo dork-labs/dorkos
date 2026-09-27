@@ -16,6 +16,7 @@ import {
   type ConnectorManagementReviewAction,
   type ConnectorManagementReviewContext,
 } from '@dorkos/shared/connector-schemas';
+import { everyAgentGrantSubject } from './every-agent-grants.js';
 import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
 
 /** Resolve one verified owner agent into stable presentation data. */
@@ -63,6 +64,7 @@ export class ConnectorManagementReviewContextBuilder {
         custody: connectorProviderInstances.custody,
         providerDisplayName: connectorProviderInstances.displayName,
         providerStatus: connectorProviderInstances.status,
+        providerMode: connectorProviderInstances.mode,
         reconciliationStatus: connections.grantReconciliationStatus,
       })
       .from(connections)
@@ -121,6 +123,11 @@ export class ConnectorManagementReviewContextBuilder {
         affectedOperations: this.readOperationContext(
           [...new Set(grants.map((grant) => grant.operationRevisionId))].sort()
         ),
+        keptThroughEveryAgent: this.readOperationContext(
+          connection.providerMode === 'managed'
+            ? []
+            : this.everyAgentRevisionIds(action.connectionId)
+        ),
       };
     }
 
@@ -149,10 +156,63 @@ export class ConnectorManagementReviewContextBuilder {
       kind: action.kind,
       connection: publicConnection,
       affectedAgentCount: agentIds.size,
+      everyAgent:
+        connection.providerMode !== 'managed' &&
+        this.everyAgentRevisionIds(action.connectionId).length > 0,
       affectedOperations: this.readOperationContext(
         [...new Set(grants.map((grant) => grant.operationRevisionId))].sort()
       ),
     };
+  }
+
+  /**
+   * Replace the every-agent facts of a stored context with what is true now.
+   *
+   * Everything else in a review is frozen when it is filed, on purpose. These
+   * facts are not: the owner can start or stop sharing with every agent after a
+   * review is filed, and a "remove access" review that still said nothing is
+   * kept would then be wrong at the moment of approval (ADR 260926-192625).
+   * Pending reviews are read through this, and approval stores its result.
+   *
+   * @param context - The stored context.
+   * @returns The same context with live `keptThroughEveryAgent` / `everyAgent`.
+   */
+  withLiveEveryAgent(context: ConnectorManagementReviewContext): ConnectorManagementReviewContext {
+    if (context.kind !== 'remove_agent_access' && context.kind !== 'disconnect') return context;
+    const connectionId = context.connection.connectionId;
+    const mode = this.db
+      .select({ mode: connectorProviderInstances.mode })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(eq(connections.id, connectionId))
+      .get()?.mode;
+    const shared = mode === 'byo' ? this.everyAgentRevisionIds(connectionId) : [];
+    return context.kind === 'disconnect'
+      ? { ...context, everyAgent: shared.length > 0 }
+      : { ...context, keptThroughEveryAgent: this.readOperationContext(shared) };
+  }
+
+  /** Live revisions the connection shares with every agent, sorted. */
+  private everyAgentRevisionIds(connectionId: string): string[] {
+    return [
+      ...new Set(
+        this.db
+          .select({ id: connectionOperationGrants.operationRevisionId })
+          .from(connectionOperationGrants)
+          .where(
+            and(
+              eq(connectionOperationGrants.connectionId, connectionId),
+              everyAgentGrantSubject(),
+              isNull(connectionOperationGrants.revokedAt)
+            )
+          )
+          .all()
+          .map((row) => row.id)
+      ),
+    ].sort();
   }
 
   private requireAgent(
