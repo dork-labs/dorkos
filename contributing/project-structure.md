@@ -10,19 +10,33 @@ DorkOS uses Feature-Sliced Design (FSD) to organize frontend code by business do
 dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client — React 19 SPA with FSD layers
-│   ├── server/           # @dorkos/server — Express API (flat services)
+│   ├── community/        # @dorkos/community — independent Hono/Postgres community service
+│   ├── design-system/    # @dorkos/design-system — standalone shared UI catalog
+│   ├── desktop/          # @dorkos/desktop — Electron shell
+│   ├── server/           # @dorkos/server — Express API (routes + domain-grouped services)
 │   ├── site/             # @dorkos/site — Marketing site & docs (Next.js 16, Fumadocs)
 │   └── e2e/              # @dorkos/e2e — Playwright browser tests
 ├── packages/
 │   ├── cli/              # dorkos — Publishable npm CLI
-│   ├── shared/           # @dorkos/shared — Zod schemas, types, Transport interface
+│   ├── shared/           # @dorkos/shared — Zod schemas, types, AgentRuntime + Transport interfaces
 │   ├── db/               # @dorkos/db — Drizzle ORM schemas (SQLite)
 │   ├── relay/            # @dorkos/relay — Inter-agent message bus
 │   ├── mesh/             # @dorkos/mesh — Agent discovery & registry
+│   ├── harness/          # @dorkos/harness — Projects .agents/ + plugins to every agent harness
+│   ├── memory/           # @dorkos/memory — MEMORY.md store behind the MemoryProvider port
+│   ├── a2a-gateway/      # @dorkos/a2a-gateway — A2A protocol gateway
+│   ├── connector-providers/ # @dorkos/connector-providers — Confined external connector SDK adapters
+│   ├── extension-api/    # @dorkos/extension-api — Extension author API
+│   ├── skills/           # @dorkos/skills — SKILL.md schemas, parser, writer, scanner
+│   ├── operating-skills/ # @dorkos/operating-skills — First-party skill pack + version-stamped seeder
 │   ├── marketplace/      # @dorkos/marketplace — Package manifest schema, validators, scaffolder
+│   ├── cloud-api/        # @dork-labs/cloud-api — Public wire contract for DorkOS Cloud
+│   ├── icons/            # @dorkos/icons — SVG icon & logo registry
+│   ├── ui/               # @dork-labs/ui — Portable UI primitives + namespaced theme CSS
+│   ├── evals/            # @dorkos/evals — Headless outcome-oracle eval harness
+│   ├── ci-steward/       # @dorkos/ci-steward — CI Steward engine (census, ledger, verdicts)
 │   ├── typescript-config/ # Shared tsconfig presets
 │   ├── eslint-config/    # @dorkos/eslint-config — Shared ESLint presets
-│   ├── icons/            # @dorkos/icons — SVG icon & logo registry
 │   └── test-utils/       # Mock factories, test helpers
 ├── turbo.json
 ├── vitest.config.ts
@@ -36,18 +50,21 @@ dorkos/
 ```
 src/
 ├── AppShell.tsx         # Standalone shell (sidebar, header, Outlet) — layout route component
-├── router.tsx           # TanStack Router route tree (/, /session, _shell layout)
-├── main.tsx             # Vite entry point — RouterProvider
+├── router.tsx           # TanStack Router route tree: /, /activity, /team, /session, /tasks,
+│                        #   /channels, /workspaces, /connections, /marketplace(/sources), /feedback-requests
+├── main.tsx             # Vite entry point — RouterProvider; also mounts dev/ on /dev/* (DEV only, unrouted)
 ├── index.css            # Global styles
-├── app/
-│   └── init-extensions.ts  # Registers all built-in contributions into the extension registry at startup
+├── app/                 # App-level bootstrap: boot/error/unreachable screens, init-extensions,
+│                        #   Electron glue (use-electron-*), room document-title + revocation watchers
+├── dev/                 # Dev Playground — component showcases, mock factories (import.meta.env.DEV only)
 ├── layers/              # FSD architecture layers
 │   ├── shared/          # Reusable utilities, UI primitives, hooks & stores
 │   │   ├── ui/          # Shadcn components (button, card, dialog, etc.)
 │   │   ├── model/       # TransportContext, extension-registry, hooks (useTheme, useIsMobile, etc.)
 │   │   │   └── app-store/   # Zustand app store — panels, canvas, preferences, types
-│   │   └── lib/         # cn(), Transports, font-config, favicon-utils, celebrations, ui-action-dispatcher
-│   ├── entities/        # Business domain objects
+│   │   ├── lib/         # cn(), Transports, font-config, favicon-utils, celebrations, ui-action-dispatcher
+│   │   └── config/      # home-surface tab table, home-tabs, tour-anchors
+│   ├── entities/        # Business domain objects (~29 slices; highlights below)
 │   │   ├── session/     # Session types, hooks, transport calls
 │   │   │   ├── ui/
 │   │   │   ├── model/
@@ -58,15 +75,19 @@ src/
 │   │   │   ├── api/
 │   │   │   └── index.ts
 │   │   ├── agent/       # Agent identity hooks (useCurrentAgent, useAgentToolStatus, etc.)
+│   │   ├── room/        # Rooms/channels/DMs domain: use-room(s), reactions, threads, response mode
+│   │   ├── team/        # Team roster domain hooks
 │   │   ├── tasks/       # Task scheduler hooks (useSchedules, useRuns, etc.)
 │   │   ├── relay/       # Relay messaging hooks (useRelayMessages, useRelayAdapters, etc.)
+│   │   ├── connectors/  # Connections domain: connector management/credential/resource hooks
 │   │   ├── mesh/        # Mesh discovery hooks (useRegisteredAgents, useDiscoverAgents, etc.)
 │   │   ├── discovery/   # Shared discovery scan state (Zustand store + useDiscoveryScan hook)
 │   │   ├── runtime/     # Runtime capabilities (useRuntimeCapabilities, useDefaultCapabilities)
+│   │   ├── permissions/ # Permission mode / approval domain hooks
 │   │   ├── tunnel/      # Tunnel state hooks
 │   │   ├── binding/     # Adapter-agent binding hooks (useBindings, useCreateBinding, etc.)
 │   │   └── marketplace/ # Marketplace hooks (useMarketplacePackages, useInstallPackage, etc.)
-│   ├── features/        # Complete user-facing functionality
+│   ├── features/        # Complete user-facing functionality (~60 slices; highlights below)
 │   │   ├── chat/        # A session's model: useChatSession, streaming, message parts
 │   │   │   ├── ui/
 │   │   │   │   ├── input/    # QueuePanel, StopConfirmDialog, AnimatedPlaceholder
@@ -81,7 +102,10 @@ src/
 │   │   ├── composer/    # The one message box — Composer.Root/.Input/.OverlayLane/.Attachments/.ClearArmedHint, composed by chat, rooms, and the dashboard
 │   │   │   └── ui/field/ # The two fields behind one ComposerFieldProps (DOR-948) — see below
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
-│   │   ├── commands/    # Inline slash command palette (chat input)
+│   │   ├── slash-commands/ # Inline slash command palette (chat input)
+│   │   ├── room-management/ # Room panel: roster, limits, create/rename/leave, agent picker
+│   │   ├── connections/ # Connections page — connect flows, access review, agent requests, notifications
+│   │   ├── permissions/ # Permission-mode UI (consent doors, decision surfaces)
 │   │   ├── session-list/ # SessionsView and session lists
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
 │   │   ├── dashboard-attention/ # Attention rows + detail sheets — what the triage header composes
@@ -95,9 +119,11 @@ src/
 │   │   ├── mesh/        # MeshPanel, TopologyGraph, AgentNode, BindingDialog
 │   │   ├── onboarding/  # OnboardingFlow, AgentDiscoveryStep, TaskPresetsStep
 │   │   ├── canvas/      # CanvasViews — the Canvas and Browser right-panel tabs over one document store
+│   │   ├── terminal/    # In-app terminal panel
+│   │   ├── notifications/ # Notification center UI
 │   │   ├── marketplace/ # Marketplace UI — Marketplace, PackageCard, PackageDetailSheet, InstallConfirmationDialog, etc.
 │   │   └── status/      # StatusLine, GitStatusItem, ModelItem
-│   └── widgets/         # Large UI compositions
+│   └── widgets/         # Large UI compositions (~19 slices; highlights below)
 │       ├── app-layout/  # Header, Layout, main workspace
 │       │   ├── ui/
 │       │   └── index.ts
@@ -110,14 +136,33 @@ src/
 │       │   ├── lib/     #   forward-look.ts, starter-chips.ts (the tab table lives in shared/config now)
 │       │   ├── ui/
 │       │   └── index.ts
+│       ├── room-view/   # The #team room and every channel/DM surface — entries, composer dock, thread pane
+│       │   ├── ui/
+│       │   ├── model/
+│       │   ├── lib/
+│       │   └── index.ts
+│       ├── control-center/ # Control Center — the consent/autonomy dashboard
+│       │   ├── ui/
+│       │   ├── model/
+│       │   └── index.ts
+│       ├── connections/ # ConnectionsPage (/connections)
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── team/        # TeamPage (/team) — agent roster
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── tasks/       # TasksPage (/tasks)
+│       │   ├── ui/
+│       │   └── index.ts
 │       ├── marketplace/ # MarketplacePage (/marketplace), MarketplaceSourcesPage (/marketplace/sources)
 │       │   ├── ui/
 │       │   └── index.ts
 │       └── session/     # SessionPage — agent chat wrapper at /session
 │           ├── ui/
 │           └── index.ts
-└── contexts/            # React Context (TransportProvider)
 ```
+
+`TransportContext` lives at `layers/shared/model/TransportContext.tsx` — there is no separate `contexts/` directory.
 
 ### `features/composer/ui/field/` — the two fields
 
@@ -292,8 +337,11 @@ apps/server/src/
 ├── app.ts           # Express app configuration
 ├── index.ts         # Server entry point
 ├── env.ts           # Zod-validated environment config
-├── routes/          # HTTP endpoint handlers (thin, delegate to services)
+├── harness-boot.ts  # Projects skills/hooks/commands into every agent harness at startup
+├── routes/          # HTTP endpoint handlers (thin, delegate to services) — 70+ files, one
+│   │                #   per resource or sub-resource; representative ones:
 │   ├── sessions.ts
+│   ├── rooms.ts
 │   ├── commands.ts
 │   ├── health.ts
 │   ├── directory.ts
@@ -301,101 +349,101 @@ apps/server/src/
 │   ├── files.ts
 │   ├── git.ts
 │   ├── tunnel.ts
-│   ├── pulse.ts
 │   ├── relay.ts
 │   ├── mesh.ts
 │   ├── agents.ts
 │   ├── models.ts
 │   ├── capabilities.ts
-│   ├── discovery.ts
+│   ├── connector-management.ts
+│   ├── marketplace.ts
+│   ├── tasks.ts
+│   ├── search.ts
+│   ├── permissions.ts
 │   └── admin.ts
-├── services/
+├── services/        # One directory per domain — a complete census (alphabetical): activity,
+│   │                #   canvas, communities, connectors, core, core-extensions, diff, extensions,
+│   │                #   harness, identity, marketplace, marketplace-mcp, mcp-apps, memory, mesh,
+│   │                #   notifications, observability, relay, rooms, runtimes, search, session,
+│   │                #   shapes, tasks, terminal, workbench-serve, workspace (AGENTS.md keeps the
+│   │                #   census current; this tree expands the domains with the deepest nesting)
 │   ├── core/                    # Shared infrastructure services
-│   │   ├── runtime-registry.ts  # Registry of AgentRuntime instances (keyed by type)
+│   │   ├── runtime-registry.ts  # Registry of AgentRuntime instances (keyed by type, per-session binding)
 │   │   ├── config-manager.ts    # Persistent user config (~/.dork/config.json)
-│   │   ├── stream-adapter.ts    # SSE helpers (initSSEStream, sendSSEEvent, endSSEStream)
 │   │   ├── openapi-registry.ts  # Auto-generated OpenAPI spec from Zod schemas
+│   │   ├── streams/             # SSE plumbing (stream-adapter, stream-socket, durable-stream-sink)
+│   │   ├── approvals/           # Approval service, expiry sweep, decision authority
+│   │   ├── capabilities/        # Capability defs, MCP/OpenAPI projection, permission enforcement
+│   │   ├── cloud/               # DorkOS Cloud client (credits-inference, hosted-communities, plan)
+│   │   ├── agent-identity/, auth/, external-mcp/, operator/, permissions/, safe-defaults/,
+│   │   │   unattended-autonomy/, usage/   # Narrower core sub-domains, one folder each
 │   │   ├── file-lister.ts       # Directory file listing
 │   │   ├── git-status.ts        # Git status/branch info
 │   │   ├── tunnel-manager.ts    # ngrok tunnel lifecycle
 │   │   └── update-checker.ts    # npm registry version check (1-hour cache)
-│   ├── runtimes/                # Agent backend implementations
-│   │   └── claude-code/         # ClaudeCodeRuntime — the only current backend
-│   │       ├── claude-code-runtime.ts  # Implements AgentRuntime interface (composition root)
-│   │       ├── agent-types.ts          # AgentSession, ToolState interfaces (shared across subdirs)
-│   │       ├── runtime-constants.ts    # Runtime constants
-│   │       ├── index.ts                # Barrel export for ClaudeCodeRuntime
-│   │       ├── messaging/              # Send-message pipeline
-│   │       │   ├── message-sender.ts       # Extracted send-message logic
-│   │       │   ├── context-builder.ts      # Runtime context for systemPrompt (XML blocks)
-│   │       │   ├── interactive-handlers.ts # Tool approval & AskUserQuestion flows
-│   │       │   ├── plugin-activation.ts    # Builds options.plugins from installed marketplace plugins
-│   │       │   └── runtime-cache.ts        # Caches models/commands/MCP status/subagents
-│   │       ├── sdk/                    # SDK message ↔ StreamEvent mapping + SDK utilities
-│   │       │   ├── sdk-event-mapper.ts     # Dispatcher: SDK message → StreamEvent
-│   │       │   ├── event-mappers/          # Per-category mappers (system/stream/message/result)
-│   │       │   ├── sdk-error-mapping.ts    # SDK error subtype → ErrorCategory
-│   │       │   ├── sdk-utils.ts            # makeUserPrompt(), resolveClaudeCliPath()
-│   │       │   └── build-task-event.ts     # TaskUpdateEvent builder
-│   │       ├── sessions/               # Transcript/session/task reading + sync
-│   │       │   ├── transcript-reader.ts    # JSONL session reader (single source of truth)
-│   │       │   ├── transcript-parser.ts    # JSONL line → HistoryMessage parser
-│   │       │   ├── task-reader.ts          # Task state parser from JSONL
-│   │       │   ├── session-store.ts        # In-memory session state
-│   │       │   └── session-list-watcher.ts # Fleet-wide session-list watcher (chokidar)
-│   │       ├── tooling/                # Tool/command/dependency configuration
-│   │       │   ├── tool-filter.ts          # Per-agent MCP tool-group resolution
-│   │       │   ├── command-registry.ts     # Slash command discovery
-│   │       │   └── check-dependency.ts     # Verifies the Claude CLI dependency
-│   │       └── mcp-tools/              # In-process MCP tool server for Claude Agent SDK
-│   ├── tasks/                   # Task scheduler services
-│   │   ├── tasks-store.ts       # SQLite + JSON schedule/run state
-│   │   ├── scheduler-service.ts # Cron engine (croner) with overrun protection
-│   │   ├── task-presets.ts      # Default task presets
-│   │   └── tasks-state.ts       # DORKOS_TASKS_ENABLED feature flag holder
-│   ├── relay/                   # Relay messaging services
-│   │   ├── adapter-manager.ts   # Server-side adapter lifecycle management
-│   │   ├── adapter-factory.ts   # Adapter instantiation from config
-│   │   ├── adapter-config.ts    # Config load/save/watch, sensitive field masking
-│   │   ├── adapter-error.ts     # AdapterError typed error class
-│   │   ├── binding-store.ts     # JSON-backed adapter-agent binding store
-│   │   ├── binding-router.ts    # relay.human.> → relay.agent.{sessionId} routing
-│   │   ├── trace-store.ts       # SQLite delivery trace storage (message_traces table)
-│   │   ├── relay-state.ts       # DORKOS_RELAY_ENABLED feature flag holder
-│   │   └── subject-resolver.ts  # Subject pattern resolution helpers
-│   ├── mesh/                    # Mesh state
-│   │   └── mesh-state.ts        # Internal state tracking (Mesh is always-on)
-│   ├── rooms/                   # Channels, DMs and threads (spec `rooms`)
-│   │   ├── room-service.ts      # The domain's front door — delegates to the three folders below (DOR-1697)
-│   │   ├── service/             # The machinery every part shares: the deps, the wiring, and who may see or change a room
-│   │   ├── manage/              # A room, its people and its turns: open, patch, bridge, roster, list, halt
-│   │   ├── messages/            # What is said in one: posting, the shared write, the room's own voice, reads, search, reactions
-│   │   └── attachments/         # Files posted with a message — rows, bytes behind a swappable store, and the paths projected to an agent
-│   ├── marketplace/             # Package install/uninstall/update pipeline
-│   │   ├── marketplace-installer.ts  # Orchestrator (8-stage pipeline, dispatches per-kind flows)
+│   ├── runtimes/                # Agent backend implementations — every runtime passes the
+│   │   │                        #   shared runtimeConformance suite (contributing/adding-a-runtime.md)
+│   │   ├── claude-code/         # ClaudeCodeRuntime — the default backend
+│   │   │   ├── claude-code-runtime.ts  # Implements AgentRuntime interface (composition root)
+│   │   │   ├── agent-types.ts          # AgentSession, ToolState interfaces (shared across subdirs)
+│   │   │   ├── messaging/              # Send-message pipeline: message-sender, context-builder,
+│   │   │   │                           #   interactive-handlers, plugin-activation, runtime-cache
+│   │   │   ├── sdk/                    # SDK message ↔ StreamEvent mapping: sdk-event-mapper,
+│   │   │   │                           #   event-mappers/, sdk-error-mapping, turn-usage
+│   │   │   ├── sessions/               # Transcript/session reading + sync: transcript-reader,
+│   │   │   │                           #   session-pump, session-store, warm-process-ledger
+│   │   │   ├── tooling/                # check-dependency, command-registry, claude-cli-auth
+│   │   │   ├── accounts/               # Multi-account switching
+│   │   │   └── mcp-tools/              # In-process MCP tool server for Claude Agent SDK
+│   │   ├── codex/                # CodexRuntime — SDK threads (ADR-0309)
+│   │   ├── opencode/             # OpencodeRuntime — managed sidecar (ADR-0308)
+│   │   ├── connect/              # Runtime credentials / delegated login
+│   │   ├── connectors/, connector-mcp/ # Connector-backed MCP bridging shared across runtimes
+│   │   ├── shared/                # Cross-runtime helpers used by the conformance suite
+│   │   └── test-mode/             # FakeAgentRuntime backend for e2e
+│   ├── rooms/                    # Channels, DMs and threads (spec `rooms`)
+│   │   ├── room-service.ts      # The domain's front door — delegates to the folders below (DOR-1697)
+│   │   ├── manage/               # A room, its people and its turns: open, patch, bridge, roster, halt
+│   │   ├── messages/             # Posting, reads, search, reactions
+│   │   ├── attachments/          # Files posted with a message — rows, bytes, projected paths
+│   │   ├── canvas/, moments/, follow/, response-gate/ # Room canvas, highlights rail, follow state,
+│   │   │                                              #   the reply-limit ladder (room-turn overhaul)
+│   │   └── session-bindings/     # Session ↔ room binding
+│   ├── communities/               # CommunityAdapter backends: local/ (this machine's SQLite rooms,
+│   │   │                          #   registered LOCAL_COMMUNITY) + remote-community aggregation
+│   ├── connectors/                # Connections: connector accounts, agent-access requests/cleanup
+│   ├── marketplace/               # Package install/uninstall/update pipeline
+│   │   ├── marketplace-installer.ts  # Orchestrator, dispatches per-kind flows
 │   │   ├── marketplace-cache.ts      # Content-addressable cache (TTL, prune, listPackages)
-│   │   ├── marketplace-source-manager.ts # Source CRUD (marketplaces.json)
 │   │   ├── package-fetcher.ts        # marketplace.json fetch + package clone
-│   │   ├── package-resolver.ts       # Resolves package name → source + entry
-│   │   ├── permission-preview.ts     # Builds PermissionPreview from manifest
-│   │   ├── conflict-detector.ts      # Detects file conflicts before install
-│   │   ├── telemetry-hook.ts         # Install/uninstall/update telemetry
-│   │   ├── installed-metadata.ts     # Reads installed package metadata
 │   │   ├── transaction.ts            # Atomic transaction engine (backup/rollback)
-│   │   ├── lib/atomic-move.ts        # Crash-safe directory rename
 │   │   └── flows/                    # Per-kind install flows (plugin, agent, skill-pack, adapter)
-│   ├── core-extensions/        # Toggleable first-party extensions staged at server startup
-│   │   └── ensure-core-extensions.ts # Stages every core extension on startup
-│   └── discovery/               # Agent discovery (delegates to @dorkos/mesh unified scanner)
+│   ├── marketplace-mcp/           # The 9 marketplace MCP tools + personal-marketplace recommend engine
+│   ├── tasks/                    # Task scheduler services
+│   │   ├── task-scheduler-service.ts # Cron engine (croner) with overrun protection
+│   │   ├── task-store.ts             # SQLite + JSON schedule/run state
+│   │   └── execution/, lifecycle/, session/, sync/, timing/, approvals/ # Per-concern subfolders
+│   ├── relay/                    # Relay messaging services (adapter-manager, binding-router, trace-store)
+│   ├── mesh/                     # Agent discovery + MCP sign-in/OAuth (delegates to @dorkos/mesh's
+│   │   │                         #   unified-scanner for filesystem scanning; Mesh is always-on)
+│   ├── memory/                   # MemoryProvider capabilities and provider registry
+│   ├── search/                   # FTS5 message search index (indexer, jsonl-frontier, per-runtime discovery)
+│   ├── session/                  # Session aggregation, activity, asks, attachments, browser-seat
+│   ├── identity/                 # Avatars, display names, operator profile, team aggregation
+│   ├── notifications/            # Notification center (channels/, emitters/, escalation-service)
+│   ├── activity/, canvas/, diff/, extensions/, harness/, mcp-apps/, observability/, shapes/,
+│   │   terminal/, workbench-serve/, workspace/  # One folder each; browse for per-domain detail
+│   └── core-extensions/          # Toggleable first-party extensions staged at server startup
+│       └── ensure-core-extensions.ts # Stages every core extension on startup
 ├── lib/             # Shared utilities
 │   ├── resolve-root.ts  # DEFAULT_CWD (prefers DORKOS_DEFAULT_CWD, falls back to repo root)
 │   ├── boundary.ts      # Directory boundary validation (403 for out-of-boundary paths)
 │   ├── dork-home.ts     # resolveDorkHome() — single source of truth for data directory
+│   ├── agents-home.ts   # Mirrors another harness's home-dir resolution (Hard Rule 3 carve-out)
 │   └── feature-flag.ts  # Generic feature flag helpers
-└── middleware/
+└── middleware/       # mcp-auth (fail-closed), host-guard, rate limiting, agent-execution-gate, error-handler
 ```
 
-Routes are thin HTTP handlers — they delegate to services. Routes obtain the active runtime via `runtimeRegistry.getDefault()`, never referencing `ClaudeCodeRuntime` directly.
+Routes are thin HTTP handlers — they delegate to services. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins, ADR-0255), never referencing `ClaudeCodeRuntime` directly.
 
 ## Import Patterns
 
@@ -453,8 +501,8 @@ import { Button } from '@/layers/shared/ui'; // CORRECT (from index)
 The hexagonal Transport interface bridges FSD and the monorepo:
 
 ```
-packages/shared/transport.ts    → Transport interface (port)
-layers/shared/lib/              → HttpTransport (HTTP implementation)
+packages/shared/src/transport.ts → Transport interface (port)
+layers/shared/lib/transport/    → HttpTransport (HTTP implementation)
 layers/shared/model/            → TransportContext (React DI), app-store, hooks
 layers/entities/*/api/          → Transport consumption (queries/mutations)
 layers/features/*/model/        → Hooks composing entity data
