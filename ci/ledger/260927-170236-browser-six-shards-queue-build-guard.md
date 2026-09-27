@@ -5,7 +5,7 @@ kind: experiment
 status: active
 actor: agent
 gates: []
-prs: []
+prs: [2212]
 hypothesis:
   metric: 'queue-build'
   slo: 'queue-build'

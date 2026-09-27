@@ -6,7 +6,7 @@ status: active
 actor: agent
 gates:
   - wf.browser-test.browser-shard
-prs: []
+prs: [2212]
 hypothesis:
   metric: 'headroom'
   slo: 'queue-build'
