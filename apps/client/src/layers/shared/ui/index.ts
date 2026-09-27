@@ -356,7 +356,13 @@ export { Textarea } from './textarea';
 export { Toaster } from './sonner';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 export { AccountDot, type AccountDotProps } from './account-dot';
-export { UsageBar, UsageMiniBars, type UsageBarProps, type UsageMiniBarsProps } from './usage-bar';
+export {
+  UsageBar,
+  UsageMiniBars,
+  usageMiniBarsLabel,
+  type UsageBarProps,
+  type UsageMiniBarsProps,
+} from './usage-bar';
 export { FeatureDisabledState } from './FeatureDisabledState';
 export type { FeatureDisabledStateProps } from './FeatureDisabledState';
 export { LinkifiedText, containsUrl } from './linkified-text';

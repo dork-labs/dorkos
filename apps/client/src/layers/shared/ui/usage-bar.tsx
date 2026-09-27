@@ -110,6 +110,21 @@ function windowPhrase(name: string, entry: AccountWindow | null): string {
   return `${name} ${pctText(entry)} used`;
 }
 
+/**
+ * What {@link UsageMiniBars} says as one image: "5-hour window 40% used,
+ * weekly 72% used". For a control that carries the bars and needs the same
+ * words in its own accessible name.
+ *
+ * @param fiveHour - The account's 5-hour window, or `null` with no reading.
+ * @param week - The account's weekly window, or `null` with no reading.
+ */
+export function usageMiniBarsLabel(
+  fiveHour: AccountWindow | null,
+  week: AccountWindow | null
+): string {
+  return `${windowPhrase('5-hour window', fiveHour)}, ${windowPhrase('weekly', week)}`;
+}
+
 /** Props for {@link UsageMiniBars}. */
 export interface UsageMiniBarsProps {
   /** The account's 5-hour window, or `null` with no reading. */
@@ -125,7 +140,7 @@ export interface UsageMiniBarsProps {
  * or a list row. Read as one image: "5-hour window 40% used, weekly 72% used".
  */
 export function UsageMiniBars({ fiveHour, week, className }: UsageMiniBarsProps) {
-  const label = `${windowPhrase('5-hour window', fiveHour)}, ${windowPhrase('weekly', week)}`;
+  const label = usageMiniBarsLabel(fiveHour, week);
   return (
     <span
       role="img"

@@ -16,6 +16,7 @@ import {
   PermissionModeItem,
   PlanModeItem,
   RuntimeItem,
+  AccountItem,
   ModelConfigPopover,
   ContextItem,
   UsageStatusItem,
@@ -27,6 +28,7 @@ import {
   type StatusBarItemKey,
   type StatusDensity,
   type RuntimeChipState,
+  type SessionAccount,
   type MakeDefaultStopLineProps,
 } from '@/layers/features/status';
 import { AgentIdentityChip } from './AgentIdentityChip';
@@ -80,6 +82,11 @@ export interface StatusItemNodesInput {
   workspace: Workspace | null | undefined;
   /** Runtime chip state (display runtime, model, selectability). */
   runtimeChip: RuntimeChipState;
+  /**
+   * Which account the session spends and how it is doing (`useSessionAccount`).
+   * The chip renders only while its `visible` gate is open.
+   */
+  account: SessionAccount;
   /** The percent to display for the context window, or `null` before the first reading. */
   contextPercent: number | null;
   /** The SDK context breakdown, when it has arrived. */
@@ -167,7 +174,6 @@ export function buildStatusItemNodes(
   if (runtimeChip.runtime !== null) {
     nodes.runtime = (
       <RuntimeItem
-        sessionId={sessionId}
         runtime={runtimeChip.runtime}
         model={runtimeChip.model}
         onChangeRuntime={runtimeChip.onChangeRuntime}
@@ -183,6 +189,12 @@ export function buildStatusItemNodes(
         compact
       />
     );
+  }
+
+  // The account chip sits beside the runtime it belongs to, and only where
+  // accounts are told apart (two or more on a runtime that supports them).
+  if (input.account.visible) {
+    nodes.account = <AccountItem sessionId={sessionId} account={input.account} />;
   }
 
   nodes.model = (

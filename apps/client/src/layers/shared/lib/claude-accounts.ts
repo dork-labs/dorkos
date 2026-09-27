@@ -178,32 +178,128 @@ export function barTone(entry: AccountWindow | null | undefined): BarTone {
 }
 
 /**
- * What an account chip shows: `out` when the session's account ran out,
- * `near` when it is close, `unknown` with no reading, else `ok`.
+ * Where a session limit stands, as S4 names it (spec `claude-account-fleet` D9,
+ * "The states core emits"). Mirrors the server's `LimitState`: a server that
+ * does not send `state` yet is read through {@link limitStateOf}.
  */
-export type ChipState = 'ok' | 'near' | 'out' | 'unknown';
+export type LimitState =
+  | 'limited'
+  | 'wait-only'
+  | 'model-limited'
+  | 'all-accounts-out'
+  | 'handing-off'
+  | 'moved'
+  | 'waiting-reset'
+  | 'reset-ready';
+
+/**
+ * A session limit as the client reads it: the shared shape, plus the fields a
+ * newer server adds (`scope`, `state`). Each is optional here so an older
+ * server's limit still reads; {@link limitStateOf} and {@link limitScopeOf}
+ * fill them in.
+ */
+export type SessionLimitView = SessionLimit & {
+  /** `model` when only one model's window ran out; `account` when absent. */
+  scope?: 'account' | 'model';
+  /** Where the limit stands; derived from the plan when absent. */
+  state?: LimitState;
+};
+
+/**
+ * Where a session limit stands. The server's `state` when it sends one, else
+ * the state its plan implies: `continued` is `moved`, `auto` is `handing-off`,
+ * `waiting` is `waiting-reset`, and `ask` is `limited`.
+ *
+ * @param limit - The session's usage limit.
+ */
+export function limitStateOf(limit: SessionLimitView): LimitState {
+  if (limit.state) return limit.state;
+  switch (limit.plan.mode) {
+    case 'continued':
+      return 'moved';
+    case 'auto':
+      return 'handing-off';
+    case 'waiting':
+      return 'waiting-reset';
+    default:
+      return 'limited';
+  }
+}
+
+/**
+ * Whether a session limit is the whole account (`account`) or one model on it
+ * (`model`). A server that does not send `scope` means the whole account.
+ *
+ * @param limit - The session's usage limit.
+ */
+export function limitScopeOf(limit: SessionLimitView): 'account' | 'model' {
+  return limit.scope ?? 'account';
+}
+
+/**
+ * What an account chip shows: `out` when the session's account ran out,
+ * `model-out` when only one model on it did, `near` when it is close,
+ * `unknown` with no reading, else `ok`.
+ */
+export type ChipState = 'ok' | 'near' | 'out' | 'model-out' | 'unknown';
 
 /**
  * The chip state for a session's account.
  *
- * A session limit reads `out` until the work carried over to another account
- * (plan `continued`); an account the server reads as `limited` is `out` too.
- * `near` is the server's `warning` (any window at 90% or more, or
- * `allowed_warning`), so that threshold lives in one place. No clock: the
- * server recomputes the limit.
+ * A session limit reads `out` until the work moved to another session (state
+ * `moved`), or `model-out` when the limit's scope is one model: the account
+ * still has room, in every state including a wait. An account the server reads
+ * as `limited` is `out` too. `near` is the server's `warning` (any window at
+ * 90% or more, or `allowed_warning`), so that threshold lives in one place. No
+ * clock: the server recomputes the limit.
  *
  * @param usage - The account's usage, or nothing when it has not loaded.
  * @param limit - The session's usage limit, or nothing when it has none.
  */
 export function chipState(
   usage: AccountUsage | null | undefined,
-  limit: SessionLimit | null | undefined
+  limit: SessionLimitView | null | undefined
 ): ChipState {
-  if (limit && limit.plan.mode !== 'continued') return 'out';
+  if (limit && limitStateOf(limit) !== 'moved') {
+    return limitScopeOf(limit) === 'model' ? 'model-out' : 'out';
+  }
   if (usage?.state === 'limited') return 'out';
   if (usage?.state === 'warning') return 'near';
   if (!usage || usage.state === 'unknown') return 'unknown';
   return 'ok';
+}
+
+/** The model families a weekly model bucket names. */
+const MODEL_BUCKET_FAMILIES: Record<string, string> = {
+  seven_day_opus: 'opus',
+  seven_day_sonnet: 'sonnet',
+};
+
+/**
+ * The name of the model a model-scope window limits, for the chip's
+ * `Opus out until Tue 3pm`: `seven_day_opus` is Opus, `seven_day_sonnet` is
+ * Sonnet, and `model:<slug>` is that model. The runtime's model list supplies
+ * the display name (the first word of a matching model's name, when it names
+ * the family); the family or slug, capitalized, stands in without one.
+ *
+ * @param windowKey - The window that ran out, such as `seven_day_opus`.
+ * @param models - The runtime's models, as the model list serves them.
+ */
+export function modelBucketName(
+  windowKey: string,
+  models: readonly { value: string; displayName: string }[] = []
+): string {
+  const family = MODEL_BUCKET_FAMILIES[windowKey];
+  if (family) {
+    const match = models.find((model) => model.value.toLowerCase().includes(family));
+    const firstWord = match?.displayName.split(/\s+/)[0];
+    return firstWord && firstWord.toLowerCase() === family ? firstWord : capitalize(family);
+  }
+  if (windowKey.startsWith('model:')) {
+    const slug = windowKey.slice('model:'.length);
+    return models.find((model) => model.value === slug)?.displayName ?? capitalize(slug);
+  }
+  return capitalize(windowKey);
 }
 
 /**

@@ -19,6 +19,15 @@ export type { ReadOnlyModeHint } from './model/use-read-only-mode-hint';
 export { PlanModeItem } from './ui/PlanModeItem';
 export type { PlanModeItemProps } from './ui/PlanModeItem';
 export { RuntimeItem } from './ui/RuntimeItem';
+export { AccountItem, AccountTrigger, AccountMenuRow } from './ui/AccountItem';
+export type { AccountItemProps, AccountTriggerProps, AccountMenuRowProps } from './ui/AccountItem';
+export { AccountPopover } from './ui/AccountPopover';
+export type { AccountPopoverProps } from './ui/AccountPopover';
+export { useSessionAccount } from './model/use-session-account';
+export type { SessionAccount, SessionTrackerItem } from './model/use-session-account';
+// The two account rules other surfaces must agree with: the chip's tone (the
+// header badge) and when moving to another account is on offer (the banner).
+export { canOfferContinue, chipToneFor, type AccountChipTone } from './lib/account-chip';
 export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
 export { AutonomyConfirmDialog } from './ui/AutonomyConfirmDialog';
 export { ModelConfigPopover } from './ui/ModelConfigPopover';
@@ -42,7 +51,11 @@ export { partitionSubagents } from './lib/fold-active-subagents';
 // folder. Publishing it would invite a caller outside the line to bound a value
 // that has nothing to do with the line's width.
 export { gitPromotionState, useStatusBarPins } from './model/status-bar-registry';
-export type { StatusBarItemKey, StatusPromotionContext } from './model/status-bar-registry';
+export type {
+  AccountPromotionState,
+  StatusBarItemKey,
+  StatusPromotionContext,
+} from './model/status-bar-registry';
 export { selectPromotedItems } from './model/promoted-items';
 export { applyStatusBudget, resolveStatusBudget } from './model/status-budget';
 export type { StatusDensity, StatusBudget } from './model/status-budget';

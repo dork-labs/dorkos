@@ -102,8 +102,11 @@ export {
   formatResetTime,
   isAbsoluteAccountPath,
   isStale,
+  limitScopeOf,
+  limitStateOf,
   limitSubject,
   limitText,
+  modelBucketName,
   nearestWindow,
   planName,
   windowShortName,
@@ -111,6 +114,8 @@ export {
   type BarTone,
   type ChipState,
   type ClaudeAccountRef,
+  type LimitState,
+  type SessionLimitView,
 } from './claude-accounts';
 export { isBypassPermissionMode, permissionModeLabel } from './permission-mode';
 // The permission-mode derivation rules live in `@dorkos/shared` so the server's

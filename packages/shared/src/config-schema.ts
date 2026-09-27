@@ -883,6 +883,7 @@ export const StatusBarPinSchema = z.enum([
   'cwd',
   'git',
   'runtime',
+  'account',
   'model',
   'context',
   'usage',
