@@ -16,14 +16,13 @@
  * @module server/services/rooms/room-turn-port
  */
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
-import type { RoomContextData } from '@dorkos/shared/additional-context';
+import type { RoomContextData, RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import type { ProjectableAttachment } from './room-context.js';
 import type { RoomTurnUnanswered } from './notices/notice-log.js';
 import type { WaitingKind } from './notices/notice-copy.js';
-import type { DispatchMessageOpts } from '../session/index.js';
 
 /**
  * The runner's refusal when a room's session is bound to a runtime this server
@@ -102,9 +101,12 @@ export interface RoomTurnRequest {
   /**
    * Work to do when the turn LAUNCHES rather than when it is placed — see
    * `DispatchMessageOpts.prepareLaunch`. Supplied by the dispatcher, which holds
-   * the room's session bindings and its worktree manager.
+   * the room's session bindings and its worktree manager. It answers the files
+   * section as the turn launches — after the turn-start refresh (spec
+   * `agent-home-desk` §6.1) — and the runner puts it into the turn's room
+   * context before the runtime renders it.
    */
-  prepareLaunch?: (sessionId: string) => Promise<Partial<Pick<DispatchMessageOpts, 'roomContext'>>>;
+  prepareLaunch?: (sessionId: string) => Promise<{ files?: RoomContextFiles }>;
   /** The session bound to this `(room, agent)`, or `null` on its first answer. */
   sessionId: string | null;
   /** The entry that triggered this turn. */
