@@ -165,6 +165,11 @@ ADR 260926-180308, spec `agent-home-desk` §6. When a room turn launches, `room-
 fast-forwards the agent's copy to `main` — the one place the server writes into an agent's worktree
 — but only when nothing in it could be lost:
 
+0. The room's shared git settings name no program git would run
+   (`assertRoomRepoConfigSafe`). The same audit sits at the top of `runGitRaw`, so every read
+   and the fast-forward re-ask it, and settings written mid-refresh stop the write before its
+   checkout could run a smudge filter. A refusal is `held: unsafe-config`: the log names the
+   entries and how to remove them, and the agent is told a person must.
 1. `main`'s tip is captured once; every later step uses that sha, never `main` by name.
 2. The copy is on its own branch, `room/<slug>` (a detached `HEAD` or another branch is
    `off-branch`).

@@ -353,6 +353,57 @@ describe('the turn-start refresh', () => {
     });
   });
 
+  describe('the room`s shared git settings name a program', () => {
+    /**
+     * What a shell in an agent's copy can do with plain git: define a smudge
+     * filter in the room's shared config, and ask for it from `main`.
+     */
+    async function plantFilter(marker: string): Promise<void> {
+      await git(
+        repo,
+        'config',
+        '--file',
+        path.join(repo, '.git', 'config'),
+        'filter.x.smudge',
+        `sh -c 'touch "${marker}"; cat'`
+      );
+    }
+
+    it('holds the copy as unsafe-config and runs nothing', async () => {
+      const marker = path.join(scratch, 'smudge-ran');
+      await onMain({ '.gitattributes': '*.txt filter=x\n', 'a.txt': 'hello\n' }, 'Attrs');
+      await plantFilter(marker);
+      const before = await headOf(copy);
+
+      const { outcome } = await refreshRoomWorktree(target, deps());
+
+      expect(outcome).toEqual({ kind: 'held', reason: 'unsafe-config', moved: null });
+      expect(existsSync(marker)).toBe(false);
+      expect(await headOf(copy)).toBe(before);
+    });
+
+    it('stops the fast-forward itself when the settings change mid-refresh', async () => {
+      const marker = path.join(scratch, 'smudge-ran');
+      await onMain({ '.gitattributes': '*.txt filter=x\n', 'a.txt': 'hello\n' }, 'Attrs');
+      const before = await headOf(copy);
+
+      const { outcome } = await refreshRoomWorktree(
+        target,
+        deps({
+          // Written after every read passed, right before the write.
+          stillIdle: async () => {
+            await plantFilter(marker);
+            return true;
+          },
+        })
+      );
+
+      expect(outcome).toMatchObject({ kind: 'held', reason: 'unsafe-config' });
+      expect(existsSync(marker)).toBe(false);
+      expect(await headOf(copy)).toBe(before);
+    });
+  });
+
   describe('a fast-forward that is stopped partway', () => {
     it('is unreadable, not refreshed, when the write is killed by its timeout', async () => {
       await mkdir(path.join(repo, 'bulk'), { recursive: true });

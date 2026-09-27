@@ -119,6 +119,7 @@ function fileList(shown: readonly string[], total: number): string {
  *   ahead/behind line covers the counts; a turn is told nothing about a
  *   refresh it did not attempt).
  * - `off-branch`: switch back before merging.
+ * - `unsafe-config`: what is wrong, and that a person must remove the entries.
  * - held with moves: the count, a pointer to the quoted region, and — when the
  *   agent changed some of the same files — the sync command.
  *
@@ -136,6 +137,14 @@ export function refreshLines(files: RoomContextFiles, worktree: string): string[
     ];
   }
   if (refresh.kind !== 'held') return [];
+  if (refresh.reason === 'unsafe-config') {
+    return [
+      "Your copy was not updated: the room's shared git settings contain entries that can make " +
+        'git run programs, so DorkOS will not update, merge or save this room’s files until a ' +
+        'person removes those entries (the operator is told which ones). Never add git settings ' +
+        'to the room’s repository. If you need to merge, say so in the room.',
+    ];
+  }
   if (refresh.reason === 'off-branch') {
     const branch = sanitizeIdentity(files.branch) ?? 'its own branch';
     return [`Your copy is not on ${branch}, so it was not updated. Switch back before you merge.`];

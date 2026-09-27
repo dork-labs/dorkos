@@ -385,15 +385,17 @@ export interface MainMoved {
  * `agent-home-desk` §6.1): brought it up to date, found it already there, or
  * left it alone and said why.
  *
- * `busy` is the one held reason with no `moved`: another turn of this agent in
- * this room was running, so not a single git command was made.
+ * `busy` and `unsafe-config` carry no `moved`: for `busy` another turn of this
+ * agent in this room was running, so not a single git command was made; for
+ * `unsafe-config` the room's shared git settings name a program git would run,
+ * so the server makes no git call in the room at all until a person removes it.
  */
 export type WorktreeRefreshOutcome =
   | { kind: 'current' }
   | { kind: 'refreshed'; from: string; to: string; paths: string[] }
   | {
       kind: 'held';
-      reason: 'busy' | 'changes' | 'ahead' | 'off-branch' | 'unreadable';
+      reason: 'busy' | 'changes' | 'ahead' | 'off-branch' | 'unreadable' | 'unsafe-config';
       moved: MainMoved | null;
     };
 
@@ -1136,7 +1138,7 @@ export const WorktreeRefreshOutcomeSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('held'),
-    reason: z.enum(['busy', 'changes', 'ahead', 'off-branch', 'unreadable']),
+    reason: z.enum(['busy', 'changes', 'ahead', 'off-branch', 'unreadable', 'unsafe-config']),
     moved: MainMovedSchema.nullable(),
   }),
 ]);

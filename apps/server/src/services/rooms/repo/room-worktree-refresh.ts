@@ -50,7 +50,8 @@ import type {
   WorktreeRefreshOutcome,
 } from '@dorkos/shared/additional-context';
 import { logger } from '../../../lib/logger.js';
-import { aheadBehind, runGit, runGitRaw } from './room-repo-git.js';
+import { RoomError } from '../room-errors.js';
+import { aheadBehind, assertRoomRepoConfigSafe, runGit, runGitRaw } from './room-repo-git.js';
 
 /** How many of `main`'s commits the heads-up lists before "and N more". */
 const MAIN_MOVED_MAX_COMMITS = 8;
@@ -277,6 +278,34 @@ function ancestors(p: string): string[] {
 }
 
 /**
+ * Whether a git call was refused because the room's shared settings name a
+ * program (`assertRoomRepoConfigSafe` in `room-repo-git.ts`).
+ *
+ * @param err - What the call threw.
+ */
+function isUnsafeConfig(err: unknown): boolean {
+  return err instanceof RoomError && err.code === 'ROOM_REPO_CONFIG_UNSAFE';
+}
+
+/**
+ * The copy held because the room's settings are unsafe. The refusal's message —
+ * the file, the offending entries and how to remove each — goes to the log,
+ * where the operator reads it; the agent is told the fact and who fixes it.
+ *
+ * @param err - The refusal.
+ * @param mainTip - The captured tip, when step 1 had run.
+ */
+function unsafeConfig(
+  err: unknown,
+  mainTip: string | null
+): { outcome: WorktreeRefreshOutcome; mainTip: string | null } {
+  logger.warn('[rooms] left an agent’s copy of the room’s files alone: unsafe git settings', {
+    error: err instanceof Error ? err.message : String(err),
+  });
+  return { outcome: { kind: 'held', reason: 'unsafe-config', moved: null }, mainTip };
+}
+
+/**
  * Fast-forward an agent's copy of a room's files to `main`, when — and only
  * when — nothing in it could be lost (module doc, steps 1-7).
  *
@@ -297,6 +326,7 @@ export async function refreshRoomWorktree(
     mainTip: string | null,
     moved: MainMoved | null
   ) => {
+    if (isUnsafeConfig(err)) return unsafeConfig(err, mainTip);
     logger.warn('[rooms] could not read an agent’s copy of the room’s files; left it as it was', {
       ...log,
       step,
@@ -307,6 +337,17 @@ export async function refreshRoomWorktree(
       mainTip,
     };
   };
+
+  // 0. The room's shared git settings name no program git would run. Every
+  //    command below re-asks (the audit sits in `runGitRaw`, cached by the
+  //    file's stamp), so settings written mid-refresh stop it too — including
+  //    the fast-forward, whose checkout is what would run a smudge filter.
+  try {
+    await assertRoomRepoConfigSafe(target.ceiling);
+  } catch (err) {
+    if (isUnsafeConfig(err)) return unsafeConfig(err, null);
+    return unreadable('settings', err, null, null);
+  }
 
   // 1. The target, captured once.
   let mainTip: string;
@@ -556,7 +597,9 @@ export async function launchFiles(
   if (outcome.kind === 'refreshed' || outcome.kind === 'current') {
     return { ...placed, ahead: 0, behind: 0, refresh: outcome };
   }
-  if (outcome.reason === 'busy' || mainTip === null) return { ...placed, refresh: outcome };
+  if (outcome.reason === 'busy' || outcome.reason === 'unsafe-config' || mainTip === null) {
+    return { ...placed, refresh: outcome };
+  }
   try {
     const { ahead, behind } = await aheadBehind(
       target.repo,

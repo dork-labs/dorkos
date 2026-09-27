@@ -1985,6 +1985,16 @@ describe('what the turn-start refresh did, and what moved on main (spec `agent-h
     }
   });
 
+  it('says the room`s git settings are unsafe and that a person must remove them', () => {
+    const block = withRefresh({ kind: 'held', reason: 'unsafe-config', moved: null });
+    expect(block).toContain(
+      "Your copy was not updated: the room's shared git settings contain entries that can make " +
+        'git run programs, so DorkOS will not update, merge or save this room’s files until a ' +
+        'person removes those entries'
+    );
+    expect(block).not.toContain('WHAT MOVED ON MAIN');
+  });
+
   it('tells a copy on another branch to switch back first', () => {
     const block = withRefresh({ kind: 'held', reason: 'off-branch', moved: MOVED });
     expect(block).toContain(
