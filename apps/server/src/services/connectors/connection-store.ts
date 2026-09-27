@@ -244,6 +244,81 @@ export class ConnectionStore {
       .run();
   }
 
+  /**
+   * Tombstone every live connection this provider instance ever reconciled,
+   * and revoke or drop everything that hangs off one (grants, agent
+   * attachments, session overrides, event subscriptions) — the deliberate
+   * opposite of {@link unregisterProvider}, which keeps a real provider's
+   * history on purpose so re-entering a rotated key doesn't forget which
+   * accounts were connected. `connections` rows cannot be hard-deleted (a DB
+   * trigger enforces tombstone-only), so this sets `removedAt` exactly as an
+   * owner's own remove would, rather than deleting the row.
+   *
+   * For an ephemeral, scripted provider only, whose own reload already
+   * promises a clean slate (the test-mode connector's account map is
+   * in-memory and starts fresh on every credential save). Once its account
+   * ids stopped repeating across key saves (DOR-2451), a stale row from an
+   * earlier key save would otherwise sit there — still `removedAt IS NULL`,
+   * still joined into every owner and agent query — under a
+   * `providerInstanceId` that outlives any one save: forever a second
+   * "Gmail (work)" no test ever asked for.
+   *
+   * @param instanceId - The ephemeral provider instance whose connections to tombstone.
+   */
+  purgeProvider(instanceId: ConnectorProviderInstanceId): void {
+    this.assertAvailable();
+    const now = new Date().toISOString();
+    this.db.transaction((tx) => {
+      const ids = tx
+        .select({ id: connections.id })
+        .from(connections)
+        .where(and(eq(connections.providerInstanceId, instanceId), isNull(connections.removedAt)))
+        .all()
+        .map((row) => row.id);
+      if (ids.length === 0) return;
+      tx.update(connections)
+        .set({
+          lifecycleState: 'disconnected',
+          externalCleanupState: 'not_required',
+          enabled: false,
+          removedAt: now,
+          cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+          updatedAt: now,
+        })
+        .where(inArray(connections.id, ids))
+        .run();
+      tx.delete(agentConnectionAttachments)
+        .where(inArray(agentConnectionAttachments.connectionId, ids))
+        .run();
+      tx.delete(sessionConnectionOverrides)
+        .where(inArray(sessionConnectionOverrides.connectionId, ids))
+        .run();
+      tx.update(connectionOperationGrants)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            inArray(connectionOperationGrants.connectionId, ids),
+            isNull(connectionOperationGrants.revokedAt)
+          )
+        )
+        .run();
+      tx.update(connectorEventSubscriptions)
+        .set({
+          enabled: false,
+          revokedAt: now,
+          scopeVersion: sql`${connectorEventSubscriptions.scopeVersion} + 1`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(connectorEventSubscriptions.connectionId, ids),
+            isNull(connectorEventSubscriptions.revokedAt)
+          )
+        )
+        .run();
+    });
+  }
+
   /** Reconcile one private provider account to a stable DorkOS connection. */
   reconcile(
     provider: ConnectorProvider,

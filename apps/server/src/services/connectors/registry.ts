@@ -219,6 +219,21 @@ export class ConnectorRegistry {
   }
 
   /**
+   * Hard-delete one provider instance's own connections — see
+   * {@link ConnectionStore.purgeProvider}. For an ephemeral, scripted
+   * provider only (the test-mode connector); never called for a real
+   * (`composio`/`nango`) instance, whose history is meant to survive a
+   * credential rotation.
+   *
+   * @param instanceId - The ephemeral provider instance to purge.
+   */
+  purgeProviderConnections(instanceId: ConnectorProviderInstanceId): void {
+    if (this._connections.health().status === 'ready') {
+      this._connections.purgeProvider(instanceId);
+    }
+  }
+
+  /**
    * Remove a backend registration. Idempotent — unregistering an absent type is
    * a no-op, so a credential-delete reload can call it unconditionally.
    *

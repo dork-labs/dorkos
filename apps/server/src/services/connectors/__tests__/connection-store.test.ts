@@ -14,7 +14,10 @@ import {
   type Db,
 } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
+import type {
+  ConnectedAccount,
+  ConnectorProviderInstanceId,
+} from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../registry.js';
 
 const NOW = '2026-09-05T12:00:00.000Z';
@@ -404,6 +407,91 @@ describe('ConnectionStore lifecycle and cleanup', () => {
         .where(eq(connectorEventSubscriptions.agentId, 'agent-b'))
         .get()?.enabled
     ).toBe(true);
+  });
+
+  it('purgeProviderConnections tombstones a provider instance’s connections and revokes or drops everything that hangs off them (DOR-2451)', async () => {
+    grantRead(db, connection.id);
+    db.insert(agentConnectionAttachments)
+      .values({ agentId: 'agent-a', connectionId: connection.id, attachedAt: NOW })
+      .run();
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'session-a',
+        connectionId: connection.id,
+        state: 'attached',
+        updatedAt: NOW,
+      })
+      .run();
+    db.insert(connectorEventSubscriptions)
+      .values({
+        id: 'subscription-a',
+        connectionId: connection.id,
+        agentId: 'agent-a',
+        destinationKind: 'agent',
+        destinationId: 'agent-a',
+        eventType: 'message.received',
+        filterJson: '{}',
+        filterHash: 'none',
+        deliveryMode: 'direct',
+        createdBy: 'operator',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    // A second provider instance's connection is untouched — the purge is
+    // scoped to the one instance a test-mode credential save reloads.
+    const other = new FakeConnectorProvider({
+      instanceId: 'other-instance' as ConnectorProviderInstanceId,
+    });
+    registry.register(other);
+    const { flowId: otherFlowId } = await other.startConnect('gmail', { label: 'other' });
+    const otherAccount = (await other.pollConnect(otherFlowId)).account!;
+    const otherConnection = registry.recordConnect(other, otherAccount);
+
+    registry.purgeProviderConnections(provider.instanceId);
+
+    // `connections` rows can only be tombstoned, never hard-deleted (a DB
+    // trigger enforces it) — so the row survives, but removed, disconnected,
+    // and paused, which is what every owner and agent read filters out.
+    expect(
+      db.select().from(connections).where(eq(connections.id, connection.id)).get()
+    ).toMatchObject({
+      removedAt: expect.any(String),
+      lifecycleState: 'disconnected',
+      enabled: false,
+    });
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .where(eq(connectionOperationGrants.connectionId, connection.id))
+        .get()
+    ).toMatchObject({ revokedAt: expect.any(String) });
+    expect(
+      db
+        .select()
+        .from(connectorEventSubscriptions)
+        .where(eq(connectorEventSubscriptions.connectionId, connection.id))
+        .get()
+    ).toMatchObject({ enabled: false, revokedAt: expect.any(String) });
+    expect(
+      db
+        .select()
+        .from(agentConnectionAttachments)
+        .where(eq(agentConnectionAttachments.connectionId, connection.id))
+        .all()
+    ).toEqual([]);
+    expect(
+      db
+        .select()
+        .from(sessionConnectionOverrides)
+        .where(eq(sessionConnectionOverrides.connectionId, connection.id))
+        .all()
+    ).toEqual([]);
+    // The other provider's connection survives fully untouched.
+    expect(
+      db.select().from(connections).where(eq(connections.id, otherConnection.id)).get()
+    ).toMatchObject({ removedAt: null });
   });
 });
 
