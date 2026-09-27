@@ -43,6 +43,7 @@ const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'),
   peerDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
 };
 
 /** Every `.ts` file under `src/`, excluding tests. */
@@ -80,6 +81,25 @@ describe('packaging', () => {
       types: './dist/display.d.ts',
       default: './dist/display.js',
     });
+  });
+
+  // Emptying `dist/` is a publish concern, so it lives in `prepublishOnly` and
+  // never in `build`. `build` runs while other things read `dist/`: every API
+  // leg of the browser suite boots through `turbo run build`, beside two Vite
+  // dev servers whose startup dependency scan resolves this package through
+  // `exports` -> `dist/`. A `build` that deletes `dist/` first leaves it absent
+  // for the whole `tsc` run; a scan landing in that window aborts, and every
+  // dependency is then discovered at runtime, re-optimized and force-reloaded
+  // under whichever test runs first (the queue's `browser-test` red of
+  // 2026-09-27: duplicate React copies, "Cannot read properties of null
+  // (reading 'useMemo')").
+  it('empties dist/ only for a publish, never on an ordinary build', () => {
+    const scripts = manifest.scripts ?? {};
+    expect(scripts.build, 'build must leave the existing dist/ in place').not.toMatch(
+      /\bclean\b|rmSync|\brm\b|rimraf/
+    );
+    expect(scripts.prepublishOnly).toMatch(/^pnpm run clean && pnpm run build$/);
+    expect(scripts.clean).toMatch(/rmSync\('dist'/);
   });
 
   it('declares zod as a peer and nothing as a runtime dependency', () => {
