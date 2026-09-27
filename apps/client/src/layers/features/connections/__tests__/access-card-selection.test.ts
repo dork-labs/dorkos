@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import {
   cardDecision,
+  everyAgentDecision,
   heldAccess,
   initialCardLevel,
+  initialWhoCanUse,
   rankAgents,
 } from '../lib/access-card-selection';
+import { everyAgentWriteWarning } from '../ui/access/access-labels';
 
 function candidate(id: string, classification: 'read' | 'write' | 'destructive', supported = true) {
   return {
@@ -218,5 +221,73 @@ describe('cardDecision', () => {
       downgradedAgentIds: [],
       needsLevel: false,
     });
+  });
+});
+
+describe('everyAgentDecision (DOR-2420)', () => {
+  const withEvery = (
+    everyAgent: ConnectorReconciliationPreview['everyAgent']
+  ): ConnectorReconciliationPreview => ({ ...preview([]), everyAgent });
+  const off = withEvery({ available: true, operationRevisionIds: [] });
+
+  it('sends the chosen preset for every agent, and nothing when it already holds it', () => {
+    expect(everyAgentDecision(off, { who: 'every', level: 'read', levelTouched: false })).toEqual({
+      everyAgent: { operationRevisionIds: ['read'] },
+      needsLevel: false,
+    });
+    expect(
+      everyAgentDecision(off, { who: 'every', level: 'read-write', levelTouched: true })
+    ).toEqual({ everyAgent: { operationRevisionIds: ['read', 'send'] }, needsLevel: false });
+    const reading = withEvery({ available: true, operationRevisionIds: ['read'] });
+    expect(initialWhoCanUse(reading)).toBe('every');
+    expect(
+      everyAgentDecision(reading, { who: 'every', level: 'read', levelTouched: true })
+    ).toEqual({
+      needsLevel: false,
+    });
+  });
+
+  it('stops sharing only when it is shared now, and never writes when unavailable', () => {
+    expect(everyAgentDecision(off, { who: 'picked', level: 'read', levelTouched: false })).toEqual({
+      needsLevel: false,
+    });
+    expect(initialWhoCanUse(off)).toBe('picked');
+    expect(
+      everyAgentDecision(withEvery({ available: true, operationRevisionIds: ['read'] }), {
+        who: 'picked',
+        level: 'read',
+        levelTouched: false,
+      })
+    ).toEqual({ everyAgent: { operationRevisionIds: [] }, needsLevel: false });
+    expect(
+      everyAgentDecision(withEvery({ available: false, operationRevisionIds: [] }), {
+        who: 'every',
+        level: 'read-write',
+        levelTouched: true,
+      })
+    ).toEqual({ needsLevel: false });
+  });
+
+  it('leaves an exact-actions set alone until the level is touched, and asks for a level when mixed', () => {
+    const exact = withEvery({ available: true, operationRevisionIds: ['delete'] });
+    expect(everyAgentDecision(exact, { who: 'every', level: null, levelTouched: false })).toEqual({
+      needsLevel: false,
+    });
+    expect(everyAgentDecision(exact, { who: 'every', level: 'read', levelTouched: true })).toEqual({
+      everyAgent: { operationRevisionIds: ['read'] },
+      needsLevel: false,
+    });
+    expect(everyAgentDecision(off, { who: 'every', level: null, levelTouched: false })).toEqual({
+      needsLevel: true,
+    });
+  });
+
+  it('names what write access lets every agent do, per app', () => {
+    expect(everyAgentWriteWarning('gmail', 'Gmail')).toBe(
+      'Every agent — including ones you add later — could send email as you.'
+    );
+    expect(everyAgentWriteWarning('asana', 'Asana')).toBe(
+      'Every agent — including ones you add later — could make changes in Asana as you.'
+    );
   });
 });

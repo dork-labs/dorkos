@@ -53,7 +53,15 @@ function preview(connectionId: string, label: string): ConnectorReconciliationPr
       displayName: name,
     })),
     currentGrants: [{ agentId: 'mailroom', operationRevisionIds: ['list-messages'] }],
-    everyAgent: { available: true, operationRevisionIds: [] },
+    // "shared" starts shared with every agent (read); "managed" is through a
+    // DorkOS account, where every agent isn't offered yet (DOR-2420).
+    everyAgent:
+      connectionId === 'gmail-managed'
+        ? { available: false, operationRevisionIds: [] }
+        : {
+            available: true,
+            operationRevisionIds: connectionId === 'gmail-shared' ? ['list-messages'] : [],
+          },
     catalogComplete: true,
     createdAt: '2026-09-26T00:00:00.000Z',
     expiresAt: '2099-09-26T00:00:00.000Z',
@@ -82,6 +90,13 @@ function account(connectionId: string, label: string): ConnectorConnectionSummar
   };
 }
 
+/** The account label each scripted connection shows. */
+const SHOWCASE_LABELS: Record<string, string> = {
+  'gmail-work': 'work',
+  'gmail-shared': 'shared',
+  'gmail-managed': 'managed',
+};
+
 /** How the scripted server answers a save. */
 type SaveAnswer = 'ready' | 'pending' | 'failed' | 'no-answer';
 
@@ -98,7 +113,7 @@ function accessTransport(answer: SaveAnswer): Transport {
       connections: [account('gmail-work', 'work'), account('gmail-personal', 'personal')],
     }),
     previewConnectorReconciliation: async ({ connectionId }: { connectionId: string }) =>
-      preview(connectionId, connectionId === 'gmail-work' ? 'work' : 'personal'),
+      preview(connectionId, SHOWCASE_LABELS[connectionId] ?? 'personal'),
     applyConnectorReconciliation: async (
       request: ConnectorReconciliationApplyRequest
     ): Promise<ConnectorReconciliationApplyResponse> => {
@@ -111,6 +126,7 @@ function accessTransport(answer: SaveAnswer): Transport {
             ? { status: 'failed', reason: 'Composio did not confirm the change.' }
             : { status: answer },
         grants: request.grants,
+        ...(request.everyAgent && { everyAgent: request.everyAgent }),
       };
     },
   };
@@ -153,7 +169,7 @@ export function ConnectionAccessCardShowcase() {
   return (
     <PlaygroundSection
       title="ConnectionAccessCard"
-      description="Who can use an app, and what can they do. The page picks agents; the chat answers for one agent and asks which account when there are two."
+      description="Who can use an app, and what can they do. The page picks agents or every agent; the chat answers for one agent and asks which account when there are two."
     >
       <ShowcaseLabel>
         Page: pick agents (mailroom already reads; untick it to see the warning)
@@ -162,6 +178,24 @@ export function ConnectionAccessCardShowcase() {
         <CardDemo
           answer="ready"
           props={{ mode: 'page', connectionId: 'gmail-work', serviceName: 'Gmail' }}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Page: shared with every agent (switch to Read and write to see the warning)
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <CardDemo
+          answer="ready"
+          props={{ mode: 'page', connectionId: 'gmail-shared', serviceName: 'Gmail' }}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Page: through a DorkOS account, where every agent isn’t offered</ShowcaseLabel>
+      <ShowcaseDemo>
+        <CardDemo
+          answer="ready"
+          props={{ mode: 'page', connectionId: 'gmail-managed', serviceName: 'Gmail' }}
         />
       </ShowcaseDemo>
 
