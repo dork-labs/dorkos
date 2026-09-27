@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(usage): record Codex and OpenCode usage and limits (DOR-2380)'
+  - 'fix(usage): keep same-millisecond OpenCode spend, and narrow the Codex limit match (DOR-2380)'
 ---
 
 ### Added
