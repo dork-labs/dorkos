@@ -119,6 +119,9 @@ function accountIdForSlug(slug: string): ConnectorExternalAccountRef {
   return `mcp:${slug}` as ConnectorExternalAccountRef;
 }
 
+/** Backend type identifier of the raw-MCP baseline provider. */
+export const RAW_MCP_PROVIDER_TYPE = 'mcp';
+
 /**
  * Baseline connector for remote MCP servers. Single-account by construction: a
  * configured server yields at most one connected account. Re-verification uses
@@ -126,7 +129,7 @@ function accountIdForSlug(slug: string): ConnectorExternalAccountRef {
  */
 export class RawMcpConnectorProvider implements ConnectorProvider {
   readonly instanceId: ConnectorProviderInstanceId;
-  readonly type = 'mcp';
+  readonly type = RAW_MCP_PROVIDER_TYPE;
 
   private readonly _servers = new Map<string, RawMcpServerDescriptor>();
   private readonly _probe: (connection: RemoteMcpConnection) => Promise<ProbeOutcome>;

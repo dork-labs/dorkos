@@ -1,13 +1,26 @@
 /**
- * The kept app list: each connection service's whole catalog, held in memory
- * and on disk so paging, search and the agent lookup stop re-listing it.
+ * The kept app list: each connection service's whole catalog, held so paging,
+ * search and the agent lookup stop re-listing it.
  *
  * Before this, every catalog page (24 apps) and every search asked each
  * service for its whole list again — about 850 Composio apps at 100 per call,
- * so ~9 upstream calls per page. Now each service is listed at most once per
- * {@link DEFAULT_FRESH_FOR_MS}:
+ * so ~9 upstream calls per page.
  *
- * - **Fresh** (younger than a day): served straight from the kept copy.
+ * **How long a list is kept depends on what the list is** ({@link catalogKeepingFor}):
+ *
+ * - Composio (own key) lists a vendor catalog that changes about daily: kept a
+ *   day, in memory and on disk, so a restart does not re-list it.
+ * - The DorkOS account's list carries per-app sign-in availability the hosted
+ *   side can change at any time: kept 15 minutes, in memory and on disk, so a
+ *   change there corrects itself quickly.
+ * - Nango lists the person's own configured integrations: kept 60 seconds in
+ *   memory only — just long enough to collapse one burst of pages.
+ * - Raw MCP lists local configuration: never kept, it is read directly.
+ * - Anything else (a new or test service) gets the cautious Nango treatment.
+ *
+ * Within a kept window:
+ *
+ * - **Fresh**: served straight from the kept copy.
  * - **Stale**: still served, while one background refresh replaces it. A failed
  *   refresh keeps the old copy and is not retried for {@link RETRY_AFTER_FAILURE_MS}.
  * - **None yet**: the reader waits for the refresh. A failure propagates, so the
@@ -20,13 +33,10 @@
  * reader stops waiting when its own signal fires.
  *
  * Every copy is bound to a fingerprint of the service's setup (the registry's
- * secret-free execution-config digest, hashed once more here). A copy made
- * under a different key or setup is never served, and the registry drops the
- * copy outright when it unregisters the service.
- *
- * The provider-neutral layer is deliberate: the cache sits under the registry,
- * over the `ConnectorProvider` port's own paging, so Composio, Nango, the
- * DorkOS account and every future service share one policy.
+ * secret-free execution-config digest, hashed once more with
+ * {@link CONNECTOR_TOOLKIT_SHAPE_VERSION}). A copy made under a different key,
+ * setup or entry shape is never served, and the registry drops the copy
+ * outright when it unregisters the service.
  *
  * The file under `<dorkHome>/cache/connectors/catalog/` holds only validated
  * `ConnectorToolkit` entries — no keys, no accounts — and is safe to delete. A
@@ -45,15 +55,88 @@ import {
 } from '@dorkos/shared/connector-provider';
 import type { ConnectorUnsupportedResult } from '@dorkos/shared/connector-schemas';
 import { logger, logError } from '../../../lib/logger.js';
+import { COMPOSIO_PROVIDER_TYPE } from '../providers/composio.js';
+import { MANAGED_CLOUD_PROVIDER_TYPE } from '../providers/managed/managed-cloud.js';
+import { NANGO_PROVIDER_TYPE } from '../providers/nango.js';
+import { RAW_MCP_PROVIDER_TYPE } from '../providers/raw-mcp.js';
 
-/** How long a kept app list counts as fresh: one day. */
-export const DEFAULT_FRESH_FOR_MS = 24 * 60 * 60 * 1000;
+/**
+ * THE SHAPE OF ONE KEPT ENTRY. BUMP THIS WHENEVER `ConnectorToolkitSchema`
+ * CHANGES — a field added, removed, renamed or re-typed.
+ *
+ * It is part of every copy's key, so a copy written by an older DorkOS is
+ * ignored and re-listed rather than served without the new fields (a kept
+ * list from before logos existed would otherwise hide every logo for a day).
+ * `catalog-cache.test.ts` pins the schema's field list to this number and
+ * fails when one moves without the other.
+ */
+export const CONNECTOR_TOOLKIT_SHAPE_VERSION = 1;
+
+/** How one service's app list is kept. */
+export type CatalogKeeping =
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'keep';
+      /** How long a copy counts as fresh. */
+      readonly freshForMs: number;
+      /** Whether the copy also survives a restart on disk. */
+      readonly onDisk: boolean;
+    };
+
+const MINUTE_MS = 60 * 1000;
+
+/** Composio's vendor catalog: a day, surviving restarts. */
+export const VENDOR_CATALOG_KEEPING: CatalogKeeping = {
+  kind: 'keep',
+  freshForMs: 24 * 60 * MINUTE_MS,
+  onDisk: true,
+};
+
+/** The DorkOS account's list, whose per-app sign-in the hosted side can change: 15 minutes. */
+export const MANAGED_CATALOG_KEEPING: CatalogKeeping = {
+  kind: 'keep',
+  freshForMs: 15 * MINUTE_MS,
+  onDisk: true,
+};
+
+/** A person's own configured integrations: one page burst, memory only. */
+export const OWN_INTEGRATIONS_KEEPING: CatalogKeeping = {
+  kind: 'keep',
+  freshForMs: MINUTE_MS,
+  onDisk: false,
+};
+
+/** Local configuration: read directly every time. */
+export const NOT_KEPT: CatalogKeeping = { kind: 'none' };
+
+/**
+ * How a service type's app list is kept. See the module docs for why each
+ * service differs; an unknown type gets the cautious memory-only minute.
+ *
+ * @param type - The provider's backend type.
+ */
+export function catalogKeepingFor(type: string): CatalogKeeping {
+  switch (type) {
+    case COMPOSIO_PROVIDER_TYPE:
+      return VENDOR_CATALOG_KEEPING;
+    case MANAGED_CLOUD_PROVIDER_TYPE:
+      return MANAGED_CATALOG_KEEPING;
+    case RAW_MCP_PROVIDER_TYPE:
+      return NOT_KEPT;
+    case NANGO_PROVIDER_TYPE:
+    default:
+      return OWN_INTEGRATIONS_KEEPING;
+  }
+}
 
 /** The deadline one shared refresh runs under, independent of any reader. */
 const DEFAULT_REFRESH_TIMEOUT_MS = 60_000;
 
 /** After a failed background refresh, keep serving the old copy this long before trying again. */
 const RETRY_AFTER_FAILURE_MS = 60_000;
+
+/** A staging file older than this is a crash's leftover, not a write in flight. */
+const ORPHAN_TMP_AGE_MS = 60 * MINUTE_MS;
 
 /** Apps asked for per provider page. */
 const CATALOG_PAGE_SIZE = 100;
@@ -90,8 +173,8 @@ export interface ConnectorCatalogCacheOptions {
    * (`<dorkHome>/cache/connectors/catalog`). Omitted: memory only.
    */
   readonly dir?: string;
-  /** Override the one-day freshness window. */
-  readonly freshForMs?: number;
+  /** Override how each service type is kept (tests). Default {@link catalogKeepingFor}. */
+  readonly keepingFor?: (type: string) => CatalogKeeping;
   /** Override the deadline a shared refresh runs under. */
   readonly refreshTimeoutMs?: number;
   /** Clock seam for tests. */
@@ -105,9 +188,11 @@ interface RefreshRecord {
   readonly promise: Promise<KeptCatalogRead>;
 }
 
-/** Hash the registry's setup digest again so the file never carries it verbatim. */
+/** Hash the setup digest and entry shape so the file never carries the digest verbatim. */
 function setupKeyFor(configDigest: string): string {
-  return createHash('sha256').update(`dorkos:connector-catalog:${configDigest}`).digest('hex');
+  return createHash('sha256')
+    .update(`dorkos:connector-catalog:shape-${CONNECTOR_TOOLKIT_SHAPE_VERSION}:${configDigest}`)
+    .digest('hex');
 }
 
 /** Filesystem-safe file name for one provider instance. */
@@ -158,11 +243,11 @@ async function listWholeCatalog(
 
 /**
  * Keeps each connection service's whole app list; see the module docs for the
- * freshness, sharing and invalidation rules.
+ * per-service keeping, sharing and invalidation rules.
  */
 export class ConnectorCatalogCache {
   readonly #dir: string | undefined;
-  readonly #freshForMs: number;
+  readonly #keepingFor: (type: string) => CatalogKeeping;
   readonly #refreshTimeoutMs: number;
   readonly #now: () => number;
   readonly #kept = new Map<string, KeptCatalog>();
@@ -172,24 +257,32 @@ export class ConnectorCatalogCache {
   readonly #generations = new Map<string, number>();
   readonly #refreshes = new Map<string, RefreshRecord>();
   readonly #failedAt = new Map<string, number>();
-  /** Serialises disk writes and deletes per instance so a drop never races a rebuild. */
+  /**
+   * Serialises disk writes and deletes per instance. A drop's delete is always
+   * queued after any write its refresh already queued, so a dropped copy never
+   * survives on disk.
+   */
   readonly #diskQueue = new Map<string, Promise<void>>();
 
   /**
-   * Construct the cache.
+   * Construct the cache, and sweep staging files a crash left in its directory.
    *
-   * @param opts - Disk directory and timing overrides; see {@link ConnectorCatalogCacheOptions}.
+   * @param opts - Disk directory, keeping and timing overrides; see {@link ConnectorCatalogCacheOptions}.
    */
   constructor(opts: ConnectorCatalogCacheOptions = {}) {
     this.#dir = opts.dir;
-    this.#freshForMs = opts.freshForMs ?? DEFAULT_FRESH_FOR_MS;
+    this.#keepingFor = opts.keepingFor ?? catalogKeepingFor;
     this.#refreshTimeoutMs = opts.refreshTimeoutMs ?? DEFAULT_REFRESH_TIMEOUT_MS;
     this.#now = opts.now ?? Date.now;
+    // Caught as well as logged inside: a constructor must never leave an
+    // unhandled rejection behind over a leftover temp file.
+    if (this.#dir) void this.#sweepOrphanedTempFiles(this.#dir).catch(() => {});
   }
 
   /**
-   * Read one service's whole app list from the kept copy, listing it upstream
-   * only when there is no usable copy or the copy has gone stale.
+   * Read one service's whole app list, from the kept copy when its service
+   * type keeps one, listing it upstream only when there is no usable copy or
+   * the copy has gone stale.
    *
    * @param provider - The registered provider instance to read.
    * @param configDigest - Its current setup fingerprint; a copy made under another is never served.
@@ -202,33 +295,21 @@ export class ConnectorCatalogCache {
     signal: AbortSignal
   ): Promise<KeptCatalogRead> {
     signal.throwIfAborted();
+    const keeping = this.#keepingFor(provider.type);
+    if (keeping.kind === 'none') return listWholeCatalog(provider, signal);
     const setupKey = setupKeyFor(configDigest);
-    const kept = await this.#keptCopy(provider.instanceId, setupKey);
+    const kept = await this.#keptCopy(provider.instanceId, setupKey, keeping.onDisk);
     if (kept) {
-      if (this.#isStale(kept) && this.#mayRetry(provider.instanceId)) {
+      if (
+        this.#now() - kept.fetchedAt >= keeping.freshForMs &&
+        this.#mayRetry(provider.instanceId)
+      ) {
         // The stale copy keeps serving; the refresh logs its own failure.
-        this.#refresh(provider, setupKey).catch(() => undefined);
+        this.#refresh(provider, setupKey, keeping.onDisk).catch(() => undefined);
       }
       return { status: 'ok', toolkits: kept.toolkits, truncated: kept.truncated };
     }
-    return untilAborted(this.#refresh(provider, setupKey), signal);
-  }
-
-  /**
-   * Find one app in a service's kept list without listing anything upstream.
-   *
-   * @param instanceId - The provider instance whose kept list to search.
-   * @param configDigest - Its current setup fingerprint.
-   * @param slug - The app's service slug.
-   * @returns The kept entry, or `undefined` when there is no usable copy or no such app.
-   */
-  async find(
-    instanceId: string,
-    configDigest: string,
-    slug: string
-  ): Promise<ConnectorToolkit | undefined> {
-    const kept = await this.#keptCopy(instanceId, setupKeyFor(configDigest));
-    return kept?.toolkits.find((toolkit) => toolkit.slug === slug);
+    return untilAborted(this.#refresh(provider, setupKey, keeping.onDisk), signal);
   }
 
   /**
@@ -253,18 +334,18 @@ export class ConnectorCatalogCache {
     }
   }
 
-  #isStale(kept: KeptCatalog): boolean {
-    return this.#now() - kept.fetchedAt >= this.#freshForMs;
-  }
-
   #mayRetry(instanceId: string): boolean {
     const failedAt = this.#failedAt.get(instanceId);
     return failedAt === undefined || this.#now() - failedAt >= RETRY_AFTER_FAILURE_MS;
   }
 
   /** The usable copy for this setup: memory first, then the disk copy (read once per process). */
-  async #keptCopy(instanceId: string, setupKey: string): Promise<KeptCatalog | undefined> {
-    if (!this.#kept.has(instanceId)) await this.#loadFromDisk(instanceId);
+  async #keptCopy(
+    instanceId: string,
+    setupKey: string,
+    onDisk: boolean
+  ): Promise<KeptCatalog | undefined> {
+    if (onDisk && !this.#kept.has(instanceId)) await this.#loadFromDisk(instanceId);
     const kept = this.#kept.get(instanceId);
     return kept?.setupKey === setupKey ? kept : undefined;
   }
@@ -306,7 +387,11 @@ export class ConnectorCatalogCache {
   }
 
   /** One refresh per service at a time; every concurrent reader shares it. */
-  #refresh(provider: ConnectorProvider, setupKey: string): Promise<KeptCatalogRead> {
+  #refresh(
+    provider: ConnectorProvider,
+    setupKey: string,
+    onDisk: boolean
+  ): Promise<KeptCatalogRead> {
     const instanceId = provider.instanceId;
     const running = this.#refreshes.get(instanceId);
     if (running?.setupKey === setupKey) return running.promise;
@@ -314,6 +399,7 @@ export class ConnectorCatalogCache {
     const promise = this.#listAndKeep(
       provider,
       setupKey,
+      onDisk,
       () => this.#refreshes.get(instanceId)?.ticket === ticket
     );
     const record: RefreshRecord = { setupKey, ticket, promise };
@@ -335,6 +421,7 @@ export class ConnectorCatalogCache {
   async #listAndKeep(
     provider: ConnectorProvider,
     setupKey: string,
+    onDisk: boolean,
     isCurrent: () => boolean
   ): Promise<KeptCatalogRead> {
     const listing = await listWholeCatalog(provider, AbortSignal.timeout(this.#refreshTimeoutMs));
@@ -350,7 +437,7 @@ export class ConnectorCatalogCache {
     if (isCurrent()) {
       this.#kept.set(provider.instanceId, kept);
       this.#failedAt.delete(provider.instanceId);
-      await this.#persist(provider.instanceId, kept);
+      if (onDisk) await this.#persist(provider.instanceId, kept);
     }
     return { status: 'ok', toolkits: kept.toolkits, truncated: kept.truncated };
   }
@@ -363,8 +450,6 @@ export class ConnectorCatalogCache {
     const dir = this.#dir;
     if (!dir) return;
     await this.#onDisk(instanceId, async () => {
-      // Dropped while queued: writing now would resurrect a copy for an old setup.
-      if (this.#kept.get(instanceId) !== kept) return;
       await fs.mkdir(dir, { recursive: true });
       const tmp = path.join(dir, `.${randomUUID()}.tmp`);
       try {
@@ -391,5 +476,36 @@ export class ConnectorCatalogCache {
       if (this.#diskQueue.get(instanceId) === next) this.#diskQueue.delete(instanceId);
     });
     return next;
+  }
+
+  /**
+   * Remove staging files a crash between write and rename left behind. Only a
+   * file older than {@link ORPHAN_TMP_AGE_MS} is reaped: a younger one may be
+   * another instance's write still in flight.
+   */
+  async #sweepOrphanedTempFiles(dir: string): Promise<void> {
+    let names: string[];
+    try {
+      names = await fs.readdir(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      logger.warn('[Connectors] Could not list the kept app lists to tidy them', logError(error));
+      return;
+    }
+    await Promise.all(
+      names
+        .filter((name) => name.endsWith('.tmp'))
+        .map(async (name) => {
+          const file = path.join(dir, name);
+          try {
+            const { mtimeMs } = await fs.stat(file);
+            if (Date.now() - mtimeMs < ORPHAN_TMP_AGE_MS) return;
+            await fs.rm(file, { force: true });
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+            logger.warn('[Connectors] Could not remove a leftover kept-list file', logError(error));
+          }
+        })
+    );
   }
 }

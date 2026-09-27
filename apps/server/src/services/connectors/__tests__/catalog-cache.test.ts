@@ -9,7 +9,23 @@ import type {
   ConnectorProviderInstanceId,
   ConnectorToolkit,
 } from '@dorkos/shared/connector-provider';
-import { ConnectorCatalogCache, DEFAULT_FRESH_FOR_MS } from '../resources/catalog-cache.js';
+import { ConnectorToolkitSchema } from '@dorkos/shared/connector-provider';
+import {
+  CONNECTOR_TOOLKIT_SHAPE_VERSION,
+  ConnectorCatalogCache,
+  MANAGED_CATALOG_KEEPING,
+  NOT_KEPT,
+  OWN_INTEGRATIONS_KEEPING,
+  VENDOR_CATALOG_KEEPING,
+  catalogKeepingFor,
+} from '../resources/catalog-cache.js';
+import { COMPOSIO_PROVIDER_TYPE } from '../providers/composio.js';
+import { MANAGED_CLOUD_PROVIDER_TYPE } from '../providers/managed/managed-cloud.js';
+import { NANGO_PROVIDER_TYPE } from '../providers/nango.js';
+import { RAW_MCP_PROVIDER_TYPE } from '../providers/raw-mcp.js';
+
+/** The countingProvider below is a Composio instance: a day, on disk. */
+const DAY_MS = VENDOR_CATALOG_KEEPING.kind === 'keep' ? VENDOR_CATALOG_KEEPING.freshForMs : 0;
 
 const DIGEST = 'digest-a';
 const INSTANCE = 'provider-instance-a' as ConnectorProviderInstanceId;
@@ -23,8 +39,8 @@ function toolkits(count: number, prefix = 'app'): ConnectorToolkit[] {
 }
 
 /** A provider whose listing is counted and replaceable mid-test. */
-function countingProvider(initial: ConnectorToolkit[]) {
-  const provider = new FakeConnectorProvider({ type: 'composio', instanceId: INSTANCE });
+function countingProvider(initial: ConnectorToolkit[], type = COMPOSIO_PROVIDER_TYPE) {
+  const provider = new FakeConnectorProvider({ type, instanceId: INSTANCE });
   const state = { toolkits: initial, listings: 0, pages: 0 };
   const listToolkitPage = vi.spyOn(provider, 'listToolkitPage').mockImplementation((request) => {
     if (!request.cursor) state.listings += 1;
@@ -102,7 +118,7 @@ describe('ConnectorCatalogCache', () => {
     const cache = new ConnectorCatalogCache({ now: clock });
     await cache.read(provider, DIGEST, signal());
 
-    now += DEFAULT_FRESH_FOR_MS - 1;
+    now += DAY_MS - 1;
     state.toolkits = toolkits(3, 'new');
     const stillFresh = await cache.read(provider, DIGEST, signal());
     expect(stillFresh.status === 'ok' && stillFresh.toolkits[0]!.slug).toBe('old-000');
@@ -125,7 +141,7 @@ describe('ConnectorCatalogCache', () => {
     const cache = new ConnectorCatalogCache({ now: clock });
     await cache.read(provider, DIGEST, signal());
 
-    now += DEFAULT_FRESH_FOR_MS;
+    now += DAY_MS;
     listToolkitPage.mockImplementation(() => {
       state.listings += 1;
       return Promise.reject(new Error('upstream 503'));
@@ -245,7 +261,6 @@ describe('ConnectorCatalogCache', () => {
       await Promise.all([
         restarted.read(provider, DIGEST, signal()),
         restarted.read(provider, DIGEST, signal()),
-        restarted.find(INSTANCE, DIGEST, 'app-001'),
       ]);
       expect(state.listings).toBe(1);
     });
@@ -313,7 +328,6 @@ describe('ConnectorCatalogCache', () => {
       release();
       await inFlight;
 
-      expect(await cache.find(INSTANCE, DIGEST, 'old-000')).toBeUndefined();
       expect(await fileExists(fileFor(dir, INSTANCE))).toBe(false);
       state.toolkits = toolkits(2, 'new');
       const read = await cache.read(provider, DIGEST, signal());
@@ -321,22 +335,168 @@ describe('ConnectorCatalogCache', () => {
     });
   });
 
-  describe('find', () => {
-    it('looks one app up in the kept list without listing upstream', async () => {
-      const { provider, state } = countingProvider(toolkits(3));
-      const cache = new ConnectorCatalogCache({ dir, now: clock });
+  describe('a disk read racing a drop', () => {
+    it('discards a copy whose file read finished after the drop', async () => {
+      const { provider, state } = countingProvider(toolkits(2, 'old'));
+      await new ConnectorCatalogCache({ dir, now: clock }).read(provider, DIGEST, signal());
+      const realReadFile = fs.readFile.bind(fs);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const readFile = vi.spyOn(fs, 'readFile').mockImplementationOnce((async (
+        ...args: Parameters<typeof fs.readFile>
+      ) => {
+        const contents = await realReadFile(...args);
+        await gate;
+        return contents;
+      }) as typeof fs.readFile);
+      try {
+        const restarted = new ConnectorCatalogCache({ dir, now: clock });
+        const read = restarted.read(provider, DIGEST, signal());
+        await vi.waitFor(() => expect(readFile).toHaveBeenCalled());
+        restarted.drop(INSTANCE);
+        state.toolkits = toolkits(2, 'new');
+        release();
 
-      expect(await cache.find(INSTANCE, DIGEST, 'app-001')).toBeUndefined();
-      await cache.read(provider, DIGEST, signal());
-
-      expect(await cache.find(INSTANCE, DIGEST, 'app-001')).toEqual({
-        slug: 'app-001',
-        displayName: 'app 1',
-        authKind: 'oauth2',
-      });
-      expect(await cache.find(INSTANCE, DIGEST, 'missing')).toBeUndefined();
-      expect(await cache.find(INSTANCE, 'digest-b', 'app-001')).toBeUndefined();
-      expect(state.listings).toBe(1);
+        // The file held the pre-drop copy; serving it would undo the drop.
+        const result = await read;
+        expect(result.status === 'ok' && result.toolkits[0]!.slug).toBe('new-000');
+        expect(state.listings).toBe(2);
+      } finally {
+        readFile.mockRestore();
+      }
     });
+
+    it('never reads the file back after a drop', async () => {
+      const { provider, state } = countingProvider(toolkits(2));
+      await new ConnectorCatalogCache({ dir, now: clock }).read(provider, DIGEST, signal());
+      const readFile = vi.spyOn(fs, 'readFile');
+      try {
+        const restarted = new ConnectorCatalogCache({ dir, now: clock });
+        restarted.drop(INSTANCE);
+        await restarted.read(provider, DIGEST, signal());
+
+        expect(readFile).not.toHaveBeenCalled();
+        expect(state.listings).toBe(2);
+      } finally {
+        readFile.mockRestore();
+      }
+    });
+  });
+
+  describe('per service keeping', () => {
+    it('keeps each service for as long as what it lists deserves', () => {
+      expect(catalogKeepingFor(COMPOSIO_PROVIDER_TYPE)).toEqual({
+        kind: 'keep',
+        freshForMs: 24 * 60 * 60 * 1000,
+        onDisk: true,
+      });
+      expect(catalogKeepingFor(MANAGED_CLOUD_PROVIDER_TYPE)).toEqual({
+        kind: 'keep',
+        freshForMs: 15 * 60 * 1000,
+        onDisk: true,
+      });
+      expect(catalogKeepingFor(NANGO_PROVIDER_TYPE)).toEqual({
+        kind: 'keep',
+        freshForMs: 60 * 1000,
+        onDisk: false,
+      });
+      expect(catalogKeepingFor(RAW_MCP_PROVIDER_TYPE)).toEqual(NOT_KEPT);
+      expect(catalogKeepingFor('something-new')).toEqual(OWN_INTEGRATIONS_KEEPING);
+    });
+
+    it('refreshes the DorkOS account list after 15 minutes, and keeps it across a restart', async () => {
+      const { provider, state } = countingProvider(toolkits(2, 'old'), MANAGED_CLOUD_PROVIDER_TYPE);
+      await new ConnectorCatalogCache({ dir, now: clock }).read(provider, DIGEST, signal());
+      const restarted = new ConnectorCatalogCache({ dir, now: clock });
+
+      now += 15 * 60 * 1000 - 1;
+      await restarted.read(provider, DIGEST, signal());
+      expect(state.listings).toBe(1);
+
+      now += 1;
+      state.toolkits = toolkits(2, 'new');
+      await restarted.read(provider, DIGEST, signal());
+      await vi.waitFor(async () => {
+        const read = await restarted.read(provider, DIGEST, signal());
+        expect(read.status === 'ok' && read.toolkits[0]!.slug).toBe('new-000');
+      });
+      expect(MANAGED_CATALOG_KEEPING).toMatchObject({ onDisk: true });
+    });
+
+    it('keeps a Nango list one minute in memory only', async () => {
+      const { provider, state } = countingProvider(toolkits(2, 'old'), NANGO_PROVIDER_TYPE);
+      const cache = new ConnectorCatalogCache({ dir, now: clock });
+      await cache.read(provider, DIGEST, signal());
+      await cache.read(provider, DIGEST, signal());
+      expect(state.listings).toBe(1);
+      expect(await fs.readdir(dir)).toEqual([]);
+
+      // A restart has nothing to read back.
+      await new ConnectorCatalogCache({ dir, now: clock }).read(provider, DIGEST, signal());
+      expect(state.listings).toBe(2);
+
+      now += 60 * 1000;
+      state.toolkits = toolkits(2, 'new');
+      await cache.read(provider, DIGEST, signal());
+      await vi.waitFor(async () => {
+        const read = await cache.read(provider, DIGEST, signal());
+        expect(read.status === 'ok' && read.toolkits[0]!.slug).toBe('new-000');
+      });
+    });
+
+    it('never keeps a raw MCP list, and reads it under the caller signal', async () => {
+      const { provider, state, listToolkitPage } = countingProvider(
+        toolkits(2),
+        RAW_MCP_PROVIDER_TYPE
+      );
+      const cache = new ConnectorCatalogCache({ dir, now: clock });
+      const reader = signal();
+
+      await cache.read(provider, DIGEST, reader);
+      await cache.read(provider, DIGEST, reader);
+
+      expect(state.listings).toBe(2);
+      expect(listToolkitPage.mock.calls[0]![0].signal).toBe(reader);
+      expect(await fs.readdir(dir)).toEqual([]);
+    });
+  });
+
+  describe('entry shape', () => {
+    /**
+     * Every shape the kept file has ever held, by version. Never edit an
+     * existing entry: when `ConnectorToolkitSchema` changes, add the new field
+     * list under the next number and bump `CONNECTOR_TOOLKIT_SHAPE_VERSION`,
+     * so lists kept by an older DorkOS are re-listed instead of served.
+     */
+    const SHAPES: Record<number, string[]> = {
+      1: [
+        'authKind',
+        'authentication',
+        'authenticationSetup',
+        'displayName',
+        'maxAccountsPerUser',
+        'slug',
+      ],
+    };
+
+    it('moves with the toolkit schema', () => {
+      expect(Object.keys(ConnectorToolkitSchema.shape).sort()).toEqual(
+        SHAPES[CONNECTOR_TOOLKIT_SHAPE_VERSION]
+      );
+    });
+  });
+
+  it('tidies staging files a crash left behind, but not one still being written', async () => {
+    const orphan = path.join(dir, '.orphan.tmp');
+    const inFlight = path.join(dir, '.in-flight.tmp');
+    await fs.writeFile(orphan, '{');
+    await fs.writeFile(inFlight, '{');
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(orphan, twoHoursAgo, twoHoursAgo);
+
+    new ConnectorCatalogCache({ dir, now: clock });
+
+    await vi.waitFor(async () => expect(await fileExists(orphan)).toBe(false));
+    expect(await fileExists(inFlight)).toBe(true);
   });
 });

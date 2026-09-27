@@ -9,11 +9,11 @@ import { useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '../api/query-keys';
 
 /**
- * How long a catalog page is reused before it is fetched again. The app list
- * changes about daily (the server keeps it for a day), so a few minutes spares
- * a request on every mount. Saving or removing a key, and linking or unlinking
- * a DorkOS account, invalidate the whole connector scope, so a change in
- * setup never waits this out.
+ * How long catalog pages are reused before they are fetched again. The server
+ * already keeps each service's app list, so a few minutes spares a request on
+ * every mount. Saving or removing a key, and linking or unlinking a DorkOS
+ * account, invalidate the whole connector scope, so a change in setup never
+ * waits this out.
  */
 const CONNECTOR_CATALOG_STALE_TIME_MS = 5 * 60 * 1000;
 
@@ -30,7 +30,12 @@ export function useConnectorCatalog(query: string, enabled = true) {
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor,
-    staleTime: CONNECTOR_CATALOG_STALE_TIME_MS,
+    // A page that came back with a warning (a service that could not list its
+    // apps) is never reused: the next mount asks again, so it can recover.
+    staleTime: (query) =>
+      query.state.data?.pages.some((page) => page.warnings.length > 0)
+        ? 0
+        : CONNECTOR_CATALOG_STALE_TIME_MS,
     enabled,
   });
 }

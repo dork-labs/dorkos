@@ -386,8 +386,8 @@ export class ConnectorRegistry {
   }
 
   /**
-   * One registered provider's whole app list, read from its kept copy (listed
-   * upstream at most once a day; see `resources/catalog-cache.ts`).
+   * One registered provider's whole app list, read through its kept copy when
+   * its service type keeps one (see `resources/catalog-cache.ts`).
    *
    * @param provider - A provider this registry currently holds.
    * @param signal - The reader's deadline; it stops this read waiting, never the shared listing.
@@ -399,22 +399,6 @@ export class ConnectorRegistry {
       return Promise.reject(new Error(`${provider.type} is no longer set up.`));
     }
     return this._catalog.read(provider, digest, signal);
-  }
-
-  /**
-   * Find one app in a provider instance's kept list, without asking the service.
-   *
-   * @param instanceId - The provider instance whose kept list to search.
-   * @param slug - The app's service slug.
-   * @returns The kept entry, or `undefined` when the instance is not set up, has
-   *   no kept list yet, or does not list that app.
-   */
-  async keptToolkit(
-    instanceId: ConnectorProviderInstanceId,
-    slug: string
-  ): Promise<ConnectorToolkit | undefined> {
-    const digest = this._configDigests.get(instanceId);
-    return digest === undefined ? undefined : this._catalog.find(instanceId, digest, slug);
   }
 
   /**

@@ -273,9 +273,6 @@ describe('ConnectorRegistry', () => {
 
         expect(read.status).toBe('ok');
         expect(secondPages).not.toHaveBeenCalled();
-        expect(await after.keptToolkit(second.instanceId, 'gmail')).toMatchObject({
-          slug: 'gmail',
-        });
 
         // Removing the service deletes its file.
         after.unregisterProviderInstance(second.instanceId);
@@ -294,7 +291,6 @@ describe('ConnectorRegistry', () => {
       expect(pages).toHaveBeenCalledTimes(1);
 
       registry.unregisterProviderInstance(provider.instanceId);
-      expect(await registry.keptToolkit(provider.instanceId, 'gmail')).toBeUndefined();
       await expect(registry.readCatalog(provider, signal())).rejects.toThrow(
         'composio is no longer set up.'
       );

@@ -160,6 +160,23 @@ describe('useConnectorCatalog', () => {
     expect(transport.getConnectorCatalog).toHaveBeenCalledTimes(1);
   });
 
+  it('asks again on the next mount when a page came back with a warning', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [],
+      warnings: [{ code: 'catalog_provider_unavailable', message: 'Composio is unavailable.' }],
+    });
+    const { wrapper } = createWrapper(transport);
+
+    const first = renderHook(() => useConnectorCatalog('gmail'), { wrapper });
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+    first.unmount();
+    const second = renderHook(() => useConnectorCatalog('gmail'), { wrapper });
+
+    await waitFor(() => expect(transport.getConnectorCatalog).toHaveBeenCalledTimes(2));
+    expect(second.result.current.isSuccess).toBe(true);
+  });
+
   it('fetches again once a saved key sweeps the connector scope', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorCatalog).mockResolvedValue(page);
