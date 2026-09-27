@@ -276,7 +276,6 @@ describe('every agent mutation entry point broadcasts agents_changed exactly onc
       registeredAt: new Date().toISOString(),
       registeredBy: 'user',
       personaEnabled: true,
-      enabledToolGroups: {},
       mcpServers: [],
       workspace: { mode: 'home' },
     });

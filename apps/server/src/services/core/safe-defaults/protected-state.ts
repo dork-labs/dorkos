@@ -146,7 +146,7 @@ export interface ProtectiveCarryover {
  * Two kinds of entry live here, and the second is easy to miss:
  *
  * 1. A default on the permissive side, where any protective value is worth
- *    keeping (`auth.enabled`, `mcp.enabled`, the `agentContext.*` tools).
+ *    keeping (`auth.enabled`, `mcp.enabled`, `harness.autoSync`).
  * 2. A default that is ALREADY a real bound but can be tightened past
  *    (`rooms.*`, `uploads.max*`, `mcp.rateLimit.maxPerWindow`). A `safe` verdict means the shipped value
  *    protects, not that it is the tightest a person might want, so recovery
@@ -172,34 +172,6 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     protectiveValue: false,
     reason:
       'The external /mcp tool endpoint defaults ON. Someone who closed it should not have it re-opened by a wipe.',
-  },
-  {
-    path: 'agentContext.relayTools',
-    direction: 'boolean',
-    protectiveValue: false,
-    reason:
-      'The agent-to-agent messaging tools are documented to every session by default. Turning that off is a deliberate narrowing of what a person tells their agents they can do, and a wipe must not undo it. Stated as documentation rather than as access on purpose: `resolveToolConfig` feeds the context blocks and nothing else, so these four never unregister a tool (DOR-1497).',
-  },
-  {
-    path: 'agentContext.meshTools',
-    direction: 'boolean',
-    protectiveValue: false,
-    reason:
-      'The agent discovery tools, documented by default; turning them off is the same deliberate narrowing, and the same documentation-only caveat applies.',
-  },
-  {
-    path: 'agentContext.adapterTools',
-    direction: 'boolean',
-    protectiveValue: false,
-    reason:
-      'The chat-adapter tools — how an agent speaks on an outside channel — documented by default. Narrowing it is a choice about what agents here are told they may reach for.',
-  },
-  {
-    path: 'agentContext.tasksTools',
-    direction: 'boolean',
-    protectiveValue: false,
-    reason:
-      'The scheduled-work tools, documented by default; how an agent learns it can arrange an unattended run.',
   },
   {
     path: 'harness.autoSync',

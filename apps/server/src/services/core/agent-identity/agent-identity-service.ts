@@ -45,17 +45,16 @@
  * Expiry is a property of the BEARER path only. {@link AgentIdentityService.resolve}
  * enforces it, because a presented secret is what expiry protects against.
  * {@link AgentIdentityService.describeAgent} does not: it presents no secret (the
- * caller is structurally the agent whose session it is) and exists to read the
- * agent's recorded tier ceiling. Letting a stale clock erase an in-session
- * agent's identity would silently turn OFF its tier ceiling, which is the
- * opposite of what expiry is for. Revocation, the operator's actual off switch,
+ * caller is structurally the agent whose session it is) and exists to say which
+ * agent is calling. Letting a stale clock erase an in-session agent's identity
+ * would silently swap its own permission settings for the install's defaults,
+ * which is the opposite of what expiry is for. Revocation, the operator's actual off switch,
  * applies to both.
  *
  * @module services/core/agent-identity/agent-identity-service
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, isNull, agentIdentityTokens, type Db } from '@dorkos/db';
-import { DEFAULT_AGENT_TIER_CEILING, type CapabilityTier } from '@dorkos/shared/capabilities';
 
 /** Bytes of CSPRNG randomness behind a minted token (128 bits, per spec §3.1). */
 const TOKEN_BYTES = 16;
@@ -92,17 +91,6 @@ export interface AgentIdentity {
   agentPath: string;
   /** Human-readable agent name, for Activity attribution labels. */
   displayName: string;
-  /**
-   * Highest capability tier this identity may reach, as RECORDED. Carried onto
-   * every request and enforced by `enforceCapabilityTier`: a ceiling below a
-   * capability's tier refuses the call outright, and no approval can lift it.
-   *
-   * The recorded value, deliberately, not the effective one — {@link inactive}
-   * narrows it further and the gate owns that arithmetic, so this field keeps
-   * meaning "what the manifest said when this token was minted" on every surface
-   * that reads it.
-   */
-  tierCeiling: CapabilityTier;
   /** When the presented token was minted. ISO 8601 UTC. */
   createdAt: string;
   /**
@@ -111,24 +99,23 @@ export interface AgentIdentity {
    *
    * Resolution used to answer `undefined` for a revoked or expired token, which
    * made a shut-off agent indistinguishable from a caller that never identified
-   * itself — and those two get OPPOSITE ceilings, because an unidentified caller
-   * is capped at {@link DEFAULT_ANONYMOUS_TIER_CEILING} (`destructive`, the
-   * widest). So revoking a capped agent's token mid-session WIDENED what it
-   * could reach. Naming the state is what lets every consumer fail closed on it:
+   * itself — and an unidentified caller is decided on the install's DEFAULTS, so
+   * turning an agent off would have handed it whatever everyone else may do.
+   * Naming the state is what lets every consumer fail closed on it:
    *
    * | Consumer                  | What an inactive identity gets                    |
    * | ------------------------- | ------------------------------------------------- |
-   * | `enforceCapabilityTier`   | `revoked` → capped at `observe`; `expired` → its recorded ceiling |
    * | `resolveCallPermission`   | every action with an area is Blocked, both states |
+   * | `enforceCapabilityTier`   | `revoked` → refused every non-read action with no area; `expired` → the tier alone |
    * | `routes/room-caller.ts`   | `AGENT_IDENTITY_UNVERIFIED`, both states          |
    * | Activity attribution      | named as itself — knowing WHO tried is the point  |
    *
-   * `expired` keeps its recorded ceiling rather than being capped, and the
+   * `expired` is not refused the no-area actions a revoked one is, and the
    * asymmetry is deliberate: revocation is a person saying stop, while expiry is
-   * a clock, and capping on a clock would hard-block a long-running agent that
-   * had done nothing wrong. Keeping the recorded ceiling can only ever narrow
-   * what the caller reaches relative to going anonymous, which is the invariant
-   * that matters — dropping or ageing a credential must never widen anything.
+   * a clock, and hard-blocking on a clock would stop a long-running agent that
+   * had done nothing wrong. Either way the caller never reaches more than it
+   * would by going anonymous — dropping or ageing a credential must never widen
+   * anything.
    */
   inactive?: 'revoked' | 'expired';
 }
@@ -139,12 +126,6 @@ export interface MintAgentTokenInput {
   agentPath: string;
   /** Human-readable agent name. */
   displayName: string;
-  /**
-   * Highest tier the identity may reach. Defaults to `destructive`
-   * (unrestricted), so minting a token attributes an agent without narrowing what
-   * it may do; a lower ceiling is how an operator narrows it.
-   */
-  tierCeiling?: CapabilityTier;
 }
 
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
@@ -210,7 +191,7 @@ export class AgentIdentityService {
    * recoverable afterwards by design. Existing tokens for the same agent stay
    * valid (see the module TSDoc on concurrent sessions).
    *
-   * @param input - The agent to mint for, and its optional tier ceiling.
+   * @param input - The agent to mint for.
    * @returns The plaintext token to hand to exactly one caller.
    */
   async mint(input: MintAgentTokenInput): Promise<string> {
@@ -219,7 +200,6 @@ export class AgentIdentityService {
       tokenHash: hashToken(token),
       agentPath: input.agentPath,
       displayName: input.displayName,
-      tierCeiling: input.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING,
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
       revokedAt: null,
@@ -247,7 +227,7 @@ export class AgentIdentityService {
     const digest = hashToken(token);
     // Revoked rows are SELECTED, not filtered out (DOR-486 review). Dropping
     // them here is what made a revoked token indistinguishable from no token at
-    // all, and the two get opposite ceilings — see {@link AgentIdentity.inactive}.
+    // all, and the two are decided oppositely — see {@link AgentIdentity.inactive}.
     const [row] = await this.db
       .select()
       .from(agentIdentityTokens)
@@ -281,13 +261,12 @@ export class AgentIdentityService {
    *
    * @param row - The stored token row.
    * @param inactive - Why this identity is no longer acting as itself, if it is.
-   * @returns The identity, carrying the RECORDED ceiling.
+   * @returns The identity.
    */
   private identityOf(row: AgentTokenRow, inactive?: 'revoked' | 'expired'): AgentIdentity {
     return {
       agentPath: row.agentPath,
       displayName: row.displayName,
-      tierCeiling: row.tierCeiling,
       createdAt: row.createdAt,
       ...(inactive ? { inactive } : {}),
     };
@@ -325,22 +304,20 @@ export class AgentIdentityService {
    * inside its own session reach DorkOS in-process, with no HTTP hop to carry a
    * token — but the caller is structurally known to be the agent whose session
    * it is. Reading the stored record (rather than synthesizing one) means the
-   * in-session path sees the SAME `tierCeiling` the token path would, so the two
-   * surfaces cannot drift once that ceiling is enforced.
+   * in-session path sees the SAME identity the token path would, revocation
+   * included, so the two surfaces cannot drift.
    *
    * Deliberately ignores token expiry, unlike {@link resolve}: nothing is being
    * presented here, so there is no bearer secret to age out, and dropping the
-   * identity would drop the agent's tier ceiling along with it (see the module
-   * TSDoc).
+   * identity would drop the agent's own permission settings along with it (see
+   * the module TSDoc).
    *
    * **Revocation is REPORTED here, not filtered out (DOR-486 review).** This
    * method used to answer `undefined` for a fully revoked agent, and that was the
    * residual DOR-490's review recorded and could not close: `undefined` does not
-   * mean "no privilege" to the gate, it means "unidentified", and
-   * `enforceCapabilityTier` caps an unidentified caller at
-   * {@link DEFAULT_ANONYMOUS_TIER_CEILING} — `destructive`, the WIDEST ceiling.
-   * So the moment a ceiling below `destructive` became settable, revoking a
-   * capped agent's tokens mid-session WIDENED what it could reach instead of
+   * mean "no privilege" to the gate, it means "unidentified", and an
+   * unidentified caller is decided on the install's defaults. So revoking a
+   * narrowed agent's tokens mid-session WIDENED what it could reach instead of
    * shutting it off, which is exactly backward from what revocation is for.
    * Answering with `inactive: 'revoked'` is what lets the gate tell the two
    * apart; see {@link AgentIdentity.inactive} for what each consumer does with it.

@@ -25,8 +25,10 @@
  *   the save lands outside the room.
  * - Dropping the dirty-main gate reddens "refuses while somebody else has been
  *   writing here", and the save mixes a stranger's edit into its own commit.
- * - Removing the rollback reddens "a failed commit leaves the room's files
- *   clean", which then wedges every merge in the room.
+ * - Removing the rollback reddens "puts the file back, so one failed save does
+ *   not wedge the room", which then wedges every merge in the room.
+ * - Dropping the fallback in `gitAuthorName` reddens "falls back rather than
+ *   failing the save".
  * - Committing unconditionally reddens "saving an unchanged file commits
  *   nothing".
  * - Dropping `:(literal)` from `stagePaths` reddens "stages the file it was
@@ -37,7 +39,17 @@
  *   the choice, even when the folder itself has gone".
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { chmod, mkdir, mkdtemp, readFile, readlink, symlink, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -52,7 +64,8 @@ import { commitAll, runGit, stagePaths } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
-const OPERATOR = 'author-operator';
+/** The operator at the keyboard of an install with login off. */
+const OPERATOR = { authorId: 'author-operator', signedIn: false };
 
 describe('RoomFileEditor', () => {
   let db: Db;
@@ -160,7 +173,7 @@ describe('RoomFileEditor', () => {
       roomId: ROOM_ID,
       mode: 'owned',
       createdAt: '2026-08-27T12:00:00.000Z',
-      createdBy: OPERATOR,
+      createdBy: OPERATOR.authorId,
       defaultBranch: 'main',
       caps,
       lastMergeSeq: null,
@@ -183,6 +196,9 @@ describe('RoomFileEditor', () => {
         if (writeRefusal) throw writeRefusal;
       },
       operatorGitName: () => operatorName,
+      personName: () => null,
+      announce: () => undefined,
+      uploadStagingRoot: () => path.join(scratch, 'staging'),
       files,
     });
   });
@@ -470,19 +486,44 @@ describe('RoomFileEditor', () => {
       expect(await git(['status', '--porcelain=v1'])).toBe('');
     });
 
-    it('refuses a folder, and a folder the room does not have', async () => {
+    it('refuses to save over a folder', async () => {
       await expectRoomError(
         editor.save(ROOM_ID, OPERATOR, { path: 'docs', baseCommit: null, text: 'x\n' }),
         'ROOM_FILE_NOT_READABLE'
       );
-      await expectRoomError(
-        editor.save(ROOM_ID, OPERATOR, {
-          path: 'brand/new/note.md',
-          baseCommit: null,
-          text: 'x\n',
-        }),
-        'ROOM_FILE_NOT_FOUND'
-      );
+    });
+
+    it('creates the folders above a new file (agent-home-desk §7.1)', async () => {
+      const result = await save({ path: 'brand/new/note.md', baseCommit: null, text: 'x\n' });
+
+      expect(result.committed).toBe(true);
+      expect(await git(['ls-files'])).toContain('brand/new/note.md');
+      expect(await git(['status', '--porcelain=v1'])).toBe('');
+    });
+
+    it('refuses a folder that is really a file, naming it', async () => {
+      const promise = editor.save(ROOM_ID, OPERATOR, {
+        path: 'ROOM.md/inside.md',
+        baseCommit: null,
+        text: 'x\n',
+      });
+      await expectRoomError(promise, 'ROOM_FILE_PATH_INVALID');
+      await expect(promise).rejects.toThrow(/`ROOM\.md` is a file/);
+      expect(await git(['status', '--porcelain=v1'])).toBe('');
+    });
+
+    it('refuses a folder that differs from a real one only in capitals, naming the real one', async () => {
+      // `Docs/x.md` on APFS lands inside `docs/`, while git records `Docs/` — a
+      // commit naming the wrong path and a checkout left dirty.
+      const promise = editor.save(ROOM_ID, OPERATOR, {
+        path: 'Docs/x.md',
+        baseCommit: null,
+        text: 'x\n',
+      });
+      await expectRoomError(promise, 'ROOM_FILE_NOT_READABLE');
+      await expect(promise).rejects.toThrow(/`docs\/`/);
+      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await git(['ls-files'])).not.toContain('Docs/');
     });
   });
 
@@ -565,7 +606,7 @@ describe('RoomFileEditor', () => {
         roomId: ROOM_ID,
         mode: 'owned',
         createdAt: '2026-08-27T12:00:00.000Z',
-        createdBy: OPERATOR,
+        createdBy: OPERATOR.authorId,
         defaultBranch: 'main',
         caps,
         lastMergeSeq: null,
@@ -587,7 +628,7 @@ describe('RoomFileEditor', () => {
         roomId: ROOM_ID,
         mode: 'owned',
         createdAt: '2026-08-27T12:00:00.000Z',
-        createdBy: OPERATOR,
+        createdBy: OPERATOR.authorId,
         defaultBranch: 'main',
         caps,
         lastMergeSeq: null,
@@ -645,13 +686,21 @@ describe('RoomFileEditor', () => {
   });
 
   describe('when the commit itself fails', () => {
+    /**
+     * Make the next commit fail AFTER the file is written and staged: git
+     * cannot move `main` while somebody else holds its ref lock. Staging and
+     * restoring take the index lock, not the ref's, so the rollback still runs.
+     */
+    async function lockMainRef(): Promise<() => Promise<void>> {
+      const lock = path.join(repoDir, '.git', 'refs', 'heads', 'main.lock');
+      await writeFile(lock, '', 'utf-8');
+      return () => rm(lock, { force: true });
+    }
+
     it('puts the file back, so one failed save does not wedge the room', async () => {
       const before = await head();
       const original = await readFile(path.join(repoDir, 'ROOM.md'), 'utf-8');
-      // A name made entirely of control characters is stripped to nothing on
-      // the way into the commit, and git refuses an empty author. It is the one
-      // failure that happens AFTER the file has been written.
-      operatorName = '';
+      const unlock = await lockMainRef();
 
       await expect(
         editor.save(ROOM_ID, OPERATOR, {
@@ -660,26 +709,54 @@ describe('RoomFileEditor', () => {
           text: 'half a save\n',
         })
       ).rejects.toThrow();
+      await unlock();
 
       expect(await readFile(path.join(repoDir, 'ROOM.md'), 'utf-8')).toBe(original);
       expect(await git(['status', '--porcelain=v1'])).toBe('');
       expect(await head()).toBe(before);
     });
 
-    it('removes a file it created, rather than leaving it untracked', async () => {
+    it('removes a file it created, and the folders it made for it', async () => {
       const before = await head();
-      operatorName = '';
+      const unlock = await lockMainRef();
 
       await expect(
         editor.save(ROOM_ID, OPERATOR, {
-          path: 'docs/new.md',
+          path: 'new/deeper/half.md',
           baseCommit: null,
           text: 'half a save\n',
         })
       ).rejects.toThrow();
+      await unlock();
 
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await git(['status', '--porcelain=v1', '--ignored'])).toBe('');
+      expect(existsSync(path.join(repoDir, 'new'))).toBe(false);
       expect(await head()).toBe(before);
+    });
+  });
+
+  describe('a name git will not take', () => {
+    it('falls back rather than failing the save, for a name made only of what git strips', async () => {
+      // git: "fatal: name consists only of disallowed characters: <>". That
+      // failure used to come AFTER the file was written.
+      for (const name of ['<>', '', '"', ' ']) {
+        operatorName = name;
+        const result = await save({
+          path: 'ROOM.md',
+          baseCommit: await head(),
+          text: `saved by ${JSON.stringify(name)}\n`,
+        });
+        expect(result.committed).toBe(true);
+        expect(await git(['log', '--format=%an', '-n', '1'])).toBe('DorkOS operator');
+      }
+    });
+
+    it('keeps a name git takes, even one made mostly of punctuation', async () => {
+      operatorName = '...';
+
+      await save({ path: 'ROOM.md', baseCommit: await head(), text: 'dots\n' });
+
+      expect(await git(['log', '--format=%an', '-n', '1'])).toBe('...');
     });
   });
 });

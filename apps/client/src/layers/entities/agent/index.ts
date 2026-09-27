@@ -19,8 +19,6 @@ export { useExecutionExceptions } from './model/use-execution-exceptions';
 export type { ExecutionException, ExecutionExceptions } from './model/use-execution-exceptions';
 export { useAgentVisual, resolveAgentVisual } from './model/use-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './model/use-agent-visual';
-export { useAgentToolStatus } from './model/use-agent-tool-status';
-export type { ChipState, AgentToolStatus } from './model/use-agent-tool-status';
 export { useMcpConfig } from './model/use-mcp-config';
 export { useAgentMcpServers, useAgentBrowserPreset } from './model/use-agent-mcp-servers';
 export {

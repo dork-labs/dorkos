@@ -8,21 +8,20 @@
  * {@link updateAgentManifest} is the agent-reachable write path — `PATCH
  * /api/agents/current` and the `operator.update_agent` MCP tool (tier `act`, so
  * nothing asks a person) both land there. What it accepted used to be "whatever
- * `UpdateAgentRequestSchema` picks", minus three hand-written guards bolted on as
- * each field earned one: `account`, the retired `enabledToolGroups.roomsManage`
- * grant, and the direction check on `tierCeiling`.
+ * `UpdateAgentRequestSchema` picks", minus hand-written guards bolted on as each
+ * field earned one.
  *
- * Three guards is not a policy, and the shape of the defect they leave is
+ * Hand-written guards are not a policy, and the shape of the defect they leave is
  * mechanical: a field added to that schema's `.pick(...)` list becomes
  * agent-writable the moment it exists, silently, with no decision anywhere. That
- * is exactly how the four `enabledToolGroups` documentation keys ended up
- * agent-writable while the four GLOBAL switches they override
- * (`agentContext.*` in `config-write-policy.ts`) were operator-only: a person
- * could turn an agent's tool-context blocks off in Settings and the agent could
- * turn its own back on, because per-agent values beat the global ones
- * (`resolveToolConfig`, `claude-code/tooling/tool-filter.ts`). DOR-1497 closed
- * that at the config seam and said in its own module doc that the per-agent seam
- * stayed open. This table is that seam (DOR-1506).
+ * is exactly how the four retired `enabledToolGroups` documentation keys once
+ * ended up agent-writable while the global switches they overrode were
+ * operator-only (DOR-1506). This table is the decision, made per field.
+ *
+ * What an agent is allowed to DO is not on this wire at all: its `permissions`
+ * are written only by a person through the permission routes (spec
+ * `agent-permissions` D10), and the fields that used to carry that answer
+ * (`enabledToolGroups`, `tierCeiling`) are retired and refused by name.
  *
  * ## The line
  *
@@ -50,12 +49,11 @@
  *
  * ## Where the check runs, and what that costs
  *
- * FIRST, before the schema parse and before the manifest is read, unlike the
- * value-shaped `tighten-only` check below it. The answer is about WHO may write
- * a field, and it must not be contingent on the rest of the patch being
- * well-formed (`{"enabledToolGroups": {"tasks": null}}` fails a boolean schema, and reporting that
- * as a validation error tells a model to fix its types and try the same door
- * again) or on which agent is at the path.
+ * FIRST, before the schema parse and before the manifest is read. The answer is
+ * about WHO may write a field, and it must not be contingent on the rest of the
+ * patch being well-formed (`{"account": 7}` fails a string schema, and reporting
+ * that as a validation error tells a model to fix its types and try the same
+ * door again) or on which agent is at the path.
  *
  * ## What this does NOT close
  *
@@ -64,8 +62,8 @@
  *
  * - **The operator's own route is untouched.** `PATCH /api/mesh/agents/:id`
  *   (`routes/mesh.ts`) writes every field here and does not come through this
- *   module. A cockpit surface that edits an operator-only field must use it —
- *   the Tools tab's tool-group switches do. Permissions have their own routes.
+ *   module. A cockpit surface that edits an operator-only field must use it.
+ *   Permissions have their own routes.
  * - **A shell-capable agent bypasses any route guard.** With local login off the
  *   server cannot tell the person in the cockpit from a process running as the
  *   same user, and an agent with Bash can edit `.dork/agent.json` directly. This
@@ -91,12 +89,8 @@ import {
  * - `operator-only` — changing it undoes a person's narrowing, widens what the
  *   agent reaches, or repoints what its work costs, so the agent surface refuses
  *   it and the person changes it on their own route.
- * - `tighten-only` — the direction is what matters, not the field: the agent may
- *   move it toward LESS capability and never toward more. The comparison needs
- *   the value already on disk, so {@link updateAgentManifest} enforces these
- *   after the manifest read rather than here.
  */
-export type AgentWriteAccess = 'agent-writable' | 'operator-only' | 'tighten-only';
+export type AgentWriteAccess = 'agent-writable' | 'operator-only';
 
 /**
  * Every leaf an agent can reach on its own manifest, classified.
@@ -183,43 +177,17 @@ export const AGENT_WRITE_POLICY = {
   color: 'agent-writable',
   icon: 'agent-writable',
   // Which model and how hard it thinks. A preference inside a lane the person
-  // already chose: the account that pays is `account`, the ceiling on what the
-  // agent may DO is `tierCeiling`, and neither moves because a model did. Left
-  // writable here for the person's own editors, and gated for an agent caller
-  // on the same terms as `runtime` above (DOR-2328): an agent told to switch to
-  // the cheap model asks, and the card says which one it is moving from.
+  // already chose: the account that pays is `account`, what the agent may DO is
+  // its permissions, and neither moves because a model did. Left writable here
+  // for the person's own editors, and gated for an agent caller on the same
+  // terms as `runtime` above (DOR-2328): an agent told to switch to the cheap
+  // model asks, and the card says which one it is moving from.
   model: 'agent-writable',
   effort: 'agent-writable',
   // Whose subscription this agent's work bills to (spec `billing-account-ladder`
   // invariant 4). The credential axis `config-write-policy.ts` already holds
   // `runtimes.claudeCode.defaultAccount` on.
   account: 'operator-only',
-
-  // The four per-agent tool groups, all operator-only — the DOR-1506 closure.
-  //
-  // The four documentation keys were writable here while their global twins
-  // (`agentContext.*`) were refused at the config seam, and per-agent values
-  // BEAT the global ones, so the config-seam refusal was undone by a curl at
-  // this one. That is the whole defect: a person turns an agent's tool context
-  // off in Settings → Tools, and the agent turns its own back on, on the surface
-  // the person would least look at.
-  //
-  // State what they actually do, because the flattering version is wrong and a
-  // refusal built on it would teach a model something false (DOR-1044).
-  // `resolveToolConfig` feeds the CONTEXT BLOCKS: off means the agent is not told
-  // about the group, not that the tools are unregistered or blocked. So these
-  // four protect a person's deliberate narrowing rather than a capability gate,
-  // and the refusal is worded to match.
-  'enabledToolGroups.tasks': 'operator-only',
-  'enabledToolGroups.relay': 'operator-only',
-  'enabledToolGroups.mesh': 'operator-only',
-  'enabledToolGroups.adapter': 'operator-only',
-
-  // The most this agent is ever allowed to do. The one field whose verdict is a
-  // DIRECTION: lowering it is an agent giving something up — the honest way to
-  // say "I only ever read" — and raising it (or clearing it, since absent means
-  // `destructive`) hands privilege back, which is a person's decision (DOR-486).
-  tierCeiling: 'tighten-only',
 
   // The three convention FILES, which ride the same PATCH body. SOUL.md and
   // MEMORY.md are the agent's own prose about itself and its own saved notes.
@@ -239,10 +207,17 @@ export const AGENT_WRITE_POLICY = {
  * would be silently stripped and answered as if it had worked, which is the
  * DOR-1253 shape. What an agent may do is only ever written by a person through
  * the permission routes (spec `agent-permissions` D10), and a caller that tries
- * here is told so. Kept out of {@link AGENT_WRITE_POLICY} because that table
- * mirrors the wire exactly and its drift guard asserts it.
+ * here is told so. The two retired fields that used to answer the same question,
+ * `enabledToolGroups` and `tierCeiling`, are refused the same way, so a caller
+ * still sending one learns where the setting went instead of hearing "done".
+ * Kept out of {@link AGENT_WRITE_POLICY} because that table mirrors the wire
+ * exactly and its drift guard asserts it.
  */
-export const REFUSED_OFF_WIRE_AGENT_PATHS: readonly string[] = ['permissions'];
+export const REFUSED_OFF_WIRE_AGENT_PATHS: readonly string[] = [
+  'permissions',
+  'enabledToolGroups',
+  'tierCeiling',
+];
 
 /** Paths from {@link AGENT_WRITE_POLICY} carrying one verdict. */
 function pathsWithAccess(access: AgentWriteAccess): readonly string[] {
@@ -259,16 +234,6 @@ export const OPERATOR_ONLY_AGENT_PATHS: readonly string[] = [
   ...pathsWithAccess('operator-only'),
   ...REFUSED_OFF_WIRE_AGENT_PATHS,
 ];
-
-/**
- * The manifest leaves an agent may move only toward LESS capability.
- *
- * Derived so {@link updateAgentManifest} cannot enforce a direction on a field
- * the table no longer classifies that way, and so a SECOND `tighten-only` field
- * fails the guard in `__tests__/agent-write-policy.test.ts` until somebody
- * teaches the updater what "tighter" means for it.
- */
-export const TIGHTEN_ONLY_AGENT_PATHS: readonly string[] = pathsWithAccess('tighten-only');
 
 /**
  * The manifest fields whose value is an OBJECT of independently classified
@@ -405,17 +370,7 @@ export const AGENT_OPERATOR_ONLY_STAKES: readonly {
     description: "An agent's billing account is set by a person, in the agent's Runs on settings",
   },
   {
-    paths: [
-      'enabledToolGroups.tasks',
-      'enabledToolGroups.relay',
-      'enabledToolGroups.mesh',
-      'enabledToolGroups.adapter',
-    ],
-    description:
-      "Which tool groups an agent is told about is set by a person, in the agent's Tools settings",
-  },
-  {
-    paths: ['permissions'],
+    paths: ['permissions', 'enabledToolGroups', 'tierCeiling'],
     description:
       "What an agent is allowed to do is set by a person, on the agent's Permissions page",
   },

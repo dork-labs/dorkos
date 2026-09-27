@@ -6,8 +6,8 @@
  *
  * Walks the WHOLE docs registry (every domain, composed unconditionally) and the
  * hand-registered tool table, so an action added anywhere is counted the day it
- * lands. The phase-1 membership of the Rooms area is pinned by name: an action
- * that silently lost its area would move from "what the person set for Rooms" to
+ * lands. Every area's membership is pinned by name: an action that silently
+ * lost its area would move from "what the person set for that area" to
  * "reachable by every agent", and nothing else would notice.
  */
 import { describe, it, expect } from 'vitest';
@@ -49,10 +49,81 @@ function everyAction(): CensusEntry[] {
 }
 
 /**
- * The areas that have members in this phase. Phase 3 assigns every other action
- * its final area and widens this to all ten.
+ * Every area's members, by id, as spec `agent-permissions` D2 assigns them.
+ * Reach & secrets has no static member on purpose: it is reached by input, when
+ * a config patch touches a setting like the tunnel (asserted separately below).
  */
-const AREAS_WITH_MEMBERS_THIS_PHASE = ['rooms'] as const;
+const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
+  rooms: [
+    'rooms.add_members',
+    'rooms.archive',
+    'rooms.create',
+    'rooms.leave',
+    'rooms.merge',
+    'rooms.remove_members',
+    'rooms.update',
+  ],
+  tasks: ['tasks_create', 'tasks_delete', 'tasks_get_run_history', 'tasks_list', 'tasks_update'],
+  agents: [
+    'create_agent',
+    'mesh_deny',
+    'mesh_discover',
+    'mesh_inspect',
+    'mesh_list',
+    'mesh_query_topology',
+    'mesh_register',
+    'mesh_status',
+    'mesh_unregister',
+    'operator.sidebar_add_to_group',
+    'operator.sidebar_remove_from_group',
+    'operator.update_agent',
+    'operator.update_agent_execution',
+  ],
+  messages: [
+    'relay_get_metrics',
+    'relay_get_trace',
+    'relay_inbox',
+    'relay_list_endpoints',
+    'relay_notify_user',
+    'relay_register_endpoint',
+    'relay_send',
+    'relay_send_and_wait',
+    'relay_send_async',
+    'relay_unregister_endpoint',
+  ],
+  connections: [
+    'binding_create',
+    'binding_delete',
+    'binding_list',
+    'binding_list_sessions',
+    'relay_disable_adapter',
+    'relay_enable_adapter',
+    'relay_list_adapters',
+    'relay_reload_adapters',
+  ],
+  packages: [
+    'create_extension',
+    'marketplace.create_package',
+    'marketplace.install',
+    'marketplace.uninstall',
+    'marketplace.update',
+    'mcp.add',
+    'mcp.disable',
+    'mcp.enable',
+    'mcp.import',
+    'mcp.remove',
+    'mcp.set_client',
+    'mcp.signin',
+    'mcp.test',
+    'mcp.update',
+    'reload_extensions',
+    'test_extension',
+  ],
+  settings: ['operator.config_patch'],
+  safety: ['operator.update_agent_boundaries'],
+  permissions: ['permissions.change'],
+  reach: [],
+};
 
 describe('permission-area census', () => {
   const actions = everyAction();
@@ -85,10 +156,19 @@ describe('permission-area census', () => {
   });
 
   it('gives every non-read action with an area card fields, since Ask raises a card', () => {
+    // Declared, and non-empty unless the action takes no arguments at all
+    // (`relay_reload_adapters`): the tool table's own pin checks that side.
     const bare = actions
-      .filter((a) => a.area !== null && a.tier !== 'observe' && !a.approvalDisplayFields?.length)
+      .filter((a) => a.area !== null && a.tier !== 'observe' && !a.approvalDisplayFields)
       .map((a) => a.id);
     expect(bare).toEqual([]);
+  });
+
+  it('leaves no action on a placeholder note from an earlier phase', () => {
+    const placeholders = actions
+      .filter((a) => a.areaNote !== undefined && /phase/i.test(a.areaNote))
+      .map((a) => `${a.id}: ${a.areaNote}`);
+    expect(placeholders).toEqual([]);
   });
 
   it('never leaves an observe action as the only member of an area', () => {
@@ -109,32 +189,29 @@ describe('permission-area census', () => {
     expect(serializeCapability(create!).area).toBe('rooms');
   });
 
-  it('pins the Rooms area to exactly the room-arranging verbs', () => {
-    const rooms = actions
-      .filter((a) => a.area === 'rooms')
-      .map((a) => a.id)
-      .sort();
-    expect(rooms).toEqual(
-      [
-        'rooms.add_members',
-        'rooms.archive',
-        'rooms.create',
-        'rooms.leave',
-        'rooms.merge',
-        'rooms.remove_members',
-        'rooms.update',
-      ].sort()
-    );
+  it('pins every area to exactly the actions the spec puts in it', () => {
+    for (const area of PERMISSION_AREA_IDS) {
+      const members = actions
+        .filter((a) => a.area === area)
+        .map((a) => a.id)
+        .sort();
+      expect(members, area).toEqual([...EXPECTED_MEMBERS[area]!].sort());
+    }
   });
 
-  it('gives every area with members this phase at least one member', () => {
-    // Scoped to the areas phase 1 populates; phase 3 widens this to all ten,
-    // once every other action has its final area.
-    for (const area of AREAS_WITH_MEMBERS_THIS_PHASE) {
+  it('gives all ten areas something to switch, Reach & secrets by input', () => {
+    for (const area of PERMISSION_AREA_IDS) {
+      if (area === 'reach') continue;
       expect(
         actions.some((a) => a.area === area),
         area
       ).toBe(true);
     }
+    // Reach & secrets has no static member: a config patch touching the tunnel
+    // is asked about there. Without this, its row would switch nothing at all.
+    const configPatch = composeCapabilityRegistryForDocs().get('operator.config_patch');
+    expect(configPatch?.areasForInput?.({ patch: { tunnel: { enabled: true } } })).toEqual([
+      'reach',
+    ]);
   });
 });

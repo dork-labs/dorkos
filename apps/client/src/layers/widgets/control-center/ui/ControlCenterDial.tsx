@@ -1,84 +1,44 @@
-import type { PermissionStop } from '@dorkos/shared/agent-runtime';
-import { CANONICAL_TRUST_STOPS, PermissionModeScopeNote, TrustDial } from '@/layers/shared/ui';
-import { useConfig } from '@/layers/entities/config';
-import { useRuntimeCapabilities } from '@/layers/entities/runtime';
-import { AutonomyConfirmDialog } from '@/layers/features/status';
-import { useTrustStopWrites } from '@/layers/features/settings';
+import { ChevronRight } from 'lucide-react';
+import { createModalHandoff } from '@/layers/shared/lib';
+import { useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
+import { Button } from '@/layers/shared/ui';
+import { PresetPicker } from '@/layers/features/permissions';
 
 /**
- * The Control Center's global Trust Dial — where new sessions start, changed
- * through the one consent-gated write path Settings uses.
+ * The Control Center's power setting: the permission preset (spec
+ * `agent-permissions`, task 3.8). Careful · Balanced · Full power, reading
+ * "Full power, 2 changes" when the defaults differ from the preset.
  *
- * It writes through {@link useTrustStopWrites} (a widget importing a feature
- * hook is the allowed direction) and renders the shared
- * {@link AutonomyConfirmDialog} off the hook's `pendingAutonomy`, exactly as the
- * Runtimes tab does. Moving to Full autonomy without a standing acknowledgement
- * raises that dialog — existing behaviour the hook owns; nothing here
- * re-implements or bypasses it.
- *
- * The dial is the ONE runtime-neutral dial, so it is rendered from the canonical
- * stops rather than a runtime's modes: its value is the stop itself, and the
- * caption reads green at Full autonomy because that is the product's headline
- * capability, not a mistake (`trust-tone`).
+ * It is the same {@link PresetPicker} Settings shows, so the Full autonomy
+ * consent step and the "agents set differently" question are the ones Settings
+ * asks. The Control Center stays a summary: the per-area switches live in
+ * Settings → Permissions, one tap away.
  */
 export function ControlCenterDial() {
-  const { data: config } = useConfig();
-  const { data: capabilityMap } = useRuntimeCapabilities();
-  const trust = useTrustStopWrites();
-
-  const defaults = config?.executionDefaults;
-  const defaultRuntime = defaults?.runtime ?? 'claude-code';
-  const defaultModes = capabilityMap?.capabilities[defaultRuntime]?.permissionModes;
-  // A stored `null` resolves to the default runtime's own starting mode — the
-  // same chain Settings → Runtimes resolves, so the two dials agree.
-  const runtimeDefaultStop: PermissionStop =
-    defaultModes?.values.find((m) => m.id === defaultModes.default)?.stop ?? 'ask';
-  const globalStop: PermissionStop = defaults?.trustStop ?? runtimeDefaultStop;
+  const { open: openSettings } = useSettingsDeepLink();
+  const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
+  const openAndClose = createModalHandoff(() => setControlCenterOpen(false));
 
   return (
-    <section className="flex flex-col gap-2" data-testid="control-center-dial">
+    <section className="@container flex flex-col gap-2" data-testid="control-center-dial">
       <div>
         <p className="text-sm font-medium">Power</p>
         <p className="text-muted-foreground text-xs">
-          Where new sessions start. Conversations already running keep their own setting.
+          How much your agents may do without asking you first.
         </p>
       </div>
-
-      <TrustDial
-        mode={globalStop}
-        descriptors={CANONICAL_TRUST_STOPS}
-        onChangeMode={(next) => trust.changeTrustStop(null, next as PermissionStop)}
-      />
-
-      {/* What the top stop does not cover (DOR-2102). The Control Center is
-          where a person comes to flip power on without reading a dialog, and a
-          standing acknowledgement means no dialog opens — so without this line
-          the one sentence correcting the promise never reaches them here.
-
-          `descriptor` alone, with no `mode`: this dial's value is a dial STOP,
-          and the note's name-based fallback reads runtime mode ids. Passing
-          'autonomy' there would look like a safety net and be a branch that can
-          never fire (DOR-2102 review). */}
-      <PermissionModeScopeNote
-        descriptor={CANONICAL_TRUST_STOPS.find((stop) => stop.id === globalStop)}
-        className="px-1"
-      />
-
-      {trust.writeError && (
-        <p className="text-destructive px-1 text-xs" role="alert">
-          {trust.writeError}
-        </p>
-      )}
-
-      {/* One dialog, one contract — the same door Settings shows. No "remember"
-          checkbox: agreeing here IS the standing record the server requires. */}
-      <AutonomyConfirmDialog
-        descriptor={trust.pendingAutonomy?.descriptor ?? null}
-        canRemember={false}
-        consentNote="Every new session will start here, and DorkOS will remember that you have read this."
-        onCancel={trust.cancelAutonomy}
-        onConfirm={trust.confirmAutonomy}
-      />
+      <PresetPicker surface="control-center" />
+      {/* After the picker, so the flyout's first focus lands on the choice
+          itself rather than on a link away from it. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-muted-foreground h-7 self-start px-2 text-xs"
+        onClick={openAndClose(() => openSettings('permissions'))}
+      >
+        Edit permissions
+        <ChevronRight className="size-3.5" aria-hidden />
+      </Button>
     </section>
   );
 }

@@ -164,6 +164,10 @@ Each session has a trust setting — one dial with three stops — that decides 
 
 Plan mode is a separate toggle next to the composer, not a stop on the dial: it puts the session in read-only planning — Claude can investigate and propose a plan but cannot execute tools — and you switch it on for a stretch of work rather than leaving a session parked at it.
 
+### Where a new conversation starts
+
+This dial is what an agent's **Files & commands** setting decides for a new conversation before you touch it. DorkOS works out the starting stop in order: a session, task, or room turn you set yourself always wins; failing that, the agent's own Files & commands setting on its Permissions page; failing that, the setting for its runtime in **Settings → Runtimes**, if you set one; and otherwise the setting everyone has. Moving the dial here only ever changes this one conversation — to change where this agent's next conversation starts, set its Files & commands row on its Permissions page. See [Permissions](/docs/guides/permissions).
+
 <Callout type="info">
   **This covers what an agent does in a session: editing files, running commands, and working
   outside this project.** DorkOS's own risky actions still stop for you, like deleting a schedule or

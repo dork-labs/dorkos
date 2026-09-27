@@ -34,7 +34,6 @@ import {
   tryGetRoomWorktreeManager,
 } from '../services/rooms/index.js';
 import { commitAll } from '../services/rooms/repo/room-repo-git.js';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
 import { hashApprovalInput, type ApprovalService } from '../services/core/approvals/index.js';
 import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
@@ -492,27 +491,6 @@ const agentTokenSchema = z.object({
 });
 
 /**
- * The highest tier a token minted here may ever reach.
- *
- * **`mint` defaults to `destructive`, which is the top of the ladder** — higher
- * than the ceiling an unidentified caller gets (`DEFAULT_ANONYMOUS_TIER_CEILING`
- * in `tier-enforcement.ts`). So a test seam that took the default would hand out
- * a MORE powerful identity than presenting no identity at all, which is the
- * wrong direction for a route that exists only to let a test pretend.
- *
- * `act` is the narrowest ceiling that still covers what this seam is for: the
- * rooms verbs a test drives as an agent — `post_to_room`, `react_to_room_entry`
- * — are `act` (`room-capabilities.ts`). Anything destructive is refused, which
- * is a property worth having on a token handed out over an unauthenticated
- * local route.
- *
- * It is a deliberate divergence from production, where nothing passes a ceiling
- * yet and every real spawn is therefore `destructive`. Named here rather than
- * silently inherited so the difference is a decision somebody can read.
- */
-const TEST_TOKEN_TIER_CEILING: CapabilityTier = 'act';
-
-/**
  * `POST /api/test/agent-token` — mint an identity token for an agent that is
  * really registered here, and hand it to the test.
  *
@@ -585,7 +563,6 @@ testControlRouter.post('/agent-token', async (req, res) => {
   const token = await service.mint({
     agentPath,
     displayName: agent.displayName ?? agent.name,
-    tierCeiling: TEST_TOKEN_TIER_CEILING,
   });
   res.json({ token });
 });
@@ -869,7 +846,6 @@ testControlRouter.post('/seed-agent', async (req, res) => {
     registeredBy: 'dorkos-e2e',
     personaEnabled: false,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
     workspace: { mode: 'home' },
   };
@@ -1067,7 +1043,6 @@ testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
     registeredBy: 'dorkos-e2e',
     personaEnabled: false,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: 'granola',

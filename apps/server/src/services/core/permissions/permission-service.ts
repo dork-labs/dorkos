@@ -32,7 +32,12 @@ import {
   type PermissionSurface,
   type PermissionsResponse,
   type ResolvedPermission,
+  PERMISSION_PRESET_TABLES,
+  presetTableFor,
+  resolveFilesAndCommands,
 } from '@dorkos/shared/permissions';
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { z } from 'zod';
 
@@ -43,6 +48,24 @@ import {
   type PermissionWriter,
 } from './permission-history.js';
 import type { ActivityService } from '../../activity/activity-service.js';
+import { narrowArrivedPermissions } from './arrival-narrowing.js';
+
+/** Who a setting DorkOS declined on arrival is recorded under. */
+const ARRIVAL_WRITER: PermissionWriter = {
+  attribution: 'outside',
+  actorType: 'system',
+  actorLabel: 'DorkOS',
+};
+
+/** The line a declined-on-arrival event carries. */
+export const ARRIVAL_NOTE =
+  "Permissions in this folder's settings file that were not stricter than everyone's " +
+  'defaults were not applied. Set them in DorkOS.';
+
+/** The line an arrival whose file could not be written back carries. */
+export const ARRIVAL_WRITE_FAILED_NOTE =
+  "DorkOS couldn't apply this folder's settings file, so this agent follows everyone's " +
+  'defaults except where its file is stricter. Set its permissions in DorkOS.';
 
 /** A permission write the service refused, with the HTTP status that fits it. */
 export class PermissionError extends Error {
@@ -77,6 +100,8 @@ export interface PermissionActionInfo {
   area: PermissionAreaId | null;
   /** The MCP tool name the action is listed under, when it has one. */
   toolName?: string;
+  /** Its card shows the change it would make, so it is never Allowed (DOR-2328). */
+  alwaysAsks?: true;
 }
 
 /** One registered agent, as the service needs it. */
@@ -89,7 +114,22 @@ export interface PermissionAgentRef {
   displayName?: string;
   /** Its project directory, where its manifest lives. */
   projectPath: string;
+  /** The runtime it runs on, for its per-runtime Files & commands stop. */
+  runtime?: string;
 }
+
+/** The stored Files & commands stops: the global one, and each runtime's own. */
+export interface StoredTrustStops {
+  /** `runtimes.defaultTrustStop`. */
+  global: PermissionStop | null;
+  /** Each runtime's own stop, by runtime id (`claude-code`, `codex`, `opencode`). */
+  perRuntime: Readonly<Record<string, PermissionStop | null>>;
+}
+
+/** The sentence a Full-autonomy write without an acknowledgement is refused with. */
+export const AUTONOMY_ACK_MESSAGE =
+  'Full autonomy lets agents edit files and run commands without asking. Confirm that in the ' +
+  'app first, then try again.';
 
 /** Everything the service reads and writes through. */
 export interface PermissionServiceDeps {
@@ -97,8 +137,17 @@ export interface PermissionServiceDeps {
   config: {
     get: () => PermissionConfigInput & { upgradeSweptVersion: string | null };
     set: (next: PermissionConfigInput & { upgradeSweptVersion: string | null }) => void;
-    /** The global Files & commands stop, recorded in a preset snapshot. */
-    trustStop: () => string | null;
+    /** The stored Files & commands stops. */
+    trustStops: () => StoredTrustStops;
+    /**
+     * Write the global Files & commands stop, recording the person's
+     * acknowledgement of Full autonomy in the same write when `acknowledge`.
+     */
+    setGlobalTrustStop: (stop: PermissionStop, acknowledge: boolean) => void;
+    /** Whether an acknowledgement of Full autonomy is on file. */
+    hasAutonomyAck: () => boolean;
+    /** Record the acknowledgement on its own (an agent's own stop set to Full autonomy). */
+    recordAutonomyAck: () => void;
   };
   /** The registered agents and the manifest write-through. */
   agents: {
@@ -107,9 +156,17 @@ export interface PermissionServiceDeps {
     readPermissions: (projectPath: string) => Promise<AgentPermissions | undefined>;
     /** Write an agent's overrides through the manifest (absent = inherit all). */
     writePermissions: (agentId: string, next: AgentPermissions | undefined) => Promise<void>;
+    /**
+     * The agent's settings exactly as its file holds them, for the arrival
+     * screen, which must see what it is narrowing. Defaults to
+     * {@link readPermissions}.
+     */
+    readStoredPermissions?: (projectPath: string) => Promise<AgentPermissions | undefined>;
   };
   /** Every action an agent can reach, with its area. Read per call. */
   actions: () => PermissionActionInfo[];
+  /** Whether the record of screened arrivals can be read and saved. */
+  arrivalsHealthy?: () => boolean;
   /** The Activity log, absent in a process with none. */
   activity?: Pick<ActivityService, 'emit' | 'list'>;
 }
@@ -118,6 +175,8 @@ export interface PermissionServiceDeps {
 export type PermissionPatch = {
   areas?: Record<string, PermissionState | null>;
   actions?: Record<string, PermissionState | null>;
+  /** An agent's own Files & commands stop; `null` = back to the default. */
+  filesAndCommands?: PermissionStop | null;
 };
 
 /**
@@ -225,6 +284,12 @@ export class PermissionService {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
           `"${action.title}" is in an area that is never Allowed. Choose Ask or Blocked.`
+        );
+      }
+      if (state === 'allowed' && action.alwaysAsks) {
+        throw new PermissionError(
+          'ALWAYS_ASKS',
+          `"${action.title}" always shows you what it would change, so it is never Allowed. Choose Ask or Blocked.`
         );
       }
     }
@@ -339,8 +404,21 @@ export class PermissionService {
         if (area)
           changes.push({ target, key: { kind: 'action', action: k, area }, before, after: null });
       }
+      // Following the new preset means its Files & commands stop too.
+      let files = stored.filesAndCommands;
+      if (keys === 'all' && files) {
+        changes.push({ target, key: { kind: 'files' }, before: files, after: null });
+        files = undefined;
+        moved = true;
+      }
       if (moved) {
-        const next = compact({ ...stored, areas, actions: actionMap });
+        const { filesAndCommands: _previous, ...rest } = stored;
+        const next = compact({
+          ...rest,
+          areas,
+          actions: actionMap,
+          ...(files ? { filesAndCommands: files } : {}),
+        });
         writes.push(() => this.deps.agents.writePermissions(agent.id, next));
       }
     }
@@ -366,6 +444,59 @@ export class PermissionService {
   }
 
   /**
+   * Screen the settings a newly arrived agent brought in its own folder.
+   *
+   * An agent is registered from a folder whose `.dork/agent.json` anybody (or
+   * any agent with file tools) may have written, so the permissions in it were
+   * never a person's choice in DorkOS. Every arrival is screened: the agent
+   * keeps only what is strictly stricter than the defaults it would otherwise
+   * follow ({@link narrowArrivedPermissions}), the rest is dropped from the
+   * file, and one history line says so.
+   *
+   * Until this returns `written: true` the agent is pending in the arrival
+   * record, and every reader narrows its settings the same way, so a write
+   * that cannot land (a read-only file) never leaves the folder's settings in
+   * force. A failed write is recorded too, and left for the next boot to retry.
+   *
+   * @param agentId - The agent that just arrived.
+   * @returns What was dropped, and whether the file now says what the agent keeps.
+   */
+  async screenArrivedAgent(
+    agentId: string
+  ): Promise<{ changes: PermissionChange[]; written: boolean }> {
+    const agent = this.deps.agents.list().find((a) => a.id === agentId);
+    if (!agent) return { changes: [], written: false };
+    const read = this.deps.agents.readStoredPermissions ?? this.deps.agents.readPermissions;
+    const stored = await read(agent.projectPath);
+    const actions = this.actionIndex();
+    const { kept, dropped, droppedUnknown } = narrowArrivedPermissions(stored, {
+      config: this.deps.config.get(),
+      actions,
+      globalStop: this.deps.config.trustStops().global,
+    });
+    const target = this.agentTarget(agent);
+    const changes: PermissionChange[] = dropped.map((d) => ({ ...d, target, after: null }));
+    if (changes.length === 0 && !droppedUnknown) return { changes, written: true };
+
+    try {
+      await this.deps.agents.writePermissions(agentId, kept);
+    } catch (err) {
+      await this.record(
+        { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_WRITE_FAILED_NOTE },
+        this.titleFor(actions)
+      );
+      throw err;
+    }
+    if (changes.length > 0) {
+      await this.record(
+        { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_NOTE },
+        this.titleFor(actions)
+      );
+    }
+    return { changes, written: true };
+  }
+
+  /**
    * Change the defaults: per area and per action, `null` removing a change.
    * `applyToAgents` removes those agents' own settings for the same keys in the
    * same write, so they follow the new default.
@@ -375,7 +506,12 @@ export class PermissionService {
    * @returns Every change the write made.
    */
   async setDefaults(
-    input: PermissionPatch & { applyToAgents?: string[]; surface: PermissionSurface },
+    input: PermissionPatch & {
+      applyToAgents?: string[];
+      surface: PermissionSurface;
+      /** The approval an agent's request was answered through, when it was one. */
+      approvalId?: string;
+    },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
     const actions = this.actionIndex();
@@ -391,27 +527,53 @@ export class PermissionService {
     if (changes.length > 0) this.deps.config.set({ ...config, defaults: next });
     await cleared.write();
     const all = [...changes, ...cleared.changes];
-    await this.record({ changes: all, surface: input.surface, writer }, this.titleFor(actions));
+    await this.record(
+      {
+        changes: all,
+        surface: input.surface,
+        writer,
+        ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+      },
+      this.titleFor(actions)
+    );
     return all;
   }
 
   /**
-   * Choose a preset. Clears the changes on top of the old one; `applyToAgents`
-   * removes every setting those agents have of their own, so they follow the
-   * new preset. The trust-stop coupling is later work: the event records the
-   * stop only in its snapshot, so an Undo can restore it.
+   * Choose a preset (spec `agent-permissions` D5). Clears the changes on top of
+   * the old one, and moves the global Files & commands stop to the preset's
+   * (Careful: Ask first, Balanced: Act, Full power: Full autonomy). Per-runtime
+   * stops are left alone and show as changes. `applyToAgents` removes every
+   * setting those agents have of their own, so they follow the new preset.
    *
-   * @param input - The preset, the agents to bring along, and where it came from.
+   * All or nothing: a preset that moves the stop to Full autonomy with no
+   * acknowledgement on file, and none sent with it, is refused (428
+   * `AUTONOMY_ACK_REQUIRED`) before anything is written, preset included.
+   *
+   * @param input - The preset, the agents to bring along, where it came from,
+   *   and whether the person acknowledged Full autonomy in this request.
    * @param writer - Who is making the change.
    * @returns Every change the write made.
+   * @throws {PermissionError} `AUTONOMY_ACK_REQUIRED` (428).
    */
   async setPreset(
-    input: { preset: PermissionPreset; applyToAgents?: string[]; surface: PermissionSurface },
+    input: {
+      preset: PermissionPreset;
+      applyToAgents?: string[];
+      surface: PermissionSurface;
+      acknowledgeAutonomy?: boolean;
+    },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
     const actions = this.actionIndex();
     const selected = this.agentsById(input.applyToAgents ?? []);
+    const presetStop = PERMISSION_PRESET_TABLES[input.preset].filesStop;
+    const acknowledge = input.acknowledgeAutonomy === true;
+    if (presetStop === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
+      throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
+    }
     const config = this.deps.config.get();
+    const stops = this.deps.config.trustStops();
     const changes: PermissionChange[] = [];
     if (config.preset !== input.preset) {
       changes.push({
@@ -440,11 +602,19 @@ export class PermissionService {
         after: null,
       });
     }
+    if (presetStop !== null && stops.global !== presetStop) {
+      changes.push({
+        target: { kind: 'default' },
+        key: { kind: 'files' },
+        before: stops.global,
+        after: presetStop,
+      });
+    }
     const cleared = await this.clearAgentKeys(selected, 'all', actions);
     const presetSnapshot = {
       preset: config.preset,
       defaults: config.defaults,
-      trustStop: this.deps.config.trustStop(),
+      trustStop: stops.global,
     };
     const moved =
       config.preset !== input.preset ||
@@ -456,6 +626,9 @@ export class PermissionService {
         preset: input.preset,
         defaults: { areas: {}, actions: {} },
       });
+    }
+    if (presetStop !== null && (stops.global !== presetStop || acknowledge)) {
+      this.deps.config.setGlobalTrustStop(presetStop, acknowledge);
     }
     await cleared.write();
     const all = [...changes, ...cleared.changes];
@@ -487,19 +660,52 @@ export class PermissionService {
        * How a reversal avoids undoing a write it did not make.
        */
       expectActions?: Record<string, PermissionState | null>;
+      /** The person acknowledged Full autonomy in this request. */
+      acknowledgeAutonomy?: boolean;
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
     const actions = this.actionIndex();
     this.validate(input, actions);
+    const files = input.filesAndCommands;
+    if (files !== undefined && files !== null && !PERMISSION_STOPS.includes(files)) {
+      throw new PermissionError(
+        'INVALID_STOP',
+        `"${String(files)}" is not a Files & commands stop.`
+      );
+    }
+    // The same consent door the global stop has: an agent's own Full autonomy
+    // needs the acknowledgement on file, or sent with it (428 otherwise).
+    const acknowledge = input.acknowledgeAutonomy === true;
+    if (files === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
+      throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
+    }
     const [agent] = this.agentsById([agentId]);
     const stored = (await this.deps.agents.readPermissions(agent!.projectPath)) ?? {};
     const patch = input.expectActions ? unchanged(stored, input, input.expectActions) : input;
-    const { next, changes } = this.applyPatch(stored, patch, this.agentTarget(agent!), actions);
+    const target = this.agentTarget(agent!);
+    const { next, changes } = this.applyPatch(stored, patch, target, actions);
+    let nextFiles = stored.filesAndCommands;
+    if (files !== undefined && (stored.filesAndCommands ?? null) !== files) {
+      changes.push({
+        target,
+        key: { kind: 'files' },
+        before: stored.filesAndCommands ?? null,
+        after: files,
+      });
+      nextFiles = files ?? undefined;
+    }
     if (changes.length > 0) {
+      if (files === 'autonomy' && acknowledge) this.deps.config.recordAutonomyAck();
+      const { filesAndCommands: _previous, ...rest } = stored;
       await this.deps.agents.writePermissions(
         agentId,
-        compact({ ...stored, areas: next.areas, actions: next.actions })
+        compact({
+          ...rest,
+          areas: next.areas,
+          actions: next.actions,
+          ...(nextFiles ? { filesAndCommands: nextFiles } : {}),
+        })
       );
     }
     await this.record(
@@ -529,9 +735,17 @@ export class PermissionService {
     area: PermissionAreaId,
     actionId: string,
     tier: CapabilityTier,
-    agent?: AgentPermissions
+    agent?: AgentPermissions,
+    alwaysAsks?: true
   ): ResolvedPermission {
-    return resolvePermission({ area, actionId, tier, config, ...(agent ? { agent } : {}) });
+    return resolvePermission({
+      area,
+      actionId,
+      tier,
+      config,
+      ...(agent ? { agent } : {}),
+      ...(alwaysAsks ? { alwaysAsks } : {}),
+    });
   }
 
   /**
@@ -559,7 +773,8 @@ export class PermissionService {
             id: a.id,
             title: a.title,
             tier: a.tier,
-            resolved: this.resolveDefault(config, id, a.id, a.tier, agent),
+            ...(a.alwaysAsks ? { alwaysAsks: true as const } : {}),
+            resolved: this.resolveDefault(config, id, a.id, a.tier, agent, a.alwaysAsks),
           })),
         resolved: { state: resolved.state, source: resolved.source, layer: resolved.layer },
       };
@@ -577,6 +792,7 @@ export class PermissionService {
     const byId = new Map(actions.map((a) => [a.id, a]));
     const agents = this.deps.agents.list();
     const exceptions: PermissionException[] = [];
+    const filesExceptions: { agentId: string; agentName: string; stop: PermissionStop }[] = [];
     for (const agent of agents) {
       let stored: AgentPermissions | undefined;
       try {
@@ -585,6 +801,13 @@ export class PermissionService {
         // An unreadable manifest is refused at the gate; here it is simply not
         // listed as differing, since nothing about it can be read.
         continue;
+      }
+      if (stored?.filesAndCommands) {
+        filesExceptions.push({
+          agentId: agent.id,
+          agentName: agentName(agent),
+          stop: stored.filesAndCommands,
+        });
       }
       for (const [area, state] of Object.entries(stored?.areas ?? {})) {
         if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area) || !isState(state)) continue;
@@ -607,14 +830,41 @@ export class PermissionService {
         });
       }
     }
+    const stops = this.deps.config.trustStops();
+    const presetStop = presetTableFor(config.preset).filesStop;
+    const runtimeStops = Object.entries(stops.perRuntime).flatMap(([runtime, stop]) =>
+      stop ? [{ runtime, stop }] : []
+    );
+    // "Custom" is never stored: it is the default changes, plus the global stop
+    // when it is not the one the preset sets (an unset stop included: an install
+    // whose preset came from an upgrade, or whose stop was cleared, does not
+    // start where its preset says), plus each per-runtime stop that differs.
+    // Undecided installs have no preset stop, so their stops are not changes to
+    // anything.
+    const stopChanges =
+      presetStop === null
+        ? 0
+        : (stops.global !== presetStop ? 1 : 0) +
+          runtimeStops.filter((entry) => entry.stop !== presetStop).length;
     return {
       preset: config.preset,
       defaults: config.defaults,
       changeCount:
-        Object.keys(config.defaults.areas).length + Object.keys(config.defaults.actions).length,
+        Object.keys(config.defaults.areas).length +
+        Object.keys(config.defaults.actions).length +
+        stopChanges,
+      filesAndCommands: {
+        stop: stops.global,
+        presetStop,
+        runtimes: runtimeStops,
+        exceptions: filesExceptions,
+      },
       areas: this.areaEntries(config, actions),
       exceptions,
       agentCount: agents.length,
+      ...(this.deps.arrivalsHealthy && !this.deps.arrivalsHealthy()
+        ? { newAgentRecordUnreadable: true as const }
+        : {}),
     };
   }
 
@@ -632,6 +882,14 @@ export class PermissionService {
     const own = this.areaEntries(config, actions, stored);
     const inherited = this.areaEntries(config, actions);
     const outside = await this.changedOutsideAt(agent!.id);
+    const stops = this.deps.config.trustStops();
+    const perRuntime = agent!.runtime ? (stops.perRuntime[agent!.runtime] ?? null) : null;
+    const inheritedFiles = resolveFilesAndCommands({ perRuntime, global: stops.global });
+    const files = resolveFilesAndCommands({
+      ...(stored.filesAndCommands ? { agent: { filesAndCommands: stored.filesAndCommands } } : {}),
+      perRuntime,
+      global: stops.global,
+    });
     return {
       agentId: agent!.id,
       agentName: agentName(agent!),
@@ -641,6 +899,7 @@ export class PermissionService {
         inherited: inherited[i]!.resolved,
         changedOutsideAt: outside.get(entry.id) ?? null,
       })),
+      filesAndCommands: { ...files, inherited: inheritedFiles },
     };
   }
 

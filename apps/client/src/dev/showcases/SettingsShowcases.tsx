@@ -33,7 +33,7 @@ import {
 import { NotificationsTab } from '@/layers/features/settings/ui/tabs/NotificationsTab';
 import { RoomsTab } from '@/layers/features/settings/ui/tabs/RoomsTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
-import { ToolsResetAction, ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
+import { ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { DangerZoneTab } from '@/layers/features/settings/ui/DangerZoneTab';
 import { RemoteAccessTab } from '@/layers/features/settings/ui/RemoteAccessTab';
 import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
@@ -310,7 +310,7 @@ function IndividualTabsSection() {
       <ShowcaseLabel>Tools Tab</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider>
-          <TabShell value="tools" title="Tools" actions={<ToolsResetAction />}>
+          <TabShell value="tools" title="Tools">
             <ToolsTab />
           </TabShell>
         </MockedQueryProvider>

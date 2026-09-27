@@ -1,17 +1,16 @@
 /**
  * Tier enforcement matrix (spec `agent-trust` §3.2): what the gate does for each
- * tier, against each state an approval token can be in, under each tier ceiling.
+ * tier, against each state an approval token can be in.
  *
  * The invariant every case defends: a `destructive` capability does not run until a
  * person has said yes to THAT action with THOSE arguments — identified or not — and
  * refusals and waits are audited, not just successes.
  *
- * Three of these cases pin fixes to reproduced defects, so read them before
+ * These cases pin fixes to reproduced defects, so read them before
  * relaxing anything:
  *
- * - the ceiling applies to an unidentified caller too. It used to apply only when
- *   an identity was present, so an agent capped at `act` was refused while the SAME
- *   agent after `unset DORKOS_AGENT_TOKEN` reached the approvable path instead.
+ * - an unidentified caller is gated too: dropping a credential never buys a
+ *   caller a path the identified agent does not have.
  * - the card cannot be forged. `{ name: 'pkg, purge: no', purge: true }` used to
  *   render a fake `purge: no` BEFORE the real `purge: yes`.
  * - secret-shaped values never reach the card, which is broadcast on the global
@@ -28,7 +27,6 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { defineCapability } from '../capability-definition.js';
 import {
   APPROVAL_TOKEN_ARGUMENT,
-  DEFAULT_ANONYMOUS_TIER_CEILING,
   describeGatedAttempt,
   enforceCapabilityTier,
   initCapabilityTierGate,
@@ -59,12 +57,11 @@ function capabilityAt(tier: CapabilityTier) {
   });
 }
 
-/** An identity with the given ceiling. */
-function identityWith(tierCeiling: CapabilityTier): AgentIdentity {
+/** The identified agent every case runs as. */
+function identity(): AgentIdentity {
   return {
     agentPath: '/projects/prober',
     displayName: 'Prober',
-    tierCeiling,
     createdAt: new Date().toISOString(),
   };
 }
@@ -94,13 +91,13 @@ describe('enforceCapabilityTier', () => {
     vi.useRealTimers();
   });
 
-  /** Run the gate over a tier, ceiling, and optional token. */
-  function enforce(tier: CapabilityTier, ceiling: CapabilityTier, approvalToken?: string) {
+  /** Run the gate over a tier and an optional token, as the identified agent. */
+  function enforce(tier: CapabilityTier, approvalToken?: string) {
     return enforceCapabilityTier({
       permission: null,
       action: capabilityAt(tier),
       input: INPUT,
-      identity: identityWith(ceiling),
+      identity: identity(),
       ...(approvalToken ? { approvalToken } : {}),
       retryChannel: 'mcp-argument',
     });
@@ -160,92 +157,28 @@ describe('enforceCapabilityTier', () => {
 
       expect(enforceAnonymous('destructive', asked.payload.approvalToken).outcome).toBe('allowed');
     });
-
-    it('is capped by the anonymous ceiling, which defaults to no extra restriction', () => {
-      // Unchanged behavior, deliberately asserted: the DEFAULT anonymous ceiling is
-      // `destructive`, so an anonymous destructive call is approvable, not refused.
-      expect(DEFAULT_ANONYMOUS_TIER_CEILING).toBe('destructive');
-      const decision = enforceAnonymous('destructive');
-      expect(decision.outcome).toBe('approval_required');
-    });
-
-    it('CANNOT escape a ceiling by dropping its identity', () => {
-      // The defect this replaces: the ceiling comparison used to run only when an
-      // identity was present, so presenting a credential strictly COST privilege.
-      // An agent capped at `act` was refused unapprovably; the same agent with the
-      // token unset reached the approvable path instead.
-      initCapabilityTierGate({
-        approvals,
-        anonymousTierCeiling: 'act',
-        onAttempt: (attempt) => attempts.push(attempt),
-      });
-
-      const identified = enforce('destructive', 'act');
-      const anonymous = enforceAnonymous('destructive');
-
-      expect(identified.outcome).toBe('denied');
-      expect(anonymous.outcome).toBe('denied');
-      if (anonymous.outcome !== 'denied') throw new Error('unreachable');
-      expect(anonymous.payload.reason).toBe('tier_ceiling');
-      expect(anonymous.payload.approvable).toBe(false);
-      // Says whose limit it is, without pretending to know who asked.
-      expect(anonymous.payload.message).toContain('callers that do not identify themselves');
-      // And nothing was queued for a person who could not act on it anyway.
-      expect(approvals.listPending()).toHaveLength(0);
-    });
   });
 
   describe('observe', () => {
-    it('passes, even under the tightest ceiling', () => {
-      expect(enforce('observe', 'observe').outcome).toBe('allowed');
+    it('passes', () => {
+      expect(enforce('observe').outcome).toBe('allowed');
     });
   });
 
   describe('act', () => {
-    it('passes under an act or destructive ceiling', () => {
-      expect(enforce('act', 'act').outcome).toBe('allowed');
-      expect(enforce('act', 'destructive').outcome).toBe('allowed');
+    it('passes', () => {
+      expect(enforce('act').outcome).toBe('allowed');
     });
 
     it('emits no gate audit event of its own — the invocation observer covers it', () => {
-      enforce('act', 'destructive');
+      enforce('act');
       expect(attempts).toHaveLength(0);
-    });
-
-    it('is refused, unapprovably, under an observe ceiling', () => {
-      const decision = enforce('act', 'observe');
-      expect(decision.outcome).toBe('denied');
-      if (decision.outcome !== 'denied') throw new Error('unreachable');
-      expect(decision.payload.reason).toBe('tier_ceiling');
-      expect(decision.payload.approvable).toBe(false);
-    });
-  });
-
-  describe('destructive under a capping ceiling', () => {
-    it('is refused with a distinct, never-approvable payload', () => {
-      const decision = enforce('destructive', 'act');
-      expect(decision.outcome).toBe('denied');
-      if (decision.outcome !== 'denied') throw new Error('unreachable');
-      expect(decision.payload.status).toBe('denied');
-      expect(decision.payload.reason).toBe('tier_ceiling');
-      expect(decision.payload.approvable).toBe(false);
-      expect(decision.payload.message).toContain('Nobody can approve this');
-      // Nothing was recorded: an unapprovable attempt must not put a card in front
-      // of a person who could not act on it anyway.
-      expect(approvals.listPending()).toHaveLength(0);
-    });
-
-    it('audits the refusal', () => {
-      enforce('destructive', 'act');
-      expect(attempts).toHaveLength(1);
-      expect(attempts[0].decision.outcome).toBe('denied');
-      expect(attempts[0].identity.agentPath).toBe('/projects/prober');
     });
   });
 
   describe('destructive with no token', () => {
     it('does not allow the call, and records an approval for exactly this action', () => {
-      const decision = enforce('destructive', 'destructive');
+      const decision = enforce('destructive');
       expect(decision.outcome).toBe('approval_required');
       if (decision.outcome !== 'approval_required') throw new Error('unreachable');
 
@@ -271,7 +204,7 @@ describe('enforceCapabilityTier', () => {
         permission: null,
         action: capabilityAt('destructive'),
         input: INPUT,
-        identity: identityWith('destructive'),
+        identity: identity(),
         retryChannel: 'http-header',
       });
       if (decision.outcome !== 'approval_required') throw new Error('unreachable');
@@ -280,7 +213,7 @@ describe('enforceCapabilityTier', () => {
     });
 
     it('audits the wait', () => {
-      enforce('destructive', 'destructive');
+      enforce('destructive');
       expect(attempts).toHaveLength(1);
       expect(attempts[0].decision.outcome).toBe('approval_required');
     });
@@ -289,7 +222,7 @@ describe('enforceCapabilityTier', () => {
   describe('destructive with a token', () => {
     /** Ask, then grant, and return the token to retry with. */
     function grantedToken(): string {
-      const decision = enforce('destructive', 'destructive');
+      const decision = enforce('destructive');
       if (decision.outcome !== 'approval_required') throw new Error('unreachable');
       expect(approvals.grant(decision.payload.approvalId)).toBeUndefined();
       return decision.payload.approvalToken;
@@ -297,7 +230,7 @@ describe('enforceCapabilityTier', () => {
 
     it('allows the call once a person granted it, and names the approval spent', () => {
       const token = grantedToken();
-      const decision = enforce('destructive', 'destructive', token);
+      const decision = enforce('destructive', token);
       expect(decision.outcome).toBe('allowed');
       if (decision.outcome !== 'allowed') throw new Error('unreachable');
       expect(decision.approval?.via).toBe('approval');
@@ -307,9 +240,9 @@ describe('enforceCapabilityTier', () => {
 
     it('refuses a REPLAY of the same granted token', () => {
       const token = grantedToken();
-      expect(enforce('destructive', 'destructive', token).outcome).toBe('allowed');
+      expect(enforce('destructive', token).outcome).toBe('allowed');
 
-      const replay = enforce('destructive', 'destructive', token);
+      const replay = enforce('destructive', token);
       expect(replay.outcome).toBe('approval_required');
       if (replay.outcome !== 'approval_required') throw new Error('unreachable');
       expect(replay.payload.reason).toBe('already_used');
@@ -322,7 +255,7 @@ describe('enforceCapabilityTier', () => {
         action: capabilityAt('destructive'),
         // The same package, but no longer purging — a materially different effect.
         input: { name: 'sentry-monitor', purge: false },
-        identity: identityWith('destructive'),
+        identity: identity(),
         approvalToken: token,
         retryChannel: 'mcp-argument',
       });
@@ -339,10 +272,10 @@ describe('enforceCapabilityTier', () => {
     });
 
     it('echoes the same approval back while it is still undecided', () => {
-      const first = enforce('destructive', 'destructive');
+      const first = enforce('destructive');
       if (first.outcome !== 'approval_required') throw new Error('unreachable');
 
-      const second = enforce('destructive', 'destructive', first.payload.approvalToken);
+      const second = enforce('destructive', first.payload.approvalToken);
       expect(second.outcome).toBe('approval_required');
       if (second.outcome !== 'approval_required') throw new Error('unreachable');
       expect(second.payload.reason).toBe('awaiting_decision');
@@ -352,11 +285,11 @@ describe('enforceCapabilityTier', () => {
     });
 
     it('reports a refusal when a person said no', () => {
-      const first = enforce('destructive', 'destructive');
+      const first = enforce('destructive');
       if (first.outcome !== 'approval_required') throw new Error('unreachable');
       approvals.deny(first.payload.approvalId, 'Not that package');
 
-      const decision = enforce('destructive', 'destructive', first.payload.approvalToken);
+      const decision = enforce('destructive', first.payload.approvalToken);
       expect(decision.outcome).toBe('denied');
       if (decision.outcome !== 'denied') throw new Error('unreachable');
       expect(decision.payload.reason).toBe('operator_denied');
@@ -365,21 +298,21 @@ describe('enforceCapabilityTier', () => {
 
     it('asks again when the decision window closed', () => {
       vi.useFakeTimers();
-      const first = enforce('destructive', 'destructive');
+      const first = enforce('destructive');
       if (first.outcome !== 'approval_required') throw new Error('unreachable');
       approvals.grant(first.payload.approvalId);
 
       // Derived from the decision window, not a hardcoded duration — tuning
       // APPROVAL_TTL_MS must not turn this into a silently-passing test.
       vi.advanceTimersByTime(APPROVAL_TTL_MS + 60_000);
-      const decision = enforce('destructive', 'destructive', first.payload.approvalToken);
+      const decision = enforce('destructive', first.payload.approvalToken);
       expect(decision.outcome).toBe('approval_required');
       if (decision.outcome !== 'approval_required') throw new Error('unreachable');
       expect(decision.payload.reason).toBe('expired');
     });
 
     it('asks again for a token nothing recognizes', () => {
-      const decision = enforce('destructive', 'destructive', 'not-a-real-token');
+      const decision = enforce('destructive', 'not-a-real-token');
       expect(decision.outcome).toBe('approval_required');
       if (decision.outcome !== 'approval_required') throw new Error('unreachable');
       expect(decision.payload.reason).toBe('unknown_token');
@@ -389,7 +322,7 @@ describe('enforceCapabilityTier', () => {
   describe('fail closed', () => {
     it('refuses a destructive call when the gate was never wired to an approval service', () => {
       resetCapabilityTierGate();
-      const decision = enforce('destructive', 'destructive');
+      const decision = enforce('destructive');
       expect(decision.outcome).toBe('denied');
       if (decision.outcome !== 'denied') throw new Error('unreachable');
       expect(decision.payload.reason).toBe('enforcement_unavailable');
@@ -398,8 +331,8 @@ describe('enforceCapabilityTier', () => {
 
     it('still allows observe and act, which need nobody to ask', () => {
       resetCapabilityTierGate();
-      expect(enforce('observe', 'destructive').outcome).toBe('allowed');
-      expect(enforce('act', 'destructive').outcome).toBe('allowed');
+      expect(enforce('observe').outcome).toBe('allowed');
+      expect(enforce('act').outcome).toBe('allowed');
     });
   });
 
@@ -450,7 +383,7 @@ describe('enforceCapabilityTier', () => {
         throw new Error('database is locked');
       });
 
-      expect(() => enforce('destructive', 'destructive')).toThrow('database is locked');
+      expect(() => enforce('destructive')).toThrow('database is locked');
       expect(attempts).toHaveLength(1);
       expect(attempts[0].decision.outcome).toBe('denied');
       expect(attempts[0].decision.payload.reason).toBe('enforcement_unavailable');
@@ -461,9 +394,7 @@ describe('enforceCapabilityTier', () => {
         throw new Error('database is locked');
       });
 
-      expect(() => enforce('destructive', 'destructive', 'some-token')).toThrow(
-        'database is locked'
-      );
+      expect(() => enforce('destructive', 'some-token')).toThrow('database is locked');
       expect(attempts).toHaveLength(1);
       expect(attempts[0].decision.payload.reason).toBe('enforcement_unavailable');
     });
@@ -477,7 +408,7 @@ describe('enforceCapabilityTier', () => {
           throw new Error('the feed is on fire');
         },
       });
-      expect(() => enforce('destructive', 'destructive')).not.toThrow();
+      expect(() => enforce('destructive')).not.toThrow();
     });
   });
 });
@@ -575,7 +506,7 @@ describe('describeGatedAttempt', () => {
     const summary = describeGatedAttempt(
       capabilityAt('destructive'),
       { name: 'sentry-monitor', purge: true },
-      identityWith('destructive')
+      identity()
     );
     expect(summary).toBe(
       '"Prober" wants to run "Demo destructive" with name: "sentry-monitor", purge: yes'
@@ -586,7 +517,7 @@ describe('describeGatedAttempt', () => {
     const summary = describeGatedAttempt(
       capabilityAt('destructive'),
       {},
-      { ...identityWith('destructive'), displayName: '' }
+      { ...identity(), displayName: '' }
     );
     expect(summary).toContain('/projects/prober');
   });
@@ -632,7 +563,7 @@ describe('describeGatedAttempt', () => {
         capabilityAt('destructive'),
         { name: 'x' },
         {
-          ...identityWith('destructive'),
+          ...identity(),
           displayName: 'A'.repeat(500),
         }
       );

@@ -666,11 +666,10 @@ describe('Agents Routes', () => {
       expect(res.body.error).toContain('displayName');
     });
 
-    it('refuses an agent restoring its own tool-context blocks (DOR-1506)', async () => {
-      // The issue, through the real route. A person turns an agent's tool
-      // context off in Settings → Tools (`agentContext.*`, operator-only at the
-      // config seam since DOR-1497), and the agent writes a PER-AGENT value,
-      // which `resolveToolConfig` prefers over the global switch.
+    it('refuses a retired permission field, pointing at the Permissions page', async () => {
+      // `enabledToolGroups` folded into the agent's permissions (spec
+      // `agent-permissions` D13), which only a person sets. Stripped silently,
+      // this patch would have reported a change that never happened.
       mockReadManifest.mockResolvedValue(mockManifest);
 
       const res = await request(testServer)
@@ -679,7 +678,7 @@ describe('Agents Routes', () => {
         .send({ displayName: 'Sneaky', enabledToolGroups: { relay: true, mesh: true } });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Tools settings');
+      expect(res.body.error).toContain('Permissions page');
       // Whole-patch: the legitimate half did not land either.
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });

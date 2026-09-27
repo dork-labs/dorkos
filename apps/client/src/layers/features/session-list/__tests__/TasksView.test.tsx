@@ -188,18 +188,13 @@ describe('TasksView', () => {
   });
 
   it('shows empty state when no schedules exist', () => {
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     expect(screen.getByText('No schedules yet.')).toBeInTheDocument();
   });
 
-  it('shows disabled state when toolStatus is disabled-by-agent', () => {
-    render(<TasksView toolStatus="disabled-by-agent" agentId={null} />, { wrapper: Wrapper });
-    expect(screen.getByText('Scheduled tasks are off for this agent')).toBeInTheDocument();
-  });
-
-  it('does not render schedule list when toolStatus is disabled-by-server', () => {
-    // disabled-by-server skips queries — data defaults to empty
-    render(<TasksView toolStatus="disabled-by-server" agentId={null} />, { wrapper: Wrapper });
+  it('does not render schedule list when the server runs no scheduled tasks', () => {
+    // Unavailable skips queries — data defaults to empty
+    render(<TasksView available={false} agentId={null} />, { wrapper: Wrapper });
     expect(screen.getByText('No schedules yet.')).toBeInTheDocument();
   });
 
@@ -211,7 +206,7 @@ describe('TasksView', () => {
       data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
     });
     mockActiveRunCount.mockReturnValue({ data: 1 });
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     expect(screen.getByText('Running')).toBeInTheDocument();
     expect(screen.getByText('Deploy Bot')).toBeInTheDocument();
   });
@@ -228,7 +223,7 @@ describe('TasksView', () => {
         }),
       ],
     });
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     expect(screen.getByText('Upcoming')).toBeInTheDocument();
     expect(screen.getByText('Nightly Sync')).toBeInTheDocument();
   });
@@ -245,7 +240,7 @@ describe('TasksView', () => {
         }),
       ],
     });
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     expect(screen.getByText('in 2h')).toBeInTheDocument();
   });
 
@@ -257,19 +252,12 @@ describe('TasksView', () => {
       data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
     });
     mockActiveRunCount.mockReturnValue({ data: 3 });
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   it('Open Schedules button opens via tasks deep-link in empty state', () => {
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
-    const btn = screen.getByText(/Open Schedules/);
-    fireEvent.click(btn);
-    expect(mockOpenTasksDeepLink).toHaveBeenCalled();
-  });
-
-  it('Open Schedules button opens via tasks deep-link in disabled-by-agent state', () => {
-    render(<TasksView toolStatus="disabled-by-agent" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     const btn = screen.getByText(/Open Schedules/);
     fireEvent.click(btn);
     expect(mockOpenTasksDeepLink).toHaveBeenCalled();
@@ -291,7 +279,7 @@ describe('TasksView', () => {
     mockRuns.mockReturnValue({
       data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
     });
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     expect(screen.getByText('Running')).toBeInTheDocument();
     expect(screen.getByText('Upcoming')).toBeInTheDocument();
     expect(screen.getByText('Running Task')).toBeInTheDocument();
@@ -309,7 +297,7 @@ describe('TasksView', () => {
     mockRuns.mockReturnValue({
       data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
     });
-    render(<TasksView toolStatus="enabled" agentId="agent-a" />, { wrapper: Wrapper });
+    render(<TasksView available agentId="agent-a" />, { wrapper: Wrapper });
     expect(screen.getByText('Agent A Task')).toBeInTheDocument();
     expect(screen.queryByText('Agent B Task')).not.toBeInTheDocument();
     expect(screen.queryByText('Unassigned Task')).not.toBeInTheDocument();
@@ -319,13 +307,13 @@ describe('TasksView', () => {
     mockSchedules.mockReturnValue({
       data: [makeSchedule({ id: 's1', name: 'Other Agent Task', agentId: 'agent-b' })],
     });
-    render(<TasksView toolStatus="enabled" agentId="agent-a" />, { wrapper: Wrapper });
+    render(<TasksView available agentId="agent-a" />, { wrapper: Wrapper });
     expect(screen.getByText('No schedules yet.')).toBeInTheDocument();
     expect(screen.queryByText('Other Agent Task')).not.toBeInTheDocument();
   });
 
   it('shows featured preset cards in empty state', () => {
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     // index 0 = Health Check, index 2 = Docs Sync
     expect(screen.getByText('Health Check')).toBeInTheDocument();
     expect(screen.getByText('Docs Sync')).toBeInTheDocument();
@@ -334,14 +322,14 @@ describe('TasksView', () => {
   });
 
   it('shows formatted cron for featured presets', () => {
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     // formatCron is mocked to return `cron:<cron>`
     expect(screen.getByText('cron:0 8 * * 1')).toBeInTheDocument();
     expect(screen.getByText('cron:0 10 * * *')).toBeInTheDocument();
   });
 
   it('+ Use preset button calls openWithPreset and opens via tasks deep-link', () => {
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     const usePresetBtns = screen.getAllByText('+ Use preset');
     fireEvent.click(usePresetBtns[0]);
     expect(mockOpenWithPreset).toHaveBeenCalledWith(
@@ -357,7 +345,7 @@ describe('TasksView', () => {
     mockRuns.mockReturnValue({
       data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
     });
-    render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
+    render(<TasksView available agentId={null} />, { wrapper: Wrapper });
     expect(screen.queryByText('Health Check')).not.toBeInTheDocument();
     expect(screen.queryByText('Docs Sync')).not.toBeInTheDocument();
   });

@@ -57,13 +57,6 @@ export interface CapabilityDeps {
 }
 
 /**
- * The `areaNote` of every area-less action whose area is assigned later in the
- * permission programme (spec `agent-permissions`, phase 3). A named constant so
- * the phase-3 census can assert none remain.
- */
-export const AREA_PENDING_PHASE_3 = 'Area assigned in agent-permissions phase 3';
-
-/**
  * A capability declared by a service domain: the single source of truth every
  * agent-facing surface is generated from.
  *
@@ -126,6 +119,18 @@ export interface CapabilityDefinition<
    * absence of a switch is a recorded decision rather than a missing line.
    */
   areaNote?: string;
+  /**
+   * The other areas one particular call reaches, decided from its input (spec
+   * `agent-permissions` D6). `operator.config_patch` is the one user: a patch
+   * touching a setting only a person may change also reaches that setting's
+   * floor area.
+   *
+   * Can only make a call stricter: the gate resolves the static {@link area}
+   * AND every area named here, area-level (the action's own entries belong to
+   * its own area), and decides by the strictest state among them. Receives the
+   * parsed input.
+   */
+  areasForInput?: (input: unknown) => readonly PermissionAreaId[];
   /** Zod input contract; validated before `invoke`, projected as JSON Schema. */
   input: In;
   /** Zod output contract; projected as JSON Schema in the catalog. */
@@ -186,6 +191,17 @@ export interface CapabilityDefinition<
    * whose field could exceed that must cap its own input lower.
    */
   approvalDetailField?: string;
+  /**
+   * A display-only view of the input, which {@link approvalDisplayFields} are
+   * read from instead of the raw input. The approval still binds to the real
+   * input; this only changes what the card's sentence can say.
+   *
+   * For an action whose input is one nested object a card cannot show usefully
+   * (`operator.config_patch`'s `patch` renders as "details"), so it can list the
+   * settings a call changes. The view must leave out anything secret: it reaches
+   * the same broadcast card every other display field does.
+   */
+  approvalView?: (input: unknown) => Record<string, unknown>;
   /**
    * Which argument names the thing being acted on, and which registry knows it
    * by name (DOR-1929). Expected on any action that can raise a card and whose

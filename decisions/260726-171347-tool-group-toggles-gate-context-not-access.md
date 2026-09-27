@@ -1,16 +1,18 @@
 ---
 id: 260726-171347
 title: Tool-group toggles gate context, not access
-status: accepted
+status: superseded
 created: 2026-07-26
 spec: null
 supersedes: 70
-superseded-by: null
+superseded-by: '260923-223904'
 ---
 
 # 260726-171347. Tool-group toggles gate context, not access
 
 ## Status
+
+Superseded (2026-09-24, DOR-2278, spec `agent-permissions` phase 3) by ADR-260923-223904 (one permission model for agent actions): the tool-group documentation switches it decided about are gone. A Blocked permission area now hides its tools from the agent's tool list and leaves their documentation out of the prompt, on every runtime.
 
 Accepted (2026-07-26, DOR-519). Supersedes ADR-0070 (Per-Agent Tool Filtering via
 Domain-Level allowedTools).

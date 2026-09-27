@@ -111,6 +111,7 @@ import {
   toSidebarItemRef,
 } from '@dorkos/shared/config-schema';
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import { restoreProtectedState } from './safe-defaults/protected-state.js';
@@ -3459,6 +3460,89 @@ export function retireStandingGrantSettings(store: {
   else store.set('approvals', rest);
 }
 
+/**
+ * Which permission area each retired `agentContext` switch folds into.
+ */
+const AGENT_CONTEXT_AREAS = {
+  tasksTools: 'tasks',
+  relayTools: 'messages',
+  meshTools: 'agents',
+  adapterTools: 'connections',
+} as const satisfies Record<string, PermissionAreaId>;
+
+/**
+ * Retire the four `agentContext.*Tools` switches (spec `agent-permissions` D13,
+ * phase 3). Each switch a person turned OFF becomes its area Blocked in
+ * `permissions.defaults.areas` for everyone, unless that area is already set
+ * there (an area a person set through DorkOS wins); then the section is deleted.
+ *
+ * The switches only ever left tool docs out of Claude Code's context, and the
+ * tools stayed callable (ADR 260726-171347, superseded). A Blocked area hides
+ * AND refuses them on every runtime, so the fold is faithful to what a person
+ * who turned one off meant, and slightly stronger than what they got.
+ *
+ * Deliberately NOT a `CONFIG_MIGRATIONS` body, on the precedent of
+ * {@link retireStandingGrantSettings}: a migration runs once per version, so an
+ * install that already ran this version's key under an earlier build (a
+ * dogfood install always has) would never be folded, and a migration runs
+ * before the Activity log exists, so it could not record the change it made.
+ * This runs at every boot, from the permission upgrade, acts only while the
+ * section is on disk, and returns what it Blocked so the caller can record it.
+ * Running it twice is a no-op: the first run removed the section.
+ *
+ * `agentContext` is a top-level section this build no longer declares, so
+ * nothing else ever writes it again; until this runs it is an unknown key,
+ * carried across writes like any other.
+ *
+ * @param store - The config store.
+ * @returns The areas it set to Blocked, in a stable order, or `null` when there
+ *   was no `agentContext` section to retire.
+ */
+export function retireAgentContextSettings(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+  delete: (key: string) => void;
+}): PermissionAreaId[] | null {
+  const stored = store.get('agentContext');
+  if (stored === undefined) return null;
+  const section =
+    stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Record<string, unknown>)
+      : {};
+  const off = (Object.keys(AGENT_CONTEXT_AREAS) as (keyof typeof AGENT_CONTEXT_AREAS)[])
+    .filter((key) => section[key] === false)
+    .map((key) => AGENT_CONTEXT_AREAS[key]);
+
+  const blocked: PermissionAreaId[] = [];
+  if (off.length > 0) {
+    const permissions = store.get('permissions');
+    const current =
+      permissions && typeof permissions === 'object' && !Array.isArray(permissions)
+        ? (permissions as Record<string, unknown>)
+        : { preset: null, defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null };
+    const defaults =
+      current.defaults && typeof current.defaults === 'object' && !Array.isArray(current.defaults)
+        ? (current.defaults as Record<string, unknown>)
+        : { areas: {}, actions: {} };
+    const areas: Record<string, unknown> = {
+      ...((defaults.areas as Record<string, unknown> | undefined) ?? {}),
+    };
+    for (const area of off) {
+      if (Object.hasOwn(areas, area)) continue;
+      areas[area] = 'blocked';
+      blocked.push(area);
+    }
+    if (blocked.length > 0) {
+      store.set('permissions', {
+        ...current,
+        defaults: { actions: {}, ...defaults, areas },
+      });
+    }
+  }
+  store.delete('agentContext');
+  return blocked;
+}
+
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -5113,6 +5197,18 @@ export class ConfigManager {
   retireStandingGrantSettings(): void {
     retireStandingGrantSettings(
       this.store as unknown as Parameters<typeof retireStandingGrantSettings>[0]
+    );
+  }
+
+  /**
+   * Fold the retired `agentContext` switches into the permission defaults and
+   * remove them. See {@link retireAgentContextSettings}.
+   *
+   * @returns The areas it set to Blocked, or `null` when nothing was left to retire.
+   */
+  retireAgentContext(): PermissionAreaId[] | null {
+    return retireAgentContextSettings(
+      this.store as unknown as Parameters<typeof retireAgentContextSettings>[0]
     );
   }
 

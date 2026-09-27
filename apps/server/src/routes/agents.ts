@@ -287,7 +287,6 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
         registeredBy: 'dorkos-ui',
         personaEnabled: true,
         isSystem: false,
-        enabledToolGroups: {},
         mcpServers: [],
         workspace: { mode: 'home' },
       };

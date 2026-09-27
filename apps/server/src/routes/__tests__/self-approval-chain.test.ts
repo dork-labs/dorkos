@@ -104,7 +104,6 @@ describe('an agent holding the API key cannot approve its own work', () => {
   const IDENTITY = {
     agentPath: AGENT_PATH,
     displayName: 'Prober',
-    tierCeiling: 'destructive' as const,
     createdAt: new Date().toISOString(),
   };
 

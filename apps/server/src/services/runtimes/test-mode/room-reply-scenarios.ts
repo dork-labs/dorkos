@@ -129,7 +129,6 @@ export async function sayInRoom(
         identity: {
           agentPath: author?.naturalKey ?? '',
           displayName: author?.displayName ?? '',
-          tierCeiling: 'act',
           createdAt: new Date().toISOString(),
         },
         ...(opts?.cwd ? { cwd: opts.cwd } : {}),
@@ -196,7 +195,6 @@ function roomReadsCanvas(finishRequested: FinishRequested): ScenarioFn {
             identity: {
               agentPath: author?.naturalKey ?? '',
               displayName: author?.displayName ?? '',
-              tierCeiling: 'act',
               createdAt: new Date().toISOString(),
             },
           }

@@ -96,7 +96,6 @@ const DESTROY = defineCapability({
 const IDENTITY = {
   agentPath: '/projects/prober',
   displayName: 'Prober',
-  tierCeiling: 'destructive' as const,
   createdAt: new Date().toISOString(),
 };
 

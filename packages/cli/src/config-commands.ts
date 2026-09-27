@@ -5,6 +5,7 @@ import {
   ACKNOWLEDGE_AUTONOMY_COMMAND,
   AUTONOMY_ACK_REQUIRED_CODE,
   handleConfigAcknowledgeAutonomy,
+  USE_PERMISSIONS_API_CODE,
   writeOrExplain,
 } from './config-write.js';
 import type { CliConfigWriter } from './config-write.js';
@@ -252,6 +253,10 @@ export async function handleConfigSet(
         console.error(
           `Run \`${ACKNOWLEDGE_AUTONOMY_COMMAND}\` to read what it means and confirm, then try again.`
         );
+      }
+      // The terminal's version of the Permissions page.
+      if (result.refusal.code === USE_PERMISSIONS_API_CODE) {
+        console.error('From a terminal, use `dorkos permissions` instead.');
       }
     }
     process.exit(1);

@@ -17,6 +17,7 @@ import {
   PermissionOverridesSchema,
   PermissionPresetSchema,
   PermissionStateSchema,
+  PermissionStopSchema,
   PermissionSurfaceSchema,
   ResolvedPermissionSchema,
 } from './permission-schemas.js';
@@ -32,10 +33,18 @@ export const PermissionActionEntrySchema = z
     id: z.string(),
     title: z.string(),
     tier: z.enum(CAPABILITY_TIERS),
+    /**
+     * Never Allowed: its card shows the change it would make, so a person sees
+     * every one. Offers Blocked and Ask only, like a floor area.
+     */
+    alwaysAsks: z.literal(true).optional(),
     /** What this action resolves to at the layer being viewed. */
     resolved: ResolvedPermissionSchema,
   })
   .openapi('PermissionActionEntry');
+
+/** One action inside an area, as the permissions pages list it. */
+export type PermissionActionEntry = z.infer<typeof PermissionActionEntrySchema>;
 
 /** One area as the permissions pages list it. */
 export const PermissionAreaEntrySchema = z
@@ -68,17 +77,58 @@ export const PermissionExceptionSchema = z
 /** An agent that differs from the default. */
 export type PermissionException = z.infer<typeof PermissionExceptionSchema>;
 
+/** Where a Files & commands stop came from (`resolveFilesAndCommands`). */
+export const FilesAndCommandsSourceSchema = z
+  .enum(['agent', 'runtime', 'default', 'runtime-own'])
+  .openapi('FilesAndCommandsSource');
+
+/** A resolved Files & commands stop: the stop, or `null` for the runtime's own behaviour. */
+export const ResolvedFilesAndCommandsSchema = z
+  .object({
+    stop: PermissionStopSchema.nullable(),
+    source: FilesAndCommandsSourceSchema,
+  })
+  .openapi('ResolvedFilesAndCommands');
+
+/** The Files & commands row at the default layer. */
+export const DefaultFilesAndCommandsSchema = z
+  .object({
+    /** `runtimes.defaultTrustStop`: where a new session starts for everyone. */
+    stop: PermissionStopSchema.nullable(),
+    /** The stop the chosen preset sets; `null` while no preset is chosen. */
+    presetStop: PermissionStopSchema.nullable(),
+    /** Per-runtime stops that are set, which beat the global one for that runtime. */
+    runtimes: z.array(z.object({ runtime: z.string(), stop: PermissionStopSchema })),
+    /** Agents with a Files & commands stop of their own. */
+    exceptions: z.array(
+      z.object({ agentId: z.string(), agentName: z.string(), stop: PermissionStopSchema })
+    ),
+  })
+  .openapi('DefaultFilesAndCommands');
+
 /** `GET /api/permissions`: the default layer, every area, and who differs. */
 export const PermissionsResponseSchema = z
   .object({
     preset: PermissionPresetSchema.nullable(),
     defaults: PermissionOverridesSchema,
-    /** How many changes sit on top of the preset ("Full power, 2 changes"). */
+    /**
+     * How many changes sit on top of the preset ("Full power, 2 changes"): the
+     * default changes, plus the global Files & commands stop and each
+     * per-runtime stop that differs from the preset's.
+     */
     changeCount: z.number().int().min(0),
+    /** The Files & commands row: the stored stops, and who differs. */
+    filesAndCommands: DefaultFilesAndCommandsSchema,
     areas: z.array(PermissionAreaEntrySchema),
     exceptions: z.array(PermissionExceptionSchema),
     /** How many registered agents the defaults reach. */
     agentCount: z.number().int().min(0),
+    /**
+     * Set when DorkOS cannot read or save its record of which new agents it has
+     * screened: until it can, every agent's own settings count only where they
+     * are stricter than the defaults.
+     */
+    newAgentRecordUnreadable: z.literal(true).optional(),
   })
   .openapi('PermissionsResponse');
 
@@ -103,6 +153,10 @@ export const AgentPermissionsResponseSchema = z
         changedOutsideAt: z.string().nullable(),
       })
     ),
+    /** The agent's Files & commands stop, resolved, and what it would inherit. */
+    filesAndCommands: ResolvedFilesAndCommandsSchema.extend({
+      inherited: ResolvedFilesAndCommandsSchema,
+    }),
   })
   .openapi('AgentPermissionsResponse');
 
@@ -115,6 +169,12 @@ export const SetPermissionPresetBodySchema = z
     preset: PermissionPresetSchema,
     applyToAgents: z.array(z.string().min(1)).max(500).optional(),
     surface: PermissionSurfaceSchema,
+    /**
+     * The person read what Full autonomy means and said yes, recorded with the
+     * preset in one write. Needed only when the preset moves Files & commands to
+     * Full autonomy and no acknowledgement is on file (428 otherwise).
+     */
+    acknowledgeAutonomy: z.literal(true).optional(),
   })
   .openapi('SetPermissionPresetBody');
 
@@ -139,7 +199,11 @@ export const PatchAgentPermissionsBodySchema = z
   .object({
     areas: z.record(z.string(), NullableStateSchema).optional(),
     actions: z.record(z.string(), NullableStateSchema).optional(),
+    /** This agent's own Files & commands stop; `null` = back to the default. */
+    filesAndCommands: PermissionStopSchema.nullable().optional(),
     surface: PermissionSurfaceSchema,
+    /** As on the preset body: the acknowledgement Full autonomy needs, in the same write. */
+    acknowledgeAutonomy: z.literal(true).optional(),
   })
   .openapi('PatchAgentPermissionsBody');
 

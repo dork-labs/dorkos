@@ -1,7 +1,7 @@
 ---
 id: 260923-223905
 title: Permission decisions ride the tier gate's three choke points and the existing approval machinery
-status: draft
+status: accepted
 created: 2026-09-23
 spec: agent-permissions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: agent-permissions).
+Accepted (extracted from spec: agent-permissions; implemented in phases 1–2, DOR-2278).
 
 ## Context
 

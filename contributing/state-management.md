@@ -260,22 +260,22 @@ export function usePreviewData(agentId: string, agentCwd: string) {
 When a component needs state computed from multiple independent server queries, create a dedicated hook that combines them:
 
 ```typescript
-// Pattern: useAgentToolStatus combines agent manifest + feature flags
+// Pattern: useAgentToolStatus combines agent permissions + feature flags
 function useAgentToolStatus() {
   const { data: agent } = useCurrentAgent(); // TanStack Query
-  const pulseEnabled = usePulseEnabled(); // TanStack Query
+  const tasksEnabled = useTasksEnabled(); // TanStack Query
   const relayEnabled = useRelayEnabled(); // TanStack Query
 
   return useMemo(
     () => ({
-      pulse: !pulseEnabled
+      tasks: !tasksEnabled
         ? 'disabled-by-server'
-        : agent?.enabledToolGroups?.pulse === false
+        : agent?.permissions?.areas?.tasks === 'blocked'
           ? 'disabled-by-agent'
           : 'enabled',
-      // ... similar for relay, mesh, adapter
+      // ... similar for messages, agents, connections
     }),
-    [agent, pulseEnabled, relayEnabled]
+    [agent, tasksEnabled, relayEnabled]
   );
 }
 ```

@@ -16,6 +16,7 @@ import type {
   RoomCanvasChange,
   RoomEntry,
   RoomEntryBody,
+  RoomFileChangeEvent,
   RoomMergeEvent,
   RoomMoment,
 } from '@dorkos/shared/room-schemas';
@@ -215,6 +216,65 @@ export class RoomSystemPosts {
       // Addresses nobody. See the TSDoc — this is the whole no-cascade claim,
       // and the emptiness is the mechanism rather than a consequence of the
       // text happening not to contain an `@`.
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...threadPointers(this.store, roomId, undefined),
+      ...deriveCascade(id, {
+        authorKind: 'system',
+        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+      }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publisher.publishEntry(entry);
+    return entry;
+  }
+
+  /**
+   * Announce a change a PERSON made to the room's files (spec
+   * `agent-home-desk` §7.2) — an edit, an upload, a rename, a delete, or a file
+   * kept from the chat.
+   *
+   * **The merge entry's shape, for the merge entry's reasons**
+   * ({@link postMergeEvent}): a post in the room's own voice, written by the
+   * system author, addressing nobody (`mentions: []`), its cascade spent at the
+   * ceiling, and never dispatched. A person saving `ROOM.md` is news for whoever
+   * reads the room next; a room where every save set its agents talking is the
+   * over-participation `meta/agent-etiquette.md` exists to damp. A person who
+   * wants a reaction @mentions somebody.
+   *
+   * One entry per commit, composed by the caller, which is the only thing that
+   * knows what the commit touched. `subjectAuthorId` names the person, so the
+   * feed draws their face beside the sentence and a later reader (the turn-start
+   * heads-up) takes their NAME from here rather than from git.
+   *
+   * @param roomId - The room whose files changed.
+   * @param input.text - The sentence a person reads, composed from sanitized
+   *   path segments.
+   * @param input.fileChange - The machine-readable half, for the file explorer.
+   * @param input.subjectAuthorId - The person who made the change.
+   * @returns The committed entry.
+   * @throws {RoomError} `ROOM_ARCHIVED` — an archived room gains no entries.
+   */
+  postFileChangeEvent(
+    roomId: string,
+    input: { text: string; fileChange: RoomFileChangeEvent; subjectAuthorId: string }
+  ): RoomEntry {
+    const room = this.visibility.requireRoom(roomId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'post',
+      body: {
+        text: input.text,
+        fileChange: input.fileChange,
+        subjectAuthorId: input.subjectAuthorId,
+      },
+      // Addresses nobody — the emptiness is the mechanism, exactly as it is on a
+      // merge entry. This is what makes "edits wake nobody" structural.
       mentions: [],
       mentionSpans: [],
       sessionId: null,

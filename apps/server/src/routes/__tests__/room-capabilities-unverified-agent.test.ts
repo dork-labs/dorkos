@@ -709,7 +709,6 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
     const ANA_IDENTITY: AgentIdentity = {
       agentPath: ANA_PATH,
       displayName: 'Ana',
-      tierCeiling: 'destructive',
       createdAt: new Date().toISOString(),
     };
 

@@ -439,26 +439,6 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     reason:
       'The external tool endpoint answers by default because wiring an agent to DorkOS is the product. It is not ungated: `mcp-auth.ts` fails closed for everything but the handshake and read-only tools, and the per-instance local token gates the rest.',
   },
-  'agentContext.relayTools': {
-    value: true,
-    reason:
-      'Agent-to-agent messaging is the coordination layer DorkOS exists to provide; an agent that cannot reach the bus cannot do the job it was installed for. Scoped to this machine and subject to the same tier gate as every other capability.',
-  },
-  'agentContext.meshTools': {
-    value: true,
-    reason:
-      'Agent discovery is the coordination layer DorkOS exists to provide. Local-only, and read-mostly.',
-  },
-  'agentContext.adapterTools': {
-    value: true,
-    reason:
-      'Chat-adapter tools let an agent answer on the channel it was addressed from. The adapters themselves start disconnected and need credentials, so this flag alone reaches nothing.',
-  },
-  'agentContext.tasksTools': {
-    value: true,
-    reason:
-      'Scheduled-work tools are core to unattended operation. Task creation through the API and MCP surfaces parks at `pending_approval` regardless of this flag.',
-  },
   'uploads.allowedTypes': {
     value: ['*/*'],
     reason:

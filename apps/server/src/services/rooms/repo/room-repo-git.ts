@@ -192,6 +192,65 @@ export interface GitIdentity {
 }
 
 /**
+ * The characters git calls "crud" in an author name — `crud()` in git's own
+ * `ident.c`, copied exactly.
+ *
+ * git refuses a name made of nothing else ("fatal: name consists only of
+ * disallowed characters"), measured with `<>`, `"` and a lone space. A `.` is
+ * NOT on the list, which is why `...` commits and `"` does not.
+ *
+ * @param char - One character of the name.
+ */
+function isGitNameCrud(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return code <= 32 || ',:;<>"\\\''.includes(char);
+}
+
+/**
+ * The name a commit made on a PERSON's behalf is authored under — theirs when
+ * git will take it, {@link FALLBACK_OPERATOR_GIT_NAME} when it will not.
+ *
+ * A display name is text the person chose, and git refuses some of it outright:
+ * a name that is empty, or made only of `<`, `>`, quotes, commas and the like,
+ * fails the COMMIT, after the file has already been written. That is a save a
+ * person cannot make for a reason that has nothing to do with the file, so the
+ * name falls back rather than the save failing — the same fallback an install
+ * with no name for its operator has always used. The room entry, not git, is
+ * where a person's name is read back from (spec `agent-home-desk` §7.1), so the
+ * fallback costs nothing a reader relies on.
+ *
+ * Control characters, `<` and `>` are removed first: git strips the angle
+ * brackets itself and {@link commitStaged} strips control characters, so what is
+ * judged here is exactly what would reach the commit header.
+ *
+ * @param name - The person's display name, or `null` when there is none.
+ * @returns A name git will accept.
+ */
+export function gitAuthorName(name: string | null | undefined): string {
+  // eslint-disable-next-line no-control-regex -- control characters are what a commit header must not carry.
+  const cleaned = (name ?? '').replace(/[\u0000-\u001f\u007f-\u009f<>]/g, '');
+  for (const char of cleaned) {
+    if (!isGitNameCrud(char)) return cleaned;
+  }
+  return FALLBACK_OPERATOR_GIT_NAME;
+}
+
+/**
+ * The address a person's commit carries: `person-<authorId>@dorkos.local`.
+ *
+ * Stable, and deliberately not an address anybody has: a `.local` domain can
+ * never resolve (RFC 6762), so no real email lands in a room's history, while
+ * two people still get two authors in `git log`. The author id is an opaque
+ * room-domain id; anything but letters, digits, `-` and `_` is dropped so the
+ * header cannot be bent by it.
+ *
+ * @param authorId - The person's room author id.
+ */
+export function personGitEmail(authorId: string): string {
+  return `person-${authorId.replace(/[^A-Za-z0-9_-]/g, '')}@dorkos.local`;
+}
+
+/**
  * The environment one git command runs in.
  *
  * Built from the parent's rather than replaced wholesale, because git needs

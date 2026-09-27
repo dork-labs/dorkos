@@ -7,7 +7,7 @@ const RIGHT_PANEL_PCT = 45;
 
 /**
  * Page Object for the managed-MCP OAuth sign-in surface (DOR-943 client half,
- * DOR-952 e2e). The surface is the profile's **Tools & MCP** page — the
+ * DOR-952 e2e). The surface is the profile's **MCP servers** page — the
  * `AgentMcpServers` section that joins an agent's managed servers with their
  * live `getMcpStatus` by name.
  *
@@ -35,7 +35,7 @@ export class McpOAuthSigninPage {
 
   /**
    * Open the seeded agent's managed-MCP surface: deep-link the profile onto its
-   * Tools & MCP page.
+   * MCP servers page.
    *
    * @param agentDir - The seeded agent's directory (from `seed-oauth-mcp-agent`).
    */

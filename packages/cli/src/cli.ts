@@ -56,6 +56,7 @@ const knownCommands = new Set([
   'task',
   'room',
   'activity',
+  'permissions',
   'connections',
   'capabilities',
   'call',
@@ -373,6 +374,7 @@ if (
   process.argv[2] === 'task' ||
   process.argv[2] === 'room' ||
   process.argv[2] === 'activity' ||
+  process.argv[2] === 'permissions' ||
   process.argv[2] === 'connections' ||
   process.argv[2] === 'capabilities' ||
   process.argv[2] === 'call' ||
@@ -406,6 +408,10 @@ if (
       console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
+  }
+  if (process.argv[2] === 'permissions') {
+    const { runPermissionsDispatcher } = await import('./commands/permissions.js');
+    process.exit(await runPermissionsDispatcher(subArgs));
   }
   if (process.argv[2] === 'connections') {
     const { runConnectionsDispatcher } = await import('./commands/connections.js');
@@ -545,7 +551,8 @@ Commands:
   update [<name>]      Shorthand for marketplace update (check; --apply to install)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
   browser <sub>        Sign in once for your agents' browsers (login|status|forget)
-  agent <sub>          Manage agents (list|show|create|update) — add --json for machine output
+  agent <sub>          Manage agents (list|show|create|update|permissions) — add --json for machine output
+  permissions <sub>    See and change what agents may do (list|set|reset|history)
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
   room export <room>   Save a channel or DM's history as a file (--out|--force)
   activity             Show the activity feed (--actor|--category|--type|--limit)

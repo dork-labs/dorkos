@@ -7,7 +7,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # Permissions
 
-Your agents can do more than chat. They can open rooms, change who is in them, and put them away when the work is done. Permissions decide which of those things an agent does on its own, which ones wait for your yes, and which ones it cannot do at all.
+Your agents can do more than chat. They can open rooms, schedule tasks, set up other agents, install packages, and change settings. Permissions decide which of those things an agent does on its own, which ones wait for your yes, and which ones it cannot do at all.
 
 You set them once for everyone. If one agent needs to be different, you set that one agent differently.
 
@@ -27,26 +27,68 @@ Every permission is in one of three states:
 
 ## Areas
 
-Permissions come in areas, so you decide about a kind of work rather than about every tool one at a time. In this release one area is live:
+Permissions come in areas, so you decide about a kind of work rather than about every tool one at a time:
 
-- **Rooms**: make rooms, add or remove people, rename them, leave them, and put them away (archive). Archiving is not deleting: the room and everything said in it are kept, and you can bring it back from the room's settings.
+| Area                  | What it covers                                                                |
+| --------------------- | ----------------------------------------------------------------------------- |
+| **Rooms**             | Make rooms, add or remove people, rename them, leave them, put them away      |
+| **Tasks & schedules** | Create, change, and delete scheduled tasks                                    |
+| **Other agents**      | Set up, change, and remove agents, and sort the sidebar                       |
+| **Messages**          | Message other agents, and message you                                         |
+| **Chat connections**  | Turn Telegram and Slack connections on or off, and change where chats go      |
+| **Tools & packages**  | Install or remove packages, add or change MCP servers, build extensions       |
+| **DorkOS settings**   | Change your everyday settings, like notifications and the sidebar             |
+| **Safety limits**     | Change reply limits, message caps, and an agent's safety boundaries           |
+| **Permissions**       | Change what any agent is allowed to do                                        |
+| **Reach & secrets**   | Open this computer to the internet, change login, sign-ins, keys, and folders |
 
-Talking in a room is not part of this area. An agent in a room can always post and react there, whatever you set here, because nothing should be able to mute an agent in the middle of a conversation.
+Putting a room away (archiving) is not deleting: the room and everything said in it are kept, and you can bring it back from the room's settings.
 
-More areas (tasks, other agents, chat connections, packages, settings) arrive in later releases.
+Talking in a room is not part of any area. An agent in a room can always post and react there, whatever you set here, because nothing should be able to mute an agent in the middle of a conversation.
+
+Three areas are never Allowed: **Safety limits**, **Permissions**, and **Reach & secrets**. The most they can be is Ask, and their rows show a lock.
+
+### Single actions
+
+Each area is made of actions, like "Delete a schedule" inside Tasks & schedules. Under a row, **Show individual actions** lists them, each with its own switch. A single action you set on its own beats its area, and shows under the row even when the list is closed, for example **"Except Open a room: Allowed"**.
+
+A few actions always show you exactly what they would change, before and after, such as changing which model an agent runs on. Those always ask: their cards never offer **Always allow**, and they can't be set to Allowed.
+
+An action that deletes or removes something asks even when its area is Allowed. Its line says **"Always asks unless you set it here"**: it runs without asking only if you set that one action to Allowed yourself.
+
+### Files & commands
+
+**Files & commands** is how often an agent stops to check with you while it edits files and runs commands in a conversation. It doesn't use Blocked, Ask, or Allowed. It uses the same three positions as the dial in a conversation:
+
+- **Ask first**: it asks before it changes anything.
+- **Act**: it gets on with the work and stops for the risky parts.
+- **Full autonomy**: it edits files and runs commands on its own. It will not stop to ask you.
+
+The first time you move something to Full autonomy, DorkOS asks you to confirm what that means, and remembers that you did. DorkOS's own risky actions, like deleting a schedule or removing an agent, still stop for you whatever this is set to. The areas above decide those.
+
+An agent's own Files & commands setting beats everything else for that agent: its conversations, its scheduled runs, and its turns in rooms. Without one, the agent follows the setting for its runtime in **Settings → Runtimes**, if you set one, and otherwise the setting everyone has.
 
 ## Presets
 
-A preset is the starting point for every area. You pick one when you first set up DorkOS:
+A preset sets every area and Files & commands at once. You pick one when you first set up DorkOS, and you can change it any time in **Settings → Permissions** or in the Control Center (the ⚡ button in the top bar).
 
-- **Full power**: your agents arrange rooms themselves.
-- **Careful**: your agents ask you before they arrange rooms, including merging a room's work into the main branch.
+| Area              | Careful   | Balanced | Full power    |
+| ----------------- | --------- | -------- | ------------- |
+| Rooms             | Ask       | Allowed  | Allowed       |
+| Tasks & schedules | Ask       | Ask      | Allowed       |
+| Other agents      | Ask       | Ask      | Allowed       |
+| Messages          | Allowed   | Allowed  | Allowed       |
+| Chat connections  | Ask       | Ask      | Allowed       |
+| Tools & packages  | Ask       | Ask      | Ask           |
+| DorkOS settings   | Ask       | Ask      | Ask           |
+| Safety limits     | Ask       | Ask      | Ask           |
+| Permissions       | Ask       | Ask      | Ask           |
+| Reach & secrets   | Blocked   | Ask      | Ask           |
+| Files & commands  | Ask first | Act      | Full autonomy |
 
-Rooms is the only area that follows the preset in this release. The other kinds of work keep behaving as they did before, until their areas arrive.
+Anything you change on top of the preset counts as a change, so the picker reads, for example, **"Full power, 2 changes"**. **Reset to Full power** takes the changes away. Choosing a preset replaces those changes; agents you set differently keep their own settings unless you tick them in the question DorkOS asks.
 
-If you have not picked yet, your agents keep working exactly as they did before permissions existed. Settings → Permissions says so, and has a button to choose.
-
-Three areas are never Allowed, whatever preset you pick: safety limits, permissions themselves, and reach and secrets. The most they can be is Ask. These show a lock.
+If you have not picked yet, your agents keep working exactly as they did before permissions existed, and Settings → Permissions says so.
 
 ## The request card
 
@@ -65,17 +107,17 @@ When an agent asks for something that is Blocked, the card says so and quotes th
 ## Change what everyone may do
 
 1. Open **Settings → Permissions**.
-2. Find the area and pick **Blocked**, **Ask**, or **Allowed**.
+2. Find the area and pick **Blocked**, **Ask**, or **Allowed**. For Files & commands, pick **Ask first**, **Act**, or **Full autonomy**.
 
 If some agents are set differently, DorkOS asks before it changes anything. Nothing is checked for you: tick the agents you want to follow the new setting, then choose **Update selected**, or choose **Keep their settings** to leave them as they are.
 
-A **"2 agents differ"** link under a row lists who is set differently. Each has its own **Reset**, which puts that agent back on the setting everyone else has.
+A **"2 agents differ"** link under a row lists who is set differently. Each has its own **Reset**, which puts that agent back on the setting everyone else has. The Control Center lists every agent set differently too, each with a one-tap **Reset**.
 
 ## Set one agent differently
 
 1. Open the agent's profile.
 2. Choose **Permissions**.
-3. Pick a state for the area.
+3. Pick a state for the area, or a position for Files & commands.
 
 A row that says **"Same as everyone (Allowed)"** follows your default. Once you change it, the row shows a dot and a **Reset to default** button.
 
@@ -83,15 +125,37 @@ An action you answered **Always allow** for shows under its area, for example **
 
 If the agent runs on a program that cannot use DorkOS tools, the page says so: those settings do not change anything for it.
 
+## From a terminal
+
+The `dorkos` command changes the same settings, through the same checks, and the history records them the same way:
+
+```bash
+dorkos permissions                              # the preset, every area, and who differs
+dorkos permissions set --preset balanced        # choose a preset
+dorkos permissions set tasks ask                # one area, for everyone
+dorkos permissions set tasks_delete blocked     # one action, for everyone
+dorkos permissions reset tasks                  # back to the preset
+dorkos permissions history --agent dorkbot      # recent changes
+
+dorkos agent permissions dorkbot                # what one agent may do, and why
+dorkos agent permissions dorkbot set rooms ask  # give it its own setting
+dorkos agent permissions dorkbot set files ask  # its own Files & commands
+dorkos agent permissions dorkbot reset files    # back to the setting everyone has
+```
+
+Choosing Full power or Full autonomy from a terminal needs the same confirmation as in the app. If you haven't given it yet, the command tells you to run `dorkos config acknowledge-autonomy`, which shows you what it means and asks.
+
 ## Who can change them
 
-In DorkOS, only a person can: the permission pages and your answer on a request card are the ways in, and DorkOS refuses a change that an agent asks for through DorkOS itself. An agent can ask you; it cannot answer for you.
+In DorkOS, only a person can. The permission pages, the `dorkos permissions` command, and your answer on a request card are the ways in. An agent can ask you to change a permission, or one of the settings only you may change, like turning on remote access. That always raises a card, and it never offers **Always allow**: the change happens only after you say yes, every time. An agent can ask you; it cannot answer for you.
 
 ## What permissions can't stop
 
 An agent's own settings are kept in a file in its folder (`.dork/agent.json`). Anything that can edit files on your computer can edit that file, and that includes an agent that has file tools. DorkOS can't prevent that, and turning on login doesn't prevent it either, because login guards DorkOS, not your files.
 
-What DorkOS does is notice. The next time it checks that agent's permissions, it records the change in the history as **"Changed outside DorkOS"**, with what it was before and what it is now. The change takes effect, because you may have edited the file yourself on purpose. The agent's Permissions page marks the row too, so you can see it and set it back.
+A new agent is different. When DorkOS first adds an agent from a folder, whether you add it, an agent adds it, or DorkOS finds it on its own, the permissions already written in that folder's settings file were never your choice. So DorkOS keeps only the ones that are stricter than your defaults, drops the rest so the agent follows your defaults, and says so in the history. If DorkOS can't write the file back, it still ignores the dropped ones, and the history says it couldn't apply the file. You can give the agent more afterwards, in DorkOS.
+
+For an agent DorkOS already knows, what it does is notice. The next time it checks that agent's permissions, it records the change in the history as **"Changed outside DorkOS"**, with what it was before and what it is now. The change takes effect, because you may have edited the file yourself on purpose. The agent's Permissions page marks the row too, so you can see it and set it back.
 
 If an agent should never be able to do something, don't rely on its settings alone: give it no way to edit files in its own folder, or keep a close eye on the history.
 
@@ -103,6 +167,15 @@ With login off, DorkOS cannot tell you apart from any other program running on y
 
 ## After an upgrade
 
-If you already told DorkOS to run at full power, your agents get the Full power preset. If you chose to keep being asked, they get Careful. An agent you had switched **Manage rooms** on for keeps rooms; one you had switched it off for has Rooms blocked. The history records each of these as an upgrade.
+If you already told DorkOS to run at full power, your agents get the Full power preset. If you chose to keep being asked, they get Careful. The history records each of these as an upgrade.
+
+Careful now covers more than rooms. On a Careful install, agents ask before they touch tasks and schedules, other agents, chat connections, or rooms, where before some of those ran without asking.
+
+Two older settings are gone, and what they said carries over:
+
+- **The per-agent limit** ("observe", "act"): an agent limited to observe now has every area Blocked. It can still post and react in conversations.
+- **The Agent context switches** for tasks, messages, other agents, and chat connections in Settings: a switch you had turned off becomes that area Blocked for everyone.
+
+An agent you had switched **Manage rooms** on for keeps rooms; one you had switched it off for has Rooms blocked.
 
 Standing permissions (the old "stop asking about this for 8 hours" answer) are gone; **Always allow** replaces them. Any that were still running when you upgraded were ended, not made permanent, and the history has a line for each.

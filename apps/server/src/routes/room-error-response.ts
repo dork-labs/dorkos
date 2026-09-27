@@ -160,6 +160,13 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // A 400 for the same reason: the request carried bytes that would stop being
   // a text file, and no credential or retry changes that.
   ROOM_FILE_NOT_TEXT: 400,
+  // A 409: the request is well formed and allowed, and the room already holds
+  // something at that path. What changes the answer is the person choosing to
+  // replace it, or another name.
+  ROOM_FILE_EXISTS: 409,
+  // A 400: nothing about the room or the caller changes how many files one
+  // upload may carry.
+  ROOM_UPLOAD_TOO_MANY_FILES: 400,
   // The room exists and the caller may see it; it simply has no files. A 409
   // rather than a 404, for the same reason as the two above: the answer changes
   // by giving the room a repo, not by asking about a different room.

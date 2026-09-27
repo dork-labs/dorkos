@@ -1,11 +1,23 @@
 import { z } from 'zod';
 
 import {
+  CreditMicroSchema,
+  DenominationSchema,
   IdSchema,
-  MicroAmountSchema,
-  PositiveMicroAmountSchema,
+  MoneyMicroSchema,
+  PositiveMoneyMicroSchema,
   TimestampSchema,
 } from './primitives.js';
+
+/**
+ * The optional `denomination` every amount-bearing response carries.
+ *
+ * Optional so a response from an older service still parses. A client that
+ * receives none must not guess a unit.
+ */
+const denominationField = DenominationSchema.optional().describe(
+  'The unit these amounts are in. Absent from an older service; a client that receives none must not guess one.'
+);
 
 /**
  * How remote access works for the caller.
@@ -89,7 +101,7 @@ export const EntitlementLimitsSchema = z
   .object({
     personSeatsIncluded: z.number().int().nonnegative(),
     agentSeatsIncluded: z.number().int().nonnegative(),
-    includedCreditsMicro: MicroAmountSchema,
+    includedCreditsMicro: CreditMicroSchema,
     cloudHours: z.number().nonnegative(),
     storageGb: z.number().nonnegative(),
     remoteAccess: RemoteAccessCapabilitySchema,
@@ -148,6 +160,7 @@ export const EntitlementsSchema = z
     canCreateSeat: z.boolean(),
     canInviteMember: z.boolean(),
     staleAt: TimestampSchema.describe('When this snapshot should be refetched.'),
+    denomination: denominationField,
   })
   .describe(
     'What the caller is allowed to do. A caller with no subscription gets the free entitlement, never a 404.'
@@ -167,12 +180,12 @@ export type Entitlements = z.infer<typeof EntitlementsSchema>;
 export const BalanceSchema = z
   .object({
     allowance: z.object({
-      grantedMicro: MicroAmountSchema,
-      remainingMicro: MicroAmountSchema,
+      grantedMicro: CreditMicroSchema,
+      remainingMicro: CreditMicroSchema,
       resetsAt: TimestampSchema,
     }),
     purchased: z.object({
-      remainingMicro: MicroAmountSchema,
+      remainingMicro: CreditMicroSchema,
       holds: z
         .number()
         .int()
@@ -182,20 +195,21 @@ export const BalanceSchema = z
           'How many first-purchase holds are in force. Absent means the server did not say; zero means none.'
         ),
     }),
-    pendingMicro: MicroAmountSchema.optional().describe(
+    pendingMicro: CreditMicroSchema.optional().describe(
       'Credit the caller has paid for that is not spendable yet, because a hold is still in force. Absent means the server did not say.'
     ),
-    heldMicro: MicroAmountSchema.describe('Reserved against turns currently running.'),
-    owedMicro: MicroAmountSchema.describe(
+    heldMicro: CreditMicroSchema.describe('Reserved against turns currently running.'),
+    owedMicro: CreditMicroSchema.describe(
       'Debt from a turn that overran its reservation. May be "0"; when it is not, show it.'
     ),
     autoReload: z.object({
       enabled: z.boolean(),
-      ceilingMicro: MicroAmountSchema.nullable(),
+      ceilingMicro: MoneyMicroSchema.nullable(),
     }),
+    denomination: denominationField,
   })
   .describe(
-    'The caller`s credit position. Every amount is an exact integer of micro-units carried as a string.'
+    'The caller`s credit position. Every amount is an exact integer of micro-units carried as a string, counted as credits except the auto-reload ceiling, which is money.'
   );
 
 /** The caller`s credit position. */
@@ -267,8 +281,8 @@ export const UsageRowSchema = z
       .nonnegative()
       .describe('How much was used, in the unit the row is measured in.'),
     unit: z.string().describe('What `units` counts, as a server-supplied string.'),
-    listPriceMicro: MicroAmountSchema.describe('The upstream list price for this row.'),
-    dorkosPriceMicro: MicroAmountSchema.describe('What DorkOS charged for this row.'),
+    listPriceMicro: MoneyMicroSchema.describe('The upstream list price for this row.'),
+    dorkosPriceMicro: CreditMicroSchema.describe('What DorkOS charged for this row.'),
     costBasis: CostBasisSchema,
   })
   .describe(
@@ -284,9 +298,10 @@ export const UsageResponseSchema = z
     state: UsageStateSchema,
     rows: z.array(UsageRowSchema),
     totals: z.object({
-      listPriceMicro: MicroAmountSchema,
-      dorkosPriceMicro: MicroAmountSchema,
+      listPriceMicro: MoneyMicroSchema,
+      dorkosPriceMicro: CreditMicroSchema,
     }),
+    denomination: denominationField,
   })
   .describe('The caller`s own usage for a window, grouped as asked.');
 
@@ -301,8 +316,14 @@ export const PriceListEntrySchema = z
     ),
     displayName: z.string(),
     unit: z.string().describe('What the prices below are per, as a server-supplied string.'),
-    inputMicro: MicroAmountSchema,
-    outputMicro: MicroAmountSchema,
+    inputMicro: CreditMicroSchema,
+    outputMicro: CreditMicroSchema,
+    cacheReadMicro: CreditMicroSchema.optional().describe(
+      'The rate for reading prompt-cached input, in the entry`s existing unit. Absent means the service did not say.'
+    ),
+    cacheWriteMicro: CreditMicroSchema.optional().describe(
+      'The rate for writing input to the prompt cache, in the entry`s existing unit. Absent means the service did not say.'
+    ),
   })
   .describe('One entry of the published price list.');
 
@@ -319,6 +340,7 @@ export const PriceListResponseSchema = z
     version: z.string().describe('An opaque version string for this list.'),
     effectiveFrom: TimestampSchema,
     entries: z.array(PriceListEntrySchema),
+    denomination: denominationField,
   })
   .describe(
     'The published per-model price list. The only route in this contract that carries a price.'
@@ -334,13 +356,14 @@ export const PriceListResponseSchema = z
  */
 export const NudgeSchema = z
   .object({
-    trailing30Micro: MicroAmountSchema,
+    trailing30Micro: CreditMicroSchema,
     suggestedPlanId: IdSchema.describe('An opaque identifier. Never switch on this value.'),
     suggestedPlanDisplayName: z.string(),
-    suggestedPlanPriceMicro: MicroAmountSchema,
-    savingMicro: MicroAmountSchema.describe('The subtraction the server already did.'),
+    suggestedPlanPriceMicro: MoneyMicroSchema,
+    savingMicro: MoneyMicroSchema.describe('The subtraction the server already did.'),
     computedAt: TimestampSchema,
     dismissible: z.literal(true),
+    denomination: denominationField,
   })
   .describe('One already-computed comparison. 404 from this route means "no nudge", not an error.');
 
@@ -415,7 +438,9 @@ export const StatementResponseSchema = z
  */
 export const TopupRequestSchema = z
   .object({
-    amountMicro: PositiveMicroAmountSchema.describe('How much credit to buy, in micro-units.'),
+    amountMicro: PositiveMoneyMicroSchema.describe(
+      'How much to pay for credit, in micro-units of money.'
+    ),
     returnUrl: z
       .string()
       .url()
@@ -474,7 +499,7 @@ export const RefundResponseSchema = z
   .object({
     refundId: IdSchema,
     chargeId: IdSchema,
-    refundedMicro: MicroAmountSchema.describe('How much came back, in micro-units.'),
+    refundedMicro: MoneyMicroSchema.describe('How much came back, in micro-units.'),
     refundedAt: TimestampSchema,
   })
   .meta({ description: REFUNDS_WITHDRAWN, deprecated: true });

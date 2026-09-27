@@ -97,6 +97,8 @@ export const PERMISSION_SOURCES = [
   'unchanged',
   'floor',
   'inactive',
+  /** A stored Allowed on an action whose card shows what changes, kept at Ask. */
+  'always-asks',
 ] as const;
 
 /** One of {@link PERMISSION_SOURCES}. */
@@ -172,7 +174,11 @@ export const PermissionChangeKeySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('preset') }),
   z.object({ kind: z.literal('area'), area: PermissionAreaIdSchema }),
   z.object({ kind: z.literal('action'), action: z.string(), area: PermissionAreaIdSchema }),
-  z.object({ kind: z.literal('files') }),
+  z.object({
+    kind: z.literal('files'),
+    /** The runtime whose own stop changed; absent for the global one. */
+    runtime: z.string().optional(),
+  }),
 ]);
 
 /** One change inside a `permission.changed` event. */
@@ -199,6 +205,12 @@ export const PermissionChangedMetadataSchema = z.object({
   attribution: PermissionAttributionSchema,
   approvalId: z.string().optional(),
   undoOf: z.string().optional(),
+  /**
+   * One plain sentence the history shows beside the change, when the change
+   * alone would mislead: an upgrade that Blocked every area of an agent that
+   * used to be limited to reading says the conversation verbs still work.
+   */
+  note: z.string().max(500).optional(),
   /** What the preset, the defaults and the trust stop were BEFORE a preset write. */
   presetSnapshot: z
     .object({

@@ -359,7 +359,7 @@ Each runtime declares static capability flags via `getCapabilities()`:
 | `supportsCostTracking`      | Whether dollar-cost tracking is available (gates the cost strip)                                                                                                                         |
 | `supportsResume`            | Whether sessions can be resumed                                                                                                                                                          |
 | `supportsMcp`               | Whether DorkOS can inject its MCP tool server                                                                                                                                            |
-| `supportsManagedMcpServers` | Whether DorkOS can inject an agent's own managed MCP servers — the "Add server" affordance on an agent profile's Tools & MCP page — distinct from `supportsMcp`'s in-process tool server |
+| `supportsManagedMcpServers` | Whether DorkOS can inject an agent's own managed MCP servers — the "Add server" affordance on an agent profile's MCP servers page — distinct from `supportsMcp`'s in-process tool server |
 | `supportsQuestionPrompt`    | Whether the AskUserQuestion interactive flow is supported                                                                                                                                |
 | `supportsPlugins`           | Whether marketplace plugins / plugin commands apply                                                                                                                                      |
 | `permissionModes`           | Structured mode declaration: `{ supported, default, values[] }` — the picker renders exactly this set                                                                                    |
@@ -585,59 +585,39 @@ store.set(resolveCaller(req, res).id, 'room', roomId, seq);
 
 There is no `PUT /api/rooms/:id/read-cursor`. It was removed once every client wrote through the generic route; a test in `rooms.test.ts` keeps it gone.
 
-## Per-Session Tool Groups
+## Per-Agent Tool Visibility
 
-Each agent can be told about a different subset of the DorkOS MCP tools. The resolution pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:
+**What a Blocked permission hides from an agent's tool list is decided by permissions (spec `agent-permissions`), not by a tool-group config.** The four `enabledToolGroups` manifest switches and the global `agentContext.*Tools` config section that used to gate this are retired (D13): what an agent may do — and therefore what it is shown and told about — now lives entirely in the ten permission areas (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, DorkOS settings, Safety limits, Permissions, Reach & secrets). The resolution pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:
 
 ```
 ClaudeCodeRuntime.sendMessage(sessionId, content, cwd)
-  -> readManifest(effectiveCwd)                    // Load .dork/agent.json
-  -> resolveToolConfig(manifest.enabledToolGroups, // Merge agent overrides with global defaults
-       { relayEnabled, tasksEnabled, globalConfig })
-  -> buildSystemPromptAppend(cwd, meshCore,        // Context blocks gated by toolConfig
-       toolConfig)
-  -> query({ systemPrompt })                       // SDK call — no tool list is passed
+  -> resolveToolVisibilityFor(cwd)          // Which tools & areas resolve to Blocked for this agent
+  -> toolDocGates(blockedAreas)             // Which of the switchable tool-doc blocks it still gets
+  -> buildSystemPromptAppend(cwd, toolConfig, { blockedAreaLines })
+  -> createDorkOsToolServer(..., hiddenToolNames)  // The Blocked tools are left out of the SDK tool list
+  -> query({ systemPrompt })
 ```
 
-### Resolution Order
+### Two things happen from one resolution, so they cannot disagree
 
-1. **Per-agent override** (`enabledToolGroups` in `.dork/agent.json`): explicit `true`/`false` per domain
-2. **Global default** (`agentContext.*Tools` in `~/.dork/config.json`): applies when agent has no override
-3. **Server feature flag** (`relayEnabled`, `tasksEnabled`): hard gate that overrides both above when `false`
+- **Tool registration.** `resolveToolVisibilityFor` (`services/runtimes/shared/permission-tool-filter.ts`) resolves every gated action's permission with the SAME `resolvePermission` the tier/permission gate runs, over the same sources. An action whose area resolves to Blocked is added to `hiddenToolNames`; `createDorkOsToolServer` filters the in-session MCP server's tool list against it (`mcp-tools/index.ts`), so a Blocked tool is **not registered for that session** — not merely undocumented. The external `/mcp` server and the Codex/OpenCode tool-list builders read the same function, so all three surfaces agree.
+- **Tool documentation.** `toolDocGates(blockedAreas)` (`messaging/tool-doc-gates.ts`) decides which of the five switchable prompt blocks (`tasks`, `relay`, `mesh`, `adapter`, `packages`) `buildSystemPromptAppend` includes, folding in the server feature flags (`relayEnabled`, `tasksEnabled`) the same way the old toggles did. `renderBlockedAreaLines` adds one line per Blocked area to the prompt, naming the tool the agent can ask past Blocked with (`request_permission`), so a hidden area is one the agent knows exists and knows how to ask for.
 
-### Implicit Grouping
+Hiding is still a courtesy to the agent, not the enforcement: the tier/permission gate resolves on every call regardless of what the tool list showed, so a call made before a permission change takes effect (the next turn) is still refused or asked about correctly. `resolveCallPermission` resolves Blocked, Ask or Allowed inside `registry.invoke`, `authorizeCapability` and the MCP tool gate's `runGate`, so both MCP servers converge on the same answer that decided the list. The per-agent `roomsManage` grant this section used to describe (ADR-260828-123331) is folded into `permissions.areas.rooms` on read and by the boot-time upgrade sweep, the same way `enabledToolGroups` and `tierCeiling` are (`contributing/configuration.md#boot-time-permission-retirements`). `contributing/agent-operator-surface.md` has the identity rule that goes with the tier gate.
 
-Four top-level toggles control six tool groups:
+### What DOR-519 already established, and still holds
 
-| Toggle    | Controls                                                                                          |
-| --------- | ------------------------------------------------------------------------------------------------- |
-| `tasks`   | Tasks tools (list/create/update/delete schedules, run history)                                    |
-| `relay`   | Relay tools (send, inbox, endpoints) + Trace tools (get_trace, get_metrics)                       |
-| `mesh`    | Mesh tools (discover, register, list, deny, status, inspect, topology)                            |
-| `adapter` | Adapter tools (list/enable/disable/reload adapters) + Binding tools (list/create/delete bindings) |
-
-Core tools (ping, get_server_info, get_session_count, get_agent) are always included.
-
-### What a Disabled Group Actually Does
-
-Exactly one thing: `buildSystemPromptAppend` leaves that group's tool block out of the agent's context, so the agent is never told those tools exist. The tools stay registered on the session's MCP server, and an agent that names one anyway can still call it through the normal approval prompt. This steers the agent; it is not a security boundary.
-
-Until DOR-519 this section described a second, stronger mechanism: the resolved config also produced an SDK `allowedTools` array. That was a misreading of the option. `allowedTools` auto-approves the names in it rather than restricting them, and the array was only non-empty once a group had been turned OFF. So turning one group off made 31 to 35 tools skip the approval prompt (the count depends which group), while leaving every group on auto-approved only the 13 names in `DORKOS_AGENT_TOOLS`. `binding_delete` and `relay_disable_adapter` are representative of what that exposed. The toggle ran backwards, and because `enabledToolGroups` is agent-writable through `config_patch`, an agent could widen its own auto-approval. The wiring and `buildAllowedTools` are gone, nothing sets `allowedTools`, and a test in `claude-code-runtime.test.ts` fails if anything sets it again. ADR-0070 carries the full history.
-
-Both of the `destructive` tools that appeared in those lists, `tasks_delete` and `mesh_unregister`, were never actually exposed: they are gated in the handler by `gateHandRegisteredMcpTools` (DOR-468), a layer `allowedTools` cannot reach. (Scoped deliberately: `marketplace.uninstall`, `operator.update_agent_boundaries` and `operator.update_agent_execution` are `destructive` too, but no registry capability is in any tool group, so they were never in those lists.) That left 29 to 34 `act` and `observe` tools in the list, of which 7 to 13 already auto-approved through `canUseTool` regardless of any toggle. The prompts the toggle actually silenced numbered 16 to 24. That split is the argument for where enforcement lives: consequence is gated by tier in `services/core/mcp-tool-gate.ts`, below every caller, and never by a list of names a config toggle can rewrite.
-
-Everything above is still true of these four toggles, and ADR-260726-171347 records that deliberate position: they gate context, not access.
-
-**Real access is decided elsewhere, by permissions (spec `agent-permissions`).** Every capability declares a permission `area`, and `resolveCallPermission` resolves it to Blocked, Ask or Allowed inside `registry.invoke`, `authorizeCapability` and the MCP tool gate, so both MCP servers converge on the same answer. A Blocked action is also left out of every tool list (`runtimes/shared/permission-tool-filter.ts`), with one context line per Blocked area; hiding is a courtesy, the gate is the enforcement. The per-agent `roomsManage` grant this section used to describe (ADR-260828-123331) is folded into `permissions.areas.rooms` on read and by the boot-time upgrade sweep. `contributing/agent-operator-surface.md` has the identity rule that goes with it.
+Before the permission-areas system existed, this section described a stronger-looking but mistaken mechanism: the resolved tool-group config also produced an SDK `allowedTools` array. That was a misreading of the option — `allowedTools` auto-approves the names in it rather than restricting them — and the wiring is long gone (`buildAllowedTools` no longer exists; a test in `claude-code-runtime.test.ts` fails if anything sets `allowedTools` again). The lesson it left behind is still the operative one: **consequence is gated by tier in `services/core/mcp-tool-gate.ts`, below every caller, never by a list of names a tool-visibility mechanism can rewrite.** `tasks_delete` and `mesh_unregister` — the `destructive` tools a stale `allowedTools` list once exposed — are gated in the handler by `gateHandRegisteredMcpTools` (DOR-468), a layer neither the old `allowedTools` nor today's `hiddenToolNames` filter is asked to reach. (Scoped deliberately: `marketplace.uninstall`, `operator.update_agent_boundaries` and `operator.update_agent_execution` are `destructive` too, but they were never in a tool group, so no such list ever held them.) See ADR-0070 and ADR-260726-171347 for the full history.
 
 ### Files
 
-| File                                                                         | Purpose                                      |
-| ---------------------------------------------------------------------------- | -------------------------------------------- |
-| `apps/server/src/services/runtimes/claude-code/tooling/tool-filter.ts`       | `resolveToolConfig()`                        |
-| `apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts` | Agent-aware block gating, peer agents block  |
-| `packages/shared/src/mesh-schemas.ts`                                        | `EnabledToolGroupsSchema` on `AgentManifest` |
-| `packages/shared/src/config-schema.ts`                                       | `agentContext.tasksTools` global default     |
+| File                                                                         | Purpose                                                   |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `apps/server/src/services/runtimes/shared/permission-tool-filter.ts`         | `resolveToolVisibility()` / `resolveToolVisibilityFor()`  |
+| `apps/server/src/services/runtimes/claude-code/messaging/tool-doc-gates.ts`  | `toolDocGates()` — which prompt blocks an agent gets      |
+| `apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts` | Agent-aware block gating, peer agents block               |
+| `apps/server/src/services/runtimes/claude-code/mcp-tools/index.ts`           | Filters the in-session MCP tool list by `hiddenToolNames` |
+| `packages/shared/src/permissions/`                                           | Area registry, presets, resolver, HTTP DTOs               |
 
 ## Module Layout
 
@@ -707,12 +687,7 @@ Location: `~/.dork/config.json` (created automatically on first run). Format:
   "relay": { "enabled": true, "dataDir": null },
   "scheduler": { "enabled": true, "maxConcurrentRuns": 1, "timezone": null, "retentionCount": 100 },
   "mesh": { "scanRoots": [] },
-  "agentContext": {
-    "relayTools": true,
-    "meshTools": true,
-    "adapterTools": true,
-    "tasksTools": true
-  }
+  "permissions": { "preset": null, "defaults": { "areas": {}, "actions": {} } }
 }
 ```
 

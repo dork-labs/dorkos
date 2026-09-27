@@ -524,6 +524,21 @@ export type RoomErrorCode =
    */
   | 'ROOM_FILE_NOT_TEXT'
   /**
+   * A person's upload, move or save-from-the-chat would land on a path the
+   * room's files already hold (spec `agent-home-desk` §7.1).
+   *
+   * Refused rather than overwritten, and the message names the path: the app
+   * turns this into "replace, or keep both?", and replacing is a choice the
+   * person makes by naming the file in the upload's `replace` list — never one
+   * the server makes for them.
+   */
+  | 'ROOM_FILE_EXISTS'
+  /**
+   * One upload carried more files than the twenty a single commit and a single
+   * room entry take (`ROOM_UPLOAD_MAX_FILES`). Refused while still being read.
+   */
+  | 'ROOM_UPLOAD_TOO_MANY_FILES'
+  /**
    * Something that only makes sense for a room with files was asked of a room
    * without any — a working copy, a merge, a file listing (spec `project-rooms`
    * §3.4, §3.6).

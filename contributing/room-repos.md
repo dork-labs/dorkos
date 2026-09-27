@@ -29,7 +29,9 @@ Spec: `specs/project-rooms/02-specification.md`. Decisions: `260829-115621`, `26
 | Worktree create / status / reap     | `apps/server/src/services/rooms/repo/room-worktree-manager.ts`      |
 | Merge contract + `room_repo_status` | `apps/server/src/services/rooms/repo/room-merge-service.ts`         |
 | Read-only listing and file content  | `apps/server/src/services/rooms/repo/room-files.ts`                 |
-| Human save path (commit-as-user)    | `apps/server/src/services/rooms/repo/room-file-editor.ts`           |
+| People's file operations            | `apps/server/src/services/rooms/repo/room-file-editor.ts`           |
+| Change sets: checks, commit, undo   | `apps/server/src/services/rooms/repo/room-file-ops.ts`              |
+| A person's change → room entry text | `apps/server/src/services/rooms/repo/room-file-change-text.ts`      |
 | Dirty-main detection                | `apps/server/src/services/rooms/repo/room-main-checkout.ts`         |
 | `ROOM.md` → prompt block            | `apps/server/src/services/rooms/repo/room-conventions.ts`           |
 | `ROOM.md` seed template             | `apps/server/src/services/rooms/repo/room-md.ts`                    |
@@ -73,11 +75,11 @@ destructive half belongs on the delete path, where the intent is.
 
 ## Who may write what
 
-| Tree                       | Writer                                    | How                                                           |
-| -------------------------- | ----------------------------------------- | ------------------------------------------------------------- |
-| `repo/` (integration tree) | The server, and only the server           | `merge_to_room_main`, `PUT .../files/content`, enable, repair |
-| `worktrees/<agentSlug>/`   | That one agent, and only during its turns | Ordinary git and ordinary tools                               |
-| Any other agent's worktree | Nobody                                    | There is no code path                                         |
+| Tree                       | Writer                                    | How                                                        |
+| -------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
+| `repo/` (integration tree) | The server, and only the server           | `merge_to_room_main`, `.../files/*` writes, enable, repair |
+| `worktrees/<agentSlug>/`   | That one agent, and only during its turns | Ordinary git and ordinary tools                            |
+| Any other agent's worktree | Nobody                                    | There is no code path                                      |
 
 This is DOR-500 applied to rooms. Every write to `repo/` goes through `RoomRepoMutex.run(roomId, …)`,
 so merges, human saves, enable, and repair are serialized against each other per room.
@@ -91,7 +93,7 @@ plain `git merge main` rather than a tool.
 | ------------------------------- | ----------------------------------------- | ----------------------------------------------------------------- |
 | Read a room's files server-side | `RoomFilesService.list` / `.read`         | Reads a commit, not the checkout, so in-flight state is invisible |
 | Let an agent land work          | `merge_to_room_main` → `RoomMergeService` | The only agent write path; validated and serialized               |
-| Let a person save a file        | `PUT /api/rooms/:id/files/content`        | Commit-as-user with per-path optimistic locking                   |
+| Let a person change files       | `PUT`/`POST /api/rooms/:id/files/*`       | One commit as the person, per-path lock, one quiet room entry     |
 | Know if a room has files        | `RoomRepoService.hasRepo(roomId)`         | One predicate over "never enabled" and "switched off"             |
 | Decide where a room turn runs   | `resolveSessionCwd` at **turn dispatch**  | Context is built after cwd, and it names attachments by that path |
 | Compose the `ROOM.md` block     | `RoomConventions.compose`                 | Reads `main:ROOM.md`, caches on `(roomId, commitSha)`             |
@@ -209,16 +211,55 @@ ROOM_HAS_NO_REPO`. Reversed, a room id would leak which rooms are project rooms.
 asserting an outsider gets three identical answers for a room with files, a room without, and an
 imaginary one.
 
-## Human saves and dirty-main repair
+## People's file operations and dirty-main repair
 
-`PUT /api/rooms/:id/files/content` carries `{ path, baseCommit, text }`.
+A person changes a room's files through five routes (spec `agent-home-desk` §7.1). Each is one
+commit on `main`, through the same mutex merges use, after `assertMainCheckoutReady`:
+
+| Route                                       | Body                                                       | Commit subject               |
+| ------------------------------------------- | ---------------------------------------------------------- | ---------------------------- |
+| `PUT /api/rooms/:id/files/content`          | `{ path, baseCommit, text }` (text only)                   | `Edit <path>` / `Add <path>` |
+| `POST /api/rooms/:id/files/upload`          | multipart `files[]` (≤ 20), `dir`, `baseCommit`, `replace` | `Upload N files to <dir>/`¹  |
+| `POST /api/rooms/:id/files/move`            | `{ from, to, baseCommit }`, file or folder                 | `Rename <from> to <to>`      |
+| `POST /api/rooms/:id/files/delete`          | `{ path, baseCommit }`, file or folder                     | `Delete <path>`              |
+| `POST /api/rooms/:id/files/from-attachment` | `{ attachmentId, dir, name?, baseCommit }`                 | `Add <path> from the chat`   |
+
+¹ `Upload N files to the top folder` for the root; the room entry says "the top folder" too.
+`baseCommit` is required for move and delete — nobody moves or deletes files they have not seen.
 
 - **People only.** An agent is refused `PEOPLE_ONLY` (403), not 404: it is already a visible member,
-  and merging is its write path.
-- **Optimistic locking is per path**, not on `main` moving. `409 FILE_CHANGED` fires only when main
-  moved _and touched that path_, and the refusal carries `{ path, commit, lastCommit }` so the client
-  can name who won and offer reload-or-overwrite.
-- **One save is one commit**, authored as the person, through the same mutex merges use.
+  and merging is its write path. An upload is refused before multer reads a byte.
+- **Optimistic locking is per path**, not on `main` moving. `409 FILE_CHANGED` fires only when a
+  path the change touches moved — the file a save or a replacing upload names, every file under a
+  moved or deleted folder — and carries `{ path, commit, lastCommit }` so the client can name who
+  won and offer reload-or-overwrite. A new path that already exists is `409 ROOM_FILE_EXISTS`,
+  naming it; an upload overwrites only the names listed in `replace`.
+- **Authored as the person.** With login on, the signed-in person's display name and
+  `person-<authorId>@dorkos.local`; with login off, the operator. `gitAuthorName` falls back to
+  `DorkOS operator` for a name git refuses (`<>`, `"`, empty). Names shown anywhere come from the
+  room entry, never from git.
+- **One quiet entry per commit.** `RoomService.postFileChangeEvent` posts `body.fileChange` in the
+  room's own voice with `mentions: []` and a spent cascade, so it wakes nobody (I10). Its `text` is
+  built from sanitized path segments, each path set in a markdown code span (`codeSpan`, backtick-
+  safe), because the app draws post text as markdown; clients render `fileChange.paths` as plain
+  text.
+- **Every change is a change set** (`room-file-ops.ts`): a list of `{ path, content | null }` written
+  (removals first, so a case-only rename works on APFS), staged by exact `:(literal)` path and
+  committed once — or rolled back entirely. A rollback removes only files and folders the set
+  itself created; a "new" path that already exists on disk (another spelling of a real file) is
+  refused `ROOM_FILE_EXISTS` before anything is written.
+- **Missing folders are created; a case clash is refused per folder segment.** `Notes/plan.md` when
+  `notes/` exists names `notes/`, because APFS and NTFS would write into `notes/` while git records
+  `Notes/`. A folder segment that is a file is `ROOM_FILE_PATH_INVALID`.
+- **Unicode spellings resolve to the tree's.** `RoomTreeIndex.canonicalize` maps each segment that
+  equals an existing name once both are NFC onto that name, and a new segment to NFC (what git with
+  `core.precomposeunicode` records). An NFD `café.md` therefore finds the NFC `café.md` the tree
+  holds — it meets the lock and `ROOM_FILE_EXISTS` — instead of silently overwriting it on APFS.
+- **Every `.git` door is refused** (`assertWritablePath`): any case, trailing dots and spaces,
+  HFS-ignorable characters, `git~<digit>`, and any colon at all (NTFS streams such as
+  `.git::$INDEX_ALLOCATION`).
+- **Uploads use multer disk storage** in a per-request folder under `<dorkHome>/.temp/room-uploads/`,
+  capped per file at the room's frozen `maxFileBytes`, removed before the response is sent.
 - The client editor is a **source** editor, not the session canvas. The canvas round-trips markdown
   through ProseMirror and would commit a reformat under a person's name that they never typed. Byte
   fidelity outranks editor reuse in a tree whose whole point is per-line provenance

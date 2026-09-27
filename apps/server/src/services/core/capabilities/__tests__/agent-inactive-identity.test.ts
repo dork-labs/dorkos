@@ -1,13 +1,16 @@
 /**
- * A tier ceiling set through the affordance actually caps the agent (DOR-486).
+ * A turned-off agent reaches nothing it could not before, on either path an
+ * identity arrives by (DOR-486, carried into the permission model).
  *
- * The ceiling was enforced correctly and reachable by nobody: `mint()` always
- * stamped `destructive`, no manifest field carried a limit, and no surface wrote
- * one — so the gate compared every agent against the widest rung forever. This
- * walks the whole chain with no mock in it, because the defect was exactly that
- * the two halves never met: write the manifest through the same service the
- * self-edit route and the `update_agent` tool use, mint a token the way a spawn
- * does, resolve it the way an HTTP call does, and ask the real gate.
+ * Revoking an agent, or its token ageing out, used to erase its identity, and an
+ * erased identity reads as "unidentified" at the gate, which is decided on the
+ * install's defaults: turning an agent off could widen it. Identities now arrive
+ * NAMED and marked `inactive`, so this walks the whole chain with no mock in it:
+ * mint a token the way a spawn does, resolve it the way an HTTP call does, and
+ * ask the real gate.
+ *
+ * (Until spec `agent-permissions` phase 3 this file also pinned the per-agent
+ * tier ceiling, which Blocked permission areas replaced.)
  *
  * @vitest-environment node
  */
@@ -18,7 +21,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agentIdentityTokens, type Db } from '@dorkos/db';
-import { writeManifest, readManifest } from '@dorkos/shared/manifest';
+import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 import { defineCapability } from '../capability-definition.js';
@@ -41,7 +44,6 @@ import {
   type AgentIdentityService,
 } from '../../agent-identity/agent-identity-service.js';
 import { resolveAgentTokenEnv, AGENT_TOKEN_ENV_VAR } from '../../agent-identity/agent-token-env.js';
-import { updateAgentManifest, AgentUpdateError } from '../../operator/agent-updater.js';
 
 /** An agent as it exists before anybody has limited it. */
 const SEED = {
@@ -56,24 +58,10 @@ const SEED = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
 } as unknown as AgentManifest;
 
-/** The destructive capability every case asks for. */
-const UNINSTALL = defineCapability({
-  id: 'demo.uninstall',
-  title: 'Uninstall a package',
-  description: 'A destructive capability used to probe the ceiling.',
-  tier: 'destructive',
-  area: null,
-  input: z.object({ name: z.string() }),
-  output: z.unknown(),
-  surfaces: { mcp: { toolName: 'demo_uninstall', servers: ['external'] } },
-  invoke: async () => ({ ok: true }),
-});
-
-/** An `act` capability — the rung a revoked agent must lose and a capped one keeps. */
+/** An `act` capability with no area — the rung a revoked agent must lose. */
 const RENAME = defineCapability({
   id: 'demo.rename',
   title: 'Rename a thing',
@@ -86,7 +74,7 @@ const RENAME = defineCapability({
   invoke: async () => ({ ok: true }),
 });
 
-/** An `observe` capability — reading, which no ceiling ever blocks. */
+/** An `observe` capability — reading, which a revoked agent keeps. */
 const READ = defineCapability({
   id: 'demo.read',
   title: 'Read a thing',
@@ -124,23 +112,8 @@ async function spawnAndResolve() {
   return service.resolve(token!);
 }
 
-/** Ask the real gate for the destructive capability, as that identity. */
-async function askTheGate() {
-  const identity = await spawnAndResolve();
-  return {
-    identity,
-    decision: enforceCapabilityTier({
-      permission: null,
-      action: UNINSTALL,
-      identity,
-      input: { name: 'sentry-monitor' },
-      retryChannel: 'mcp-argument',
-    }),
-  };
-}
-
 beforeEach(async () => {
-  agentPath = await mkdtemp(join(tmpdir(), 'tier-ceiling-'));
+  agentPath = await mkdtemp(join(tmpdir(), 'inactive-identity-'));
   await writeManifest(agentPath, SEED);
   resetAgentIdentityService();
   identityDb = createTestDb();
@@ -157,65 +130,13 @@ afterEach(async () => {
   await rm(agentPath, { recursive: true, force: true });
 });
 
-describe('a ceiling set on the manifest reaches the gate', () => {
-  it('leaves an agent that has never been limited exactly as it was', async () => {
-    // The migration guarantee: nothing already running loses capability. The
-    // call still needs a person's approval — it is destructive — but the ceiling
-    // is not what stopped it, and a person CAN unlock it.
-    const { identity, decision } = await askTheGate();
-
-    expect(identity?.tierCeiling).toBe('destructive');
-    expect(decision.outcome).toBe('approval_required');
-  });
-
-  it('refuses the destructive capability, unapprovably, once the ceiling is act', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
-
-    const { identity, decision } = await askTheGate();
-
-    // The affordance wrote it...
-    expect((await readManifest(agentPath))?.tierCeiling).toBe('act');
-    // ...the spawn carried it onto the token...
-    expect(identity?.tierCeiling).toBe('act');
-    // ...and the gate acted on it.
-    expect(decision.outcome).toBe('denied');
-    if (decision.outcome !== 'denied') throw new Error('unreachable');
-    expect(decision.payload.reason).toBe('tier_ceiling');
-    expect(decision.payload.approvable).toBe(false);
-    expect(decision.payload.message).toContain('Nobody can approve this');
-  });
-
-  it('keeps the limit on the next spawn, not just the one that set it', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'observe' } });
-
-    await spawnAndResolve();
-    const { identity } = await askTheGate();
-
-    expect(identity?.tierCeiling).toBe('observe');
-  });
-
-  it('does not widen a ceiling when the manifest becomes unreadable', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'observe' } });
-    await spawnAndResolve();
-
-    // A limit you can delete your way out of is not a limit.
-    await rm(join(agentPath, '.dork'), { recursive: true, force: true });
-    const { identity, decision } = await askTheGate();
-
-    expect(identity?.tierCeiling).toBe('observe');
-    expect(decision.outcome).toBe('denied');
-  });
-});
-
-describe('revoking a capped agent shuts it off, and never widens it', () => {
+describe('revoking an agent shuts it off, and never widens it', () => {
   // The inversion this closes, reproduced before it was fixed: `describeAgent`
   // and `resolve` filtered revoked rows out, so a revoked agent resolved to
-  // `undefined`, `undefined` reads as "unidentified" at the gate, and an
-  // unidentified caller is capped at DEFAULT_ANONYMOUS_TIER_CEILING —
-  // `destructive`. Revoking an agent capped at `act` therefore let it reach
-  // MORE than before it was revoked.
-  it('does not hand a revoked agent the anonymous (widest) ceiling', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
+  // `undefined`, and `undefined` reads as "unidentified" at the gate, which is
+  // decided on the install's defaults. Revoking a narrowed agent therefore let
+  // it reach MORE than before it was revoked.
+  it('names a revoked agent rather than treating it as a stranger', async () => {
     await spawnAndResolve();
 
     await service.revoke(agentPath);
@@ -227,7 +148,6 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
   });
 
   it('refuses an act call a revoked agent could make one moment earlier', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
     await spawnAndResolve();
     const before = enforceCapabilityTier({
       permission: null,
@@ -250,13 +170,12 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
 
     expect(after.outcome).toBe('denied');
     if (after.outcome !== 'denied') throw new Error('unreachable');
-    expect(after.payload.reason).toBe('tier_ceiling');
+    expect(after.payload.reason).toBe('permission_blocked');
     expect(after.payload.approvable).toBe(false);
     expect(after.payload.message).toContain('access was turned off');
   });
 
   it('shuts off the bearer path too, not only the in-session one', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
     const env = await resolveAgentTokenEnv(agentPath, 'Warden');
     await service.revoke(agentPath);
 
@@ -327,7 +246,6 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
   });
 
   it('gives a fresh spawn its identity back', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
     await spawnAndResolve();
     await service.revoke(agentPath);
 
@@ -336,7 +254,7 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
     const identity = await spawnAndResolve();
 
     expect(identity?.inactive).toBeUndefined();
-    expect(identity?.tierCeiling).toBe('act');
+    expect(identity?.agentPath).toBe(agentPath);
   });
 });
 
@@ -394,62 +312,5 @@ describe('a token that has aged out cannot spend what the live agent was granted
     });
 
     expect(decision.outcome).toBe('allowed');
-  });
-});
-
-describe('an agent may tighten its own ceiling, never widen one', () => {
-  it('accepts a lowering from the agent-reachable path', async () => {
-    const updated = await updateAgentManifest({ agentPath, body: { tierCeiling: 'observe' } });
-
-    expect(updated.tierCeiling).toBe('observe');
-  });
-
-  it('accepts a no-op write of the ceiling it already has', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
-    const updated = await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
-
-    expect(updated.tierCeiling).toBe('act');
-  });
-
-  it('refuses a raise, and changes nothing else in the same patch', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'observe' } });
-
-    await expect(
-      updateAgentManifest({
-        agentPath,
-        body: { tierCeiling: 'destructive', displayName: 'Warden the Unbound' },
-      })
-    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
-
-    // All-or-nothing, like the seam's other operator-only guards.
-    const onDisk = await readManifest(agentPath);
-    expect(onDisk?.tierCeiling).toBe('observe');
-    expect(onDisk?.displayName).toBe('Warden');
-  });
-
-  it('refuses clearing the ceiling, because absent means unrestricted', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
-
-    const refusal = await updateAgentManifest({
-      agentPath,
-      body: { tierCeiling: null },
-    }).catch((err: unknown) => err);
-
-    expect(refusal).toBeInstanceOf(AgentUpdateError);
-    expect((refusal as AgentUpdateError).code).toBe('OPERATOR_ONLY');
-    expect((await readManifest(agentPath))?.tierCeiling).toBe('act');
-  });
-
-  it('tells the agent who can change it, and what the two limits are', async () => {
-    await updateAgentManifest({ agentPath, body: { tierCeiling: 'observe' } });
-
-    const refusal = (await updateAgentManifest({
-      agentPath,
-      body: { tierCeiling: 'act' },
-    }).catch((err: unknown) => err)) as AgentUpdateError;
-
-    expect(refusal.message).toContain('Only a person can widen');
-    expect(refusal.message).toContain('reading only');
-    expect(refusal.message).toContain('changes that can be undone');
   });
 });

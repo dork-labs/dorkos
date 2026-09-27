@@ -6,6 +6,7 @@
  * @module features/permissions/lib/permission-copy
  */
 import type {
+  FilesAndCommandsSource,
   PermissionPreset,
   PermissionSource,
   PermissionState,
@@ -23,6 +24,13 @@ export const PRESET_LABEL: Record<PermissionPreset, string> = {
   careful: 'Careful',
   balanced: 'Balanced',
   full: 'Full power',
+};
+
+/** What each preset means, in one line. */
+export const PRESET_SUMMARY: Record<PermissionPreset, string> = {
+  careful: 'Agents ask before they change anything, and can’t reach outside DorkOS.',
+  balanced: 'Agents run their rooms and ask before anything wider.',
+  full: 'Agents do the everyday work themselves and ask before installing or changing settings.',
 };
 
 /**
@@ -45,6 +53,8 @@ export function defaultSourceText(
       return 'Not chosen yet, so it works as it did before';
     case 'floor':
       return 'Never Allowed';
+    case 'always-asks':
+      return 'Always asks, so you see what it would change';
     default:
       return '';
   }
@@ -53,3 +63,21 @@ export function defaultSourceText(
 /** What Blocked means, said once wherever it is explained. */
 export const BLOCKED_IS_NOT_A_SANDBOX =
   "Blocked stops an agent that plays by the rules; it isn't a sandbox.";
+
+/**
+ * Where a Files & commands stop came from, in words.
+ *
+ * @param source - The resolved source.
+ */
+export function filesSourceText(source: FilesAndCommandsSource): string {
+  switch (source) {
+    case 'agent':
+      return 'Set for this agent';
+    case 'runtime':
+      return 'Set for its runtime in Settings → Runtimes';
+    case 'default':
+      return 'The setting everyone has';
+    case 'runtime-own':
+      return 'Not set, so each runtime starts where it always has';
+  }
+}

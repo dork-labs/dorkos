@@ -66,7 +66,10 @@ vi.mock('../../../../lib/boundary.js', () => ({
 // update_agent reads the target agent's manifest off disk; stub it to "no agent
 // here" so the handler returns its structured NOT_FOUND (a CapabilityToolError),
 // never a raw filesystem throw.
-vi.mock('@dorkos/shared/manifest', () => ({
+// The rest of the module stays real: the permission gate reads an agent's own
+// settings file by the manifest path constants.
+vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/manifest')>()),
   readManifest: async () => null,
   writeManifest: async () => {},
 }));
@@ -330,7 +333,6 @@ const { ApprovalService } = await import('../../approvals/index.js');
 const PROBE_IDENTITY = {
   agentPath: path.join(SANDBOX_CWD, 'agents', 'prober'),
   displayName: 'Prober',
-  tierCeiling: 'destructive' as const,
   createdAt: new Date().toISOString(),
 };
 
@@ -541,6 +543,9 @@ capabilityConformance(registry, {
       arguments: {},
       reason: 'a conformance probe',
     },
+    // A floor-area action: nothing lets it run without a person's yes, so the
+    // gate answers before the handler, which is the wiring this proves.
+    'permissions.change': { target: 'everyone', area: 'tasks', state: 'ask' },
     'mcp.list': { agentId: 'conformance-agent' },
     'mcp.add': {
       agentId: 'conformance-agent',
@@ -687,13 +692,15 @@ describe('capability conformance wiring', () => {
  * surfaces here as a SUCCESS where a refusal belongs.
  */
 describe('operator.config_patch refuses posture changes through the registry', () => {
-  it('refuses to turn login off', async () => {
+  it('never turns login off on its own: the gate decides it in Reach & secrets', async () => {
+    // Turning login off is a Reach & secrets change (spec `agent-permissions`
+    // D6), a floor area that is never Allowed, so the gate stops the call before
+    // the handler runs, whatever the preset. The handler's own refusal (for a
+    // call that somehow reached it without a person's yes) is pinned in its
+    // unit tests.
     await expect(
       registry.invoke('operator.config_patch', { patch: { auth: { enabled: false } } })
-    ).rejects.toMatchObject({
-      name: 'CapabilityToolError',
-      payload: { code: 'operator_only_config', paths: ['auth.enabled'] },
-    });
+    ).rejects.toMatchObject({ name: 'CapabilityGateRefusal' });
   });
 
   it('lets an ordinary preference past the guard', async () => {

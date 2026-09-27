@@ -175,7 +175,6 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
   const AGENT: AgentIdentity = {
     agentPath: '/projects/prober',
     displayName: 'Prober',
-    tierCeiling: 'destructive',
     createdAt: new Date().toISOString(),
   };
 
@@ -239,8 +238,8 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
     expect(destroyed).toEqual([]);
   });
 
-  it('403s an agent whose ceiling forbids the tier, with no approval to chase', async () => {
-    const res = await request(fixtureTarget.mount(buildGatedApp({ ...AGENT, tierCeiling: 'act' })))
+  it('403s an agent whose access was turned off, with no approval to chase', async () => {
+    const res = await request(fixtureTarget.mount(buildGatedApp({ ...AGENT, inactive: 'revoked' })))
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'production' });
 

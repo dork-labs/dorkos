@@ -49,7 +49,6 @@ describe('resolveAgentIdentity', () => {
     expect(getRequestAgentIdentity(res)).toMatchObject({
       agentPath: AGENT_PATH,
       displayName: 'Researcher',
-      tierCeiling: 'destructive',
     });
     expect(next).toHaveBeenCalledOnce();
   });

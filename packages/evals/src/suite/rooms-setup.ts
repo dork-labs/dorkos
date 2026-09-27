@@ -113,7 +113,6 @@ export async function seedRoomAgents(
       registeredBy: 'dorkos-evals',
       personaEnabled: false,
       isSystem: false,
-      enabledToolGroups: {},
       mcpServers: [],
     };
     await writeManifest(dir, manifest);

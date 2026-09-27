@@ -2807,7 +2807,6 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       registeredAt: new Date().toISOString(),
       registeredBy: 'test',
       personaEnabled: true,
-      enabledToolGroups: {},
       mcpServers: [],
     } as AgentManifest);
     return dir;

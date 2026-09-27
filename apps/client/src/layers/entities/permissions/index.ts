@@ -15,6 +15,12 @@ export { useAgentPermissions } from './model/use-agent-permissions';
 export { useOverridingAgents } from './model/use-overriding-agents';
 export { usePermissionHistory } from './model/use-permission-history';
 export {
+  useResetAgentPermission,
+  type AgentPermissionKey,
+  type ResetAgentPermissionInput,
+} from './model/use-reset-agent-permission';
+export {
+  isAutonomyAckRefusal,
   useSetPermission,
   type PermissionScope,
   type SetPermissionInput,

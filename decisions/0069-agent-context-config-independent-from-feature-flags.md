@@ -1,15 +1,17 @@
 ---
 number: 69
 title: Agent Context Config Section Independent from Feature Flags
-status: accepted
+status: superseded
 created: 2026-03-04
 spec: agent-tool-context-injection
-superseded-by: null
+superseded-by: '260923-223904'
 ---
 
 # 69. Agent Context Config Section Independent from Feature Flags
 
 ## Status
+
+Superseded (2026-09-24, DOR-2278, spec `agent-permissions` phase 3) by ADR-260923-223904 (one permission model for agent actions): the `agentContext` config section is removed; a switch that was off became that permission area Blocked for everyone.
 
 Accepted
 

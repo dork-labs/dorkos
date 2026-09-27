@@ -12,8 +12,8 @@
  * an entry that runs a command in an agent's environment.
  *
  * **Both verbs are `destructive`, so the shape of the test is the shape of the
- * attack.** The tier gate asks a person before either runs, and the anonymous
- * ceiling is `destructive` — so a caller with a junk token is NOT denied, it gets
+ * attack.** The tier gate asks a person before either runs, and a caller with a
+ * junk token is decided on the install's defaults — so it is NOT denied, it gets
  * a card, and on a grant it retries and reaches the handler. That retry is where
  * the refusal has to land, and it is why every case here goes through the whole
  * ask-grant-retry round trip rather than calling the verb directly.
@@ -51,7 +51,10 @@ vi.mock('../../lib/logger.js', () => ({
   logError: vi.fn(() => ({})),
 }));
 
-vi.mock('@dorkos/shared/manifest', () => ({
+// The rest of the module stays real: the permission gate reads an agent's own
+// settings file by the manifest path constants.
+vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/manifest')>()),
   readManifest: vi.fn().mockResolvedValue(null),
 }));
 
@@ -89,14 +92,17 @@ type DeadTokenState = 'fabricated' | 'revoked' | 'expired';
 /**
  * The dead states that REACH `resolveAddedBy`, which is what these rows test.
  *
- * `revoked` is deliberately not among them and gets its own case: a revoked
- * identity is capped at `observe`, so the tier gate refuses a `destructive` verb
- * before an approval is ever minted — it never arrives at the principal check at
- * all. `expired` keeps its recorded ceiling, so it does arrive, and it is the
- * state that proves the `inactive` test in `resolveAddedBy` is load-bearing
- * (DOR-486).
+ * Only the fabricated token does now. A revoked or expired token resolves to an
+ * identity marked `inactive`, and `mcp.add` sits in the Tools & packages
+ * permission area, where a turned-off identity is Blocked and not approvable
+ * (spec `agent-permissions` D3): the gate refuses it before an approval is ever
+ * minted, so it never arrives at the principal check at all. Both get their own
+ * row below.
  */
-const DEAD_TOKEN_STATES: DeadTokenState[] = ['fabricated', 'expired'];
+const DEAD_TOKEN_STATES: DeadTokenState[] = ['fabricated'];
+
+/** The dead states the permission gate stops before any card. */
+const INACTIVE_TOKEN_STATES: DeadTokenState[] = ['revoked', 'expired'];
 
 /** The code every seam that names a caller now answers an unverifiable token with. */
 const REFUSAL_CODE = 'AGENT_IDENTITY_UNVERIFIED';
@@ -254,21 +260,25 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
       }
     );
 
-    it('stops a revoked token at the tier gate, before any card is minted', async () => {
-      // Defence in depth, and worth pinning as its own row: a revoked identity
-      // is capped at `observe`, so this `destructive` verb is refused outright
-      // rather than queued for a person. Nothing is recorded either way, which
-      // is the property both rows share (DOR-486).
-      const res = await request(fixtureTarget.mount(app()))
-        .post('/api/capabilities/mcp.add/invoke')
-        .set('X-DorkOS-Agent', await deadToken('revoked'))
-        .send(SERVER);
+    it.each(INACTIVE_TOKEN_STATES)(
+      'stops a %s token at the tier gate, before any card is minted',
+      async (state) => {
+        // Defence in depth, and worth pinning as its own row: a turned-off
+        // identity is Blocked in every permission area, so this verb is refused
+        // outright rather than queued for a person. Nothing is recorded either
+        // way, which is the property every row here shares (DOR-486).
+        const res = await request(fixtureTarget.mount(app()))
+          .post('/api/capabilities/mcp.add/invoke')
+          .set('X-DorkOS-Agent', await deadToken(state))
+          .send(SERVER);
 
-      expect(res.status).not.toBe(200);
-      expect(res.body.reason).toBe('tier_ceiling');
-      expect(res.body.approvable).toBe(false);
-      expect(recordedAddedBy).toEqual([]);
-    });
+        expect(res.status).not.toBe(200);
+        expect(res.body.reason).toBe('permission_blocked');
+        expect(res.body.approvable).toBe(false);
+        expect(approvals.listPending()).toEqual([]);
+        expect(recordedAddedBy).toEqual([]);
+      }
+    );
 
     it('still records the operator when no header is presented', async () => {
       // The negative control, and the posture the whole product runs in: the
@@ -361,14 +371,18 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
       }
     );
 
-    it('stops a revoked token at the tier gate, before any card is minted', async () => {
-      const res = await rpc(SERVER, await deadToken('revoked'));
+    it.each(INACTIVE_TOKEN_STATES)(
+      'stops a %s token at the tier gate, before any card is minted',
+      async (state) => {
+        const res = await rpc(SERVER, await deadToken(state));
 
-      const payload = mcpPayload(res) as { status?: string; reason?: string };
-      expect(payload.status).toBe('denied');
-      expect(payload.reason).toBe('tier_ceiling');
-      expect(recordedAddedBy).toEqual([]);
-    });
+        const payload = mcpPayload(res) as { status?: string; reason?: string };
+        expect(payload.status).toBe('denied');
+        expect(payload.reason).toBe('permission_blocked');
+        expect(approvals.listPending()).toEqual([]);
+        expect(recordedAddedBy).toEqual([]);
+      }
+    );
 
     it('still records the operator when no header is presented', async () => {
       const res = await askGrantRetry();

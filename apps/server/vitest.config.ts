@@ -21,16 +21,6 @@ export default defineConfig({
     //   leaves of `UserConfigSchema` to prove every config field has been
     //   classified for the tokenless `config_get` surface. Against a stale dist a
     //   newly added field reads as "already classified".
-    // - `mcp-tool-groups` backs the tool-group guards, which decide what the cockpit
-    //   shows for each toggle and which groups no toggle gates. Measured against a
-    //   stale dist, back when this table also fed the SDK's `allowedTools`: moving
-    //   `tasks_delete` into an always-on group, making a destructive tool permanently
-    //   auto-approved, passed all 85 targeted tests AND `tsc`, because the type-level
-    //   assertions only compare key SETS and the keys had not changed. Nothing feeds
-    //   `allowedTools` anymore (DOR-519), so that exact edit no longer bypasses a
-    //   prompt, but the guard is still the only thing that notices the table moved,
-    //   and a stale dist still turns it into decoration. With the alias the same edit
-    //   fails immediately.
     // - `@dorkos/operating-skills` backs the two pack-prose guards, which read the
     //   SKILL TEXT agents are seeded with and check it against server reality:
     //   `services/core/__tests__/operating-skills-tier-consistency.test.ts` against
@@ -219,12 +209,6 @@ export default defineConfig({
         find: '@dorkos/shared/config-schema',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/config-schema.ts', import.meta.url)
-        ),
-      },
-      {
-        find: '@dorkos/shared/mcp-tool-groups',
-        replacement: fileURLToPath(
-          new URL('../../packages/shared/src/mcp-tool-groups.ts', import.meta.url)
         ),
       },
       {
