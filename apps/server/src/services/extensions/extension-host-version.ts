@@ -1,5 +1,6 @@
 import { gte, valid } from 'semver';
 import { SERVER_VERSION, IS_DEV_BUILD } from '../../lib/version.js';
+import { logger } from '../../lib/logger.js';
 
 /** The DorkOS build an extension's `minHostVersion` is checked against. */
 export interface HostVersion {
@@ -23,9 +24,10 @@ export const RUNNING_HOST_VERSION: HostVersion = {
  *
  * - No minimum: always compatible.
  * - A development build: always compatible, since it runs the newest source.
- * - A host version that is not semver (only a test double or a hand-set
- *   override): compatible, because there is nothing to compare against and
- *   refusing every extension would be the worse failure.
+ * - A host version that is not semver (a mistyped `DORKOS_VERSION_OVERRIDE`,
+ *   say): incompatible, with one warning naming the bad version. Loading
+ *   every extension whatever it needs would hide the mistake; refusing only
+ *   extensions that ask for a minimum makes it visible on their cards.
  * - A minimum that is not semver: incompatible, since it cannot be satisfied.
  *
  * @param minHostVersion - The manifest's `minHostVersion`, if any.
@@ -38,7 +40,21 @@ export function satisfiesMinHostVersion(
 ): boolean {
   if (!minHostVersion) return true;
   if (host.isDevBuild) return true;
-  if (!valid(host.version)) return true;
+  if (!valid(host.version)) {
+    warnUnreadableHostVersion(host.version);
+    return false;
+  }
   if (!valid(minHostVersion)) return false;
   return gte(host.version, minHostVersion);
+}
+
+let warnedHostVersion: string | null = null;
+
+/** Log once per bad host version, so a mistyped override is visible without flooding the log. */
+function warnUnreadableHostVersion(version: string): void {
+  if (warnedHostVersion === version) return;
+  warnedHostVersion = version;
+  logger.warn(
+    `[Extensions] DorkOS version "${version}" is not a version number, so extensions that need a minimum DorkOS version will not load. Check DORKOS_VERSION_OVERRIDE.`
+  );
 }

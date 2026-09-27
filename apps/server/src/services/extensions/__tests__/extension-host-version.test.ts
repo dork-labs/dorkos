@@ -26,7 +26,12 @@ describe('satisfiesMinHostVersion', () => {
     expect(satisfiesMinHostVersion('latest', RELEASED)).toBe(false);
   });
 
-  it('accepts when the host version itself cannot be read as a version', () => {
-    expect(satisfiesMinHostVersion('0.88.0', { version: 'test', isDevBuild: false })).toBe(true);
+  it('refuses a minimum when the host version itself cannot be read as a version', () => {
+    // A mistyped DORKOS_VERSION_OVERRIDE must not silently load every extension.
+    expect(satisfiesMinHostVersion('0.88.0', { version: '0.88', isDevBuild: false })).toBe(false);
+  });
+
+  it('still loads an extension with no minimum when the host version is unreadable', () => {
+    expect(satisfiesMinHostVersion(undefined, { version: '0.88', isDevBuild: false })).toBe(true);
   });
 });
