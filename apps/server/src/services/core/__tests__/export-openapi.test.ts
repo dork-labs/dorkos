@@ -20,6 +20,18 @@ describe('export-openapi', () => {
     expect(paths.some((p) => p.includes('/health'))).toBe(true);
   });
 
+  it('documents the fleet fields on the session list (spec claude-account-fleet D7)', () => {
+    const spec = generateOpenAPISpec();
+    const schemas = spec.components?.schemas ?? {};
+    expect(schemas).toHaveProperty('AccountUsage');
+    expect(schemas).toHaveProperty('SessionLimit');
+    const list = JSON.stringify(schemas.SessionListResponse);
+    expect(list).toContain('accountUsage');
+    const session = JSON.stringify(schemas.Session);
+    for (const field of ['accountId', 'status', 'trackerItem']) expect(session).toContain(field);
+    expect(spec.paths?.['/api/sessions']?.get?.description).toContain('accountUsage');
+  });
+
   it('documents only the canonical connector resource and authority routes', () => {
     const paths = generateOpenAPISpec().paths ?? {};
 

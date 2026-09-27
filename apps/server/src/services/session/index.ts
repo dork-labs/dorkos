@@ -199,6 +199,11 @@ export {
 } from './fleet/session-limit-store.js';
 export { startLimitPlanning, onLimitPlanWritten } from './fleet/limit-plans.js';
 export { installContinueService } from './fleet/continue-service.js';
+export {
+  applySessionFleetOverlay,
+  sessionFleetOverlayDeps,
+} from './fleet/session-fleet-overlay.js';
+export type { FleetUsageReader, SessionFleetOverlayDeps } from './fleet/session-fleet-overlay.js';
 export type {
   TriggerCommandIntentDeps,
   TriggerCommandIntentOpts,

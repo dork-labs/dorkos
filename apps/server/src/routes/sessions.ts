@@ -20,6 +20,7 @@ import {
 import type {
   InterruptReceipt,
   PermissionModeId,
+  SessionListResponse,
   StoredSessionSettingsResponse,
 } from '@dorkos/shared/types';
 import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
@@ -48,6 +49,8 @@ import {
   countSessionsPerDay,
   clearQueuedMessages,
   applySessionOriginOverlays,
+  applySessionFleetOverlay,
+  sessionFleetOverlayDeps,
   sessionOriginResolvers,
   overlayStoredSettings,
   callerNamedCwd,
@@ -204,7 +207,7 @@ function answeredBy(res: Response): string | undefined {
 }
 
 // GET /api/sessions - List sessions aggregated across all registered runtimes
-// (ADR-0310). Responds with the { sessions, warnings? } envelope rather than a
+// (ADR-0310). Responds with the { sessions, warnings?, accountUsage? } envelope rather than a
 // bare array: aggregation degrades gracefully per runtime, and the in-band
 // warnings[] must survive both transports (an HTTP header would be invisible
 // to the Direct in-process transport). See SessionListResponseSchema.
@@ -236,7 +239,15 @@ router.get('/', async (req, res) => {
   // applies too, so a room turn reads the same way whichever one a client heard
   // it from (DOR-1141).
   applySessionOriginOverlays(page, sessionOriginResolvers(req.app.locals));
-  res.json(warnings.length > 0 ? { sessions: page, warnings } : { sessions: page });
+  // The fleet fields (spec claude-account-fleet D7): each session's account,
+  // live status and work item, and the usage of the accounts on the page. One
+  // pass over the page, from memory plus one limit query.
+  const accountUsage = await applySessionFleetOverlay(page, sessionFleetOverlayDeps());
+  res.json({
+    sessions: page,
+    ...(warnings.length > 0 && { warnings }),
+    ...(accountUsage && { accountUsage }),
+  } satisfies SessionListResponse);
 });
 
 // GET /api/sessions/recent - Most-recent sessions across ALL agents (DOR-329).
@@ -440,6 +451,11 @@ router.get('/:id', async (req, res) => {
   // keys off the session it actually resolved, not the id asked for.
   overlayStoredSettings([session], runtimeRegistry);
   applySessionOriginOverlays([session], sessionOriginResolvers(req.app.locals));
+  // The same fleet fields the list carries, so a session reads the same either
+  // way (spec claude-account-fleet D7). It runs FIRST: the usage block below
+  // spreads onto the status it sets, and both merge rather than replace.
+  // The accounts' usage is the list envelope's, so it is not returned here.
+  await applySessionFleetOverlay([session], sessionFleetOverlayDeps());
   // The account's cached usage, so a single-session read shows it before any
   // turn (spec `claude-account-fleet` §6 U). A live projector's stamp is the
   // one its snapshot carries; otherwise it is read from the store here. This
@@ -454,6 +470,11 @@ router.get('/:id', async (req, res) => {
       ...(session.status ?? { lifecycle: live?.lifecycle ?? 'idle', limit: live?.limit ?? null }),
       accountUsage,
     };
+  }
+  // A session the fleet overlay could not name (no transcript and no folder it
+  // matched) still has an account once its usage resolved one.
+  if (session.accountId === undefined && session.status?.accountUsage?.accountId) {
+    session.accountId = session.status.accountUsage.accountId;
   }
   res.json(session);
 });
