@@ -185,7 +185,7 @@ export const DORKBOT_TOUR_LINES = {
   /** The Relay occasion tour, fired on the first integration made. */
   relay: {
     relayIntegrations:
-      'Right here. Every integration you add shows up in this list, so you can check on it or add more.',
+      'Right here. Every app you connect shows up in this list, so you can check on it or add more.',
   },
   /** The Mesh occasion tour, fired when a second agent joins the fleet. */
   mesh: {

@@ -34,3 +34,13 @@ export {
 } from './identity';
 export type { MockIdentity } from './identity';
 export { HUMAN_AUTHOR, AGENT_AUTHOR } from './message-authors';
+export {
+  MOCK_AGENT_NAMES,
+  MOCK_CATALOG_SERVICES,
+  MOCK_CHAT_APPS,
+  MOCK_CHAT_BINDINGS,
+  MOCK_CONNECTIONS,
+  MOCK_GMAIL_USAGE,
+  mockConnection,
+  mockConnectionDetail,
+} from './connections';

@@ -213,7 +213,7 @@ export function useOverridesLedger(): OverridesLedger {
         kind: 'binding',
         name: binding.label || binding.adapterId,
         detail: descriptor?.label ?? permissionModeLabel(binding.permissionMode),
-        onOpen: navigate ? openAndClose(() => openConnections('messaging')) : null,
+        onOpen: navigate ? openAndClose(() => openConnections()) : null,
       });
     }
   }

@@ -3,22 +3,20 @@ import { CONNECTOR_ADAPTER_TYPE } from '@dorkos/marketplace';
 import { adapterBridge } from '../adapter-bridge';
 
 describe('adapterBridge', () => {
-  it('routes a messaging adapter to the Messaging region', () => {
+  it('says a messaging adapter adds a way to reach your agents', () => {
     expect(adapterBridge('adapter', 'telegram')).toEqual({
       line: 'Adds a new way to reach your agents',
-      region: 'messaging',
     });
   });
 
-  it('routes a connector-refinement adapter to the Accounts region', () => {
+  it('says a connector-refinement adapter adds a service agents act on', () => {
     expect(adapterBridge('adapter', CONNECTOR_ADAPTER_TYPE)).toEqual({
       line: 'Adds a new service your agents can act on',
-      region: 'accounts',
     });
   });
 
   it('treats an adapter with no adapterType as messaging', () => {
-    expect(adapterBridge('adapter', undefined)?.region).toBe('messaging');
+    expect(adapterBridge('adapter', undefined)?.line).toBe('Adds a new way to reach your agents');
   });
 
   it('returns null for every non-adapter package type', () => {

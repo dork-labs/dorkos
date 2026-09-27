@@ -282,7 +282,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
               get started.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
+          <Button variant="outline" size="sm" onClick={() => openConnections()}>
             Open Messaging settings
           </Button>
         </div>
@@ -304,7 +304,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
               will appear here as soon as it’s ready.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
+          <Button variant="outline" size="sm" onClick={() => openConnections()}>
             Add a connection
           </Button>
         </div>

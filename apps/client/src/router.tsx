@@ -82,16 +82,16 @@ const appShellRoute = createRoute({
    *
    * That param opened a dialog, on any route, that the Connections page has
    * replaced. Links to it are in bookmarks, tours and old release notes, so
-   * rather than breaking them it lands on the half of the page that took the
-   * dialog's job. Handled on the shell route because the param was never
-   * route-specific.
+   * rather than breaking them it lands on the Connections page, where chat
+   * apps now sit in the one list. Handled on the shell route because the param
+   * was never route-specific.
    */
   beforeLoad: ({ search }) => {
     const { relay, ...rest } = search as { relay?: string } & Record<string, unknown>;
     if (!relay) return;
     throw redirect({
       to: '/connections',
-      search: { ...rest, region: 'messaging' },
+      search: rest,
       replace: true,
     });
   },
@@ -492,12 +492,14 @@ const workspacesRoute = createRoute({
 
 // ── Connections at /connections ──────────────────────────────
 /**
- * Which half of the page to scroll to. Not a tab: both regions are always
- * rendered, and this only says where to start.
+ * What the one list has open: `app` is a connected app's side panel (a
+ * connection id or a chat app id), `request`/`review` a decision's dialog, and
+ * `flow` a sign-in in progress. The retired `region` param (the old
+ * Messaging/Accounts halves) is simply dropped, so old links land on the list.
  */
 const connectionsSearchSchema = mergeDialogSearch(
   z.object({
-    region: z.enum(['messaging', 'accounts']).optional(),
+    app: z.string().min(1).optional(),
     review: z.string().min(1).optional(),
     flow: z.string().min(1).optional(),
     request: z.string().min(1).optional(),

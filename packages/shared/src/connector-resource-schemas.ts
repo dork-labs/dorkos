@@ -9,6 +9,7 @@
  */
 import { z } from 'zod';
 import { ConnectorAuthenticationSetupSchema } from './connector-authentication-setup.js';
+import { ConnectorProviderStatusSchema } from './connector-provider.js';
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
   ConnectionIdSchema,
@@ -125,6 +126,19 @@ export const ConnectorAppConnectionsSchema = z
   .strict();
 /** How DorkOS reaches apps right now, and which way new apps use. */
 export type ConnectorAppConnections = z.infer<typeof ConnectorAppConnectionsSchema>;
+
+/**
+ * `GET /api/connectors/providers`: every connection service's setup state, and
+ * how DorkOS reaches apps right now (which way new apps use).
+ */
+export const ConnectorProvidersResourceSchema = z
+  .object({
+    providers: z.array(ConnectorProviderStatusSchema),
+    appConnections: ConnectorAppConnectionsSchema,
+  })
+  .strict();
+/** Every connection service's setup state, and which way new apps use. */
+export type ConnectorProvidersResource = z.infer<typeof ConnectorProvidersResourceSchema>;
 
 /** One service intent in the unified catalog. */
 export const ConnectorCatalogIntentSchema = z.discriminatedUnion('kind', [

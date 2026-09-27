@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Clock3, ShieldAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, Clock3, ShieldAlert } from 'lucide-react';
 import type { ConnectorReceiveScope } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectionId, ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorAgentRequest,
-  useConnectorAgentRequests,
   useConnectorCatalog,
   useConnectorConnection,
   useConnectorConnections,
@@ -31,28 +30,8 @@ import {
   SelectValue,
   Skeleton,
 } from '@/layers/shared/ui';
+import { appNameFromSlug } from '../lib/app-list';
 import { AgentRequestEventScopes } from './AgentRequestEventScopes';
-
-interface AgentRequestsProps {
-  /** URL-selected durable request. */
-  selectedRequestId?: string | null;
-  /** Hide the request sheet while its account authentication sheet is open. */
-  suspended?: boolean;
-  /** Put a request into the URL for reload and Back/Forward support. */
-  onSelectRequest?: (requestId: string) => void;
-  /** Remove the request from the URL. */
-  onCloseRequest?: () => void;
-  /** Open the existing owner authentication flow for this exact service. */
-  onConnectService?: (service: ConnectorCatalogService) => void;
-}
-
-function serviceName(slug: string): string {
-  return slug
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
 
 function operationName(slug: string): string {
   const leaf = slug.split('.').at(-1) ?? slug;
@@ -78,109 +57,24 @@ function requestStateLabel(status: ConnectorAgentRequestItem['status']): string 
   }
 }
 
-/** Owner-only agent access requests and their exact account/action review sheet. */
-export function AgentRequests({
-  selectedRequestId = null,
-  suspended = false,
-  onSelectRequest = () => undefined,
-  onCloseRequest = () => undefined,
-  onConnectService = () => undefined,
-}: AgentRequestsProps) {
-  const list = useConnectorAgentRequests('pending');
-  const openerRef = useRef<HTMLButtonElement | null>(null);
-  const headingRef = useRef<HTMLHeadingElement | null>(null);
-
-  const closeRequest = useCallback(() => {
-    onCloseRequest();
-    requestAnimationFrame(() => {
-      const destination = openerRef.current?.isConnected ? openerRef.current : headingRef.current;
-      destination?.focus();
-    });
-  }, [onCloseRequest]);
-
-  return (
-    <section aria-labelledby="agent-service-requests" className="space-y-3">
-      <div>
-        <h3
-          ref={headingRef}
-          id="agent-service-requests"
-          tabIndex={-1}
-          className="text-sm font-semibold"
-        >
-          Agent requests
-        </h3>
-        <p className="text-muted-foreground mt-1 text-xs">
-          You choose the account and exact actions. Agents cannot see your account list.
-        </p>
-      </div>
-      {list.isPending ? (
-        <div aria-label="Loading agent requests" className="space-y-2">
-          <Skeleton className="h-16 rounded-lg" />
-        </div>
-      ) : list.isError ? (
-        <QueryErrorState
-          title="Couldn’t load agent requests"
-          description="Try again. No access was changed."
-          onRetry={() => void list.refetch()}
-          isRetrying={list.isFetching}
-        />
-      ) : list.data.length === 0 ? (
-        <p className="bg-muted/40 text-muted-foreground rounded-lg p-4 text-sm">
-          No agent requests are waiting.
-        </p>
-      ) : (
-        <ul className="space-y-2" data-testid="agent-request-list">
-          {list.data.map((request) => (
-            <li key={request.requestId}>
-              <Button
-                variant="ghost"
-                className="bg-muted/40 hover:bg-muted/70 h-auto min-h-14 w-full justify-start rounded-lg px-3 py-2.5 text-left"
-                onClick={(event) => {
-                  openerRef.current = event.currentTarget;
-                  onSelectRequest(request.requestId);
-                }}
-                data-testid={`agent-request-${request.requestId}`}
-              >
-                <Bot className="text-muted-foreground size-4 shrink-0" aria-hidden />
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-medium">
-                      {request.agent.displayName} · {serviceName(request.serviceSlug)}
-                    </span>
-                    <Badge size="xs" variant="outline">
-                      {requestStateLabel(request.status)}
-                    </Badge>
-                  </span>
-                  <span className="text-muted-foreground mt-0.5 line-clamp-1 block text-xs">
-                    {request.reason}
-                  </span>
-                </span>
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <AgentRequestDialog
-        requestId={selectedRequestId}
-        open={selectedRequestId !== null && !suspended}
-        onOpenChange={(open) => {
-          if (!open) closeRequest();
-        }}
-        onConnectService={onConnectService}
-      />
-    </section>
-  );
-}
-
-function AgentRequestDialog({
+/**
+ * One agent's request to use an app: which account, which exact actions, and
+ * the owner's decision. Opened from the page's "Needs you" strip or a
+ * `?request=` deep link.
+ */
+export function AgentRequestDialog({
   requestId,
   open,
   onOpenChange,
   onConnectService,
 }: {
+  /** The request to show. */
   requestId: string | null;
+  /** Whether the dialog is open (closed while its sign-in dialog is in front). */
   open: boolean;
+  /** Close the dialog. */
   onOpenChange: (open: boolean) => void;
+  /** Open the sign-in flow for the exact app the agent asked for. */
   onConnectService: (service: ConnectorCatalogService) => void;
 }) {
   const request = useConnectorAgentRequest(requestId);
@@ -324,7 +218,7 @@ function AgentRequestDialog({
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold">{request.data.agent.displayName}</p>
                   <Badge size="xs" variant="outline">
-                    {serviceName(request.data.serviceSlug)}
+                    {appNameFromSlug(request.data.serviceSlug)}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-2 text-sm">{request.data.reason}</p>

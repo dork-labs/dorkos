@@ -233,7 +233,7 @@ export function CommunityContextSwitcher({
     onOpenSettings: () => selected && openOnCommunity(selected),
     onLeave: () => selected && openOnCommunity(selected, 'account'),
     onDisconnect: () => setDisconnecting(selected),
-    onConnect: () => openConnections('messaging'),
+    onConnect: () => openConnections(),
     onJoin: () => setJoinOpen(true),
     creationOrigins: communityCreationOrigins(destinations),
     // The pinned origin again: the only host these connections talked to.
@@ -302,7 +302,7 @@ export function CommunityContextSwitcher({
   async function selectCommunity(connection: CommunityConnectionDescriptor) {
     if (connection.ref === selectedRef || pendingSelection.current) return;
     if (connection.status !== 'connected') {
-      openConnections('messaging');
+      openConnections();
       return;
     }
     const owner = getCommunityAuthority();

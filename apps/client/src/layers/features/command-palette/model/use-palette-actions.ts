@@ -259,7 +259,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openTasks();
           return;
         case 'openRelay':
-          openConnections('messaging');
+          openConnections();
           return;
         case 'openMesh':
           navigate({ to: '/team' });
@@ -345,7 +345,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openTasks();
           return;
         case 'openRelay':
-          openConnections('messaging');
+          openConnections();
           return;
         case 'openMesh':
           navigate({ to: '/team' });

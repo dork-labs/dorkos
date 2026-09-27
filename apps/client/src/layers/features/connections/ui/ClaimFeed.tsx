@@ -25,10 +25,11 @@ import { ClaimCard } from './ClaimCard';
  * say who should answer. This is the list of those, and it renders nothing at
  * all when there is nothing waiting.
  *
- * @param props - Whether messaging is on at all.
+ * @param props - Whether messaging is on at all, and which chat app to show.
  * @param props.enabled - False turns the whole feed off, request included.
+ * @param props.adapterId - Only the chats that reached this one chat app.
  */
-export function ClaimFeed({ enabled }: { enabled: boolean }) {
+export function ClaimFeed({ enabled, adapterId }: { enabled: boolean; adapterId?: string }) {
   useUnclaimedChatsSync();
   const { data: chats, isLoading } = useUnclaimedChats('pending', enabled);
   const { data: agentsData } = useRegisteredAgents();
@@ -42,7 +43,7 @@ export function ClaimFeed({ enabled }: { enabled: boolean }) {
   const [conflict, setConflict] = useState<ChatConflict | null>(null);
 
   const agentOptions = agentsData?.agents ?? [];
-  const pending = chats ?? [];
+  const pending = (chats ?? []).filter((chat) => !adapterId || chat.adapterId === adapterId);
   const isDeciding = claim.isPending || ignore.isPending || block.isPending || leave.isPending;
 
   if (!enabled) return null;
