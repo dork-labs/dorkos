@@ -1,0 +1,447 @@
+/**
+ * The usage ledger on disk: one small JSON file per account at
+ * `<dorkHome>/runtimes/<runtime>/usage/<account-id>.json`, shared with flow.
+ *
+ * Every writer, flow or DorkOS, follows the same seven steps (marketplace
+ * `specs/flow-cli-core` §1.2 "Writing", contract revision 4 and later), and this
+ * module is DorkOS's one implementation of them:
+ *
+ * 1. Take the lock: exclusive-create `<id>.json.lock` (`wx`) holding a fresh
+ *    token `<pid>:<128-bit hex>`. The token, not the pid, names the holder, so
+ *    two writers in one process never mistake each other's lock.
+ * 2. A lock whose mtime is older than 10 s is stale. Read its token, rename it
+ *    to `<id>.json.lock.stale-<random>`, read the moved file's token, and when it
+ *    is NOT the token judged stale (a fresh lock was moved by mistake) put it
+ *    back with `link`, which fails harmlessly when a newer lock exists. Then
+ *    delete the moved name and retry. A lock is never deleted by its original
+ *    name.
+ * 3. Retry every 25-100 ms (jittered); give up after 2 s. Giving up returns
+ *    `gaveUp` and never throws, so a turn is never failed by a busy ledger.
+ * 4. Under the lock, read the file. Missing = empty; unparsable = renamed to
+ *    `<id>.json.corrupt-<epoch ms>` and started empty.
+ * 5. Merge (`mergeLedger`). Nothing changed: release and stop.
+ * 6. Write `<id>.json.<pid>.<random>.tmp`, `fsync`, `rename` over the file.
+ * 7. Release: delete the lock only while it still holds our token.
+ *
+ * Reading takes no lock: `rename` is atomic, so a reader sees the old file or
+ * the new one, never half of one.
+ *
+ * Folder mode `0700`, file mode `0600`: a ledger says how much of someone's
+ * subscription is used, which is nobody else's business on a shared machine.
+ *
+ * @module services/core/usage/ledger-file
+ */
+import { randomBytes } from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {
+  ACCOUNT_ID_PATTERN,
+  LEDGER_RUNTIMES,
+  UsageLedgerSchema,
+  mergeLedger,
+  type LedgerMergeWarning,
+  type LedgerObservation,
+  type LedgerRuntime,
+  type UsageLedger,
+} from '@dorkos/shared/account-usage';
+import { logger } from '../../../lib/logger.js';
+
+/** A lock whose mtime is older than this is stale (contract step 2). */
+export const LOCK_STALE_MS = 10_000;
+/** How long a writer keeps trying for the lock before it gives up (contract step 3). */
+export const LOCK_GIVE_UP_MS = 2_000;
+const RETRY_MIN_MS = 25;
+const RETRY_SPREAD_MS = 75;
+
+/** The suffixes of the files a ledger folder holds beside the ledgers themselves. */
+const SIDE_FILE_PATTERN = /\.(lock|tmp)$|\.stale-|\.corrupt-/;
+
+/** Injectable timing, so tests can drive retries and give-ups without waiting. */
+export interface LedgerLockOptions {
+  /** Give up after this many ms. Default {@link LOCK_GIVE_UP_MS}. */
+  giveUpMs?: number;
+  /** Sleep between attempts. Default: a real timer. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** The outcome of {@link writeLedger}. */
+export interface WriteLedgerResult {
+  /** True when the file was rewritten. False when nothing changed, or on a give-up. */
+  written: boolean;
+  /** Observations `mergeLedger` set aside, for the caller's warning log. */
+  dropped: LedgerMergeWarning[];
+  /** True when the lock could not be taken within the give-up time. */
+  gaveUp?: boolean;
+  /** The ledger as it stands on disk after this write (`null` when there is none). */
+  ledger: UsageLedger | null;
+}
+
+/** The outcome of {@link withLedgerLock}. */
+export type LockedResult<T> = { gaveUp: false; value: T } | { gaveUp: true };
+
+function isErrno(err: unknown, code: string): boolean {
+  return (err as NodeJS.ErrnoException | null)?.code === code;
+}
+
+function randomHex(bytes = 16): string {
+  return randomBytes(bytes).toString('hex');
+}
+
+const realSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms).unref?.();
+  });
+
+/**
+ * Refuse an account id that is not a ledger file name. The id is part of a
+ * path, so anything outside {@link ACCOUNT_ID_PATTERN} could escape the folder.
+ */
+function assertAccountId(accountId: string): void {
+  if (!ACCOUNT_ID_PATTERN.test(accountId)) {
+    throw new Error(`Refused a ledger for account id "${accountId}": not a valid account id.`);
+  }
+}
+
+/**
+ * The runtime a ledger folder belongs to, read off its path
+ * (`<dorkHome>/runtimes/<runtime>/usage`). The contract says readers trust the
+ * path, so the writer does too.
+ */
+export function runtimeOfLedgerDir(dir: string): LedgerRuntime {
+  const runtime = path.basename(path.dirname(dir));
+  if (!(LEDGER_RUNTIMES as readonly string[]).includes(runtime)) {
+    throw new Error(`Refused ledger folder "${dir}": it is not under runtimes/<runtime>/usage.`);
+  }
+  return runtime as LedgerRuntime;
+}
+
+/**
+ * The ledger folder for one runtime: `<dorkHome>/runtimes/<runtime>/usage`.
+ *
+ * @param dorkHome - The DorkOS data directory.
+ * @param runtime - The runtime slug.
+ */
+export function ledgerDir(dorkHome: string, runtime: LedgerRuntime): string {
+  return path.join(dorkHome, 'runtimes', runtime, 'usage');
+}
+
+/** Create the ledger folder (mode `0700`) and its parents, if missing. */
+async function ensureDir(dir: string): Promise<void> {
+  await fs.mkdir(path.dirname(dir), { recursive: true });
+  try {
+    await fs.mkdir(dir, { mode: 0o700 });
+  } catch (err) {
+    if (!isErrno(err, 'EEXIST')) throw err;
+  }
+}
+
+async function readToken(file: string): Promise<string | null> {
+  try {
+    return await fs.readFile(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Break the lock at `lockPath` when it is stale (contract step 2). Returns true
+ * when the caller should retry at once (the lock is gone or was just broken),
+ * false when a live lock is held.
+ */
+async function breakIfStale(lockPath: string): Promise<boolean> {
+  let mtimeMs: number;
+  try {
+    mtimeMs = (await fs.stat(lockPath)).mtimeMs;
+  } catch {
+    return true;
+  }
+  if (Date.now() - mtimeMs <= LOCK_STALE_MS) return false;
+  const judged = await readToken(lockPath);
+  if (judged === null) return true;
+  const moved = `${lockPath}.stale-${randomHex(8)}`;
+  try {
+    await fs.rename(lockPath, moved);
+  } catch {
+    // Somebody else broke or released it first.
+    return true;
+  }
+  const movedToken = await readToken(moved);
+  if (movedToken !== judged) {
+    // We moved a FRESH lock (its holder replaced the stale one between our read
+    // and our rename). Put it back; a newer lock already there wins (EEXIST).
+    try {
+      await fs.link(moved, lockPath);
+    } catch (err) {
+      if (!isErrno(err, 'EEXIST')) {
+        logger.debug('[ledger-file] could not restore a lock moved by mistake', {
+          lockPath,
+          err: String(err),
+        });
+      }
+    }
+  }
+  await fs.rm(moved, { force: true });
+  return true;
+}
+
+/** Take the lock (contract steps 1-3). Returns our token, or null on a give-up. */
+async function acquire(lockPath: string, opts: LedgerLockOptions): Promise<string | null> {
+  const giveUpMs = opts.giveUpMs ?? LOCK_GIVE_UP_MS;
+  const sleep = opts.sleep ?? realSleep;
+  const token = `${process.pid}:${randomHex()}`;
+  const started = Date.now();
+  for (;;) {
+    try {
+      const handle = await fs.open(lockPath, 'wx', 0o600);
+      try {
+        await handle.writeFile(token);
+      } finally {
+        await handle.close();
+      }
+      return token;
+    } catch (err) {
+      if (!isErrno(err, 'EEXIST')) throw err;
+    }
+    const broke = await breakIfStale(lockPath);
+    if (Date.now() - started >= giveUpMs) return null;
+    if (!broke) await sleep(RETRY_MIN_MS + Math.random() * RETRY_SPREAD_MS);
+  }
+}
+
+/** Release the lock only while it still holds our token (contract step 7). */
+async function release(lockPath: string, token: string): Promise<void> {
+  if ((await readToken(lockPath)) !== token) return;
+  await fs.rm(lockPath, { force: true });
+}
+
+/**
+ * Run `fn` while holding one ledger's lock (contract steps 1-3 and 7).
+ *
+ * @param dir - The runtime's ledger folder; created (mode `0700`) when missing.
+ * @param accountId - The ledger id. Refused unless it matches {@link ACCOUNT_ID_PATTERN}.
+ * @param fn - The work to do under the lock.
+ * @param opts - Timing overrides.
+ * @returns `fn`'s value, or `{ gaveUp: true }` when the lock could not be taken.
+ */
+export async function withLedgerLock<T>(
+  dir: string,
+  accountId: string,
+  fn: () => Promise<T>,
+  opts: LedgerLockOptions = {}
+): Promise<LockedResult<T>> {
+  assertAccountId(accountId);
+  await ensureDir(dir);
+  const lockPath = path.join(dir, `${accountId}.json.lock`);
+  const token = await acquire(lockPath, opts);
+  if (token === null) return { gaveUp: true };
+  try {
+    return { gaveUp: false, value: await fn() };
+  } finally {
+    await release(lockPath, token);
+  }
+}
+
+/**
+ * Read the file under the lock (contract step 4): missing = empty; not JSON, or
+ * not a ledger-shaped object, = renamed to `.corrupt-<ms>` and empty. A ledger
+ * of another version is returned as is, for `mergeLedger` to leave alone.
+ */
+async function readUnderLock(file: string): Promise<unknown> {
+  let text: string;
+  try {
+    text = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (isErrno(err, 'ENOENT')) return null;
+    throw err;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  const shaped =
+    parsed !== null &&
+    typeof parsed === 'object' &&
+    !Array.isArray(parsed) &&
+    ((parsed as { v?: unknown }).v !== 1 ||
+      ((parsed as { windows?: unknown }).windows !== null &&
+        typeof (parsed as { windows?: unknown }).windows === 'object'));
+  if (shaped) return parsed;
+  const corrupt = `${file}.corrupt-${Date.now()}`;
+  await fs.rename(file, corrupt);
+  logger.warn('[ledger-file] a usage ledger could not be read; set it aside and started empty', {
+    file,
+    movedTo: corrupt,
+  });
+  return null;
+}
+
+/** Write `ledger` over `file` through a temp file, `fsync` and `rename` (contract step 6). */
+async function replaceFile(dir: string, file: string, ledger: UsageLedger): Promise<void> {
+  const tmp = path.join(dir, `${path.basename(file)}.${process.pid}.${randomHex(8)}.tmp`);
+  const handle = await fs.open(tmp, 'w', 0o600);
+  try {
+    await handle.writeFile(`${JSON.stringify(ledger, null, 2)}\n`);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await fs.rename(tmp, file);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
+}
+
+/**
+ * Merge observations into one account's ledger file (contract §1.2 "Writing",
+ * steps 1-7 exactly).
+ *
+ * Never throws on a busy lock: after 2 s it returns `{ written: false, gaveUp:
+ * true }` and the caller keeps its readings for the next try. It does throw on
+ * a refused account id or an unexpected filesystem error, which the caller logs.
+ *
+ * @param dir - `<dorkHome>/runtimes/<runtime>/usage`; the runtime is read off the path.
+ * @param accountId - The ledger id (`default` for a standalone default account).
+ * @param observations - The readings to merge.
+ * @param now - The moment of the write.
+ * @param opts - Timing overrides.
+ */
+export async function writeLedger(
+  dir: string,
+  accountId: string,
+  observations: readonly LedgerObservation[],
+  now: Date,
+  opts: LedgerLockOptions = {}
+): Promise<WriteLedgerResult> {
+  const runtime = runtimeOfLedgerDir(dir);
+  const file = path.join(dir, `${accountId}.json`);
+  const locked = await withLedgerLock(
+    dir,
+    accountId,
+    async (): Promise<WriteLedgerResult> => {
+      const existing = await readUnderLock(file);
+      const merged = mergeLedger(existing, observations, now, { runtime, accountId });
+      if (!merged.changed) {
+        const parsed = UsageLedgerSchema.safeParse(existing);
+        return {
+          written: false,
+          dropped: merged.warnings,
+          ledger: parsed.success ? parsed.data : null,
+        };
+      }
+      await replaceFile(dir, file, merged.ledger);
+      return { written: true, dropped: merged.warnings, ledger: merged.ledger };
+    },
+    opts
+  );
+  if (locked.gaveUp) return { written: false, dropped: [], gaveUp: true, ledger: null };
+  return locked.value;
+}
+
+/**
+ * Read one account's ledger without a lock. Missing = `null`. A file that is not
+ * a valid ledger also reads as `null`, with a warning.
+ *
+ * @param dir - The runtime's ledger folder.
+ * @param accountId - The ledger id.
+ */
+export async function readLedger(dir: string, accountId: string): Promise<UsageLedger | null> {
+  assertAccountId(accountId);
+  const file = path.join(dir, `${accountId}.json`);
+  let text: string;
+  try {
+    text = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (!isErrno(err, 'ENOENT')) {
+      logger.warn('[ledger-file] could not read a usage ledger', { file, err: String(err) });
+    }
+    return null;
+  }
+  try {
+    const parsed = UsageLedgerSchema.safeParse(JSON.parse(text));
+    if (parsed.success) return parsed.data;
+  } catch {
+    // Falls through to the warning below.
+  }
+  logger.warn('[ledger-file] a usage ledger is not valid; read it as empty', { file });
+  return null;
+}
+
+/**
+ * Delete one account's ledger file under its lock (contract §1.2 "Removing an
+ * account"). A missing file or folder is not an error.
+ *
+ * @param dir - The runtime's ledger folder.
+ * @param accountId - The ledger id.
+ * @param opts - Timing overrides.
+ * @returns False on a give-up, else true.
+ */
+export async function deleteLedger(
+  dir: string,
+  accountId: string,
+  opts: LedgerLockOptions = {}
+): Promise<boolean> {
+  assertAccountId(accountId);
+  try {
+    await fs.access(dir);
+  } catch {
+    return true;
+  }
+  const locked = await withLedgerLock(
+    dir,
+    accountId,
+    () => fs.rm(path.join(dir, `${accountId}.json`), { force: true }),
+    opts
+  );
+  return !locked.gaveUp;
+}
+
+/** One ledger file found in a folder. */
+export interface LedgerFileEntry {
+  /** The account id its name carries. */
+  id: string;
+  /** Its last modification time, in epoch ms. */
+  mtimeMs: number;
+}
+
+/**
+ * The ledger files in one folder, skipping locks, temp files, and the
+ * `.stale-*` and `.corrupt-*` names. A missing folder has none.
+ *
+ * @param dir - The runtime's ledger folder.
+ */
+export async function listLedgerFiles(dir: string): Promise<LedgerFileEntry[]> {
+  let names: string[];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
+  const entries: LedgerFileEntry[] = [];
+  for (const name of names.sort()) {
+    const id = ledgerIdOfFileName(name);
+    if (id === null) continue;
+    try {
+      entries.push({ id, mtimeMs: (await fs.stat(path.join(dir, name))).mtimeMs });
+    } catch {
+      // Gone between the listing and the stat: not a file any more.
+    }
+  }
+  return entries;
+}
+
+/**
+ * The account id a ledger folder entry names, or `null` for anything that is
+ * not a ledger file (a lock, a temp file, a `.stale-*` or `.corrupt-*` name, or
+ * a name whose id is not a valid account id).
+ *
+ * @param name - A file name inside a ledger folder.
+ */
+export function ledgerIdOfFileName(name: string): string | null {
+  if (SIDE_FILE_PATTERN.test(name) || !name.endsWith('.json')) return null;
+  const id = name.slice(0, -'.json'.length);
+  return ACCOUNT_ID_PATTERN.test(id) ? id : null;
+}

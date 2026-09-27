@@ -476,7 +476,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // it, so it stays deferred and unprefixed.
     // 109 -> 110 for `change_permission` (spec `agent-permissions` D9): the
     // settings tool's description names it by its ENDING, never bare.
-    expect(advertised.size).toBe(110);
+    // 110 -> 111 for `accounts_usage` (spec `claude-account-fleet` D2): no prompt
+    // block names it, so it stays deferred and unprefixed.
+    expect(advertised.size).toBe(111);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

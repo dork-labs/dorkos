@@ -10,6 +10,8 @@ import {
 } from '../sdk-error-mapping.js';
 import { sumContextTokens } from '../context-tokens.js';
 import { advanceUsageLedger, readModelUsageTotals, type TurnUsage } from '../turn-usage.js';
+import type { LedgerWindowObservation } from '@dorkos/shared/account-usage';
+import { recordSessionUsage } from '../../accounts/account-usage-feed.js';
 
 /**
  * Map a Claude rate-limit type to a human-readable window label. Authored
@@ -32,6 +34,33 @@ function formatLimitType(type?: string): string | undefined {
     default:
       return type;
   }
+}
+
+/**
+ * One `rate_limit_event` as a usage-ledger reading (shared contract §1.2, the
+ * `sdk_event` row): keyed by `rateLimitType` verbatim (`overage` and
+ * `seven_day_overage_included` included), `usedPct` from the event's 0..1
+ * `utilization`, `resetsAt` from epoch seconds. An event with no type names no
+ * window, so it is not recorded.
+ */
+function rateLimitObservation(
+  info: Record<string, unknown>,
+  now: Date
+): LedgerWindowObservation | null {
+  const key = info.rateLimitType;
+  if (typeof key !== 'string' || key.length === 0) return null;
+  const utilization = info.utilization;
+  const resetsAt = info.resetsAt;
+  const status = info.status;
+  return {
+    key,
+    usedPct: typeof utilization === 'number' ? utilization * 100 : null,
+    resetsAt: typeof resetsAt === 'number' ? new Date(resetsAt * 1000).toISOString() : null,
+    status:
+      status === 'allowed' || status === 'allowed_warning' || status === 'rejected' ? status : null,
+    observedAt: now.toISOString(),
+    source: 'sdk_event',
+  };
 }
 
 /**
@@ -143,6 +172,10 @@ export async function* mapResultEvent(
         ...(info.isUsingOverage ? { detail: 'Using overage capacity' } : {}),
       };
       session.lastSubscriptionUsage = usage;
+      // The same reading, account-wide: it lands in the account's usage ledger,
+      // which every session on that account (and flow) reads.
+      const observation = rateLimitObservation(info, new Date());
+      if (observation) recordSessionUsage(session, [observation]);
       yield {
         type: 'session_status',
         data: { sessionId, usage },

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { mapSdkUsageResponse, fetchSubscriptionUsage } from '../subscription-usage.js';
+import {
+  mapSdkUsageResponse,
+  mapSdkUsageWindows,
+  fetchSubscriptionUsage,
+} from '../subscription-usage.js';
 import type { Query, SDKControlGetUsageResponse } from '@anthropic-ai/claude-agent-sdk';
 
 function sdkResponse(
@@ -88,8 +92,10 @@ describe('fetchSubscriptionUsage', () => {
         .mockResolvedValue(sdkResponse()),
     } as unknown as Query;
     const usage = await fetchSubscriptionUsage(query, 1000);
-    expect(usage?.kind).toBe('subscription');
-    expect(usage?.utilization).toBe(0.34);
+    expect(usage.status?.kind).toBe('subscription');
+    expect(usage.status?.utilization).toBe(0.34);
+    expect(usage.subscriptionType).toBe('max');
+    expect(usage.observations.map((o) => o.key)).toEqual(['five_hour', 'seven_day']);
   });
 
   it('rejects when the control response does not arrive within the timeout', async () => {
@@ -99,5 +105,70 @@ describe('fetchSubscriptionUsage', () => {
         .mockReturnValue(new Promise(() => {})), // never resolves
     } as unknown as Query;
     await expect(fetchSubscriptionUsage(query, 20)).rejects.toThrow(/timed out/);
+  });
+});
+
+describe('mapSdkUsageWindows (spec claude-account-fleet D2, the sdk_usage row)', () => {
+  const now = new Date('2026-07-10T16:00:00.000Z');
+
+  it('maps every present window by its SDK key, 0-100 as given, status null', () => {
+    const observations = mapSdkUsageWindows(
+      sdkResponse({
+        rate_limits: {
+          five_hour: { utilization: 34, resets_at: '2026-07-10T18:00:00.000Z' },
+          seven_day: { utilization: 12, resets_at: null },
+          seven_day_oauth_apps: { utilization: 3, resets_at: null },
+          seven_day_opus: { utilization: 50, resets_at: null },
+          seven_day_sonnet: null,
+        },
+      } as Partial<SDKControlGetUsageResponse>),
+      now
+    );
+    expect(observations).toEqual([
+      {
+        key: 'five_hour',
+        usedPct: 34,
+        resetsAt: '2026-07-10T18:00:00.000Z',
+        status: null,
+        observedAt: now.toISOString(),
+        source: 'sdk_usage',
+      },
+      expect.objectContaining({ key: 'seven_day', usedPct: 12, resetsAt: null }),
+      expect.objectContaining({ key: 'seven_day_oauth_apps', usedPct: 3 }),
+      expect.objectContaining({ key: 'seven_day_opus', usedPct: 50 }),
+    ]);
+  });
+
+  it('maps each model_scoped bucket under model:<slug>, skipping a name that slugs to nothing', () => {
+    const observations = mapSdkUsageWindows(
+      sdkResponse({
+        rate_limits: {
+          model_scoped: [
+            { display_name: 'Fable', utilization: 71, resets_at: '2026-07-14T00:00:00.000Z' },
+            { display_name: '!!!', utilization: 5, resets_at: null },
+          ],
+        },
+      } as Partial<SDKControlGetUsageResponse>),
+      now
+    );
+    expect(observations).toEqual([
+      expect.objectContaining({ key: 'model:fable', usedPct: 71, source: 'sdk_usage' }),
+    ]);
+  });
+
+  it('skips a window with no utilization', () => {
+    const observations = mapSdkUsageWindows(
+      sdkResponse({
+        rate_limits: { five_hour: { utilization: null, resets_at: null } },
+      } as Partial<SDKControlGetUsageResponse>),
+      now
+    );
+    expect(observations).toEqual([]);
+  });
+
+  it('maps nothing when plan rate limits do not apply', () => {
+    expect(
+      mapSdkUsageWindows(sdkResponse({ rate_limits_available: false, rate_limits: null }), now)
+    ).toEqual([]);
   });
 });

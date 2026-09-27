@@ -493,6 +493,13 @@ import {
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import {
+  AccountUsageStore,
+  readConfigFile,
+  setAccountUsageStore,
+} from './services/core/usage/account-usage-store.js';
+import { claudeDefaultAccountFolder } from './services/runtimes/claude-code/claude-config-dir.js';
+import { machineDefaultCodexHome } from './services/runtimes/codex/codex-home.js';
+import {
   initObservability,
   shutdownObservability,
   isOtlpExporting,
@@ -540,6 +547,7 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
+let accountUsageStore: AccountUsageStore | undefined;
 // The relay's DEFAULT runtime — what answers a relay message that names no
 // runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
 // agent-to-agent send to a mesh agent). The relay carries every registered
@@ -866,6 +874,34 @@ async function start() {
   // imported by the write path, and an unwired write says so instead of claiming
   // an apply that never happened.
   initClaudeAccountApplier(() => void applyClaudeAccountChange());
+
+  // Per-account usage for every runtime (spec `claude-account-fleet` D2, §6 R):
+  // the ledger files under `<dorkHome>/runtimes/<runtime>/usage/` are its
+  // persistence, shared with flow. Built right after config so the first turn
+  // already records into it. `default` resolves from config and the OS home
+  // only (the two helpers below), never from this process's environment.
+  accountUsageStore = new AccountUsageStore({
+    dorkHome,
+    readConfig: () => readConfigFile(configManager.path),
+    resolveDefaultRoot: (runtime, config) =>
+      runtime === 'claude-code'
+        ? claudeDefaultAccountFolder(config)
+        : runtime === 'codex'
+          ? { path: machineDefaultCodexHome(), warnings: [] }
+          : { path: null, warnings: [] },
+    broadcast: (usage) => eventFanOut.broadcast('account_usage', usage),
+  });
+  await accountUsageStore.load().catch((err: unknown) => {
+    logger.warn('[DorkOS] account usage store failed to load; usage starts empty', {
+      err: String(err),
+    });
+  });
+  setAccountUsageStore(accountUsageStore);
+  // An in-app account change is reconciled at once; `flow accounts add` and hand
+  // edits never reach onChange, which is why the store's 60 s scan reconciles too.
+  configManager.onChange((change) => {
+    if (change.sections.includes('runtimes')) void accountUsageStore?.reconcileAccounts();
+  });
 
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
   // initLogger was already called above with defaults — re-init with config values.
@@ -5345,6 +5381,14 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  if (accountUsageStore) {
+    accountUsageStore.stop();
+    await accountUsageStore.flush().catch((err: unknown) => {
+      logger.warn('[DorkOS] account usage flush failed at shutdown', { err: String(err) });
+    });
+    setAccountUsageStore(undefined);
+    accountUsageStore = undefined;
+  }
   legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
   remoteCommunitySubscriptions = undefined;

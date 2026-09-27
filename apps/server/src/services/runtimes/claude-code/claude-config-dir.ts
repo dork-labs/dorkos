@@ -42,11 +42,16 @@ import type {
   UserConfig,
 } from '@dorkos/shared/config-schema';
 import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
-import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
+import { ACCOUNT_ID_PATTERN, IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
+import {
+  canonicalAccountPath,
+  defaultAccountFolder,
+  type AccountWarning,
+} from '../../core/usage/runtime-accounts.js';
 
 /** Minimal read surface of the config manager (injectable for tests). */
 type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
@@ -180,6 +185,67 @@ export function resolveActiveClaudeRoot(config: ConfigReader = configManager): s
 }
 
 /**
+ * The folder Claude Code's `default` account names, machine-wide, from a parsed
+ * `config.json` and the OS home only (shared contract rev 6d): `defaultAccount`
+ * when it is a path, else the pre-0.65.0 `activeAccount`, else `~/.claude`.
+ *
+ * **Never the process environment.** A server started with
+ * `CLAUDE_CONFIG_DIR=/x` must not make `default` mean `/x`: the usage store
+ * would then read, write and prune the wrong account's ledger. That is the one
+ * difference from {@link resolveActiveClaudeRoot}, which answers where a launch
+ * with no account named goes and keeps inheriting the variable.
+ *
+ * Lives here because it needs the OS home, and this file is the Hard Rule 3
+ * carve-out for Claude Code's own directory.
+ *
+ * @param config - The parsed `config.json` (`null` when missing).
+ * @returns The folder, `~` expanded, and any `default-account-invalid` warning.
+ */
+export function claudeDefaultAccountFolder(config: unknown): {
+  path: string;
+  warnings: AccountWarning[];
+} {
+  const resolved = defaultAccountFolder('claude-code', config, os.homedir());
+  return { path: resolved.path ?? path.join(os.homedir(), '.claude'), warnings: resolved.warnings };
+}
+
+/**
+ * The folder Claude Code's `default` account names, from the live config
+ * (see {@link claudeDefaultAccountFolder}). Never the inherited
+ * `CLAUDE_CONFIG_DIR`, and never throws: an unreadable config gives `~/.claude`.
+ *
+ * @param config - Config reader (defaults to the module singleton).
+ * @returns The absolute folder an explicit `default` launch runs in.
+ */
+export function machineDefaultClaudeRoot(config: ConfigReader = configManager): string {
+  let claudeCode: unknown;
+  try {
+    claudeCode = config.get('runtimes')?.claudeCode;
+  } catch (err) {
+    logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
+  }
+  return claudeDefaultAccountFolder({ runtimes: { claudeCode } }).path;
+}
+
+/**
+ * Where an explicit `default` launch runs: the routable registered row that
+ * `default` is an alias of (its own spelling of the folder), else the machine
+ * default.
+ */
+function defaultLaunchRoot(config: ConfigReader, accounts: readonly ReadClaudeAccount[]): string {
+  const root = machineDefaultClaudeRoot(config);
+  const target = canonicalAccountPath(root, undefined);
+  const alias = accounts.find(
+    (account) =>
+      account.id !== IMPLICIT_ACCOUNT_ID &&
+      ACCOUNT_ID_PATTERN.test(account.id) &&
+      path.isAbsolute(account.path) &&
+      canonicalAccountPath(account.path, undefined) === target
+  );
+  return alias?.path ?? root;
+}
+
+/**
  * Resolve the Claude root ONE launch runs and bills on, through the full ladder
  * (ADR 260821-205323):
  *
@@ -187,6 +253,13 @@ export function resolveActiveClaudeRoot(config: ConfigReader = configManager): s
  * 2. `agentAccountId` — the account this agent's manifest pins it to.
  * 3. `runtimes.claudeCode.defaultAccount` — the operator's server-wide default.
  * 4. The environment (`$CLAUDE_CONFIG_DIR`, else `~/.claude`).
+ *
+ * **`default` is the machine-wide default account** (shared contract rev 6d). An
+ * explicit `default` on either rung launches in {@link machineDefaultClaudeRoot}
+ * (or the row it aliases), never in the folder the server process inherited;
+ * `~/.claude` then reaches the subprocess as an UNSET `CLAUDE_CONFIG_DIR`
+ * ({@link claudeConfigDirEnv}). A hand-edited row whose id is `default` never
+ * takes the name.
  *
  * **A launch never fails on a bad account reference.** An id that no longer
  * names a registered account — the operator removed it, an agent manifest was
@@ -224,6 +297,7 @@ export function resolveLaunchAccountRoot(
     // id, so `find(a => a.id === id)` with an absent `id` on both sides would
     // return the first row and bill an account nobody named.
     if (!id) continue;
+    if (id === IMPLICIT_ACCOUNT_ID) return defaultLaunchRoot(config, accounts);
     const match = findRegisteredAccount(accounts, id);
     if (match) return match.path;
     logger.warn('[claude-config-dir] account id is not registered; falling through', {
