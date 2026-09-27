@@ -131,6 +131,7 @@ import { ConnectorEventNativeDestination } from './services/connectors/events/ch
 import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
+import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
 import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
 import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
@@ -1003,6 +1004,9 @@ async function start() {
   const connectorRegistry = new ConnectorRegistry({
     db,
     configuredOwner: { ownerKind: 'local_install', ownerId: connectorInstallationId },
+    catalogCache: new ConnectorCatalogCache({
+      dir: path.join(dorkHome, 'cache', 'connectors', 'catalog'),
+    }),
   });
   const connectorAuthorityCleanup = new ConnectorAuthorityCleanupService({ db });
   const connectorBootEpoch = randomUUID();

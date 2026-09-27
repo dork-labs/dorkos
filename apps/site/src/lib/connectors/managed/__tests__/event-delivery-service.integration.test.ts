@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { applyCurrentManagedMigrations } from './managed-database-fixture';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -114,6 +115,7 @@ async function provisionBase(client: PGlite, recovery = true): Promise<void> {
     if (!name) throw new Error('Event migration missing.');
     await client.exec(readFileSync(join(MIGRATIONS_DIR, name), 'utf8'));
   }
+  await applyCurrentManagedMigrations(client);
 }
 
 // Booting PGlite and replaying the managed-connector migrations costs seconds,

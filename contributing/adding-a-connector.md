@@ -35,7 +35,7 @@ The capability descriptor states whether this instance supports catalog discover
 
 The main methods are:
 
-- `listToolkitPage(request)` returns one bounded catalog page, a cursor when more results exist, and an honest `truncated` value.
+- `listToolkitPage(request)` returns one bounded catalog page, a cursor when more results exist, and an honest `truncated` value. Callers never page it directly: the registry keeps each instance's whole list for as long as its type warrants (`catalogKeepingFor` in `services/connectors/resources/catalog-cache.ts`; add your type there), optionally on disk under `<dorkHome>/cache/connectors/catalog/`, and drops it when the instance is unregistered. Paging and search slice that kept list, so an adapter need not cache anything itself, and a failed listing must throw rather than return an empty page.
 - `resolveToolkitVersion(toolkit, signal)` returns the exact trusted version that every following operation page must use. It never infers `latest`.
 - `listOperationSchemas(request)` returns one bounded page of immutable operation metadata. Each operation includes the provider instance, toolkit, stable operation slug, toolkit version, input schema and hash, and `read`, `write`, or `destructive` classification.
 - `startConnect()` and `pollConnect()` perform the reference-only connect flow. Secrets remain behind the adapter.

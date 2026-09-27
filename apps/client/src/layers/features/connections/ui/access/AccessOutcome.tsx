@@ -58,8 +58,8 @@ export function AccessOutcome({
   }
   if (access.saved) {
     return (
-      <div className="border-success/30 bg-success/5 flex items-start gap-3 rounded-lg border p-4">
-        <Check className="text-success mt-0.5 size-4 shrink-0" aria-hidden />
+      <div className="border-status-success/30 bg-status-success/5 flex items-start gap-3 rounded-lg border p-4">
+        <Check className="text-status-success mt-0.5 size-4 shrink-0" aria-hidden />
         <div>
           <p data-testid="connector-access-outcome" className="text-sm font-medium">
             Access updated
@@ -71,7 +71,7 @@ export function AccessOutcome({
   }
   if (access.needsReconciliation) {
     return (
-      <div className="border-warning/30 bg-warning/5 flex items-start gap-3 rounded-lg border p-4">
+      <div className="border-status-warning/30 bg-status-warning/5 flex items-start gap-3 rounded-lg border p-4">
         <ShieldAlert className="text-status-warning-dot mt-0.5 size-4 shrink-0" aria-hidden />
         <div>
           <p data-testid="connector-access-outcome" className="text-sm font-medium">
@@ -86,7 +86,7 @@ export function AccessOutcome({
   }
   if (saveOutcome?.authoritySync.status === 'pending') {
     return (
-      <div className="border-warning/30 bg-warning/5 space-y-3 rounded-lg border p-4">
+      <div className="border-status-warning/30 bg-status-warning/5 space-y-3 rounded-lg border p-4">
         <div className="flex items-start gap-3">
           <Clock3 className="text-status-warning-dot mt-0.5 size-4 shrink-0" aria-hidden />
           <div>

@@ -91,9 +91,25 @@ export { initialOf } from './initial-of';
 export { isDynamicImportError } from './dynamic-import-error';
 export { LAUNCH_STARTED_AT } from './launch-started-at';
 export {
+  accountWindow,
+  barTone,
+  chipState,
   claudeAccountName,
   claudeAccountOptions,
+  formatAsOf,
+  formatBackIn,
+  formatResetDay,
+  formatResetTime,
   isAbsoluteAccountPath,
+  isStale,
+  limitSubject,
+  limitText,
+  nearestWindow,
+  planName,
+  windowShortName,
+  type AccountWindow,
+  type BarTone,
+  type ChipState,
   type ClaudeAccountRef,
 } from './claude-accounts';
 export { isBypassPermissionMode, permissionModeLabel } from './permission-mode';

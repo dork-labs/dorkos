@@ -199,8 +199,10 @@ import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import {
   resolveRoomTurnPlace,
   roomTurnLaunchStep,
+  type RoomTurnLaunch,
   type RoomTurnPlace,
 } from './repo/room-turn-place.js';
+import { editBaselineStore } from '../diff/index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   RoomNoticeLog,
@@ -4086,21 +4088,38 @@ export class RoomTriggerDispatcher {
     authorId: string,
     agentPath: string,
     place: RoomTurnPlace
-  ): { prepareLaunch?: (sessionId: string) => Promise<Record<string, never>> } {
+  ): { prepareLaunch?: (sessionId: string) => Promise<RoomTurnLaunch> } {
     const worktrees = this.deps.worktrees?.();
     if (!worktrees || place.worktree === null) return {};
     return {
       prepareLaunch: roomTurnLaunchStep(
         {
+          // The id the binding holds, and every retired id that still resolves
+          // to it: an app-resumed turn on an old id is granted the same copy.
           boundSessionIds: () => {
             const bound = this.deps.store.getRoomSession(roomId, authorId);
-            return bound ? [bound] : [];
+            return bound ? [bound, ...this.deps.store.sessionLedger.retiredIdsFor(bound)] : [];
           },
           isTurnInFlight: async (sessionId) =>
             isTurnInFlight(sessionId, await runtimeRegistry.resolveForSession(sessionId)),
           worktrees,
+          // Named from the room log, never from git (spec `agent-home-desk` §6.2).
+          describeCommits: (shas) => {
+            const named = new Map<string, { kind: 'merge' | 'person'; who: string | null }>();
+            for (const [sha, note] of this.deps.store.commitAnnouncements(roomId, shas)) {
+              const who =
+                note.subjectAuthorId === null
+                  ? null
+                  : (this.deps.authors.getById(note.subjectAuthorId)?.displayName ?? null);
+              named.set(sha, { kind: note.kind, who });
+            }
+            return named;
+          },
+          forgetBaselines: (sessionIds, absPaths) => {
+            for (const sessionId of sessionIds) editBaselineStore.forget(sessionId, absPaths);
+          },
         },
-        { roomId, worktree: place.worktree, agentPath }
+        { roomId, worktree: place.worktree, agentPath, files: place.files }
       ),
     };
   }

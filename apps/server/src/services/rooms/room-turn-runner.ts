@@ -901,6 +901,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         }
       };
 
+      // Taken back only for an id this run minted, and only while this process
+      // lives: a server that dies between the launch-time write and the turn
+      // starting leaves one unused row for an id nothing will ever bind — the
+      // same exposure a person's first message has, and harmless (no room
+      // points at it).
       const forgetLaunchRow = async (): Promise<void> => {
         if (!mintedRowAtLaunch) return;
         mintedRowAtLaunch = false;
@@ -940,10 +945,21 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // starts: a dispatch refused before launching writes nothing, so the
         // ghost-row case the late write below was moved for stays closed. The
         // late write stays too, for the id a runtime renames the session to.
+        //
+        // BEFORE the room's own launch step (the turn-start refresh), so a
+        // refresh that fails — which the dispatcher logs and launches past —
+        // can never leave the turn starting without its owner on record.
+        //
+        // Then the room's step: its files section, which carries the
+        // turn-start refresh's outcome and the counts measured after it,
+        // replaces the one placement measured, so the model is told about the
+        // files as they are when it starts (I8).
         prepareLaunch: async () => {
           // Only a row for an id this run MINTED is ever taken back below.
           mintedRowAtLaunch = (await recordSessionOwner(sessionId)) && boundSessionId === null;
-          return request.prepareLaunch !== undefined ? request.prepareLaunch(sessionId) : {};
+          if (request.prepareLaunch === undefined) return {};
+          const launched = await request.prepareLaunch(sessionId);
+          return launched.files ? { roomContext: { ...roomContext, files: launched.files } } : {};
         },
         roomContext,
         // Routing metadata, never prompt context: the room, the acting member and
@@ -1043,6 +1059,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       });
 
       if (!result.accepted) {
+        // Defensive, and most likely unreachable: the dispatcher answers
+        // `accepted: false` only when the session's lock is held by somebody
+        // else, which is decided BEFORE the launch step runs — so no row was
+        // written for this dispatch. Kept so that if that ordering ever
+        // changes, a refused launch still leaves nothing behind.
         await forgetLaunchRow();
         // Somebody else is writing to this session — the operator, most likely,
         // typing into the very agent the room just addressed. It is the ONLY way

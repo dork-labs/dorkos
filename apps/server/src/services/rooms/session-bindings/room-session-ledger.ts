@@ -211,6 +211,54 @@ export class RoomSessionLedger {
   }
 
   /**
+   * Every retired session id whose rename chain ends at `canonicalId` — the old
+   * ids {@link bindingForSession} still answers for that binding.
+   *
+   * Asked by the room's turn-start refresh (spec `agent-home-desk` §6.1): a turn
+   * picked up in the app on an old id is resolved to the same room binding and
+   * granted the same copy of the room's files, so "is any session bound to this
+   * (room, agent) running" has to ask about those ids too. The same chase as
+   * {@link successorFor}, walked over the whole (small, horizon-bounded) table
+   * in memory rather than once per row. A read that fails answers nothing extra,
+   * and the caller's answer for the canonical id still stands.
+   *
+   * @param canonicalId - The id the binding holds now.
+   * @returns The retired ids that resolve to it, in no particular order.
+   */
+  retiredIdsFor(canonicalId: string): string[] {
+    let rows: { retired: string; canonical: string }[];
+    try {
+      rows = this.db
+        .select({
+          retired: roomSessionRetirements.retiredSessionId,
+          canonical: roomSessionRetirements.canonicalSessionId,
+        })
+        .from(roomSessionRetirements)
+        .all();
+    } catch (err) {
+      logger.warn('[rooms] could not read which session ids are retired', {
+        sessionId: canonicalId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return [];
+    }
+    const next = new Map(rows.map((row) => [row.retired, row.canonical]));
+    const found: string[] = [];
+    for (const start of next.keys()) {
+      const seen = new Set<string>([start]);
+      let current = start;
+      for (let hop = 0; hop < SUCCESSOR_CHASE_LIMIT; hop += 1) {
+        const successor = next.get(current);
+        if (successor === undefined || seen.has(successor)) break;
+        seen.add(successor);
+        current = successor;
+      }
+      if (current === canonicalId && start !== canonicalId) found.push(start);
+    }
+    return found;
+  }
+
+  /**
    * What replaced a retired session id, or `undefined` when nothing has recorded
    * it as renamed.
    *

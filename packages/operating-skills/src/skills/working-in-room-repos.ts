@@ -67,10 +67,17 @@ different folder, so:
 
 ## Sync before you edit
 
-Run \`git -C <your copy> merge main\` at the start of any turn where you are
-going to change something. This is plain git, not a tool: sorting out a clash in
-your own copy is your job, and doing it there means the room's copy never sits in
-a conflicted state.
+When a room turn of yours starts and your copy has nothing in progress (nothing
+changed, nothing committed that the room lacks, still on your own branch),
+DorkOS brings it up to date with main first, and your room context says so.
+When you do have work in progress, your copy is left exactly as it is, and your
+room context lists what moved on main since you branched: who changed it, which
+files, and which of those you have changed too.
+
+Either way, run \`git -C <your copy> merge main\` at the start of any turn where
+you are going to change something. This is plain git, not a tool: sorting out a
+clash in your own copy is your job, and doing it there means the room's copy
+never sits in a conflicted state.
 
 Your room context tells you how far the room has moved ahead of you. If you want
 to look before you start, the tool whose name ends in \`room_repo_status\` reports
