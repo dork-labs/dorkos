@@ -229,6 +229,10 @@ describe('ConnectorOperatorQueryService', () => {
       appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
     });
 
+    // A search for what an app does finds it by its one line.
+    const pages = await empty.catalog({ query: 'pages and', signal: new AbortController().signal });
+    expect(pages.services.map((entry) => entry.serviceSlug)).toEqual(['notion']);
+
     // A search by shelf finds the apps on it.
     const email = await empty.catalog({ query: 'email', signal: new AbortController().signal });
     expect(email.services.map((entry) => entry.serviceSlug)).toEqual(['gmail', 'outlook']);

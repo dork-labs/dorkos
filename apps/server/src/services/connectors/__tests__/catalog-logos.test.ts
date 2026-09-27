@@ -2,7 +2,13 @@ import { mkdtemp, readdir, readFile, rm, writeFile, mkdir } from 'node:fs/promis
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../../lib/logger.js';
 import { CatalogLogoService, MAX_LOGO_BYTES, catalogLogoPath } from '../resources/catalog-logos.js';
+
+vi.mock('../../../lib/logger.js', () => ({
+  logger: { warn: vi.fn() },
+  logError: (error: unknown) => ({ error: String(error) }),
+}));
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1v1z"/></svg>';
 const GMAIL = 'https://logos.composio.dev/api/gmail';
@@ -31,6 +37,7 @@ describe('CatalogLogoService', () => {
   beforeEach(async () => {
     dorkHome = await mkdtemp(path.join(os.tmpdir(), 'dork-logos-'));
     now = 1_000;
+    vi.mocked(logger.warn).mockClear();
     sources = vi.fn(() => Promise.resolve(new Map([['gmail', GMAIL]])));
     fetchImpl = vi.fn(() => Promise.resolve(svgResponse()));
   });
@@ -120,6 +127,7 @@ describe('CatalogLogoService', () => {
     await expect(logos.get('gmail')).resolves.toBeUndefined();
     await expect(logos.get('gmail')).resolves.toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
 
     now += 10 * 60_000 + 1;
     fetchImpl.mockResolvedValue(svgResponse());

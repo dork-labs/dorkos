@@ -265,8 +265,13 @@ export class ComposioConnectorProvider implements ConnectorProvider {
 
   async listToolkitPage(request: ConnectorCatalogPageRequest) {
     request.signal.throwIfAborted();
-    const all = (await this._toolkitsForRead(request.signal)).filter((toolkit) =>
-      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
+    const query = request.query?.toLowerCase();
+    // The app's one line counts too, so a search for what it does finds it.
+    const all = (await this._toolkitsForRead(request.signal)).filter(
+      (toolkit) =>
+        !query ||
+        toolkit.displayName.toLowerCase().includes(query) ||
+        toolkit.description?.toLowerCase().includes(query)
     );
     const offset = request.cursor ? Number(request.cursor) : 0;
     const toolkits = all.slice(offset, offset + request.limit);

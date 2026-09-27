@@ -340,7 +340,9 @@ export class ConnectorOperatorQueryService {
     // Popular apps first, so the list is never empty before a way to reach
     // apps is set up; everything live below merges into them by service id.
     for (const app of BUILT_IN_APPS) {
-      if (!matchesQuery(query, app.serviceSlug, app.displayName, app.category)) continue;
+      if (!matchesQuery(query, app.serviceSlug, app.displayName, app.category, app.description)) {
+        continue;
+      }
       services.set(app.serviceSlug, {
         serviceSlug: app.serviceSlug,
         displayName: app.displayName,

@@ -495,6 +495,12 @@ describe('ComposioConnectorProvider — degrade contract on transport failure', 
       },
       { slug: 'bare', displayName: 'Bare', authKind: 'api-key' },
     ]);
+    const search = await providerWith(client).listToolkitPage({
+      query: 'NOTES',
+      limit: 10,
+      signal: new AbortController().signal,
+    });
+    expect(search.toolkits.map((toolkit) => toolkit.slug)).toEqual(['notion']);
   });
 
   it('startConnect throws a typed error when Composio returns no authorize URL', async () => {
