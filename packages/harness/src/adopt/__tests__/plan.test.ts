@@ -94,7 +94,7 @@ describe('the adopt refusal ladder', () => {
       rule: 'auto-adopt-not-permitted',
       reason:
         'harness.autoAdopt is on, and it does nothing here: DorkOS only moves skills on its own ' +
-        'inside the agent folders and room folders it owns. Run dorkos harness adopt <name> to ' +
+        'inside the agent folders it owns. Run dorkos harness adopt <name> to ' +
         'move one yourself.',
     });
   });
