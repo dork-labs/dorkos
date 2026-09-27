@@ -110,6 +110,24 @@ export function resolveCaller(
   req: Pick<Request, 'headers'>,
   res: Pick<Response, 'locals'>
 ): AuthorRecord {
+  const caller = resolveCallerRecord(req, res);
+  // Kept for `sendRoomError`, which words one refusal differently for the
+  // operator than for anybody else (DOR-2457) and is handed only `res`.
+  res.locals[ROOM_CALLER_LOCAL] = caller;
+  return caller;
+}
+
+/**
+ * The `res.locals` key {@link resolveCaller} leaves the resolved caller under.
+ * Unset when the caller was never resolved, or was refused.
+ */
+export const ROOM_CALLER_LOCAL = 'roomCaller';
+
+/** {@link resolveCaller}'s three branches and its refusal, without the bookkeeping. */
+function resolveCallerRecord(
+  req: Pick<Request, 'headers'>,
+  res: Pick<Response, 'locals'>
+): AuthorRecord {
   const registry = getRoomService().authorRegistry;
   const identity = getRequestAgentIdentity(res);
   // `!identity.inactive` preserves this route's existing answer through a change

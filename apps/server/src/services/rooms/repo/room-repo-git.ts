@@ -111,7 +111,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { promises as fsp } from 'node:fs';
 import { internalGitArgs } from '../../../lib/git-safety.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError, RoomRepoConfigUnsafeError } from '../room-errors.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -401,11 +401,7 @@ async function unsafeKeysIn(file: string, ceilingDir: string): Promise<string[]>
     listing = stdout;
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(err);
-    throw new RoomError(
-      'ROOM_REPO_CONFIG_UNSAFE',
-      `This room’s git settings (${file}) could not be read, so DorkOS will not work on its files ` +
-        `until they can be.`
-    );
+    throw new RoomRepoConfigUnsafeError(file, []);
   }
   return [
     ...new Set(
@@ -462,13 +458,7 @@ export async function assertRoomRepoConfigSafe(ceilingDir: string): Promise<void
   const unsafe = await unsafeKeysIn(file, ceilingDir);
   if (unsafe.length > 0) {
     safeConfigSeen.delete(file);
-    throw new RoomError(
-      'ROOM_REPO_CONFIG_UNSAFE',
-      `This room’s shared git settings (${file}) contain entries that can make git run programs: ` +
-        `${unsafe.join(', ')}. DorkOS will not merge, save or read this room’s files until they are ` +
-        `removed. Something outside DorkOS added them, most likely a command an agent ran. Remove ` +
-        `each one with \`git config --file "${file}" --unset-all <name>\`.`
-    );
+    throw new RoomRepoConfigUnsafeError(file, unsafe);
   }
   safeConfigSeen.set(file, stamp);
 }

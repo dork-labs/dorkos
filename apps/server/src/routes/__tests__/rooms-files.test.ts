@@ -30,6 +30,8 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
 import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -91,8 +93,11 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { runGit } from '../../services/rooms/repo/room-repo-git.js';
+import { ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE } from '../../services/rooms/room-errors.js';
 import { LocalRoomAttachmentStore } from '../../services/rooms/attachments/local-room-attachment-store.js';
 import { AttachmentRowStore } from '../../services/rooms/attachments/attachment-row-store.js';
+
+const execFileAsync = promisify(execFile);
 
 const app = createApp();
 finalizeApp(app);
@@ -915,6 +920,63 @@ describe('room files routes', () => {
             .reverse()
             .join('\n')
         );
+      });
+    });
+
+    describe('a room whose git settings name a program (DOR-2457)', () => {
+      /** The key an agent's plain `git config` could plant, with a quote in its subsection. */
+      const KEY = "filter.it's.smudge";
+
+      /** Plant {@link KEY} in the room's shared settings, as an agent's shell could. */
+      async function armed(): Promise<{ roomId: string; configFile: string }> {
+        const roomId = await roomWithFiles();
+        const configFile = path.join(store.repoPath(roomId), '.git', 'config');
+        await execFileAsync('git', ['config', '--file', configFile, KEY, 'cat']);
+        return { roomId, configFile };
+      }
+
+      it('tells the operator the file, the key, and a command that removes exactly it', async () => {
+        const { roomId, configFile } = await armed();
+
+        const res = await request(testServer).get(`/api/rooms/${roomId}/files`);
+
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('ROOM_REPO_CONFIG_UNSAFE');
+        expect(res.body.error).toContain(KEY);
+        expect(res.body.error).not.toContain('<name>');
+        // The command is the real one, quoted for a shell: run it as the
+        // operator would paste it, and the room reads again.
+        const command = /`([^`]+)`/.exec(res.body.error as string)?.[1];
+        expect(command).toContain(configFile);
+        await execFileAsync('sh', ['-c', command!]);
+        expect((await request(testServer).get(`/api/rooms/${roomId}/files`)).status).toBe(200);
+      });
+
+      it('tells anybody else only that the files are paused, never a path on this machine', async () => {
+        const { roomId } = await armed();
+        const owner = resolveOperatorAuthor(roomSubsystem.authors).id;
+        const person = roomSubsystem.authors.human('user-member');
+        roomSubsystem.service.addMember(roomId, owner, { authorId: person.id });
+        signedInUserId = 'user-member';
+        const token = await anaToken();
+
+        const answers = await Promise.all([
+          request(signedInServer).get(`/api/rooms/${roomId}/files`),
+          request(signedInServer)
+            .put(`/api/rooms/${roomId}/files/content`)
+            .send({ path: 'notes.md', baseCommit: null, text: 'x\n' }),
+          request(testServer).get(`/api/rooms/${roomId}/files`).set('X-DorkOS-Agent', token),
+        ]);
+
+        for (const res of answers) {
+          expect(res.status).toBe(409);
+          expect(res.body).toEqual({
+            code: 'ROOM_REPO_CONFIG_UNSAFE',
+            error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+          });
+          expect(JSON.stringify(res.body)).not.toContain(dorkHome);
+          expect(JSON.stringify(res.body)).not.toContain(KEY);
+        }
       });
     });
 

@@ -12,8 +12,16 @@
  * @module routes/room-error-response
  */
 import type { Response } from 'express';
-import { RoomError, type RoomErrorCode } from '../services/rooms/index.js';
+import {
+  isOwnerRecord,
+  RoomError,
+  RoomRepoConfigUnsafeError,
+  type AuthorRecord,
+  type RoomErrorCode,
+} from '../services/rooms/index.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
+import { ROOM_CALLER_LOCAL } from './room-caller.js';
 
 /** HTTP status for each way the room service can refuse. */
 export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
@@ -202,11 +210,37 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
  * @param err - The caught value.
  * @param context - Route label for the log line.
  */
-export function sendRoomError(res: Response, err: unknown, context: string): void {
+export function sendRoomError(
+  res: Pick<Response, 'status' | 'locals'>,
+  err: unknown,
+  context: string
+): void {
   if (err instanceof RoomError) {
-    res.status(STATUS_BY_CODE[err.code]).json({ error: err.message, code: err.code });
+    res.status(STATUS_BY_CODE[err.code]).json({ error: sentenceFor(res, err), code: err.code });
     return;
   }
   logger.error(`[rooms] ${context} failed`, { err });
   res.status(500).json({ error: 'Internal server error' });
+}
+
+/**
+ * The sentence a refusal carries to THIS caller.
+ *
+ * Every refusal says the same thing to everyone, except one: a room whose
+ * shared git settings name a program (DOR-2457). Its full sentence names the
+ * settings file under the operator's data folder and a command to run there,
+ * which is the operator's to read and nobody else's. Anybody else — another
+ * person in the room, an agent, or a caller that never resolved — is told the
+ * files are paused and who fixes them. **Withheld unless the caller is known to
+ * be the operator**, so a route that refuses before resolving its caller fails
+ * closed.
+ *
+ * @param res - The response, carrying the caller `resolveCaller` resolved.
+ * @param err - The refusal.
+ */
+function sentenceFor(res: Pick<Response, 'locals'>, err: RoomError): string {
+  if (!(err instanceof RoomRepoConfigUnsafeError)) return err.message;
+  const caller = res.locals[ROOM_CALLER_LOCAL] as AuthorRecord | undefined;
+  const isOperator = caller !== undefined && isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
+  return isOperator ? err.message : err.forMember;
 }

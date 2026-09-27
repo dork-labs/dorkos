@@ -159,6 +159,12 @@ folder is inside the rooms directory, and `getGitStatus` never runs git there �
 settings are only read through `room-repo-git.ts`, which audits them first
 (`ROOM_REPO_CONFIG_UNSAFE`).
 
+That refusal is a `RoomRepoConfigUnsafeError` carrying the settings file and the offending keys. Its
+`message` is the operator's sentence (the file, the keys, and one shell-quoted
+`git config --file … --unset-all …` command) and is what the log records. `sendRoomError` sends it
+only to a caller `resolveCaller` resolved as the install's owner; anybody else, and any route that
+refused before resolving its caller, gets `forMember`, which names no path (DOR-2457).
+
 ## The turn-start refresh: bringing a copy up to date
 
 ADR 260926-180308, spec `agent-home-desk` §6. When a room turn launches, `room-worktree-refresh.ts`

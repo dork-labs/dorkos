@@ -686,6 +686,77 @@ export class RoomError extends Error {
 }
 
 /**
+ * What anyone but the operator is told when a room's shared git settings name a
+ * program: the fact and who fixes it, with no path and no command (DOR-2457).
+ */
+export const ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE =
+  'This room’s files are paused until the person who runs this DorkOS fixes the room’s git ' +
+  'settings.';
+
+/**
+ * Quote one word for a POSIX shell, so a command a person copies runs exactly
+ * what it says. A key's subsection is whatever the author of the settings chose,
+ * quotes included, and the command below is one somebody pastes into a terminal.
+ *
+ * @param word - The word to quote.
+ */
+function shellQuote(word: string): string {
+  return `'${word.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * `ROOM_REPO_CONFIG_UNSAFE`, carrying what it found (spec `agent-home-desk`
+ * §5.2, DOR-2457).
+ *
+ * **Two sentences, because two audiences.** The operator needs the settings
+ * file, the offending keys and a command to paste; that is {@link message}, and
+ * it is also what the log records. Anybody else in the room is told only that
+ * the files are paused and who fixes them ({@link forMember}): the file sits
+ * under the operator's data folder, and a path on this machine is not something
+ * a room member was ever shown. `sendRoomError` picks one per caller.
+ */
+export class RoomRepoConfigUnsafeError extends RoomError {
+  /**
+   * Build the refusal, with the operator's sentence as its message.
+   *
+   * @param configFile - The room's shared settings file, `<room>/repo/.git/config`.
+   * @param keys - The offending keys as `git config --list` prints them; empty
+   *   when the file could not be read at all.
+   */
+  constructor(
+    readonly configFile: string,
+    readonly keys: readonly string[]
+  ) {
+    super('ROOM_REPO_CONFIG_UNSAFE', operatorSentence(configFile, keys));
+    this.name = 'RoomRepoConfigUnsafeError';
+  }
+
+  /** The sentence for anybody but the operator: no path, no keys, no command. */
+  get forMember(): string {
+    return ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE;
+  }
+}
+
+/** The operator's sentence: the file, the keys, and one command that removes them all. */
+function operatorSentence(configFile: string, keys: readonly string[]): string {
+  if (keys.length === 0) {
+    return (
+      `This room’s git settings (${configFile}) could not be read, so DorkOS will not work on its ` +
+      `files until they can be.`
+    );
+  }
+  const command = keys
+    .map((key) => `git config --file ${shellQuote(configFile)} --unset-all ${shellQuote(key)}`)
+    .join(' && ');
+  return (
+    `This room’s shared git settings (${configFile}) contain entries that can make git run ` +
+    `programs: ${keys.join(', ')}. DorkOS will not merge, save or read this room’s files until ` +
+    `they are removed. Something outside DorkOS added them, most likely a command an agent ran. ` +
+    `Remove them with \`${command}\`.`
+  );
+}
+
+/**
  * What the room domain needs to know about an agent, without reaching into mesh
  * internals.
  *

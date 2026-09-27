@@ -908,8 +908,13 @@ export function getRoomAuthors(): AuthorRegistry {
 // from its own module by the code that uses it, so this file does not accrue a
 // re-export for every symbol the domain happens to have.
 export { RoomService, type PostedEntry } from './room-service.js';
-export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
-export { toAuthorRef, type AuthorRecord } from './author-registry.js';
+export {
+  RoomError,
+  RoomRepoConfigUnsafeError,
+  type RoomErrorCode,
+  type RoomAgentLookup,
+} from './room-errors.js';
+export { isOwnerRecord, toAuthorRef, type AuthorRecord } from './author-registry.js';
 export { resolveOperatorAuthor } from './operator-author.js';
 export type { RoomTurnRunner } from './room-trigger.js';
 export { RoomTurnBudget } from './limits/turn-budget.js';
