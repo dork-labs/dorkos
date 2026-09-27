@@ -44,6 +44,11 @@ export interface StoredSessionLimit {
   cwd: string | null;
   /** The extension id of the advisor that claimed the session, or `null` when none did. */
   claimedBy: string | null;
+  /**
+   * The plan exactly as stored, the version a conditional write compares
+   * against ({@link SessionLimitStore.update} `expectPlanJson`).
+   */
+  planJson: string;
   /** The row's last write, ISO 8601. */
   updatedAt: string;
 }
@@ -147,6 +152,7 @@ function toStored(row: SessionLimitRow): StoredSessionLimit {
     state,
     cwd: row.cwd,
     claimedBy: row.claimedBy,
+    planJson: row.plan,
     updatedAt: row.updatedAt,
   };
 }
@@ -201,12 +207,22 @@ export class SessionLimitStore {
    * read: a row whose `since` moved on (a newer limit) or that is gone (the
    * session's next turn started) is left alone.
    *
+   * With `opts.expectPlanJson`, also only while the plan is still the one the
+   * caller read (compare-and-set), so a decision made on a stale read never
+   * overwrites a newer one.
+   *
    * @param sessionId - The canonical session id.
    * @param since - The episode the caller planned for (`limit.since`).
    * @param patch - What to change.
+   * @param opts.expectPlanJson - The plan as read ({@link StoredSessionLimit.planJson}).
    * @returns Whether a row was changed.
    */
-  update(sessionId: string, since: string, patch: SessionLimitPatch): boolean {
+  update(
+    sessionId: string,
+    since: string,
+    patch: SessionLimitPatch,
+    opts: { expectPlanJson?: string } = {}
+  ): boolean {
     const set: Partial<typeof sessionLimits.$inferInsert> = {
       updatedAt: this.now().toISOString(),
     };
@@ -221,7 +237,15 @@ export class SessionLimitStore {
       this.db
         .update(sessionLimits)
         .set(set)
-        .where(and(eq(sessionLimits.sessionId, sessionId), eq(sessionLimits.since, since)))
+        .where(
+          and(
+            eq(sessionLimits.sessionId, sessionId),
+            eq(sessionLimits.since, since),
+            ...(opts.expectPlanJson !== undefined
+              ? [eq(sessionLimits.plan, opts.expectPlanJson)]
+              : [])
+          )
+        )
         .run().changes > 0
     );
   }

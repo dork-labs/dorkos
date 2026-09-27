@@ -66,6 +66,7 @@ describe('SessionLimitStore', () => {
       state: 'limited',
       cwd: null,
       claimedBy: null,
+      planJson: JSON.stringify(LIMIT.plan),
       updatedAt: '2026-09-26T10:00:05.000Z',
     });
   });
@@ -99,6 +100,25 @@ describe('SessionLimitStore', () => {
       },
     });
     expect(store.list().map((s) => s.sessionId)).toEqual(['s-1']);
+  });
+
+  it('writes only over the plan the caller read, when asked to compare', () => {
+    write('s-1');
+    const read = store.get('s-1')!;
+    expect(
+      store.update(
+        's-1',
+        LIMIT.since,
+        { plan: { mode: 'ask', carryOver: false } },
+        {
+          expectPlanJson: read.planJson,
+        }
+      )
+    ).toBe(true);
+    expect(
+      store.update('s-1', LIMIT.since, { state: 'moved' }, { expectPlanJson: read.planJson })
+    ).toBe(false);
+    expect(store.get('s-1')?.state).toBe('limited');
   });
 
   it('leaves a newer episode alone, and a new episode starts unclaimed', () => {

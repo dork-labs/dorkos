@@ -28,7 +28,13 @@ import {
   gatherCarryOverSummary,
   runGitForSummary,
 } from './carry-over-summary.js';
-import { cwdOf, limitedInfoOf, writePlan } from './limit-plans.js';
+import {
+  PlanChangedError,
+  cwdOf,
+  limitedInfoOf,
+  readStoredLimit,
+  writePlan,
+} from './limit-plans.js';
 import type { StoredSessionLimit } from './session-limit-store.js';
 
 /** The first message of a carried-over session when the advisor gives none (spec D9, quoted). */
@@ -184,6 +190,31 @@ export function recordCarryOverActivity(
 }
 
 /**
+ * Point the source's plan at the new session. The session has started, so
+ * the pointer must land: a compare-and-set miss re-reads and writes again over
+ * whatever plan is there now, unless the episode is gone or already continued.
+ */
+async function pointAtNewSession(
+  source: StoredSessionLimit,
+  newSessionId: string,
+  accountId: string
+): Promise<void> {
+  let current: StoredSessionLimit | undefined = source;
+  for (let attempt = 1; current && attempt <= 3; attempt++) {
+    if (current.limit.since !== source.limit.since || current.limit.plan.mode === 'continued') {
+      return;
+    }
+    try {
+      await writePlan(current, { mode: 'continued', sessionId: newSessionId, accountId });
+      return;
+    } catch (err) {
+      if (!(err instanceof PlanChangedError)) throw err;
+      current = readStoredLimit(source.sessionId);
+    }
+  }
+}
+
+/**
  * Start the new session and point the source's plan at it.
  *
  * @param request - The source, the target account, who asked, and the app's launch deps.
@@ -237,11 +268,7 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
     );
   }
   const newSessionId = result.canonicalId;
-  await writePlan(source, {
-    mode: 'continued',
-    sessionId: newSessionId,
-    accountId: targetAccountId,
-  });
+  await pointAtNewSession(source, newSessionId, targetAccountId);
   recordCarryOverActivity(request.activity, {
     by,
     sourceSessionId: source.sessionId,

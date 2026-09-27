@@ -43,6 +43,7 @@ import { SessionLimitStore, setSessionLimitStore } from '../session-limit-store.
 import {
   CLAIMED_HANDOFF_SETTLE_MS,
   planNewLimit,
+  refreshLimitState,
   settleAutoPlansAtBoot,
   startLimitPlanning,
 } from '../limit-plans.js';
@@ -410,6 +411,29 @@ describe('without an advisor', () => {
     expect(err.code).toBe('UNKNOWN_ACCOUNT');
   });
 
+  it('refuses the account that ran out', async () => {
+    await limitedSession('src-1');
+    const err = await refusal(continueSession('src-1', { account: 'main' }, deps));
+    expect(err.status).toBe(400);
+    expect(err.code).toBe('SAME_ACCOUNT');
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('checks the chosen model before carrying the work over', async () => {
+    await limitedSession('src-1');
+    const err = await refusal(
+      continueSession(
+        'src-1',
+        { account: 'spare', model: 'gpt-9' },
+        { ...deps, checkModel: async () => 'That model is not offered.' }
+      )
+    );
+    expect(err.status).toBe(400);
+    expect(err.code).toBe('UNSUPPORTED_MODEL');
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(plan('src-1')).toEqual({ mode: 'ask' });
+  });
+
   it('refuses a body with neither an account nor a model', async () => {
     await limitedSession('src-1');
     expect((await refusal(continueSession('src-1', {}, deps))).status).toBe(400);
@@ -622,12 +646,46 @@ describe('with an advisor', () => {
     expect(plan('src-1')).toEqual({ mode: 'ask' });
   });
 
-  it('turns an onLimited wait into a waiting plan that resumes by itself', async () => {
+  it('turns an onLimited wait into a waiting plan that promises no resume core cannot run yet', async () => {
     advise({ onLimited: async () => ({ mode: 'wait' }) });
     await limitedSession('src-1');
-    expect(plan('src-1')).toEqual({ mode: 'waiting', resumeAt: RESETS, autoResume: true });
-    // A person's wait keeps the advisor's preference unless they say otherwise.
-    expect(await waitForReset('src-1', {})).toMatchObject({ autoResume: true });
+    expect(plan('src-1')).toEqual({ mode: 'waiting', resumeAt: RESETS, autoResume: false });
+    // Until task 5.2's resume engine lands, a person's wait promises none either.
+    expect(await waitForReset('src-1', { autoResume: true })).toMatchObject({ autoResume: false });
+  });
+
+  it('never lets a state refresh that read before a carry-over undo it', async () => {
+    let gate: Promise<void> | undefined;
+    let release: () => void = () => undefined;
+    advise({
+      rank: async () => {
+        if (gate) {
+          const held = gate;
+          gate = undefined;
+          await held;
+        }
+        return {
+          accounts: accounts
+            .filter((a) => a.id !== 'main')
+            .map((a) => ({ id: a.id, eligible: a.state !== 'limited', reason: 'fine' })),
+          recommendedId: null,
+        };
+      },
+    });
+    await limitedSession('src-1');
+    expect(state('src-1')).toBe('limited');
+    // Every other account runs out, so a refresh would change the state...
+    accounts = accounts.map((a) => ({ ...a, state: 'limited' as const }));
+    gate = new Promise<void>((resolve) => (release = resolve));
+    const refresh = refreshLimitState('src-1');
+    // ...and while it waits on the ranking, the person carries the work over.
+    const first = await continueSession('src-1', { account: 'spare' }, deps);
+    release();
+    await refresh;
+    expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' });
+    expect(state('src-1')).toBe('moved');
+    expect(await continueSession('src-1', { account: 'busy' }, deps)).toEqual(first);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -652,6 +710,30 @@ describe('a session the advisor claims', () => {
     expect(plan('src-1')).toEqual({ mode: 'auto', target: 'spare', fireAt: NOW.toISOString() });
     expect(state('src-1')).toBe('handing-off');
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('asks the advisor to move once for a double click', async () => {
+    const move = vi.fn(async () => undefined);
+    advise({ claims: async () => true, move });
+    await limitedSession('src-1');
+    const [a, b] = await Promise.all([
+      continueSession('src-1', { account: 'spare' }, deps),
+      continueSession('src-1', { account: 'spare' }, deps),
+    ]);
+    expect(await continueSession('src-1', { account: 'spare' }, deps)).toEqual({});
+    expect([a, b]).toEqual([{}, {}]);
+    expect(move).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a model on a claimed session, since the advisor moves it', async () => {
+    const move = vi.fn(async () => undefined);
+    advise({ claims: async () => true, move });
+    await limitedSession('src-1');
+    const err = await refusal(
+      continueSession('src-1', { account: 'spare', model: 'sonnet' }, deps)
+    );
+    expect(err.status).toBe(400);
+    expect(move).not.toHaveBeenCalled();
   });
 
   it('puts an unreported handoff from a person’s continue back to ask after 10 minutes', async () => {

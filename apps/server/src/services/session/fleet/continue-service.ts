@@ -46,6 +46,8 @@ import {
   readStoredLimit,
   sessionInfoOf,
   writePlan,
+  CORE_AUTO_RESUME_AVAILABLE,
+  PlanChangedError,
 } from './limit-plans.js';
 import type { StoredSessionLimit } from './session-limit-store.js';
 
@@ -162,8 +164,22 @@ export async function continueOptions(sessionId: string): Promise<ContinueOption
   };
 }
 
-/** Carry-overs in flight, per limit episode, shared by every caller. */
-const inFlight = new Map<string, Promise<string>>();
+/** Continues in flight (a carry-over or a claimed move), per limit episode, shared by every caller. */
+const inFlight = new Map<string, Promise<ContinueSessionResponse>>();
+
+/**
+ * Run an action that decides from the stored plan, and decide again when its
+ * write lost a race with a newer decision (a compare-and-set miss).
+ */
+async function decidingAgainOnChange<T>(action: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await action();
+    } catch (err) {
+      if (!(err instanceof PlanChangedError) || attempt >= 3) throw err;
+    }
+  }
+}
 
 function episodeKey(stored: StoredSessionLimit): string {
   return `${stored.sessionId}\u0000${stored.limit.since}`;
@@ -216,12 +232,18 @@ async function moveClaimed(
     accountId,
   });
   if (!accepted) throw new ContinueError(503, 'FLOW_UNREACHABLE', FLOW_UNREACHABLE_MESSAGE);
-  const written = await writePlan(stored, {
-    mode: 'auto',
-    target: accountId,
-    fireAt: limitClock().toISOString(),
-  });
-  if (written) armClaimedHandoff(written);
+  try {
+    const written = await writePlan(stored, {
+      mode: 'auto',
+      target: accountId,
+      fireAt: limitClock().toISOString(),
+    });
+    if (written) armClaimedHandoff(written);
+  } catch (err) {
+    // The advisor already reported the move (or a person decided) in the
+    // meantime: that newer plan stands, and the move was still accepted.
+    if (!(err instanceof PlanChangedError)) throw err;
+  }
   return {};
 }
 
@@ -258,8 +280,9 @@ export async function continueSession(
       `Continuing on the ${body.runtime} runtime is not offered for this session.`
     );
   }
-  const pending = inFlight.get(episodeKey(stored));
-  if (body.account && pending) return { sessionId: await pending };
+  const key = episodeKey(stored);
+  const pending = inFlight.get(key);
+  if (body.account && pending) return pending;
   requireNotStreaming(stored.sessionId);
 
   if (!body.account) return continueOnModel(stored, body.model as string, deps);
@@ -276,23 +299,41 @@ export async function continueSession(
     );
   }
   if (!mayCarryOver(stored)) throw new ContinueError(409, 'WAIT_ONLY', WAIT_ONLY_MESSAGE);
-  if (stored.claimedBy) return moveClaimed(stored, accountId);
+  if (stored.claimedBy) {
+    if (body.model) {
+      throw new ContinueError(
+        400,
+        'MODEL_NOT_YOURS_TO_SET',
+        'Flow moves this session, so it chooses the new session’s model. Choose only the account.'
+      );
+    }
+    // A second click after the advisor accepted: already handing off there.
+    if (plan.mode === 'auto' && plan.target === accountId) return {};
+  }
 
   // Set before any await, so a second caller (a person's second click, or the
-  // automatic handoff) joins this carry-over rather than starting another.
-  const key = episodeKey(stored);
-  const run = carryOverSession({
-    source: stored,
-    targetAccountId: accountId,
-    by: 'person',
-    ...(body.model ? { model: body.model } : {}),
-    launch: { meshCore: deps.meshCore, roomSessionPlace: deps.roomSessionPlace },
-    activity,
-  }).finally(() => {
+  // automatic handoff) joins this continue rather than starting another.
+  const run = (async (): Promise<ContinueSessionResponse> => {
+    if (stored.claimedBy) return moveClaimed(stored, accountId);
+    if (body.model) {
+      const runtime = await runtimeRegistry.resolveForSession(stored.sessionId);
+      const refusal = await deps.checkModel(runtime, body.model);
+      if (refusal) throw new ContinueError(400, 'UNSUPPORTED_MODEL', refusal);
+    }
+    const sessionId = await carryOverSession({
+      source: stored,
+      targetAccountId: accountId,
+      by: 'person',
+      ...(body.model ? { model: body.model } : {}),
+      launch: { meshCore: deps.meshCore, roomSessionPlace: deps.roomSessionPlace },
+      activity,
+    });
+    return { sessionId };
+  })().finally(() => {
     if (inFlight.get(key) === run) inFlight.delete(key);
   });
   inFlight.set(key, run);
-  return { sessionId: await run };
+  return run;
 }
 
 /**
@@ -305,10 +346,14 @@ export async function continueSession(
  *   Defaults to the advisor's own preference (on when it chose to wait), else off.
  * @throws {ContinueError} With the status the route answers.
  */
-export async function waitForReset(
+export function waitForReset(
   sessionId: string,
   opts: { autoResume?: boolean }
 ): Promise<LimitPlan> {
+  return decidingAgainOnChange(() => waitOnce(sessionId, opts));
+}
+
+async function waitOnce(sessionId: string, opts: { autoResume?: boolean }): Promise<LimitPlan> {
   const stored = await requireLimit(sessionId);
   const current = stored.limit.plan;
   if (current.mode === 'continued') {
@@ -325,7 +370,10 @@ export async function waitForReset(
   if (opts.autoResume === true && !allowed) {
     throw new ContinueError(400, 'WAIT_ONLY', WAIT_ONLY_MESSAGE);
   }
-  const autoResume = opts.autoResume ?? (current.mode === 'waiting' ? current.autoResume : false);
+  const asked = opts.autoResume ?? (current.mode === 'waiting' ? current.autoResume : false);
+  // Only the advisor can honour an automatic resume until core's own resume
+  // engine lands (task 5.2); an unclaimed session never promises one.
+  const autoResume = stored.claimedBy ? asked : asked && CORE_AUTO_RESUME_AVAILABLE;
   const resumeAt = stored.limit.resetsAt;
   if (stored.claimedBy) {
     requireClaimOwner(stored);
@@ -350,7 +398,11 @@ export async function waitForReset(
  * @param sessionId - The session.
  * @throws {ContinueError} With the status the route answers.
  */
-export async function cancelAutoContinue(sessionId: string): Promise<LimitPlan> {
+export function cancelAutoContinue(sessionId: string): Promise<LimitPlan> {
+  return decidingAgainOnChange(() => cancelOnce(sessionId));
+}
+
+async function cancelOnce(sessionId: string): Promise<LimitPlan> {
   const stored = await requireLimit(sessionId);
   if (stored.limit.plan.mode !== 'auto') {
     throw new ContinueError(409, 'NOT_HANDING_OFF', 'There is no handoff to cancel.');
@@ -378,7 +430,15 @@ export async function cancelAutoContinue(sessionId: string): Promise<LimitPlan> 
  * @throws {Error} When the plan is already `continued`, or the session is not
  *   one this extension claimed.
  */
-export async function recordMarkContinued(
+export function recordMarkContinued(
+  ownerId: string,
+  sourceSessionId: string,
+  to: ContinuationTarget
+): Promise<void> {
+  return decidingAgainOnChange(() => markContinuedOnce(ownerId, sourceSessionId, to));
+}
+
+async function markContinuedOnce(
   ownerId: string,
   sourceSessionId: string,
   to: ContinuationTarget

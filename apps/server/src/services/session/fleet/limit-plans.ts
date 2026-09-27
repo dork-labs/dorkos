@@ -49,6 +49,14 @@ import {
   type StoredSessionLimit,
 } from './session-limit-store.js';
 
+/**
+ * Whether core resumes a waiting session by itself once its reset is
+ * confirmed. Off until the reset-and-resume engine (task 5.2) lands and turns
+ * it on, so no unclaimed `waiting` plan promises a resume nothing would run.
+ * A claimed session's `autoResume` is the advisor's to honour, and is kept.
+ */
+export const CORE_AUTO_RESUME_AVAILABLE = false;
+
 /** How long a claimed handoff may go unreported before the plan goes back to `ask`. */
 export const CLAIMED_HANDOFF_SETTLE_MS = 10 * 60_000;
 
@@ -223,6 +231,22 @@ function publish(stored: StoredSessionLimit): void {
   peekProjector(stored.sessionId)?.ingest(event);
 }
 
+/**
+ * A plan write lost a race: the row still holds the same episode, but its plan
+ * changed after the caller read it. The caller re-reads and decides again.
+ */
+export class PlanChangedError extends Error {
+  /**
+   * Build the error.
+   *
+   * @param sessionId - The session whose plan moved on.
+   */
+  constructor(readonly sessionId: string) {
+    super(`The plan of session ${sessionId} changed while it was being decided.`);
+    this.name = 'PlanChangedError';
+  }
+}
+
 /** What {@link writePlan} changes besides the plan. */
 interface PlanWriteExtras {
   /** The model offered in place of the one that ran out (planning only). */
@@ -232,14 +256,16 @@ interface PlanWriteExtras {
 }
 
 /**
- * Write a new plan for the episode the caller read, recompute the state from
- * it, publish the result, and tell the plan listeners. Nothing is written when
- * the episode moved on (the session's next turn started, or a newer limit).
+ * Write a new plan over the plan the caller read (compare-and-set), recompute
+ * the state from it, publish the result, and tell the plan listeners. Nothing
+ * is written when the episode moved on (the session's next turn started, or a
+ * newer limit).
  *
  * @param stored - The limit as the caller read it.
  * @param plan - The new plan.
  * @param extras - Planning-time fields.
- * @returns The limit as now stored, or `undefined` when nothing was written.
+ * @returns The limit as now stored, or `undefined` when the episode is gone.
+ * @throws {PlanChangedError} When the plan changed after the caller read it.
  */
 export async function writePlan(
   stored: StoredSessionLimit,
@@ -256,7 +282,11 @@ export async function writePlan(
     ...(extras.claimedBy !== undefined ? { claimedBy: extras.claimedBy } : {}),
   };
   const derived = await deriveFor(next, modelFallback);
-  return commit(store, stored, next, derived, modelFallback, extras.claimedBy);
+  const written = commit(store, stored, next, derived, modelFallback, extras.claimedBy, true);
+  if (written) return written;
+  const now = store.get(stored.sessionId);
+  if (now && now.limit.since === stored.limit.since) throw new PlanChangedError(stored.sessionId);
+  return undefined;
 }
 
 /** The state of a stored limit, from the current ranking and usage. */
@@ -289,15 +319,24 @@ function commit(
   next: StoredSessionLimit,
   derived: ReturnType<typeof deriveLimitState>,
   modelFallback: string | undefined,
-  claimedBy: string | null | undefined
+  claimedBy: string | null | undefined,
+  writesPlan: boolean
 ): StoredSessionLimit | undefined {
-  const written = store.update(read.sessionId, read.limit.since, {
-    plan: next.limit.plan,
-    state: derived.state,
-    modelFallback: modelFallback ?? null,
-    allOut: derived.allOut ?? null,
-    ...(claimedBy !== undefined ? { claimedBy } : {}),
-  });
+  // Always conditional on the plan the caller read: a plan write never lands
+  // over a newer decision, and a state computed from a stale plan never lands
+  // over the state its successor already derived.
+  const written = store.update(
+    read.sessionId,
+    read.limit.since,
+    {
+      ...(writesPlan ? { plan: next.limit.plan } : {}),
+      state: derived.state,
+      modelFallback: modelFallback ?? null,
+      allOut: derived.allOut ?? null,
+      ...(claimedBy !== undefined ? { claimedBy } : {}),
+    },
+    { expectPlanJson: read.planJson }
+  );
   if (!written) return undefined;
   const limit: SessionLimit = {
     ...next.limit,
@@ -307,7 +346,12 @@ function commit(
   delete limit.allOut;
   if (modelFallback) limit.modelFallback = modelFallback;
   if (derived.allOut) limit.allOut = derived.allOut;
-  const stored: StoredSessionLimit = { ...next, limit, state: derived.state };
+  const stored: StoredSessionLimit = {
+    ...next,
+    limit,
+    state: derived.state,
+    planJson: writesPlan ? JSON.stringify(next.limit.plan) : read.planJson,
+  };
   publish(stored);
   for (const listener of planListeners) {
     try {
@@ -321,7 +365,9 @@ function commit(
 
 /**
  * Recompute a limited session's state from what is true now (usage, ranking)
- * without changing its plan; writes and publishes only when it changed.
+ * without changing its plan; writes and publishes only when it changed. It
+ * never writes a plan, and its state lands only while the plan it derived
+ * from is still the stored one (a plan write in between derived its own).
  *
  * @param sessionId - The session.
  */
@@ -333,7 +379,7 @@ export async function refreshLimitState(sessionId: string): Promise<void> {
   const sameAllOut =
     JSON.stringify(derived.allOut ?? null) === JSON.stringify(stored.limit.allOut ?? null);
   if (derived.state === stored.state && sameAllOut) return;
-  commit(store, stored, stored, derived, stored.limit.modelFallback, undefined);
+  commit(store, stored, stored, derived, stored.limit.modelFallback, undefined, false);
 }
 
 // === Claimed handoffs: the 10-minute rule ===
@@ -382,7 +428,10 @@ export function armClaimedHandoff(stored: StoredSessionLimit): void {
         claimedBy: stored.claimedBy,
         target: plan.target,
       });
-      void writePlan(current, { mode: 'ask' });
+      void writePlan(current, { mode: 'ask' }).catch((err) => {
+        // A newer decision (markContinued, a person's wait) landed first: it wins.
+        if (!(err instanceof PlanChangedError)) throw err;
+      });
     },
     Math.max(0, due)
   );
@@ -449,7 +498,7 @@ async function planEpisode(stored: StoredSessionLimit): Promise<void> {
       plan = {
         mode: 'waiting',
         resumeAt: answer.resumeAt ?? stored.limit.resetsAt,
-        autoResume: true,
+        autoResume: claimedBy !== null || CORE_AUTO_RESUME_AVAILABLE,
       };
     } else if (answer?.mode === 'auto' && claimedBy) {
       // A claimed session's automatic handoff is flow's to run: core shows the
@@ -485,6 +534,12 @@ export function planNewLimit(sessionId: string, since: string): Promise<void> {
   if (!stored || stored.limit.since !== since) return Promise.resolve();
   const run = planEpisode(stored)
     .catch((err) => {
+      if (err instanceof PlanChangedError) {
+        logger.info('[limit-plans] a newer decision landed while planning; it stands', {
+          sessionId: rowId,
+        });
+        return;
+      }
       logger.warn('[limit-plans] could not plan a limited session; it asks the person', {
         sessionId: rowId,
         err: err instanceof Error ? err.message : String(err),
