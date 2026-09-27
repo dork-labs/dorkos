@@ -115,7 +115,7 @@ export interface AccountMenuRowProps {
 /** One row of the pre-launch account menu: dot, name, and the account's usage bars. */
 export function AccountMenuRow({ label, color, usage }: AccountMenuRowProps) {
   return (
-    <span className="flex min-w-0 items-center gap-2">
+    <span className="flex w-full min-w-0 items-center gap-2">
       {color && (
         <span aria-hidden className="inline-flex">
           <AccountDot color={color} name={label} />
