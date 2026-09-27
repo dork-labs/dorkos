@@ -17,6 +17,7 @@ import {
 } from '@dorkos/shared/config-schema';
 import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { configManager } from '../core/config-manager.js';
+import { readOperatorDisplayName } from '../core/config/operator-display-name.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
@@ -600,6 +601,9 @@ export function createRoomSubsystem(opts: {
     // captured at boot would leave the rooms domain believing forever that the
     // unbound `'local'` author is still the operator.
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    // Read per turn: the person can rename themselves at any time, and the
+    // next turn's context has to call them by the new name (DOR-2458).
+    operatorName: readOperatorDisplayName,
     // The record-based twin, for a caller that already fetched a batch of
     // rows and would otherwise pay `isOwnerAuthor`'s re-query per member.
     isOwnerRecord: (record) => isOwnerRecord(record, readOwnerAccount()?.id ?? null),

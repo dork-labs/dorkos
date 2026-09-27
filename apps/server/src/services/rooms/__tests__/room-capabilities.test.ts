@@ -612,6 +612,20 @@ describe('the rooms capability domain', () => {
       ).toBe(true);
     });
 
+    it('names the operator as an agent should read them, never the registry`s "You"', async () => {
+      // DOR-2458: "You" in a tool result reads as the agent itself. No profile
+      // name in this harness, so it is the fallback.
+      service.post(channel.id, { authorId: human, text: 'ship it' });
+
+      const result = (await call('rooms.read_history', {
+        roomId: channel.id,
+        limit: 10,
+      })) as { entries: Array<{ text: string; author: string }> };
+
+      expect(result.entries.find((entry) => entry.text === 'ship it')?.author).toBe('the operator');
+      expect(result.entries.some((entry) => entry.author === 'You')).toBe(false);
+    });
+
     it('finds a message through the shipped index', async () => {
       service.post(channel.id, { authorId: human, text: 'the kubernetes rollout is done' });
       await harness.indexMessages();

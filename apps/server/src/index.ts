@@ -42,6 +42,7 @@ import {
   configManager,
   ConfigBootError,
 } from './services/core/config-manager.js';
+import { readOperatorDisplayName } from './services/core/config/operator-display-name.js';
 import { logConfigWrite } from './services/core/operator/config-write.js';
 import { initClaudeAccountApplier } from './services/core/operator/config-patch.js';
 import { applyClaudeAccountChange } from './services/runtimes/claude-code/account-switch.js';
@@ -1746,20 +1747,9 @@ async function start() {
   const resolveOperatorAuthorId = (): string => resolveOperatorAuthor(roomAuthors).id;
 
   // The REAL name a bridged group sees prefixed on an operator's post (chats-
-  // as-channels §6.7, DOR-899). `config.profile.displayName` ("what the user
-  // likes to be called", spec `user-profile-onboarding`) is the only place a
-  // real human name is stored on this machine — NOT `roomAuthors`' own
-  // `displayName` for this same person, which `bindOwner` fixes at `'You'`
-  // forever on purpose (the right word from the operator's own cockpit seat,
-  // the wrong one on the wire in somebody else's group). `sanitizeIdentity`
-  // runs the same label treatment every other agent-writable profile value
-  // gets before it reaches a line DorkOS wrote — `config_patch` can set this
-  // field mid-conversation, so it is not purely operator-authored text.
-  const resolveOperatorDisplayName = (): string | null => {
-    const raw = configManager.getAll().profile.displayName;
-    if (!raw) return null;
-    return sanitizeIdentity(raw) ?? null;
-  };
+  // as-channels §6.7, DOR-899) — never the room registry's 'You'. One reader,
+  // shared with the rooms domain's agent context (DOR-2458).
+  const resolveOperatorDisplayName = readOperatorDisplayName;
 
   // A room's own files (spec `project-rooms` §3). Same doctrine as the
   // attachment store above: WHERE they live is decided here and nowhere else,

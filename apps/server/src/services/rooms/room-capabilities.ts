@@ -430,7 +430,8 @@ function projectEntry(rooms: RoomService, entry: RoomEntry): Record<string, unkn
     at: entry.createdAt,
     kind: entry.kind,
     authorId: entry.authorId,
-    author: sanitizeIdentity(author?.displayName ?? 'someone who has left'),
+    // The owner by name, never the registry's 'You' (DOR-2458).
+    author: sanitizeIdentity(rooms.nameForAgents(entry.authorId) ?? 'someone who has left'),
     ...(author?.handle ? { handle: sanitizeIdentity(author.handle) } : {}),
     text: entry.body.text,
     ...(entry.threadRootEntryId ? { threadRootEntryId: entry.threadRootEntryId } : {}),
@@ -1870,6 +1871,6 @@ async function readFileBacked(
  */
 function authorLabel(rooms: RoomService, authorId: string): string {
   const author = rooms.authorRegistry.getById(authorId);
-  const name = author?.handle ?? author?.displayName;
-  return (name === undefined ? undefined : sanitizeIdentity(name)) ?? 'Somebody';
+  const name = author?.handle ?? rooms.nameForAgents(authorId);
+  return (name ? sanitizeIdentity(name) : undefined) ?? 'Somebody';
 }

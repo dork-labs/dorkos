@@ -149,7 +149,8 @@ describe('acknowledgments in the room context', () => {
     expect(anaContext().acknowledgments).toEqual([
       {
         handle: null,
-        displayName: 'You',
+        // The operator by name, never the registry's 'You' (DOR-2458).
+        displayName: 'the operator',
         isPerson: true,
         emoji: '👍',
         entryAt: expect.any(String),
@@ -272,7 +273,7 @@ describe('acknowledgments in the room context', () => {
     // claim here is that the two reactors are reported separately with their own
     // emoji, not that the second one has a good name.
     expect(anaContext().acknowledgments.map((ack) => [ack.displayName, ack.emoji])).toEqual([
-      ['You', '👍'],
+      ['the operator', '👍'],
       ['Someone', '🎉'],
     ]);
   });
@@ -289,7 +290,7 @@ describe('acknowledgments in the room context', () => {
       // No `@`: the person has not been asked for a handle yet, so the block
       // names them without inviting a mention it knows would reach nobody.
       expect(block).toMatch(
-        /You \(person, cannot be mentioned\) reacted 👍 to: Deployed to staging — the migration ran clean\./
+        /the operator \(person, cannot be mentioned\) reacted 👍 to: Deployed to staging — the migration ran clean\./
       );
       expect(block, 'the rule has to travel with the lines it governs — etiquette E16b').toContain(
         'Nothing here is owed a reply, a thank-you, or a mention'
