@@ -31,6 +31,7 @@ function connection(over: Partial<ConnectorConnectionSummary> = {}): ConnectorCo
     custody: 'managed',
     payer: 'dorkos_managed',
     agentCount: 2,
+    everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
     warnings: [],
@@ -191,6 +192,18 @@ describe('accountRow', () => {
       account: 'you@gmail.com',
       identity: null,
     });
+  });
+
+  it('reads "Every agent" instead of a count when the app is shared with every agent', () => {
+    const row = accountRow(
+      connection({
+        agentCount: 0,
+        everyAgent: { operationRevisionIds: ['op-1'], classifications: ['read'] },
+      }),
+      SERVICES
+    );
+    expect(row.detail).toBe('you@gmail.com · Every agent');
+    expect(row.tone).toBe('ready');
   });
 
   it('says "No agents yet" and names an app the catalog doesn’t list', () => {

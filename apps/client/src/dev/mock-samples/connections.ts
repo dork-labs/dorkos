@@ -1,6 +1,6 @@
 /**
  * Fixtures for the Connections showcases: a person with Gmail twice, Notion
- * signed out, Calendar paused, a Telegram bot with someone waiting, and the
+ * signed out, Calendar paused, Drive shared with every agent, a Telegram bot with someone waiting, and the
  * popular apps the catalog always lists.
  */
 import type {
@@ -29,6 +29,7 @@ export function mockConnection(
     custody: 'managed',
     payer: 'dorkos_managed',
     agentCount: 2,
+    everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 16, attemptCount: 16 },
     warnings: [],
@@ -57,6 +58,14 @@ export const MOCK_CONNECTIONS: ConnectorConnectionSummary[] = [
     toolkit: 'googlecalendar',
     identityHint: 'you@gmail.com',
     lifecycle: 'paused',
+  }),
+  mockConnection({
+    connectionId: 'conn-drive' as ConnectorConnectionSummary['connectionId'],
+    toolkit: 'googledrive',
+    label: 'googledrive',
+    identityHint: 'you@gmail.com',
+    agentCount: 0,
+    everyAgent: { operationRevisionIds: ['drive-list-v1'], classifications: ['read'] },
   }),
   mockConnection({
     connectionId: 'conn-linear' as ConnectorConnectionSummary['connectionId'],

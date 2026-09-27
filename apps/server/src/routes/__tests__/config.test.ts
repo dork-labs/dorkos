@@ -1,3 +1,4 @@
+import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
@@ -538,7 +539,9 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({
           runtimes: {
-            claudeCode: { accounts: [{ id: 'acct-1', path: '/tmp/theirs', label: null }] },
+            claudeCode: {
+              accounts: [{ id: 'acct-1', path: '/tmp/theirs', label: null, color: null }],
+            },
           },
         })
         .expect(403);
@@ -559,12 +562,14 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({
           runtimes: {
-            claudeCode: { accounts: [{ id: 'me', path: '/Users/me/.claude', label: 'Me' }] },
+            claudeCode: {
+              accounts: [{ id: 'me', path: '/Users/me/.claude', label: 'Me', color: null }],
+            },
           },
         })
         .expect(200);
       expect(accounts.body.config.runtimes.claudeCode.accounts).toEqual([
-        { id: 'me', path: '/Users/me/.claude', label: 'Me' },
+        { id: 'me', path: '/Users/me/.claude', label: 'Me', color: null },
       ]);
 
       const servers = await request(server)
@@ -595,14 +600,16 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({
           runtimes: {
-            claudeCode: { accounts: [{ id: 'acct-2', path: '/Users/me/.claude', label: null }] },
+            claudeCode: {
+              accounts: [{ id: 'acct-2', path: '/Users/me/.claude', label: null, color: null }],
+            },
           },
         })
         .expect(200);
 
       const emptied = await request(server)
         .patch('/api/config')
-        .send({ runtimes: { claudeCode: { accounts: [] } } })
+        .send({ runtimes: { claudeCode: { accounts: [], accountsSeen: ['acct-2'] } } })
         .expect(200);
       expect(emptied.body.config.runtimes.claudeCode.accounts).toEqual([]);
     });
@@ -1604,8 +1611,8 @@ describe('GET /api/config', () => {
         claudeCode: {
           defaultAccount: real,
           accounts: [
-            { id: 'acme-corp', path: real, label: 'Acme Corp' },
-            { id: 'gone', path: missing, label: null },
+            { id: 'acme-corp', path: real, label: 'Acme Corp', color: '#12ab9f' },
+            { id: 'gone', path: missing, label: null, color: null },
           ],
           defaultModel: null,
           defaultEffort: null,
@@ -1622,8 +1629,23 @@ describe('GET /api/config', () => {
         resolvedAccount: real,
         inherited: false,
         accounts: [
-          { id: 'acme-corp', path: real, label: 'Acme Corp', isAccountRoot: true },
-          { id: 'gone', path: missing, label: null, isAccountRoot: false },
+          {
+            id: 'acme-corp',
+            path: real,
+            label: 'Acme Corp',
+            color: '#12ab9f',
+            colorIsDefault: false,
+            isAccountRoot: true,
+          },
+          {
+            id: 'gone',
+            path: missing,
+            label: null,
+            // No stored color: the default for its position, the second one.
+            color: DEFAULT_ACCOUNT_COLORS[1],
+            colorIsDefault: true,
+            isAccountRoot: false,
+          },
         ],
         // The warm-agents value flows through from config to the Control Center.
         persistentSession: false,

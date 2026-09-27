@@ -392,6 +392,7 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.claudeCode.accounts[].id': 'expose',
   'runtimes.claudeCode.accounts[].path': 'expose',
   'runtimes.claudeCode.accounts[].label': 'expose',
+  'runtimes.claudeCode.accounts[].color': 'expose',
   // The execution defaults a new session on each runtime starts with. A model id
   // and an effort rung are the same class of thing as `runtimes.default`: they
   // describe HOW work runs here, name no credential and no person, and an agent

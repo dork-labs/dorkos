@@ -39,6 +39,7 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsQuestionPrompt: true,
   // Capability-gated: asClaudePluginTransport() returns null for this runtime.
   supportsPlugins: false,
+  supportsAccounts: false,
   // `true` since DOR-1326: test-mode can hold a scripted process across a
   // session's turns (`held-process.ts`), which is all this flag denotes — the
   // ADAPTER's ability, never a claim that every session does. Whether a given

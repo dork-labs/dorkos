@@ -698,6 +698,10 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.claudeCode.accounts[].id': 'operator-only',
   'runtimes.claudeCode.accounts[].path': 'operator-only',
   'runtimes.claudeCode.accounts[].label': 'operator-only',
+  // Cosmetic on its own, but it sits on the same rows: `accounts` is written as a
+  // whole array, so a write that could set a color could also add or repoint an
+  // account. The row stays operator-only as a unit.
+  'runtimes.claudeCode.accounts[].color': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the
   // operator was asked directly: a model and an effort level are a preference
   // about how work runs, on the same footing as `runtimes.default` right above,
@@ -934,6 +938,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].path',
       'runtimes.claudeCode.accounts[].label',
+      'runtimes.claudeCode.accounts[].color',
     ],
   },
   {

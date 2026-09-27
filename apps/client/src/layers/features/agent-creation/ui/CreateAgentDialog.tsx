@@ -12,6 +12,7 @@ import {
 } from '@/layers/shared/ui';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import { OpenMeshNotice } from '@/layers/entities/mesh';
+import { EveryAgentAccessNotice, useEveryAgentConnectorGrants } from '@/layers/entities/connectors';
 import { useConfig } from '@/layers/entities/config';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
@@ -265,6 +266,14 @@ export function CreateAgentDialog() {
     }
   }
 
+  // Apps shared with every agent reach this one too, so what it inherits is
+  // said right above Create, and Create waits until DorkOS knows (ADR
+  // 260926-192625). A failed check does not block: the notice says it failed.
+  const inheritance = useEveryAgentConnectorGrants(isOpen);
+  const inheritanceNotice = (
+    <EveryAgentAccessNotice agentName={form.displayName || seed?.template.displayName || ''} />
+  );
+
   const header = STEP_HEADERS[step];
   // Per-step canvas width: the gallery spreads across the fullscreen frame,
   // naming holds a tighter two-column composition, arrival stays narrow.
@@ -317,6 +326,8 @@ export function CreateAgentDialog() {
                     resolvedDirectory={packageDirectory ?? form.resolvedDirectory}
                     canSubmit={form.canSubmit}
                     isCreating={createAgent.isPending}
+                    inheritance={inheritanceNotice}
+                    isCheckingInheritance={inheritance.isPending}
                     onCreate={() => handleCreate()}
                     onCustomize={() => setStep('naming')}
                     onNotNow={() => handleOpenChange(false)}
@@ -337,6 +348,8 @@ export function CreateAgentDialog() {
                     offerRefusal={offerSchedules.refusal}
                     isCheckingOffer={offerSchedules.isChecking}
                     packageDirectory={packageDirectory}
+                    inheritance={inheritanceNotice}
+                    isCheckingInheritance={inheritance.isPending}
                     templateReview={
                       templateReview ? (
                         <TemplateReviewNotice

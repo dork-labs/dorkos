@@ -42,6 +42,7 @@ function summary(over: Partial<ConnectorConnectionSummary> = {}): ConnectorConne
     custody: 'managed',
     payer: 'dorkos_managed',
     agentCount: 1,
+    everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 4, attemptCount: 4 },
     warnings: [],
@@ -221,6 +222,7 @@ describe('AccountPanel', () => {
     vi.mocked(transport.getConnectorDisconnectImpact).mockResolvedValue({
       connectionId: 'c-1' as never,
       affectedAgentCount: 1,
+      everyAgent: false,
       affectedSessionCount: 0,
       affectedSubscriptionCount: 0,
       pendingDeliveryCount: 0,
@@ -235,6 +237,55 @@ describe('AccountPanel', () => {
     const confirm = await screen.findByRole('alertdialog', { name: 'Disconnect Gmail?' });
     expect(await within(confirm).findByText('mailroom will lose access.')).toBeInTheDocument();
     await user.click(within(confirm).getByRole('button', { name: 'Disconnect' }));
+    await waitFor(() => expect(handlers.onClose).toHaveBeenCalled());
+  });
+
+  it('stops sharing with every agent from More, and says every agent loses access on disconnect', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({
+        agentCount: 0,
+        everyAgent: { operationRevisionIds: ['op-1', 'op-2'], classifications: ['read', 'write'] },
+      })
+    );
+    vi.mocked(transport.stopSharingConnectorWithEveryAgent).mockResolvedValue({
+      connectionId: 'c-1' as never,
+      revokedCount: 2,
+    });
+    vi.mocked(transport.getConnectorDisconnectImpact).mockResolvedValue({
+      connectionId: 'c-1' as never,
+      affectedAgentCount: 0,
+      everyAgent: true,
+      affectedSessionCount: 0,
+      affectedSubscriptionCount: 0,
+      pendingDeliveryCount: 0,
+    });
+    renderPanel(transport);
+
+    await user.click(await screen.findByRole('button', { name: 'More' }));
+    const more = screen.getByTestId('app-panel-more');
+    await user.click(within(more).getByRole('button', { name: /Stop sharing with every agent/ }));
+    await waitFor(() =>
+      expect(transport.stopSharingConnectorWithEveryAgent).toHaveBeenCalledWith('c-1')
+    );
+
+    await user.click(within(more).getByRole('button', { name: /Disconnect…/ }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Disconnect Gmail?' });
+    expect(await within(confirm).findByText('Every agent will lose access.')).toBeInTheDocument();
+  });
+
+  it('asks before removing a disconnected app from the list', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({ lifecycle: 'disconnected', externalCleanup: 'complete' })
+    );
+    vi.mocked(transport.removeConnectorConnection).mockResolvedValue(undefined as never);
+    const handlers = renderPanel(transport);
+
+    await user.click(await screen.findByTestId('remove-account'));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Remove Gmail from your apps?' });
+    expect(transport.removeConnectorConnection).not.toHaveBeenCalled();
+    await user.click(within(confirm).getByRole('button', { name: 'Remove', exact: true }));
     await waitFor(() => expect(handlers.onClose).toHaveBeenCalled());
   });
 });

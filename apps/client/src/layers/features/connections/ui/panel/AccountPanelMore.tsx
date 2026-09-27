@@ -7,6 +7,7 @@ import {
   usePauseConnectorConnection,
   useRenameConnectorConnection,
   useResumeConnectorConnection,
+  useStopSharingWithEveryAgent,
 } from '@/layers/entities/connectors';
 import {
   AlertDialog,
@@ -51,6 +52,7 @@ export function AccountPanelMore({
   const connectionId = connection.connectionId;
   const pause = usePauseConnectorConnection();
   const resume = useResumeConnectorConnection();
+  const stopSharing = useStopSharingWithEveryAgent();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const disconnected = connection.lifecycle === 'disconnected';
 
@@ -75,6 +77,20 @@ export function AccountPanelMore({
               <ConnectionNotifications connectionId={connectionId} />
             </CollapsibleContent>
           </Collapsible>
+        )}
+
+        {connection.everyAgent && (
+          <PanelMoreRow
+            label="Stop sharing with every agent"
+            hint="Agents you picked by name keep their access"
+            disabled={stopSharing.isPending}
+            onClick={() => stopSharing.mutate({ connectionId })}
+          />
+        )}
+        {stopSharing.isError && (
+          <p role="alert" className="text-destructive px-2 text-xs">
+            Couldn’t stop sharing it. Check your connection to DorkOS, then try again.
+          </p>
         )}
 
         {!disconnected && (
@@ -231,6 +247,7 @@ function DisconnectConfirm({
 export function disconnectImpactLine(
   agentNames: string[],
   impact: {
+    everyAgent?: boolean;
     affectedAgentCount: number;
     affectedSessionCount: number;
     affectedSubscriptionCount: number;
@@ -238,7 +255,8 @@ export function disconnectImpactLine(
   }
 ): string {
   const lines: string[] = [];
-  if (agentNames.length > 0) lines.push(`${joinNames(agentNames)} will lose access.`);
+  if (impact.everyAgent) lines.push('Every agent will lose access.');
+  else if (agentNames.length > 0) lines.push(`${joinNames(agentNames)} will lose access.`);
   else if (impact.affectedAgentCount > 0) {
     lines.push(
       `${impact.affectedAgentCount} ${impact.affectedAgentCount === 1 ? 'agent' : 'agents'} will lose access.`

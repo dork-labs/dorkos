@@ -11,6 +11,7 @@ import {
   useConnectorCatalog,
   useStartConnectorAuthentication,
   useStartConnectorAgentRequestAuthentication,
+  serviceName as toolkitServiceName,
 } from '@/layers/entities/connectors';
 import {
   Button,
@@ -60,10 +61,6 @@ interface ConnectDialogProps {
    * skipped); the page opens the new app's panel next, where "Try it" waits.
    */
   onConnected?: (connectionId: string) => void;
-}
-
-function titleCase(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function authenticationGuidance(
@@ -147,7 +144,8 @@ export function ConnectDialog({
   const activeFlow: ConnectorAuthenticationFlowState | undefined = flow.data ?? start.data;
   const firstConnect = !activeFlow && needsFirstConnectStep(resolvedService);
 
-  const serviceName = resolvedService?.displayName ?? titleCase(activeFlow?.toolkit ?? 'service');
+  const serviceName =
+    resolvedService?.displayName ?? toolkitServiceName(activeFlow?.toolkit ?? 'service');
   const guidance = route ? authenticationGuidance(route, serviceName) : null;
   const whoAsks = signInLine(route, resolvedService);
   const close = () => {

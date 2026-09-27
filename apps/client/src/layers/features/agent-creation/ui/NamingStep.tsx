@@ -67,6 +67,10 @@ export interface NamingStepProps {
   packageDirectory?: string;
   /** What a custom template brings, shown before Create when the server asked. */
   templateReview?: ReactNode;
+  /** What this agent inherits from apps shared with every agent, shown before Create. */
+  inheritance?: ReactNode;
+  /** True while that inheritance is still unknown; holds Create until it is. */
+  isCheckingInheritance?: boolean;
 }
 
 /**
@@ -95,6 +99,8 @@ export function NamingStep({
   offerRefusal,
   packageDirectory,
   templateReview,
+  inheritance,
+  isCheckingInheritance = false,
 }: NamingStepProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [rerollOffset, setRerollOffset] = useState(0);
@@ -320,10 +326,17 @@ export function NamingStep({
             can take a moment.
           </p>
         )}
+        {inheritance}
         <Button
           size="lg"
           onClick={onCreate}
-          disabled={!form.canSubmit || isCreating || isCheckingOffer || offerRefusal !== undefined}
+          disabled={
+            !form.canSubmit ||
+            isCreating ||
+            isCheckingOffer ||
+            isCheckingInheritance ||
+            offerRefusal !== undefined
+          }
           data-testid="create-button"
         >
           {createLabel}

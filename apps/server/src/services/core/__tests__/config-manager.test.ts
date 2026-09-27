@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Conf, { type Schema } from 'conf';
 import { z } from 'zod';
 import * as semver from 'semver';
-import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  UserConfigSchema,
+  USER_CONFIG_DEFAULTS,
+  readClaudeAccountSettings,
+} from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
   initConfigManager,
@@ -3903,7 +3907,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(33);
+    expect(Object.keys(bodies)).toHaveLength(34);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -5000,9 +5004,11 @@ describe('a Claude account registry written before ids, through the real conf lo
     expect(manager.get('telemetry').install).toBe(false);
   });
 
-  it('still refuses an id of the WRONG TYPE — tolerance is about absence only', () => {
-    // Dropping `id` from `required` must not become "stop validating ids". A
-    // number where a slug belongs is damage, not skew.
+  it('reads an id of the WRONG TYPE instead of condemning the file (DOR-2379)', () => {
+    // The registry is shared with flow and hand-editable, and its read rules
+    // skip or re-mint a bad row rather than refuse the file (contract
+    // `flow-cli-core` §1.1a). A number where a slug belongs is re-minted on
+    // read; resetting every setting over one account row is the worse answer.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-bad-account-id-'));
     dirs.push(dir);
     fs.writeFileSync(
@@ -5019,8 +5025,11 @@ describe('a Claude account registry written before ids, through the real conf lo
         __internal__: { migrations: { version: '0.64.0' } },
       })
     );
-    new ConfigManager(dir);
-    expect(wasBackedUp(dir)).toBe(true);
+    const manager = new ConfigManager(dir);
+    expect(wasBackedUp(dir)).toBe(false);
+    expect(
+      readClaudeAccountSettings(manager.get('runtimes').claudeCode).accounts.map((a) => a.id)
+    ).toEqual(['claude2']);
   });
 
   it('still accepts a settings write while the migration has not run', () => {

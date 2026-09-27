@@ -962,6 +962,68 @@ describe('CreateAgentDialog', () => {
     expect(screen.getByTestId('arrival-needs-name')).toBeInTheDocument();
   });
 
+  it('says what an arriving agent inherits, above Create, and holds Create until it knows (DOR-2420)', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    let answer: (
+      value: Awaited<ReturnType<typeof transport.getEveryAgentConnectorGrants>>
+    ) => void = () => {};
+    vi.mocked(transport.getEveryAgentConnectorGrants).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+
+    // Still asking: Create waits and says why (marketplace agents arrive here too).
+    expect(await screen.findByTestId('every-agent-access-checking')).toBeInTheDocument();
+    expect(screen.getByTestId('arrival-create')).toBeDisabled();
+
+    answer({
+      connections: [
+        {
+          connectionId: 'connection-gmail' as never,
+          toolkit: 'gmail',
+          label: 'Work Gmail',
+          lifecycle: 'connected',
+          access: { operationRevisionIds: ['gmail-read'], classifications: ['read'] },
+        },
+        {
+          connectionId: 'connection-calendar' as never,
+          toolkit: 'calendar',
+          label: 'Calendar',
+          lifecycle: 'paused',
+          access: { operationRevisionIds: ['calendar-read'], classifications: ['read'] },
+        },
+      ],
+    });
+    const notice = await screen.findByTestId('every-agent-access-notice');
+    expect(notice).toHaveTextContent(
+      'Linear Keeper will get: Gmail (read), Calendar (read, paused). You can change this in Connections.'
+    );
+    const create = screen.getByTestId('arrival-create');
+    await waitFor(() => expect(create).toBeEnabled());
+    // Read before Create, on every width: it sits above the button in the DOM.
+    expect(notice.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // No link that would throw the draft away.
+    expect(screen.queryByRole('button', { name: 'Change' })).not.toBeInTheDocument();
+
+    // The naming step says it too, above its own Create, for whatever name is typed.
+    await user.click(screen.getByTestId('arrival-customize'));
+    const name = await screen.findByLabelText('Name');
+    await user.clear(name);
+    await user.type(name, 'Research Bot');
+    const namingNotice = screen.getByTestId('every-agent-access-notice');
+    expect(namingNotice).toHaveTextContent(
+      'Research Bot will get: Gmail (read), Calendar (read, paused).'
+    );
+    expect(
+      namingNotice.compareDocumentPosition(screen.getByTestId('create-button')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   it('Customize first opens naming pre-filled from the seed', async () => {
     const user = userEvent.setup();
     renderDialog();

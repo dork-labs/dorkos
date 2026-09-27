@@ -30,6 +30,7 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  supportsAccounts: true,
   // This adapter CAN hold one process across many turns: `SessionPump` owns it,
   // `SessionTurnWindows` cuts the turns out of its output, and
   // `PersistentDispatch` is the path a message takes to reach it (spec

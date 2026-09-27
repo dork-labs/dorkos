@@ -19,6 +19,7 @@ function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnect
     custody: 'managed',
     payer: 'operator_byo',
     agentCount: 1,
+    everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
     warnings: [],
@@ -61,7 +62,7 @@ describe('groupAppsByWay', () => {
     );
     expect(grouped.dorkosAccount.map((app) => app.connectionId)).toEqual(['a']);
     expect(grouped.byKeyInstance.cpi_composio).toEqual([
-      { connectionId: 'b', name: 'Notion (team)', agentCount: 1, active: true },
+      { connectionId: 'b', name: 'Notion (team)', agentCount: 1, everyAgent: false, active: true },
     ]);
     expect(grouped.byKeyInstance.cpi_nango?.map((app) => app.name)).toEqual(['Linear (work)']);
   });
@@ -96,8 +97,8 @@ describe('groupAppsByWay', () => {
 
 describe('splitByImpact', () => {
   const apps = [
-    { connectionId: 'a', name: 'Gmail (work)', agentCount: 1, active: true },
-    { connectionId: 'b', name: 'Notion (team)', agentCount: 0, active: false },
+    { connectionId: 'a', name: 'Gmail (work)', agentCount: 1, everyAgent: false, active: true },
+    { connectionId: 'b', name: 'Notion (team)', agentCount: 0, everyAgent: false, active: false },
   ];
 
   it('counts only working apps as stopping when the way works', () => {

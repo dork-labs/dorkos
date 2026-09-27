@@ -14,6 +14,7 @@ import type {
   ConnectorCatalogService,
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
+import { serviceNameFromToolkit } from '@dorkos/shared/connector-schemas';
 import type { AdapterBinding, CatalogEntry, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
 /**
@@ -84,20 +85,6 @@ export interface YourAppsInput {
 }
 
 /**
- * The display name of an app the catalog doesn't list: `google_drive` reads
- * "Google Drive" rather than a raw id.
- *
- * @param slug - A service id.
- */
-export function appNameFromSlug(slug: string): string {
-  return slug
-    .split(/[-_.]/u)
-    .filter(Boolean)
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(' ');
-}
-
-/**
  * The name an account's row goes by: the catalog's name for the app.
  *
  * @param toolkit - The connection's service id.
@@ -107,7 +94,7 @@ export function accountAppName(
   toolkit: string,
   services: ReadonlyMap<string, ConnectorCatalogService>
 ): string {
-  return services.get(toolkit)?.displayName ?? appNameFromSlug(toolkit);
+  return services.get(toolkit)?.displayName ?? serviceNameFromToolkit(toolkit);
 }
 
 /** "No agents yet", "1 agent", "3 agents". */
@@ -205,7 +192,10 @@ export function accountRow(
   // A new account reads "needs reconcile" until its access is first chosen;
   // with nobody granted there is nothing to re-check, so it is simply
   // connected with no agents yet. Only granted access can have gone stale.
-  if (connection.reconciliationStatus !== 'ready' && connection.agentCount > 0) {
+  if (
+    connection.reconciliationStatus !== 'ready' &&
+    (connection.agentCount > 0 || connection.everyAgent !== null)
+  ) {
     return {
       ...base,
       tone: 'attention',
@@ -220,7 +210,7 @@ export function accountRow(
     ...base,
     tone: 'ready',
     action: null,
-    detail: `${who} · ${agentCountLine(connection.agentCount)}`,
+    detail: `${who} · ${connection.everyAgent ? 'Every agent' : agentCountLine(connection.agentCount)}`,
   };
 }
 
@@ -342,7 +332,7 @@ export function buildYourApps(input: YourAppsInput): YourAppRow[] {
   const pending = input.pendingSignIn;
   if (!pending) return ordered;
   const service = input.services.get(pending.toolkit);
-  const name = service?.displayName ?? appNameFromSlug(pending.toolkit);
+  const name = service?.displayName ?? serviceNameFromToolkit(pending.toolkit);
   return [
     {
       id: pending.flowId,

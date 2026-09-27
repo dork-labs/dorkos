@@ -10,6 +10,7 @@ import {
   useConnectorConnections,
   usePreviewConnectorReconciliation,
   useResolveConnectorAgentRequest,
+  serviceName,
 } from '@/layers/entities/connectors';
 import {
   Badge,
@@ -30,7 +31,6 @@ import {
   SelectValue,
   Skeleton,
 } from '@/layers/shared/ui';
-import { appNameFromSlug } from '../lib/app-list';
 import { AgentRequestEventScopes } from './AgentRequestEventScopes';
 
 function operationName(slug: string): string {
@@ -225,7 +225,7 @@ export function AgentRequestDialog({
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold">{request.data.agent.displayName}</p>
                   <Badge size="xs" variant="outline">
-                    {appNameFromSlug(request.data.serviceSlug)}
+                    {serviceName(request.data.serviceSlug)}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-2 text-sm">{request.data.reason}</p>

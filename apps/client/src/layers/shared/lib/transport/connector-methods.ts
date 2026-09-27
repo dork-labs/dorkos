@@ -40,6 +40,7 @@ import type {
   ConnectorProgramExecutionRequest,
   ConnectorReconciliationApplyRequest,
   ConnectorReconciliationApplyResponse,
+  ConnectorEveryAgentRevokeResponse,
   ConnectorReconciliationPreview,
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
@@ -47,6 +48,7 @@ import type {
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import type {
   ConnectorAgentConnections,
+  ConnectorEveryAgentGrants,
   ConnectorAuthenticationFlowCreateRequest,
   ConnectorAuthenticationFlowState,
   ConnectorCatalogResourcePage,
@@ -254,6 +256,10 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
+    getEveryAgentConnectorGrants(): Promise<ConnectorEveryAgentGrants> {
+      return fetchJSON<ConnectorEveryAgentGrants>(baseUrl, '/connectors/every-agent-grants');
+    },
+
     getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections> {
       return fetchJSON<ConnectorSessionConnections>(
         baseUrl,
@@ -323,6 +329,16 @@ export function createConnectorMethods(baseUrl: string) {
         baseUrl,
         '/connectors/reconciliation/apply',
         { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    stopSharingConnectorWithEveryAgent(
+      connectionId: string
+    ): Promise<ConnectorEveryAgentRevokeResponse> {
+      return fetchJSON<ConnectorEveryAgentRevokeResponse>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/every-agent`,
+        { method: 'DELETE' }
       );
     },
 
