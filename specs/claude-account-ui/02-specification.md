@@ -129,7 +129,7 @@ FSD placement follows today's split: session rows (`entities/session`) already r
 
 **UI atoms** (`layers/shared/ui/`, each with `data-slot`, TSDoc, sizes per `components.md`):
 
-- `AccountDot({ color, name, size = 'sm', className })`: an 8px (`sm`) or 10px (`md`) circle, `role="img"`, `aria-label={name}`, wrapped in the house `Tooltip` showing `name`. Background from `--account-color`.
+- `AccountDot({ color, name, size = 'sm', className })`: an 8px (`sm`) or 10px (`md`) circle, `role="img"`, `aria-label={name}`, wrapped in the house `Tooltip` showing `name` on hover. **Not a tab stop** (no `tabIndex`): screen readers read its label in place, and the row or chip around it is the focus target and carries the account name (orchestrator, 04 §9). Background from `--account-color`.
 - `UsageMiniBars({ fiveHour, week, className })`: two vertical 4×10px bars, 2px apart, bottom-filled to `usedPct`, fill by `barTone` through `bg-status-<tone>` tokens (`success`, `warning-dot`, `error`); track `bg-muted`. `role="img"` with `aria-label` "5-hour window 40% used, weekly 72% used" (unknown → "5-hour window usage unknown").
 - `UsageBar({ window, label, showReset })`: the horizontal 6px bar of the popover and settings rows, with the label on the left and "40% · resets 2:10pm" on the right (`text-2xs`, `text-muted-foreground`). Same tones and accessible text. Used for every runtime (R7).
 - **Unknown** (a window with no reading): no fill and a dashed outline instead of a solid track, and the text says "unknown". (Q6, operator.) It lives behind the one `barTone === 'unknown'` branch.
@@ -362,9 +362,9 @@ A read-only discovery the Settings section calls, plus one small write for Dismi
      - "Kept out: flow never uses it."
      - "How to use all your accounts" → the guide `docs/use-all-your-accounts.mdx` (written by the S8 lead), published at `https://dorkos.ai/docs/use-all-your-accounts` (the docs site maps `docs/<path>.mdx` to `/docs/<path>`; confirm with the S8 lead if the page moves), opened in a new tab.
    - **Nothing in rotation** (any visit, among the accounts of runtimes with `supportsAccounts`, since an implicit account such as Codex's is Rotation by default): when a Main is set and no such account is in Rotation, a short notice above the rows: "Nothing is in rotation yet, so flow only uses your main account."
-   - At most one notice shows: the first-visit notice wins.
    - The notices copy the host `Notice` component's info tone exactly (its surface, radius, text size and icon, redrawn with host CSS variables and inline SVG), because an extension cannot import host components (§8.1). `role="status"`.
-   - **Nothing usable** (Q23): when roles are saved (`anyRoleStored`) but no account of a `supportsAccounts` runtime is Main or Rotation, flow has nothing it may use, so a notice in the same style: "Flow can't use any account yet. Make one account Main or Rotation."
+   - **Nothing usable** (Q23): when roles are saved (`anyRoleStored`) but no account in any group is Main or Rotation, counting implicit accounts (Codex's built-in account is Rotation by default, so while it is present flow still has something to use), a notice in the same style: "Flow can't use any account yet. Make one account Main or Rotation."
+   - At most one notice shows, in this order: first visit, then nothing usable, then nothing in rotation.
    - The link's words are "How to use all your accounts" (Q22).
 2. **One group per runtime** (orchestrator): a small group caption (the runtime's name, styled like the host's settings group captions), then one row per account: dot (color, `role="img"`, `aria-label` = name), name, and a three-way segmented control **Main | Rotation | Kept out**, built as a `role="radiogroup"` of `role="radio"` buttons with roving tabindex and arrow keys; the selected segment uses `--foreground` fill and `--background` text, as the mockup's dark segment. An implicit account reads "Codex (this computer's sign-in)" and uses the stone palette color (Q21). With only Claude Code accounts, the caption is still shown, so the tab reads the same when another runtime appears.
 3. Under a Main row, an inset panel: "Keep **50%** for me" + a native `<input type="range" min=0 max=100 step=5>` (`aria-label` "Share of the weekly limit kept for you", `aria-valuetext` "50%") + "· Use it all in the last" + a native `<select>` of 6, 12, 24, 48 and 72 hours (a stored value outside the list is added as its own option) + "before it resets". The reserve writes on release (`change`), not on every drag step.
@@ -412,7 +412,7 @@ A read-only discovery the Settings section calls, plus one small write for Dismi
 ## 10. Accessibility
 
 - Color is never the only signal (invariant 2). The chip, badge, banner, marker and picker rows print the name; state is in words.
-- `AccountDot`, `UsageMiniBars` and `UsageBar` are `role="img"` with full sentences as names; the popover and dialog use the house primitives (focus trap, `Escape`, focus returns to the chip or button).
+- `AccountDot`, `UsageMiniBars` and `UsageBar` are `role="img"` with full sentences as names; the popover and dialog use the house primitives (focus trap, `Escape`, focus returns to the chip or button). None of them is a tab stop; their tooltips show on hover (04 §9).
 - The chip is a button with `aria-haspopup="dialog"` and `aria-expanded`; its accessible name includes the state text.
 - The banner is `role="status"` (§6.7). Countdown digits sit in an `aria-hidden` span beside a visually hidden sentence ("Moving this task to Acct 2 in 10 seconds.") that is set once per state, so a screen reader is not read a number every second. The checkbox is a labelled native checkbox. The picker's inline error is `role="alert"`. The marker is plain text in reading order.
 - The Flow tab's segmented controls are real radio groups (arrow keys, `aria-checked`), the slider is a native range with `aria-valuetext`, and every chip remove button is labelled.
