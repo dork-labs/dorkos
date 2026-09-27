@@ -26,7 +26,10 @@ import {
 import { SessionEventStore } from '../../session-event-store.js';
 import { feedProjector } from '../../session-event-normalizer.js';
 import { SessionContextStore } from '../session-context-store.js';
-import { predictLaunchBillsPerToken } from '../../../runtimes/claude-code/messaging/per-token-billing.js';
+import {
+  envBillsPerToken,
+  predictLaunchBillsPerToken,
+} from '../../../runtimes/claude-code/messaging/per-token-billing.js';
 import {
   installSessionStatusHydration,
   type SessionStatusHydration,
@@ -178,7 +181,15 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
   it("a key inherited from the server's environment reads as per token on open and after a store change", async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'inherited');
     // The runtime's real prediction: what a launch made now would receive.
-    claude.sessionBillsPerToken.mockImplementation(() => predictLaunchBillsPerToken());
+    // No key reference and no credits here, so the inherited key is the only signal.
+    claude.sessionBillsPerToken.mockImplementation(async () =>
+      predictLaunchBillsPerToken({
+        keyReferenceConfigured: false,
+        creditsOn: false,
+        // eslint-disable-next-line no-restricted-syntax -- the parent environment is the input under test
+        inheritedKey: envBillsPerToken(process.env),
+      })
+    );
     try {
       store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 40)]);
       launched.set('s-inherit', work());

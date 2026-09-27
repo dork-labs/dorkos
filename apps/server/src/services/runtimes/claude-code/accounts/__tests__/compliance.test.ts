@@ -103,3 +103,29 @@ describe('account usage compliance guard (invariant 3)', () => {
     expect(hits).toEqual([]);
   });
 });
+
+/**
+ * The per-token billing check decides whether a session is shown its account's
+ * subscription bar, so it sits on the usage path too: it may look at which
+ * variable NAMES are set, and must never resolve a stored key. It is therefore
+ * guarded like the account directories, with the two variable names it checks
+ * for allowed, and it may not import the credential resolver or provider
+ * (either one resolves a reference to its secret).
+ */
+describe('per-token billing compliance guard (invariant 3)', () => {
+  const FILE = path.resolve(HERE, '../../messaging/per-token-billing.ts');
+  const ALLOWED = new Set([['ANTHROPIC_', 'AUTH_TOKEN'].join('')]);
+  const FORBIDDEN_IMPORTS = [
+    /from\s+'[^']*credential-env(\.js)?'/,
+    /from\s+'[^']*credential-provider(\.js)?'/,
+  ];
+
+  it('names no credential store or usage endpoint, and imports nothing that resolves a secret', async () => {
+    const text = await readFile(FILE, 'utf8');
+    const hits = FORBIDDEN.filter((needle) => !ALLOWED.has(needle) && text.includes(needle));
+    for (const pattern of FORBIDDEN_IMPORTS) {
+      if (pattern.test(text)) hits.push(String(pattern));
+    }
+    expect(hits).toEqual([]);
+  });
+});

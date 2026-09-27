@@ -8,10 +8,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn(), renameSession: vi.fn() }));
-const storedKey = vi.hoisted(() => ({ env: {} as Record<string, string> }));
-vi.mock('../../../core/credential-env.js', async (importOriginal) => ({
+/** The configured provider references (what `providers` in config.json holds). */
+const config = vi.hoisted(() => ({ providers: {} as Record<string, string> }));
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: (key: string) => (key === 'providers' ? config.providers : undefined) },
+}));
+/** The credential resolver: a prediction must never reach it. */
+const resolve = vi.hoisted(() => vi.fn());
+vi.mock('../../../core/credential-provider.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  resolveClaudeCredentialEnv: vi.fn(async () => storedKey.env),
+  credentialProvider: { resolve },
 }));
 
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
@@ -33,7 +39,7 @@ describe('ClaudeCodeRuntime.sessionBillsPerToken', () => {
   let runtime: ClaudeCodeRuntime;
 
   beforeEach(() => {
-    storedKey.env = {};
+    config.providers = {};
     vi.stubEnv('ANTHROPIC_API_KEY', '');
     vi.stubEnv('ANTHROPIC_AUTH_TOKEN', '');
     runtime = new ClaudeCodeRuntime('/tmp/dorkos-test', '/repo');
@@ -49,10 +55,11 @@ describe('ClaudeCodeRuntime.sessionBillsPerToken', () => {
     await expect(runtime.sessionBillsPerToken('s1')).resolves.toBe(false);
   });
 
-  it('never launched, with a stored key: per token', async () => {
+  it('never launched, with a stored key reference: per token, and the key is never resolved', async () => {
     stubSession(runtime, undefined);
-    storedKey.env = { ANTHROPIC_API_KEY: 'stored' };
+    config.providers = { anthropic: 'keychain:dorkos-anthropic' };
     await expect(runtime.sessionBillsPerToken('s1')).resolves.toBe(true);
+    expect(resolve).not.toHaveBeenCalled();
   });
 
   it("never launched, with a key inherited from the server's own environment: per token", async () => {
@@ -82,7 +89,7 @@ describe('ClaudeCodeRuntime.sessionBillsPerToken', () => {
 describe('per-token billing signals', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
-    storedKey.env = {};
+    config.providers = {};
   });
 
   it("reads the launch's final environment, whatever put the key there", () => {
@@ -99,9 +106,17 @@ describe('per-token billing signals', () => {
     }
   });
 
-  it('predicts per token from an inherited key', async () => {
+  it('predicts from presence alone, and per token on any signal', () => {
+    const none = { keyReferenceConfigured: false, creditsOn: false, inheritedKey: false };
+    expect(predictLaunchBillsPerToken(none)).toBe(false);
+    expect(predictLaunchBillsPerToken({ ...none, keyReferenceConfigured: true })).toBe(true);
+    expect(predictLaunchBillsPerToken({ ...none, creditsOn: true })).toBe(true);
+    expect(predictLaunchBillsPerToken({ ...none, inheritedKey: true })).toBe(true);
+  });
+
+  it('predicts per token from an inherited key', () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'inherited');
-    await expect(predictLaunchBillsPerToken()).resolves.toBe(true);
+    expect(predictLaunchBillsPerToken()).toBe(true);
   });
 
   it("the binary's apiKeySource on init overrides the launch's guess", async () => {

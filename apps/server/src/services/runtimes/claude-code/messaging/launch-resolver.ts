@@ -328,14 +328,6 @@ export async function resolveLaunch(args: {
       agentAccountId: manifest?.account,
     });
   const accountEnv = claudeConfigDirEnv(accountRoot);
-  // Record which account this launch settled on, so the session can say later
-  // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
-  // read by the sign-in watch). Written HERE rather than in the two callers for
-  // the same reason this function exists at all: the turn path and the pump
-  // would otherwise each keep their own copy, and a copy that drifted would
-  // attribute a dead sign-in to the wrong account. It is deliberately not
-  // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
-  session.launchedAccountRoot = accountRoot;
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
@@ -422,11 +414,22 @@ export async function resolveLaunch(args: {
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };
 
-  // Whether this launch bills per token, read off the FINAL environment the
-  // binary receives (a stored key, credits, or a key inherited from the server's
-  // own environment), so the folder's subscription windows are never shown as
-  // this session's usage when it pays per token (spec §6 U). The binary's own
-  // `apiKeySource` on session init overrides this guess.
+  // Record which account this launch settled on, so the session can say later
+  // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
+  // read by the sign-in watch). Written HERE rather than in the two callers for
+  // the same reason this function exists at all: the turn path and the pump
+  // would otherwise each keep their own copy, and a copy that drifted would
+  // attribute a dead sign-in to the wrong account. It is deliberately not
+  // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
+  //
+  // Beside it, whether this launch bills per token, read off the FINAL
+  // environment the binary receives (a stored key, credits, or a key inherited
+  // from the server's own environment), so the folder's subscription windows
+  // are never shown as this session's usage when it pays per token (spec §6 U).
+  // The binary's own `apiKeySource` on session init overrides this guess. Both
+  // are written only once the options are built, so a launch that throws while
+  // building them changes neither.
+  session.launchedAccountRoot = accountRoot;
   session.launchedPerToken = envBillsPerToken(sdkOptions.env ?? {});
   // The session's shown account usage follows the account it now runs on: a
   // new session's per-send hint is only known here (spec `claude-account-fleet`
