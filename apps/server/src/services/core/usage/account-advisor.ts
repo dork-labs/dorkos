@@ -19,14 +19,19 @@
  * @module services/core/usage/account-advisor
  */
 import { z } from 'zod';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type {
   AccountAdvisor,
+  AccountUsage as ExtensionAccountUsage,
   AdvisorRanking,
   CarryOverSeed,
   LimitedPlan,
 } from '@dorkos/extension-api/server';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
+
+/** The longest `reason` an advisor's ranking row may carry; longer ones are cut to fit. */
+export const MAX_RANKING_REASON_LENGTH = 200;
 
 /** How long core waits for any advisor call before using its default. */
 export const ADVISOR_TIMEOUT_MS = 2_000;
@@ -128,6 +133,17 @@ export async function callAdvisor<M extends AdvisorMethod>(
   }
 }
 
+/**
+ * An account's usage as an extension may see it: without `path`, so no
+ * account's config folder leaves the server through the extension API.
+ *
+ * @param usage - The store's reading.
+ */
+export function toExtensionAccountUsage(usage: AccountUsage): ExtensionAccountUsage {
+  const { path: _path, ...rest } = usage;
+  return rest;
+}
+
 // === Validation ===
 
 const RankingRowSchema = z.object({
@@ -148,8 +164,10 @@ export type ValidRankingRow = AdvisorRanking['accounts'][number] & { runtime: st
 
 /**
  * Validate an advisor's ranking: keep only well-formed rows naming a known
- * account (the first of any duplicate), fill in each row's runtime, and keep
- * `recommendedId` only when it names a kept row.
+ * account (the first of any duplicate), fill in each row's runtime, cut a
+ * `reason` longer than {@link MAX_RANKING_REASON_LENGTH} to fit (it is shown to
+ * a person), and keep `recommendedId` only when it names a kept ELIGIBLE row of
+ * `opts.runtime` (never an ineligible account or another runtime's).
  *
  * @param ranking - The advisor's answer.
  * @param opts.runtime - The runtime a row without one belongs to.
@@ -171,11 +189,21 @@ export function validateAdvisorRanking(
     const key = `${runtime}\u0000${row.data.id}`;
     if (seen.has(key) || !opts.isKnown(runtime, row.data.id)) continue;
     seen.add(key);
-    accounts.push({ ...row.data, runtime });
+    let reason = row.data.reason;
+    if (reason.length > MAX_RANKING_REASON_LENGTH) {
+      logger.warn(
+        `[account-advisor] a ranking reason for ${runtime}/${row.data.id} was ${reason.length} characters; cut to ${MAX_RANKING_REASON_LENGTH}`
+      );
+      reason = `${reason.slice(0, MAX_RANKING_REASON_LENGTH - 1).trimEnd()}\u2026`;
+    }
+    accounts.push({ ...row.data, reason, runtime });
   }
   const recommended = parsed.data.recommendedId;
-  const recommendedId =
-    recommended !== null && accounts.some((a) => a.id === recommended) ? recommended : null;
+  const recommendedId = accounts.some(
+    (a) => a.id === recommended && a.runtime === opts.runtime && a.eligible
+  )
+    ? recommended
+    : null;
   return { accounts, recommendedId };
 }
 

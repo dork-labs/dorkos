@@ -7,9 +7,15 @@
  *
  * @module @dorkos/extension-api/server
  */
-import type { AccountUsage } from '@dorkos/shared/account-usage';
+import type { AccountUsage as CoreAccountUsage } from '@dorkos/shared/account-usage';
 
-export type { AccountUsage };
+/**
+ * One account's usage as an extension sees it: identity, resolved color, the
+ * readable windows and a single state. It is `AccountUsage` from
+ * `@dorkos/shared/account-usage` without `path`: the account's config folder
+ * stays on the server, and extensions name accounts by `runtime` and id.
+ */
+export type AccountUsage = Omit<CoreAccountUsage, 'path'>;
 
 /** Encrypted per-extension secret store. */
 export interface SecretStore {

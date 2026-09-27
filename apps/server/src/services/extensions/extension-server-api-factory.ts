@@ -19,7 +19,7 @@ import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { eventFanOut } from '../core/event-fan-out.js';
-import { registerAccountAdvisor } from '../core/usage/account-advisor.js';
+import { registerAccountAdvisor, toExtensionAccountUsage } from '../core/usage/account-advisor.js';
 import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
 import { recordContinuation } from '../core/usage/session-continuation.js';
 import fs from 'fs/promises';
@@ -46,9 +46,25 @@ function isLedgerRuntime(runtime: string): runtime is LedgerRuntime {
  * Build one extension's {@link AccountsApi}. Every listener and advisor it
  * registers is tracked, so `release` removes them when the extension shuts
  * down or reloads, whether or not its own cleanup did.
+ *
+ * After `release` the API is closed: `onUsage` and `registerAdvisor` throw and
+ * register nothing, and `markContinued` rejects. A shut-down or replaced
+ * instance can still have work in flight (a `.then(() => registerAdvisor(…))`
+ * that resolves after the reload), and that late call must never leak a
+ * listener or replace the new instance's advisor. `list` and `usage` keep
+ * answering; they only read.
  */
 function createAccountsApi(extensionId: string): { accounts: AccountsApi; release: () => void } {
   const releases = new Set<() => void>();
+  let released = false;
+
+  function assertOpen(method: string): void {
+    if (released) {
+      throw new Error(
+        `accounts.${method} was called after the extension "${extensionId}" shut down or reloaded.`
+      );
+    }
+  }
 
   function track(remove: () => void): () => void {
     let removed = false;
@@ -77,10 +93,13 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
     async usage(runtime) {
       const store = getAccountUsageStore();
       if (!store) return [];
-      if (runtime === undefined) return store.list();
-      return isLedgerRuntime(runtime) ? store.list(runtime) : [];
+      if (runtime !== undefined && !isLedgerRuntime(runtime)) return [];
+      return (runtime === undefined ? store.list() : store.list(runtime)).map(
+        toExtensionAccountUsage
+      );
     },
     onUsage(listener) {
+      assertOpen('onUsage');
       if (typeof listener !== 'function') {
         throw new TypeError('accounts.onUsage needs a listener function.');
       }
@@ -89,9 +108,10 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
         logger.debug(`[ext:${extensionId}] account usage is not available; onUsage is inert`);
         return () => {};
       }
-      return track(store.onChange(listener));
+      return track(store.onChange((usage) => listener(toExtensionAccountUsage(usage))));
     },
     async markContinued(sourceSessionId, to) {
+      assertOpen('markContinued');
       const parsed = ContinuationSchema.safeParse({ sourceSessionId, to });
       if (!parsed.success) {
         throw new TypeError(
@@ -101,6 +121,7 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
       await recordContinuation(extensionId, parsed.data.sourceSessionId, parsed.data.to);
     },
     registerAdvisor(advisor) {
+      assertOpen('registerAdvisor');
       return track(registerAccountAdvisor(extensionId, advisor));
     },
   };
@@ -108,6 +129,7 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
   return {
     accounts,
     release: () => {
+      released = true;
       for (const remove of [...releases]) {
         try {
           remove();

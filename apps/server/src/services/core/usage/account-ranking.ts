@@ -21,7 +21,12 @@ import type {
   AdvisorContext,
   AdvisorRanking,
 } from '@dorkos/extension-api/server';
-import { callAdvisor, hasAccountAdvisor, validateAdvisorRanking } from './account-advisor.js';
+import {
+  callAdvisor,
+  hasAccountAdvisor,
+  toExtensionAccountUsage,
+  validateAdvisorRanking,
+} from './account-advisor.js';
 import { getAccountUsageStore } from './current-usage-store.js';
 import type { RuntimeAccount } from './runtime-accounts.js';
 
@@ -207,7 +212,7 @@ async function advisedRanking(ctx: AdvisorContext): Promise<AccountRanking | nul
     id: account.id,
     label: account.label,
     color: account.color,
-    usage,
+    usage: toExtensionAccountUsage(usage),
   }));
   const answer: AdvisorRanking | undefined = await callAdvisor('rank', candidates, ctx);
   if (answer === undefined) return 'failed';

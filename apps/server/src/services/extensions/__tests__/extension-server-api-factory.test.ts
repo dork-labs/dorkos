@@ -303,7 +303,12 @@ describe('createDataProviderContext', () => {
       isDefault: true,
       ledgerId: 'default',
     };
-    const usageRow = { runtime: 'claude-code', accountId: 'work' } as AccountUsage;
+    const usageRow = {
+      runtime: 'claude-code',
+      accountId: 'work',
+      path: '/Users/kai/.claude-work',
+    } as AccountUsage;
+    const { path: _hidden, ...extensionUsageRow } = usageRow;
     let listeners: Set<(u: AccountUsage) => void>;
     let storeList: ReturnType<typeof vi.fn>;
 
@@ -340,7 +345,7 @@ describe('createDataProviderContext', () => {
 
     it('reads usage for every runtime or one, and nothing for an unknown runtime', async () => {
       const { ctx } = buildCtx();
-      expect(await ctx.accounts.usage()).toEqual([usageRow]);
+      expect(await ctx.accounts.usage()).toEqual([extensionUsageRow]);
       expect(storeList).toHaveBeenLastCalledWith();
       await ctx.accounts.usage('codex');
       expect(storeList).toHaveBeenLastCalledWith('codex');
@@ -362,11 +367,50 @@ describe('createDataProviderContext', () => {
       const stop = ctx.accounts.onUsage(removed);
       stop();
       for (const l of listeners) l(usageRow);
-      expect(kept).toHaveBeenCalledWith(usageRow);
+      expect(kept).toHaveBeenCalledWith(extensionUsageRow);
       expect(removed).not.toHaveBeenCalled();
 
       releaseAccounts();
       expect(listeners.size).toBe(0);
+    });
+
+    it('never hands an extension an account folder path', async () => {
+      const { ctx } = buildCtx();
+      const seen = vi.fn();
+      ctx.accounts.onUsage(seen);
+      for (const l of listeners) l(usageRow);
+      const rows = [...(await ctx.accounts.usage()), ...(await ctx.accounts.usage('claude-code'))];
+      for (const row of [...rows, seen.mock.calls[0]?.[0]]) {
+        expect(row).toBeDefined();
+        expect(row).not.toHaveProperty('path');
+      }
+    });
+
+    it('closes after release: a late registerAdvisor or onUsage registers nothing', async () => {
+      const old = buildCtx({ extensionId: 'reloaded-ext' });
+      old.releaseAccounts();
+
+      expect(() =>
+        old.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) })
+      ).toThrow(/shut down or reloaded/);
+      expect(() => old.ctx.accounts.onUsage(vi.fn())).toThrow(/shut down or reloaded/);
+      await expect(
+        old.ctx.accounts.markContinued('old', { sessionId: 'n', runtime: 'x', accountId: 'y' })
+      ).rejects.toThrow(/shut down or reloaded/);
+      expect(hasAccountAdvisor()).toBe(false);
+      expect(listeners.size).toBe(0);
+
+      // The instance that replaced it keeps its advisor when the old one calls late.
+      const current = buildCtx({ extensionId: 'reloaded-ext' });
+      current.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) });
+      expect(() =>
+        old.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) })
+      ).toThrow();
+      old.releaseAccounts();
+      expect(accountAdvisorOwner()).toBe('reloaded-ext');
+      expect(hasAccountAdvisor()).toBe(true);
+      // Reads still answer.
+      expect(await old.ctx.accounts.list()).toHaveLength(2);
     });
 
     it('registers the advisor under the extension id and removes it on release', () => {

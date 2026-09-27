@@ -185,7 +185,7 @@ describe('rankAccounts: with an advisor', () => {
       { id: 'kept-out', weekly: 0 },
       { id: 'default', runtime: 'codex', implicit: true },
     ]);
-    const rank = vi.fn((): AdvisorRanking => ({
+    const rank = vi.fn<AccountAdvisor['rank']>(() => ({
       accounts: [
         { id: 'client', eligible: true, reason: 'Client work', badge: 'recommended' },
         { id: 'ghost', eligible: true, reason: 'Not real' },
@@ -205,6 +205,9 @@ describe('rankAccounts: with an advisor', () => {
       ],
       continueCtx
     );
+    for (const candidate of rank.mock.calls[0]?.[0] ?? []) {
+      expect(candidate.usage).not.toHaveProperty('path');
+    }
     expect(ranking.advised).toBe(true);
     expect(ranking.recommendedId).toBe('client');
     expect(ranking.accounts.map((a) => [a.runtime, a.id, a.eligible, a.reason, a.badge])).toEqual([

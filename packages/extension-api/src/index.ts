@@ -59,6 +59,7 @@ export type {
   ServerExtensionRegister,
   AccountsApi,
   AccountSummary,
+  AccountUsage,
   AccountAdvisor,
   AccountCandidate,
   AdvisorContext,

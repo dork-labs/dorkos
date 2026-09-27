@@ -3,6 +3,7 @@ import type { AccountAdvisor } from '@dorkos/extension-api/server';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import {
   ADVISOR_TIMEOUT_MS,
+  MAX_RANKING_REASON_LENGTH,
   __resetAccountAdvisorForTests,
   accountAdvisorOwner,
   callAdvisor,
@@ -141,6 +142,47 @@ describe('validateAdvisorRanking', () => {
       ],
       recommendedId: 'work',
     });
+  });
+
+  it('drops a recommendedId that names an ineligible row', () => {
+    expect(
+      validateAdvisorRanking(
+        { accounts: [{ id: 'work', eligible: false, reason: 'Reserved' }], recommendedId: 'work' },
+        opts
+      )?.recommendedId
+    ).toBeNull();
+  });
+
+  it("drops a recommendedId that only matches another runtime's row", () => {
+    const withDefaults = {
+      runtime: 'claude-code',
+      isKnown: (runtime: string, id: string) => runtime === 'codex' && id === 'default',
+    };
+    expect(
+      validateAdvisorRanking(
+        {
+          accounts: [{ runtime: 'codex', id: 'default', eligible: true, reason: 'Fallback' }],
+          recommendedId: 'default',
+        },
+        withDefaults
+      )?.recommendedId
+    ).toBeNull();
+  });
+
+  it(`cuts a reason longer than ${MAX_RANKING_REASON_LENGTH} characters to fit, and logs it`, () => {
+    const result = validateAdvisorRanking(
+      { accounts: [{ id: 'work', eligible: true, reason: 'x'.repeat(500) }], recommendedId: null },
+      opts
+    );
+    const reason = result?.accounts[0]?.reason ?? '';
+    expect(reason.length).toBe(MAX_RANKING_REASON_LENGTH);
+    expect(reason.endsWith('\u2026')).toBe(true);
+    expect(logger.warn).toHaveBeenCalled();
+    const short = validateAdvisorRanking(
+      { accounts: [{ id: 'work', eligible: true, reason: 'x'.repeat(200) }], recommendedId: null },
+      opts
+    );
+    expect(short?.accounts[0]?.reason).toBe('x'.repeat(200));
   });
 
   it('drops a recommendedId that names no kept row', () => {
