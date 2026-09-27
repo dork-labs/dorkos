@@ -2,6 +2,9 @@
  * The contract-level invariants: the wire version, the shape of the route
  * table, the money rule, and the additive-within-a-major discipline.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -273,6 +276,135 @@ describe('the withdrawn refunds route', () => {
 
   it('keeps the route`s refusal code, because removing a member narrows a published type', () => {
     expect(contract.ProblemCodeSchema.safeParse('refund_window_closed').success).toBe(true);
+  });
+});
+
+describe('the offers read', () => {
+  const limits = {
+    personSeatsIncluded: 1,
+    agentSeatsIncluded: 0,
+    includedCreditsMicro: '0',
+    cloudHours: 0,
+    storageGb: 0,
+    remoteAccess: 'byo',
+    alwaysAvailableInstances: 0,
+    customAddress: 'none',
+    managedConnectionActions: null,
+    support: 'community',
+    emailAddressPerSeat: false,
+  };
+  const offer = {
+    skuId: 'sku_x',
+    planId: 'pl_x',
+    displayName: 'x',
+    interval: 'month',
+    amountMicro: '1',
+    limits,
+  };
+
+  it('is published as a route, so a conforming client can get a skuId to check out with', () => {
+    expect(V1_ROUTES.offers).toBe('/v1/offers');
+  });
+
+  it('parses an empty list, because nothing on sale is a normal answer and never a 404', () => {
+    expect(contract.OffersResponseSchema.safeParse({ offers: [] }).success).toBe(true);
+  });
+
+  it('reuses the published limits shape by reference rather than a twin', () => {
+    expect(contract.OfferSchema.shape.limits).toBe(contract.EntitlementLimitsSchema);
+    expect(contract.OffersResponseSchema.safeParse({ offers: [offer] }).success).toBe(true);
+  });
+
+  it('carries only the ids, name, interval, amount and limits: no order hint, flag or supplier id', () => {
+    // A client that renders a "recommended" badge is a client that nudges, and
+    // a "current" flag is a second place to compute what the entitlement says.
+    expect(Object.keys(contract.OfferSchema.shape).sort()).toEqual([
+      'amountMicro',
+      'displayName',
+      'interval',
+      'limits',
+      'planId',
+      'skuId',
+    ]);
+    const parsed = contract.OfferSchema.parse({ ...offer, current: true, recommended: true });
+    expect(parsed).not.toHaveProperty('current');
+    expect(parsed).not.toHaveProperty('recommended');
+  });
+
+  it('reads an interval added later as unrecognised, so one offer cannot fail the list', () => {
+    expect(contract.OfferSchema.parse({ ...offer, interval: 'year' }).interval).toBe('year');
+    const page = contract.OffersResponseSchema.parse({
+      offers: [{ ...offer, interval: 'week' }, offer],
+    });
+    expect(page.offers.map((item) => item.interval)).toEqual([contract.UNRECOGNISED, 'month']);
+    expect(contract.OfferSchema.safeParse({ ...offer, interval: 12 }).success).toBe(false);
+    expect(contract.OfferIntervalSchema.options).toEqual(['month', 'year']);
+  });
+});
+
+describe('the statement lines', () => {
+  const link = {
+    period: '2026-08',
+    downloadUrl: 'https://example.invalid/s',
+    expiresAt: '2026-09-15T12:00:00.000Z',
+  };
+
+  it('leaves a link-only statement valid, which is what an older service sends', () => {
+    expect(contract.StatementResponseSchema.safeParse(link).success).toBe(true);
+  });
+
+  it('keeps every itemised fixture`s totals equal to the exact sum of its lines', () => {
+    for (const rel of ['billing/statement-itemised.json']) {
+      const body = contract.StatementResponseSchema.parse(
+        JSON.parse(
+          readFileSync(path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'v1', rel), 'utf8')
+        )
+      );
+      const sum = (key: 'listPriceMicro' | 'dorkosPriceMicro') =>
+        (body.lines ?? []).reduce((total, line) => total + BigInt(line[key]), 0n).toString();
+      expect(body.totals?.listPriceMicro, rel).toBe(sum('listPriceMicro'));
+      expect(body.totals?.dorkosPriceMicro, rel).toBe(sum('dorkosPriceMicro'));
+    }
+  });
+
+  it('names its window, so a client never derives one from the period label', () => {
+    expect(
+      contract.StatementResponseSchema.safeParse({
+        ...link,
+        from: '2026-08-20T00:00:00.000Z',
+        to: '2026-09-20T00:00:00.000Z',
+      }).success
+    ).toBe(true);
+    expect(contract.StatementResponseSchema.safeParse({ ...link, from: '2026-08' }).success).toBe(
+      false
+    );
+  });
+
+  it('uses the usage row shape for its lines, so a statement adds no new vocabulary', () => {
+    const lines = contract.StatementResponseSchema.shape.lines.unwrap();
+    expect(lines.element).toBe(contract.UsageRowSchema);
+    const withLines = {
+      ...link,
+      lines: [
+        {
+          key: 'md_x',
+          displayName: 'x',
+          units: 1,
+          unit: 'tokens',
+          listPriceMicro: '1',
+          dorkosPriceMicro: '2',
+          costBasis: 'published_price',
+        },
+      ],
+      totals: { listPriceMicro: '1', dorkosPriceMicro: '2' },
+    };
+    expect(contract.StatementResponseSchema.safeParse(withLines).success).toBe(true);
+    expect(
+      contract.StatementResponseSchema.safeParse({
+        ...withLines,
+        totals: { listPriceMicro: 1, dorkosPriceMicro: '2' },
+      }).success
+    ).toBe(false);
   });
 });
 

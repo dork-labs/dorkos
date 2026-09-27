@@ -47,7 +47,7 @@ body is neither.
 | Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                               |
 | Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                            |
 | Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                              |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                   |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`     |
 | Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
 | Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                          |
 | Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
@@ -194,7 +194,8 @@ that server's single-use owner claim; it never owns one itself.
 - **Generate JSON Schema with `{ io: 'input' }`.** `tolerantEnum` maps an unknown value with a
   transform, and Zod cannot express a transform's output in JSON Schema. Call
   `z.toJSONSchema(schema, { io: 'input' })` (or pass `unrepresentable: 'any'`) for the
-  communities shapes, or the conversion throws.
+  communities shapes, or the conversion throws. The same holds for `OffersResponseSchema`, whose
+  `interval` is tolerant for the same reason.
 
 Every link to a community is a runtime value.
 
@@ -210,12 +211,12 @@ An amount is one of two kinds, and a renderer has to know which before it shows 
 string read the wrong way prints a price as a credit balance.
 
 - **`MoneyMicroSchema`** (and `PositiveMoneyMicroSchema` for an amount to pay): money paid,
-  refunded, offered or capped. The auto-reload ceiling, the usage list price, the nudge's
-  suggested plan price and saving and the top-up amount are money, and so is the amount on the
-  withdrawn refund answer.
+  refunded, offered or capped. The auto-reload ceiling, the usage and statement list price, the
+  nudge's suggested plan price and saving, an offer's price and the top-up amount are money, and
+  so is the amount on the withdrawn refund answer.
 - **`CreditMicroSchema`**: credits held, spent or priced. Included credits, the balance's
-  granted, remaining, pending, held and owed amounts, the usage DorkOS price, the price-list
-  rates and the nudge's trailing spend are credits.
+  granted, remaining, pending, held and owed amounts, the usage and statement DorkOS price, the
+  price-list rates and the nudge's trailing spend are credits.
 
 Both have exactly the wire shape of `MicroAmountSchema` and both infer `string`, so nothing on
 the wire or in a consumer's types moves. The kind is a `.meta({ amountKind })` mark
@@ -225,7 +226,7 @@ one.
 
 ### The denomination is served, never assumed
 
-The entitlements, balance, usage, price-list and nudge responses carry an optional
+The entitlements, balance, usage, price-list, nudge, offers and statement responses carry an optional
 `denomination` (`DenominationSchema`):
 
 - `currency`, an ISO 4217 code: what the micro-units are millionths of;
@@ -289,8 +290,8 @@ request is not part of this contract and is published nowhere.
 
 ### Where amounts appear, and where they do not
 
-Three routes carry amounts, and it is worth being precise about which, because "no prices here"
-would be a comfortable claim and a false one:
+Five routes carry prices or charges, and it is worth being precise about which, because "no
+prices here" would be a comfortable claim and a false one:
 
 - **`GET /v1/price-list`** publishes the per-model list. That is its whole job.
 - **`GET /v1/usage`** returns, per row and in the totals, both `listPriceMicro` (the upstream
@@ -298,8 +299,25 @@ would be a comfortable claim and a false one:
   difference, and that is the point rather than an accident: somebody paying for inference
   through us can see exactly what the routing costs them without asking. If that ever stops
   being the intent, the field to drop is `listPriceMicro`, and dropping it is a `/v2` change.
+- **`GET /v1/statement`** may carry the same projection as `GET /v1/usage`, one line per model
+  for the statement's period, with `totals` that are the exact sum of the lines, and the `from`
+  and `to` of the window the period covers (a period is labelled by a month, but it need not be a
+  calendar month). The lines cover inference usage only: any other charge in the period is in the
+  downloadable statement, so `totals` is not the whole bill when there are other charges. It is
+  the caller's own bill, so it carries both prices for the same reason `GET /v1/usage` does.
+  `lines` and `totals` arrive together or not at all, and a service that predates them answers
+  with the download link alone.
 - **`GET /v1/nudge`** returns one already-computed comparison — one subscription, one price, one
   subtraction the server already did. The client renders it and computes nothing.
+- **`GET /v1/offers`** lists what the service will sell the caller: per offer, an opaque `skuId`
+  (the one string `POST /v1/checkout` takes back, and the only place a client gets one), the
+  opaque `planId` `GET /v1/entitlements` also publishes, the server's own `displayName`, the
+  `interval` (`month` or `year`), the price per interval as money, and the published
+  `EntitlementLimitsSchema`. It carries no "recommended" flag and no "current" flag: compare
+  `planId` with the entitlement's to mark what the caller is on, and render the offers in the
+  order served, without re-sorting. `interval` is tolerant, so an interval added later reads as
+  `unrecognised` rather than failing the list. An account with nothing on sale gets an empty
+  list, never a 404. It takes a bearer or the person's own browser session.
 
 Each of those, and the balance and the entitlements, carries the optional
 `denomination` above. The price list's entries also carry optional cache-read and cache-write
@@ -308,6 +326,11 @@ rates (`cacheReadMicro`, `cacheWriteMicro`) beside input and output, in the entr
 
 Nothing else carries an amount. In particular, no inference route does: not a rate, not a
 multiplier, not a unit cost. And no route anywhere carries a supplier's terms.
+
+`POST /v1/checkout` and `POST /v1/portal` accept either a bearer token or the person's own
+browser session, with the same request and response shapes either way. A request authenticated
+by a browser session must come from an origin the service trusts, or it is refused with
+`forbidden`.
 
 `POST /v1/topup` carries an amount in the request (`TopupRequestSchema`). It publishes neither a
 minimum nor a first-purchase ceiling: those are server policy, and a request that misses one is
