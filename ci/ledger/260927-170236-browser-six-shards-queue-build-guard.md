@@ -5,7 +5,7 @@ kind: experiment
 status: reverted
 actor: agent
 gates: []
-prs: [2212]
+prs: [2212, 2249]
 hypothesis:
   metric: 'queue-build'
   slo: 'queue-build'
@@ -53,7 +53,7 @@ than about 60 with no queue-build gain.
 
 ## Reverted 2026-09-27
 
-Reverted along with 260919-175503, which it guards (the revert of ea1e913fe, PR
+Reverted along with 260919-175503, which it guards (PR #2249, the revert of ea1e913fe, PR
 #2212). The six-shard grouping exposed a mid-run Vite package re-bundle that
 crashes shard 6 with two copies of React (evidence: run 36355925886). See that
 entry's note. No verdict should be read from this entry.

@@ -6,7 +6,7 @@ status: reverted
 actor: agent
 gates:
   - wf.browser-test.browser-shard
-prs: [2212]
+prs: [2212, 2249]
 hypothesis:
   metric: 'headroom'
   slo: 'queue-build'
@@ -119,7 +119,7 @@ queue time.
 
 ## Reverted 2026-09-27
 
-Reverted by `git revert` of ea1e913fe (PR #2212), back to three shards. From
+Reverted by PR #2249, a `git revert` of ea1e913fe (PR #2212), back to three shards. From
 the first queue build after it landed (18:43Z), shard 6 of 6 failed on most
 queue builds and blocked the queue for more than two hours. The same two specs
 failed on their first attempt every time: `chat/status-line-fit.spec.ts:270` and
