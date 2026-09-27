@@ -110,17 +110,19 @@ function preview(
       reconciliationStatus: 'ready',
     },
     candidates: [
-      {
-        operationRevisionId: 'read-v1',
-        toolkit: 'gmail',
-        operationSlug: 'GMAIL_FETCH_EMAILS',
-        toolkitVersion: '1',
-        capabilityClassification: 'read',
-        retryPolicy: 'never',
-        inputSchema: {},
-        supported: true,
-      },
-    ],
+      ['read-v1', 'GMAIL_FETCH_EMAILS', 'read'],
+      ['send-v1', 'GMAIL_SEND_EMAIL', 'write'],
+      ['delete-v1', 'GMAIL_DELETE_EMAIL', 'destructive'],
+    ].map(([operationRevisionId, operationSlug, capabilityClassification]) => ({
+      operationRevisionId: operationRevisionId!,
+      toolkit: 'gmail',
+      operationSlug: operationSlug!,
+      toolkitVersion: '1',
+      capabilityClassification: capabilityClassification as 'read' | 'write' | 'destructive',
+      retryPolicy: 'never' as const,
+      inputSchema: {},
+      supported: true,
+    })),
     agents: [{ agentId: 'agent-bo', displayName: 'Bo' }],
     currentGrants: grants,
     catalogComplete: true,
@@ -264,27 +266,87 @@ describe('AgentRequestCard — an account exists', () => {
     });
   });
 
-  it('says plainly when the answer did not save', async () => {
+  it('never says "nothing changed" once the access landed, and Try again re-sends the answer', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([account('connection-1')]);
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+    );
+    vi.mocked(transport.resolveConnectorAgentRequest)
+      .mockRejectedValueOnce(new Error('network dropped'))
+      .mockResolvedValueOnce({ ...REQUEST, status: 'granted' } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    const unanswered = await screen.findByTestId('agent-request-unanswered');
+    expect(unanswered).toHaveTextContent('The access is saved, but Bo’s request wasn’t answered');
+    expect(unanswered).not.toHaveTextContent(/nothing changed/i);
+    expect(screen.getByRole('heading', { name: 'Bo can now use Gmail' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
+      decision: 'current_access',
+      connectionId: 'connection-1',
+    });
+  });
+
+  it.each([
+    ['request_already_resolved', 'already answered somewhere else'],
+    ['request_expired', 'ran out of time'],
+  ])('offers no retry that cannot land when the request is %s', async (code, words) => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
       preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
-      Object.assign(new Error('pending'), { code: 'authority_sync_failed' })
+      Object.assign(new Error('refused'), { code })
     );
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Access is still being set up. Try again in a moment.'
+    expect(await screen.findByTestId('agent-request-unanswered')).toHaveTextContent(words);
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  it('starts on the level the agent asked for and lists what it asked', async () => {
+    const transport = transportWith([account('connection-1')]);
+    renderWith(
+      transport,
+      <AgentRequestCard
+        request={{ ...REQUEST, requestedOperations: ['GMAIL_FETCH_EMAILS', 'GMAIL_SEND_EMAIL'] }}
+      />
     );
+    const asked = await screen.findByTestId('requested-actions');
+    expect(asked).toHaveTextContent('Bo asked: Summarise today’s inbox');
+    expect(asked).toHaveTextContent('It wants to: Fetch emails and Send email.');
+    expect(screen.getByRole('radio', { name: 'Read and write' })).toBeChecked();
+    expect(asked).not.toHaveTextContent('With Read');
+  });
+
+  it('says what Read leaves out when the person picks it, and what neither level covers', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([account('connection-1')]);
+    renderWith(
+      transport,
+      <AgentRequestCard
+        request={{
+          ...REQUEST,
+          requestedOperations: ['GMAIL_SEND_EMAIL', 'GMAIL_DELETE_EMAIL'],
+        }}
+      />
+    );
+    const asked = await screen.findByTestId('requested-actions');
+    expect(asked).toHaveTextContent('Neither choice includes delete email.');
+    await user.click(screen.getByRole('radio', { name: 'Read' }));
+    expect(asked).toHaveTextContent('With Read, Bo can’t send email.');
   });
 });
 
 describe('AgentRequestCard — answered', () => {
   it.each([
-    ['granted', 'Gmail connected · Bo can use it'],
+    ['granted', 'Allowed Bo to use Gmail'],
     ['denied', 'Bo wasn’t given Gmail'],
     ['expired', 'This request for Gmail ran out of time. Bo can ask again.'],
     ['authentication_failed', 'Signing in to Gmail didn’t finish. Nothing was shared.'],
@@ -362,5 +424,61 @@ describe('ChatAgentRequest', () => {
     );
     expect(await screen.findByText('plain tool card')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-agent-request')).not.toBeInTheDocument();
+  });
+});
+
+describe('AgentRequestCard — an account that needs attention first', () => {
+  it('asks to resume a paused account before any Allow', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([{ ...account('connection-1'), lifecycle: 'paused' }]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    expect(await screen.findByTestId('account-attention')).toHaveAttribute('data-kind', 'paused');
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Resume' }));
+    expect(transport.resumeConnectorConnection).toHaveBeenCalledWith('connection-1');
+  });
+
+  it('asks to sign in again when the account is signed out', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([
+      { ...account('connection-1'), authenticationStatus: 'expired' },
+    ]);
+    vi.mocked(transport.reconnectConnectorConnection).mockResolvedValue({
+      flowId: 'flow-r',
+      providerInstanceId: 'composio-1',
+      toolkit: 'gmail',
+      state: 'pending',
+      authorizeUrl: 'https://accounts.example/again',
+    } as never);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue({
+      flowId: 'flow-r',
+      providerInstanceId: 'composio-1',
+      toolkit: 'gmail',
+      state: 'pending',
+      authorizeUrl: 'https://accounts.example/again',
+    } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Sign in again' }));
+    expect(transport.reconnectConnectorConnection).toHaveBeenCalledWith(
+      'connection-1',
+      expect.objectContaining({ idempotencyKey: expect.any(String) })
+    );
+    expect(await screen.findByRole('link', { name: /Sign in to Gmail/ })).toHaveAttribute(
+      'href',
+      'https://accounts.example/again'
+    );
+  });
+
+  it('skips a paused account when another one is ready', async () => {
+    const transport = transportWith([
+      { ...account('connection-2'), label: 'home', lifecycle: 'paused' },
+      account('connection-1'),
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+    expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
+    // Only one usable account, so no "which account?" question.
+    expect(screen.queryByRole('heading', { name: 'Which Gmail account?' })).not.toBeInTheDocument();
   });
 });

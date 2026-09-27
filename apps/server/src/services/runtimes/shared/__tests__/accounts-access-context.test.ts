@@ -72,6 +72,9 @@ describe('Accounts turn awareness', () => {
       // them the link back to it rather than a relative page path.
       expect(text).toContain('a card in this conversation');
       expect(text).toContain("the result's openUrl");
+      // A link goes only to the owner directly; a shared chat gets none.
+      expect(text).toContain('in a group or shared chat, only say a request is waiting');
+      expect(text).toContain('open DorkOS on their computer');
     }
   );
 

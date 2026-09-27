@@ -7,7 +7,9 @@ function receiptLine(request: ConnectorAgentRequestItem, serviceName: string): s
   const agent = request.agent.displayName;
   switch (request.status) {
     case 'granted':
-      return `${serviceName} connected · ${agent} can use it`;
+      // Past tense on purpose: this record stays in the transcript, and access
+      // can be changed later, so it says what was decided, not what holds now.
+      return `Allowed ${agent} to use ${serviceName}`;
     case 'access_pending':
       return `Giving ${agent} access to ${serviceName}…`;
     case 'denied':

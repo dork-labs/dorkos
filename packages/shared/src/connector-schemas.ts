@@ -649,10 +649,11 @@ const ConnectorAgentRequestBaseSchema = z
     requestId: z.string().min(1),
     reviewUrl: z.string().startsWith('/connections?request='),
     /**
-     * An absolute link that opens the conversation holding this request's card
-     * in the DorkOS app: the tunnel address when one is up, this computer's
-     * address otherwise. For an agent answering somewhere the card cannot draw
-     * (Telegram, Slack), so it can hand the owner a way back to it.
+     * An absolute link that opens where this request's card is drawn in the
+     * DorkOS app (the room for a room's turn, otherwise the conversation), over
+     * the remote-access address. Absent when remote access is off, since a link
+     * to this computer would not open on a phone. For an agent answering in a
+     * direct chat where the card cannot draw (Telegram, Slack).
      */
     openUrl: z.string().url().optional(),
     serviceSlug: z.string().min(1),
@@ -673,6 +674,12 @@ export const ConnectorAgentRequestStatusSchema = z.discriminatedUnion('status', 
     connectionId: ConnectionIdSchema,
     grantedOperationRevisionIds: z.array(z.string().min(1)),
     grantedEvents: z.array(z.string().min(1)),
+    /**
+     * Operations the agent asked for that the owner did not allow. Empty when
+     * everything asked for was allowed; the agent works within the rest and
+     * says what it could not do.
+     */
+    notGrantedOperations: z.array(z.string().min(1)).optional(),
   }).strict(),
   ConnectorAgentRequestBaseSchema.extend({ status: z.literal('denied') }).strict(),
   ConnectorAgentRequestBaseSchema.extend({ status: z.literal('expired') }).strict(),

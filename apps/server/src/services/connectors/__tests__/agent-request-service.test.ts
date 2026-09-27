@@ -909,6 +909,119 @@ describe('ConnectorAgentRequestService', () => {
       });
     });
 
+    it('counts only live grants: a revoked one is not access', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read', 'revision-draft']);
+      db.update(connectionOperationGrants)
+        .set({ revokedAt: NOW.toISOString() })
+        .where(eq(connectionOperationGrants.operationRevisionId, 'revision-draft'))
+        .run();
+
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+      expect(resolved).toMatchObject({ grantedOperationRevisionIds: ['revision-read'] });
+
+      // Every grant revoked: nothing live, so nothing to answer with.
+      const second = await requests.create(principal(), { ...INPUT, reason: 'Another look' });
+      db.update(connectionOperationGrants)
+        .set({ revokedAt: NOW.toISOString() })
+        .where(eq(connectionOperationGrants.operationRevisionId, 'revision-read'))
+        .run();
+      await expect(
+        requests.resolve(OWNER, second.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
+    it('tells the agent what it asked for and was not given', async () => {
+      const queue = new MessageQueueStore(db);
+      const source = new ConnectorAgentRequestSourceAdapter(db, authority, 'boot-a');
+      const acceptance = new PrivateSessionMessageAcceptanceService(
+        db,
+        queue,
+        [source],
+        'boot-a',
+        () => clock
+      );
+      const requests = service({
+        resume: {
+          accept: (ref) => {
+            acceptance.accept(ref);
+          },
+          nudge: (sessionId) => nudges.push(sessionId),
+        },
+      });
+      const created = await requests.create(principal(), INPUT);
+      // Asked to read and draft; the owner allowed reading only.
+      grantLive(['revision-read']);
+
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+      expect(resolved).toMatchObject({ notGrantedOperations: ['gmail.draft'] });
+
+      // No live call is holding it any more, so the answer rides a follow-up.
+      clock = new Date(NOW.getTime() + 11 * 60_000);
+      await requests.reconcile();
+      const content = (
+        await acceptance.prepare(db.select().from(sessionMessageAcceptanceReceipts).get()!.id)
+      ).content;
+      expect(content).toContain('did not allow everything you asked for: gmail.draft');
+      expect(content).not.toContain('Continue the original request');
+    });
+
+    it('says "continue" only when everything asked for was allowed', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read', 'revision-draft']);
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+      expect(resolved).toMatchObject({ notGrantedOperations: [] });
+    });
+
+    it('treats a retry for another account as a different answer', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: 'connection-other' as ConnectionId,
+        })
+      ).rejects.toMatchObject({ code: 'request_already_resolved' });
+    });
+
+    it('does not pass an exact-action approval off as a current-access answer', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'approved',
+        connectionId: CONNECTION_ID,
+        operationRevisionIds: ['revision-read'],
+        eventScopes: [],
+      });
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'request_already_resolved' });
+    });
+
     it('answers the same decision twice idempotently and refuses a different later one', async () => {
       const requests = service();
       const created = await requests.create(principal(), INPUT);
@@ -946,13 +1059,27 @@ describe('ConnectorAgentRequestService', () => {
     });
     const created = await requests.create(principal(), INPUT);
 
-    expect(created.openUrl).toBe('https://tunnel.example/session?session=session-1');
+    // A room's turn runs in a hidden session: the link opens the room, where
+    // the card is drawn.
+    expect(created.openUrl).toBe('https://tunnel.example/channels?id=room-1');
     expect(requests.getForOwner(OWNER, created.requestId)).toMatchObject({
       roomId: 'room-1',
-      openUrl: 'https://tunnel.example/session?session=session-1',
+      openUrl: 'https://tunnel.example/channels?id=room-1',
     });
     // The room is an owner-side fact; the agent's own status never carries it.
     expect(created).not.toHaveProperty('roomId');
+  });
+
+  it('links a direct conversation to itself, and gives no link without a remote address', async () => {
+    const linked = service({ appOrigin: () => 'https://tunnel.example' });
+    const created = await linked.create(principal(), INPUT);
+    expect(created.openUrl).toBe('https://tunnel.example/session?session=session-1');
+
+    // Remote access off: a link to this computer would not open on a phone.
+    const unlinked = service({ appOrigin: () => undefined });
+    expect(await unlinked.getForRuntime(principal(), created.requestId)).not.toHaveProperty(
+      'openUrl'
+    );
   });
 
   it("lists only one conversation's requests when asked for its session", async () => {

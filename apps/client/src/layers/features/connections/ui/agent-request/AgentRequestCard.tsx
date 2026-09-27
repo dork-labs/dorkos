@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Check } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import type { ConnectionId, ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
 import {
@@ -9,9 +9,11 @@ import {
 } from '@/layers/entities/connectors';
 import { Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { accountAttention, usableAccounts } from '../../lib/account-readiness';
 import { serviceNameFromSlug } from '../../lib/presentation';
 import { AccessCardFrame } from '../access/AccessCardFrame';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
+import { AccountAttentionStep } from './AccountAttentionStep';
 import { RequestConnectStep } from './RequestConnectStep';
 import { RequestReceipt } from './RequestReceipt';
 
@@ -23,20 +25,41 @@ export interface AgentRequestCardProps {
   className?: string;
 }
 
-/** Why an answer did not save, in words the person can act on. */
-function decisionError(error: Error | null): string {
-  const code = (error as { code?: string } | null)?.code;
-  if (code === 'request_expired') return 'This request ran out of time. Nothing changed.';
-  if (code === 'authority_sync_failed') {
-    return 'Access is still being set up. Try again in a moment.';
+/** Why "Not now" did not save. Declining writes nothing, so nothing changed. */
+const DECLINE_FAILED = 'Couldn’t save your answer. Nothing changed. Try again.';
+
+/**
+ * Why an Allow's answer did not reach the request after the access itself had
+ * already been saved, and whether sending it again can help.
+ */
+function unansweredReason(
+  error: Error | null,
+  agentName: string
+): { reason: string; retry: boolean } {
+  switch ((error as { code?: string } | null)?.code) {
+    case 'request_already_resolved':
+      return {
+        reason: `it was already answered somewhere else, and ${agentName} got that answer. Ask ${agentName} again if it still needs this.`,
+        retry: false,
+      };
+    case 'request_expired':
+      return { reason: `the request ran out of time. Ask ${agentName} again.`, retry: false };
+    case 'request_not_found':
+      return { reason: 'the request is no longer open.', retry: false };
+    case 'authority_sync_failed':
+      return { reason: 'the access is still being set up.', retry: true };
+    case 'selection_invalid':
+      return { reason: 'that account isn’t ready for it yet.', retry: true };
+    default:
+      return { reason: 'the answer didn’t reach the server.', retry: true };
   }
-  return 'Couldn’t save your answer. Nothing changed. Try again.';
 }
 
 /**
  * The card an agent's request for an app draws in the conversation where it
  * asked (connections-one-list design §3): connect the app if it has no account
- * yet, then "Let DorkBot use Gmail?", then a one-line record of the answer.
+ * yet, fix the account if it is paused or signed out, then "Let DorkBot use
+ * Gmail?", then a one-line record of the answer.
  *
  * Everything it shows is the server's state for this request, so a second
  * window, a reload and the Connections page all agree. It is always about the
@@ -44,8 +67,10 @@ function decisionError(error: Error | null): string {
  * which only ever raises that agent's access and never touches another. Only
  * the owner can read a request, so only the owner ever sees this card.
  *
- * Allow answers with the access the agent now holds; the agent's held turn
- * picks the answer up and carries on by itself. Not now answers no.
+ * Allow is two writes: the shared card saves the access, then the card answers
+ * the request with it, and the agent's held turn picks the answer up. When the
+ * second write fails the first has still landed, so the card says so and never
+ * claims that nothing changed. Not now answers no.
  */
 export function AgentRequestCard({ request, className }: AgentRequestCardProps) {
   const resolve = useResolveConnectorAgentRequest();
@@ -56,15 +81,21 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
       .flatMap((page) => page.services)
       .find((candidate) => candidate.serviceSlug === request.serviceSlug) ?? null;
   const serviceName = service?.displayName ?? serviceNameFromSlug(request.serviceSlug);
+  const agentName = request.agent.displayName;
   // The account a sign-in from this card just made; the access step skips the
   // "which account?" question for it.
   const [signedInId, setSignedInId] = useState<string | null>(null);
+  // The account whose access Allow saved. Set before the answer is sent, so a
+  // failed answer is reported as "saved, not answered", never "nothing changed".
+  const [allowedId, setAllowedId] = useState<string | null>(null);
 
   const decline = useCallback(() => {
+    setAllowedId(null);
     resolve.mutate({ requestId: request.requestId, decision: { decision: 'denied' } });
   }, [resolve, request.requestId]);
-  const allow = useCallback(
+  const answer = useCallback(
     (connectionId: string) => {
+      setAllowedId(connectionId);
       resolve.mutate({
         requestId: request.requestId,
         decision: { decision: 'current_access', connectionId: connectionId as ConnectionId },
@@ -74,13 +105,38 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   );
 
   const frameClass = cn('max-w-xl', className);
+
+  if (allowedId && resolve.isError) {
+    const { reason, retry } = unansweredReason(resolve.error, agentName);
+    return (
+      <AccessCardFrame
+        titleId={`agent-request-unanswered-${request.requestId}`}
+        toolkit={request.serviceSlug}
+        title={`${agentName} can now use ${serviceName}`}
+        className={frameClass}
+      >
+        <p role="alert" className="text-sm" data-testid="agent-request-unanswered">
+          <Check className="text-success mr-1.5 inline size-4 align-text-bottom" aria-hidden />
+          The access is saved, but {agentName}’s request wasn’t answered: {reason}
+        </p>
+        {retry && (
+          <div className="flex justify-end">
+            <Button onClick={() => answer(allowedId)} disabled={resolve.isPending}>
+              {resolve.isPending ? 'Sending…' : 'Try again'}
+            </Button>
+          </div>
+        )}
+      </AccessCardFrame>
+    );
+  }
+
   if (request.status !== 'awaiting_owner') {
     return <RequestReceipt request={request} serviceName={serviceName} className={frameClass} />;
   }
 
-  const failure = resolve.isError && (
+  const declineFailure = resolve.isError && (
     <p role="alert" className="text-destructive text-sm">
-      {decisionError(resolve.error)}
+      {DECLINE_FAILED}
     </p>
   );
 
@@ -94,7 +150,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
         onDecline={decline}
         deciding={resolve.isPending}
         className={frameClass}
-        failure={failure}
+        failure={declineFailure}
       />
     );
   }
@@ -115,11 +171,14 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
     );
   }
 
-  const hasAccount = (connections.data?.connections ?? []).some(
+  const all = connections.data?.connections ?? [];
+  const connected = all.filter(
     (connection) =>
       connection.toolkit === request.serviceSlug && connection.lifecycle !== 'disconnected'
   );
-  if (!hasAccount && !signedInId) {
+  const usable = usableAccounts(all, request.serviceSlug);
+
+  if (connected.length === 0 && !signedInId) {
     return (
       <div className={cn('space-y-2', frameClass)}>
         <RequestConnectStep
@@ -130,7 +189,26 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           onDecline={decline}
           deciding={resolve.isPending}
         />
-        {failure}
+        {declineFailure}
+      </div>
+    );
+  }
+
+  // Connected, but nothing an agent could use right now: fix that first.
+  if (usable.length === 0 && !signedInId) {
+    const account = connected[0]!;
+    return (
+      <div className={cn('space-y-2', frameClass)}>
+        <AccountAttentionStep
+          account={account}
+          attention={accountAttention(account) ?? { kind: 'setting_up' }}
+          serviceName={serviceName}
+          agentName={agentName}
+          onDecline={decline}
+          deciding={resolve.isPending}
+          onRecheck={() => void connections.refetch()}
+        />
+        {declineFailure}
       </div>
     );
   }
@@ -143,10 +221,11 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
         toolkit={request.serviceSlug}
         serviceName={serviceName}
         {...(signedInId ? { connectionId: signedInId } : {})}
+        request={{ reason: request.reason, operations: request.requestedOperations }}
         onSkip={decline}
-        onAllowed={allow}
+        onAllowed={answer}
       />
-      {failure}
+      {declineFailure}
     </div>
   );
 }

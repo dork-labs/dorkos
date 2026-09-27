@@ -39,12 +39,15 @@ The row itself shows its state; the right side is always the one thing you can d
 **Screen:** `mockups/03-two-doors.html`
 The operator's point: "connected, but no agent can use it" is a dead end, and the real journey starts in a chat.
 
-**Path 1 — from a chat (the main one).** You ask an agent something that needs an app. A card appears in the transcript: "Connect Gmail — so DorkBot can read your email" [Connect Gmail] [Not now]. Sign-in opens the provider's page (the only moment you leave). The same card then asks "Let DorkBot use Gmail?" — Read email / Read and send — [Allow] [Allow once]. It collapses to "✓ Gmail connected · DorkBot can read" and the agent resumes the original request by itself.
+**Path 1 — from a chat (the main one).** You ask an agent something that needs an app. A card appears in the transcript: "Connect Gmail — so DorkBot can read your email" [Connect Gmail] [Not now]. Sign-in opens the provider's page (the only moment you leave). The same card then asks "Let DorkBot use Gmail?" — Read email / Read and send — [Allow] [Not now]. It collapses to "✓ Allowed DorkBot to use Gmail" and the agent resumes the original request by itself.
 
 - Already connected but not granted: only the "Let DorkBot use Gmail?" step.
 - Two accounts of the same app: the card asks which one.
 - In a room, only the owner sees and answers the card.
-- Over Telegram/Slack the card can't render; the agent sends a link that opens it in the app.
+- Over Telegram/Slack the card can't render; DorkOS gives the agent a link to where the card is (the conversation, or the room for a room's turn), only while remote access is on, and tells it to post the link only in a direct chat with the owner.
+
+**As built (DOR-2415).** No "Allow once": the server has no one-time grant (DOR-2437). The level starts on the one covering what the agent asked for, the card shows the agent's reason and the actions it named, and says plainly what a level leaves out; an agent given less than it asked for is told so when it resumes. A paused or signed-out account is fixed from the card before any Allow. The record is past tense ("Allowed DorkBot to use Gmail"), because access can change later and the record stays in the transcript. A request that also asks for event updates goes to the full review on Connections.
+
 - The chat card is always about **one** agent. It never offers "every agent".
 - Tracked as **DOR-2415**; `meta/chat-capabilities.md` §13 row CN-12. The server half exists (CN-02, CN-03, CN-04, CN-06); the missing half is the transcript card, and an eval that the model raises the request from an ordinary message.
 

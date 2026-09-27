@@ -1297,6 +1297,7 @@ export class ConnectorAgentRequestService {
         connectionId: request.resolvedConnectionId as ConnectionId,
         grantedOperationRevisionIds: parseStringArray(request.resolvedOperationRevisionIdsJson),
         grantedEvents: this.resolvedEventTypes(request, review),
+        notGrantedOperations: notGrantedOperations(this.options.db, request),
       };
     }
     if (request.outcome === 'granted') return { ...base, status: 'access_pending' };
@@ -1324,12 +1325,20 @@ export class ConnectorAgentRequestService {
     };
   }
 
-  /** The absolute link to the conversation holding a request's card, when the app has an address. */
+  /**
+   * The absolute link to wherever a request's card is drawn: the room, for a
+   * room's turn (its session is hidden), otherwise the conversation. Left out
+   * when the app has no address the owner can reach from elsewhere.
+   */
   private openUrl(sessionId: string): { openUrl?: string } {
     const origin = this.options.appOrigin?.();
     if (!origin) return {};
+    const roomId = this.options.roomForSession?.(sessionId);
+    const target = roomId
+      ? `/channels?${new URLSearchParams({ id: roomId }).toString()}`
+      : sessionPath({ session: sessionId });
     try {
-      return { openUrl: new URL(sessionPath({ session: sessionId }), origin).toString() };
+      return { openUrl: new URL(target, origin).toString() };
     } catch {
       return {};
     }
@@ -2036,11 +2045,16 @@ export class ConnectorAgentRequestSourceAdapter implements PrivateSessionMessage
         'The service request outcome is no longer available.'
       );
     }
+    const notGranted = notGrantedOperations(this.db, row);
     const content =
       row.outcome === 'granted'
         ? `Access is ready for service ${row.serviceSlug} on connection ${row.resolvedConnectionId}. ` +
           `Use only these operation revision IDs: ${parseStringArray(row.resolvedOperationRevisionIdsJson).join(', ')}. ` +
-          'Continue the original request.'
+          (notGranted.length > 0
+            ? `The owner did not allow everything you asked for: ${notGranted.join(', ')} ` +
+              'is not allowed. Do what you can with what was allowed, tell the person what you ' +
+              'could not do, and ask again only if it is still needed.'
+            : 'Continue the original request.')
         : row.outcome === 'denied'
           ? `The owner denied the request for service ${row.serviceSlug}. Do not retry it automatically.`
           : row.outcome === 'expired'
@@ -2121,6 +2135,27 @@ export class ConnectorAgentRequestSourceAdapter implements PrivateSessionMessage
       .where(eq(connectorAgentRequests.id, receipt.sourceId))
       .run();
   }
+}
+
+/**
+ * The requested operations the resolved revisions do not cover, so an agent
+ * given less than it asked for is told so instead of "access is ready".
+ */
+function notGrantedOperations(db: Db, request: ConnectorAgentRequest): string[] {
+  const granted = parseStringArray(request.resolvedOperationRevisionIdsJson);
+  const covered = new Set(
+    granted.length === 0
+      ? []
+      : db
+          .select({ operationSlug: connectorOperationRevisions.operationSlug })
+          .from(connectorOperationRevisions)
+          .where(inArray(connectorOperationRevisions.id, granted))
+          .all()
+          .map((revision) => revision.operationSlug)
+  );
+  return parseStringArray(request.requestedOperationsJson).filter(
+    (operation) => !covered.has(operation)
+  );
 }
 
 function originFromRows(

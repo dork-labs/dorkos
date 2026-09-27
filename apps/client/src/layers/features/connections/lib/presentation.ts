@@ -71,6 +71,22 @@ export function serviceNameFromSlug(slug: string): string {
 }
 
 /**
+ * A plain name for one service operation: `GMAIL_SEND_EMAIL` or
+ * `gmail.send_email` reads "Send email". The app's own name is dropped since
+ * the card already says which app.
+ *
+ * @param slug - The operation slug.
+ * @param toolkit - The app's slug, stripped when the operation starts with it.
+ */
+export function operationLabel(slug: string, toolkit: string): string {
+  const leaf = slug.split('.').at(-1) ?? slug;
+  const prefix = `${toolkit.toLowerCase()}_`;
+  const bare = leaf.toLowerCase().startsWith(prefix) ? leaf.slice(prefix.length) : leaf;
+  const words = bare.replace(/[_-]+/g, ' ').trim().toLowerCase();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : slug;
+}
+
+/**
  * The one way an account is named everywhere on this surface: the service's
  * display name with the label in parentheses — "Gmail (work)".
  *

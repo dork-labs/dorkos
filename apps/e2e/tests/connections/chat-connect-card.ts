@@ -48,7 +48,7 @@ export function registerChatConnectCardTests(harness: ChatConnectHarness): void 
       ).toBeVisible();
       await card.getByRole('button', { name: 'Allow' }).click();
       await expect(card.getByTestId('agent-request-receipt')).toHaveText(
-        `Gmail connected · ${agent.agentName} can use it`
+        `Allowed ${agent.agentName} to use Gmail`
       );
 
       // The agent's held call got the real answer.

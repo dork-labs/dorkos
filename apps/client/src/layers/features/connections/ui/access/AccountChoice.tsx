@@ -8,12 +8,13 @@ import {
   RadioGroupItem,
   Skeleton,
 } from '@/layers/shared/ui';
+import { usableAccounts } from '../../lib/account-readiness';
 import { AccessCardFrame } from './AccessCardFrame';
 import type { AgentAccessCardProps } from './ConnectionAccessCard';
 
 /**
  * Fixed-agent mode without a known account: find it, and ask which one when
- * there are two. Once one is known, hands off to `renderAccess`.
+ * there are two. Only accounts an agent can use right now are offered. Once one is known, hands off to `renderAccess`.
  */
 export function AccountChoice({
   props,
@@ -24,9 +25,9 @@ export function AccountChoice({
 }) {
   const titleId = useId();
   const query = useConnectorConnections();
-  const accounts = (query.data?.connections ?? []).filter(
-    (connection) => connection.toolkit === props.toolkit && connection.lifecycle !== 'disconnected'
-  );
+  // Only accounts an agent could use right now: a paused or signed-out account
+  // can't be given to one, so offering it would be an Allow that cannot land.
+  const accounts = usableAccounts(query.data?.connections ?? [], props.toolkit);
   const [picked, setPicked] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
 
@@ -55,7 +56,7 @@ export function AccountChoice({
         />
       ) : accounts.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          No {props.serviceName} account is connected yet.
+          No {props.serviceName} account is ready to use yet.
         </p>
       ) : (
         <RadioGroup

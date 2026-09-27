@@ -13,6 +13,7 @@ import {
   cardDecision,
   heldAccess,
   initialCardLevel,
+  levelForRequest,
   type CardAccessLevel,
   type CardDecision,
 } from '../../lib/access-card-selection';
@@ -25,6 +26,7 @@ import { AccessCardFrame } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
 import { AgentChecklist } from './AgentChecklist';
+import { RequestedActions } from './RequestedActions';
 import { joinNames, LEVEL_LABELS } from './access-labels';
 
 interface SharedCardProps {
@@ -74,6 +76,12 @@ export interface AgentAccessCardProps extends SharedCardProps {
    * do this, since the question still needs an answer.
    */
   onAllowed?: (connectionId: string) => void;
+  /**
+   * What the agent asked for, when a request opened the card: the level starts
+   * on the one that covers it, and the card shows the reason and the actions
+   * asked for, and says plainly what a level leaves out.
+   */
+  request?: { readonly reason: string; readonly operations: readonly string[] };
 }
 
 /** Props for {@link ConnectionAccessCard}. */
@@ -168,11 +176,16 @@ function AccessStep(
               .map((agent) => agent.agentId)
               .filter((agentId) => (current[agentId] ?? []).length > 0);
       setPicked(new Set(props.mode === 'agent' ? [props.agentId] : subjects));
-      setLevel(
-        initialCardLevel(
-          subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
-        )
+      const heldLevel = initialCardLevel(
+        subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
       );
+      // A request starts on the level that covers what the agent asked for, and
+      // never below what it already holds.
+      const asked =
+        props.mode === 'agent' && props.request
+          ? levelForRequest(preview.candidates, props.request.operations).level
+          : null;
+      setLevel(asked === 'read-write' || heldLevel === 'read-write' ? 'read-write' : heldLevel);
       setLevelTouched(false);
     },
   });
@@ -214,7 +227,9 @@ function AccessStep(
     if (!access.saved || !onAllowed || allowedReported.current) return;
     allowedReported.current = true;
     onAllowed(props.connectionId);
-  }, [access.saved, onAllowed, props.connectionId]);
+    // Keyed on the outcome itself, not on `saved`: every answer the server
+    // gives re-checks, so only a confirmed, applied save ever reports.
+  }, [access.saveOutcome, access.saved, onAllowed, props.connectionId]);
 
   const agentName =
     props.mode === 'agent'
@@ -425,6 +440,19 @@ function AccessEditor({
 
   return (
     <div className="space-y-4">
+      {props.mode === 'agent' && props.request && (
+        <RequestedActions
+          agentName={
+            preview.agents.find((agent) => agent.agentId === props.agentId)?.displayName ??
+            'The agent'
+          }
+          toolkit={props.toolkit}
+          reason={props.request.reason}
+          operations={props.request.operations}
+          candidates={preview.candidates}
+          level={level}
+        />
+      )}
       {who}
       {nothingToGrant ? (
         <p className="text-muted-foreground text-sm">

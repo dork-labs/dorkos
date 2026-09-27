@@ -51,11 +51,7 @@ import {
   initCredentialProvider,
 } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
-import {
-  getLocalCockpitOrigin,
-  getLocalCockpitPort,
-  getTunnelOrigin,
-} from './lib/trusted-origins.js';
+import { getLocalCockpitPort, getTunnelOrigin } from './lib/trusted-origins.js';
 import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
@@ -3197,8 +3193,9 @@ async function start() {
       // binding follows a session's rekey, so it is read when a card is read.
       roomForSession: (sessionId) => roomStore.sessionLedger.bindingForSession(sessionId)?.roomId,
       // The link an agent hands an owner who is not in the app (Telegram,
-      // Slack): the tunnel when one is up, this computer otherwise.
-      appOrigin: () => getTunnelOrigin() ?? getLocalCockpitOrigin(),
+      // Slack). Only the remote-access address: a localhost link would not
+      // open on the phone that link is sent to.
+      appOrigin: () => getTunnelOrigin() ?? undefined,
       onChanged: connectorAgentRequestsChangedAnnouncer(eventFanOut),
     });
     void connectorAgentRequests.reconcile().catch((error: unknown) => {

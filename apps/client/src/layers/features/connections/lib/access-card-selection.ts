@@ -179,3 +179,38 @@ export function cardDecision(
   }
   return { changes, removedAgentIds, downgradedAgentIds, needsLevel };
 }
+
+/** What an agent's request for an app asks of the card's two levels. */
+export interface RequestedLevel {
+  /** The lowest level that covers everything asked for that a level can cover. */
+  level: CardAccessLevel;
+  /** Operations asked for that no level covers (destructive, or not available on this account). */
+  uncovered: string[];
+  /** Operations asked for that only Read and write covers. */
+  needsWrite: string[];
+}
+
+/**
+ * Read an agent's requested operations against one account's snapshot, so the
+ * chat card starts on the level the agent actually asked for rather than on
+ * Read, and can say plainly what a lower level, or either level, leaves out.
+ *
+ * @param candidates - The account's complete operation snapshot.
+ * @param requestedOperations - The operation slugs the agent asked for.
+ */
+export function levelForRequest(
+  candidates: ConnectorReconciliationCandidate[],
+  requestedOperations: readonly string[]
+): RequestedLevel {
+  const uncovered: string[] = [];
+  const needsWrite: string[] = [];
+  for (const operation of requestedOperations) {
+    const candidate = candidates.find((item) => item.operationSlug === operation && item.supported);
+    if (!candidate || candidate.capabilityClassification === 'destructive') {
+      uncovered.push(operation);
+    } else if (candidate.capabilityClassification === 'write') {
+      needsWrite.push(operation);
+    }
+  }
+  return { level: needsWrite.length > 0 ? 'read-write' : 'read', uncovered, needsWrite };
+}
