@@ -6,6 +6,7 @@
 import { z } from 'zod';
 
 import { env } from '@/env';
+import { cloudAccountsForwarding } from '@/lib/cloud-accounts/forward';
 import { managedEventProtector } from './event-protection';
 
 const RawManagedConnectorConfigSchema = z
@@ -51,7 +52,13 @@ export class ManagedConnectorConfigError extends Error {
 
 function deploymentConfigSource(): Record<string, string | undefined> {
   return {
-    DORKOS_MANAGED_CONNECTORS_ENABLED: env.DORKOS_MANAGED_CONNECTORS_ENABLED,
+    // Off while accounts are handed to the accounts service (DOR-2441): every
+    // managed flow authenticates an account or an instance against the account
+    // tables, and this site no longer holds them. They move to that service
+    // later, as their own change.
+    DORKOS_MANAGED_CONNECTORS_ENABLED: cloudAccountsForwarding(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN)
+      ? undefined
+      : env.DORKOS_MANAGED_CONNECTORS_ENABLED,
     DORKOS_MANAGED_CONNECTORS_LIVE_READY: env.DORKOS_MANAGED_CONNECTORS_LIVE_READY,
     DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY: env.DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY,
     DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS: env.DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS,

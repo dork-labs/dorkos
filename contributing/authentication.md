@@ -252,6 +252,21 @@ app.all('/api/auth/*splat', toNodeHandler(auth)); // breaks body parsing
 
 The cloud identity is a **second, fully independent Better Auth instance** in `apps/site` (`apps/site/src/lib/auth.ts`), running on Next.js and Neon Postgres via the Drizzle `pg` adapter. It is the durable **"DorkOS account"** that local instances device-link to. It shares the Better Auth library with the local instance but **never shares a database**, and identities are **never migrated** between the two.
 
+### Handing accounts to the DorkOS Cloud service (DOR-2441)
+
+Accounts are moving from `apps/site` to the DorkOS Cloud service, which serves the same pages and API paths. `DORKOS_CLOUD_ACCOUNTS_ORIGIN` in `apps/site/src/env.ts` controls the hand-over. **Unset (the default, and what every test and credential-free build runs), the site serves everything below itself, exactly as described.** Set to the service's https origin, the site's edge proxy (`apps/site/src/proxy.ts`, decision in `apps/site/src/lib/cloud-accounts/forward.ts`) sends the account surface there:
+
+| Request                                                                                                               | What happens                    | Why                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| An account page: `/signin`, `/signup`, `/reset-password/**`, `/verify-email`, `/activate`, `/account/**`, `/admin/**` | 307 to the same path and query  | a session cookie belongs to one host, so the browser has to be where the service sets it                                                 |
+| A browser navigation to `/api/auth/**`, `/api/account/**` or the registry paths (an email link)                       | 307, the same way               | the same cookie reason                                                                                                                   |
+| Anything else on those API paths: a bearer token, a body, a background `fetch`                                        | proxied to the same path        | a cross-origin redirect drops `Authorization`, and released CLIs call these paths and must keep working                                  |
+| Managed connections (`/api/instances/connectors/**`, `/api/connectors/**`, `/connectors/**`)                          | not forwarded, and switched off | the service does not serve them yet, and they authenticate against account tables this site no longer holds; they move separately, later |
+
+The redirect is temporary and sent `no-store`, so unsetting the variable takes effect without a browser remembering the old answer. While the variable is set, managed connections read as not enabled (`lib/connectors/managed/config.ts`), the two cron routes answer `200 { skipped: 'accounts-service' }` and touch nothing, and the root layout does not mount the session-to-analytics identity bridge, whose session now lives on the service's host. A value that is not an https origin with no path (plain `http` is allowed only for a loopback host), or that names the site's own origin, forwards nothing and logs one line. The loop guard compares exact origins, so never point the variable at another name for this same site (the `www` alias, say): the platform's own redirect between the two would send requests round in a circle.
+
+On Vercel, a changed environment variable reaches traffic only with a new deployment, so turning the hand-over on or off is a redeploy, and promoting the previous deployment reverses it. A proxied request reaches the service from the site's platform, so the service sees that platform's address rather than the caller's; anything it limits or records per address counts the proxied callers together.
+
 ### The two-identity model
 
 |                              | Local login (P1)                      | DorkOS account (P2)                        |
