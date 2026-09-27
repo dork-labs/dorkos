@@ -191,7 +191,16 @@ export async function resolveSessionCwdWithRoom(
       assertOwnDesk(agentPath, resolved.cwd, 'home');
     } catch (err) {
       if (!(err instanceof DeskNotOwnError)) throw err;
-      return { ...resolved, refusal: { code: 'DESK_NOT_OWN', message: err.message } };
+      return {
+        ...resolved,
+        refusal: {
+          code: 'DESK_NOT_OWN',
+          message:
+            `This room conversation always runs from ${agentName}'s own folder ` +
+            `("${agentPath}") and can't move to "${path.resolve(resolved.cwd)}", not even to ` +
+            `a folder inside it. Send the message without choosing a folder.`,
+        },
+      };
     }
   }
   logResolvedCwd(resolved, { sessionId: req.sessionId, roomId });

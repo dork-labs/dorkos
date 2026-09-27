@@ -177,6 +177,7 @@ describe('resolveSessionCwdWithRoom', () => {
         for (const cwd of [OTHER, '/home/.dork/rooms/room-1/repo', '/work/elsewhere']) {
           const resolved = await resolveSessionCwdWithRoom({ cwd, sessionId: 's1' }, place());
           expect(resolved.refusal?.code, cwd).toBe('DESK_NOT_OWN');
+          expect(resolved.refusal?.message).toContain(`API Bot's own folder ("${AGENT}")`);
         }
       });
     });

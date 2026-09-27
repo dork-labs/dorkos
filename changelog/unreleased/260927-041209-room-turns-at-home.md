@@ -5,6 +5,7 @@ covers:
   - 'fix(rooms): stop git work in a room whose shared settings name a program (DOR-2410)'
   - "fix(rooms): refuse any turn or git read that would stand in a room's files (DOR-2410)"
   - "fix(relay): let only people and DorkOS choose a relay turn's folder, agent and permission mode (DOR-2410, DOR-2446)"
+  - 'fix(rooms): say plainly where a room conversation runs and who may shape a relay turn (DOR-2410)'
 ---
 
 ### Changed
@@ -18,7 +19,7 @@ covers:
 
 - An agent can only change the parts of a room's shared history that saving its own work needs. Settings and scripts that run for everyone in the room stay out of its reach, and DorkOS no longer follows a pointer an agent could rewrite when it checks an agent's copy (DOR-2410).
 - A task, a chat connection, a message from another agent or a room turn for one agent can no longer run inside another agent's folder or inside a room's files. It stops with a message saying why instead (DOR-2410).
-- A message from another agent can no longer choose the folder a turn runs in, which agent it runs as, or how much it may do without asking. The receiving agent answers from its own folder with its own settings. Only a person's chat connection and DorkOS itself set those (DOR-2446).
+- A message from another agent can no longer choose the folder a turn runs in, which agent it runs as, or how much it may do without asking. The receiving agent answers from its own folder with its own settings. Only people, through a chat connection, the app or the API, and DorkOS itself set those (DOR-2446).
 
 ### Note for people upgrading
 
