@@ -128,6 +128,18 @@ Spec: §14 (all resolved), §6.5, §6.7, §7.3 N10.
 - A first-visit state that explains the three roles in one plain line each (Main: yours, kept in reserve and used last; Rotation: flow may use it fully; Kept out: flow never uses it), with a link to the guide `docs/use-all-your-accounts.mdx`.
 - When no account is in rotation: "Nothing is in rotation yet, so flow only uses your main account."
 - Built as a notice above the approved rows; anything beyond that is a design question. Open: the link's words (Q22) and the case with roles stored but no Main and nothing in Rotation (Q23).
-- A core "we found ~/.claude2 on this computer, add it?" prompt in Settings → Runtimes is being taken to the operator as a design question; not built.
+- A core "we found ~/.claude2 on this computer, add it?" prompt was taken to the operator; decided in §8.
 
 Spec: §8.3.
+
+## 8. "Found on this computer" (operator decision, 2026-09-27)
+
+Mockup: [`design/found-accounts.html`](design/found-accounts.html). **Option A chosen** (a list under your accounts); option B (a notice that opens a picker) was not.
+
+- Below the registered accounts in Settings → Runtimes → Claude accounts, a dashed "Found on this computer" group lists unregistered Claude account folders: each with its name (the folder's name), "used N ago" and its path, plus **Add** (primary) and **Dismiss**.
+- A folder that shows org-managed policy files gets an amber "managed by an organization" flag, and its Add is **not** primary: adding it must be deliberate.
+- Dismissed folders stay hidden (saved).
+- The group shows only when at least one unregistered folder exists, and disappears when empty.
+- Nothing is added without a click.
+
+Spec: §6.9, §7.4.
