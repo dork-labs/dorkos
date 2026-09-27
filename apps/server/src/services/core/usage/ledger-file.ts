@@ -64,6 +64,16 @@ export interface LedgerLockOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+/** Options for {@link writeLedger}. */
+export interface WriteLedgerOptions extends LedgerLockOptions {
+  /**
+   * Top-level fields to keep from another ledger being folded into this one
+   * (writers keep fields they do not know, contract §1.2). The target's own
+   * value wins on a clash; the declared ledger fields are never taken.
+   */
+  carryFields?: Readonly<Record<string, unknown>>;
+}
+
 /** The outcome of {@link writeLedger}. */
 export interface WriteLedgerResult {
   /** True when the file was rewritten. False when nothing changed, or on a give-up. */
@@ -387,7 +397,7 @@ export async function writeLedger(
   accountId: string,
   observations: readonly LedgerObservation[],
   now: Date,
-  opts: LedgerLockOptions = {}
+  opts: WriteLedgerOptions = {}
 ): Promise<WriteLedgerResult> {
   const runtime = runtimeOfLedgerDir(dir);
   const file = path.join(dir, `${accountId}.json`);
@@ -397,24 +407,58 @@ export async function writeLedger(
     async (): Promise<WriteLedgerResult> => {
       const existing = await readUnderLock(dir, accountId);
       const merged = mergeLedger(existing, observations, now, { runtime, accountId });
-      if (!merged.changed) {
+      if (merged.warnings.some((w) => w.code === 'ledger-version-unknown')) {
+        return { written: false, dropped: merged.warnings, ledger: null, otherVersion: true };
+      }
+      const base = merged.changed ? merged.ledger : existing;
+      const carried = withCarriedFields(base, opts.carryFields, now);
+      if (!merged.changed && carried === base) {
         const parsed = UsageLedgerSchema.safeParse(existing);
         return {
           written: false,
           dropped: merged.warnings,
           ledger: parsed.success ? parsed.data : null,
-          ...(merged.warnings.some((w) => w.code === 'ledger-version-unknown')
-            ? { otherVersion: true }
-            : {}),
         };
       }
-      await replaceFile(dir, file, merged.ledger);
-      return { written: true, dropped: merged.warnings, ledger: merged.ledger };
+      await replaceFile(dir, file, carried as UsageLedger);
+      return { written: true, dropped: merged.warnings, ledger: carried as UsageLedger };
     },
     opts
   );
   if (locked.gaveUp) return { written: false, dropped: [], gaveUp: true, ledger: null };
   return locked.value;
+}
+
+/** The fields every ledger declares; anything else is a field a writer keeps. */
+const LEDGER_FIELDS = new Set([
+  'v',
+  'runtime',
+  'accountId',
+  'updatedAt',
+  'windows',
+  'plan',
+  'credits',
+  'spend',
+]);
+
+/**
+ * `base` with the undeclared top-level fields of `carry` added where `base` has
+ * none of its own (the target's value wins), and `updatedAt` moved to `now`
+ * when anything was added. `base` itself when nothing is added, or when there
+ * is no ledger to add them to.
+ */
+function withCarriedFields(
+  base: unknown,
+  carry: Readonly<Record<string, unknown>> | undefined,
+  now: Date
+): unknown {
+  if (!carry || base === null || typeof base !== 'object' || Array.isArray(base)) return base;
+  const target = base as Record<string, unknown>;
+  const extra = Object.entries(carry).filter(
+    ([key]) => !LEDGER_FIELDS.has(key) && !(key in target)
+  );
+  if (extra.length === 0) return base;
+  return { ...target, ...Object.fromEntries(extra), updatedAt: now.toISOString() };
 }
 
 /**

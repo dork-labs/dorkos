@@ -14,6 +14,7 @@ import type {
   LedgerSpend,
   UsageLedger,
 } from '@dorkos/shared/account-usage';
+import type { AccountRename } from './account-reference-move.js';
 import type { LedgerLockOptions } from './ledger-file.js';
 import type { DefaultFolderResolver, RealpathLookup } from './runtime-accounts.js';
 
@@ -103,4 +104,14 @@ export interface UsageRecord {
   lastFlushWarnAt?: number;
   /** Writes that failed in a row; the next one waits {@link flushRetryDelayMs}. */
   failures: number;
+  /** Set when the record was folded into another (its account became an alias): never written again. */
+  retired?: boolean;
+}
+
+/** How the store moves the references to a renamed account, and drops its marker. */
+export interface AccountReferenceMover {
+  /** Move every reference; true when all moved. */
+  move(renames: readonly AccountRename[]): Promise<boolean>;
+  /** Drop the `renamedFrom` marker from these Claude Code registry rows. */
+  dropMarkers(ids: readonly string[]): Promise<void>;
 }

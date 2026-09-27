@@ -58,7 +58,7 @@ describe('launching `default` (contract rev 6d)', () => {
 
   it('runs a `default` launch in ~/.claude with CLAUDE_CONFIG_DIR unset, whatever the server inherited', () => {
     const config = fakeConfig({
-      accounts: [{ id: 'claude3', path: '/staged/claude3', label: 'Claude3' }],
+      accounts: [{ id: 'claude3', path: '/staged/claude3', label: 'Claude3', color: null }],
     });
     const root = resolveLaunchAccountRoot({ hintId: 'default', config });
     expect(root).toBe(HOME_ROOT);
@@ -84,7 +84,9 @@ describe('launching `default` (contract rev 6d)', () => {
       const link = path.join(tmp, 'main-link');
       await fs.symlink(path.join(home, '.claude'), link);
       vi.spyOn(os, 'homedir').mockReturnValue(home);
-      const config = fakeConfig({ accounts: [{ id: 'main', path: link, label: 'Main' }] });
+      const config = fakeConfig({
+        accounts: [{ id: 'main', path: link, label: 'Main', color: null }],
+      });
 
       const root = resolveLaunchAccountRoot({ hintId: 'default', config });
       expect(root).toBe(path.join(home, '.claude'));
@@ -118,7 +120,7 @@ describe('launching `default` (contract rev 6d)', () => {
 
   it('a hand-edited row named `default` never takes the name', () => {
     const config = fakeConfig({
-      accounts: [{ id: 'default', path: '/staged/imposter', label: null }],
+      accounts: [{ id: 'default', path: '/staged/imposter', label: null, color: null }],
     });
     expect(resolveLaunchAccountRoot({ hintId: 'default', config })).toBe(HOME_ROOT);
   });

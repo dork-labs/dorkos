@@ -494,8 +494,13 @@ import {
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
+import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
+import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
-import { claudeDefaultAccountFolder } from './services/runtimes/claude-code/claude-config-dir.js';
+import {
+  claudeDefaultAccountFolder,
+  dropClaudeAccountRenameMarkers,
+} from './services/runtimes/claude-code/claude-config-dir.js';
 import { machineDefaultCodexHome } from './services/runtimes/codex/codex-home.js';
 import {
   initObservability,
@@ -2347,6 +2352,34 @@ async function start() {
     logger.error('[Mesh] Failed to initialize MeshCore', errInfo);
     setMeshInitError(errInfo.error);
     // Mesh failure is non-fatal: server continues without mesh routes.
+  }
+
+  // Carry any Claude account the '0.87.0' config migration renamed (a row called
+  // `default`, now `default-N`) through to its references: agent manifests,
+  // schedules with their approvals, and schedule files (spec
+  // `claude-account-fleet` §6 R). Wired once the agent registry and the task
+  // tables exist, and run at once, before any schedule file watcher starts, so
+  // a sync never reads a file halfway through the move.
+  if (accountUsageStore) {
+    const mesh = meshCore;
+    accountUsageStore.setReferenceMover({
+      move: (renames) =>
+        moveAccountReferences(renames, {
+          agents: mesh
+            ? {
+                list: () => mesh.list(),
+                setAccount: async (agentId, account) => {
+                  await mesh.update(agentId, { account });
+                },
+              }
+            : undefined,
+          renameScheduleAccount: (from, to) => renameScheduleAccount(db, from, to),
+        }),
+      dropMarkers: async (ids) => {
+        dropClaudeAccountRenameMarkers(configManager, ids);
+      },
+    });
+    await accountUsageStore.reconcileAccounts();
   }
 
   // Open #team, the room the home tab renders, and seat every registered agent

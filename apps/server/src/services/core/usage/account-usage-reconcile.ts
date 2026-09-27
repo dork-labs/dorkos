@@ -39,6 +39,7 @@ import {
   type LedgerFileEntry,
   type LedgerLockOptions,
 } from './ledger-file.js';
+import type { AccountRename } from './account-reference-move.js';
 import {
   pruneTargets,
   resolveRuntimeAccounts,
@@ -116,6 +117,14 @@ export interface ReconcileHost {
   mergeWritten(runtime: LedgerRuntime, id: string, ledger: UsageLedger): void;
   /** Forget file-backed records whose ledger id is not registered. */
   forgetUnregistered(runtime: LedgerRuntime, registered: ReadonlySet<string>): void;
+  /**
+   * Move the references to accounts the `'0.87.0'` migration renamed; true when
+   * all moved. Absent until the agent registry and the task database exist,
+   * and then no rename is carried and every marker stays.
+   */
+  moveRenamedReferences?(renames: readonly AccountRename[]): Promise<boolean>;
+  /** Drop the `renamedFrom` marker from these Claude Code registry rows. */
+  dropRenameMarkers?(ids: readonly string[]): Promise<void>;
 }
 
 /**
@@ -165,6 +174,7 @@ export async function reconcileAccounts(host: ReconcileHost): Promise<void> {
     }
   }
   host.setAccounts(accounts);
+  await carryRenames(host, accounts);
 
   const registered = {} as Record<LedgerRuntime, string[]>;
   const diskIds = {} as Record<LedgerRuntime, string[]>;
@@ -203,6 +213,29 @@ export async function reconcileAccounts(host: ReconcileHost): Promise<void> {
       }
     }
     host.forgetUnregistered(runtime, new Set(registered[runtime]));
+  }
+}
+
+/**
+ * Move the references to every Claude Code row the `'0.87.0'` migration
+ * renamed, then drop its marker (`account-reference-move.ts`). A failure keeps
+ * every marker for the next reconcile; it never stops the rest of this one.
+ */
+async function carryRenames(host: ReconcileHost, accounts: readonly RuntimeAccount[]) {
+  const renamed = accounts.filter(
+    (a) => a.runtime === 'claude-code' && a.routable && a.renamedFrom !== undefined
+  );
+  if (renamed.length === 0 || !host.moveRenamedReferences || !host.dropRenameMarkers) return;
+  try {
+    const renames = renamed.map((a) => ({ from: a.renamedFrom!, to: a.id }));
+    if (!(await host.moveRenamedReferences(renames))) return;
+    await host.dropRenameMarkers(renamed.map((a) => a.id));
+  } catch (err) {
+    host.logOnce(
+      'rename-move-failed',
+      '[account-usage] could not move every reference to a renamed account; will try again',
+      { err: String(err) }
+    );
   }
 }
 
@@ -262,7 +295,7 @@ async function foldDefaultInto(
         aliasId,
         observationsOfRaw(standalone.raw),
         host.now(),
-        host.lockOptions
+        { ...host.lockOptions, carryFields: standalone.raw }
       );
       // Landed: written, or unchanged because the row already holds it all. A
       // row ledger of another version took nothing, so default.json stays.

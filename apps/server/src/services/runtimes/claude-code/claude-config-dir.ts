@@ -279,12 +279,14 @@ export function resolveLaunchAccountRoot(
     // id, so `find(a => a.id === id)` with an absent `id` on both sides would
     // return the first row and bill an account nobody named.
     if (!id) continue;
+    // First, so a `default` still reaches a row the '0.87.0' migration renamed
+    // from it, while that row keeps its marker (see `findRegisteredAccount`).
+    const match = findRegisteredAccount(accounts, id);
+    if (match) return match.path;
     // Always the machine root itself, never an aliased row's own spelling: a row
     // reaching `~/.claude` through a symlink is the same account, and only this
     // spelling lets `claudeConfigDirEnv` unset the variable for it.
     if (id === IMPLICIT_ACCOUNT_ID) return machineDefaultClaudeRoot(config);
-    const match = findRegisteredAccount(accounts, id);
-    if (match) return match.path;
     logger.warn('[claude-config-dir] account id is not registered; falling through', {
       source,
       id,
@@ -304,13 +306,14 @@ export function resolveLaunchAccountRoot(
  * one an older flow wrote after `'0.87.0'` ran. A reference to `default`
  * therefore falls through to the next rung of the ladder.
  *
- * **The `renamedFrom` half is temporary**, until task 2.1's account reconcile
- * (spec `claude-account-fleet` §6 R) moves every reference to the new id and
- * removes both this fallback and the marker. `'0.87.0'` renames a row called
+ * **The `renamedFrom` half is transitional.** `'0.87.0'` renames a row called
  * `default` to `default-N` and marks it `renamedFrom: 'default'`, but the
- * references to it (agent manifests, schedules) live outside the config file.
- * Until they move, a reference that says `default` keeps billing the account it
- * named the day before the upgrade, and so does a new one.
+ * references to it (agent manifests, schedules and their files) live outside
+ * the config file. Until the account reconcile (`core/usage/account-reference-move.ts`)
+ * has moved them and dropped the marker, a reference that says `default` keeps
+ * billing the account it named the day before the upgrade. Once the marker is
+ * gone this half matches nothing, and `default` always means the machine
+ * default (contract rev 6d).
  *
  * @param accounts - The listed registry rows.
  * @param id - The id a hint, manifest or schedule names.
@@ -324,6 +327,39 @@ function findRegisteredAccount(
     routable.find((account) => account.id === id) ??
     routable.find((account) => account.renamedFrom === id)
   );
+}
+
+/**
+ * Drop the `renamedFrom` marker the `'0.87.0'` migration left on these
+ * registry rows, once the account reconcile has moved every reference to them
+ * (`core/usage/account-reference-move.ts`). From then on `default` names only
+ * the machine default. Reads the stored rows as they are (raw, never a parse,
+ * so every other field survives) and writes only when a marker was there.
+ *
+ * @param config - The config manager (or a reader/writer shaped like it).
+ * @param ids - The registry ids whose marker to drop.
+ */
+export function dropClaudeAccountRenameMarkers(
+  config: ConfigReader & { set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void },
+  ids: readonly string[]
+): void {
+  const runtimes = config.get('runtimes') as unknown as Record<string, unknown> | undefined;
+  const block = runtimes?.claudeCode as Record<string, unknown> | undefined;
+  const rows = block?.accounts;
+  if (!runtimes || !block || !Array.isArray(rows)) return;
+  let changed = false;
+  const next = rows.map((row: unknown) => {
+    if (!row || typeof row !== 'object') return row;
+    const { renamedFrom, ...rest } = row as Record<string, unknown>;
+    if (renamedFrom === undefined || !ids.includes(String(rest.id))) return row;
+    changed = true;
+    return rest;
+  });
+  if (!changed) return;
+  config.set('runtimes', {
+    ...runtimes,
+    claudeCode: { ...block, accounts: next },
+  } as unknown as UserConfig['runtimes']);
 }
 
 /**

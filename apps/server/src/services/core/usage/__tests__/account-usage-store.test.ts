@@ -8,6 +8,7 @@ import { flushRetryDelayMs, type AccountUsageStoreOptions } from '../account-usa
 import { CONFIG_UNREADABLE, readConfigFile } from '../account-usage-reconcile.js';
 import { ledgerDir, readLedger, writeLedger } from '../ledger-file.js';
 import { DEFAULT_ACCOUNT_LABEL, defaultAccountFolder } from '../runtime-accounts.js';
+import { logger } from '../../../../lib/logger.js';
 
 let root: string;
 let dorkHome: string;
@@ -580,6 +581,109 @@ describe('AccountUsageStore: readings put back after a failed write', () => {
         expect((await readLedger(claudeDir(), 'default'))?.windows.five_hour?.usedPct).toBe(20),
       { timeout: 3_000 }
     );
+  });
+});
+
+describe('AccountUsageStore: review round 3', () => {
+  const aliasConfig = () =>
+    claudeConfig([{ id: 'main', path: path.join(home, '.claude'), label: null }]);
+
+  it('a fold that throws on load still starts the scan, and a later scan folds', async () => {
+    await writeConfig(claudeConfig([]));
+    const first = makeStore();
+    await first.load();
+    first.record('claude-code', { accountId: 'default' }, [obs('five_hour', 64)]);
+    await first.flush();
+    first.stop();
+    await writeConfig(aliasConfig());
+    await writeLedger(claudeDir(), 'main', [obs('seven_day', 5)], new Date(clock));
+
+    const mainFile = path.join(claudeDir(), 'main.json');
+    const realReadFile = fs.readFile.bind(fs);
+    const readFile = vi.spyOn(fs, 'readFile').mockImplementation((async (
+      file: string,
+      ...rest: unknown[]
+    ) => {
+      if (file === mainFile) throw Object.assign(new Error('EIO'), { code: 'EIO' });
+      return (realReadFile as (...a: unknown[]) => Promise<unknown>)(file, ...rest);
+    }) as typeof fs.readFile);
+    const store = makeStore();
+    await expect(store.load()).resolves.toBeUndefined();
+    expect((store as unknown as { scanTimer?: unknown }).scanTimer).toBeDefined();
+    expect((await readLedger(claudeDir(), 'default'))!.windows.five_hour?.usedPct).toBe(64);
+
+    readFile.mockRestore();
+    await store.scan();
+    await expect(fs.access(path.join(claudeDir(), 'default.json'))).rejects.toThrow();
+    expect((await readLedger(claudeDir(), 'main'))!.windows.five_hour?.usedPct).toBe(64);
+  });
+
+  it('a default write that fails while it is folded never recreates default.json', async () => {
+    await writeConfig(claudeConfig([]));
+    const store = makeStore({
+      lockOptions: { giveUpMs: 150 },
+      timings: { flushDebounceMs: 10, retryBaseMs: 20, scanIntervalMs: 3_600_000 },
+    });
+    await store.load();
+    await fs.mkdir(claudeDir(), { recursive: true });
+    const lock = path.join(claudeDir(), 'default.json.lock');
+    await fs.writeFile(lock, '1:held');
+    store.record('claude-code', { accountId: 'default' }, [obs('five_hour', 64)]);
+    const inFlight = store.flush();
+    await writeConfig(aliasConfig());
+    await store.reconcileAccounts();
+    await inFlight;
+    await fs.rm(lock);
+    await new Promise((r) => setTimeout(r, 300));
+    await store.flush();
+    await expect(fs.access(path.join(claudeDir(), 'default.json'))).rejects.toThrow();
+    expect((await readLedger(claudeDir(), 'main'))!.windows.five_hour?.usedPct).toBe(64);
+  });
+
+  it('logs a pending reading it sets aside, once', async () => {
+    await writeConfig(claudeConfig([]));
+    const store = makeStore();
+    await store.load();
+    const warn = vi.spyOn(logger, 'warn');
+    const future = clock + 60 * 60 * 1000;
+    store.record('claude-code', { accountId: 'default' }, [obs('five_hour', 1, future)]);
+    store.record('claude-code', { accountId: 'default' }, [obs('five_hour', 2, future + 1)]);
+    const setAside = warn.mock.calls.filter(([m]) => String(m).includes('set aside'));
+    expect(setAside).toHaveLength(1);
+  });
+
+  it("keeps default.json's unknown top-level fields on the row, the row's own winning", async () => {
+    await fs.mkdir(claudeDir(), { recursive: true });
+    await fs.writeFile(
+      path.join(claudeDir(), 'default.json'),
+      JSON.stringify({
+        v: 1,
+        runtime: 'claude-code',
+        accountId: 'default',
+        updatedAt: new Date(clock).toISOString(),
+        windows: { five_hour: obs('five_hour', 64) },
+        note: 'from default',
+        extra: 1,
+      })
+    );
+    await fs.writeFile(
+      path.join(claudeDir(), 'main.json'),
+      JSON.stringify({
+        v: 1,
+        runtime: 'claude-code',
+        accountId: 'main',
+        updatedAt: new Date(clock).toISOString(),
+        windows: {},
+        note: 'the row',
+      })
+    );
+    await writeConfig(aliasConfig());
+    const store = makeStore();
+    await store.load();
+    const main = JSON.parse(await fs.readFile(path.join(claudeDir(), 'main.json'), 'utf8'));
+    expect(main).toMatchObject({ note: 'the row', extra: 1 });
+    expect(main.windows.five_hour.usedPct).toBe(64);
+    await expect(fs.access(path.join(claudeDir(), 'default.json'))).rejects.toThrow();
   });
 });
 

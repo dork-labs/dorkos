@@ -77,6 +77,12 @@ export interface RuntimeAccount {
   isDefault: boolean;
   /** The ledger file's id (`<ledgerId>.json`), or `null` when it has no ledger. */
   ledgerId: string | null;
+  /**
+   * The id this row had before the `'0.87.0'` config migration renamed it (only
+   * ever `default`), while the account reconcile has not yet moved the
+   * references to it. Until then `default` still resolves to this row.
+   */
+  renamedFrom?: string;
 }
 
 /** Resolves the folder a runtime's `default` names (see {@link defaultAccountFolder}). */
@@ -292,6 +298,7 @@ function readRegistered(
       implicit: false,
       isDefault: false,
       ledgerId: routable ? id : null,
+      ...(typeof row.renamedFrom === 'string' ? { renamedFrom: row.renamedFrom } : {}),
     });
   });
   return { accounts, warnings };
@@ -371,6 +378,11 @@ function implicitAccount(
  * account `isDefault` marks (its alias row, when it has one); any other id to
  * the registered row with that id.
  *
+ * One transitional exception, the same one the launch ladder makes: while a
+ * routable row still carries `renamedFrom: 'default'` (the `'0.87.0'` rename
+ * whose references have not moved yet), `default` names that row, because the
+ * references that say `default` meant it the day before the upgrade.
+ *
  * @param accounts - Accounts from {@link resolveRuntimeAccounts}.
  * @param runtime - The runtime.
  * @param id - `default` or a registry id.
@@ -381,7 +393,11 @@ export function resolveAccountRef(
   id: string
 ): RuntimeAccount | null {
   if (id === IMPLICIT_ACCOUNT_ID) {
-    return accounts.find((a) => a.runtime === runtime && a.isDefault) ?? null;
+    return (
+      accounts.find((a) => a.runtime === runtime && a.routable && a.renamedFrom === id) ??
+      accounts.find((a) => a.runtime === runtime && a.isDefault) ??
+      null
+    );
   }
   return accounts.find((a) => a.runtime === runtime && !a.implicit && a.id === id) ?? null;
 }

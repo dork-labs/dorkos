@@ -154,8 +154,9 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  * The rule is what keeps that safe under a real identity; it is not what should
  * be deciding it for no identity at all.
  *
- * **`list_my_permissions` is the ninth** (spec `agent-permissions` D9): see its
- * line below.
+ * **`list_my_permissions` is the ninth** (spec `agent-permissions` D9), and
+ * **`accounts_usage` the tenth** (spec `claude-account-fleet` D2): see their
+ * lines below.
  *
  * **Adding a name here needs an argument, and removing one needs a better one.**
  * The drift guard reads this list, so a tool that quietly acquires
@@ -184,6 +185,11 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // would get the defaults, which a health check has no need of; an agent asks
   // with its identity, and that is who the answer is for.
   'list_my_permissions',
+  // How much of each of the operator's Claude subscriptions is used, and when
+  // each resets (spec `claude-account-fleet` D2). No message and no content, but
+  // it is the operator's billing state and the folders their accounts live in,
+  // which a tokenless health check has no need of.
+  'accounts_usage',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([

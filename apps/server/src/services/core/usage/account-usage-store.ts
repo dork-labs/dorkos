@@ -29,8 +29,6 @@ import {
   IMPLICIT_ACCOUNT_ID,
   LEDGER_RUNTIMES,
   mergeLedger,
-  resolveAccountColor,
-  toAccountUsage,
   type AccountUsage,
   type LedgerObservation,
   type LedgerRuntime,
@@ -52,9 +50,11 @@ import {
   type ReconcileHost,
 } from './account-usage-reconcile.js';
 import { LedgerFolderWatcher } from './ledger-folder-watcher.js';
+import { memoryUsage, usageOfAccount, usageOfRecord } from './account-usage-view.js';
 import {
   flushRetryDelayMs,
   type AccountKey,
+  type AccountReferenceMover,
   type AccountUsageMeta,
   type AccountUsageStoreOptions,
   type AccountUsageStoreTimings,
@@ -89,6 +89,7 @@ export class AccountUsageStore {
   private readonly loggedOnce = new Set<string>();
   private scanTimer?: NodeJS.Timeout;
   private reconciling?: Promise<void>;
+  private referenceMover?: AccountReferenceMover;
   private stopped = false;
 
   /**
@@ -142,8 +143,16 @@ export class AccountUsageStore {
    * loaded here set each account's baseline, so boot emits nothing.
    */
   async load(): Promise<void> {
-    await this.reconcileAccounts();
-    await this.reloadFiles({ baseline: true });
+    // A failed reconcile or read must not stop the watch and the scan from
+    // starting: the next scan retries it.
+    try {
+      await this.reconcileAccounts();
+      await this.reloadFiles({ baseline: true });
+    } catch (err) {
+      logger.warn('[account-usage] usage load failed; the next scan retries it', {
+        err: String(err),
+      });
+    }
     this.watcher.watchExisting();
     if (!this.scanTimer) {
       this.scanTimer = unref(setInterval(() => void this.scan(), this.timings.scanIntervalMs));
@@ -310,7 +319,7 @@ export class AccountUsageStore {
   // === Flushing ===
 
   private scheduleFlush(record: UsageRecord): void {
-    if (this.stopped || record.flushTimer) return;
+    if (this.stopped || record.retired || record.flushTimer) return;
     const { flushDebounceMs, retryBaseMs, retryMaxMs } = this.timings;
     const delay =
       record.failures > 0
@@ -333,6 +342,13 @@ export class AccountUsageStore {
       runtime: record.runtime,
       accountId: record.ledgerId ?? IMPLICIT_ACCOUNT_ID,
     });
+    for (const warning of collapsed.warnings) {
+      this.logOnce(
+        `pending:${record.runtime}:${record.ledgerId}:${warning.code}:${warning.key ?? ''}`,
+        '[account-usage] a usage reading was set aside and will not be written',
+        { runtime: record.runtime, accountId: record.ledgerId, ...warning }
+      );
+    }
     record.pending = collapsed.changed ? observationsOf(collapsed.ledger) : [];
   }
 
@@ -345,7 +361,9 @@ export class AccountUsageStore {
       );
     }
     const ledgerId = record.ledgerId;
-    if (ledgerId === null || record.pending.length === 0) return Promise.resolve();
+    if (ledgerId === null || record.retired || record.pending.length === 0) {
+      return Promise.resolve();
+    }
     const batch = record.pending;
     record.pending = [];
     record.flushing = (async () => {
@@ -472,7 +490,7 @@ export class AccountUsageStore {
         if (record.runtime !== r || record.ledgerId !== null || listedPaths.has(record.path)) {
           continue;
         }
-        out.push(this.memoryUsage(record, position++));
+        out.push(memoryUsage(record, position++, this.now()));
       }
     }
     return out;
@@ -494,60 +512,12 @@ export class AccountUsageStore {
     return out;
   }
 
-  /** The accounts as the store last resolved them (registry plus `default`). */
-  resolvedAccounts(): readonly RuntimeAccount[] {
-    return this.accounts;
-  }
-
   private usageOfAccount(account: RuntimeAccount): AccountUsage {
-    const record =
-      account.ledgerId !== null
-        ? this.records.get(`${account.runtime}:${account.ledgerId}`)
-        : account.canonicalPath !== null
-          ? this.records.get(`${account.runtime}@${account.canonicalPath}`)
-          : undefined;
-    return toAccountUsage(
-      record?.ledger ?? null,
-      {
-        runtime: account.runtime,
-        accountId: account.routable ? account.id : null,
-        path: account.path ?? '',
-        label: account.label,
-        color: account.color,
-      },
-      this.now(),
-      record?.subscriptionType ?? null
-    );
-  }
-
-  private memoryUsage(record: UsageRecord, position: number): AccountUsage {
-    return toAccountUsage(
-      record.ledger,
-      {
-        runtime: record.runtime,
-        accountId: null,
-        path: record.path,
-        label: null,
-        color: resolveAccountColor(null, position),
-      },
-      this.now(),
-      record.subscriptionType
-    );
+    return usageOfAccount(account, this.records, this.now());
   }
 
   private usageOfRecord(record: UsageRecord): AccountUsage | null {
-    if (record.ledgerId !== null) {
-      const account = this.accounts.find(
-        (a) => a.runtime === record.runtime && a.ledgerId === record.ledgerId
-      );
-      return account ? this.usageOfAccount(account) : null;
-    }
-    const account = this.accounts.find(
-      (a) => a.runtime === record.runtime && a.canonicalPath === record.path
-    );
-    if (account) return this.usageOfAccount(account);
-    const position = this.accounts.filter((a) => a.runtime === record.runtime).length;
-    return this.memoryUsage(record, position);
+    return usageOfRecord(record, this.accounts, this.records, this.now());
   }
 
   // === Files ===
@@ -595,8 +565,27 @@ export class AccountUsageStore {
     return this.reconciling;
   }
 
+  /**
+   * Wire the reference move for accounts the `'0.87.0'` migration renamed. Set
+   * once the agent registry and the task database exist; until then every
+   * rename keeps its marker, and the launch ladder keeps resolving `default`
+   * to the renamed row.
+   *
+   * @param mover - How to move the references and then drop the markers.
+   */
+  setReferenceMover(mover: AccountReferenceMover | undefined): void {
+    this.referenceMover = mover;
+  }
+
   private reconcileHost(): ReconcileHost {
+    const mover = this.referenceMover;
     return {
+      ...(mover
+        ? {
+            moveRenamedReferences: (renames) => mover.move(renames),
+            dropRenameMarkers: (ids) => mover.dropMarkers(ids),
+          }
+        : {}),
       dir: (runtime) => this.dir(runtime),
       readConfig: this.opts.readConfig,
       resolveDefaultRoot: this.opts.resolveDefaultRoot,
@@ -620,9 +609,15 @@ export class AccountUsageStore {
   private async moveDefaultInMemory(runtime: LedgerRuntime, aliasId: string): Promise<void> {
     const memory = this.records.get(`${runtime}:${IMPLICIT_ACCOUNT_ID}`);
     if (!memory) return;
+    // Let a write in flight finish first: if it fails it puts its readings back
+    // and schedules a retry, so the timers are cleared only AFTER it, and the
+    // record is marked retired so nothing writes `default.json` again.
+    while (memory.flushing) await memory.flushing;
+    memory.retired = true;
     if (memory.flushTimer) clearTimeout(memory.flushTimer);
     if (memory.broadcastTimer) clearTimeout(memory.broadcastTimer);
-    await memory.flushing;
+    memory.flushTimer = undefined;
+    memory.broadcastTimer = undefined;
     this.records.delete(`${runtime}:${IMPLICIT_ACCOUNT_ID}`);
     const target = this.fileRecord(runtime, aliasId);
     const moved = [...observationsOf(memory.ledger), ...memory.pending];
