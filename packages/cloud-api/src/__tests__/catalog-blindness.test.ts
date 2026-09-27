@@ -174,6 +174,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   InvitationStatusSchema: 'how far an invitation has got',
   SeatKindSchema: 'whether a seat holds a person or an agent',
   SeatStatusSchema: 'where a seat is in its lifecycle',
+  AgentClaimStatusSchema: 'how far a claim to an identity has got',
   AddressStatusSchema: 'whether an address is live or has been retired',
   InboxSourceKindSchema: 'where an item arrived from',
   PresenceStateSchema: 'how reachable a seat is',

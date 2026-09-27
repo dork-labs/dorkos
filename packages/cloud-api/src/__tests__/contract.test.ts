@@ -983,3 +983,81 @@ describe('the remote event batch spans', () => {
     expect(contract.ByteCountSchema.safeParse('9'.repeat(31)).success).toBe(false);
   });
 });
+
+describe('an agent`s claim, as a person`s page reads it', () => {
+  const agent = {
+    id: 'agt_x',
+    orgId: 'org_x',
+    ownerMemberId: null,
+    displayName: 'x',
+    createdAt: '2026-09-15T12:00:00.000Z',
+  };
+
+  it('parses an agent with no claim fields, which is what an older service sends', () => {
+    const parsed = contract.AgentSchema.parse(agent);
+    expect(parsed.claimStatus).toBeUndefined();
+    expect(parsed.pendingClaimId).toBeUndefined();
+  });
+
+  it('parses an agent waiting on approval, with the id the approval route takes', () => {
+    const waiting = contract.AgentSchema.parse({
+      ...agent,
+      claimStatus: 'pending',
+      pendingClaimId: 'clm_x',
+    });
+    expect(waiting.claimStatus).toBe('pending');
+    expect(contract.v1Path.agentClaimApprove(waiting.id, waiting.pendingClaimId!)).toBe(
+      '/v1/agents/agt_x/claims/clm_x/approve'
+    );
+  });
+
+  it('shares one published status vocabulary with the claim itself', () => {
+    expect(contract.AgentClaimSchema.shape.status).toBe(contract.AgentClaimStatusSchema);
+    expect(contract.AgentClaimStatusSchema.options).toEqual([
+      'pending',
+      'approved',
+      'rejected',
+      'expired',
+    ]);
+    for (const status of contract.AgentClaimStatusSchema.options) {
+      expect(contract.AgentSchema.parse({ ...agent, claimStatus: status }).claimStatus).toBe(
+        status
+      );
+    }
+  });
+
+  it('reads a status added in a later release as unrecognised, so one new status cannot fail a whole list', () => {
+    const page = contract.AgentListResponseSchema.parse({
+      items: [
+        { ...agent, claimStatus: 'revoked' },
+        { ...agent, id: 'agt_y', claimStatus: 'approved' },
+      ],
+      nextCursor: null,
+    });
+    expect(page.items.map((item) => item.claimStatus)).toEqual([contract.UNRECOGNISED, 'approved']);
+    // Tolerance is for new members, not for a broken value.
+    expect(contract.AgentSchema.safeParse({ ...agent, claimStatus: 7 }).success).toBe(false);
+    // The claim itself stays strict: its vocabulary is the one published.
+    expect(
+      contract.AgentClaimSchema.safeParse({
+        claimId: 'clm_x',
+        agentId: 'agt_x',
+        instanceId: 'inst_x',
+        status: 'revoked',
+        createdAt: '2026-09-15T12:00:00.000Z',
+        approvedAt: null,
+      }).success
+    ).toBe(false);
+  });
+
+  it('leaves the approval route and its shapes as they were', () => {
+    expect(Object.keys(contract.AgentClaimSchema.shape).sort()).toEqual([
+      'agentId',
+      'approvedAt',
+      'claimId',
+      'createdAt',
+      'instanceId',
+      'status',
+    ]);
+  });
+});
