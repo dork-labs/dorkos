@@ -81,6 +81,25 @@ describe('readWindow', () => {
     });
   });
 
+  it('reads a stored entry that omits resetsAt and status as null, as the ledger schema allows', () => {
+    const stored = { usedPct: 3, observedAt: at(-MIN), source: 'sdk_event' };
+    expect(readWindow(stored, NOW, 'some_new_window')).toEqual({
+      ...stored,
+      resetsAt: null,
+      status: null,
+      expired: false,
+    });
+    expect(
+      UsageLedgerSchema.safeParse({
+        v: 1,
+        runtime: 'claude-code',
+        accountId: 'claude3',
+        updatedAt: at(0),
+        windows: { some_new_window: stored },
+      }).success
+    ).toBe(true);
+  });
+
   it('treats now exactly at resetsAt as expired', () => {
     expect(readWindow(entry({ resetsAt: at(0) }), NOW, 'seven_day')?.expired).toBe(true);
   });
@@ -164,16 +183,126 @@ describe('mergeLedger', () => {
     expect(older).toEqual({ changed: false, ledger: stored, warnings: [] });
   });
 
-  it('keeps the stored entry on an equal observedAt, so a replay is a no-op', () => {
+  it('keeps the stored entry when a reading replays it exactly', () => {
     const stored = ledger({ five_hour: entry({ usedPct: 40, observedAt: at(-10 * MIN) }) });
     const out = mergeLedger(
       stored,
-      [obs('five_hour', { usedPct: 70, observedAt: at(-10 * MIN) })],
+      [obs('five_hour', { usedPct: 40, observedAt: at(-10 * MIN) })],
       NOW,
       OWNER
     );
     expect(out.changed).toBe(false);
     expect(out.ledger).toBe(stored);
+  });
+
+  describe('a tie on observedAt (contract 4.0.0)', () => {
+    const T = at(-10 * MIN);
+    /** Merge `b` onto a ledger holding `a`, and `a` onto one holding `b`: the same entry must win. */
+    function winnerBothWays(a: Partial<LedgerEntry>, b: Partial<LedgerEntry>) {
+      const one = mergeLedger(
+        ledger({ five_hour: entry({ observedAt: T, ...a }) }),
+        [obs('five_hour', { observedAt: T, ...b })],
+        NOW,
+        OWNER
+      );
+      const other = mergeLedger(
+        ledger({ five_hour: entry({ observedAt: T, ...b }) }),
+        [obs('five_hour', { observedAt: T, ...a })],
+        NOW,
+        OWNER
+      );
+      const pick = (out: MergeLedgerResult) => (out.ledger as UsageLedger).windows.five_hour;
+      expect(pick(one)).toEqual(pick(other));
+      return pick(one)!;
+    }
+
+    it('keeps a same-millisecond rejected reading, whichever arrives first', () => {
+      expect(
+        winnerBothWays({ status: 'rejected', usedPct: 10 }, { status: 'allowed', usedPct: 90 })
+      ).toMatchObject({ status: 'rejected', usedPct: 10 });
+    });
+
+    it('ranks rejected over allowed_warning over allowed over no status', () => {
+      expect(winnerBothWays({ status: 'allowed_warning' }, { status: 'rejected' }).status).toBe(
+        'rejected'
+      );
+      expect(winnerBothWays({ status: 'allowed' }, { status: 'allowed_warning' }).status).toBe(
+        'allowed_warning'
+      );
+      expect(winnerBothWays({ status: null }, { status: 'allowed' }).status).toBe('allowed');
+    });
+
+    it('then the higher usedPct, a missing one lowest', () => {
+      expect(winnerBothWays({ usedPct: 40 }, { usedPct: 70 }).usedPct).toBe(70);
+      expect(
+        winnerBothWays({ usedPct: null, status: 'allowed' }, { usedPct: 0, status: 'allowed' })
+          .usedPct
+      ).toBe(0);
+    });
+
+    it('compares usedPct after clamping, so 140 and 100 tie there', () => {
+      const out = mergeLedger(
+        ledger({ five_hour: entry({ observedAt: T, usedPct: 100 }) }),
+        [obs('five_hour', { observedAt: T, usedPct: 140 })],
+        NOW,
+        OWNER
+      );
+      expect(out.changed).toBe(false);
+    });
+
+    it('then the later resetsAt, a missing one lowest', () => {
+      expect(winnerBothWays({ resetsAt: null }, { resetsAt: at(HOUR) }).resetsAt).toBe(at(HOUR));
+      expect(winnerBothWays({ resetsAt: at(HOUR) }, { resetsAt: at(2 * HOUR) }).resetsAt).toBe(
+        at(2 * HOUR)
+      );
+    });
+
+    it('then the greater source, then the longer windowMinutes', () => {
+      expect(winnerBothWays({ source: 'sdk_event' }, { source: 'statusline' }).source).toBe(
+        'statusline'
+      );
+      expect(winnerBothWays({}, { windowMinutes: 300 }).windowMinutes).toBe(300);
+      expect(winnerBothWays({ windowMinutes: 60 }, { windowMinutes: 300 }).windowMinutes).toBe(300);
+    });
+
+    it('compares instants, not strings: +02:00 and Z can tie', () => {
+      const zoned = new Date(Date.parse(T)).toISOString().replace('Z', '+00:00');
+      const out = mergeLedger(
+        ledger({ five_hour: entry({ observedAt: T, status: 'allowed' }) }),
+        [obs('five_hour', { observedAt: zoned, status: 'rejected' })],
+        NOW,
+        OWNER
+      );
+      expect(written(out).windows.five_hour).toMatchObject({ status: 'rejected', observedAt: T });
+    });
+
+    it('breaks the tie inside one batch the same way in either order', () => {
+      const weak = obs('five_hour', { observedAt: T, status: 'allowed', usedPct: 90 });
+      const strong = obs('five_hour', { observedAt: T, status: 'rejected', usedPct: 10 });
+      const a = written(mergeLedger(null, [weak, strong], NOW, OWNER));
+      const b = written(mergeLedger(null, [strong, weak], NOW, OWNER));
+      expect(a).toEqual(b);
+      expect(a.windows.five_hour).toMatchObject({ status: 'rejected', usedPct: 10 });
+    });
+
+    it('keeps a fact on an equal observedAt: only windows break ties', () => {
+      const stored = ledger({}, { plan: { name: 'pro', observedAt: T, source: 'rollout' } });
+      const out = mergeLedger(
+        stored,
+        [{ kind: 'plan', name: 'plus', observedAt: T, source: 'statusline' }],
+        NOW,
+        OWNER
+      );
+      expect(out.changed).toBe(false);
+    });
+
+    it('lets any valid reading replace a stored entry that is not valid', () => {
+      const stored = ledger({
+        five_hour: { ...entry({ observedAt: T }), source: 'nope' } as unknown as LedgerEntry,
+      });
+      const out = mergeLedger(stored, [obs('five_hour', { observedAt: at(-HOUR) })], NOW, OWNER);
+      expect(written(out).windows.five_hour!.source).toBe('statusline');
+    });
   });
 
   it('lets a newer observation win even with a lower usedPct (the window reset)', () => {
