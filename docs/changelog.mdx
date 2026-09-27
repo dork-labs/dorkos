@@ -35,12 +35,17 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - If your DorkOS account doesn't say what unit its figures are in, the panel says it couldn't read them rather than showing a number that might be wrong (DOR-2425)
 - While you link this instance to a DorkOS account, Settings › Access now shows how long the code has left, counting down beside the waiting line and switching to "less than a minute" near the end. Screen readers hear the time when the code appears and again at five minutes and at one, not every second (DOR-2188)
 - The button that opens the approval page now says **Open the approval page** (DOR-2188)
+- The Connections list pages and searches much faster. DorkOS now keeps each connection service's list of apps for a while instead of asking for the whole list again on every page and every search: a day for Composio, 15 minutes for your DorkOS account, a minute for Nango. It drops that copy as soon as you change or remove the service's key (DOR-2463)
 
 ### Fixed
 
 - An app you connected can be given to an agent straight away, including when an agent asks for it; it no longer waits on a review nobody could do. Apps you connected earlier and never shared are settled the same way when you update. After you change how DorkOS reaches your apps, only apps someone already shares ask for a review (DOR-2418)
 - When a Claude account runs out of usage, the session no longer stops without a word. It now shows Claude's own message, such as "You've hit your weekly limit", and it remembers that the account is out until the limit resets, even after DorkOS restarts. The limit clears when you send the session its next message (DOR-2382)
 - If the approval page cannot be opened from the app, the panel now says so and tells you to copy the code and open the page in your browser, instead of the button doing nothing (DOR-2188)
+- Apps you connected through your DorkOS account work again. Since September 19, every request for them failed before it started, so you could not use them, see which apps were connected, check their usage, or disconnect one. All of that works again, and nothing you connected was lost (DOR-2467)
+- Warnings in agent creation and Connections (a name that's still missing, a schedule DorkOS couldn't check, access that needs another look) now actually render amber instead of ordinary text color — they used a color class the app's stylesheet never defined, so the styling was silently dropped (DOR-2444)
+- Success checkmarks in Connections (a connection confirmed, an agent's access granted) now show green instead of ordinary text color, for the same reason (DOR-2444)
+- Warning text got a bit darker app-wide, so it stays easy to read against every background it's shown on, not just the lightest ones (DOR-2444)
 
 ### Security
 
