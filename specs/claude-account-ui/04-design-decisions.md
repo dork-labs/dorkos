@@ -161,6 +161,6 @@ Mockup: [`design/flow-panel.html`](design/flow-panel.html). **Option A:** a "Flo
 - **Running:** flow runs with their item id and title, the account dot, and a state pill (building, in review, waiting on you, handing off, parked).
 - **Footer:** "Pause flow" and "2 of 3 slots busy".
 - Clicking a run opens its session; clicking an account opens its details.
-- Open: the empty state (Q24), the paused footer (Q25), the panel's own account popover (Q26).
+- Open: the empty state (Q24), the paused footer (Q25), the panel's own account popover (Q26), a run with no title (Q27), and resuming after `/flow:pause` (Q28).
 
 Spec: §8.5.
