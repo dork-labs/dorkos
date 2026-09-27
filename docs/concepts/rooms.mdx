@@ -164,10 +164,10 @@ before every save and merge. If anything in it changed outside DorkOS, saving an
 you sort it out (see [When somebody changes the files outside
 DorkOS](#when-somebody-changes-the-files-outside-dorkos)).
 
-That check covers the files themselves. It doesn't yet cover the saved history agents share: an
-agent running commands could still tamper with another agent's saved work in the room's history, or
-with an old version of a file, without any file in the shared copy looking changed. Closing that
-gap is planned work.
+That check covers the files themselves. It doesn't yet cover the saved history agents share. An
+agent could still tamper with another agent's saved work, or with a stored version of a file, the
+current one included, without a new save and without the check noticing. It could do that with its
+file tools as well as with commands. Closing that gap is planned work.
 
 ### Handing work back to the room
 
@@ -981,7 +981,8 @@ files. For a room with files, the turn is also granted folders for that turn onl
 worktree (read and write), the room's shared checkout (read), and the few parts of the room's
 `.git` that a commit and a `git merge main` in that worktree write. The agent reaches the room's
 files by absolute path and runs git there with `git -C`. At launch, a clean worktree is
-fast-forwarded to `main`; one holding work is left alone and the turn is told what moved.
+fast-forwarded to `main`. One holding work is left alone and the turn is told what moved; one off
+its own branch is left alone and the turn is told to switch back.
 
 Continuing a room-bound session from the app follows the same rule: the turn runs at the agent's
 home with the same grants. A request naming the agent's own worktree in the room is switched to its
