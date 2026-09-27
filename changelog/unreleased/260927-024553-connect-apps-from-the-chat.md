@@ -5,6 +5,7 @@ covers:
   - "fix(connections): keep the chat card's question on screen through a save, and no room-turn links (DOR-2415)"
   - 'fix(connections): answer a chat request with the access the chat really has (DOR-2415)'
   - "fix(connections): give the chat card's link only to a known direct message (DOR-2415)"
+  - 'refactor(connections): agents never receive a DorkOS link for a request (DOR-2415)'
 ---
 
 ### Added
