@@ -1,7 +1,7 @@
 ---
 id: 260926-172251
 title: An agent's identity comes from its home, and its desk is its home or a private copy of it
-status: proposed
+status: accepted
 created: 2026-09-26
 spec: agent-home-desk
 superseded-by: null
@@ -12,7 +12,12 @@ amends: [260726-022251, 260829-115621]
 
 ## Status
 
-Proposed (spec `agent-home-desk`, DOR-2355). It amends two accepted records, which stay `accepted`:
+Accepted (spec `agent-home-desk`, DOR-2355; designed in #2153). Shipped: every identity read goes
+through the registered home in #2188 (DOR-2355), and the desk guard (`DESK_NOT_OWN`) with room
+turns standing at home in #2197 (DOR-2410). Room transcripts filed under worktree folders move to
+the home by the startup migration built in #2161 (DOR-2409) and wired in #2197.
+
+It amends two accepted records, which stay `accepted`:
 
 - **260726-022251** — "identity comes from the session's working directory" is narrowed. The working
   directory stays the lookup key, but it is resolved to a registered home before anything is read.

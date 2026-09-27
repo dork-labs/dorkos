@@ -3347,7 +3347,7 @@
       "slug": "agent-home-desk",
       "title": "Home, desk and shared folders: agents know who they are from home, and people run a room's files",
       "created": "2026-09-26",
-      "status": "specified",
+      "status": "implemented",
       "linearIssue": "DOR-2355"
     }
   ]
