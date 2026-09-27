@@ -17175,6 +17175,61 @@
         }
       }
     },
+    "/api/runtimes/{runtime}/accounts/usage": {
+      "get": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "List how much of each of a runtime's accounts is used",
+        "description": "Every account of the runtime with its usage windows, from the server's memory: registered accounts in registry order, the machine-wide `default` account when it is not another name for a registered one, then folders that are neither (with a null `accountId`). A window with no current reading is left out, and an account with nothing to go on reads `state: \"unknown\"`, never zero.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude-code",
+                "codex",
+                "opencode"
+              ],
+              "description": "The runtime slug."
+            },
+            "required": true,
+            "description": "The runtime slug.",
+            "name": "runtime",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The runtime's accounts and their usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AccountUsage"
+                      }
+                    }
+                  },
+                  "required": [
+                    "accounts"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown runtime slug"
+          },
+          "503": {
+            "description": "The usage store is not running yet"
+          }
+        }
+      }
+    },
     "/api/capabilities": {
       "get": {
         "tags": [

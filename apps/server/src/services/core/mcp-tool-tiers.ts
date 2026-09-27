@@ -170,6 +170,14 @@ export const MCP_TOOL_TIERS = {
     title: "Read an agent's setup file",
   },
 
+  // ── Accounts ────────────────────────────────────────────────────────────
+  accounts_usage: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Read how much of each Claude account is used',
+  },
+
   // ── Tasks ───────────────────────────────────────────────────────────────
   tasks_list: {
     tier: 'observe',
