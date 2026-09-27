@@ -127,7 +127,8 @@ function accountLimitedPayload(
     sessionId,
     sessionLabel: sessionLabelFor(cwd),
     accountId: limit.accountId,
-    accountLabel: usage?.label ?? limit.accountId ?? 'Your Claude account',
+    // A raw id (`default`, `default-2`) is never shown: without a label, say what it is.
+    accountLabel: usage?.label ?? 'Your Claude account',
     window: limit.window,
     resetsAt: limit.resetsAt,
     since: limit.since,

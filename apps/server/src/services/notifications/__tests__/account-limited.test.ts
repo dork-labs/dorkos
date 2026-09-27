@@ -128,6 +128,13 @@ describe('account.limited', () => {
     expect(rows().filter((r) => r.kind === 'account.limited')).toHaveLength(0);
   });
 
+  it('never shows a raw account id when the account has no usage label', async () => {
+    failTurn('s-default', { ...LIMIT, accountId: 'default' });
+    await flush();
+    const [row] = rows().filter((r) => r.kind === 'account.limited');
+    expect(row!.title).toMatch(/^Your Claude account is out until /);
+  });
+
   it('keeps an unregistered account’s folder out of the stored notification', async () => {
     failTurn('s-side', { ...LIMIT, accountId: null }, '/Users/dev/.claude-side');
     await flush();

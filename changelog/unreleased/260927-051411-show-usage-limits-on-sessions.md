@@ -2,6 +2,7 @@
 covers:
   - 'feat(server): show a hard usage limit on the session and notify once per limit (DOR-2382)'
   - 'fix(server): renumber session_limits to 0117 and leave limits out of the account rename (DOR-2382)'
+  - 'fix(server): never show a raw account id in a usage-limit notification (DOR-2382)'
 ---
 
 ### Fixed
