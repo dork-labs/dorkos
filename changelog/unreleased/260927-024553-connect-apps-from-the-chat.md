@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(connections): connect an app and allow access from a card in the chat (DOR-2415)'
+  - 'fix(connections): honest chat card after a saved Allow, start on what was asked, safer links (DOR-2415)'
 ---
 
 ### Added
