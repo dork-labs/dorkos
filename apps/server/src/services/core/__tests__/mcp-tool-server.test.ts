@@ -769,8 +769,9 @@ describe('MCP Tool Handlers', () => {
       // 10 to 11.
       // 48 -> 49 for `change_permission` (spec `agent-permissions` D9).
       // 49 -> 50 for `accounts_usage` (spec `claude-account-fleet` D2).
+      // 50 -> 51 for `accounts_probe` (spec `claude-account-fleet` D3).
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(50);
+      expect(server.tools).toHaveLength(51);
     });
 
     it('registers tools with correct names', () => {

@@ -21,6 +21,11 @@ const FORBIDDEN = [
   ['oauth/', 'usage'],
   ['CLAUDE_CODE_', 'OAUTH_TOKEN'],
   ['ANTHROPIC_', 'AUTH_TOKEN'],
+  // No network call of our own: every reading comes from the official binary.
+  ['api.', 'anthropic.com'],
+  ['fetch', '('],
+  ['node:', 'https'],
+  ['und', 'ici'],
 ].map((parts) => parts.join(''));
 
 async function productionFiles(dir: string): Promise<string[]> {
@@ -39,6 +44,11 @@ async function productionFiles(dir: string): Promise<string[]> {
 describe('account usage compliance guard (invariant 3)', () => {
   it('scans a non-empty set of files', async () => {
     for (const dir of GUARDED_DIRS) expect((await productionFiles(dir)).length).toBeGreaterThan(0);
+  });
+
+  it('covers the account probe, which boots the CLI on an account folder (spec D3)', async () => {
+    const files = (await productionFiles(GUARDED_DIRS[0]!)).map((f) => path.basename(f));
+    expect(files).toContain('account-probe.ts');
   });
 
   it('no file in the account or usage directories reaches for credentials or a usage endpoint', async () => {

@@ -1342,6 +1342,42 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: 'post',
+  path: '/api/runtimes/claude-code/accounts/{id}/probe',
+  tags: ['Runtimes'],
+  summary: "Check a Claude account's usage without running a turn",
+  description:
+    "Starts Claude Code in the account's own folder on a prompt that never sends a message, " +
+    'asks it for the account usage, and closes it: no turn runs, nothing is billed, and no ' +
+    'transcript is kept. On demand only, one probe per account at a time and at most one a ' +
+    'minute. `probe` says how it went: `ok` recorded new readings; `unavailable` (the account ' +
+    'has no plan limits), `failed` (with a `reason`) and `throttled` recorded nothing.',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .openapi({ description: "A registry id, or `default` for this computer's own sign-in." }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The account's usage after the probe, and how the probe went",
+      content: {
+        'application/json': {
+          schema: z.object({
+            account: AccountUsageSchema,
+            probe: z.enum(['ok', 'unavailable', 'failed', 'throttled']),
+            reason: z.string().optional(),
+          }),
+        },
+      },
+    },
+    404: { description: 'No Claude Code account has that id (`code: "UNKNOWN_ACCOUNT"`)' },
+    503: { description: 'The usage store is not running yet' },
+  },
+});
+
 // --- Capabilities ---
 
 const PermissionModeDescriptorSchema = z.object({

@@ -17241,6 +17241,66 @@
         }
       }
     },
+    "/api/runtimes/claude-code/accounts/{id}/probe": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Check a Claude account's usage without running a turn",
+        "description": "Starts Claude Code in the account's own folder on a prompt that never sends a message, asks it for the account usage, and closes it: no turn runs, nothing is billed, and no transcript is kept. On demand only, one probe per account at a time and at most one a minute. `probe` says how it went: `ok` recorded new readings; `unavailable` (the account has no plan limits), `failed` (with a `reason`) and `throttled` recorded nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A registry id, or `default` for this computer's own sign-in."
+            },
+            "required": true,
+            "description": "A registry id, or `default` for this computer's own sign-in.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's usage after the probe, and how the probe went",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "$ref": "#/components/schemas/AccountUsage"
+                    },
+                    "probe": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "unavailable",
+                        "failed",
+                        "throttled"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "account",
+                    "probe"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Claude Code account has that id (`code: \"UNKNOWN_ACCOUNT\"`)"
+          },
+          "503": {
+            "description": "The usage store is not running yet"
+          }
+        }
+      }
+    },
     "/api/capabilities": {
       "get": {
         "tags": [
