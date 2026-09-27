@@ -26,7 +26,6 @@ export type {
 export { AccountPanel } from './ui/panel/AccountPanel';
 export type { AccountPanelProps } from './ui/panel/AccountPanel';
 export { PanelFix, PanelMoreRow, PanelSection } from './ui/panel/panel-parts';
-export { ServiceMark } from './ui/ServiceMark';
 export { NeedsYou } from './ui/NeedsYou';
 export { AgentRequestDialog } from './ui/AgentRequestDialog';
 export { ManagementReviewDialog } from './ui/ManagementReviewDialog';

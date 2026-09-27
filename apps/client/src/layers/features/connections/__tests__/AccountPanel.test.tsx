@@ -150,7 +150,7 @@ function renderPanel(transport: Transport) {
       </TransportProvider>
     </QueryClientProvider>
   );
-  return handlers;
+  return Object.assign(handlers, { client });
 }
 
 describe('AccountPanel', () => {
@@ -215,6 +215,132 @@ describe('AccountPanel', () => {
       expect(screen.queryByTestId('remove-account')).not.toBeInTheDocument();
     }
   );
+
+  it('says why a stalled sign-out is waiting and when it tries again', async () => {
+    const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    renderPanel(
+      transportFor(
+        summary({
+          lifecycle: 'disconnected',
+          externalCleanup: 'pending',
+          authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
+        })
+      )
+    );
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('Disconnecting didn’t finish. Agents already can’t use Gmail.');
+    expect(fix).toHaveTextContent(/DorkOS’s servers had a problem\. Trying again at .+\./);
+  });
+
+  it('says it is still finishing after "Finish disconnecting", and keeps the button usable', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({ lifecycle: 'disconnected', externalCleanup: 'pending' })
+    );
+    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({
+      connectionId: 'c-1' as never,
+      lifecycle: 'disconnected',
+      authenticationStatus: 'active',
+      authoritySync: { status: 'pending' },
+      externalCleanup: 'pending',
+    });
+    renderPanel(transport);
+
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Finish disconnecting' }));
+    await waitFor(() =>
+      expect(fix).toHaveTextContent(
+        'Still finishing disconnecting Gmail. Agents already can’t use it.'
+      )
+    );
+    expect(fix).toHaveTextContent('DorkOS keeps trying on its own.');
+    const again = within(fix).getByRole('button', { name: 'Try again now' });
+    expect(again).toBeEnabled();
+    await user.click(again);
+    await waitFor(() => expect(transport.disconnectConnectorConnection).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows a refused sign-out as refused, with its reason, and never says it keeps trying', async () => {
+    renderPanel(
+      transportFor(
+        summary({
+          lifecycle: 'disconnected',
+          externalCleanup: 'pending',
+          authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+        })
+      )
+    );
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('Disconnecting didn’t finish. Agents already can’t use Gmail.');
+    expect(fix).toHaveTextContent('This instance is no longer linked.');
+    expect(fix).not.toHaveTextContent(/keeps trying|Still finishing|Trying again/);
+    expect(within(fix).getByRole('button', { name: 'Try disconnecting again' })).toBeEnabled();
+  });
+
+  it('believes a refusal from "Finish disconnecting" even when nothing was stored', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({ lifecycle: 'disconnected', externalCleanup: 'pending' })
+    );
+    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({
+      connectionId: 'c-1' as never,
+      lifecycle: 'disconnected',
+      authenticationStatus: 'active',
+      authoritySync: {
+        status: 'failed',
+        reason: 'Link this installation before finishing account disconnection.',
+      },
+      externalCleanup: 'pending',
+    });
+    renderPanel(transport);
+
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Finish disconnecting' }));
+    await waitFor(() =>
+      expect(fix).toHaveTextContent(
+        'Link this installation before finishing account disconnection.'
+      )
+    );
+    expect(fix).not.toHaveTextContent(/keeps trying|Still finishing/);
+    expect(within(fix).getByRole('button', { name: 'Try disconnecting again' })).toBeEnabled();
+  });
+
+  it('lets the stored state take over once it moves on after a refused try', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({ lifecycle: 'disconnected', externalCleanup: 'pending' })
+    );
+    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({
+      connectionId: 'c-1' as never,
+      lifecycle: 'disconnected',
+      authenticationStatus: 'active',
+      authoritySync: {
+        status: 'failed',
+        reason: 'Link this installation before finishing account disconnection.',
+      },
+      externalCleanup: 'pending',
+    });
+    const { client } = renderPanel(transport);
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Finish disconnecting' }));
+    await waitFor(() => expect(fix).toHaveTextContent('Link this installation'));
+
+    // Relinked elsewhere: DorkOS is retrying again, and says so.
+    const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue(
+      detail(
+        summary({
+          lifecycle: 'disconnected',
+          externalCleanup: 'pending',
+          authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
+        })
+      )
+    );
+    await client.invalidateQueries();
+    await waitFor(() => expect(fix).toHaveTextContent('DorkOS’s servers had a problem.'));
+    expect(fix).not.toHaveTextContent('Link this installation');
+    expect(fix).toHaveTextContent('Still finishing disconnecting Gmail.');
+  });
 
   it('asks before disconnecting, naming who loses access, then closes', async () => {
     const user = userEvent.setup();

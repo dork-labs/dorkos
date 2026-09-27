@@ -58,7 +58,13 @@ function toolkitItem(slug: string, overrides: Record<string, unknown> = {}) {
     auth_schemes: ['OAUTH2'],
     composio_managed_auth_schemes: ['OAUTH2'],
     no_auth: false,
-    meta: { description: '…', logo: '…' },
+    // The live `meta` shape (VERIFIED-DOCS 2026-09-27 in composio-client.ts).
+    meta: {
+      description: `${slug[0]!.toUpperCase() + slug.slice(1)} is an app people use at work`,
+      logo: `https://logos.composio.dev/api/${slug}`,
+      tools_count: 12,
+      triggers_count: 0,
+    },
     ...overrides,
   };
 }
@@ -77,12 +83,56 @@ describe('listToolkits — the real v3.1 envelope', () => {
 
     const toolkits = await client.listToolkits();
     expect(toolkits).toEqual([
-      { slug: 'gmail', name: 'Gmail', authScheme: 'OAUTH2' },
-      { slug: 'slack', name: 'Slack', authScheme: 'OAUTH2' },
+      {
+        slug: 'gmail',
+        name: 'Gmail',
+        authScheme: 'OAUTH2',
+        logoUrl: 'https://logos.composio.dev/api/gmail',
+        description: 'Gmail is an app people use at work',
+      },
+      {
+        slug: 'slack',
+        name: 'Slack',
+        authScheme: 'OAUTH2',
+        logoUrl: 'https://logos.composio.dev/api/slack',
+        description: 'Slack is an app people use at work',
+      },
     ]);
     expect(calls[0]!.url).toContain('/api/v3.1/toolkits');
     const headers = calls[0]!.init.headers as Record<string, string>;
     expect(headers['x-api-key']).toBe('ak-project-key');
+  });
+
+  it('keeps only logos on Composio’s own logo host, and one sentence of description', async () => {
+    const { client } = clientWith([
+      {
+        body: {
+          items: [
+            toolkitItem('graphhopper', {
+              meta: {
+                logo: 'https://www.graphhopper.com/wp-content/uploads/logo.png',
+                description:
+                  'GraphHopper plans routes.   It also   optimises vehicle fleets across cities.',
+              },
+            }),
+            toolkitItem('plain', { meta: { logo: 'http://logos.composio.dev/api/plain' } }),
+            toolkitItem('bare', { meta: undefined }),
+          ],
+          next_cursor: null,
+        },
+      },
+    ]);
+
+    const [offHost, insecure, bare] = await client.listToolkits();
+
+    expect(offHost).toEqual({
+      slug: 'graphhopper',
+      name: 'Graphhopper',
+      authScheme: 'OAUTH2',
+      description: 'GraphHopper plans routes.',
+    });
+    expect(insecure).not.toHaveProperty('logoUrl');
+    expect(bare).toEqual({ slug: 'bare', name: 'Bare', authScheme: 'OAUTH2' });
   });
 
   it('maps no_auth toolkits to NO_AUTH', async () => {

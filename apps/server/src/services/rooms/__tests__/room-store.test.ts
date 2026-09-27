@@ -55,6 +55,56 @@ function seedRoom(store: RoomStore, id = ROOM_ID): void {
   );
 }
 
+describe('RoomStore.commitAnnouncements (spec `agent-home-desk` §6.2)', () => {
+  it('names each commit from the entry that announced it, in this room only', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    seedRoom(store, 'room-2');
+    const merge = 'a'.repeat(40);
+    const edit = 'b'.repeat(40);
+    const elsewhere = 'c'.repeat(40);
+    store.appendEntry(
+      entry({
+        id: 'm1',
+        body: {
+          text: 'Bo merged',
+          subjectAuthorId: 'author-bo',
+          merge: { branch: 'room/bo-1', commit: merge, files: 1, insertions: 1, deletions: 0 },
+        },
+      })
+    );
+    store.appendEntry(
+      entry({
+        id: 'f1',
+        body: {
+          text: 'Dee edited ROOM.md',
+          subjectAuthorId: 'author-dee',
+          fileChange: { kind: 'edit', paths: ['ROOM.md'], pathCount: 1, commit: edit },
+        },
+      })
+    );
+    store.appendEntry(
+      entry({
+        id: 'x1',
+        roomId: 'room-2',
+        body: {
+          text: 'elsewhere',
+          subjectAuthorId: 'author-eve',
+          fileChange: { kind: 'edit', paths: ['a.md'], pathCount: 1, commit: elsewhere },
+        },
+      })
+    );
+
+    const found = store.commitAnnouncements(ROOM_ID, [merge, edit, elsewhere, 'd'.repeat(40)]);
+
+    expect([...found.entries()].sort()).toEqual([
+      [merge, { kind: 'merge', subjectAuthorId: 'author-bo' }],
+      [edit, { kind: 'person', subjectAuthorId: 'author-dee' }],
+    ]);
+    expect(store.commitAnnouncements(ROOM_ID, []).size).toBe(0);
+  });
+});
+
 describe('RoomStore forward paging', () => {
   let store: RoomStore;
 

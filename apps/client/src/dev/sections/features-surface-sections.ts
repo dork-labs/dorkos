@@ -228,6 +228,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'try it',
       'more',
       'disconnect',
+      'finish disconnecting',
     ],
   },
   {

@@ -229,6 +229,10 @@ describe('ConnectorOperatorQueryService', () => {
       appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
     });
 
+    // A search for what an app does finds it by its one line.
+    const pages = await empty.catalog({ query: 'pages and', signal: new AbortController().signal });
+    expect(pages.services.map((entry) => entry.serviceSlug)).toEqual(['notion']);
+
     // A search by shelf finds the apps on it.
     const email = await empty.catalog({ query: 'email', signal: new AbortController().signal });
     expect(email.services.map((entry) => entry.serviceSlug)).toEqual(['gmail', 'outlook']);
@@ -257,6 +261,75 @@ describe('ConnectorOperatorQueryService', () => {
       requestable: false,
       unavailableBecause: 'not_reached',
     });
+  });
+
+  it('gives each app a same-origin logo path and one line, never the service’s logo URL', async () => {
+    const logoRegistry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    logoRegistry.register(
+      new FakeConnectorProvider({
+        instanceId: ConnectorProviderInstanceIdSchema.parse('provider-logos'),
+        type: 'fake',
+        custody: 'managed',
+        toolkits: [
+          {
+            slug: 'gmail',
+            displayName: 'Gmail',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/gmail',
+            description: 'Gmail is Google’s email service.',
+          },
+          {
+            slug: 'zendesk',
+            displayName: 'Zendesk',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/zendesk',
+            description: 'Zendesk runs customer support tickets.',
+          },
+          // Only another app's kept logo can give this one a mark.
+          { slug: 'freshdesk', displayName: 'Freshdesk', authKind: 'oauth2' },
+          { slug: 'bare', displayName: 'Bare', authKind: 'oauth2' },
+          // Not a safe path segment, so it can never get a logo path.
+          {
+            slug: 'Odd.Slug',
+            displayName: 'Odd',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/odd',
+          },
+        ],
+      }),
+      'material-logos'
+    );
+    const logos = new ConnectorOperatorQueryService({
+      db,
+      registry: logoRegistry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+      keptLogos: () => Promise.resolve(new Set(['freshdesk'])),
+    });
+    const signal = new AbortController().signal;
+
+    const page = await logos.catalog({ limit: 100, signal });
+    const bySlug = new Map(page.services.map((entry) => [entry.serviceSlug, entry]));
+
+    // Our own line wins for a built-in app; the logo is the server's own path.
+    expect(bySlug.get('gmail')).toMatchObject({
+      description: 'Read, search and send email.',
+      logo: '/api/connectors/catalog/logos/gmail',
+    });
+    expect(bySlug.get('zendesk')).toMatchObject({
+      description: 'Zendesk runs customer support tickets.',
+      logo: '/api/connectors/catalog/logos/zendesk',
+    });
+    expect(bySlug.get('freshdesk')?.logo).toBe('/api/connectors/catalog/logos/freshdesk');
+    expect(bySlug.get('bare')).not.toHaveProperty('logo');
+    expect(bySlug.get('bare')).not.toHaveProperty('description');
+    expect(bySlug.get('Odd.Slug')).not.toHaveProperty('logo');
+    // A built-in app nothing sends a logo for has none either.
+    expect(bySlug.get('notion')).not.toHaveProperty('logo');
+    expect(JSON.stringify(page)).not.toContain('logos.composio.dev');
   });
 
   it('names the service an app will ask about on every route that signs in through one', async () => {
@@ -824,6 +897,26 @@ describe('ConnectorOperatorQueryService', () => {
       .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
       .run();
     expect((await service.listConnections(OWNER))[0]?.authoritySync).toEqual({ status: 'pending' });
+    // A stalled command says why it is waiting and when it tries again, on the
+    // exact detail the account panel reads.
+    const retryAt = '2026-09-06T18:05:00.000Z';
+    db.update(connectorManagedAuthorityOutbox)
+      .set({ safeReason: 'DorkOS’s servers had a problem.', nextAttemptAt: retryAt })
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
+      .run();
+    await expect(service.getConnection(OWNER, 'connection-a')).resolves.toMatchObject({
+      connection: {
+        authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
+      },
+    });
+    // The generic text an earlier version stored says nothing; it is no reason.
+    db.update(connectorManagedAuthorityOutbox)
+      .set({ safeReason: 'Managed connection synchronization is pending.' })
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
+      .run();
+    expect((await service.getConnection(OWNER, 'connection-a')).connection.authoritySync).toEqual({
+      status: 'pending',
+    });
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
       connections: [{ access: 'disabled', dominatingReason: 'authority_sync_required' }],
     });

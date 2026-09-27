@@ -496,6 +496,13 @@ export interface RunGitOptions {
    * `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`.
    */
   maxBuffer?: number;
+  /**
+   * How long the command may run before it is killed, defaulting to
+   * {@link GIT_TIMEOUT_MS}. A caller whose command WRITES a working tree whose
+   * size it does not control (the turn-start fast-forward) passes a longer one,
+   * because killing a write halfway leaves the tree halfway.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -530,7 +537,7 @@ export async function runGitRaw(
   try {
     const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
       cwd,
-      timeout: GIT_TIMEOUT_MS,
+      timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
       env: gitEnv(ceilingDir, cwd),
       maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
       // Bytes, not characters: this function's whole purpose is to answer what

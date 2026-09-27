@@ -1,4 +1,4 @@
-import { ArrowUpRight, Cable } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import {
   useAgentConnectorConnections,
@@ -6,6 +6,7 @@ import {
 } from '../model/use-connector-resources';
 import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { serviceName } from '../lib/access-copy';
+import { ServiceMark } from './ServiceMark';
 
 const SESSION_ACCESS_COPY = {
   inherited: 'Inherited from agent',
@@ -88,7 +89,11 @@ export function AgentConnectionAccessList({
                 data-testid={`agent-connection-${connection.connectionId}`}
                 className="bg-muted/40 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2"
               >
-                <Cable className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                <ServiceMark
+                  iconKey={connection.toolkit}
+                  displayName={serviceName(connection.toolkit)}
+                  className="size-7"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
                     {serviceName(connection.toolkit)} ({connection.label})

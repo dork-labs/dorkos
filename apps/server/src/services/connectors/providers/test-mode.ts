@@ -169,16 +169,9 @@ export class TestModeConnectorProvider implements ConnectorProvider {
     };
   }
 
-  async listToolkitPage(request: {
-    cursor?: string;
-    query?: string;
-    limit: number;
-    signal: AbortSignal;
-  }) {
+  async listToolkitPage(request: { cursor?: string; limit: number; signal: AbortSignal }) {
     request.signal.throwIfAborted();
-    const all = (await this.listToolkits()).filter((toolkit) =>
-      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
-    );
+    const all = await this.listToolkits();
     const offset = request.cursor ? Number(request.cursor) : 0;
     const toolkits = all.slice(offset, offset + request.limit);
     const next = offset + toolkits.length;

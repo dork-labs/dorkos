@@ -131,6 +131,7 @@ async function fixture() {
       query,
       lifecycle,
       actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
+      logos: { get: () => Promise.resolve(undefined) },
     })
   );
   app.use(

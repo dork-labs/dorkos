@@ -106,11 +106,26 @@ function listData(yours: YourAppRow[], owned: string[]): AppListData {
   };
 }
 
+/** When the stalled-disconnect demo says it tries again: a few minutes after the page loads. */
+const STALLED_RETRY_AT = new Date(Date.now() + 4 * 60_000).toISOString();
+
 /** A playground server for the panels: the fixtures, answered as the real one would. */
 function panelTransport(connection: ConnectorConnectionSummary): Transport {
   const base = createPlaygroundTransport();
   const overrides: Partial<Record<keyof Transport, unknown>> = {
     getConnectorConnection: async () => mockConnectionDetail(connection),
+    // Answers "Finish disconnecting" with the account's own state, so a stalled
+    // sign-out stays stalled and the panel shows what happens next.
+    disconnectConnectorConnection: async () => ({
+      connectionId: connection.connectionId,
+      lifecycle: connection.lifecycle,
+      authenticationStatus: connection.authenticationStatus,
+      authoritySync: connection.authoritySync,
+      externalCleanup:
+        connection.externalCleanup === 'unknown'
+          ? 'pending'
+          : (connection.externalCleanup ?? 'not_required'),
+    }),
     getOperatorConnectorUsage: async () => ({ items: MOCK_GMAIL_USAGE }),
     getConnectorAppActions: async () => MOCK_GMAIL_ACTIONS,
     previewConnectorReconciliation: async ({ connectionId }: { connectionId: string }) =>
@@ -291,6 +306,36 @@ export function ConnectionsShowcases() {
         <ShowcaseLabel>Signed out</ShowcaseLabel>
         <ShowcaseDemo>
           <PanelFrame connection={mockConnection({ authenticationStatus: 'expired' })}>
+            <AccountPanelDemo />
+          </PanelFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Disconnect still finishing</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PanelFrame
+            connection={mockConnection({
+              lifecycle: 'disconnected',
+              externalCleanup: 'pending',
+              authoritySync: {
+                status: 'pending',
+                reason: 'DorkOS’s servers had a problem.',
+                retryAt: STALLED_RETRY_AT,
+              },
+            })}
+          >
+            <AccountPanelDemo />
+          </PanelFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Disconnect refused</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PanelFrame
+            connection={mockConnection({
+              lifecycle: 'disconnected',
+              externalCleanup: 'pending',
+              authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+            })}
+          >
             <AccountPanelDemo />
           </PanelFrame>
         </ShowcaseDemo>

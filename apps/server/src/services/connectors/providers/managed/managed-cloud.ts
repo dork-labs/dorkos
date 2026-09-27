@@ -218,7 +218,6 @@ export class ManagedCloudConnectorProvider implements ConnectorProvider {
     const page = await this.#cloud.listManagedConnectorCatalog(
       {
         version: 1,
-        ...(request.query !== undefined && { query: request.query }),
         ...(request.cursor !== undefined && { cursor: request.cursor }),
         limit: request.limit,
       },

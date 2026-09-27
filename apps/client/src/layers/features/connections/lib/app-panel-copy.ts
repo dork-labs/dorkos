@@ -118,3 +118,20 @@ export function usageLine(
   if (item.outcome === 'outcome_unknown') return `${line} (result unknown)`;
   return `${line} (didn’t finish)`;
 }
+
+/**
+ * When DorkOS tries a stalled change again, as a person reads a clock:
+ * "Trying again at 12:48.", with the weekday when it is not today, and
+ * "Trying again now." once that time has passed.
+ *
+ * @param retryAt - ISO time of the next try.
+ * @param now - The current time.
+ */
+export function retryLine(retryAt: string, now: Date = new Date()): string {
+  const at = new Date(retryAt);
+  if (at.getTime() <= now.getTime()) return 'Trying again now.';
+  const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return at.toDateString() === now.toDateString()
+    ? `Trying again at ${time}.`
+    : `Trying again ${at.toLocaleDateString([], { weekday: 'long' })} at ${time}.`;
+}

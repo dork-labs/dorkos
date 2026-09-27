@@ -17,25 +17,29 @@
  * already does, in its own `globals.css`, which is why it is not one of the
  * consumers below), this test stops flagging it there without an edit.
  *
- * DELIBERATELY NOT A PARSER. An earlier version of this file used the real
- * TypeScript scanner to strip comment trivia before matching — and that
- * still had its own sharp edges: `Array.from(source)` indexes by CODE POINT
- * while the scanner reports UTF-16 code-unit offsets, so an emoji or other
- * astral character before a comment could desync the two and blank the
- * wrong span; `scan()` never re-enters a template literal's `${...}` hole on
- * its own, so a template after another template could desync the token
- * stream; and a regex literal containing `\/\/` is legitimate source the
- * scanner has to get exactly right to avoid reading it as a comment. Zero of
- * those ever misfired here, but "zero misfires so far" is not the same
- * guarantee as "structurally cannot misfire" — so this test stops trying to
- * understand the language at all. Instead: a line counts as a comment ONLY
- * when the ENTIRE trimmed line is one — starts with `//`, `/*`, or `*` (the
- * three shapes DorkOS's own TSDoc/JSDoc comments take, opener, opener, and
- * continuation/closer). Anything else is scanned as ordinary text, including
- * a trailing comment on a code line — so naming a bad class ONLY in a
- * trailing comment can false-positive this guard. That is an accepted
- * trade: reword the comment, rather than trust a parser to get every string,
- * template, regex-literal and Unicode edge case right forever.
+ * USES THE REPO'S SHARED LEXER, NOT A GUARD-SPECIFIC STRIPPER. Two earlier
+ * versions of this file rolled their own — first a regex pair, then a
+ * hand-written TypeScript-scanner pass, then a "whole line or nothing" rule —
+ * and each had its own way of getting comments wrong (a `//` inside a URL, a
+ * `/*` inside a string, UTF-16-vs-code-point drift, template-literal state).
+ * `scripts/lib/code-only.mjs` exists precisely because this repo already paid
+ * for those mistakes once (DOR-642, DOR-1714) and a `no guard strips comments
+ * with regexes of its own` census (`scripts/__tests__/code-only.test.ts`)
+ * fails on sight if one grows back. `lexWithoutComments` is its answer to
+ * "does this file SAY this word?" — the question this guard asks, since the
+ * subject lives in a `className` string, which the sibling `lex`/`codeOnly`
+ * (built for "is this a call?") would blank away along with the comments.
+ * Precedent for the exact pairing used here: `apps/client/src/layers/
+ * features/command-palette/__tests__/no-query-language.test.ts`.
+ *
+ * Because it is the real lexer, a TRAILING comment on a code line is handled
+ * correctly too, not just a whole-line one — `x; // text-warning is retired`
+ * loses only the comment, keeping any real usage on the same line. There is
+ * no accepted false-positive case left to document.
+ *
+ * `parseErrors` is asserted to be zero across every corpus this file scans:
+ * a file the lexer cannot parse produces a comment map made of guesses, and
+ * failure there is silent — no hit in it reads exactly like no offense in it.
  *
  * Lives beside `status-warning-contrast.test.ts` in `apps/client`, not under
  * `scripts/`: `scripts/__tests__/*` only runs from the scoped `harness` job
@@ -49,6 +53,8 @@ import { readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
@@ -104,18 +110,6 @@ function definedColorNames(cssPath: string): Set<string> {
   return names;
 }
 
-/**
- * True when a line is NOTHING but a comment — the only shape this guard
- * treats as unreadable (see the file header for why it stops there). A line
- * with real code and a trailing `//` or `/* ... *\/` still counts as code:
- * this only recognizes the opener/continuation/closer shapes DorkOS's own
- * TSDoc uses when they own the WHOLE line.
- */
-function isCommentOnlyLine(line: string): boolean {
-  const trimmed = line.trim();
-  return trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*');
-}
-
 /** Every `.ts`/`.tsx` file under `dir`, recursively. */
 function collectSourceFiles(dir: string): string[] {
   const files: string[] = [];
@@ -146,31 +140,44 @@ interface Match {
 }
 
 /**
- * Every match of `pattern` on a scannable (non-comment-only) line of `text`.
+ * Every match of `pattern` in `text`, after `text`'s comments are blanked by
+ * the shared lexer (`fileName`'s extension decides `.ts` vs `.tsx` lexing).
  * The one code path both {@link findUndefinedStatusClasses} and this file's
  * own regression tests run through, so a test proves what the real guard
  * does rather than a reimplementation of it.
  */
-function scanLines(text: string, pattern: RegExp): Match[] {
+function scanLines(
+  text: string,
+  pattern: RegExp,
+  fileName: string
+): { matches: Match[]; parseErrors: number } {
+  const { code, parseErrors } = lexWithoutComments(text, fileName);
   const matches: Match[] = [];
-  text.split('\n').forEach((line, index) => {
-    if (isCommentOnlyLine(line)) return;
+  code.split('\n').forEach((line, index) => {
     const found = line.match(pattern);
     if (!found) return;
     for (const className of found) matches.push({ line: index + 1, className });
   });
-  return matches;
+  return { matches, parseErrors };
 }
 
 interface Finding extends Match {
   readonly file: string;
 }
 
-/** Bare status-shaped color classes (`text-warning`, `bg-danger/30`, …) a consumer's CSS never defines. */
-function findUndefinedStatusClasses(consumer: Consumer): Finding[] {
+/**
+ * Bare status-shaped color classes (`text-warning`, `bg-danger/30`, …) a
+ * consumer's CSS never defines, plus every file in its source tree the
+ * shared lexer could not parse (which must be empty for the findings to mean
+ * anything — see the file header).
+ */
+function findUndefinedStatusClasses(consumer: Consumer): {
+  findings: Finding[];
+  parseErrorFiles: string[];
+} {
   const defined = definedColorNames(consumer.cssFile);
   const undefinedNames = BARE_STATUS_NAMES.filter((name) => !defined.has(name));
-  if (undefinedNames.length === 0) return [];
+  if (undefinedNames.length === 0) return { findings: [], parseErrorFiles: [] };
 
   const pattern = new RegExp(
     `\\b(?:${COLOR_PREFIXES.join('|')})-(?:${undefinedNames.join('|')})\\b`,
@@ -178,94 +185,118 @@ function findUndefinedStatusClasses(consumer: Consumer): Finding[] {
   );
 
   const findings: Finding[] = [];
+  const parseErrorFiles: string[] = [];
   for (const file of collectSourceFiles(join(REPO_ROOT, consumer.srcDir))) {
+    const relPath = relative(REPO_ROOT, file);
     const contents = readFileSync(file, 'utf8');
-    for (const match of scanLines(contents, pattern)) {
-      findings.push({ file: relative(REPO_ROOT, file), ...match });
-    }
+    const { matches, parseErrors } = scanLines(contents, pattern, file);
+    if (parseErrors > 0) parseErrorFiles.push(relPath);
+    for (const match of matches) findings.push({ file: relPath, ...match });
   }
-  return findings;
+  return { findings, parseErrorFiles };
 }
 
 describe('status-shaped Tailwind color classes', () => {
   for (const consumer of CONSUMERS) {
+    // Scanned once per consumer, shared by both `it`s below — matching
+    // `no-query-language.test.ts`'s shape, and avoiding walking a 3,600+ file
+    // tree twice for two assertions about the one pass over it.
+    const { findings, parseErrorFiles } = findUndefinedStatusClasses(consumer);
+
+    it(`${consumer.name}: the lexer parsed every file (an unparseable one can't pass silently)`, () => {
+      expect(parseErrorFiles).toEqual([]);
+    }, 20_000);
+
     it(`${consumer.name} never uses a bare status color name undefined in its CSS`, () => {
-      expect(findUndefinedStatusClasses(consumer)).toEqual([]);
+      expect(findings).toEqual([]);
     }, 20_000);
   }
 
-  it('does not flag a mention inside a whole-line comment, in any shape DorkOS TSDoc uses', () => {
+  it('does not flag a mention inside any comment shape — block, line, or trailing', () => {
     // Regression check for the false-positive this guard must not produce:
     // naming the bug's own class shape in prose must never be mistaken for
-    // the class itself. Built from parts rather than written verbatim, so
-    // this suite's own file doesn't hand the guard a literal match on itself.
+    // the class itself, in any of the shapes a comment can take. Built from
+    // parts rather than written verbatim, so this suite's own file doesn't
+    // hand the guard a literal match on itself.
     const bannedText = ['text', 'warning'].join('-');
-    const pattern = new RegExp(`\\btext-warning\\b`);
+    const pattern = new RegExp(`\\b${bannedText}\\b`);
     const source = [
-      `/** This component used to render with ${bannedText}, which was a bug. */`,
-      ` * ${bannedText} — a block-comment continuation line names it too.`,
-      ` */`,
+      '/**',
+      ` * This component used to render with ${bannedText}, which was a bug.`,
+      ' */',
       `// ${bannedText} was undefined too — see DOR-2444.`,
-      "const real = 'text-status-warning-fg';",
+      `const real = 'text-status-warning-fg'; // ${bannedText} is retired`,
+      `const other = 1; /* ${bannedText} lives only in this trailing block */`,
     ].join('\n');
-    expect(scanLines(source, pattern)).toEqual([]);
+    const { matches, parseErrors } = scanLines(source, pattern, 'snippet.ts');
+    expect(parseErrors).toBe(0);
+    expect(matches).toEqual([]);
   });
 
   it('still flags a real class after a `//` inside a URL (must-flag)', () => {
-    // Regression for the false-negative a naive `//`-splits-a-line stripper
-    // produces: it cannot tell a `//` that opens a line comment from one
-    // inside `https://example.com`. This guard never tries to tell the
-    // difference — the whole line isn't a comment, so it's scanned as-is.
+    // A naive line-based stripper cannot tell a `//` that opens a line
+    // comment from one inside `https://example.com`. The real lexer knows a
+    // string literal when it sees one, so the URL and the real class after
+    // it both survive.
     const cls = ['text', 'warning'].join('-');
     const pattern = new RegExp(`\\b${cls}\\b`);
     const source = `const url = 'https://example.com/page'; className='${cls}'`;
-    expect(scanLines(source, pattern)).toEqual([{ line: 1, className: cls }]);
+    const { matches, parseErrors } = scanLines(source, pattern, 'snippet.ts');
+    expect(parseErrors).toBe(0);
+    expect(matches).toEqual([{ line: 1, className: cls }]);
   });
 
   it('still flags real classes after a `/*`-shaped string, across several lines (must-flag)', () => {
-    // Regression for the false-negative a naive `/\*...\*\//` stripper
-    // produces: it cannot tell a `/*` that opens a block comment from one
+    // A naive stripper cannot tell a `/*` that opens a block comment from one
     // inside `'rm build/*.js'`, and would swallow every line up to the next
     // literal `*/` anywhere later in the file (this is what made 54 real
     // lines of TouchChipStrip.test.tsx invisible to an earlier version of
-    // this guard). None of these lines starts with a comment marker, so all
-    // of them are scanned.
+    // this guard). The real lexer knows these are string contents, so
+    // everything survives except the genuine comment on the last line.
     const clsWarning = ['text', 'warning'].join('-');
     const clsDanger = ['bg', 'danger'].join('-');
     const pattern = new RegExp(`\\b(?:${clsWarning}|${clsDanger})\\b`);
-    const lines = [
+    const source = [
       "const cmd = 'rm build/*.js';",
       `className='${clsWarning}'`,
       "const other = 'src/**/*.ts';",
       `className='${clsDanger}'`,
-      '/* a real, whole-line comment several lines below both fake openers */',
-    ];
-    const source = lines.join('\n');
-    expect(scanLines(source, pattern)).toEqual([
+      '/* a real comment several lines below both fake openers */',
+    ].join('\n');
+    const { matches, parseErrors } = scanLines(source, pattern, 'snippet.ts');
+    expect(parseErrors).toBe(0);
+    expect(matches).toEqual([
       { line: 2, className: clsWarning },
       { line: 4, className: clsDanger },
     ]);
   });
 
-  it('still flags a real class on a line that starts with an emoji (must-flag)', () => {
-    // Regression for the UTF-16-vs-code-point indexing risk a character-level
-    // stripper carries: an astral character (most emoji) is a surrogate PAIR
-    // in UTF-16 but ONE entry in a code-point array like `Array.from`, so the
-    // two can desync and blank the wrong span. This guard never indexes into
-    // the string at all — `.trim().startsWith(...)` is Unicode-safe on its
-    // own — so there is nothing to desync.
+  it('still flags a real class on the line after an emoji-bearing comment (must-flag)', () => {
+    // An astral character (most emoji) is a surrogate PAIR in UTF-16 but ONE
+    // entry in a code-point array — a stripper that indexes with
+    // `Array.from`/`[...text]` can desync from positions TypeScript reports
+    // in UTF-16 code units, sliding a blanked span onto the code after an
+    // emoji. `code-only.mjs` avoids this by construction (`text.split('')`,
+    // never a code-point array); this proves the comment right after the
+    // emoji is still blanked correctly and the real class on the next line
+    // lands at the right line number.
     const cls = ['text', 'warning'].join('-');
     const pattern = new RegExp(`\\b${cls}\\b`);
-    const source = `✅ console.log('done'); className='${cls}'`;
-    expect(scanLines(source, pattern)).toEqual([{ line: 1, className: cls }]);
+    const source = [
+      `console.log('✅ done'); // ${cls} named only in a trailing comment after an emoji`,
+      `className='${cls}'`,
+    ].join('\n');
+    const { matches, parseErrors } = scanLines(source, pattern, 'snippet.ts');
+    expect(parseErrors).toBe(0);
+    expect(matches).toEqual([{ line: 2, className: cls }]);
   });
 
   it('still flags a real class after two template literals with `${}` interpolation (must-flag)', () => {
-    // Regression for the token-stream desync risk a stateful scanner
-    // carries: `scan()` does not automatically re-enter a template literal's
-    // `${...}` hole, so a SECOND template later in the file could be read
-    // from the wrong state. This guard tracks no state between lines, so a
-    // template — or two in a row — cannot affect how any other line reads.
+    // A hand-rolled scanner that tracks its own state can fail to re-enter a
+    // template literal's `${...}` hole between two templates in a row,
+    // desyncing everything read afterward. The real lexer has no such state
+    // to lose, so a second template — or any number of them — cannot affect
+    // how a later line reads.
     const cls = ['bg', 'danger'].join('-');
     const pattern = new RegExp(`\\b${cls}\\b`);
     const source = [
@@ -273,17 +304,21 @@ describe('status-shaped Tailwind color classes', () => {
       'const b = `Another ${greeting} template`;',
       `className='${cls}'`,
     ].join('\n');
-    expect(scanLines(source, pattern)).toEqual([{ line: 3, className: cls }]);
+    const { matches, parseErrors } = scanLines(source, pattern, 'snippet.ts');
+    expect(parseErrors).toBe(0);
+    expect(matches).toEqual([{ line: 3, className: cls }]);
   });
 
   it('still flags a real class after a regex literal containing escaped slashes (must-flag)', () => {
-    // Regression for the risk any comment-aware stripper carries: a regex
-    // literal like `/^https?:\/\//` contains `\/\/`, which a stripper has to
-    // recognize as part of the regex token, not a line comment. This guard
-    // never looks for `//` mid-line at all, so the question doesn't arise.
+    // A regex literal like `/^https?:\/\//` contains `\/\/`, which any
+    // comment-aware stripper has to recognize as part of the regex token, not
+    // a line comment. The real lexer decides `/` vs regex-vs-division from
+    // the actual grammar, so the literal and the real class after it survive.
     const cls = ['text', 'warning'].join('-');
     const pattern = new RegExp(`\\b${cls}\\b`);
     const source = `const re = /^https?:\\/\\//; className='${cls}'`;
-    expect(scanLines(source, pattern)).toEqual([{ line: 1, className: cls }]);
+    const { matches, parseErrors } = scanLines(source, pattern, 'snippet.ts');
+    expect(parseErrors).toBe(0);
+    expect(matches).toEqual([{ line: 1, className: cls }]);
   });
 });

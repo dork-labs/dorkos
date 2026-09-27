@@ -1,7 +1,7 @@
 ---
 id: 260926-180223
 title: A turn reaches shared folders through per-turn grants on the runtime port, and room turns stand at home
-status: proposed
+status: accepted
 created: 2026-09-26
 spec: agent-home-desk
 superseded-by: null
@@ -12,7 +12,7 @@ amends: [260807-233816]
 
 ## Status
 
-Proposed (spec `agent-home-desk`). It amends **260807-233816**, which stays `accepted`: the
+Accepted (spec `agent-home-desk`; shipped by DOR-2410, #2197). It amends **260807-233816**, which stays `accepted`: the
 "filesystem grant on the `AgentRuntime` port" that record declined on cost is now built, and the
 Positive bullet "the `AgentRuntime` port is untouched" is retired. Attachments are still projected,
 into the turn's working directory, which for a room turn is the agent's home again.

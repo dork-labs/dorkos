@@ -35,6 +35,7 @@
  */
 
 import type { ConnectorKeyKind } from '@dorkos/shared/connector-provider';
+import { oneSentence, trustedLogoUrl } from './app-presentation.js';
 
 /** Composio's API origin. `VERIFIED-LIVE (2026-07-29)`. */
 const DEFAULT_COMPOSIO_BASE_URL = 'https://backend.composio.dev';
@@ -57,6 +58,14 @@ const SESSION_INFO_PATH = '/api/v3/auth/session/info';
 
 /** The header each key kind authenticates with. `VERIFIED-LIVE (2026-07-30)`. */
 type ComposioAuthHeaderKind = 'project' | 'user';
+
+/**
+ * The only host DorkOS fetches Composio logos from. `VERIFIED-LIVE (2026-09-27)`:
+ * a sample of the live toolkit list pointed 25 of 27 logos at
+ * `https://logos.composio.dev/api/<slug>`; the rest pointed at the apps' own
+ * sites, which DorkOS does not fetch from.
+ */
+const COMPOSIO_LOGO_HOSTS = ['logos.composio.dev'] as const;
 
 /** Per-request deadline so a hung Composio call can never block an aggregation. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -82,6 +91,10 @@ export interface ComposioToolkitInfo {
   name: string;
   /** Composio auth scheme, e.g. `'OAUTH2'` | `'API_KEY'` | `'NO_AUTH'`. */
   authScheme?: string;
+  /** The toolkit's logo on Composio's logo host; absent when it points anywhere else. */
+  logoUrl?: string;
+  /** Composio's description of the app, cut to one short sentence. */
+  description?: string;
 }
 
 /** The reference-not-secret result of initiating a Composio connect flow. */
@@ -266,6 +279,13 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
     //   next_cursor } — `auth_schemes` is an ARRAY and there is no
     // max-accounts field (both wrong in the original spike-derived shape).
     // Composio hosts 800+ toolkits, so the listing paginates by cursor.
+    // VERIFIED-DOCS (2026-09-27): each item also carries
+    // `meta: { description: string, logo: string, ... }` (`ToolkitListResponse.Item.Meta`
+    // in @composio/client 0.1.0-alpha.76). Live, `logo` is
+    // `https://logos.composio.dev/api/<slug>` for almost every toolkit (served
+    // as image/svg+xml, no redirect); a few point at the app's own site, and
+    // those are dropped rather than fetched. `description` is one or two
+    // sentences, up to ~360 characters.
     const toolkits: ComposioToolkitInfo[] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
@@ -281,10 +301,14 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
       );
       for (const tk of body.items ?? []) {
         const authScheme = tk.no_auth ? 'NO_AUTH' : tk.auth_schemes?.[0];
+        const logoUrl = trustedLogoUrl(tk.meta?.logo, COMPOSIO_LOGO_HOSTS);
+        const description = oneSentence(tk.meta?.description);
         toolkits.push({
           slug: tk.slug,
           name: tk.name ?? tk.slug,
           ...(authScheme && { authScheme }),
+          ...(logoUrl && { logoUrl }),
+          ...(description && { description }),
         });
       }
       const nextCursor = body.next_cursor ?? undefined;
@@ -557,6 +581,7 @@ interface RawToolkit {
   name?: string;
   auth_schemes?: string[];
   no_auth?: boolean;
+  meta?: { logo?: string; description?: string };
 }
 
 /** Raw Composio auth-config JSON (v3.1, partial). */

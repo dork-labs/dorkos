@@ -26,7 +26,12 @@ import {
 import { user } from './auth-schema';
 import { instance } from './instance-schema';
 
-/** One random hosted connector tenant per Better Auth account. */
+/**
+ * The hosted connector tenant for a Better Auth account. Its owner index is
+ * deliberately not unique, so code must never rely on it for one row per owner:
+ * `resolveConnectorTenant` is the one path that creates tenants, and it
+ * serializes creation per owner itself.
+ */
 export const connectorTenant = pgTable(
   'connector_tenant',
   {
@@ -38,7 +43,7 @@ export const connectorTenant = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('connector_tenant_owner_unique').on(table.ownerUserId),
+    index('connector_tenant_owner_idx').on(table.ownerUserId),
     uniqueIndex('connector_tenant_provider_user_unique').on(table.providerUserId),
   ]
 );

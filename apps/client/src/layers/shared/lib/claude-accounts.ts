@@ -8,8 +8,15 @@
  * path into something readable, so the sidebar badge, the status-bar switcher,
  * and the settings card all name the same account the same way.
  *
+ * It also holds the pure display helpers for an account's usage (spec
+ * `claude-account-ui` §5): bar tones, the chip state, and the reset and limit
+ * wording every surface shares.
+ *
  * @module shared/lib/claude-accounts
  */
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import type { SessionLimit } from '@dorkos/shared/session-stream';
 
 /** A registered account as `GET /api/config` reports it. */
 export interface ClaudeAccountRef {
@@ -122,4 +129,293 @@ export function isAbsoluteAccountPath(candidate: string): boolean {
 function folderName(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
   return segments.length > 0 ? segments[segments.length - 1]! : path;
+}
+
+// === Usage display (spec `claude-account-ui` §5) ===
+//
+// Pure display text and tones for an account's usage. The server decides every
+// state (the limit, eligibility, the recommended account); these helpers only
+// turn what it serves into words, so the chip, the picker and the banner say
+// the same thing the same way.
+
+/** One usage window of an account, as the server serves it. */
+export type AccountWindow = AccountUsage['windows'][number];
+
+/**
+ * The window with key `key` on an account's usage.
+ *
+ * @param usage - The account's usage, or nothing when it has not loaded.
+ * @param key - The window key, such as `five_hour`.
+ * @returns The window, or `null` when the account has no reading for it.
+ */
+export function accountWindow(
+  usage: AccountUsage | null | undefined,
+  key: string
+): AccountWindow | null {
+  return usage?.windows.find((entry) => entry.key === key) ?? null;
+}
+
+/** The tone a usage bar is drawn in. `unknown` is never drawn as an empty bar. */
+export type BarTone = 'unknown' | 'error' | 'warning' | 'success';
+
+/** The share of a window at which a usage bar turns amber (both decided mockups). */
+const BAR_WARNING_PCT = 70;
+
+/**
+ * The tone of a usage bar: `error` when the window rejected work or is full,
+ * `warning` from 70%, `success` below that, and `unknown` with no reading. The
+ * chip's own amber rule is separate: the server's 90%.
+ *
+ * @param entry - The window, or `null` when the account has no reading for it.
+ */
+export function barTone(entry: AccountWindow | null | undefined): BarTone {
+  if (!entry) return 'unknown';
+  if (entry.status === 'rejected') return 'error';
+  if (entry.usedPct === null) return 'unknown';
+  if (entry.usedPct >= 100) return 'error';
+  if (entry.usedPct >= BAR_WARNING_PCT) return 'warning';
+  return 'success';
+}
+
+/**
+ * What an account chip shows: `out` when the session's account ran out,
+ * `near` when it is close, `unknown` with no reading, else `ok`.
+ */
+export type ChipState = 'ok' | 'near' | 'out' | 'unknown';
+
+/**
+ * The chip state for a session's account.
+ *
+ * A session limit reads `out` until the work carried over to another account
+ * (plan `continued`); an account the server reads as `limited` is `out` too.
+ * `near` is the server's `warning` (any window at 90% or more, or
+ * `allowed_warning`), so that threshold lives in one place. No clock: the
+ * server recomputes the limit.
+ *
+ * @param usage - The account's usage, or nothing when it has not loaded.
+ * @param limit - The session's usage limit, or nothing when it has none.
+ */
+export function chipState(
+  usage: AccountUsage | null | undefined,
+  limit: SessionLimit | null | undefined
+): ChipState {
+  if (limit && limit.plan.mode !== 'continued') return 'out';
+  if (usage?.state === 'limited') return 'out';
+  if (usage?.state === 'warning') return 'near';
+  if (!usage || usage.state === 'unknown') return 'unknown';
+  return 'ok';
+}
+
+/**
+ * The readable window closest to its limit, for the chip's near text: the
+ * highest `usedPct`, ties going to `five_hour`, then to the server's window
+ * order (the order `windows` arrives in).
+ *
+ * @param usage - The account's usage, or nothing when it has not loaded.
+ * @returns The window, or `null` when no window has a reading.
+ */
+export function nearestWindow(usage: AccountUsage | null | undefined): AccountWindow | null {
+  let nearest: AccountWindow | null = null;
+  for (const entry of usage?.windows ?? []) {
+    if (entry.usedPct === null) continue;
+    const best = nearest?.usedPct ?? -1;
+    if (entry.usedPct > best || (entry.usedPct === best && entry.key === 'five_hour')) {
+      nearest = entry;
+    }
+  }
+  return nearest;
+}
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Whole calendar days from `now`'s local date to `date`'s local date. */
+function calendarDaysBetween(now: Date, date: Date): number {
+  const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((day(date) - day(now)) / DAY_MS);
+}
+
+/**
+ * Local time as `2:10pm` or `3pm`: minutes dropped at `:00`, lowercase am/pm, no space.
+ *
+ * The parts are always joined hour, minutes, period: the house short form of an
+ * English UI. A locale that puts the period first (ja, ko, zh) would read oddly,
+ * so revisit this when the app is translated.
+ */
+function timeOfDay(date: Date, locale: string | undefined): string {
+  const parts = new Intl.DateTimeFormat(locale, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  const minute = part('minute');
+  const period = part('dayPeriod').toLowerCase().replace(/[.\s]/g, '');
+  return `${part('hour')}${minute && minute !== '00' ? `:${minute}` : ''}${period}`;
+}
+
+/** The short weekday name of `date` in `locale`, such as `Tue`. */
+function weekday(date: Date, locale: string | undefined): string {
+  return new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(date);
+}
+
+/**
+ * When a window resets, in local time: `2:10pm` on the same calendar day,
+ * `Tue 3pm` within six days, else `Oct 3`. Day and month names follow
+ * `locale`.
+ *
+ * @param iso - The reset time, ISO-8601, or `null` when unknown.
+ * @param now - The moment to read from.
+ * @param locale - The locale for day and month names; the runtime's default when absent.
+ * @returns The text, or `null` when the reset is unknown.
+ */
+export function formatResetTime(iso: string | null, now: Date, locale?: string): string | null {
+  if (iso === null) return null;
+  const date = new Date(iso);
+  const days = calendarDaysBetween(now, date);
+  if (days === 0) return timeOfDay(date, locale);
+  if (Math.abs(days) <= 6) return `${weekday(date, locale)} ${timeOfDay(date, locale)}`;
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(date);
+}
+
+/**
+ * The day a window resets, for the picker's "28% left · resets Sun": the
+ * weekday, or the time (`3pm`) when it resets today.
+ *
+ * @param iso - The reset time, ISO-8601, or `null` when unknown.
+ * @param now - The moment to read from.
+ * @param locale - The locale for the weekday name; the runtime's default when absent.
+ * @returns The text, or `null` when the reset is unknown.
+ */
+export function formatResetDay(iso: string | null, now: Date, locale?: string): string | null {
+  if (iso === null) return null;
+  const date = new Date(iso);
+  return calendarDaysBetween(now, date) === 0 ? timeOfDay(date, locale) : weekday(date, locale);
+}
+
+/**
+ * A wait under a day, as `47 min`, `1h 12m` or `2h`. Rounds up to the next
+ * minute and never says less than `1 min`. For a day or more, callers use
+ * {@link formatResetTime} instead.
+ *
+ * @param ms - The wait in milliseconds.
+ */
+export function formatBackIn(ms: number): string {
+  const minutes = Math.max(1, Math.ceil(ms / MINUTE_MS));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/**
+ * How long an account is out, in the words the chip, the picker's out rows and
+ * the banner all use: `back in 47 min` for the 5-hour window resetting within a
+ * day, `out until Tue 3pm` for any other window or a later reset, and `out`
+ * when the reset is unknown.
+ *
+ * @param windowKey - The window that ran out, such as `five_hour`.
+ * @param resetsAt - When it resets, ISO-8601, or `null` when unknown.
+ * @param now - The moment to read from.
+ * @param locale - The locale for day and month names; the runtime's default when absent.
+ */
+export function limitText(
+  windowKey: string,
+  resetsAt: string | null,
+  now: Date,
+  locale?: string
+): string {
+  if (resetsAt === null) return 'out';
+  const wait = Date.parse(resetsAt) - now.getTime();
+  if (windowKey === 'five_hour' && wait < DAY_MS) return `back in ${formatBackIn(wait)}`;
+  return `out until ${formatResetTime(resetsAt, now, locale)}`;
+}
+
+const WINDOW_SHORT_NAMES: Record<string, string> = {
+  five_hour: '5h',
+  seven_day: 'week',
+  seven_day_opus: 'week (Opus)',
+  seven_day_sonnet: 'week (Sonnet)',
+};
+
+/**
+ * A window's short name for tight rows: `5h`, `week`, `week (Opus)`, or
+ * `week (<Model>)` for a `model:<slug>` bucket. Any other key uses the
+ * server's label.
+ *
+ * @param key - The window key.
+ * @param serverLabel - The label the server serves for the window.
+ */
+export function windowShortName(key: string, serverLabel: string): string {
+  const known = WINDOW_SHORT_NAMES[key];
+  if (known) return known;
+  if (key.startsWith('model:')) return `week (${capitalize(key.slice('model:'.length))})`;
+  return serverLabel;
+}
+
+/**
+ * An account's plan as a person reads it: `Max plan`, `Pro plan`, or any other
+ * plan capitalized with ` plan`. Callers pass
+ * `usage.plan?.name ?? usage.subscriptionType`.
+ *
+ * @param plan - The plan's name, or nothing when no source reported one.
+ * @returns The text, or `null` so the caller leaves it out.
+ */
+export function planName(plan: string | null | undefined): string | null {
+  if (!plan) return null;
+  return `${capitalize(plan)} plan`;
+}
+
+/**
+ * Who ran out, for the out-of-usage banner and its transcript marker: the
+ * account's label when accounts are told apart on this runtime (the identity
+ * gate is open) and the account has one, else the runtime's name (`Claude`,
+ * `Codex`, `OpenCode`), which is what a person with one account knows.
+ *
+ * @param input - The session's runtime, its account's label, and whether the identity gate is open.
+ */
+export function limitSubject(input: {
+  runtime: string;
+  accountLabel: string | null;
+  identityGate: boolean;
+}): string {
+  if (input.identityGate && input.accountLabel) return input.accountLabel;
+  return runtimeDisplayName(input.runtime);
+}
+
+/** How old a reading may be before it is stale. */
+const STALE_AFTER_MS = HOUR_MS;
+
+/**
+ * How fresh a reading is: `just now` under a minute, then `as of 12 min ago`,
+ * `as of 2h ago`, and past a day `as of <day and time>` (see
+ * {@link formatResetTime}).
+ *
+ * @param observedAt - When the reading was observed, ISO-8601.
+ * @param now - The moment to read from.
+ * @param locale - The locale for day and month names; the runtime's default when absent.
+ */
+export function formatAsOf(observedAt: string, now: Date, locale?: string): string {
+  const age = now.getTime() - Date.parse(observedAt);
+  if (age < MINUTE_MS) return 'just now';
+  if (age < HOUR_MS) return `as of ${Math.floor(age / MINUTE_MS)} min ago`;
+  if (age < DAY_MS) return `as of ${Math.floor(age / HOUR_MS)}h ago`;
+  return `as of ${formatResetTime(observedAt, now, locale)}`;
+}
+
+/**
+ * Whether a reading is older than an hour, so a surface marks it stale.
+ *
+ * @param observedAt - When the reading was observed, ISO-8601.
+ * @param now - The moment to read from.
+ */
+export function isStale(observedAt: string, now: Date): boolean {
+  return now.getTime() - Date.parse(observedAt) > STALE_AFTER_MS;
+}
+
+/** `sonnet` becomes `Sonnet`. */
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

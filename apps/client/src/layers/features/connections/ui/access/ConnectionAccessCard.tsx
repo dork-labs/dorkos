@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
+import type { ServiceLogo } from '@/layers/entities/connectors';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import {
   Button,
@@ -43,6 +44,8 @@ import { WhoCanUseChoice } from './WhoCanUseChoice';
 interface SharedCardProps {
   /** The app's display name, e.g. "Gmail". */
   serviceName: string;
+  /** What the catalog says about the app's logo, when the caller has its entry. */
+  logo?: ServiceLogo;
   /** Leave without changing anything. Labelled "Skip" on the page and "Not now" for one agent. */
   onSkip?: () => void;
   /** Leave after a save has an outcome. Labelled "Done" once confirmed, "Close" otherwise. */
@@ -268,6 +271,8 @@ function AccessStep(
     <AccessCardFrame
       titleId={titleId}
       toolkit={connection?.toolkit ?? (props.mode === 'agent' ? props.toolkit : undefined)}
+      serviceName={props.serviceName}
+      logo={props.logo}
       title={title}
       // Embedded in a panel that already names the account, the line would repeat it.
       subtitle={props.variant === 'embedded' ? undefined : subtitle}

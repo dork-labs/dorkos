@@ -282,6 +282,35 @@ describe('ConnectorRegistry', () => {
       }
     });
 
+    it('finds an app’s logo address in the kept lists only, never listing upstream', async () => {
+      const provider = new FakeConnectorProvider({
+        type: 'composio',
+        toolkits: [
+          {
+            slug: 'zendesk',
+            displayName: 'Zendesk',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/zendesk',
+          },
+          { slug: 'bare', displayName: 'Bare', authKind: 'oauth2' },
+        ],
+      });
+      const pages = vi.spyOn(provider, 'listToolkitPage');
+      registry.register(provider, 'material-a');
+
+      // Nothing kept yet: no logo, and no listing to find one.
+      await expect(registry.keptLogoUrl('zendesk')).resolves.toBeUndefined();
+      expect(pages).not.toHaveBeenCalled();
+
+      await registry.readCatalog(provider, signal());
+      await expect(registry.keptLogoUrl('zendesk')).resolves.toBe(
+        'https://logos.composio.dev/api/zendesk'
+      );
+      await expect(registry.keptLogoUrl('bare')).resolves.toBeUndefined();
+      await expect(registry.keptLogoUrl('notion')).resolves.toBeUndefined();
+      expect(pages).toHaveBeenCalledTimes(1);
+    });
+
     it('drops the kept list when the provider is removed or replaced', async () => {
       const provider = new FakeConnectorProvider({ type: 'composio' });
       const pages = vi.spyOn(provider, 'listToolkitPage');

@@ -144,6 +144,7 @@ import { ConnectorAuthenticationFlowService } from './services/connectors/resour
 import { ConnectorLifecycleService } from './services/connectors/resources/lifecycle-service.js';
 import { ConnectorOperatorQueryService } from './services/connectors/resources/operator-query-service.js';
 import { ConnectorAppActionsService } from './services/connectors/resources/app-actions-service.js';
+import { CatalogLogoService } from './services/connectors/resources/catalog-logos.js';
 import { ManagedAuthoritySyncService } from './services/connectors/resources/managed-authority-sync-service.js';
 import { ManagedCloudConnectorProvider } from './services/connectors/providers/managed/managed-cloud.js';
 import { legacyDefaultProviderInstanceId } from './services/connectors/legacy-connection-migration.js';
@@ -3218,9 +3219,15 @@ async function start() {
     registry: connectorRegistry,
     dorkHome,
   });
+  // A logo's source is looked up in the kept app lists only, never listed.
+  const catalogLogos = new CatalogLogoService({
+    dorkHome,
+    logoUrlFor: (serviceSlug) => connectorRegistry.keptLogoUrl(serviceSlug),
+  });
   const connectorOperatorQueries = new ConnectorOperatorQueryService({
     db,
     registry: connectorRegistry,
+    keptLogos: () => catalogLogos.keptServiceIds(),
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
     appConnections: () => connectorBootstrapper.appConnections(),
     ...(adapterManager && { relay: adapterManager }),
@@ -3930,6 +3937,7 @@ async function start() {
     '/api/connectors',
     createConnectorResourcesRouter({
       query: connectorOperatorQueries,
+      logos: catalogLogos,
       authentication: connectorAuthenticationFlows,
       lifecycle: connectorLifecycle,
       actions: connectorAppActions,

@@ -225,8 +225,6 @@ export type ConnectorProviderCapabilitySet = z.infer<typeof ConnectorProviderCap
 export interface ConnectorCatalogPageRequest {
   /** Optional provider cursor from the preceding page. */
   cursor?: string;
-  /** Optional account-free service search. */
-  query?: string;
   /** Maximum results requested from the provider. */
   limit: number;
   /** Cancels account-free discovery when its server-owned deadline expires. */

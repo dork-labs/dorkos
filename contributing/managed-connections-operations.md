@@ -31,7 +31,7 @@ See [Environment Variables](./environment-variables.md), [Adding a Connector](./
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | Launch DorkOS-managed account access                            | Follow the controlled production proof below.                                        | DorkOS supplies the server project key; the owner reviews access.                      |
 | Operator brings a Composio project                              | Use local BYO setup in Connections.                                                  | It requires no DorkOS cloud link; local keys remain local.                             |
-| People talk with agents through Slack or Telegram               | Use Messaging.                                                                       | Existing native chat connections keep owning ordinary chat ingestion.                  |
+| People talk with agents through Slack or Telegram               | Add it as a chat app in Connections.                                                 | Existing native chat connections keep owning ordinary chat ingestion.                  |
 | Account events should reach an agent, room or supported channel | Create an explicit receive subscription.                                             | Operation access does not authorize notifications.                                     |
 | Change an event filter, agent or destination                    | Revoke the old subscription and create a reviewed replacement.                       | Standalone subscription editing/pause is deferred; connection pause remains available. |
 | Stop new managed event intake                                   | Set the event readiness flag to `0` and apply the deployment change.                 | Buffered recovery remains possible. Revoke scope to stop queued delivery.              |
@@ -72,9 +72,9 @@ Managed discovery covers the current paginated Composio catalog. Do not restore 
 | The service needs unsupported authentication or custom developer credentials | Keep the service visible with the exact prerequisite. Do not present an OAuth button that cannot work.                                     |
 | Metadata is unknown, malformed or contradictory                              | Fail closed for that service without rejecting unrelated valid catalog entries.                                                            |
 
-OAuth scopes determine which operations the connected account can expose. An explicit grant then limits a named agent to reviewed operation revisions. Gmail connections may expose write operations when their consent scopes allow them; Gmail is not restricted to read-only operations across the product.
+OAuth scopes determine which operations the connected account can expose. An explicit grant, for one named agent or for every agent, then limits agents to reviewed operation revisions. Gmail connections may expose write operations when their consent scopes allow them; Gmail is not restricted to read-only operations across the product.
 
-[Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. Do not apply that interval to webhooks or ordinary Slack and Telegram Messaging.
+[Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. Do not apply that interval to webhooks or ordinary Slack and Telegram chat apps.
 
 The hosted account form belongs on `dorkos.ai`, under the signed-in owner session and single-use flow binding. It must identify the service and account context, render provider-declared labels as text, mask secret fields, and return accessible validation errors without echoing values. Keep ordinary DorkOS login visually separate from service credentials. Values may exist only in the page's form memory and site process memory while the fixed Composio request is in progress. Do not persist them, put them in URLs or logs, echo them in a response, or send them to the linked installation or agent.
 
@@ -110,7 +110,7 @@ Use a dedicated Composio project for DorkOS hosting. In that project's API-key c
 
 After provisioning, verify the real owner-bound sign-in flow through DorkOS, followed by a reviewed harmless action, matching usage receipts and revoke denial. Keep both readiness gates off outside the controlled proof window below. Do not infer event readiness from account authentication or these diagnostic requests.
 
-This hosted project credential authorizes DorkOS's upstream requests. DorkOS still derives the tenant from authenticated server state and checks the named agent's exact connection and operation grants before dispatch. Changing the upstream key selection does not expand an agent's DorkOS grants. Replacing an existing key is a material rotation: follow [Rotate Keys Without Losing Recovery](#rotate-keys-without-losing-recovery), including fresh owner review, rather than silently continuing old grants.
+This hosted project credential authorizes DorkOS's upstream requests. DorkOS still derives the tenant from authenticated server state and checks the calling agent's exact connection and operation grants, its own or an every-agent grant, before dispatch. Changing the upstream key selection does not expand an agent's DorkOS grants. Replacing an existing key is a material rotation: follow [Rotate Keys Without Losing Recovery](#rotate-keys-without-losing-recovery), including fresh owner review, rather than silently continuing old grants.
 
 ### Configure the actual fields
 

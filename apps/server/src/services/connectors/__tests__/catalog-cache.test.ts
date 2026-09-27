@@ -101,6 +101,23 @@ describe('ConnectorCatalogCache', () => {
     expect(state.pages).toBe(9);
   });
 
+  it('peeks at the kept copy, stale or not, without ever listing upstream', async () => {
+    const { provider, state } = countingProvider(toolkits(3));
+    const cache = new ConnectorCatalogCache({ now: clock });
+
+    await expect(cache.peek(provider, DIGEST)).resolves.toBeUndefined();
+    expect(state.listings).toBe(0);
+
+    await cache.read(provider, DIGEST, signal());
+    now += DAY_MS * 2;
+    await expect(cache.peek(provider, DIGEST)).resolves.toHaveLength(3);
+    await expect(cache.peek(provider, 'another-setup')).resolves.toBeUndefined();
+    expect(state.listings).toBe(1);
+
+    const { provider: raw } = countingProvider(toolkits(1), RAW_MCP_PROVIDER_TYPE);
+    await expect(cache.peek(raw, DIGEST)).resolves.toBeUndefined();
+  });
+
   it('shares one listing between concurrent readers', async () => {
     const { provider, state } = countingProvider(toolkits(250));
     const cache = new ConnectorCatalogCache({ now: clock });
@@ -478,6 +495,16 @@ describe('ConnectorCatalogCache', () => {
         'authentication',
         'authenticationSetup',
         'displayName',
+        'maxAccountsPerUser',
+        'slug',
+      ],
+      2: [
+        'authKind',
+        'authentication',
+        'authenticationSetup',
+        'description',
+        'displayName',
+        'logoUrl',
         'maxAccountsPerUser',
         'slug',
       ],

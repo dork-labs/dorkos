@@ -157,6 +157,27 @@ describe('ConnectionsPage', () => {
     );
   });
 
+  it('shows the logo of a connected app no loaded catalog page carries, in its row and panel', async () => {
+    route.search = { app: 'c-zendesk' };
+    const zendesk = summary({
+      connectionId: 'c-zendesk' as never,
+      toolkit: 'zendesk',
+      authenticationStatus: 'active',
+    });
+    const transport = transportWith([zendesk]);
+    vi.mocked(transport.getConnectorConnection).mockRejectedValue(new Error('not in this test'));
+    renderPage(transport);
+
+    const row = await screen.findByTestId('app-row-c-zendesk');
+    const panel = await screen.findByRole('dialog', { name: /Zendesk/ });
+    for (const scope of [row, panel]) {
+      expect(scope.querySelector('img')).toHaveAttribute(
+        'src',
+        '/api/connectors/catalog/logos/zendesk'
+      );
+    }
+  });
+
   it('closes a link to an app that is gone instead of holding an empty panel', async () => {
     route.search = { app: 'c-removed' };
     renderPage(transportWith([summary()]));

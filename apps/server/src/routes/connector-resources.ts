@@ -33,6 +33,7 @@ import {
   ConnectorOperatorQueryError,
   type ConnectorOperatorQueryService,
 } from '../services/connectors/resources/operator-query-service.js';
+import type { CatalogLogoService } from '../services/connectors/resources/catalog-logos.js';
 
 const CatalogQuerySchema = z
   .object({
@@ -57,6 +58,8 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
     | 'everyAgentGrants'
     | 'sessionConnections'
   >;
+  /** App logos, fetched once from the service's logo host and served from this server. */
+  readonly logos: Pick<CatalogLogoService, 'get'>;
   /** Restart-safe provider authentication flows. */
   readonly authentication: Pick<ConnectorAuthenticationFlowService, 'start' | 'reconnect' | 'poll'>;
   /** Canonical local lifecycle mutations. */
@@ -169,6 +172,31 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
           toolkit,
         })
       );
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
+  // Same account-free posture as the catalog it belongs to: a logo says only
+  // which apps exist. The bytes come from the service's own logo host, so they
+  // are served as inert images: never sniffed, and an SVG can run no script.
+  router.get('/catalog/logos/:serviceSlug', async (req, res) => {
+    try {
+      const logo = await deps.logos.get(req.params.serviceSlug);
+      if (!logo) {
+        // Briefly cacheable: the server itself waits before trying a failed logo again.
+        res.set('Cache-Control', 'private, max-age=300');
+        res.status(404).json({ error: 'This app has no logo.' });
+        return;
+      }
+      res.set({
+        'Content-Type': logo.contentType,
+        'Content-Length': String(logo.bytes.byteLength),
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        'Cache-Control': 'private, max-age=86400',
+      });
+      res.end(logo.bytes);
     } catch (error) {
       sendResourceError(res, error);
     }

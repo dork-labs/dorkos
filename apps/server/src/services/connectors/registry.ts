@@ -433,6 +433,25 @@ export class ConnectorRegistry {
   }
 
   /**
+   * The logo address one app's kept app list recorded, looking only in kept
+   * copies (never listing a service upstream), in registration order. The logo
+   * route's source: a URL the server's own list recorded, never one a request
+   * names, and a logo miss costs no catalog read.
+   *
+   * @param serviceSlug - The catalog's service id.
+   */
+  async keptLogoUrl(serviceSlug: string): Promise<string | undefined> {
+    for (const provider of this.listProviders()) {
+      const digest = this._configDigests.get(provider.instanceId);
+      if (digest === undefined) continue;
+      const toolkits = await this._catalog.peek(provider, digest);
+      const logoUrl = toolkits?.find((toolkit) => toolkit.slug === serviceSlug)?.logoUrl;
+      if (logoUrl) return logoUrl;
+    }
+    return undefined;
+  }
+
+  /**
    * Aggregate connectable toolkits across every registered provider in parallel
    * with the same per-provider degradation, deduped by slug (first provider to
    * offer a service wins the row) so the discovery picker shows each service

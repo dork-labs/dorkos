@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { ExtensionDiscovery } from '../extension-discovery.js';
+import type { HostVersion } from '../extension-host-version.js';
 import { mayRunExtensionCode } from '../extension-load-policy.js';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
 import { logger } from '../../../lib/logger.js';
@@ -161,24 +162,49 @@ describe('ExtensionDiscovery', () => {
     });
   });
 
-  it('produces status "incompatible" when minHostVersion exceeds host version', async () => {
-    await writeManifest(path.join(dorkHome, 'extensions', 'future-ext'), {
-      id: 'future-ext',
-      name: 'Future Extension',
-      version: '1.0.0',
-      minHostVersion: '99.0.0',
+  describe('minHostVersion', () => {
+    /** A released host at 0.88.0, the version the Flow extension asks for. */
+    const RELEASED: HostVersion = { version: '0.88.0', isDevBuild: false };
+    const ENABLED = (id: string): ExtensionsConfig => ({
+      enabled: [id],
+      disabled: [],
+      approvedToRun: [],
     });
 
-    const results = await discovery.discover(
-      null,
-      { enabled: ['future-ext'], disabled: [], approvedToRun: [] },
-      EMPTY_CORE
-    );
+    async function statusOn(host: HostVersion, minHostVersion?: string): Promise<string> {
+      await writeManifest(path.join(dorkHome, 'extensions', 'versioned-ext'), {
+        id: 'versioned-ext',
+        name: 'Versioned Extension',
+        version: '1.0.0',
+        ...(minHostVersion ? { minHostVersion } : {}),
+      });
+      const results = await new ExtensionDiscovery(dorkHome, host).discover(
+        null,
+        ENABLED('versioned-ext'),
+        EMPTY_CORE
+      );
+      expect(results).toHaveLength(1);
+      return results[0].status;
+    }
 
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({
-      id: 'future-ext',
-      status: 'incompatible',
+    it('marks an extension incompatible when it needs a newer DorkOS', async () => {
+      expect(await statusOn(RELEASED, '0.89.0')).toBe('incompatible');
+    });
+
+    it('loads an extension that needs exactly the running version', async () => {
+      expect(await statusOn(RELEASED, '0.88.0')).toBe('enabled');
+    });
+
+    it('loads an extension that needs an older version than the running one', async () => {
+      expect(await statusOn(RELEASED, '0.2.0')).toBe('enabled');
+    });
+
+    it('loads any extension on a development build', async () => {
+      expect(await statusOn({ version: '0.0.0', isDevBuild: true }, '99.0.0')).toBe('enabled');
+    });
+
+    it('loads an extension with no minHostVersion', async () => {
+      expect(await statusOn(RELEASED)).toBe('enabled');
     });
   });
 

@@ -21,6 +21,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import {
+  connectorCatalogLogoPath,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionSummarySchema,
@@ -59,6 +60,7 @@ import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
 import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';
+import { LEGACY_PENDING_REASON } from './managed-authority-sync-service.js';
 
 const CatalogCursorSchema = z
   .object({ offset: z.number().int().nonnegative(), queryHash: z.string().length(64) })
@@ -114,6 +116,12 @@ export interface ConnectorOperatorQueryServiceOptions {
   readonly recoverManagedProvider?: () => Promise<void>;
   /** Every way set up to reach apps, and the one new apps use. */
   readonly appConnections?: () => Promise<ConnectorAppConnections>;
+  /**
+   * The service ids whose logo this server already keeps. An app whose own
+   * list sends no logo (the DorkOS account's) still shows one another service
+   * brought for the same id.
+   */
+  readonly keptLogos?: () => Promise<ReadonlySet<string>>;
 }
 
 function ownerColumns(owner: ConnectorOwnerAuthority): {
@@ -166,6 +174,10 @@ interface CatalogServiceDraft {
   iconKey: string;
   accountRoutes: ConnectorCatalogProviderRoute[];
   builtIn?: BuiltInApp;
+  /** The first logo URL a live service sent for the app; the server's logo route fetches it. */
+  logoUrl?: string;
+  /** The first description a live service sent; the built-in line wins over it. */
+  description?: string;
 }
 
 /** A built-in app's place in the hand-picked order; every other service sorts after them. */
@@ -223,6 +235,7 @@ export class ConnectorOperatorQueryService {
   private readonly managedUsage: ConnectorManagedUsageQueryPort | undefined;
   private readonly recoverManagedProvider: (() => Promise<void>) | undefined;
   private readonly appConnections: (() => Promise<ConnectorAppConnections>) | undefined;
+  private readonly keptLogos: (() => Promise<ReadonlySet<string>>) | undefined;
 
   /** Construct owner projections over canonical connector state. */
   constructor(options: ConnectorOperatorQueryServiceOptions) {
@@ -234,6 +247,7 @@ export class ConnectorOperatorQueryService {
     this.managedUsage = options.managedUsage;
     this.recoverManagedProvider = options.recoverManagedProvider;
     this.appConnections = options.appConnections;
+    this.keptLogos = options.keptLogos;
   }
 
   /** Return a bounded account-free catalog page across every live provider. */
@@ -311,7 +325,9 @@ export class ConnectorOperatorQueryService {
     // Popular apps first, so the list is never empty before a way to reach
     // apps is set up; everything live below merges into them by service id.
     for (const app of BUILT_IN_APPS) {
-      if (!matchesQuery(query, app.serviceSlug, app.displayName, app.category)) continue;
+      if (!matchesQuery(query, app.serviceSlug, app.displayName, app.category, app.description)) {
+        continue;
+      }
       services.set(app.serviceSlug, {
         serviceSlug: app.serviceSlug,
         displayName: app.displayName,
@@ -353,7 +369,16 @@ export class ConnectorOperatorQueryService {
           const signInThrough = signInThroughFor(provider.type);
           const disclosure = this.providerDisclosure(provider);
           for (const rawToolkit of result.toolkits) {
-            if (!matchesQuery(query, rawToolkit.slug, rawToolkit.displayName)) continue;
+            if (
+              !matchesQuery(
+                query,
+                rawToolkit.slug,
+                rawToolkit.displayName,
+                rawToolkit.description ?? ''
+              )
+            ) {
+              continue;
+            }
             const toolkit = projectConnectorAuthentication(
               rawToolkit,
               input.includeAuthenticationSetup === true
@@ -368,6 +393,8 @@ export class ConnectorOperatorQueryService {
               iconKey: toolkit.slug,
               accountRoutes: [],
             };
+            current.logoUrl ??= toolkit.logoUrl;
+            current.description ??= toolkit.description;
             current.accountRoutes.push({
               ...disclosure,
               ...(toolkit.authentication && {
@@ -400,8 +427,13 @@ export class ConnectorOperatorQueryService {
       })
     );
 
+    const kept = await this.keptLogos?.();
     const all = [...services.values()]
-      .map(({ accountRoutes, builtIn, ...service }) => {
+      .map(({ accountRoutes, builtIn, logoUrl, description, ...service }) => {
+        const logo =
+          logoUrl || kept?.has(service.serviceSlug)
+            ? connectorCatalogLogoPath(service.serviceSlug)
+            : undefined;
         const intents: ConnectorCatalogResourcePage['services'][number]['intents'] = [];
         if (builtIn?.chat || this.relay?.getManifest(service.serviceSlug)) {
           intents.push({
@@ -421,11 +453,14 @@ export class ConnectorOperatorQueryService {
             ),
           });
         }
+        // DorkOS's own line for a built-in app wins over the service's.
+        const line = builtIn?.description ?? description;
         return {
           ...service,
           intents,
+          ...(line && { description: line }),
+          ...(logo && { logo }),
           ...(builtIn && {
-            description: builtIn.description,
             category: builtIn.category,
             popular: true,
             ...(builtIn.signInName && { signInName: builtIn.signInName }),
@@ -1077,7 +1112,9 @@ export class ConnectorOperatorQueryService {
     const rows = this.db
       .select({
         state: connectorManagedAuthorityOutbox.state,
+        scopeKind: connectorManagedAuthorityOutbox.scopeKind,
         safeReason: connectorManagedAuthorityOutbox.safeReason,
+        nextAttemptAt: connectorManagedAuthorityOutbox.nextAttemptAt,
       })
       .from(connectorManagedAuthorityScopes)
       .innerJoin(
@@ -1086,7 +1123,24 @@ export class ConnectorOperatorQueryService {
       )
       .where(eq(connectorManagedAuthorityScopes.managedConnectionId, managedConnectionId))
       .all();
-    if (rows.some((row) => row.state === 'pending')) return { status: 'pending' };
+    const pending = rows.filter((row) => row.state === 'pending');
+    if (pending.length > 0) {
+      // Say why it is waiting: the account's own lifecycle first (a stalled
+      // disconnect), then whichever explained command tries again soonest.
+      const explained = pending
+        .filter(
+          (row) => row.safeReason && row.safeReason !== LEGACY_PENDING_REASON && row.nextAttemptAt
+        )
+        .sort(
+          (a, b) =>
+            Number(b.scopeKind === 'connection_lifecycle') -
+              Number(a.scopeKind === 'connection_lifecycle') ||
+            a.nextAttemptAt!.localeCompare(b.nextAttemptAt!)
+        )[0];
+      return explained
+        ? { status: 'pending', reason: explained.safeReason!, retryAt: explained.nextAttemptAt! }
+        : { status: 'pending' };
+    }
     const rejected = rows.find((row) => row.state === 'rejected');
     return rejected
       ? { status: 'failed', reason: rejected.safeReason ?? 'Managed access could not synchronize.' }

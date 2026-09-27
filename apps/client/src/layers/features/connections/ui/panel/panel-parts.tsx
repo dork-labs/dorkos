@@ -45,6 +45,7 @@ export function PanelSection({
  */
 export function PanelFix({
   message,
+  detail,
   action,
   onAction,
   pending = false,
@@ -52,6 +53,8 @@ export function PanelFix({
 }: {
   /** What is wrong, plainly ("Signed out. Agents can't use Notion."). */
   message: string;
+  /** One quieter line under the message: why, and what happens next. */
+  detail?: string;
   /** The fix's button label. */
   action: string;
   /** Run the fix. */
@@ -69,10 +72,18 @@ export function PanelFix({
     >
       <p className="text-status-warning-fg flex items-start gap-2 text-sm">
         <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-        <span>{message}</span>
+        <span>
+          {message}
+          {detail && <span className="mt-1 block">{detail}</span>}
+        </span>
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={onAction} disabled={pending}>
+        <Button
+          size="sm"
+          onClick={onAction}
+          disabled={pending}
+          className="h-auto min-h-8 max-w-full whitespace-normal"
+        >
           {pending && <Spinner size="xs" />}
           {action}
         </Button>

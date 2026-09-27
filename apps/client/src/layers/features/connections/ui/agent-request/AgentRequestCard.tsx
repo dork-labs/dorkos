@@ -7,6 +7,8 @@ import {
   useConnectorConnections,
   useResolveConnectorAgentRequest,
   serviceName as appServiceName,
+  serviceLogo,
+  type ServiceLogo,
 } from '@/layers/entities/connectors';
 import { Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
@@ -125,6 +127,8 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
       <AccessCardFrame
         titleId={`agent-request-unanswered-${request.requestId}`}
         toolkit={request.serviceSlug}
+        serviceName={serviceName}
+        logo={serviceLogo(service)}
         title={`${agentName} can now use ${serviceName}`}
         className={frameClass}
       >
@@ -163,6 +167,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
       <EventRequestCard
         request={request}
         serviceName={serviceName}
+        logo={serviceLogo(service)}
         onDecline={decline}
         deciding={resolve.isPending}
         className={frameClass}
@@ -220,6 +225,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           account={account}
           attention={accountAttention(account) ?? { kind: 'needs_review' }}
           serviceName={serviceName}
+          logo={serviceLogo(service)}
           agentName={agentName}
           onDecline={decline}
           deciding={resolve.isPending}
@@ -237,6 +243,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           agentId={request.agent.id}
           toolkit={request.serviceSlug}
           serviceName={serviceName}
+          logo={serviceLogo(service)}
           {...(signedInId ? { connectionId: signedInId } : {})}
           request={{ reason: request.reason, operations: request.requestedOperations }}
           onSkip={decline}
@@ -263,6 +270,7 @@ function AccessStepMount({
 function EventRequestCard({
   request,
   serviceName,
+  logo,
   onDecline,
   deciding,
   className,
@@ -270,6 +278,7 @@ function EventRequestCard({
 }: {
   request: ConnectorAgentRequestItem;
   serviceName: string;
+  logo: ServiceLogo;
   onDecline: () => void;
   deciding: boolean;
   className: string;
@@ -279,6 +288,8 @@ function EventRequestCard({
     <AccessCardFrame
       titleId={`agent-request-${request.requestId}`}
       toolkit={request.serviceSlug}
+      serviceName={serviceName}
+      logo={logo}
       title={`Let ${request.agent.displayName} use ${serviceName}?`}
       subtitle="It also wants to hear when something new happens there"
       className={className}

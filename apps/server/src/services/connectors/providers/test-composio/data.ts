@@ -6,6 +6,14 @@ export const COMPOSIO_FIXTURE_WEBHOOK_SECRET = 'whsec_dorkos_offline_browser_fix
 export const COMPOSIO_FIXTURE_USER = 'dorkos-operator';
 /** Concrete immutable fixture toolkit version. */
 export const COMPOSIO_FIXTURE_VERSION = '20260901_00';
+/**
+ * Gmail's logo address in Composio's live toolkit list (`meta.logo`), real
+ * shape. The browser never asks for it: Gmail shows its bundled mark first.
+ */
+export const COMPOSIO_FIXTURE_LOGO = 'https://logos.composio.dev/api/gmail';
+/** Gmail's description in Composio's live toolkit list (`meta.description`), verbatim. */
+export const COMPOSIO_FIXTURE_DESCRIPTION =
+  'Gmail is Google’s email service, featuring spam protection, search functions, and seamless integration with other G Suite apps for productivity';
 /** Exact event slugs available to the browser fixture. */
 export const COMPOSIO_FIXTURE_EVENTS = [
   'GMAIL_NEW_MESSAGE',

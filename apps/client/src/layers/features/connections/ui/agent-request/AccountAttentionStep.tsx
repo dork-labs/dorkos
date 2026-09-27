@@ -6,6 +6,7 @@ import {
   useConnectorAuthentication,
   useReconnectConnectorConnection,
   useResumeConnectorConnection,
+  type ServiceLogo,
 } from '@/layers/entities/connectors';
 import { Button, ExternalLinkAnchor } from '@/layers/shared/ui';
 import type { AccountAttention } from '../../lib/account-readiness';
@@ -18,6 +19,8 @@ interface AccountAttentionStepProps {
   attention: AccountAttention;
   /** The app's display name. */
   serviceName: string;
+  /** What the catalog says about the app's logo, when the caller has its entry. */
+  logo?: ServiceLogo;
   /** The agent asking. */
   agentName: string;
   /** Answer "Not now". */
@@ -53,6 +56,7 @@ export function AccountAttentionStep({
   account,
   attention,
   serviceName,
+  logo,
   agentName,
   onDecline,
   deciding,
@@ -69,6 +73,8 @@ export function AccountAttentionStep({
     <AccessCardFrame
       titleId={titleId}
       toolkit={account.toolkit}
+      serviceName={serviceName}
+      logo={logo}
       title={`Let ${agentName} use ${serviceName}?`}
       subtitle={account.label}
       className="max-w-xl"

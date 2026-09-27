@@ -56,10 +56,21 @@ export interface ComposioSdkClientOpts {
   baseUrl?: string;
 }
 
+/**
+ * One page of the Composio project catalog, with an optional search. The app's
+ * own catalog pages carry no search (DorkOS searches its kept list itself),
+ * but the hosted DorkOS-account catalog forwards a caller's search here: the
+ * public cloud-api contract accepts `query`, and released clients send it.
+ */
+export interface ComposioCatalogPageRequest extends ConnectorCatalogPageRequest {
+  /** Composio's `search`: matches toolkit name, slug or description upstream. */
+  query?: string;
+}
+
 /** Provider-facing operation client implemented inside the confined SDK boundary. */
 export interface ComposioOperationClient {
   /** Discover one account-free toolkit page from the project catalog. */
-  listToolkitPage(request: ConnectorCatalogPageRequest): Promise<{
+  listToolkitPage(request: ComposioCatalogPageRequest): Promise<{
     status: 'ok';
     toolkits: ConnectorToolkit[];
     nextCursor?: string;
@@ -223,7 +234,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
   }
 
   /** Fetch one account-free toolkit page through the no-retry generated client. */
-  async listToolkitPage(request: ConnectorCatalogPageRequest): Promise<{
+  async listToolkitPage(request: ComposioCatalogPageRequest): Promise<{
     status: 'ok';
     toolkits: ConnectorToolkit[];
     nextCursor?: string;

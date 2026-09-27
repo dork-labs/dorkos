@@ -238,6 +238,7 @@ import {
   ConnectorAuthenticationFlowStateSchema,
   ConnectorProvidersResourceSchema,
   ConnectorCatalogResourcePageSchema,
+  CONNECTOR_LOGO_SERVICE_ID,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
   ConnectorConnectionPatchSchema,
@@ -3646,6 +3647,36 @@ registry.registerPath({
     },
     400: {
       description: 'Invalid catalog query or cursor',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/catalog/logos/{serviceSlug}',
+  tags: ['Connectors'],
+  summary: 'Get one catalog app’s logo',
+  description:
+    'Serves the logo a catalog entry’s `logo` path points at. The server fetches it once, from ' +
+    'the URL its own app list recorded for that service on the connection service’s own logo ' +
+    'host, keeps it under the DorkOS data directory, and serves it with `nosniff` and a ' +
+    'sandboxing Content-Security-Policy. The browser never loads a third-party URL.',
+  request: {
+    params: z.object({ serviceSlug: z.string().regex(CONNECTOR_LOGO_SERVICE_ID) }),
+  },
+  responses: {
+    200: {
+      description: 'The logo image',
+      content: Object.fromEntries(
+        ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'].map((type) => [
+          type,
+          { schema: z.string().openapi({ type: 'string', format: 'binary' }) },
+        ])
+      ),
+    },
+    404: {
+      description: 'The app has no logo, or its logo could not be fetched just now',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
