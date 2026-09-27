@@ -1,24 +1,29 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
-import type {
-  AgentPermissionsResponse,
-  PermissionAreaEntry,
-  PermissionState,
-  PermissionsResponse,
+import {
+  describeAffectedAgents,
+  type AgentPermissionsResponse,
+  type PermissionAreaEntry,
+  type PermissionState,
+  type PermissionsResponse,
 } from '@dorkos/shared/permissions';
 import {
+  useAffectedAgentCount,
   useAgentPermissions,
   useOverridingAgents,
   usePermissions,
   useSetPermission,
   type PermissionScope,
 } from '@/layers/entities/permissions';
-import { RotateCcw } from 'lucide-react';
-import { Button, Skeleton } from '@/layers/shared/ui';
+import { Skeleton } from '@/layers/shared/ui';
 import { STATE_LABEL, defaultSourceText } from '../lib/permission-copy';
+import { stateWhy } from '../lib/permission-why';
+import { reportPermissionFailure } from '../lib/report-failure';
 import { PermissionRow } from './PermissionRow';
+import { PermissionWhy } from './PermissionWhy';
 import { ExceptionsChip } from './ExceptionsChip';
 import { ApplyToOverridesDialog } from './ApplyToOverridesDialog';
+import { ActionOverrides } from './ActionOverrides';
+import { AgentFilesAndCommandsRow } from './FilesAndCommandsRow';
 
 /** Props for {@link PermissionList}. */
 export interface PermissionListProps {
@@ -26,17 +31,13 @@ export interface PermissionListProps {
   scope: PermissionScope;
 }
 
-/** Tell the person a write did not land; the switch is already back. */
-function reportFailure(err: unknown) {
-  toast.error(err instanceof Error ? err.message : "That change didn't save.");
-}
-
 /**
- * The areas a phase lights up: the ones with at least one action. Driven from
- * the server's list, so a later phase shows more rows with no change here.
+ * Every area that takes a state, in the server's order. An area can have no
+ * fixed actions (Reach & secrets is reached through a setting's own input), and
+ * it still shows: its state decides what those calls do.
  */
-function visibleAreas<T extends { kind: string; actions: unknown[] }>(areas: readonly T[]): T[] {
-  return areas.filter((area) => area.kind === 'state' && area.actions.length > 0);
+function stateAreas<T extends { kind: string }>(areas: readonly T[]): T[] {
+  return areas.filter((area) => area.kind === 'state');
 }
 
 /** One default-layer row, with its exceptions chip and the apply dialog. */
@@ -49,6 +50,7 @@ function DefaultAreaRow({
 }) {
   const write = useSetPermission({ kind: 'default' });
   const overriding = useOverridingAgents(area.id);
+  const affected = useAffectedAgentCount({ kind: 'area', area: area.id }) ?? 0;
   const [pending, setPending] = useState<PermissionState | null>(null);
 
   const commit = (next: PermissionState, applyToAgents?: string[]) => {
@@ -59,7 +61,7 @@ function DefaultAreaRow({
         ...(applyToAgents && applyToAgents.length > 0 ? { applyToAgents } : {}),
         surface: 'settings',
       },
-      { onError: reportFailure, onSettled: () => setPending(null) }
+      { onError: reportPermissionFailure, onSettled: () => setPending(null) }
     );
   };
 
@@ -77,18 +79,44 @@ function DefaultAreaRow({
         description={area.description}
         floor={area.floor}
         value={area.resolved.state}
-        sourceText={defaultSourceText(area.resolved.source, overview.preset)}
+        // Where it comes from, and the honest preview of what changing it
+        // reaches, before the switch is touched.
+        sourceText={[
+          defaultSourceText(area.resolved.source, overview.preset),
+          describeAffectedAgents(affected),
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+        why={
+          <PermissionWhy
+            question={`Why is ${area.label} set to ${STATE_LABEL[area.resolved.state]}?`}
+            sentence={stateWhy({ ...area.resolved, preset: overview.preset })}
+            {...(area.lastChange ? { lastChange: area.lastChange } : {})}
+          />
+        }
         onChange={onChange}
         disabled={write.isPending}
         footer={<ExceptionsChip area={area.id} areaLabel={area.label} agents={overriding} />}
+        details={
+          <ActionOverrides
+            scope={{ kind: 'default' }}
+            area={area}
+            surface="settings"
+            preset={overview.preset}
+          />
+        }
       />
       <ApplyToOverridesDialog
         open={pending !== null}
         onCancel={() => setPending(null)}
         subject={area.label}
         next={pending ?? 'ask'}
-        agents={overriding}
-        affectedCount={Math.max(0, overview.agentCount - overriding.length)}
+        agents={overriding.map((e) => ({
+          agentId: e.agentId,
+          agentName: e.agentName,
+          detail: `${STATE_LABEL[e.state]}${e.action ? ' (one action)' : ''}`,
+        }))}
+        affectedCount={affected}
         onKeep={() => pending && commit(pending)}
         onUpdate={(ids) => pending && commit(pending, ids)}
         pending={write.isPending}
@@ -97,59 +125,17 @@ function DefaultAreaRow({
   );
 }
 
-/**
- * The single actions this agent is set differently for inside one area, each
- * with its own Reset. An Always allow from a request card lands here (spec
- * `agent-permissions` D7), so a person can find it and take it back where the
- * rest of the agent's permissions are, not only in the Settings exceptions list.
- */
-function ActionExceptions({
-  agentId,
-  area,
-}: {
-  agentId: string;
-  area: AgentPermissionsResponse['areas'][number];
-}) {
-  const write = useSetPermission({ kind: 'agent', agentId });
-  const own = area.actions.filter((action) => action.resolved.source === 'agent-action');
-  if (own.length === 0) return null;
-  return (
-    <ul className="space-y-1" data-testid={`permission-action-exceptions-${area.id}`}>
-      {own.map((action) => (
-        <li key={action.id} className="flex items-center justify-between gap-2 text-xs">
-          <span className="text-muted-foreground min-w-0">
-            Except {action.title}: {STATE_LABEL[action.resolved.state]}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            disabled={write.isPending}
-            aria-label={`Put ${action.title} back to ${area.label}`}
-            onClick={() =>
-              write.mutate(
-                { kind: 'patch', actions: { [action.id]: null }, surface: 'agent-page' },
-                { onError: reportFailure }
-              )
-            }
-          >
-            <RotateCcw className="size-3.5" aria-hidden />
-            Reset
-          </Button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** One agent-layer row: the agent's own state, or the default it follows. */
 function AgentAreaRow({
   agentId,
+  agentName,
   area,
 }: {
   agentId: string;
+  agentName: string;
   area: AgentPermissionsResponse['areas'][number];
 }) {
+  const preset = usePermissions().data?.preset ?? null;
   const write = useSetPermission({ kind: 'agent', agentId });
   const changed = area.resolved.source === 'agent-area' || area.resolved.source === 'agent-action';
   const inheritedText = changed
@@ -163,7 +149,7 @@ function AgentAreaRow({
   const save = (next: PermissionState | null) =>
     write.mutate(
       { kind: 'patch', areas: { [area.id]: next }, surface: 'agent-page' },
-      { onError: reportFailure }
+      { onError: reportPermissionFailure }
     );
 
   return (
@@ -174,20 +160,37 @@ function AgentAreaRow({
       floor={area.floor}
       value={area.resolved.state}
       sourceText={sourceText}
+      why={
+        <PermissionWhy
+          question={`Why is ${area.label} set to ${STATE_LABEL[area.resolved.state]} for ${agentName}?`}
+          sentence={stateWhy({ ...area.resolved, preset })}
+          {...(area.lastChange ? { lastChange: area.lastChange } : {})}
+        />
+      }
       changed={changed}
       onChange={(next) => {
         if (next !== area.resolved.state) save(next);
       }}
       onReset={() => save(null)}
       disabled={write.isPending}
-      footer={<ActionExceptions agentId={agentId} area={area} />}
+      details={
+        <ActionOverrides
+          scope={{ kind: 'agent', agentId }}
+          area={area}
+          surface="agent-page"
+          preset={preset}
+          agentName={agentName}
+        />
+      }
     />
   );
 }
 
 /**
- * Every permission area that has actions, for one layer: the defaults
- * everyone follows, or one agent's own settings on top of them.
+ * Every permission area, for one layer: the defaults everyone follows, or one
+ * agent's own settings on top of them. An agent's list starts with its Files &
+ * commands row; the default layer's lives with the preset on the Settings page,
+ * which owns the trust-stop setting.
  *
  * @param props - See {@link PermissionListProps}.
  */
@@ -202,7 +205,7 @@ export function PermissionList({ scope }: PermissionListProps) {
     if (!overview.data) return <Skeleton className="h-20 w-full" />;
     return (
       <div className="divide-border divide-y" data-testid="permission-list-default">
-        {visibleAreas(overview.data.areas).map((area) => (
+        {stateAreas(overview.data.areas).map((area) => (
           <DefaultAreaRow key={area.id} area={area} overview={overview.data} />
         ))}
       </div>
@@ -215,8 +218,18 @@ export function PermissionList({ scope }: PermissionListProps) {
   if (!agent.data) return <Skeleton className="h-20 w-full" />;
   return (
     <div className="divide-border divide-y" data-testid="permission-list-agent">
-      {visibleAreas(agent.data.areas).map((area) => (
-        <AgentAreaRow key={area.id} agentId={scope.agentId} area={area} />
+      <AgentFilesAndCommandsRow
+        agentId={scope.agentId}
+        agentName={agent.data.agentName}
+        files={agent.data.filesAndCommands}
+      />
+      {stateAreas(agent.data.areas).map((area) => (
+        <AgentAreaRow
+          key={area.id}
+          agentId={scope.agentId}
+          agentName={agent.data.agentName}
+          area={area}
+        />
       ))}
     </div>
   );

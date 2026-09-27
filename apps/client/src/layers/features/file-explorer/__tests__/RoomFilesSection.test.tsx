@@ -82,7 +82,7 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-function renderSection(transport: Transport) {
+function renderSection(transport: Transport, canChange = true) {
   const queryErrors: unknown[] = [];
   const queryCache = new QueryCache({ onError: (error) => queryErrors.push(error) });
   const queryClient = new QueryClient({
@@ -92,7 +92,7 @@ function renderSection(transport: Transport) {
   const view = render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <RoomFilesSection roomId={ROOM_ID} />
+        <RoomFilesSection roomId={ROOM_ID} canChange={canChange} />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -214,16 +214,37 @@ describe('RoomFilesSection', () => {
     expect(box.className).not.toContain('max-h-');
   });
 
-  it('offers nothing that would write to a commit', async () => {
+  it('offers the room’s own changes, and nothing that needs a disk or a copy', async () => {
     renderSection(roomWithFiles([entry({ name: 'ROOM.md' })]));
 
     const row = await screen.findByRole('treeitem', { name: 'ROOM.md' });
-    // No drag handle and no context menu: an affordance that would always
-    // refuse is worse than no affordance.
+    expect(row).toHaveAttribute('draggable', 'true');
+    fireEvent.contextMenu(row);
+    expect(await screen.findByText('Rename')).toBeInTheDocument();
+    expect(screen.getByText('Delete')).toBeInTheDocument();
+    expect(screen.getByText('Upload files…')).toBeInTheDocument();
+    expect(screen.getByText('Copy path')).toBeInTheDocument();
+    // A room has no copy route and no place on this machine's disk: an
+    // affordance that would always refuse is worse than no affordance.
+    expect(screen.queryByText('Duplicate')).not.toBeInTheDocument();
+    expect(screen.queryByText('Paste')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
+    expect(screen.queryByText('Copy relative path')).not.toBeInTheDocument();
+  });
+
+  it('offers nothing that changes the files to somebody who may not change them', async () => {
+    // An archived room, or a reader who only sees the room: every change would
+    // be refused, so the section is a tree to read.
+    renderSection(roomWithFiles([entry({ name: 'ROOM.md' })]), false);
+
+    const row = await screen.findByRole('treeitem', { name: 'ROOM.md' });
     expect(row).not.toHaveAttribute('draggable', 'true');
     fireEvent.contextMenu(row);
     expect(screen.queryByText('Rename')).not.toBeInTheDocument();
     expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+    for (const name of ['New file', 'New folder', 'Upload files']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
   });
 
   it('looks again when the room stream delivers something, at most once a window', async () => {
@@ -404,7 +425,7 @@ describe('RoomFilesSection previews', () => {
 
     fireEvent.click(await screen.findByRole('treeitem', { name: 'logo.png' }));
     expect(
-      await screen.findByText('This isn’t text, so there’s nothing to show here.')
+      await screen.findByText('This isn’t a text file, so it can’t be shown or edited here.')
     ).toBeInTheDocument();
   });
 

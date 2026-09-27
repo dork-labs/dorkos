@@ -10,8 +10,10 @@
  *    truth for a manifest (ADR-0043), by {@link readAgentExecutionDefaults}.
  *    Each key is dropped where it could not mean anything: the model when the
  *    session lands on a runtime other than the one the manifest names, the
- *    effort on a runtime that has none (OpenCode). A manifest has no trust
- *    level, so that key has no agent tier at all.
+ *    effort on a runtime that has none (OpenCode). The trust stop has an agent
+ *    tier too: the agent's own Files & commands stop (`permissions.
+ *    filesAndCommands`, spec `agent-permissions` D16) beats both server tiers
+ *    below, and `resolveFilesAndCommands` (shared) is the one ladder for it.
  * 2. **The server's per-runtime default** — `runtimes.<runtime>.defaultModel`,
  *    `.defaultEffort` and `.defaultTrustStop`. Per runtime because a model id
  *    only means something inside the runtime that offers it.
@@ -92,7 +94,9 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
 import { resolveStopMode } from '@dorkos/shared/permission-semantics';
+import { resolveFilesAndCommands } from '@dorkos/shared/permissions';
 import { configManager } from '../core/config-manager.js';
+import { permissionGateSources } from '../core/capabilities/permission-enforcement.js';
 
 /**
  * What one agent says its sessions should start with — the ladder's first tier.
@@ -117,6 +121,8 @@ export interface AgentExecutionDefaults {
   model?: string;
   /** The effort rung the agent names. */
   effort?: SessionSettings['effort'];
+  /** The agent's own Files & commands stop (spec `agent-permissions` D16). */
+  filesAndCommands?: PermissionStop;
 }
 
 /**
@@ -145,19 +151,33 @@ export async function readAgentExecutionDefaults(
   manifestDir?: string
 ): Promise<AgentExecutionDefaults> {
   if (!manifestDir) return {};
+  let manifest: Awaited<ReturnType<typeof readManifest>>;
   try {
-    const manifest = await readManifest(manifestDir);
-    if (!manifest) return {};
-    return {
-      // The manifest's own runtime travels with its model, because it is what
-      // makes the model id readable — see `AgentExecutionDefaults.runtime`.
-      runtime: manifest.runtime,
-      ...(manifest.model !== undefined ? { model: manifest.model } : {}),
-      ...(manifest.effort !== undefined ? { effort: manifest.effort } : {}),
-    };
+    manifest = await readManifest(manifestDir);
   } catch {
     return {};
   }
+  if (!manifest) return {};
+  // The agent's own Files & commands stop is read through the permission
+  // gate's reader, never off the manifest here: that reader is the one place
+  // an arriving agent's unscreened folder settings are narrowed (spec
+  // `agent-permissions`, review D1), and a session, a scheduled run and a room
+  // turn all start from this value. A read that fails contributes no stop.
+  let filesAndCommands: PermissionStop | undefined;
+  try {
+    filesAndCommands = (await permissionGateSources().readAgentPermissions(manifestDir))
+      ?.filesAndCommands;
+  } catch {
+    filesAndCommands = undefined;
+  }
+  return {
+    // The manifest's own runtime travels with its model, because it is what
+    // makes the model id readable — see `AgentExecutionDefaults.runtime`.
+    runtime: manifest.runtime,
+    ...(manifest.model !== undefined ? { model: manifest.model } : {}),
+    ...(manifest.effort !== undefined ? { effort: manifest.effort } : {}),
+    ...(filesAndCommands ? { filesAndCommands } : {}),
+  };
 }
 
 /** The `runtimes.*` config keys that actually exist in {@link UserConfig}. */
@@ -295,13 +315,19 @@ export function resolveSessionDefaults(opts: {
     }
   }
 
-  // Tiers 2 and 3 for the trust stop, which is the one key with a GLOBAL tier
-  // under the per-runtime one — see the module doc. A runtime with no config
-  // section still reads the global stop: the value is runtime-neutral by
-  // construction, so "every new session asks first" has to mean every runtime,
-  // not every runtime somebody wrote a settings section for.
+  // Tiers 1 to 3 for the trust stop: the agent's own Files & commands stop,
+  // then the per-runtime one, then the GLOBAL one — see the module doc. A
+  // runtime with no config section still reads the global stop: the value is
+  // runtime-neutral by construction, so "every new session asks first" has to
+  // mean every runtime, not every runtime somebody wrote a settings section for.
   const mode = resolveTrustMode({
-    stop: configured?.defaultTrustStop ?? runtimes?.defaultTrustStop ?? null,
+    stop: resolveFilesAndCommands({
+      ...(opts.agent?.filesAndCommands
+        ? { agent: { filesAndCommands: opts.agent.filesAndCommands } }
+        : {}),
+      perRuntime: configured?.defaultTrustStop ?? null,
+      global: runtimes?.defaultTrustStop ?? null,
+    }).stop,
     descriptors: opts.permissionModes,
   });
   if (mode !== undefined) settings.permissionMode = mode;
@@ -405,17 +431,26 @@ export async function resolveUnattendedSessionDefaults(opts: {
  *   documents — `configManager` is a `let` that is undefined until
  *   `initConfigManager` runs, and a missing setting is a reason to fall through,
  *   never a reason to refuse the work.
+ * @param opts.agent - The agent whose turn this is, for its own Files & commands
+ *   stop, which beats both server stops (spec `agent-permissions` D16).
  * @returns The configured stop, or `null` when nothing is configured.
  */
 export function resolveUnattendedDefaultStop(opts?: {
   configSection?: string | null;
   runtimes?: UserConfig['runtimes'];
+  agent?: { filesAndCommands?: PermissionStop };
 }): PermissionStop | null {
   const runtimes = opts?.runtimes ?? configManager?.get('runtimes');
   const declared = opts?.configSection ?? null;
   const section = isRuntimesConfigSection(declared) ? declared : undefined;
   const configured = section ? runtimes?.[section] : undefined;
-  return configured?.defaultTrustStop ?? runtimes?.defaultTrustStop ?? null;
+  return resolveFilesAndCommands({
+    ...(opts?.agent?.filesAndCommands
+      ? { agent: { filesAndCommands: opts.agent.filesAndCommands } }
+      : {}),
+    perRuntime: configured?.defaultTrustStop ?? null,
+    global: runtimes?.defaultTrustStop ?? null,
+  }).stop;
 }
 
 /**
@@ -452,12 +487,14 @@ export function resolveUnattendedDefaultStop(opts?: {
  * @param opts.runtimes - The `runtimes` config section; defaults to the stored
  *   one, with the same pre-boot tolerance {@link resolveUnattendedDefaultStop}
  *   documents.
+ * @param opts.agent - The agent whose turn this is, for its own stop.
  * @returns The runtime's own id for the configured stop, or `undefined` when
  *   there is nothing to honor.
  */
 export function resolveUnattendedPermissionMode(opts: {
   capabilities: RuntimeCapabilities | undefined;
   runtimes?: UserConfig['runtimes'];
+  agent?: { filesAndCommands?: PermissionStop };
 }): PermissionModeId | undefined {
   const { capabilities } = opts;
   if (!capabilities) return undefined;
@@ -465,6 +502,7 @@ export function resolveUnattendedPermissionMode(opts: {
     stop: resolveUnattendedDefaultStop({
       configSection: capabilities.settings.configSection,
       ...(opts.runtimes !== undefined ? { runtimes: opts.runtimes } : {}),
+      ...(opts.agent ? { agent: opts.agent } : {}),
     }),
     descriptors: capabilities.permissionModes.values,
   });

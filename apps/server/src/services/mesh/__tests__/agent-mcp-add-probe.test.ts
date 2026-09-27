@@ -56,7 +56,6 @@ async function setup(
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
   };
   await writeManifest(projectPath, manifest);

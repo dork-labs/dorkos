@@ -17,6 +17,8 @@ export interface PermissionRowProps {
   value: PermissionState | undefined;
   /** Where the state came from, in words. */
   sourceText: string;
+  /** The "Why?" link after the source line (`PermissionWhy`). */
+  why?: ReactNode;
   /** Set on an agent's row when the agent has its own setting here. */
   changed?: boolean;
   /** Called with the state a person picked. */
@@ -27,6 +29,8 @@ export interface PermissionRowProps {
   disabled?: boolean;
   /** Extra content under the switch, e.g. the "agents differ" chip. */
   footer?: ReactNode;
+  /** Full-width content under the whole row, e.g. the area's single actions. */
+  details?: ReactNode;
 }
 
 /**
@@ -43,11 +47,13 @@ export function PermissionRow({
   floor,
   value,
   sourceText,
+  why,
   changed = false,
   onChange,
   onReset,
   disabled = false,
   footer,
+  details,
 }: PermissionRowProps) {
   // Sized by its own width, not the viewport's: the agent page lives in a
   // narrow side panel on a wide screen, where a viewport breakpoint would put
@@ -70,7 +76,15 @@ export function PermissionRow({
             ) : null}
           </div>
           <p className="text-muted-foreground text-sm">{description}</p>
-          <p className="text-muted-foreground text-xs">{sourceText}</p>
+          <p className="text-muted-foreground text-xs">
+            <span>{sourceText}</span>
+            {why ? (
+              <>
+                {sourceText ? ' · ' : null}
+                {why}
+              </>
+            ) : null}
+          </p>
         </div>
         <div className="flex shrink-0 flex-col gap-2 @lg:items-end">
           <PermissionStateSwitch
@@ -95,6 +109,7 @@ export function PermissionRow({
           {footer}
         </div>
       </div>
+      {details}
     </div>
   );
 }

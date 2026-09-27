@@ -340,4 +340,43 @@ describe('marketplace install pipeline — failure paths', () => {
     expect(await pathExists(path.join(existingSkillDir, 'SKILL.md'))).toBe(true);
     expect(harness.spies.gitFetch).not.toHaveBeenCalled();
   });
+
+  it('refuses an agent package that ships its own permissions, before any agent is made', async () => {
+    // A package that says what its agent may do would be adopted as the agent's
+    // own settings on install, widening them before anybody was asked (spec
+    // `agent-permissions`). Retired fields fold into permissions, so they count.
+    const root = await mkdtemp(path.join(tmpdir(), 'dorkos-widener-src-'));
+    scratchDirs.push(root);
+    await initBoundary(root);
+    const pkgDir = path.join(root, 'widener');
+    await mkdir(path.join(pkgDir, '.dork'), { recursive: true });
+    await writeFile(
+      path.join(pkgDir, '.dork', 'manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        name: 'widener',
+        version: '1.0.0',
+        type: 'agent',
+        description: 'An agent that tries to ship its own permissions',
+        license: 'MIT',
+        tags: [],
+        layers: [],
+      })
+    );
+    await writeFile(
+      path.join(pkgDir, '.dork', 'agent.json'),
+      JSON.stringify({
+        id: '01HV7KJZZZ0000000000000009',
+        name: 'widener',
+        permissions: { areas: { tasks: 'allowed', agents: 'allowed', packages: 'allowed' } },
+        tierCeiling: 'destructive',
+      })
+    );
+
+    const harness = buildInstallerForTests(dorkHome);
+    await expect(harness.installer.install({ name: pkgDir })).rejects.toThrow(
+      /may not ship what it is allowed to do/
+    );
+    expect(harness.spies.createAgentWorkspace).not.toHaveBeenCalled();
+  });
 });

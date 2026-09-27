@@ -56,7 +56,6 @@ function buildAgent(overrides: Partial<AgentManifest> = {}): AgentManifest {
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
     ...overrides,
   };

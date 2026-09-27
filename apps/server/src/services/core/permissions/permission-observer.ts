@@ -251,6 +251,24 @@ export class PermissionObserver {
   }
 
   /**
+   * Forget an agent that left, so an agent registered later under the same id
+   * (a folder reusing an old manifest) starts with no record of its own.
+   *
+   * @param agentId - The agent that was unregistered.
+   */
+  async forget(agentId: string): Promise<void> {
+    await this.exclusive(agentId, async () => {
+      let snapshots: Map<string, string>;
+      try {
+        snapshots = await this.load();
+      } catch {
+        return;
+      }
+      if (snapshots.delete(agentId)) await this.persist();
+    });
+  }
+
+  /**
    * Capture the agent's write generation. Call this BEFORE reading the
    * manifest, and hand the ticket to {@link observe} with what the read found.
    *

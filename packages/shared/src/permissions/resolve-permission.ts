@@ -49,8 +49,12 @@ export interface PermissionConfigInput {
 export interface ResolvePermissionInput {
   /** The action's declared area. */
   area: PermissionAreaId;
-  /** The capability id or hand-registered tool name. */
-  actionId: string;
+  /**
+   * The capability id or hand-registered tool name. Absent asks the area-level
+   * question only: how an area another action's input reaches is set, where
+   * that action's own entries, which belong to its own area, do not apply.
+   */
+  actionId?: string;
   /** The action's declared tier. */
   tier: CapabilityTier;
   /** The install's permission config. */
@@ -59,6 +63,12 @@ export interface ResolvePermissionInput {
   agent?: AgentPermissions;
   /** A revoked or expired identity: always Blocked. */
   inactive?: boolean;
+  /**
+   * An action whose card shows the change it would make, old → new, so a
+   * person sees every one (DOR-2328). Never Allowed: a stored Allowed on it
+   * resolves to Ask, source `always-asks`, the way a floor area's does.
+   */
+  alwaysAsks?: boolean;
 }
 
 const AGENT_SOURCES: ReadonlySet<PermissionSource> = new Set(['agent-action', 'agent-area']);
@@ -77,9 +87,11 @@ function isState(value: unknown): value is PermissionState {
 /** Own-property read, so an id like `__proto__` never reaches the prototype. */
 function own(
   record: Readonly<Record<string, PermissionState>> | undefined,
-  key: string
+  key: string | undefined
 ): PermissionState | undefined {
-  if (!record || !Object.prototype.hasOwnProperty.call(record, key)) return undefined;
+  if (!record || key === undefined || !Object.prototype.hasOwnProperty.call(record, key)) {
+    return undefined;
+  }
   const value = record[key];
   return isState(value) ? value : undefined;
 }
@@ -146,6 +158,9 @@ export function resolvePermission(input: ResolvePermissionInput): ResolvedPermis
 
   if (state === 'allowed' && isFloorArea(area)) {
     return { area, state: 'ask', source: 'floor', layer: 'floor' };
+  }
+  if (state === 'allowed' && input.alwaysAsks) {
+    return { area, state: 'ask', source: 'always-asks', layer: 'floor' };
   }
 
   const layer = AGENT_SOURCES.has(source) ? 'agent' : 'default';

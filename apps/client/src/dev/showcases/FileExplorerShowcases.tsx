@@ -15,14 +15,18 @@
  *
  * @module dev/showcases/FileExplorerShowcases
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { FilePlus, FolderPlus, Upload } from 'lucide-react';
 import { TransportProvider } from '@/layers/shared/model';
+import { Button } from '@/layers/shared/ui';
 import {
   FileExplorer,
   HiddenEntriesToggle,
+  type ExplorerChangeOutcome,
   type ExplorerEntry,
   type ExplorerFile,
+  type FileExplorerCommands,
   type FileExplorerSource,
 } from '@/layers/features/file-explorer';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -105,17 +109,67 @@ const ROOM_FILES: Record<string, ExplorerFile['body']> = {
  */
 const ALWAYS_CONFLICTS = 'notes/sizing.md';
 
+/** The folder whose files always lose a rename, move or delete race. */
+const ALWAYS_CONFLICTS_DIR = 'notes';
+
+/** The fixture's directory of a path. */
+function dirOf(path: string): string {
+  const slash = path.lastIndexOf('/');
+  return slash === -1 ? '' : path.slice(0, slash);
+}
+
+/** A change that lands, as the fixture room answers it. */
+const LANDED: ExplorerChangeOutcome = { status: 'changed', commit: 'fixture2' };
+
+/** A change under {@link ALWAYS_CONFLICTS_DIR}, which somebody always got to first. */
+const LOST: ExplorerChangeOutcome = {
+  status: 'conflict',
+  path: ALWAYS_CONFLICTS,
+  commit: 'fixture1',
+  lastCommit: commit('Ana', 1, 'sharpen the sizing note'),
+};
+
 /** A room's own files, served from the fixture above instead of from git. */
 function createFixtureRoomSource(): FileExplorerSource {
+  const touchesConflicted = (path: string, baseCommit: string) =>
+    baseCommit !== 'fixture1' &&
+    (path === ALWAYS_CONFLICTS_DIR || path.startsWith(`${ALWAYS_CONFLICTS_DIR}/`));
   return {
     scopeKey: 'playground:room-files',
     cwd: null,
-    writable: false,
+    writable: true,
+    changes: {
+      maxUploadFiles: 20,
+      upload: ({ dir, files, replace }) => {
+        const entries = (ROOM_TREE[dir] ??= []);
+        for (const upload of files) {
+          if (replace.includes(upload.name)) continue;
+          const path = dir === '' ? upload.name : `${dir}/${upload.name}`;
+          entries.push({ ...file(path, null), name: upload.name });
+        }
+        return Promise.resolve(LANDED);
+      },
+      move: ({ from, to, baseCommit }) => {
+        if (touchesConflicted(from, baseCommit)) return Promise.resolve(LOST);
+        const entries = ROOM_TREE[dirOf(from)] ?? [];
+        const moving = entries.find((e) => e.path === from);
+        if (!moving) return Promise.resolve({ status: 'refused', reason: 'That is gone.' });
+        ROOM_TREE[dirOf(from)] = entries.filter((e) => e !== moving);
+        const name = to.slice(to.lastIndexOf('/') + 1);
+        (ROOM_TREE[dirOf(to)] ??= []).push({ ...moving, name, path: to });
+        return Promise.resolve(LANDED);
+      },
+      remove: ({ path, baseCommit }) => {
+        if (touchesConflicted(path, baseCommit)) return Promise.resolve(LOST);
+        ROOM_TREE[dirOf(path)] = (ROOM_TREE[dirOf(path)] ?? []).filter((e) => e.path !== path);
+        return Promise.resolve(LANDED);
+      },
+    },
     provenance: true,
     filtersHidden: false,
     preview: 'inline',
     editable: true,
-    list: (path) => Promise.resolve({ entries: ROOM_TREE[path] ?? [] }),
+    list: (path) => Promise.resolve({ entries: [...(ROOM_TREE[path] ?? [])], commit: 'fixture0' }),
     read: (path) =>
       Promise.resolve({
         path,
@@ -133,6 +187,10 @@ function createFixtureRoomSource(): FileExplorerSource {
         });
       }
       ROOM_FILES[path] = { kind: 'text', text };
+      const entries = (ROOM_TREE[dirOf(path)] ??= []);
+      if (!entries.some((e) => e.path === path)) {
+        entries.push({ ...file(path, null), name: path.slice(path.lastIndexOf('/') + 1) });
+      }
       return Promise.resolve({
         status: 'saved',
         commit: 'fixture1',
@@ -151,25 +209,50 @@ export function FileExplorerShowcases() {
   );
   const transport = useMemo(() => createPlaygroundTransport(), []);
   const source = useMemo(() => createFixtureRoomSource(), []);
+  const [commands, setCommands] = useState<FileExplorerCommands | null>(null);
 
   return (
     <PlaygroundSection
       title="Room Files"
-      description="One explorer, two sources. This is the room-shaped one: the tree is read-only, because what it lists is the commit main points at rather than files on a disk, while the markdown files in it can be opened and changed; provenance, because a commit knows who last touched a path and a filesystem does not; ROOM.md and README.md floated to the top; and the plumbing hidden until the eye is pressed. Clicking a file previews it in place — try the image and the symlink for the empty states, and Edit on a markdown file to save one. Saving notes/sizing.md always loses the race, which is how the reload / keep-mine choice is reachable here at all. The session pane is the same component with a different source, and it is on /session rather than here: the two share one store, so only one may be mounted at a time."
+      description="One explorer, two sources. This is the room-shaped one: what it lists is the commit main points at rather than files on a disk, and every change a person makes is one commit — New file and New folder open the editor, Upload (or dropping files on the pane or a folder) asks before replacing, Rename and Delete sit on each row's menu, and Delete always confirms. Any text file can be edited; the image stays read-only. Provenance, because a commit knows who last touched a path; ROOM.md and README.md floated to the top; the plumbing hidden until the eye is pressed. Saving notes/sizing.md, and renaming or deleting anything in notes/, always loses the race — which is how the open-theirs / do-it-anyway choices are reachable here at all. The session pane is the same component with a different source, on /session: the two share one store, so only one may be mounted at a time."
     >
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
-          <ShowcaseLabel>Read-only, with provenance and pinning</ShowcaseLabel>
+          <ShowcaseLabel>Changeable, with provenance and pinning</ShowcaseLabel>
           <ShowcaseDemo responsive>
             <div className="border-border/60 flex h-80 w-full flex-col overflow-hidden rounded-lg border">
               <header className="border-border/60 flex items-center gap-2 border-b px-3 py-1.5">
                 <h4 className="text-muted-foreground flex-1 text-xs font-medium tracking-wide uppercase">
                   Files
                 </h4>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="New file"
+                  onClick={() => commands?.newFile()}
+                >
+                  <FilePlus className="text-muted-foreground" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="New folder"
+                  onClick={() => commands?.newFolder()}
+                >
+                  <FolderPlus className="text-muted-foreground" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Upload files"
+                  onClick={() => commands?.upload?.()}
+                >
+                  <Upload className="text-muted-foreground" />
+                </Button>
                 <HiddenEntriesToggle />
               </header>
               <div className="min-h-0 flex-1">
-                <FileExplorer source={source} />
+                <FileExplorer source={source} onCommands={setCommands} />
               </div>
             </div>
           </ShowcaseDemo>

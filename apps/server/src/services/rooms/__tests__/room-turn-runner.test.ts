@@ -311,6 +311,8 @@ vi.mock('../../session/index.js', async (importOriginal) => ({
 }));
 
 const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
+const { initPermissionGate, resetPermissionGate } =
+  await import('../../core/capabilities/permission-enforcement.js');
 const { SessionEventStore, setSessionEventStore } = await import('../../session/index.js');
 const { setRoomAttachmentStores } = await import('../index.js');
 const { LocalRoomAttachmentStore } = await import('../attachments/local-room-attachment-store.js');
@@ -2328,6 +2330,32 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     await createSessionRoomTurnRunner().run(request());
 
     expect(triggered[0].newSessionPermissionMode).toBe('acceptEdits');
+  });
+
+  it("starts at the agent's own stop only as the permission gate reads it", async () => {
+    // The folder's file asks for Full autonomy; the gate's reader, which narrows
+    // an arriving agent's unscreened settings, says it keeps none of its own.
+    runtimesConfig = atStop('ask');
+    agentManifest = { runtime: 'claude-code', permissions: { filesAndCommands: 'autonomy' } };
+    initPermissionGate({ readAgentPermissions: async () => undefined });
+    try {
+      await createSessionRoomTurnRunner().run(request());
+      expect(triggered[0].newSessionPermissionMode).toBe('default');
+    } finally {
+      resetPermissionGate();
+    }
+  });
+
+  it("uses the agent's own stop when the gate reader keeps it", async () => {
+    runtimesConfig = atStop('ask');
+    agentManifest = { runtime: 'claude-code' };
+    initPermissionGate({ readAgentPermissions: async () => ({ filesAndCommands: 'autonomy' }) });
+    try {
+      await createSessionRoomTurnRunner().run(request());
+      expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
+    } finally {
+      resetPermissionGate();
+    }
   });
 
   it('lets the per-runtime setting beat the global one', async () => {

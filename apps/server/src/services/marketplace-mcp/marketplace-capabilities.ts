@@ -29,11 +29,7 @@
  */
 import { z } from 'zod';
 
-import {
-  AREA_PENDING_PHASE_3,
-  defineCapability,
-  type CapabilityDomain,
-} from '../core/capabilities/index.js';
+import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
@@ -91,12 +87,30 @@ function callerContext(context: CapabilityHandlerContext): MarketplaceConfirmati
     : undefined;
   return {
     ...(requestedBy ? { requestedBy } : {}),
-    // Two different proofs that this person has already said yes to this exact
-    // call, and the handler must not ask again for either: an approval the tier
-    // gate spent, or a caller that proved it may DECIDE approvals — for whom the
-    // confirmation this flow would go and fetch is its own.
-    ...(context.approval || context.trusted ? { preApproved: true } : {}),
+    // Three different proofs that this person has already said yes, and the
+    // handler must not ask again for any: an approval the tier gate spent on
+    // this exact call, a caller that proved it may DECIDE approvals (for whom
+    // the confirmation this flow would go and fetch is its own), or an Allowed
+    // the person set on this one action (an Always allow).
+    ...(context.trusted || personAlreadySaidYes(context.approval) ? { preApproved: true } : {}),
   };
+}
+
+/**
+ * Whether what the gate concluded is a person's yes for THIS action.
+ *
+ * An area-level Allowed is not one: a preset or an area default says "this kind
+ * of work may run", and the marketplace's own confirmation is how a person sees
+ * which package is about to land (spec `agent-permissions` D5, where the
+ * undecided install keeps that confirmation). Only an approval spent on this
+ * call, or an Allowed set on this one action, stands in for it.
+ *
+ * @param approval - What the gate concluded, when the call was gated.
+ */
+function personAlreadySaidYes(approval: CapabilityHandlerContext['approval']): boolean {
+  if (!approval) return false;
+  if (approval.via === 'approval') return true;
+  return approval.source === 'agent-action' || approval.source === 'default-action';
 }
 
 /**
@@ -237,8 +251,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'For external AI agents: the first call returns status:requires_confirmation with a token. ' +
         'After the user approves in DorkOS, re-call with confirmationToken to complete the install.',
       tier: 'act',
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'packages',
+      approvalDisplayFields: ['name', 'marketplace', 'projectPath'],
       input: z.object(InstallInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -271,8 +285,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'A linked (symlinked) install is never reinstalled.',
       tier: 'act',
       // Same area as install: an applied update is an install of a new version.
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'packages',
+      approvalDisplayFields: ['names', 'installPaths', 'apply'],
       input: z.object(UpdateInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -297,8 +311,7 @@ export const marketplaceDomain: CapabilityDomain = {
         'Uninstalling an agent package removes the agent from the team (rooms, schedules, sign-ins, access), ' +
         'and reinstalling does not restore that.',
       tier: 'destructive',
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'packages',
       input: z.object(UninstallInputSchema),
       output: z.unknown(),
       // What a person needs to decide, and nothing else. `confirmationToken` is a
@@ -326,8 +339,8 @@ export const marketplaceDomain: CapabilityDomain = {
         '~/.dork/personal-marketplace/packages/<name>/ and registers the package in personal marketplace.json. ' +
         'Requires user confirmation. Publishing to a public marketplace is a separate step.',
       tier: 'act',
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'packages',
+      approvalDisplayFields: ['name', 'type'],
       input: z.object(CreatePackageInputSchema),
       output: z.unknown(),
       surfaces: {

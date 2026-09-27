@@ -11,7 +11,7 @@
  * identity a coding session in it used to be handed. Each reader is asked about
  * the WORKTREE and must answer with the home's values.
  *
- * Rows 1 and 3 (the claude-code launch's tool groups and account pin) are
+ * Rows 1 and 3 (the claude-code launch's account pin and persona) are
  * driven through the real `resolveLaunch`; rows 4 and 5 (codex, opencode) call
  * the same builder as row 2 and can pass it nothing but an `AgentHome`, which
  * the typecheck enforces. Rows 9-11 have their own cases beside their routes
@@ -40,11 +40,6 @@ vi.mock('../runtimes/claude-code/claude-config-dir.js', async (importOriginal) =
     `/accounts/${opts.agentAccountId ?? 'default'}`,
   claudeConfigDirEnv: (root: string) => ({ CLAUDE_CONFIG_DIR: root }),
 }));
-vi.mock('../runtimes/claude-code/tooling/tool-filter.js', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../runtimes/claude-code/tooling/tool-filter.js')>();
-  return { ...actual, resolveToolConfig: vi.fn(actual.resolveToolConfig) };
-});
 
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -56,7 +51,6 @@ import {
 import { buildAgentContextAppend } from '../runtimes/shared/agent-context.js';
 import { buildOpenCodeTurnContext } from '../runtimes/opencode/messaging/turn-context.js';
 import { resolveLaunch } from '../runtimes/claude-code/messaging/launch-resolver.js';
-import { resolveToolConfig } from '../runtimes/claude-code/tooling/tool-filter.js';
 import type { AgentSession } from '../runtimes/claude-code/agent-types.js';
 import { createGetAgentHandler } from '../runtimes/claude-code/mcp-tools/core-tools.js';
 import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
@@ -69,7 +63,6 @@ interface Identity {
   name: string;
   runtime: AgentManifest['runtime'];
   account: string;
-  tasks: boolean;
   soul: string;
   nope: string;
 }
@@ -78,7 +71,6 @@ const BRANCH: Identity = {
   name: 'ana-branch-copy',
   runtime: 'opencode',
   account: 'acct-branch',
-  tasks: true,
   soul: 'BRANCH-SOUL-MARKER',
   nope: 'BRANCH-NOPE-MARKER',
 };
@@ -86,7 +78,6 @@ const HOME: Identity = {
   name: 'ana',
   runtime: 'codex',
   account: 'acct-home',
-  tasks: false,
   soul: 'HOME-SOUL-MARKER',
   nope: 'HOME-NOPE-MARKER',
 };
@@ -142,7 +133,7 @@ describe('a worktree of a home repo reads the HOME identity', () => {
     expect(opencode).not.toContain(BRANCH.soul);
   });
 
-  it('rows 1 and 3: a claude-code launch takes tool groups, account and persona from home', async () => {
+  it('rows 1 and 3: a claude-code launch takes its account and persona from home', async () => {
     const session: AgentSession = {
       sdkSessionId: 'sdk-1',
       lastActivity: Date.now(),
@@ -152,7 +143,6 @@ describe('a worktree of a home repo reads the HOME identity', () => {
       eventQueue: [],
       cwd: tree,
     };
-    vi.mocked(resolveToolConfig).mockClear();
 
     const resolved = await resolveLaunch({
       sessionId: 'worktree-session',
@@ -163,7 +153,6 @@ describe('a worktree of a home repo reads the HOME identity', () => {
       effectiveCwd: tree,
     });
 
-    expect(vi.mocked(resolveToolConfig).mock.calls[0]?.[0]).toEqual({ tasks: HOME.tasks });
     expect((resolved.sdkOptions.env as Record<string, string>).CLAUDE_CONFIG_DIR).toBe(
       `/accounts/${HOME.account}`
     );
@@ -257,7 +246,6 @@ async function writeIdentity(dir: string, identity: Identity): Promise<void> {
     registeredBy: 'test',
     personaEnabled: true,
     account: identity.account,
-    enabledToolGroups: { tasks: identity.tasks },
   } as unknown as AgentManifest;
   await writeManifest(dir, manifest);
   fs.writeFileSync(path.join(dir, '.dork', 'SOUL.md'), `${identity.soul}\n`);

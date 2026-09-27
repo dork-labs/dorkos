@@ -24,6 +24,7 @@ import {
   useUpdateConfig,
 } from '@/layers/entities/config';
 import { settingsForRuntime, useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { permissionKeys } from '@/layers/entities/permissions';
 
 /**
  * A Full-autonomy default waiting on the dialog: which runtime it is for
@@ -117,6 +118,9 @@ export function useTrustStopWrites(): TrustStopWrites {
       updateConfig.mutate(patch, {
         onSuccess: () => {
           void queryClient.invalidateQueries({ queryKey: configKeys.all });
+          // The stop is also the Permissions page's Files & commands row, and it
+          // counts toward "Full power, N changes".
+          void queryClient.invalidateQueries({ queryKey: permissionKeys.all });
         },
         onError: (err) => setWriteError(describeWriteFailure(err)),
       });

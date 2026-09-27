@@ -160,18 +160,52 @@ describe('editing one of a room’s files', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toHaveFocus());
   });
 
-  it('offers no editing on a file that is not markdown', async () => {
+  it('edits any text file in the same plain editor, not only markdown', async () => {
     const transport = createMockTransport();
     transport.readRoomFileContent = vi.fn().mockResolvedValue({
-      path: 'notes.txt',
+      path: 'src/index.ts',
       commit: 'aaa1111',
-      size: 4,
+      size: 20,
       lastCommit: null,
-      body: { kind: 'text', encoding: 'utf-8', text: 'hi\n' },
+      body: { kind: 'text', encoding: 'utf-8', text: 'export const a = 1;\n' },
     });
-    renderDialog(transport, 'notes.txt');
+    transport.saveRoomFile = vi.fn().mockResolvedValue({
+      path: 'src/index.ts',
+      commit: 'bbb2222',
+      committed: true,
+      lastCommit: null,
+    });
+    renderDialog(transport, 'src/index.ts');
 
-    expect(await screen.findByText(/hi/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const box = screen.getByRole('textbox', { name: 'index.ts contents' });
+    expect(box).toHaveValue('export const a = 1;\n');
+    fireEvent.change(box, { target: { value: 'export const a = 2;\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(transport.saveRoomFile).toHaveBeenCalledWith(ROOM_ID, {
+        path: 'src/index.ts',
+        baseCommit: 'aaa1111',
+        text: 'export const a = 2;\n',
+      })
+    );
+  });
+
+  it('offers no editing on a binary file, and says so', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFileContent = vi.fn().mockResolvedValue({
+      path: 'logo.png',
+      commit: 'aaa1111',
+      size: 900,
+      lastCommit: null,
+      body: { kind: 'binary' },
+    });
+    renderDialog(transport, 'logo.png');
+
+    expect(
+      await screen.findByText('This isn’t a text file, so it can’t be shown or edited here.')
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
 

@@ -42,17 +42,6 @@ export const agentIdentityTokens = sqliteTable(
     /** Human-readable agent name, denormalized for Activity attribution labels. */
     displayName: text('display_name').notNull(),
 
-    /**
-     * Highest capability tier this identity may reach, enforced at the capability
-     * choke points; `destructive` (unrestricted) is the default and matches the
-     * trust posture agents had before ceilings existed.
-     */
-    tierCeiling: text('tier_ceiling', {
-      enum: ['observe', 'act', 'destructive'],
-    })
-      .notNull()
-      .default('destructive'),
-
     /** When the token was minted. ISO 8601 UTC. */
     createdAt: text('created_at').notNull(),
 

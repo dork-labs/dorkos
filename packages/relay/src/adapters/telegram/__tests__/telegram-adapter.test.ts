@@ -1411,7 +1411,7 @@ describe('TelegramAdapter', () => {
         respondedBy: '42',
         platform: 'telegram',
       }),
-      { from: 'telegram:42' }
+      { from: 'relay.system.approval-bridge.telegram.tg1' }
     );
     // Decision edit uses HTML parse mode (legacy Markdown hard-fails)
     expect(ctx.editMessageText).toHaveBeenCalledWith('✅ <b>Tool Approved</b>', {
@@ -1474,7 +1474,7 @@ describe('TelegramAdapter', () => {
       expect(mockRelay.publish).toHaveBeenCalledWith(
         'relay.system.approval.agent-1',
         expect.objectContaining({ approved: true, respondedBy: '42' }),
-        { from: 'telegram:42' }
+        { from: 'relay.system.approval-bridge.telegram.tg1' }
       );
     });
 

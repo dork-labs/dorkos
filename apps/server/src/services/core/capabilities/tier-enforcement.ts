@@ -31,13 +31,12 @@
  *   gets a structured {@link ApprovalRequiredPayload} carrying a fresh pending
  *   approval and instructions for retrying.
  *
- * An identity's `tierCeiling` caps all of it. A ceiling of `act` makes every
- * destructive capability permanently unreachable for that agent — not
- * approvable, refused, with a distinct payload saying so. An unidentified caller
- * is capped too, at {@link DEFAULT_ANONYMOUS_TIER_CEILING} — see "the ceiling is
- * not an escape hatch" below.
+ * What an agent may do beyond its tier is its PERMISSION (below), not a limit
+ * carried on its identity: the per-agent tier ceiling was retired in spec
+ * `agent-permissions` (phase 3), and an agent that used to be capped at
+ * `observe` now has every permission area Blocked instead.
  *
- * ## The TIER decides whether to gate. Identity only supplies the ceiling.
+ * ## The TIER decides whether to gate. Identity only names the caller.
  *
  * A caller that presents no {@link AgentIdentity} is still gated. This is the
  * load-bearing asymmetry in the whole module, so it is worth stating why:
@@ -56,42 +55,23 @@
  * straight through. Only `destructive` stops — and spec §Security is explicit
  * that a modified client or skill must not be able to bypass enforcement.
  *
- * So identity, when present, does exactly two things: it narrows what the caller
- * may reach (`tierCeiling`) and it names them on the approval card. Its absence
- * costs the caller nothing except a name — the approval is still required, and
- * the card says an unidentified caller asked.
+ * So identity, when present, does exactly two things: it selects the agent's own
+ * permission settings (an unidentified caller is decided on the install's
+ * defaults, spec `agent-permissions` D11), and it names the caller on the
+ * approval card. Its absence costs the caller nothing except a name — the
+ * approval is still required, and the card says an unidentified caller asked.
+ * The residual that leaves (an agent set stricter than the defaults that strips
+ * its own token) is stated in `permission-enforcement.ts`.
  *
- * ## The ceiling is not an escape hatch either
+ * ## A revoked identity reaches nothing above reading
  *
- * The first implementation compared a capability's tier against a ceiling ONLY
- * when an identity was present, which quietly rebuilt the same bypass one level
- * up: an agent capped at `act` was refused outright (`tier_ceiling`, not
- * approvable), and the SAME agent after `unset DORKOS_AGENT_TOKEN` got the
- * approvable path instead. Presenting a credential strictly cost privilege.
- *
- * Every caller now has a ceiling. An unidentified one is capped at
- * {@link DEFAULT_ANONYMOUS_TIER_CEILING}, overridable at boot via
- * {@link CapabilityTierGateOptions.anonymousTierCeiling}. The default is
- * `destructive`, so today's behavior is unchanged — but the two paths are
- * comparable, and lowering the anonymous ceiling can only ever tighten things.
- *
- * ## Per-agent ceilings are REAL now, and that changed what `undefined` costs
- *
- * This module was written while nothing set a ceiling below `destructive`, and
- * said so. That is no longer true (DOR-486): `.dork/agent.json` carries a
- * `tierCeiling`, the agent Tools tab and `dorkos agent update --ceiling` write
- * it, and `resolveAgentTokenEnv` stamps it onto every token a spawn mints. Two
- * consequences the old wording let sit as theory:
- *
- * - **A missing identity is no longer harmless.** It reads as
- *   {@link DEFAULT_ANONYMOUS_TIER_CEILING}, the widest rung, so anything that
- *   turned a capped agent into an unidentified one WIDENED it. Revocation did
- *   exactly that. Hence {@link effectiveCeiling} and `AgentIdentity.inactive`:
- *   "known and shut off" and "never identified" are now different answers.
- * - **The escape hatch is the anonymous path itself**, not the ceiling
- *   comparison. Read the residual on {@link DEFAULT_ANONYMOUS_TIER_CEILING}
- *   before describing a ceiling as containment anywhere a user will read it.
- *
+ * Revocation means "this agent no longer acts as itself". Every permission area
+ * resolves Blocked for a turned-off identity (`permission-enforcement.ts`), and a
+ * REVOKED one is also refused every `act` and `destructive` action that has no
+ * area, not approvable: it keeps reading, which every caller may, and nothing
+ * more. An expired token keeps the tier behaviour of an action with no area, as
+ * it did before (it is a session that ran long, not an off switch).
+
  * ## Permissions decide whether a call asks (spec `agent-permissions` D6)
  *
  * An action that declares a permission area is also decided by the permission
@@ -123,12 +103,7 @@
  *
  * @module services/core/capabilities/tier-enforcement
  */
-import {
-  CAPABILITY_CEILING_PHRASE,
-  CAPABILITY_TIER_RANK,
-  WIDEST_CAPABILITY_TIER,
-  type CapabilityTier,
-} from '@dorkos/shared/capabilities';
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ApprovalOrigin, ApprovalSubject } from '@dorkos/shared/approval-schemas';
 import {
   getPermissionArea,
@@ -203,8 +178,18 @@ export interface GatedAction {
    * the gate without somebody having decided it.
    */
   area: PermissionAreaId | null;
+  /**
+   * The other areas this call reaches, decided from its input. See
+   * `CapabilityDefinition.areasForInput`; `permission-enforcement.ts` applies it.
+   */
+  areasForInput?: (input: unknown) => readonly PermissionAreaId[];
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
+  /**
+   * A display-only view of the input the card's fields are read from. See
+   * `CapabilityDefinition.approvalView`.
+   */
+  approvalView?: (input: unknown) => Record<string, unknown>;
   /**
    * The one input field whose FULL value the card carries, when the action
    * declares one (DOR-1698). Read here rather than by a surface, so every
@@ -336,8 +321,6 @@ export interface ApprovalRequiredPayload {
 /**
  * Why a call was refused outright rather than queued for approval.
  *
- * - `tier_ceiling` — the caller's ceiling forbids this tier. No approval can
- *   unlock it; only changing that ceiling can.
  * - `operator_denied` — a person said no to this exact action.
  * - `enforcement_unavailable` — the gate was never wired to an approval service,
  *   so there is nobody to ask. Refused rather than allowed (see the module TSDoc).
@@ -355,7 +338,6 @@ export interface ApprovalRequiredPayload {
  * - `request_limit` — the agent made five blocked requests in the last hour.
  */
 export type TierDeniedReason =
-  | 'tier_ceiling'
   | 'operator_denied'
   | 'enforcement_unavailable'
   | 'input_not_bindable'
@@ -377,8 +359,9 @@ export interface TierDeniedPayload {
   /** Why it was refused. */
   reason: TierDeniedReason;
   /**
-   * Whether asking a person could ever change this answer. `false` for a ceiling
-   * refusal, so an agent does not loop on a request that can never be granted.
+   * Whether asking a person could ever change this answer. `false` for a refusal
+   * nobody can approve past, so an agent does not loop on a request that can
+   * never be granted.
    */
   approvable: boolean;
   /** One plain sentence a model can act on. */
@@ -530,7 +513,7 @@ export interface TierEnforcementRequest {
    * Which surface this request arrived over, recorded only so an UNATTRIBUTED
    * card can say the true thing DorkOS knows about it.
    *
-   * Never consulted by any decision here. It changes no ceiling, no binding and
+   * Never consulted by any decision here. It changes no permission, no binding and
    * no outcome — a request's origin is not evidence of anything, and treating it
    * as evidence is exactly how "it came from a session" would become a
    * privilege a caller could claim by choosing a surface.
@@ -560,53 +543,7 @@ export interface CapabilityTierGateOptions {
    * gate swallows anything it does.
    */
   onAttempt?: (attempt: TierEnforcementAttempt) => void;
-  /**
-   * The ceiling applied to a caller that presented no identity. Defaults to
-   * {@link DEFAULT_ANONYMOUS_TIER_CEILING} (`destructive`, i.e. no extra
-   * restriction), so wiring this is how an operator makes anonymous callers
-   * strictly LESS privileged than named ones. It can only ever tighten: an
-   * anonymous destructive call still needs an approval at `destructive`.
-   */
-  anonymousTierCeiling?: CapabilityTier;
 }
-
-/**
- * The ceiling an unidentified caller is capped at when boot does not say
- * otherwise.
- *
- * `destructive` means "no extra restriction", which keeps today's behavior
- * byte-identical — the point of naming it is that anonymous and identified
- * callers travel the SAME comparison, so dropping a credential can never widen
- * what a caller may reach *once it is identified*.
- *
- * ## The residual this default leaves, stated because a ceiling invites the
- * wrong reading (DOR-486)
- *
- * A per-agent ceiling caps the caller that PRESENTS ITS TOKEN. An agent with a
- * shell can run `env -u DORKOS_AGENT_TOKEN dorkos call …`, or a bare `curl`, and
- * arrive here anonymous — capped at this value, which restricts nothing. It is
- * still gated (a destructive call needs a person's approval either way, and the
- * card says an unidentified caller asked), and it is still audited; what it is
- * not is *capped*.
- *
- * That is the same `local-trust` residual a per-agent permission and `account`
- * carry — an agent with a shell can reach the operator's own HTTP routes too —
- * and it has the same remedy: turn login on, which makes every `/api/*` path
- * demand a credential the agent has no way to mint. (An agent that can edit
- * files can also edit its own `.dork/agent.json`, which login does not stop;
- * the permission gate records that as a change made outside DorkOS.) See
- * `contributing/agent-operator-surface.md`. **A ceiling is protection against a
- * confused or prompt-injected agent following the sanctioned path, not a
- * sandbox**, and no user-facing copy may promise otherwise.
- *
- * Boot does not currently set {@link CapabilityTierGateOptions.anonymousTierCeiling}
- * and there is no config field for it: lowering it would cap the person's own
- * `dorkos call` and the external MCP clients that never send the header, which is
- * a posture decision with its own design, not a default to slip in behind a
- * ticket about per-agent limits. The seam is wired and typed so that decision has
- * somewhere to land.
- */
-export const DEFAULT_ANONYMOUS_TIER_CEILING: CapabilityTier = WIDEST_CAPABILITY_TIER;
 
 /** Boot-wired gate state. See the module TSDoc on failing closed. */
 let gate: CapabilityTierGateOptions | undefined;
@@ -637,60 +574,6 @@ export function initCapabilityTierGate(options: CapabilityTierGateOptions): void
  */
 export function resetCapabilityTierGate(): void {
   gate = undefined;
-}
-
-/**
- * Tier ordering, so a ceiling can be compared against a capability's tier.
- *
- * Shared with the guard that decides whether a change to a per-agent ceiling
- * widens it (`operator/agent-updater.ts`), because two tables that disagree
- * would mean an agent could set a fence this module then reads differently.
- */
-const TIER_RANK = CAPABILITY_TIER_RANK;
-
-/** How a capability's own tier reads in a message written for a model or a person. */
-const TIER_PHRASE: Record<CapabilityTier, string> = {
-  observe: 'only reads',
-  act: 'changes things',
-  destructive: 'cannot be undone',
-};
-
-/** How a tier reads as a LIMIT on an agent, which is a different sentence. */
-const CEILING_PHRASE = CAPABILITY_CEILING_PHRASE;
-
-/**
- * What a REVOKED agent may still reach: nothing above reading.
- *
- * Revocation means "this agent no longer acts as itself", and until DOR-486 it
- * did not survive contact with this gate: `describeAgent`/`resolve` answered
- * `undefined` for a revoked agent, `undefined` reads as "unidentified" here, and
- * an unidentified caller is capped at {@link DEFAULT_ANONYMOUS_TIER_CEILING} —
- * the WIDEST rung. So revoking a capped agent's tokens mid-session WIDENED what
- * it could reach. Both resolvers now say `inactive: 'revoked'` instead, and this
- * is the ceiling that answer buys.
- *
- * `observe` rather than "refuse everything" because the tier gate lets reads
- * through before any ceiling is consulted, for every caller including anonymous
- * ones — a revoked agent that could not read would be the one principal on the
- * system less privileged than a stranger, which is not what an off switch means.
- */
-const REVOKED_TIER_CEILING: CapabilityTier = 'observe';
-
-/**
- * The ceiling this caller is actually held to.
- *
- * Three cases, and the ORDER between them is the whole point: a caller that
- * identified itself must never be able to reach more by presenting less. See
- * {@link AgentIdentity.inactive} for why an expired identity keeps its recorded
- * ceiling while a revoked one is clamped.
- *
- * @param identity - The calling agent, when a surface resolved one.
- * @returns The tier this caller may not exceed.
- */
-function effectiveCeiling(identity: AgentIdentity | undefined): CapabilityTier {
-  if (!identity) return gate?.anonymousTierCeiling ?? DEFAULT_ANONYMOUS_TIER_CEILING;
-  if (identity.inactive === 'revoked') return REVOKED_TIER_CEILING;
-  return identity.tierCeiling;
 }
 
 /**
@@ -758,7 +641,7 @@ export function describeGatedAttempt(
     : 'An unidentified caller ';
   const clause = joinSummaryFields(
     summaryFieldsNamingSubject(
-      input,
+      action.approvalView ? action.approvalView(input) : input,
       action.approvalDisplayFields,
       subject,
       action.approvalSubject?.field
@@ -1037,33 +920,20 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     return { outcome: 'denied', payload };
   }
 
-  // Reading is free, and a ceiling never blocks reading. Ask lets reads through
-  // too: only a call that changes something raises a card. A blocked read the
-  // agent asked for goes on to the card like anything else it asked for.
+  // Reading is free, and Ask lets reads through too: only a call that changes
+  // something raises a card. A blocked read the agent asked for goes on to the
+  // card like anything else it asked for.
   if (tier === 'observe' && !blockedAsk) return { outcome: 'allowed' };
 
-  // EVERY caller has a ceiling. An unidentified one gets the anonymous default,
-  // so dropping a credential cannot move a caller onto a more permissive path
-  // (see "the ceiling is not an escape hatch either" in the module TSDoc). The
-  // ceiling is checked BEFORE the permission: an Allowed permission never lifts
-  // a ceiling.
-  const ceiling = effectiveCeiling(identity);
-  if (TIER_RANK[tier] > TIER_RANK[ceiling]) {
-    const limitedParty = identity
-      ? identity.inactive === 'revoked'
-        ? "this agent's access was turned off, so it is limited to"
-        : 'this agent is limited to'
-      : 'callers that do not identify themselves are limited to';
-    const changeWhat = identity
-      ? identity.inactive === 'revoked'
-        ? 'somebody has to give this agent its access back first'
-        : "the agent's own limit has to change first"
-      : "DorkOS's limit for unidentified callers has to change first";
+  // A revoked identity reaches nothing above reading. Its permission areas are
+  // already Blocked (the permission resolved above says so); this covers the
+  // actions with no area, which no permission governs. Not approvable: a person
+  // gives the agent its access back, nobody approves past a revocation.
+  if (permission === null && identity?.inactive === 'revoked') {
     const payload = denied(
       action,
-      'tier_ceiling',
-      `"${action.title}" ${TIER_PHRASE[tier]}, and ${limitedParty} ` +
-        `${CEILING_PHRASE[ceiling]}. Nobody can approve this; ${changeWhat}.`,
+      'permission_blocked',
+      "This agent's access was turned off, so it cannot do this. Ask the person.",
       { approvable: false }
     );
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
@@ -1398,6 +1268,7 @@ export async function authorizeCapability(
   const parsed = capability.input.parse(input);
   const permission = await resolveCallPermission({
     action: capability,
+    input: parsed,
     ...(context.identity ? { identity: context.identity } : {}),
   });
   return enforceCapabilityTier({

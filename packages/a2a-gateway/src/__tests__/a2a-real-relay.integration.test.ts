@@ -133,7 +133,6 @@ function makeManifest(): AgentManifest {
     registeredAt: '2026-01-01T00:00:00Z',
     registeredBy: 'mesh',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
   } as AgentManifest;
 }

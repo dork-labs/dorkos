@@ -89,6 +89,13 @@ const EXEMPT_SITES: Record<string, Array<{ contains: string; reason: string }>> 
         'of the header reader: with login off it says "Someone on this computer", never ' +
         '"You", which is what every other permission line says too.',
     },
+    {
+      contains: 'PERMISSION_SUGGESTION_DISMISSED_EVENT',
+      reason:
+        '"Not now" on the Always allow suggestion clears the same two person bars an answer ' +
+        'does, so its actor comes from the same permission writer (`writerForPosture`), by ' +
+        'the same honesty rule.',
+    },
   ],
   'relay.ts': [
     {

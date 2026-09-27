@@ -112,7 +112,6 @@ function makeAgent(
     namespace: 'default',
     registeredAt: new Date().toISOString(),
     registeredBy: 'test',
-    enabledToolGroups: {},
     mcpServers: [],
     workspace: { mode: 'home' as const },
     personaEnabled: true,

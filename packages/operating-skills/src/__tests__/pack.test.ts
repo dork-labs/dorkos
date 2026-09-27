@@ -245,8 +245,10 @@ describe('the pack teaches the world as it actually is', () => {
     expect(umbrella).toContain('--approval');
     // The reasons a model has to branch on, not just the happy path.
     expect(umbrella).toContain('awaiting_decision');
-    expect(umbrella).toContain('tier_ceiling');
+    expect(umbrella).toContain('permission_blocked');
     expect(umbrella).toContain('operator_denied');
+    // The retired per-agent ceiling's refusal can no longer happen.
+    expect(umbrella).not.toContain('tier_ceiling');
   });
 
   it('teaches MCP-first discovery and only a verified CLI fallback', () => {

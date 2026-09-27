@@ -175,12 +175,48 @@ export interface CapabilityInvocationContext {
   connectorAgentId?: string;
   /** Server-known connector entry surface used only for immutable usage attribution. */
   connectorSurface?: 'mcp' | 'rest' | 'cli';
+  /**
+   * The hand-registered tools the calling MCP server built, handed on only to a
+   * `forwardsApproval` capability (the request tool). See {@link HandToolReach}.
+   */
+  handTools?: HandToolReach;
 }
 
 /** Live domain authorization resolved between parsing and tier approval. */
 export interface CapabilityPreflightResult {
   /** Process-authenticated binding over authority, target, and parsed input. */
   readonly authorityBinding: CapabilityAuthorityBindingProof;
+}
+
+/**
+ * The hand-registered MCP tools one MCP server built, reachable by the request
+ * tool (`permissions.request_access`) even when a Blocked permission left them
+ * out of the list the agent sees (spec `agent-permissions` D8).
+ *
+ * Built by the two servers that register hand tools (claude-code's in-session
+ * server and the external `/mcp` server) and handed only to the request tool.
+ * `request` runs the tool through the same tier gate a direct call does, marked
+ * as a deliberate request past Blocked, so the person is asked about exactly
+ * this tool and these arguments.
+ */
+export interface HandToolReach {
+  /** Whether this server built a hand-registered tool by this bare name. */
+  has(name: string): boolean;
+  /**
+   * Run one hand-registered tool as a request past Blocked.
+   *
+   * @param name - The bare tool name.
+   * @param args - The exact arguments the agent would call it with.
+   * @param options - Who is asking, why, and the token a retry presents.
+   * @returns The tool's own result.
+   * @throws {CapabilityGateRefusal} When the gate did not let it run (a card was
+   *   raised, or it was refused), so the in-session hold can wait on it.
+   */
+  request(
+    name: string,
+    args: Record<string, unknown>,
+    options: { identity: AgentIdentity; reason: string; approvalToken?: string }
+  ): Promise<unknown>;
 }
 
 /**
@@ -260,6 +296,8 @@ export interface CapabilityHandlerContext {
   connectorAgentId?: string;
   /** Server-known connector entry surface used only for immutable usage attribution. */
   connectorSurface?: 'mcp' | 'rest' | 'cli';
+  /** The calling server's hand-registered tools; only the request tool receives it. */
+  handTools?: HandToolReach;
 }
 
 /**
@@ -582,6 +620,7 @@ export function composeRegistry(
       if (capability.forwardsApproval) {
         if (supplied.approvalToken) invocationContext.approvalToken = supplied.approvalToken;
         if (supplied.retryChannel) invocationContext.retryChannel = supplied.retryChannel;
+        if (supplied.handTools) invocationContext.handTools = supplied.handTools;
       }
 
       // Existing trusted callers retain their ordinary bypass. A capability with
@@ -595,6 +634,7 @@ export function composeRegistry(
           ? null
           : await resolveCallPermission({
               action: capability,
+              input: parsed,
               ...(supplied.identity ? { identity: supplied.identity } : {}),
             });
         // Named here rather than in the gate, which is synchronous (DOR-1929):

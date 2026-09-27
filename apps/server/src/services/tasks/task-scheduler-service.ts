@@ -1417,6 +1417,7 @@ export class TaskSchedulerService {
       const permissionMode = (task.permissionMode ??
         resolveScheduledRunPermissionMode({
           capabilities: execution.capabilities,
+          agent: execution.agent,
         })) as PermissionMode;
 
       agentManager.ensureSession(sessionId, {

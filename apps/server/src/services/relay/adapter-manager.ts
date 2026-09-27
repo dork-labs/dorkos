@@ -769,6 +769,15 @@ export class AdapterManager {
    *   spec's Non-Goals say the direct-bind path is not widened here, and
    *   `approver-allowlist.ts`'s own module doc records the residual.
    *
+   * **This is only ever asked about a click a chat adapter carried.** The
+   * approval handler refuses every sender but a chat adapter's approval
+   * principal (`relay.system.approval-bridge.*`, which no agent and no HTTP
+   * caller can publish as) before it calls this (DOR-2431). That is what makes
+   * the unbound branch's `true` safe: it answers "may this adapter's click
+   * approve this session?", and the adapter's own `mayApprove` already ran on
+   * that click. Before that check, the same `true` let any agent that knew a
+   * session id and a pending tool call id approve it.
+   *
    * @param decision - What arrived on the approval bus.
    * @returns Whether to forward the decision to the runtime.
    */
@@ -793,6 +802,8 @@ export class AdapterManager {
       return false;
     }
     const binding = bindings.bindingForSession(decision.sessionId);
+    // Safe only because the approval handler has already refused every sender
+    // that is not a chat adapter (DOR-2431); see the method doc.
     if (!binding) return true;
 
     const bridge = this.deps.roomBridges?.findBridgeByRoom(binding.roomId);

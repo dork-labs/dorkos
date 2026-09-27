@@ -22,8 +22,6 @@ import { createAgentRuntimeMcpServer } from '../agent-runtime-server.js';
 import { permissionsDomain } from '../../../core/permissions/permission-capabilities.js';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { devtoolsCaptureStore } from '../../../session/devtools-capture-store.js';
-import { AgentIdentitySnapshotPrincipalPort } from '../agent-identity-snapshots.js';
-import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 
 const principal = createServerPrincipal({
   kind: 'runtime',
@@ -53,7 +51,6 @@ function runtimePrincipal(runtime: 'codex' | 'opencode', sessionId: string) {
 const identity = {
   agentPath: '/agents/a',
   displayName: 'Agent A',
-  tierCeiling: 'act' as const,
   createdAt: '2026-09-08T00:00:00.000Z',
 };
 
@@ -157,117 +154,6 @@ describe('createAgentRuntimeMcpServer', () => {
         serverPrincipal: principal,
       })
     );
-  });
-
-  it('keeps a manifest ceiling change out of the active turn MCP dispatch', async () => {
-    const invoked = vi.fn(() => ({ ok: true }));
-    const registry = composeRegistry(
-      [
-        {
-          name: 'probe',
-          capabilities: [
-            defineCapability({
-              id: 'probe.act',
-              title: 'Change probe',
-              description: 'Change a probe reversibly.',
-              tier: 'act',
-              area: null,
-              input: z.object({}),
-              output: z.object({ ok: z.boolean() }),
-              surfaces: { mcp: { toolName: 'change_probe', servers: ['in-session'] } },
-              invoke: async () => invoked(),
-            }),
-          ],
-        },
-      ],
-      { logger: noopLogger }
-    );
-    let manifestTier: 'observe' | 'destructive' = 'observe';
-    let binding = 0;
-    const backing: ConnectorRuntimePrincipalPort = {
-      openTurn: vi.fn(async () => ({
-        bindingId: `binding-${++binding}`,
-        bearer: `bearer-${binding}`,
-        expiresAt: '2026-09-09T00:00:00.000Z',
-        renewalPermit: Object.freeze({}) as never,
-      })),
-      renew: vi.fn(),
-      resolve: vi.fn(),
-      revoke: vi.fn(),
-    };
-    const snapshots = new AgentIdentitySnapshotPrincipalPort({
-      principals: backing,
-      snapshotIdentity: async (agentPath) => ({
-        agentPath,
-        displayName: 'Agent A',
-        tierCeiling: manifestTier,
-        createdAt: '2026-09-08T00:00:00.000Z',
-      }),
-      identityWasRevoked: async () => false,
-      now: () => new Date('2026-09-08T12:00:00.000Z'),
-    });
-    const first = await snapshots.openTurn(
-      {
-        runtime: 'opencode',
-        canonicalSessionId: 'session-a',
-        agentPath: '/agents/a',
-        canonicalCwd: '/work/a',
-        signal: new AbortController().signal,
-      },
-      { isCurrent: () => true }
-    );
-
-    manifestTier = 'destructive';
-    const activePrincipal = createServerPrincipal({
-      kind: 'runtime',
-      owner: { kind: 'local_install', installationId: 'install-a' },
-      bindingId: first.bindingId,
-      runtime: 'opencode',
-      canonicalSessionId: 'session-a',
-      agentId: 'agent-a',
-      agentPath: '/agents/a',
-      canonicalCwd: '/work/a',
-    });
-    const activeIdentity = await snapshots.identityFor(activePrincipal);
-    if (!activeIdentity) throw new Error('Expected active turn identity.');
-    const activeClient = await connect(
-      createAgentRuntimeMcpServer(registry, activePrincipal, activeIdentity)
-    );
-    const denied = payload(await activeClient.callTool({ name: 'change_probe', arguments: {} }));
-
-    expect(denied).toMatchObject({ status: 'denied', reason: 'tier_ceiling', approvable: false });
-    expect(invoked).not.toHaveBeenCalled();
-
-    const next = await snapshots.openTurn(
-      {
-        runtime: 'opencode',
-        canonicalSessionId: 'session-b',
-        agentPath: '/agents/a',
-        canonicalCwd: '/work/a',
-        signal: new AbortController().signal,
-      },
-      { isCurrent: () => true }
-    );
-    const nextPrincipal = createServerPrincipal({
-      kind: 'runtime',
-      owner: { kind: 'local_install', installationId: 'install-a' },
-      bindingId: next.bindingId,
-      runtime: 'opencode',
-      canonicalSessionId: 'session-b',
-      agentId: 'agent-a',
-      agentPath: '/agents/a',
-      canonicalCwd: '/work/a',
-    });
-    const nextIdentity = await snapshots.identityFor(nextPrincipal);
-    if (!nextIdentity) throw new Error('Expected next turn identity.');
-    const nextClient = await connect(
-      createAgentRuntimeMcpServer(registry, nextPrincipal, nextIdentity)
-    );
-
-    expect(payload(await nextClient.callTool({ name: 'change_probe', arguments: {} }))).toEqual({
-      ok: true,
-    });
-    expect(invoked).toHaveBeenCalledOnce();
   });
 
   it('lists and reads only rooms belonging to the bound agent', async () => {

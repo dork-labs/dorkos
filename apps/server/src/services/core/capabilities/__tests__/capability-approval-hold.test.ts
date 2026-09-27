@@ -55,7 +55,6 @@ import type { AgentIdentity } from '../../agent-identity/index.js';
 const AGENT: AgentIdentity = {
   agentPath: '/projects/prober',
   displayName: 'Prober',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 

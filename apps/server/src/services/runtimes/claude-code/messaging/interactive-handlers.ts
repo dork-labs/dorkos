@@ -77,15 +77,17 @@ const READ_ONLY_TOOLS = new Set([
  *
  * ## Why this is a hand-written list and not derived (DOR-499)
  *
- * This is the fourth place DorkOS names a subset of its MCP tools, and the most
+ * This is one of the places DorkOS names a subset of its MCP tools, and the most
  * consequential: everything here is auto-allowed in `canUseTool` without ever
- * asking a person. DOR-499 collapsed three OTHER such lists into
- * `@dorkos/shared/mcp-tool-groups` and deliberately left this one alone, for the
- * same reason the tokenless read-only carve-out in
- * `core/external-mcp/tool-security.ts` was left alone.
+ * asking a person. DOR-499 collapsed three OTHER such lists into one per-tool
+ * table (`core/mcp-tool-tiers.ts`, which now carries each tool's permission area
+ * as well) and deliberately left this one alone, for the same reason the
+ * tokenless read-only carve-out in `core/external-mcp/tool-security.ts` was left
+ * alone.
  *
- * It is not the same predicate as any group or tier. A group answers "which toggle
- * takes this away". A tier answers "does this need approval in general". This list
+ * It is not the same predicate as any area or tier. An area answers "which
+ * permission switch takes this away". A tier answers "does this need approval in
+ * general". This list
  * answers the narrower question above: does this tool carry its own authorization,
  * so that a card would add friction without adding safety? That is a hand-picked
  * judgment, not a property of the tier. `relay_register_endpoint` and

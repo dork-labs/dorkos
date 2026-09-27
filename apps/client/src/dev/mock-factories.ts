@@ -248,7 +248,6 @@ export function createAgentManifest(overrides: Partial<AgentManifest> = {}): Age
     registeredAt: minutesBeforeNow(60 * 24 * 30),
     registeredBy: 'playground',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
     ...overrides,
   };

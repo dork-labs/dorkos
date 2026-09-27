@@ -12,7 +12,8 @@ import { test, expect } from '../fixtures';
  *      write) and `ui.fullPowerChoice: 'full'`, and the mesh opens
  *      (`openMesh: true`). The door does not return on reload.
  *   2. DECLINE ("Keep asking me first") records `ui.fullPowerChoice: 'supervised'`
- *      and touches NOTHING consent-gated: no autonomy stop, no ack, no open mesh.
+ *      and the Careful preset, whose Files & commands stop is Ask first, and
+ *      touches NOTHING consent-gated: no autonomy stop, no ack, no open mesh.
  *      It does not return on reload.
  *
  * ## It RUNS in CI (no skip gate), and why it is `serial` + warm-boot
@@ -196,7 +197,10 @@ test.describe('Full-power consent door @full-power', () => {
     const config = await readPowerConfig(request);
     expect(config.fullPowerChoice).toBe('supervised');
     expect(config.fullPowerDecidedAt).not.toBeNull();
-    expect(config.defaultTrustStop).toBeNull();
+    // The Careful preset sets Files & commands to Ask first (spec
+    // `agent-permissions` D5): the answer is written down, never left to a
+    // runtime's own default.
+    expect(config.defaultTrustStop).toBe('ask');
     expect(config.autonomyAcknowledgedAt).toBeNull();
     expect(await readMeshOpen(request)).toBe(false);
     expect((await (await request.get('/api/permissions')).json()).preset).toBe('careful');

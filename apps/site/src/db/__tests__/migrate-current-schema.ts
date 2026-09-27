@@ -3,8 +3,9 @@
  *
  * The frozen `drizzle/` history stops at the schema split; everything since
  * lives in the public and control-plane histories. A test that needs the schema
- * production runs today applies those two, in the order `pnpm db:migrate` does,
- * on a fresh database — never the frozen folder alone, which would quietly
+ * production runs today applies those two, public first, on a fresh database
+ * (a deploy applies only the public one; the control plane migrates the other
+ * half in production) — never the frozen folder alone, which would quietly
  * leave the test on the pre-split schema (DOR-2036: `account.issuer` still
  * NOT NULL there, so every Better Auth sign-up failed).
  *

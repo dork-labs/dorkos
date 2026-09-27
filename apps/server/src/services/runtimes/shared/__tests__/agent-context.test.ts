@@ -91,7 +91,6 @@ function createTestManifest(overrides: Partial<AgentManifest> = {}): AgentManife
     registeredBy: 'test',
     behavior: { responseMode: 'always' },
     personaEnabled: true,
-    enabledToolGroups: {},
     ...overrides,
   };
 }

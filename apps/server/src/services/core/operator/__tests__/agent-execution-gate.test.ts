@@ -50,7 +50,6 @@ import { describeExecutionChange } from '../agent-execution.js';
 const AGENT: AgentIdentity = {
   agentPath: '/projects/warden',
   displayName: 'Warden',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 
@@ -67,7 +66,6 @@ const SEED = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
 } as unknown as AgentManifest;
 

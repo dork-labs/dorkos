@@ -7,8 +7,8 @@
  * schema fails until someone gives the new field a verdict. That is the defect
  * generator this table exists to close — a field added to the `.pick(...)` list
  * became agent-writable the moment it existed, with no decision anywhere, which
- * is how the four `enabledToolGroups` documentation keys stayed writable while
- * their global twins were refused (DOR-1506).
+ * is how the four retired `enabledToolGroups` documentation keys once stayed
+ * writable while their global twins were refused (DOR-1506).
  *
  * The second guard is the one a reviewer reads: the operator-only SET is
  * asserted item by item, so moving a field across the line has to break a test.
@@ -27,7 +27,6 @@ import {
   AGENT_WRITE_POLICY,
   NESTED_AGENT_FIELDS,
   OPERATOR_ONLY_AGENT_PATHS,
-  TIGHTEN_ONLY_AGENT_PATHS,
   describeAgentOperatorOnlyRefusal,
   findOperatorOnlyAgentPaths,
 } from '../agent-write-policy.js';
@@ -82,17 +81,14 @@ describe('AGENT_WRITE_POLICY drift guard', () => {
         // it escalates — the stake `rooms.responseGate` carries at the config seam.
         'behavior.escalationThreshold',
         'behavior.responseMode',
-        // The four documentation keys, refused because a per-agent value BEATS the
-        // global `agentContext.*` switch a person set, and those four are
-        // operator-only at the config seam (DOR-1497 → DOR-1506).
-        'enabledToolGroups.adapter',
-        'enabledToolGroups.mesh',
-        'enabledToolGroups.relay',
-        'enabledToolGroups.tasks',
         // What the agent may do: written only through the permission routes, and
         // refused by name here even though the wire never carries it (spec
-        // `agent-permissions` D10).
+        // `agent-permissions` D10). The two retired fields that used to carry the
+        // same answer are refused by name too, so a caller still sending one is
+        // told where the setting went instead of hearing "done".
+        'enabledToolGroups',
         'permissions',
+        'tierCeiling',
         // The slug every other agent addresses this one by.
         'name',
         // Which other agents this one can reach.
@@ -107,16 +103,7 @@ describe('AGENT_WRITE_POLICY drift guard', () => {
     // derivation as much as the set: a field that stops appearing here goes back
     // to being written whole, which is how a partial patch used to reset the
     // flags it never named.
-    expect([...NESTED_AGENT_FIELDS].sort()).toEqual(
-      ['behavior', 'conventions', 'enabledToolGroups', 'traits'].sort()
-    );
-  });
-
-  it('leaves the tier ceiling as the only direction-shaped verdict', () => {
-    // `updateAgentManifest` enforces the direction with a comparison written for
-    // this one field. A second `tighten-only` entry needs its own comparison
-    // there, so it has to break here first.
-    expect([...TIGHTEN_ONLY_AGENT_PATHS]).toEqual(['tierCeiling']);
+    expect([...NESTED_AGENT_FIELDS].sort()).toEqual(['behavior', 'conventions', 'traits'].sort());
   });
 
   it('keeps every field an agent legitimately edits about itself writable', () => {
@@ -168,59 +155,51 @@ describe('findOperatorOnlyAgentPaths', () => {
     expect(findOperatorOnlyAgentPaths({ permissions: {} })).toEqual(['permissions']);
   });
 
-  it('finds a nested field the caller named exactly', () => {
+  it('refuses the two retired permission fields by name, whatever they carry', () => {
     expect(findOperatorOnlyAgentPaths({ enabledToolGroups: { relay: true } })).toEqual([
-      'enabledToolGroups.relay',
+      'enabledToolGroups',
+    ]);
+    expect(findOperatorOnlyAgentPaths({ tierCeiling: 'observe' })).toEqual(['tierCeiling']);
+  });
+
+  it('finds a nested field the caller named exactly', () => {
+    expect(findOperatorOnlyAgentPaths({ behavior: { responseMode: 'always' } })).toEqual([
+      'behavior.responseMode',
     ]);
   });
 
   it('catches an ancestor write, so emptying the object is not a way past it', () => {
-    // `{ enabledToolGroups: {} }` names no key and still replaces all five.
-    expect(findOperatorOnlyAgentPaths({ enabledToolGroups: {} }).sort()).toEqual(
-      [
-        'enabledToolGroups.adapter',
-        'enabledToolGroups.mesh',
-        'enabledToolGroups.relay',
-        'enabledToolGroups.tasks',
-      ].sort()
-    );
+    // `{ behavior: {} }` names no key and still replaces both guarded leaves.
+    expect(findOperatorOnlyAgentPaths({ behavior: {} }).sort()).toEqual([
+      'behavior.escalationThreshold',
+      'behavior.responseMode',
+    ]);
   });
 
   /**
    * The shape the first version of this matrix never tried, found by adversarial
    * review and reproduced against a real manifest before the fix.
    *
-   * The walk emits LEAVES, so `{ enabledToolGroups: {} }` was caught (it stops
-   * above the guarded leaves and matches them as an ancestor) while
-   * `{ enabledToolGroups: { zzz: 1 } }` was not — `enabledToolGroups.zzz` equals
-   * no policy key, sits under none, and sits above none. And that patch WRITES:
-   * Zod strips the unknown key, the raw body still names `enabledToolGroups`, and
-   * the merge REPLACES the stored object. Measured before the fix: 200, `{}` on
-   * disk, the rooms grant that object then carried gone.
+   * The walk emits LEAVES, so an emptied object was caught (it stops above the
+   * guarded leaves and matches them as an ancestor) while an object carrying one
+   * unknown key was not — `behavior.zzz` equals no policy key, sits under none,
+   * and sits above none. And that patch WRITES: Zod strips the unknown key, the
+   * raw body still names the object, and the merge REPLACED the stored object.
+   * Found on the retired `enabledToolGroups`, where it cleared a person's two
+   * disabled groups; pinned here on `behavior`, where it is worse.
    */
   describe('an object carrying only keys nobody classified', () => {
-    it('refuses every leaf it would have replaced', () => {
-      expect(findOperatorOnlyAgentPaths({ enabledToolGroups: { zzz: 1 } }).sort()).toEqual(
-        [
-          'enabledToolGroups.adapter',
-          'enabledToolGroups.mesh',
-          'enabledToolGroups.relay',
-          'enabledToolGroups.tasks',
-        ].sort()
-      );
-    });
-
     it('catches a nested __proto__ key, which arrives as an own key over HTTP', () => {
       // `JSON.parse` makes it an own, enumerable property — the shape Express
       // hands the route — where the object literal `{ __proto__: {…} }` instead
       // sets the prototype and leaves an empty object, which was already caught.
-      const body: unknown = JSON.parse('{"enabledToolGroups":{"__proto__":{"relay":true}}}');
+      const body: unknown = JSON.parse('{"behavior":{"__proto__":{"responseMode":"always"}}}');
 
-      expect(findOperatorOnlyAgentPaths(body)).toContain('enabledToolGroups.relay');
+      expect(findOperatorOnlyAgentPaths(body)).toContain('behavior.responseMode');
     });
 
     it('catches it on `behavior`, where the schema default is the permissive one', () => {
-      // Worse in kind than the tool groups: `AgentBehaviorSchema` defaults
+      // Worse in kind than the retired tool groups: `AgentBehaviorSchema` defaults
       // `responseMode`, so the replacing write re-armed `always` — the most
       // permissive setting there is — and dropped `escalationThreshold`.
       expect(findOperatorOnlyAgentPaths({ behavior: { zzz: 1 } }).sort()).toEqual([

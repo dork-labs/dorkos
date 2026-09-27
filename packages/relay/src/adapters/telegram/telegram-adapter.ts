@@ -40,6 +40,7 @@ import {
 import type { ResponseBuffer, TelegramOutboundState } from './outbound.js';
 import { startWebhookMode, stopWebhookServer } from './webhook.js';
 import { describeError } from '../../lib/describe-error.js';
+import { approvalBridgePrincipal } from '../../lib/approval-principal.js';
 
 /** Static adapter manifest for the Telegram built-in adapter. */
 export const TELEGRAM_MANIFEST: AdapterManifest = {
@@ -608,7 +609,9 @@ export class TelegramAdapter extends BaseRelayAdapter {
       clearApprovalTimeout(this.outboundState, data.k);
 
       // Publish approval response to relay bus
-      const opts: PublishOptions = { from: `telegram:${ctx.from.id}` };
+      // Published as this adapter's approval principal, the only sender the
+      // approval handler accepts (DOR-2431); who clicked rides `respondedBy`.
+      const opts: PublishOptions = { from: approvalBridgePrincipal('telegram', this.id) };
       await relay.publish(
         `relay.system.approval.${entry.agentId}`,
         {

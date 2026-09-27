@@ -4150,23 +4150,6 @@ export const ServerConfigSchema = z
         description:
           'What the user told DorkOS about themselves (spec user-profile-onboarding). Local-only; never included in any telemetry payload.',
       }),
-    agentContext: z
-      .object({
-        relayTools: z
-          .boolean()
-          .openapi({ description: 'Whether relay tool context is injected into agent prompts' }),
-        meshTools: z
-          .boolean()
-          .openapi({ description: 'Whether mesh tool context is injected into agent prompts' }),
-        adapterTools: z
-          .boolean()
-          .openapi({ description: 'Whether adapter tool context is injected into agent prompts' }),
-        tasksTools: z
-          .boolean()
-          .openapi({ description: 'Whether tasks tool context is injected into agent prompts' }),
-      })
-      .optional()
-      .openapi({ description: 'Agent tool context injection toggles' }),
     agents: z
       .object({
         defaultDirectory: z

@@ -850,9 +850,11 @@ The `approvals` section is gone. Its settings (`approvals.standingGrants`, `appr
 
 ### Agent permissions
 
-What your agents may do on their own, what waits for your yes, and what they cannot do at all. See the [Permissions guide](/docs/guides/permissions).
+What your agents may do on their own, what waits for your yes, and what they cannot do at all — across ten areas (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, DorkOS settings, Safety limits, Permissions, Reach & secrets) plus **Files & commands**, how often an agent stops to check with you while it edits files and runs commands. See the [Permissions guide](/docs/guides/permissions).
 
 These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here, so that every change DorkOS makes is recorded in the history. (An edit made straight to an agent's settings file is recorded too, as changed outside DorkOS.) `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
+
+Choosing a preset (Careful, Balanced, or Full power) sets all ten areas AND moves `runtimes.defaultTrustStop`, the global Files & commands stop: Careful to `ask`, Balanced to `act`, Full power to `autonomy`. Moving it to `autonomy` needs the same confirmation Full autonomy always needs; without it, the write is refused. Per-runtime stops (`runtimes.claudeCode.defaultTrustStop` and its siblings, documented under Runtimes above) are left alone by a preset and show up as changes on top of it.
 
 <TypeTable
   type={{
@@ -862,18 +864,24 @@ These are changed on the Permissions page (Settings → Permissions, or an agent
       type: "'careful' | 'balanced' | 'full' | null",
       default: 'null',
     },
-    'permissions.defaults': {
+    'permissions.defaults.areas': {
       description:
-        'The changes you made on top of the preset, as `areas` and `actions`, each mapping to `blocked`, `ask` or `allowed`.',
-      type: 'object',
-      default: '{ areas: {}, actions: {} }',
+        'The area changes you made on top of the preset: `rooms`, `tasks`, `agents`, `messages`, `connections`, `packages`, `settings`, `safety`, `permissions`, `reach`, each mapping to `blocked`, `ask` or `allowed`. Safety limits, Permissions, and Reach & secrets can never be `allowed`.',
+      type: 'Partial<Record<string, "blocked" | "ask" | "allowed">>',
+      default: '{}',
+    },
+    'permissions.defaults.actions': {
+      description:
+        'Single-action changes on top of the preset, keyed by action id, each mapping to `blocked`, `ask` or `allowed`. A single action beats its area.',
+      type: 'Partial<Record<string, "blocked" | "ask" | "allowed">>',
+      default: '{}',
     },
   }}
 />
 
 DorkOS keeps one more value here, `permissions.upgradeSweptVersion`. It records which version last carried your old settings across on upgrade; leave it alone.
 
-Each agent's own differences live in its `.dork/agent.json`, under `permissions`.
+Each agent's own differences live in its `.dork/agent.json`, under `permissions` (`areas`, `actions`, and its own `filesAndCommands` stop).
 
 ### Full autonomy
 

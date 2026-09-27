@@ -207,9 +207,12 @@ export interface MarketplaceConfirmationContext {
    *
    * ## What it is actually set for, which is more than the line above implies
    *
-   * `callerContext` (`marketplace-capabilities.ts`) sets this on `context.approval`
-   * OR `context.trusted`. The first is the tier gate's spent approval and only
-   * reaches `destructive` capabilities. The second is a caller that proved it may
+   * `callerContext` (`marketplace-capabilities.ts`) sets this on a person's yes
+   * for this action OR `context.trusted`. The first is the tier gate's spent
+   * approval (a destructive call, or an `act` call whose Tools & packages area is
+   * set to Ask), or an Allowed the person set on this one action (spec
+   * `agent-permissions`); an area-level Allowed never counts, so the undecided
+   * install keeps this confirmation. The second is a caller that proved it may
    * DECIDE approvals — and it is not tier-scoped, so a trusted caller installing a
    * package (`marketplace.install` is tier `act`, gated by nothing upstream) skips
    * this provider entirely and no card is ever shown.

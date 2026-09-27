@@ -596,7 +596,7 @@ function SignedInBrowserSection() {
   return (
     <PlaygroundSection
       title="MCP cards: the signed-in browser"
-      description="Offered on Tools & MCP until the agent has one. It gives the agent a browser that starts signed in to the sites saved with `dorkos browser login`. The button goes through the same confirmation as Add server; press it to see the command."
+      description="Offered on the MCP servers page until the agent has one. It gives the agent a browser that starts signed in to the sites saved with `dorkos browser login`. The button goes through the same confirmation as Add server; press it to see the command."
     >
       <ShowcaseDemo>
         <div className="flex flex-wrap gap-6">

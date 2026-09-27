@@ -73,7 +73,8 @@ describe('shipped preset tables', () => {
 
   it('Unchanged reproduces the behaviour before permissions existed', () => {
     // Rooms management was an off-by-default tool group (merge never was), the
-    // floor areas were out of an agent's reach, everything else ran on its tier.
+    // floor areas were out of an agent's reach (except the boundaries tool,
+    // which always asked on a card of its own), everything else ran on its tier.
     expect(UNCHANGED_PERMISSION_TABLE).toEqual({
       areas: {
         rooms: 'blocked',
@@ -87,7 +88,7 @@ describe('shipped preset tables', () => {
         permissions: 'blocked',
         reach: 'blocked',
       },
-      actions: { 'rooms.merge': 'allowed' },
+      actions: { 'rooms.merge': 'allowed', 'operator.update_agent_boundaries': 'ask' },
       filesStop: null,
     });
     expect(presetTableFor(null)).toBe(UNCHANGED_PERMISSION_TABLE);

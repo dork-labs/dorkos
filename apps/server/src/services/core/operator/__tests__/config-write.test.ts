@@ -78,6 +78,12 @@ describe('applyGuardedConfigWrite', () => {
   }
 
   describe('the permissions section (spec `agent-permissions` D10)', () => {
+    it('keeps the refusal code `dorkos config set` compares as a literal', async () => {
+      // If you are changing this, change `packages/cli/src/config-write.ts` too.
+      const { USE_PERMISSIONS_API_CODE } = await import('../config-write.js');
+      expect(USE_PERMISSIONS_API_CODE).toBe('USE_PERMISSIONS_API');
+    });
+
     it('refuses any permissions key from every door, even the operator, and writes nothing', () => {
       // Only the permission routes write it, because only they carry a person's
       // yes AND an audit event. The operator authority is the strongest one this
@@ -340,6 +346,58 @@ describe('applyGuardedConfigWrite', () => {
         displayName: 'Dorian',
         source: { kind: 'agent', agentName: 'DorkBot' },
       });
+    });
+  });
+
+  describe('recording a Files & commands move (spec `agent-permissions` D10)', () => {
+    it('tells the listener exactly which stops moved, after the write lands', async () => {
+      const { onTrustStopChange } = await import('../config-write.js');
+      const heard: unknown[] = [];
+      onTrustStopChange((moves, write) => heard.push({ moves, source: write.source }));
+      try {
+        const result = applyGuardedConfigWrite({
+          patch: { runtimes: { defaultTrustStop: 'ask', codex: { defaultTrustStop: 'act' } } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        expect(result.ok).toBe(true);
+        expect(heard).toEqual([
+          {
+            moves: [
+              { before: null, after: 'ask' },
+              { runtime: 'codex', before: null, after: 'act' },
+            ],
+            source: 'dorkos config set',
+          },
+        ]);
+      } finally {
+        onTrustStopChange(undefined);
+      }
+    });
+
+    it('stays quiet for a write that moves no stop, and for a refused one', async () => {
+      const { onTrustStopChange } = await import('../config-write.js');
+      const heard: unknown[] = [];
+      onTrustStopChange((moves) => heard.push(moves));
+      try {
+        applyGuardedConfigWrite({
+          patch: { ui: { theme: 'dark' } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        // Full autonomy with no acknowledgement is refused, so nothing moved.
+        applyGuardedConfigWrite({
+          patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        expect(heard).toEqual([]);
+      } finally {
+        onTrustStopChange(undefined);
+      }
     });
   });
 

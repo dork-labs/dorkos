@@ -43,5 +43,11 @@ export function createApprovalMethods(baseUrl: string) {
         body: JSON.stringify(reason ? { reason } : {}),
       });
     },
+
+    dismissAlwaysSuggestion(approvalId: string): Promise<{ ok: true; approvalId: string }> {
+      return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/dismiss-suggestion`, {
+        method: 'POST',
+      });
+    },
   };
 }
