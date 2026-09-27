@@ -15,7 +15,9 @@ import { writeSkillFile } from '@dorkos/skills/writer';
 import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
 import { parseContentKey } from '../../schedule-permission-clamp.js';
-import { renameScheduleAccount } from '../account-rename.js';
+import { renameScheduleAccount, rewriteScheduleAccountInPlace } from '../account-rename.js';
+
+const notOwned = async () => false;
 
 const PROMPT = 'Post the overnight digest.';
 const CRON = '0 7 * * *';
@@ -77,7 +79,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await fs.chmod(path.join(root, 'digest'), 0o755).catch(() => {});
+  await fs.chmod(filePath, 0o644).catch(() => {});
   await fs.rm(root, { recursive: true, force: true });
 });
 
@@ -87,7 +89,10 @@ describe('renameScheduleAccount', () => {
     const id = store.fileSync.upsertFromFile(definition('default')).id;
     expect(parseContentKey(row(id).approvedContentKey!)?.account).toBe('default');
 
-    expect(await renameScheduleAccount(db, 'default', 'default-2')).toEqual({ rows: 1, files: 1 });
+    expect(await renameScheduleAccount(db, 'default', 'default-2', notOwned)).toEqual({
+      rows: 1,
+      files: 1,
+    });
 
     expect(row(id).account).toBe('default-2');
     expect(parseContentKey(row(id).approvedContentKey!)?.account).toBe('default-2');
@@ -101,25 +106,83 @@ describe('renameScheduleAccount', () => {
   it('re-runs cleanly after being cut short between the row and the file', async () => {
     await writeSchedule('default');
     const id = store.fileSync.upsertFromFile(definition('default')).id;
-    await fs.chmod(path.join(root, 'digest'), 0o555);
-    await expect(renameScheduleAccount(db, 'default', 'default-2')).rejects.toThrow();
+    await fs.chmod(filePath, 0o444);
+    await expect(renameScheduleAccount(db, 'default', 'default-2', notOwned)).rejects.toThrow();
     // The row and its approval moved together; the file did not.
     expect(row(id).account).toBe('default-2');
     expect(await fileAccount()).toBe('default');
 
-    await fs.chmod(path.join(root, 'digest'), 0o755);
-    expect(await renameScheduleAccount(db, 'default', 'default-2')).toEqual({ rows: 0, files: 1 });
+    await fs.chmod(filePath, 0o644);
+    expect(await renameScheduleAccount(db, 'default', 'default-2', notOwned)).toEqual({
+      rows: 0,
+      files: 1,
+    });
     expect(await fileAccount()).toBe('default-2');
     expect(parseContentKey(row(id).approvedContentKey!)?.account).toBe('default-2');
-    expect(await renameScheduleAccount(db, 'default', 'default-2')).toEqual({ rows: 0, files: 0 });
+    expect(await renameScheduleAccount(db, 'default', 'default-2', notOwned)).toEqual({
+      rows: 0,
+      files: 0,
+    });
   });
 
   it('leaves a schedule on another account alone', async () => {
     await writeSchedule('work');
     const id = store.fileSync.upsertFromFile(definition('work')).id;
     const before = row(id);
-    expect(await renameScheduleAccount(db, 'default', 'default-2')).toEqual({ rows: 0, files: 0 });
+    expect(await renameScheduleAccount(db, 'default', 'default-2', notOwned)).toEqual({
+      rows: 0,
+      files: 0,
+    });
     expect(row(id)).toEqual(before);
     expect(await fileAccount()).toBe('work');
+  });
+
+  it('edits only the account value, byte for byte everywhere else', async () => {
+    const before = [
+      '---',
+      '# kept: a comment',
+      'name: digest',
+      'description: "Post the overnight digest"  # quoted',
+      'tags: [daily, digest]',
+      'schedule:',
+      "  cron: '0 7 * * *'",
+      '  enabled: true',
+      "  account: 'default' # the main sign-in",
+      '  timezone: UTC',
+      '---',
+      '',
+      'Post the overnight digest.',
+      '',
+    ].join('\n');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, before);
+    const id = store.fileSync.upsertFromFile(definition('default')).id;
+
+    await renameScheduleAccount(db, 'default', 'default-2', notOwned);
+
+    expect(await fs.readFile(filePath, 'utf8')).toBe(
+      before.replace("account: 'default' #", "account: 'default-2' #")
+    );
+    expect(row(id).account).toBe('default-2');
+  });
+
+  it('leaves a flow-style schedule block to the planner', () => {
+    const flow = '---\nname: x\nschedule: { cron: "0 7 * * *", account: default }\n---\nbody\n';
+    expect(rewriteScheduleAccountInPlace(flow, 'default', 'default-2')).toBeNull();
+  });
+
+  it('skips a schedule an installed package owns: neither its row nor its file moves', async () => {
+    await writeSchedule('default');
+    const id = store.fileSync.upsertFromFile(definition('default')).id;
+    const before = await fs.readFile(filePath, 'utf8');
+    const owned = async ({ filePath: file }: { filePath: string }) => file === filePath;
+
+    expect(await renameScheduleAccount(db, 'default', 'default-2', owned)).toEqual({
+      rows: 0,
+      files: 0,
+    });
+    expect(row(id).account).toBe('default');
+    expect(parseContentKey(row(id).approvedContentKey!)?.account).toBe('default');
+    expect(await fs.readFile(filePath, 'utf8')).toBe(before);
   });
 });

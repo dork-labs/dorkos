@@ -9,4 +9,4 @@ covers:
 
 ### Fixed
 
-- Starting work on the `default` account now always uses this computer's own Claude sign-in, even when DorkOS itself was started from a terminal pointed at a different account (DOR-2380)
+- Starting work on the `default` account now uses this computer's own Claude sign-in, even when DorkOS itself was started from a terminal pointed at a different account. If one of your accounts used to be called `default`, the agents and schedules that named it move to its new name and keep using it (DOR-2380)

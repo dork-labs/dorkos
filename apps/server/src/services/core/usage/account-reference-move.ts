@@ -16,7 +16,34 @@
  *
  * @module services/core/usage/account-reference-move
  */
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { logger } from '../../../lib/logger.js';
+
+/** Messages already logged by this process, so a 60 s scan does not repeat them. */
+const loggedOnce = new Set<string>();
+
+function warnOnce(key: string, message: string, meta?: Record<string, unknown>): void {
+  if (loggedOnce.has(key)) return;
+  loggedOnce.add(key);
+  logger.warn(message, meta);
+}
+
+/**
+ * Whether an agent's manifest can be rewritten where it is: its project folder
+ * exists and its `.dork/agent.json` can be read. A folder that is gone (or on
+ * a volume that is not mounted) is skipped rather than recreated by the
+ * registry's write, and never blocks the rename.
+ */
+async function manifestReachable(projectPath: string | undefined): Promise<boolean> {
+  if (!projectPath) return false;
+  try {
+    await fs.access(path.join(projectPath, '.dork', 'agent.json'), fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** One rename to carry through: the old id and the one the migration gave the row. */
 export interface AccountRename {
@@ -31,13 +58,13 @@ export interface AccountReferenceSites {
   /** The agent registry, or `undefined` when it is not running (nothing then moves). */
   agents:
     | {
-        /** Every registered agent, with the account its manifest names. */
-        list(): readonly { id: string; account?: string | null }[];
+        /** Every registered agent, with the account its manifest names and its folder. */
+        list(): readonly { id: string; account?: string | null; projectPath?: string }[];
         /** Point one agent's manifest at another account (file first). */
         setAccount(agentId: string, account: string): Promise<void>;
       }
     | undefined;
-  /** Move every schedule (row, approval, file) from one account id to another. */
+  /** Move every schedule (row, approval, file) from one account id to another; package-owned ones stay. */
   renameScheduleAccount(from: string, to: string): Promise<unknown>;
 }
 
@@ -54,14 +81,24 @@ export async function moveAccountReferences(
 ): Promise<boolean> {
   if (renames.length === 0) return true;
   if (!sites.agents) {
-    logger.warn(
+    warnOnce(
+      'no-registry',
       '[account-usage] the agent registry is not running, so a renamed account keeps its old name for now'
     );
     return false;
   }
   for (const { from, to } of renames) {
     for (const agent of sites.agents.list()) {
-      if (agent.account === from) await sites.agents.setAccount(agent.id, to);
+      if (agent.account !== from) continue;
+      if (!(await manifestReachable(agent.projectPath))) {
+        warnOnce(
+          `agent-unreachable:${agent.id}`,
+          '[account-usage] skipped an agent whose folder is missing or unreadable while moving a renamed account; its manifest still names the old id',
+          { agentId: agent.id, projectPath: agent.projectPath }
+        );
+        continue;
+      }
+      await sites.agents.setAccount(agent.id, to);
     }
     await sites.renameScheduleAccount(from, to);
     logger.info('[account-usage] moved every reference to a renamed Claude account', { from, to });

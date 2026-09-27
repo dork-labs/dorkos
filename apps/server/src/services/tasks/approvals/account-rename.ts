@@ -30,6 +30,7 @@ import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseContentKey, scheduleContentKey } from '../schedule-permission-clamp.js';
 import { planTaskFileUpdate } from '../task-file-update.js';
+import { logger } from '../../../lib/logger.js';
 
 /** What {@link renameScheduleAccount} moved. */
 export interface ScheduleAccountRename {
@@ -61,24 +62,120 @@ function fileAccount(content: string): string | undefined {
 }
 
 /**
+ * Replace the `account:` value inside the `schedule:` block of a SKILL.md's
+ * frontmatter, touching nothing else: quoting style, a trailing comment, every
+ * other line (comments, flow lists, `enabled: true`, the blank line before the
+ * body) stay byte for byte. `null` when that edit is not possible (no
+ * frontmatter, a flow-style `schedule: { ... }`, or not exactly one match).
+ *
+ * @param content - The file's bytes.
+ * @param from - The account value to replace.
+ * @param to - The new value.
+ */
+export function rewriteScheduleAccountInPlace(
+  content: string,
+  from: string,
+  to: string
+): string | null {
+  const frontmatter = /^---\r?\n([\s\S]*?\r?\n)---(?:\r?\n|$)/.exec(content);
+  if (!frontmatter) return null;
+  const start = frontmatter[0].indexOf(frontmatter[1]);
+  const lines = frontmatter[1].split('\n');
+  let inSchedule = false;
+  let blockIndent: number | null = null;
+  const hits: number[] = [];
+  lines.forEach((line, index) => {
+    const bare = line.replace(/\r$/, '');
+    if (/^schedule:\s*(#.*)?$/.test(bare)) {
+      inSchedule = true;
+      return;
+    }
+    if (!inSchedule || bare.trim() === '' || /^\s*#/.test(bare)) return;
+    const indent = /^ */.exec(bare)![0].length;
+    if (indent === 0) {
+      inSchedule = false;
+      return;
+    }
+    blockIndent ??= indent;
+    if (indent !== blockIndent) return;
+    const match = /^(\s*account\s*:\s*)(['"]?)(.*?)\2(\s*(?:#.*)?)$/.exec(bare);
+    if (match && match[3] === from) hits.push(index);
+  });
+  if (hits.length !== 1) return null;
+  const at = hits[0]!;
+  lines[at] = lines[at]!.replace(
+    /^(\s*account\s*:\s*)(['"]?)(.*?)\2(\s*(?:#.*)?)(\r?)$/,
+    (_all, prefix: string, quote: string, _value: string, rest: string, cr: string) =>
+      `${prefix}${quote}${to}${quote}${rest}${cr}`
+  );
+  const absoluteStart = frontmatter.index + start;
+  return (
+    content.slice(0, absoluteStart) +
+    lines.join('\n') +
+    content.slice(absoluteStart + frontmatter[1].length)
+  );
+}
+
+/** Whether an installed package owns a schedule's file (never written by DorkOS). */
+export type ScheduleOwnershipCheck = (schedule: {
+  filePath: string;
+  agentId: string | null;
+}) => Promise<boolean>;
+
+/** Schedules already reported as skipped, so each is logged once per process. */
+const loggedSkips = new Set<string>();
+
+/**
  * Move every schedule naming account `from` to `to`: rows and their approval
- * in one transaction, then each schedule file that still says `from`.
+ * in one transaction, then each schedule file that still says `from`, edited in
+ * place.
+ *
+ * A schedule whose file an installed package owns is skipped entirely, row and
+ * file: DorkOS never writes a package's file, and moving the row alone would
+ * only be undone by the next sync. It keeps `default`, which once the rename
+ * marker is dropped means the machine default (contract rev 6d). Logged once.
  *
  * @param db - The database holding `pulse_schedules`.
  * @param from - The old registry id (`default`).
  * @param to - The id the migration gave the row (`default-N`).
+ * @param isPackageOwned - Whether a schedule's file belongs to an installed package.
  * @returns What moved. Throws when a file cannot be rewritten, so the caller
  *   keeps its rename marker and tries again.
  */
 export async function renameScheduleAccount(
   db: Db,
   from: string,
-  to: string
+  to: string,
+  isPackageOwned: ScheduleOwnershipCheck
 ): Promise<ScheduleAccountRename> {
+  const owned = new Set<string>();
+  const candidates = db
+    .select({
+      id: pulseSchedules.id,
+      filePath: pulseSchedules.filePath,
+      agentId: pulseSchedules.agentId,
+      account: pulseSchedules.account,
+    })
+    .from(pulseSchedules)
+    .all()
+    .filter((row) => row.account === from || row.account === to);
+  for (const row of candidates) {
+    if (!(await isPackageOwned(row))) continue;
+    owned.add(row.id);
+    if (row.account === from && !loggedSkips.has(row.id)) {
+      loggedSkips.add(row.id);
+      logger.info(
+        '[account-usage] left a schedule an installed package owns on `default`, which now means the machine default',
+        { scheduleId: row.id, filePath: row.filePath }
+      );
+    }
+  }
+
   let rows = 0;
   db.transaction((tx) => {
     const named = tx.select().from(pulseSchedules).where(eq(pulseSchedules.account, from)).all();
     for (const row of named) {
+      if (owned.has(row.id)) continue;
       tx.update(pulseSchedules)
         .set({
           account: to,
@@ -92,11 +189,12 @@ export async function renameScheduleAccount(
 
   let files = 0;
   const moved = db
-    .select({ filePath: pulseSchedules.filePath })
+    .select({ id: pulseSchedules.id, filePath: pulseSchedules.filePath })
     .from(pulseSchedules)
     .where(eq(pulseSchedules.account, to))
     .all();
-  for (const { filePath } of moved) {
+  for (const { id, filePath } of moved) {
+    if (owned.has(id)) continue;
     let content: string;
     try {
       content = await fs.readFile(filePath, 'utf8');
@@ -106,6 +204,15 @@ export async function renameScheduleAccount(
       throw err;
     }
     if (fileAccount(content) !== from) continue;
+    const edited = rewriteScheduleAccountInPlace(content, from, to);
+    if (edited !== null) {
+      await fs.writeFile(filePath, edited);
+      files++;
+      continue;
+    }
+    // A shape the in-place edit does not handle: rewrite through the planner,
+    // which re-serializes the frontmatter (comments and quoting are lost).
+    logger.warn('[account-usage] rewrote a schedule file whole to move its account', { filePath });
     const plan = planTaskFileUpdate(filePath, content, { account: to });
     if (plan.kind === 'refuse') {
       throw new Error(`Could not rewrite the account in ${filePath}: ${plan.message}`);

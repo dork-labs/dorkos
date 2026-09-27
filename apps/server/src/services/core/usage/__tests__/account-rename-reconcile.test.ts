@@ -35,7 +35,7 @@ let home: string;
 let skillFile: string;
 let db: Db;
 let tasks: TaskStore;
-let agents: { id: string; account?: string | null }[];
+let agents: { id: string; account?: string | null; projectPath?: string }[];
 let stores: AccountUsageStore[];
 
 const configPath = () => path.join(dorkHome, 'config.json');
@@ -74,7 +74,7 @@ function sites(overrides: Partial<AccountReferenceSites> = {}): AccountReference
         agents = agents.map((a) => (a.id === id ? { ...a, account } : a));
       },
     },
-    renameScheduleAccount: (from, to) => renameScheduleAccount(db, from, to),
+    renameScheduleAccount: (from, to) => renameScheduleAccount(db, from, to, async () => false),
     ...overrides,
   };
 }
@@ -144,9 +144,12 @@ beforeEach(async () => {
   await fs.mkdir(dorkHome, { recursive: true });
   db = createTestDb();
   tasks = new TaskStore(db);
+  const agentDir = path.join(root, 'agent-a');
+  await fs.mkdir(path.join(agentDir, '.dork'), { recursive: true });
+  await fs.writeFile(path.join(agentDir, '.dork', 'agent.json'), '{}');
   agents = [
-    { id: 'agent-a', account: 'default' },
-    { id: 'agent-b', account: 'work' },
+    { id: 'agent-a', account: 'default', projectPath: agentDir },
+    { id: 'agent-b', account: 'work', projectPath: agentDir },
   ];
   stores = [];
 });
@@ -164,9 +167,9 @@ describe('carrying a renamed `default` row through to its references', () => {
     const store = makeStore();
     await store.reconcileAccounts();
 
-    expect(agents).toEqual([
-      { id: 'agent-a', account: 'default-2' },
-      { id: 'agent-b', account: 'work' },
+    expect(agents.map((a) => [a.id, a.account])).toEqual([
+      ['agent-a', 'default-2'],
+      ['agent-b', 'work'],
     ]);
     const row = db.select().from(pulseSchedules).where(eq(pulseSchedules.id, scheduleId)).get()!;
     expect(row.account).toBe('default-2');
@@ -204,7 +207,7 @@ describe('carrying a renamed `default` row through to its references', () => {
       sites({
         renameScheduleAccount: async (from, to) => {
           if (failSchedules) throw new Error('disk full');
-          return renameScheduleAccount(db, from, to);
+          return renameScheduleAccount(db, from, to, async () => false);
         },
       })
     );
@@ -237,5 +240,45 @@ describe('carrying a renamed `default` row through to its references', () => {
     expect(renameSchedules).not.toHaveBeenCalled();
     expect(await fs.readFile(configPath(), 'utf8')).toBe(before);
     expect(agents[0]!.account).toBe('default');
+  });
+
+  it('skips an agent whose folder is gone, creates nothing, and still drops the marker', async () => {
+    await writeConfig([renamedRow()]);
+    const gone = path.join(root, 'gone-agent');
+    agents.push({ id: 'agent-gone', account: 'default', projectPath: gone });
+    const setAccount = vi.fn(async (id: string, account: string) => {
+      agents = agents.map((a) => (a.id === id ? { ...a, account } : a));
+    });
+    const store = makeStore(sites({ agents: { list: () => agents, setAccount } }));
+    await store.reconcileAccounts();
+    expect(setAccount.mock.calls.map(([id]) => id)).toEqual(['agent-a']);
+    await expect(fs.access(gone)).rejects.toThrow();
+    expect((await storedRows())[0].renamedFrom).toBeUndefined();
+  });
+
+  it('a fresh reconcile after wiring the mover runs with it, not the pass already in flight', async () => {
+    await writeConfig([renamedRow()]);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const store = new AccountUsageStore({
+      dorkHome,
+      readConfig: async () => {
+        await gate;
+        return readConfigFile(configPath());
+      },
+      resolveDefaultRoot: (runtime, config) => defaultAccountFolder(runtime, config, home),
+      timings: { scanIntervalMs: 3_600_000 },
+    });
+    stores.push(store);
+    const early = store.reconcileAccounts();
+    store.setReferenceMover({
+      move: (renames) => moveAccountReferences(renames, sites()),
+      dropMarkers: async (ids) => dropClaudeAccountRenameMarkers(fileConfig, ids),
+    });
+    const fresh = store.reconcileAccounts({ fresh: true });
+    release();
+    await Promise.all([early, fresh]);
+    expect(agents[0]!.account).toBe('default-2');
+    expect((await storedRows())[0].renamedFrom).toBeUndefined();
   });
 });

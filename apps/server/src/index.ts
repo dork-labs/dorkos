@@ -496,6 +496,7 @@ import { AccountUsageStore } from './services/core/usage/account-usage-store.js'
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
+import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
 import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
 import {
   claudeDefaultAccountFolder,
@@ -2367,19 +2368,35 @@ async function start() {
         moveAccountReferences(renames, {
           agents: mesh
             ? {
-                list: () => mesh.list(),
+                list: () =>
+                  mesh.list().map((agent) => ({
+                    id: agent.id,
+                    account: agent.account,
+                    projectPath: mesh.getProjectPath(agent.id) ?? undefined,
+                  })),
                 setAccount: async (agentId, account) => {
                   await mesh.update(agentId, { account });
                 },
               }
             : undefined,
-          renameScheduleAccount: (from, to) => renameScheduleAccount(db, from, to),
+          renameScheduleAccount: (from, to) =>
+            renameScheduleAccount(db, from, to, (schedule) =>
+              isPackageOwned(
+                schedule.filePath,
+                packageOwnershipContext(
+                  dorkHome,
+                  schedule.agentId ? mesh?.getProjectPath(schedule.agentId) : undefined
+                )
+              )
+            ),
         }),
       dropMarkers: async (ids) => {
         dropClaudeAccountRenameMarkers(configManager, ids);
       },
     });
-    await accountUsageStore.reconcileAccounts();
+    // Fresh, not the one a config write or the scan may have in flight: that one
+    // started without the mover.
+    await accountUsageStore.reconcileAccounts({ fresh: true });
   }
 
   // Open #team, the room the home tab renders, and seat every registered agent

@@ -555,8 +555,15 @@ export class AccountUsageStore {
    * Bring memory and the ledger files in line with the registry on disk
    * (`account-usage-reconcile.ts`). Idempotent, and never two at once; run at
    * boot, on every scan and after an in-app config write.
+   *
+   * @param opts - `fresh` waits for a pass in flight and runs a new one.
    */
-  reconcileAccounts(): Promise<void> {
+  async reconcileAccounts(opts: { fresh?: boolean } = {}): Promise<void> {
+    // `fresh`: a pass already running was built before whatever the caller just
+    // wired (the reference mover), so wait it out and start a new one.
+    if (opts.fresh) {
+      while (this.reconciling) await this.reconciling.catch(() => {});
+    }
     if (!this.reconciling) {
       this.reconciling = reconcileAccounts(this.reconcileHost()).finally(() => {
         this.reconciling = undefined;
