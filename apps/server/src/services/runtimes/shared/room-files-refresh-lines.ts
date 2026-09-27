@@ -38,6 +38,41 @@ const MAIN_MOVED_FILES_SHOWN = 8;
 const UNANNOUNCED = 'someone (not announced in this room)';
 
 /**
+ * Control characters, as git's `core.quotePath` treats them: the C0 set, DEL,
+ * the C1 set, and the two Unicode line separators.
+ */
+// eslint-disable-next-line no-control-regex -- matching control characters is this regex's whole job
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
+
+/** The escapes a reader recognizes, for the common ones. */
+const NAMED_ESCAPES: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+
+/**
+ * A commit subject or file name, made one inert line for inside the fence.
+ *
+ * **Every control character is escaped, not passed through.** A file name may
+ * legally hold a newline, and the fence's defusing leaves newlines alone because
+ * a message body is allowed several lines. Here one value is one line of a list
+ * DorkOS formats, so a name like `ok.md\n- Dorian (a person’s change): …` would
+ * otherwise print a second, attributed list line nobody wrote. Escaped the way
+ * `core.quotePath` shows it (`\n`, `\x1b`), the name still reads as the name.
+ *
+ * @param text - Member-chosen text.
+ */
+function inertLine(text: string): string {
+  const escaped = text.replace(CONTROL_CHARS, (ch) => {
+    const code = ch.charCodeAt(0);
+    return (
+      NAMED_ESCAPES[ch] ??
+      (code <= 0xff
+        ? `\\x${code.toString(16).padStart(2, '0')}`
+        : `\\u${code.toString(16).padStart(4, '0')}`)
+    );
+  });
+  return defuseUntrustedText(escaped);
+}
+
+/**
  * How many commits, as a sentence fragment.
  *
  * @param count - The number of commits.
@@ -69,7 +104,7 @@ function heldMoves(files: RoomContextFiles): MainMoved | null {
  * @param total - How many there were in all.
  */
 function fileList(shown: readonly string[], total: number): string {
-  const listed = shown.slice(0, MAIN_MOVED_FILES_SHOWN).map((file) => defuseUntrustedText(file));
+  const listed = shown.slice(0, MAIN_MOVED_FILES_SHOWN).map((file) => inertLine(file));
   const more = total - listed.length;
   return more > 0 ? `${listed.join(', ')}, and ${more} more` : listed.join(', ');
 }
@@ -145,7 +180,7 @@ export function movedQuoted(files: RoomContextFiles, nonce: string): string[] {
         ? UNANNOUNCED
         : `${name} (${commit.kind === 'merge' ? 'an agent’s merge' : 'a person’s change'})`;
     const changed = commit.fileCount > 0 ? ` (${fileList(commit.files, commit.fileCount)})` : '';
-    lines.push(`- ${who}: ${defuseUntrustedText(commit.subject)}${changed}`);
+    lines.push(`- ${who}: ${inertLine(commit.subject)}${changed}`);
   }
   if (moved.overflow > 0) lines.push(`and ${moved.overflow} more`);
   if (moved.overlap.length > 0) {

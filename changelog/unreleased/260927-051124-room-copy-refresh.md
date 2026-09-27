@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(rooms): keep a file name or commit subject on its own line in the what-moved heads-up (DOR-2411)'
   - "feat(rooms): bring an agent's copy of the room's files up to date when its turn starts (DOR-2411)"
 ---
 
