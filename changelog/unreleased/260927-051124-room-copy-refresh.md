@@ -1,5 +1,6 @@
 ---
 covers:
+  - "fix(rooms): quote the copy's path in the what-moved sync command (DOR-2411)"
   - 'fix(operating-skills): bump the pack to 35 for the room copy refresh note (DOR-2411)'
   - "fix(rooms): never remove another process's git lock after a refresh fails (DOR-2411)"
   - "fix(rooms): leave a room copy alone when the room's git settings name a program (DOR-2411)"
