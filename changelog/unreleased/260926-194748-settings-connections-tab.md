@@ -3,6 +3,7 @@ covers:
   - 'feat(settings): add a Connections tab for how DorkOS reaches your apps (DOR-2419)'
   - 'fix(settings): make Settings › Connections honest about what each change stops (DOR-2419)'
   - 'fix(settings): name the Change-key confirm for what it does (DOR-2419)'
+  - 'fix(connections): say when the DorkOS account check failed (DOR-2419)'
 ---
 
 ### Changed

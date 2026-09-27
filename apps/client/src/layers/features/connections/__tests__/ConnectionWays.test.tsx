@@ -349,6 +349,27 @@ describe('ConnectionWays', () => {
     expect(handlers.onManageAccount).toHaveBeenCalledTimes(1);
   });
 
+  it('never claims nothing is set up when the account check failed, and retries it', async () => {
+    const user = userEvent.setup();
+    const cloudRead = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('cloud down'))
+      .mockResolvedValue({ linked: true, accountLabel: 'me', lastHeartbeatAt: null });
+    renderWays(
+      createMockTransport({
+        getCloudStatus: cloudRead,
+        getConnectorProviders: vi.fn().mockResolvedValue([provider(), nango]),
+      })
+    );
+
+    const account = await screen.findByTestId('connection-way-dorkos-account');
+    expect(account).toHaveTextContent('Couldn’t check your DorkOS account');
+    expect(screen.queryByText('Set up when you connect your first app')).toBeNull();
+    await user.click(within(account).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(account).toHaveTextContent('Working'));
+    expect(cloudRead).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses to show counts it could not read', async () => {
     const user = userEvent.setup();
     const read = vi

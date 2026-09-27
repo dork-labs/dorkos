@@ -81,7 +81,10 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
   const statuses = providers.data;
   const apps = groupAppsByWay(connections.data.connections, statuses);
   const linked = cloud.data?.linked === true;
-  const showAccount = linked || apps.dorkosAccount.length > 0;
+  // A failed account check is not "not linked": the account row stays, says it
+  // couldn't check, and offers a retry, so this section never claims nothing is
+  // set up on the strength of a read that failed.
+  const showAccount = linked || cloud.isError || apps.dorkosAccount.length > 0;
   const keyRows = statuses.filter(
     (status) =>
       status.configured || (apps.byKeyInstance[status.providerInstanceId]?.length ?? 0) > 0
@@ -89,6 +92,12 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
   const keysToAdd = statuses.filter((status) => !keyRows.includes(status));
   const accountToAdd = cloud.isSuccess && !showAccount;
   const nothingSetUp = !showAccount && keyRows.length === 0;
+
+  // Still asking about the account, with nothing else to show: saying
+  // "nothing set up" now could be wrong a moment later.
+  if (nothingSetUp && cloud.isPending) {
+    return <Skeleton className="h-16 rounded-lg" aria-label="Checking your DorkOS account" />;
+  }
 
   const addWays = (
     <AddWays keys={keysToAdd} offerAccount={accountToAdd} onManageAccount={onManageAccount} />
@@ -129,6 +138,8 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
           <AccountWayRow
             linked={linked}
             checkFailed={cloud.isError}
+            retrying={cloud.isFetching}
+            onRetry={() => void cloud.refetch()}
             apps={apps.dorkosAccount}
             onManageAccount={onManageAccount}
           />
@@ -152,11 +163,15 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
 function AccountWayRow({
   linked,
   checkFailed,
+  retrying,
+  onRetry,
   apps,
   onManageAccount,
 }: {
   linked: boolean;
   checkFailed: boolean;
+  retrying: boolean;
+  onRetry: () => void;
   apps: readonly ImpactApp[];
   onManageAccount: () => void;
 }) {
@@ -169,13 +184,24 @@ function AccountWayRow({
     <WayRow
       testId="connection-way-dorkos-account"
       name="Your DorkOS account"
-      detail={`${appCount(apps.length)} connected`}
+      detail={
+        checkFailed && apps.length === 0
+          ? 'Couldn’t check your DorkOS account'
+          : `${appCount(apps.length)} connected`
+      }
       status={status}
       actions={
-        <Button size="sm" variant="outline" onClick={onManageAccount}>
-          Manage in Access
-          <ChevronRight className="size-3.5" aria-hidden />
-        </Button>
+        <>
+          {checkFailed && (
+            <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
+              {retrying ? 'Checking…' : 'Try again'}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={onManageAccount}>
+            Manage in Access
+            <ChevronRight className="size-3.5" aria-hidden />
+          </Button>
+        </>
       }
     >
       {!linked && !checkFailed && apps.length > 0 && (
