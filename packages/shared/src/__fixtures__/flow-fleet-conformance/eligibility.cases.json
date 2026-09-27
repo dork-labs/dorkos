@@ -1,0 +1,315 @@
+{
+  "contract": "fleet",
+  "about": "Whether an account has room for work, for every kind of account (spec flow-cli-core 1.1b 'Room on an account'). Call accountRoom(runtime, policy, ledger, now) and spendRoom(ledger.spend). input.ledger is the parsed ledger (windows, and spend when present), or null with none; input.policy is the account's resolved policy (only role, reservePct and spendDownWindowHours matter). Every window is read with readWindow first. Model buckets (keys starting 'model:' or 'seven_day_') are skipped here; modelRoom checks them when the model is known. room is false when any current non-bucket window is 'rejected' or at its ceiling (seven_day against 100 - effectiveReservePct, every other window against 100), including a credits:<slug> or rate_limit:<slug> rejection whatever the other windows say, or when spendRoom is false. Else room is true when there is a current non-bucket window reading or a spend reading: a metered account is eligible unless its cap is reached. Else, with nothing to go on, room is true for opencode (a local-model account, no windows and no cap, is always eligible) and null (unknown) for claude-code and codex. spendRoom is null with no valid spend reading, false when limitUsd is set and costUsd >= limitUsd, else true. A spend reading never goes stale.",
+  "cases": [
+    {
+      "name": "Claude Code with no ledger is unknown",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "claude-code",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": null
+      },
+      "expected": {"room": null, "spendRoom": null}
+    },
+    {
+      "name": "Codex with no ledger is unknown",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "codex",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": null
+      },
+      "expected": {"room": null, "spendRoom": null}
+    },
+    {
+      "name": "an OpenCode account with no windows and no cap (a local model) is always eligible",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "opencode",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": null
+      },
+      "expected": {"room": true, "spendRoom": null}
+    },
+    {
+      "name": "a metered account under its cap has room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "opencode",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {},
+          "spend": {
+            "periodStart": "2026-09-01T00:00:00.000Z",
+            "costUsd": 20,
+            "limitUsd": 25,
+            "observedAt": "2026-09-26T15:59:00.000Z",
+            "source": "sidecar"
+          }
+        }
+      },
+      "expected": {"room": true, "spendRoom": true}
+    },
+    {
+      "name": "a metered account at its cap has none",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "opencode",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {},
+          "spend": {
+            "periodStart": "2026-09-01T00:00:00.000Z",
+            "costUsd": 25,
+            "limitUsd": 25,
+            "observedAt": "2026-09-26T15:59:00.000Z",
+            "source": "sidecar"
+          }
+        }
+      },
+      "expected": {"room": false, "spendRoom": false}
+    },
+    {
+      "name": "a metered account with no cap has room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "opencode",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {},
+          "spend": {
+            "periodStart": "2026-09-01T00:00:00.000Z",
+            "costUsd": 310,
+            "limitUsd": null,
+            "observedAt": "2026-09-26T15:59:00.000Z",
+            "source": "sidecar"
+          }
+        }
+      },
+      "expected": {"room": true, "spendRoom": true}
+    },
+    {
+      "name": "an out-of-credits error blocks, whatever the spend says",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "opencode",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "credits:openrouter": {
+              "usedPct": null,
+              "resetsAt": null,
+              "status": "rejected",
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "error"
+            }
+          },
+          "spend": {
+            "periodStart": "2026-09-01T00:00:00.000Z",
+            "costUsd": 1,
+            "limitUsd": 25,
+            "observedAt": "2026-09-26T15:59:00.000Z",
+            "source": "sidecar"
+          }
+        }
+      },
+      "expected": {"room": false, "spendRoom": true}
+    },
+    {
+      "name": "a rate-limit error past its resetsAt no longer blocks",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "opencode",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "rate_limit:openrouter": {
+              "usedPct": null,
+              "resetsAt": "2026-09-26T15:59:30.000Z",
+              "status": "rejected",
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "error"
+            }
+          }
+        }
+      },
+      "expected": {"room": true, "spendRoom": null}
+    },
+    {
+      "name": "a rate-limit error with no resetsAt stops blocking after an hour",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "opencode",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "rate_limit:openrouter": {
+              "usedPct": null,
+              "resetsAt": null,
+              "status": "rejected",
+              "observedAt": "2026-09-26T14:59:59.000Z",
+              "source": "error"
+            }
+          }
+        }
+      },
+      "expected": {"room": true, "spendRoom": null}
+    },
+    {
+      "name": "windows under their ceilings have room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "claude-code",
+        "policy": {"role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "five_hour": {
+              "usedPct": 20,
+              "resetsAt": "2026-09-26T19:00:00.000Z",
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "statusline"
+            },
+            "seven_day": {
+              "usedPct": 45,
+              "resetsAt": "2026-09-29T16:00:00.000Z",
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "statusline"
+            }
+          }
+        }
+      },
+      "expected": {"room": true, "spendRoom": null}
+    },
+    {
+      "name": "the weekly window counts the reserve",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "claude-code",
+        "policy": {"role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "five_hour": {
+              "usedPct": 20,
+              "resetsAt": "2026-09-26T19:00:00.000Z",
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "statusline"
+            },
+            "seven_day": {
+              "usedPct": 60,
+              "resetsAt": "2026-09-29T16:00:00.000Z",
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "statusline"
+            }
+          }
+        }
+      },
+      "expected": {"room": false, "spendRoom": null}
+    },
+    {
+      "name": "a Codex window:<minutes> at 100 has no room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "codex",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "window:60": {
+              "usedPct": 100,
+              "resetsAt": null,
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "rollout"
+            }
+          }
+        }
+      },
+      "expected": {"room": false, "spendRoom": null}
+    },
+    {
+      "name": "a full model bucket does not block the account",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "codex",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "five_hour": {
+              "usedPct": 10,
+              "resetsAt": null,
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "rollout"
+            },
+            "model:gpt-5.3-codex-spark": {
+              "usedPct": 100,
+              "resetsAt": null,
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "rollout"
+            }
+          }
+        }
+      },
+      "expected": {"room": true, "spendRoom": null}
+    },
+    {
+      "name": "only model buckets is unknown",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "claude-code",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "model:opus": {
+              "usedPct": 10,
+              "resetsAt": null,
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "statusline"
+            },
+            "seven_day_opus": {
+              "usedPct": 10,
+              "resetsAt": null,
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "statusline"
+            }
+          }
+        }
+      },
+      "expected": {"room": null, "spendRoom": null}
+    },
+    {
+      "name": "a subscription account's credits error blocks it too",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "runtime": "codex",
+        "policy": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}},
+        "ledger": {
+          "windows": {
+            "five_hour": {
+              "usedPct": 10,
+              "resetsAt": null,
+              "status": null,
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "rollout"
+            },
+            "credits:openai": {
+              "usedPct": null,
+              "resetsAt": null,
+              "status": "rejected",
+              "observedAt": "2026-09-26T15:59:00.000Z",
+              "source": "error"
+            }
+          }
+        }
+      },
+      "expected": {"room": false, "spendRoom": null}
+    }
+  ]
+}

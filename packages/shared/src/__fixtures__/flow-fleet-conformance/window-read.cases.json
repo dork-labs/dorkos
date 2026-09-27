@@ -1,0 +1,382 @@
+{
+  "contract": "fleet",
+  "about": "Reading one ledger window (spec flow-cli-core 1.2 'Reading a window'). Call readWindow(entry, now, key). input.entry is the stored window entry, or null when the ledger has none. expected.reading is null for 'no reading' (no entry, an invalid entry, or a stale one), else { usedPct, resetsAt, windowMinutes (only when the entry has one), status, observedAt, source, expired } with timestamps as UTC ISO strings ending in 'Z' with milliseconds. Expired: resetsAt is set and now >= resetsAt; it reads usedPct 0, status 'allowed', expired true. Stale: resetsAt is null and now - observedAt is MORE than the window length: 1 hour for credits:<slug> and rate_limit:<slug>; else the entry's windowMinutes, or the minutes in a window:<minutes> key; else five_hour 5 h and every other key 7 days. A windowMinutes that is not an integer of 1 or more makes the entry invalid.",
+  "cases": [
+    {
+      "name": "a current entry reads as stored",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T16:05:00.000Z",
+        "entry": {
+          "usedPct": 41.5,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "allowed",
+          "observedAt": "2026-09-26T16:04:10.000Z",
+          "source": "statusline"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 41.5,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "allowed",
+          "observedAt": "2026-09-26T16:04:10.000Z",
+          "source": "statusline",
+          "expired": false
+        }
+      }
+    },
+    {
+      "name": "at exactly resetsAt the window has expired",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T19:00:00.000Z",
+        "entry": {
+          "usedPct": 97,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "allowed_warning",
+          "observedAt": "2026-09-26T18:00:00.000Z",
+          "source": "sdk_event"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 0,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "allowed",
+          "observedAt": "2026-09-26T18:00:00.000Z",
+          "source": "sdk_event",
+          "expired": true
+        }
+      }
+    },
+    {
+      "name": "an expired rejection reads as allowed",
+      "input": {
+        "key": "seven_day",
+        "now": "2026-10-01T00:00:00.000Z",
+        "entry": {
+          "usedPct": null,
+          "resetsAt": "2026-09-30T00:00:00.000Z",
+          "status": "rejected",
+          "observedAt": "2026-09-29T12:00:00.000Z",
+          "source": "transcript"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 0,
+          "resetsAt": "2026-09-30T00:00:00.000Z",
+          "status": "allowed",
+          "observedAt": "2026-09-29T12:00:00.000Z",
+          "source": "transcript",
+          "expired": true
+        }
+      }
+    },
+    {
+      "name": "timestamps with an offset are compared as instants and read back in UTC",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T19:00:00.000Z",
+        "entry": {
+          "usedPct": 10,
+          "resetsAt": "2026-09-26T21:00:00+02:00",
+          "status": null,
+          "observedAt": "2026-09-26T19:30:00+02:00",
+          "source": "statusline"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 0,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "allowed",
+          "observedAt": "2026-09-26T17:30:00.000Z",
+          "source": "statusline",
+          "expired": true
+        }
+      }
+    },
+    {
+      "name": "a five_hour entry with no resetsAt goes stale after 5 hours",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T21:00:00.001Z",
+        "entry": {
+          "usedPct": 50,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "statusline"
+        }
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "exactly 5 hours old is not yet stale",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T21:00:00.000Z",
+        "entry": {
+          "usedPct": 50,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "statusline"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 50,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "statusline",
+          "expired": false
+        }
+      }
+    },
+    {
+      "name": "a seven_day entry with no resetsAt is still current after 6 days",
+      "input": {
+        "key": "seven_day",
+        "now": "2026-10-02T16:00:00.000Z",
+        "entry": {
+          "usedPct": 30,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "sdk_usage"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 30,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "sdk_usage",
+          "expired": false
+        }
+      }
+    },
+    {
+      "name": "a model bucket goes stale after 7 days, like every non-five_hour key",
+      "input": {
+        "key": "model:opus",
+        "now": "2026-10-03T16:00:00.001Z",
+        "entry": {
+          "usedPct": 30,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "sdk_usage"
+        }
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "a status-only reading is a reading",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T16:05:00.000Z",
+        "entry": {
+          "usedPct": null,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "rejected",
+          "observedAt": "2026-09-26T16:04:00.000Z",
+          "source": "transcript"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": null,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "rejected",
+          "observedAt": "2026-09-26T16:04:00.000Z",
+          "source": "transcript",
+          "expired": false
+        }
+      }
+    },
+    {
+      "name": "no entry is no reading",
+      "input": {"key": "five_hour", "now": "2026-09-26T16:05:00.000Z", "entry": null},
+      "expected": {"reading": null}
+    },
+    {
+      "name": "an entry with no source is no reading",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T16:05:00.000Z",
+        "entry": {"usedPct": 10, "resetsAt": null, "status": null, "observedAt": "2026-09-26T16:04:00.000Z"}
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "an entry with neither usedPct nor status is no reading",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T16:05:00.000Z",
+        "entry": {
+          "usedPct": null,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:04:00.000Z",
+          "source": "statusline"
+        }
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "a timestamp with no zone is no reading",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T16:05:00.000Z",
+        "entry": {
+          "usedPct": 10,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:04:00",
+          "source": "statusline"
+        }
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "a window:<minutes> key with no resetsAt goes stale after its own length",
+      "input": {
+        "key": "window:60",
+        "now": "2026-09-26T17:00:00.001Z",
+        "entry": {
+          "usedPct": 10,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "rollout"
+        }
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "a window:<minutes> key at exactly its length is not yet stale",
+      "input": {
+        "key": "window:60",
+        "now": "2026-09-26T17:00:00.000Z",
+        "entry": {
+          "usedPct": 10,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "rollout"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 10,
+          "resetsAt": null,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "rollout",
+          "expired": false
+        }
+      }
+    },
+    {
+      "name": "a stored windowMinutes is kept and sets the stale age",
+      "input": {
+        "key": "model:gpt-5.3-codex-spark",
+        "now": "2026-09-26T21:00:00.001Z",
+        "entry": {
+          "usedPct": 80,
+          "resetsAt": null,
+          "windowMinutes": 300,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "rollout"
+        }
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "a windowMinutes that is not a positive integer is no reading",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T16:05:00.000Z",
+        "entry": {
+          "usedPct": 10,
+          "resetsAt": null,
+          "windowMinutes": 0,
+          "status": null,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "rollout"
+        }
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "credits:<slug> with no resetsAt is current for an hour",
+      "input": {
+        "key": "credits:openrouter",
+        "now": "2026-09-26T17:00:00.000Z",
+        "entry": {
+          "usedPct": null,
+          "resetsAt": null,
+          "status": "rejected",
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "error"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": null,
+          "resetsAt": null,
+          "status": "rejected",
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "error",
+          "expired": false
+        }
+      }
+    },
+    {
+      "name": "rate_limit:<slug> with no resetsAt is stale after an hour",
+      "input": {
+        "key": "rate_limit:openrouter",
+        "now": "2026-09-26T17:00:00.001Z",
+        "entry": {
+          "usedPct": null,
+          "resetsAt": null,
+          "status": "rejected",
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "error"
+        }
+      },
+      "expected": {"reading": null}
+    },
+    {
+      "name": "an error reading with a resetsAt expires then",
+      "input": {
+        "key": "rate_limit:openrouter",
+        "now": "2026-09-26T16:30:00.000Z",
+        "entry": {
+          "usedPct": null,
+          "resetsAt": "2026-09-26T16:10:00.000Z",
+          "status": "rejected",
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "error"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 0,
+          "resetsAt": "2026-09-26T16:10:00.000Z",
+          "status": "allowed",
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "error",
+          "expired": true
+        }
+      }
+    }
+  ]
+}

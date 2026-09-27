@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Fleet routing policy v1 (contract 2.0.0)",
+  "description": "flow's routing policy at <dorkHome>/flow/fleet.json (spec flow-cli-core 1.1b). Writers store only what the operator set; defaults are resolved at read time. Readers ignore fields they do not know; writers keep them. This is the WRITER shape. Readers accept more: a file with no v reads as version 1, and a bare account key written before contract 2.0.0 reads as claude-code:<key>; writers never write either. A file with another v is not read (every account at its default) and never written.",
+  "type": "object",
+  "required": ["v"],
+  "properties": {
+    "v": {"const": 1},
+    "handoff": {"enum": ["auto", "ask"], "description": "Default auto."},
+    "runtimes": {
+      "type": "array",
+      "description": "Runtimes in order of preference. Default [] (the runtime the item started on first).",
+      "uniqueItems": true,
+      "items": {"enum": ["claude-code", "codex", "opencode"]}
+    },
+    "crossRuntimeFallback": {"enum": ["off", "on"], "description": "Default off."},
+    "accounts": {
+      "type": "object",
+      "description": "Keyed <runtime>:<account-id>: an id in that runtime's registry in config.json, or default for its implicit account.",
+      "propertyNames": {"pattern": "^(claude-code|codex|opencode):[a-z0-9]+(-[a-z0-9]+)*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "enum": ["main", "rotation", "kept-out"],
+            "description": "Default rotation for an implicit default account, else kept-out."
+          },
+          "reservePct": {"type": "number", "minimum": 0, "maximum": 100, "description": "Default 50 for main, else 0."},
+          "spendDownWindowHours": {"type": "number", "minimum": 0, "description": "Default 24."},
+          "scope": {
+            "type": "object",
+            "properties": {
+              "repos": {
+                "type": "array",
+                "description": "owner/name, compared case-insensitively. Read only for kept-out. Default [].",
+                "items": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

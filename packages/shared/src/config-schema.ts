@@ -1382,15 +1382,27 @@ export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void 
  * - `id-invalid`: the id fails {@link ACCOUNT_ID_PATTERN} (a hand edit);
  *   listed, but it has no usage file and cannot be routed.
  * - `color-invalid`: `color` is not lowercase `#rrggbb`; read as `null`.
+ * - `label-invalid`: `label` is set but not text; read as `null`.
+ * - `id-minted`: a listed row had no id; read with the one minted for it.
+ * - `accounts-invalid`: `accounts` is set but not a list; read as no rows.
+ *   It names no row, so its `index` is `-1`.
  */
 export type ClaudeAccountReadWarningCode =
-  'row-invalid' | 'path-invalid' | 'id-duplicate' | 'id-reserved' | 'id-invalid' | 'color-invalid';
+  | 'row-invalid'
+  | 'path-invalid'
+  | 'id-duplicate'
+  | 'id-reserved'
+  | 'id-invalid'
+  | 'color-invalid'
+  | 'label-invalid'
+  | 'id-minted'
+  | 'accounts-invalid';
 
 /** One thing the registry reader noticed about a stored row. */
 export interface ClaudeAccountReadWarning {
   /** What was wrong. */
   code: ClaudeAccountReadWarningCode;
-  /** The row's position in the STORED array. */
+  /** The row's position in the STORED array, or `-1` for `accounts-invalid`. */
   index: number;
   /** One line naming the row and what the reader did about it. */
   message: string;
@@ -1497,7 +1509,9 @@ export type ReadClaudeAccount = ClaudeCodeAccount & {
  * stays listed with a warning; a bad `color` reads as `null`. Each row's color
  * is resolved by its position among the LISTED rows, so a skipped hand edit
  * never shifts the colors the operator sees. A missing or non-string `label`
- * reads as `null`.
+ * reads as `null`. The warning codes are the contract's (`identity.cases` in
+ * flow's conformance fixture), so a minted id, a label that is not text and an
+ * `accounts` that is not a list are each reported too.
  *
  * Read-time only, by design. Nothing here writes: the migration remains the sole
  * writer of the settled shape, and a reader that heals cannot corrupt a file it
@@ -1516,11 +1530,34 @@ export function readClaudeAccountSettings(raw: unknown): {
   const block =
     healed && typeof healed === 'object' ? (healed as Record<string, unknown>) : undefined;
   const defaultAccount = typeof block?.defaultAccount === 'string' ? block.defaultAccount : null;
-  const { rows, warnings } = classifyClaudeAccountRows(block?.accounts);
+  const storedRows = block?.accounts;
+  const { rows, warnings } = classifyClaudeAccountRows(storedRows);
+  if (storedRows !== undefined && storedRows !== null && !Array.isArray(storedRows)) {
+    warnings.push({
+      code: 'accounts-invalid',
+      index: -1,
+      message: 'The Claude account list is not a list, so it was read as no accounts.',
+    });
+  }
   const accounts: ReadClaudeAccount[] = [];
   for (const { index, row, listed } of rows) {
     if (!listed || !row) continue;
     const id = row.id as string;
+    const storedId = (storedRows as Record<string, unknown>[])[index]?.id;
+    if (typeof storedId !== 'string' || storedId.length === 0) {
+      warnings.push({
+        code: 'id-minted',
+        index,
+        message: `Claude account ${index + 1} has no id, so it was read as "${id}".`,
+      });
+    }
+    if (row.label !== undefined && row.label !== null && typeof row.label !== 'string') {
+      warnings.push({
+        code: 'label-invalid',
+        index,
+        message: `Claude account "${id}" has a label that is not text, so it has no label.`,
+      });
+    }
     if (id === IMPLICIT_ACCOUNT_ID) {
       warnings.push({
         code: 'id-reserved',
