@@ -78,6 +78,9 @@ describe('resolveConnectorTenant over a non-unique owner index', () => {
     expect(await capacityRows(first.id)).toHaveLength(1);
   });
 
+  // PGlite runs every transaction on one connection, so these requests run one
+  // after another and this case cannot race. It documents the intent; the
+  // ordering test below ("serializes each owner…") is what guards the lock.
   it('creates exactly one tenant when first requests for one owner arrive together', async () => {
     const results = await Promise.all(
       Array.from({ length: 6 }, () => resolveConnectorTenant(db, 'owner-a'))
