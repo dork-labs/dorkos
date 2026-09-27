@@ -12,6 +12,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import {
   useConnectorAppConnections,
+  useConnectorCatalog,
   useConnectorProviders,
   useSaveConnectorCredential,
   useDeleteConnectorCredential,
@@ -139,5 +140,41 @@ describe('useDeleteConnectorCredential', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.deleteConnectorCredential).toHaveBeenCalledWith('composio');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors'] });
+  });
+});
+
+describe('useConnectorCatalog', () => {
+  const page = { services: [], warnings: [] };
+
+  it('reuses a catalog page on the next mount instead of fetching it again', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue(page);
+    const { wrapper } = createWrapper(transport);
+
+    const first = renderHook(() => useConnectorCatalog('gmail'), { wrapper });
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+    first.unmount();
+    const second = renderHook(() => useConnectorCatalog('gmail'), { wrapper });
+    await waitFor(() => expect(second.result.current.isSuccess).toBe(true));
+
+    expect(transport.getConnectorCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches again once a saved key sweeps the connector scope', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue(page);
+    vi.mocked(transport.putConnectorCredential).mockResolvedValue({
+      ...providerStatus,
+      configured: true,
+      registered: true,
+    });
+    const { wrapper } = createWrapper(transport);
+
+    const catalog = renderHook(() => useConnectorCatalog(''), { wrapper });
+    await waitFor(() => expect(catalog.result.current.isSuccess).toBe(true));
+    const save = renderHook(() => useSaveConnectorCredential(), { wrapper });
+    save.result.current.mutate({ provider: 'composio', secret: 'sk-test' });
+
+    await waitFor(() => expect(transport.getConnectorCatalog).toHaveBeenCalledTimes(2));
   });
 });
