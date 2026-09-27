@@ -1,7 +1,7 @@
 ---
 id: 260924-213416
 title: A schedule's name, runtime, model, effort, time limit and memory are part of what a person approves
-status: draft
+status: accepted
 created: 2026-09-24
 spec: null
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (DOR-2323). Extends `260924-101531` (the timezone joined the key in DOR-2307).
+Accepted (DOR-2323). Extends `260924-101531` (the timezone joined the key in DOR-2307). The Claude account a schedule names later joined the key too (DOR-2384).
 
 ## Context
 

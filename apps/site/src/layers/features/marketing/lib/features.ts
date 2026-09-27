@@ -863,7 +863,7 @@ export const features: Feature[] = [
       "Sharing a file over chat loses someone's edit. A room's Files panel lets you and your agents edit it together, catching every clash before it overwrites work.",
     status: 'ga',
     benefits: [
-      'Open any file in a room and edit it right there',
+      'Add, upload, rename and edit any text file right there',
       'Save clashes ask you to keep theirs or keep yours',
       'Agents work in their own copy, then merge back in',
       'See which agent is holding work still unmerged',

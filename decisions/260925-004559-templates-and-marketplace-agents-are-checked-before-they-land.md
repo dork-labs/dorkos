@@ -1,7 +1,7 @@
 ---
 id: 260925-004559
 title: Templates and marketplace agents are checked before they land in an agent's folder
-status: draft
+status: accepted
 created: 2026-09-25
 spec: agent-template-creation
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: agent-template-creation)
+Accepted (auto-extracted from spec: agent-template-creation)
 
 ## Context
 
