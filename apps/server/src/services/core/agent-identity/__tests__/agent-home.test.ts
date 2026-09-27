@@ -3,10 +3,9 @@
  *
  * The rule in `agent-home.ts`, pinned at the seam every identity read now goes
  * through (spec `agent-home-desk` §3.1, §11 "Resolver" and "Resolver
- * hardening"). The linked-worktree source is driven against real git, because
- * its whole claim is that it reads what `git worktree add` writes; the room
- * worktree manager's own half is pinned beside the manager in
- * `rooms/repo/__tests__/room-worktree-manager.test.ts`.
+ * hardening", "Desk guard"). The linked-worktree source and the desk guard are
+ * driven against real git, because their whole claim is that they read what
+ * `git worktree add` writes.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -14,36 +13,23 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  assertOwnDesk,
+  deskBindingFor,
+  DeskNotOwnError,
   homeOf,
   resolveAgentHome,
-  setWorkingCopyOwnerPort,
   turnAgentOf,
-  type WorkingCopyOwnerPort,
 } from '../agent-home.js';
 import { clearTestHomes, registerTestHomes } from './agent-home-fixture.js';
 
 const ANA = '/agents/ana';
 const BEN = '/agents/ben';
-const WORKTREES = '/dork/rooms/01ROOM/worktrees';
-const ANA_WORKTREE = `${WORKTREES}/ana-1a2b3c4d`;
-const STRAY_WORKTREE = `${WORKTREES}/ana-00000000`;
-
-/** A port with the manager's shape: location decides "a working copy", a record decides whose. */
-function portFor(owners: Record<string, string>): WorkingCopyOwnerPort {
-  return {
-    ownerOf: (dir) =>
-      path.dirname(path.resolve(dir)) === WORKTREES
-        ? { owner: owners[path.resolve(dir)] ?? null }
-        : null,
-  };
-}
 
 afterEach(() => {
-  setWorkingCopyOwnerPort(undefined);
   clearTestHomes();
 });
 
-describe('resolveAgentHome — exact and room working copies', () => {
+describe('resolveAgentHome — exact', () => {
   it('resolves a registered home to itself, and any other folder to no agent', () => {
     registerTestHomes([ANA, BEN]);
 
@@ -55,82 +41,26 @@ describe('resolveAgentHome — exact and room working copies', () => {
     expect(resolveAgentHome(ANA)).toEqual({ kind: 'none' });
   });
 
-  it('resolves a room working copy to the agent it was handed to', () => {
+  it('never resolves by prefix: a folder inside a home is nobody', () => {
     registerTestHomes([ANA, BEN]);
-    setWorkingCopyOwnerPort(portFor({ [ANA_WORKTREE]: ANA }));
-
-    expect(resolveAgentHome(ANA_WORKTREE)).toEqual({
-      kind: 'home',
-      home: ANA,
-      via: 'room-worktree',
-    });
-    expect(homeOf(resolveAgentHome(ANA_WORKTREE, ANA))).toBe(ANA);
-  });
-
-  it('never resolves by prefix: a folder inside a home, or inside its worktree, is nobody', () => {
-    registerTestHomes([ANA, BEN]);
-    setWorkingCopyOwnerPort(portFor({ [ANA_WORKTREE]: ANA }));
 
     expect(resolveAgentHome(`${ANA}/src`)).toEqual({ kind: 'none' });
-    expect(resolveAgentHome(`${ANA_WORKTREE}/src`)).toEqual({ kind: 'none' });
-  });
-
-  it('refuses a working copy nobody can vouch for, rather than reading it as nobody', () => {
-    registerTestHomes([ANA, BEN]);
-    setWorkingCopyOwnerPort(portFor({ [ANA_WORKTREE]: ANA }));
-
-    expect(resolveAgentHome(STRAY_WORKTREE)).toEqual({
-      kind: 'refused',
-      reason: 'unowned-working-copy',
-    });
-    // Naming the right agent does not buy a working copy an owner.
-    expect(resolveAgentHome(STRAY_WORKTREE, ANA).kind).toBe('refused');
-  });
-
-  it('refuses a working copy whose recorded owner is no longer a registered agent', () => {
-    registerTestHomes([BEN]);
-    setWorkingCopyOwnerPort(portFor({ [ANA_WORKTREE]: ANA }));
-
-    expect(resolveAgentHome(ANA_WORKTREE)).toEqual({
-      kind: 'refused',
-      reason: 'unregistered-owner',
-    });
-    expect(resolveAgentHome(ANA_WORKTREE, ANA).kind).toBe('refused');
-    expect(resolveAgentHome(ANA)).toEqual({ kind: 'none' });
   });
 
   it('fails CLOSED when the registry check throws', () => {
-    setWorkingCopyOwnerPort(portFor({ [ANA_WORKTREE]: ANA }));
     const { port } = registerTestHomes([]);
     port.isRegisteredHome = () => {
       throw new Error('the registry is gone');
     };
 
-    expect(resolveAgentHome(ANA_WORKTREE).kind).toBe('refused');
     expect(resolveAgentHome(ANA)).toEqual({ kind: 'none' });
-  });
-
-  it('fails CLOSED when the working-copy lookup throws', () => {
-    registerTestHomes([ANA]);
-    setWorkingCopyOwnerPort({
-      ownerOf: () => {
-        throw new Error('the manager is gone');
-      },
-    });
-
-    expect(resolveAgentHome('/somewhere/plain').kind).toBe('refused');
   });
 });
 
 describe('resolveAgentHome — the turn the folder is for', () => {
-  it("refuses agent A's working copy, or A's home, for a turn that is for agent B", () => {
+  it("refuses agent A's home for a turn that is for agent B", () => {
     registerTestHomes([ANA, BEN]);
-    setWorkingCopyOwnerPort(portFor({ [ANA_WORKTREE]: ANA }));
 
-    expect(resolveAgentHome(ANA_WORKTREE, BEN)).toEqual({
-      kind: 'refused',
-      reason: 'not-the-turns-agent',
-    });
     expect(resolveAgentHome(ANA, BEN)).toEqual({
       kind: 'refused',
       reason: 'not-the-turns-agent',
@@ -408,6 +338,176 @@ describe('resolveAgentHome — linked worktrees of a home repo (real git)', () =
     homes.delete(home);
     expect(resolveAgentHome(tree)).toEqual({ kind: 'none' });
     expect(resolveAgentHome(home)).toEqual({ kind: 'none' });
+  });
+});
+
+describe('assertOwnDesk — the desk guard (spec §3.4, DOR-2356)', () => {
+  let scratch: string;
+  let ana: string;
+  let ben: string;
+  let roomsDir: string;
+  let defaultCwd: string;
+
+  beforeAll(() => {
+    scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-home-desk-')));
+    ana = path.join(scratch, 'ana');
+    ben = path.join(scratch, 'ben');
+    initRepo(ana);
+    initRepo(ben);
+    roomsDir = path.join(scratch, 'dork', 'rooms');
+    const roomRepo = path.join(roomsDir, '01ROOM', 'repo');
+    initRepo(roomRepo);
+    git(
+      roomRepo,
+      'worktree',
+      'add',
+      '-q',
+      '-b',
+      'room/ana',
+      path.join(roomsDir, '01ROOM', 'worktrees', 'ana-1a2b3c4d')
+    );
+    git(
+      ana,
+      'worktree',
+      'add',
+      '-q',
+      '-b',
+      'ana-feature',
+      path.join(scratch, 'trees', 'ana-feature')
+    );
+    git(
+      ben,
+      'worktree',
+      'add',
+      '-q',
+      '-b',
+      'ben-feature',
+      path.join(scratch, 'trees', 'ben-feature')
+    );
+    defaultCwd = path.join(scratch, 'shared-default');
+    fs.mkdirSync(defaultCwd);
+  });
+
+  afterAll(() => {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  });
+
+  /** The code a refusal carries, or `null` when the desk passed. */
+  function verdict(
+    forAgent: string,
+    cwd: string,
+    binding: Parameters<typeof assertOwnDesk>[2],
+    def = defaultCwd
+  ): string | null {
+    try {
+      assertOwnDesk(forAgent, cwd, binding, def);
+      return null;
+    } catch (err) {
+      expect(err).toBeInstanceOf(DeskNotOwnError);
+      return (err as DeskNotOwnError).code;
+    }
+  }
+
+  it('passes the agent`s own home, its own linked worktree and its own managed checkout', () => {
+    const managed = path.join(scratch, 'managed', 'ana-checkout');
+    fs.mkdirSync(managed, { recursive: true });
+    registerTestHomes([ana, ben], { roomsDir, managed: { [managed]: ana } });
+
+    expect(verdict(ana, ana, 'home')).toBeNull();
+    expect(verdict(ana, path.join(scratch, 'trees', 'ana-feature'), 'home')).toBeNull();
+    expect(verdict(ana, managed, 'managed')).toBeNull();
+  });
+
+  it('refuses a room`s folder — its worktrees and its shared copy — before anything else', () => {
+    registerTestHomes([ana, ben], { roomsDir });
+
+    expect(verdict(ana, path.join(roomsDir, '01ROOM', 'worktrees', 'ana-1a2b3c4d'), 'home')).toBe(
+      'DESK_NOT_OWN'
+    );
+    expect(verdict(ana, path.join(roomsDir, '01ROOM', 'repo'), 'home')).toBe('DESK_NOT_OWN');
+    // Step 1 wins over step 4: a default folder inside a room is still a room.
+    expect(
+      verdict(
+        ana,
+        path.join(roomsDir, '01ROOM', 'repo'),
+        'none',
+        path.join(roomsDir, '01ROOM', 'repo')
+      )
+    ).toBe('DESK_NOT_OWN');
+  });
+
+  it('refuses another agent`s home and a linked worktree of it', () => {
+    registerTestHomes([ana, ben], { roomsDir });
+
+    expect(verdict(ana, ben, 'home')).toBe('DESK_NOT_OWN');
+    expect(verdict(ana, path.join(scratch, 'trees', 'ben-feature'), 'home')).toBe('DESK_NOT_OWN');
+  });
+
+  it('refuses a folder that is nobody`s home unless it is the default folder of a `none` agent', () => {
+    registerTestHomes([ana, ben], { roomsDir });
+
+    // workspace.mode 'none': the operator's default folder, identity from home.
+    expect(verdict(ana, defaultCwd, 'none')).toBeNull();
+    expect(homeOf(resolveAgentHome(defaultCwd, ana))).toBe(ana);
+    // The boundary refused the home, so the default folder answered.
+    expect(verdict(ana, defaultCwd, 'boundary-refused')).toBeNull();
+    // The same folder for an agent that asked for its home is refused…
+    expect(verdict(ana, defaultCwd, 'home')).toBe('DESK_NOT_OWN');
+    expect(verdict(ana, defaultCwd, 'managed')).toBe('DESK_NOT_OWN');
+    // …and so is any other folder, for a `none` agent too — a subfolder of its
+    // own home included (no prefix rule).
+    expect(verdict(ana, path.join(scratch, 'elsewhere'), 'none')).toBe('DESK_NOT_OWN');
+    expect(verdict(ana, path.join(ana, '.dork'), 'home')).toBe('DESK_NOT_OWN');
+  });
+
+  it('refuses a `none` agent at a default folder that is ANOTHER agent`s home (the dev-checkout fallback)', () => {
+    // In a DorkOS dev checkout DEFAULT_CWD falls back to the repo root, which is
+    // the `dorkos` agent's own home. Step 2 wins over step 4, on purpose.
+    registerTestHomes([ana, ben], { roomsDir });
+    let caught: unknown;
+    try {
+      assertOwnDesk(ana, ben, 'none', ben);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(DeskNotOwnError);
+    expect((caught as DeskNotOwnError).code).toBe('DESK_NOT_OWN');
+    expect((caught as Error).message).toContain('belongs to another agent');
+    expect((caught as Error).message).toContain('Set a default folder that belongs to no agent');
+  });
+
+  it('refuses a `none` agent whose default folder is a SUBFOLDER of another agent`s home', () => {
+    // The CLI sets the default folder from wherever `dorkos` started, which is
+    // often somewhere inside an agent's project. The resolver never walks up, so
+    // step 2 alone would let it pass.
+    registerTestHomes([ana, ben], { roomsDir });
+    const inside = path.join(ben, 'src');
+    fs.mkdirSync(inside, { recursive: true });
+    let caught: unknown;
+    try {
+      assertOwnDesk(ana, inside, 'none', inside);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(DeskNotOwnError);
+    expect((caught as Error).message).toContain('inside another agent');
+    // Inside the agent's OWN home is its own business, and still passes.
+    const ownInside = path.join(ana, 'shared');
+    fs.mkdirSync(ownInside, { recursive: true });
+    expect(verdict(ana, ownInside, 'none', ownInside)).toBeNull();
+  });
+
+  it('maps the session-cwd rung to a desk binding, telling the two `default`s apart', () => {
+    expect(deskBindingFor({ rung: 'agent-home' })).toBe('home');
+    expect(deskBindingFor({ rung: 'agent-home', degraded: 'no manifest' })).toBe('home');
+    expect(deskBindingFor({ rung: 'agent-managed' })).toBe('managed');
+    expect(deskBindingFor({ rung: 'default', degraded: 'agent home /a is out of bounds' })).toBe(
+      'boundary-refused'
+    );
+    expect(deskBindingFor({ rung: 'default' })).toBe('none');
+    expect(deskBindingFor({ rung: 'explicit' })).toBe('home');
   });
 });
 

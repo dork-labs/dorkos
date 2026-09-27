@@ -178,6 +178,7 @@ export type {
   TasksStoreLike,
   RefusedAskReporter,
   ExecutionSettingsResolver,
+  TurnDeskCheck,
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
   TurnExecutionSettings,

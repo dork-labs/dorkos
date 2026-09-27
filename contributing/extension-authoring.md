@@ -535,6 +535,53 @@ ctx.extensionId; // "my-extension" — from the manifest
 ctx.extensionDir; // "/Users/kai/.dork/extensions/my-extension" — absolute path
 ```
 
+#### `ctx.dorkHome`
+
+The resolved DorkOS data directory (`~/.dork` in production, `apps/server/.temp/.dork` in dev, or whatever `DORK_HOME` names). Use it for a file another tool also reads, such as the Flow extension's `<dorkHome>/flow/fleet.json`. A project-local extension's `extensionDir` is not under it, so never derive it from `extensionDir`. Data only your extension reads belongs in `ctx.storage`.
+
+#### `ctx.accounts`
+
+Read access to the agent accounts DorkOS knows, and the account advisor seam (spec `claude-account-fleet` §6 X1-X3). Every type is exported from `@dorkos/extension-api/server`.
+
+```typescript
+const accounts = await ctx.accounts.list();
+// [{ runtime: 'claude-code', id: 'work', label: 'Work', color: '#…', implicit: false },
+//  { runtime: 'codex', id: 'default', label: null, color: '#…', implicit: true }, …]
+
+const usage = await ctx.accounts.usage('claude-code'); // AccountUsage[]; omit the runtime for all
+
+const stop = ctx.accounts.onUsage((u) => ctx.emit('usage', u)); // throttled per account
+
+await ctx.accounts.markContinued(sourceSessionId, { sessionId, runtime, accountId });
+```
+
+- **`list()`** covers every runtime: the registered rows, then each runtime's implicit `default` (`implicit: true`) when it is an account of its own. When `default` is the same folder as a registered row, that row is the one entry.
+- **`usage(runtime?)`** and **`onUsage(listener)`** read the usage store. The `AccountUsage` they hand you is the shared one without `path`: an account's config folder never leaves the server, so name accounts by `runtime` and `id`. Usage listeners are removed automatically when the extension shuts down or reloads.
+- **After shutdown or reload the old `ctx.accounts` is closed.** `onUsage` and `registerAdvisor` throw and register nothing, and `markContinued` rejects, so a late `.then(() => ctx.accounts.registerAdvisor(…))` from a previous instance cannot replace the new instance's advisor. `list` and `usage` keep answering.
+- **`markContinued`** tells DorkOS that your extension moved a session it claimed (see `claims` below) to a new session, so the source session points at where its work went. It rejects a malformed call, and rejects while this server tracks no session limits.
+
+**The account advisor.** `ctx.accounts.registerAdvisor(advisor)` lets an extension decide which accounts work may go to. Core never reads any routing policy itself; it asks the advisor.
+
+```typescript
+const unregister = ctx.accounts.registerAdvisor({
+  rank(candidates, rankCtx) {
+    // rankCtx: { purpose: 'launch' | 'continue', caller, cwd, runtime, sessionId?, excludeAccountId? }
+    return {
+      accounts: candidates.map((c) => ({ id: c.id, eligible: true, reason: 'Allowed' })),
+      recommendedId: candidates[0]?.id ?? null,
+    };
+  },
+  // Optional: onLimited, modelFallback, carryOver, claims, move, cancelAuto, wait
+});
+```
+
+The rules an advisor lives by:
+
+- **One advisor at a time.** A second registration replaces the first, and the server log warns naming both extensions. The function `registerAdvisor` returns removes only your own advisor, and shutdown or reload removes it for you.
+- **Every call is bounded at 2 seconds, and every answer is checked.** A ranking keeps only ids DorkOS knows (and never the excluded account); an id you leave out is hidden; a `reason` over 200 characters is cut to fit; `recommendedId` counts only when it names an eligible account of the context's runtime. An `auto` plan's `delaySeconds` is clamped to 0..3600, and its target must be a registered account other than the one that ran out. A `carryOver` seed longer than the seed-context limit is refused. A throw, a timeout or an invalid answer means core's default for that call.
+- **A person's own pick is never refused by the advisor.** Its ranking is advice for anything a person does.
+- **Agents and relay messages need it.** When an agent (`session_start`) or a relay message names an account, core allows it only when the advisor's `launch` ranking marks that account eligible. With no advisor registered, such a pick is refused ("Agents can pick an account only after Flow is set up to say which accounts they may use."), and an advisor that fails refuses it too ("The account policy could not be checked."). Without an advisor everything else uses core's defaults: accounts ranked by weekly headroom, and a person asked what to do when an account runs out.
+
 ### Route Conventions
 
 Routes registered on the `router` are mounted at `/api/ext/{id}/`:

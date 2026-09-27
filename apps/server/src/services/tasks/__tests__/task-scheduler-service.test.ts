@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 import path from 'node:path';
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -2881,6 +2886,60 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     expect(row.resolvedRuntime).toBe('codex');
     expect(row.resolvedModel).toBe('gpt-5.5');
     await service.stop();
+  });
+
+  it('refuses a `none` agent whose default folder is ANOTHER agent`s home — the dev-checkout fallback', async () => {
+    // Spec `agent-home-desk` §3.4, step 2 before step 4. In a DorkOS dev
+    // checkout the default folder falls back to the repo root, which is the
+    // `dorkos` agent's own home; a `none` agent's run there would read and write
+    // that agent's folder. It is refused, recorded failed with the reason in
+    // plain words, and no turn starts anywhere.
+    const dir = await agentDir({ mode: 'none' });
+    registerTestHomes([dir, DEFAULT_CWD]);
+    try {
+      const task = store.createTask(taskInput({ name: 'Borrowed desk', agentId: 'a-1' }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: runtimesWith(['claude-code', 'codex']),
+        config: { ...DEFAULT_CONFIG },
+        meshCore: meshAt(dir),
+      });
+
+      const row = await runToCompletion(service, task.id);
+
+      expect(row.status).toBe('failed');
+      expect(row.error).toContain('belongs to another agent');
+      expect(row.error).toContain('Set a default folder');
+      for (const manager of Object.values(managers)) {
+        expect(manager!.sendMessage).not.toHaveBeenCalled();
+      }
+      await service.stop();
+    } finally {
+      clearTestHomes();
+    }
+  });
+
+  it('runs a `none` agent at a default folder that is nobody`s home, as that agent', async () => {
+    // The supported value (§3.4 step 4): the operator's default folder, with
+    // identity from the agent's home.
+    const dir = await agentDir({ mode: 'none' });
+    registerTestHomes([dir]);
+    try {
+      const task = store.createTask(taskInput({ name: 'Shared desk', agentId: 'a-1' }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: runtimesWith(['claude-code', 'codex']),
+        config: { ...DEFAULT_CONFIG },
+        meshCore: meshAt(dir),
+      });
+
+      const row = await runToCompletion(service, task.id);
+
+      expect(row.status).not.toBe('failed');
+      await service.stop();
+    } finally {
+      clearTestHomes();
+    }
   });
 
   it('a sticky task moved to another runtime mints a FRESH session, across the real store', async () => {

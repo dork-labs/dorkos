@@ -118,9 +118,12 @@ export function mapErrorCategory(subtype: string): ErrorCategory {
 /**
  * Terminal `SDKAssistantMessage.error` values we surface to the user (SDK 0.3.144+).
  *
- * Excludes `rate_limit` / `overloaded` (handled by the `api_retry` and
- * `rate_limit_event` channels) and `max_output_tokens` (handled by the
- * `stop_reason === 'max_tokens'` branch) to avoid double-reporting.
+ * Excludes `overloaded` (handled by the `api_retry` channel) and
+ * `max_output_tokens` (handled by the `stop_reason === 'max_tokens'` branch) to
+ * avoid double-reporting. `rate_limit` is not in this set either, but it is not
+ * dropped: it has its own branch in `message-event-mapper.ts`, because it keeps
+ * the CLI's own words and must stay uncategorised (no DorkOS copy, and no Retry
+ * on a limit that holds until its window resets; spec claude-account-fleet D4).
  *
  * **This set is hand-maintained, and a value missing from it is dropped on the
  * floor** — `message-event-mapper.ts` gates every assistant-error card on it, so

@@ -271,6 +271,9 @@ describe('Database Migrations', () => {
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
       'session_events',
+      // A session's hard usage limit, kept across a restart until its next
+      // turn starts (spec claude-account-fleet D4, migration 0117).
+      'session_limits',
       // Stable proof that a protected source was accepted for one session.
       'session_message_acceptance_receipts',
       // Messages typed while a session was busy, waiting their turn — the

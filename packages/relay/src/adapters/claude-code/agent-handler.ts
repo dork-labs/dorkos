@@ -31,6 +31,7 @@ import type {
   AgentSessionStoreLike,
   ExecutionSettingsResolver,
   SessionRuntimeBinder,
+  TurnDeskCheck,
   TurnExecutionSettings,
 } from './types.js';
 import {
@@ -70,6 +71,8 @@ export interface AgentHandlerDeps {
   agentSessionStore?: AgentSessionStoreLike;
   /** What model and effort this turn runs on — see {@link ExecutionSettingsResolver}. */
   resolveExecutionSettings?: ExecutionSettingsResolver;
+  /** Refuse a turn whose sender-named folder is not the agent's desk — see {@link TurnDeskCheck}. */
+  checkTurnDesk?: TurnDeskCheck;
   /**
    * This turn's stop handle, owned by the caller (DOR-791).
    *
@@ -228,6 +231,7 @@ const NO_EVENTS: readonly StreamEvent[] = [];
  */
 function abortText(signal: AbortSignal, started: boolean): string | undefined {
   if (!signal.aborted) return undefined;
+  if (signal.reason instanceof DeskRefusal) return signal.reason.message;
   if (isCallerCancel(signal.reason)) {
     return signal.reason.reason === 'caller_timeout'
       ? 'Stopped: the caller stopped waiting for this turn'
@@ -236,6 +240,36 @@ function abortText(signal: AbortSignal, started: boolean): string | undefined {
   return started
     ? 'The message ran out of time before the agent finished'
     : 'The message expired before the agent could start';
+}
+
+/**
+ * Senders whose payload may shape a turn — its folder, the agent it acts as and
+ * its permission mode: a person reached through a binding (`relay.human.*`),
+ * the server's own principals (`relay.system.*`) and chat bridges
+ * (`relay.bridge.*`). Every other sender — an agent (`relay.agent.*`), a
+ * session (`relay.session.*`), an external MCP caller — is read for its words
+ * only. An agent's `from` is stamped by the server from its own identity, so
+ * an agent cannot claim to be a person. A caller of the HTTP API
+ * (`POST /api/relay/messages`) may name a `relay.human.*` sender and is then
+ * trusted as the person, exactly as the rest of `/api` trusts its caller; only
+ * the server's own principals are refused there.
+ *
+ * @param from - The envelope's sender address.
+ */
+export function isTurnShapingSender(from: string): boolean {
+  return (
+    from.startsWith('relay.human.') ||
+    from.startsWith('relay.system.') ||
+    from.startsWith('relay.bridge.')
+  );
+}
+
+/** Why a turn was stopped before it started: its folder is not its agent's desk. */
+class DeskRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeskRefusal';
+  }
 }
 
 /**
@@ -306,6 +340,15 @@ export async function handleAgentMessage(
     typeof envelope.payload === 'object' && envelope.payload !== null
       ? (envelope.payload as Record<string, unknown>)
       : null;
+  // **Whose words the turn-shaping fields are** (spec `agent-home-desk` §3.4,
+  // DOR-2446). `cwd`, `forAgent` and `__bindingPermissions` decide where the
+  // turn stands, who it acts as and how much it may do without asking. The
+  // binding router and the server's own principals set them; an AGENT sending
+  // with `relay_send` can put anything in a payload. `from` is stamped by the
+  // server, so it is what tells the two apart: only a human, system or bridge
+  // sender's payload may shape the turn, and an agent's is read for its text.
+  const trustedShaper = isTurnShapingSender(envelope.from);
+  const shaping = trustedShaper ? payloadObj : null;
 
   // The session scope, the persisted SDK id and the key this turn runs under all
   // come from `resolveAgentTurnIdentity` above — the same call the adapter makes
@@ -335,21 +378,19 @@ export async function handleAgentMessage(
   });
 
   // Extract binding-enriched fields from the payload resolved above.
-  const bindingPerms = payloadObj?.__bindingPermissions as
+  const bindingPerms = shaping?.__bindingPermissions as
     { permissionMode?: PermissionMode } | undefined;
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
   // Resolve CWD: payload cwd > Mesh agent context directory > deferred
-  const payloadCwd = payloadObj?.cwd as string | undefined;
+  const payloadCwd = shaping?.cwd as string | undefined;
   const effectiveCwd = payloadCwd ?? context?.agent?.directory;
   // The agent a binding dispatched this turn AS (spec `agent-home-desk` §3.2
   // row 12). Read off the same payload as `cwd`, which alone already decides
   // whose identity a turn carries — so this can only NARROW what a forged
   // payload could claim: a `cwd` resolving to another agent's home is refused.
   const payloadForAgent =
-    typeof payloadObj?.forAgent === 'string' && payloadObj.forAgent !== ''
-      ? payloadObj.forAgent
-      : undefined;
+    typeof shaping?.forAgent === 'string' && shaping.forAgent !== '' ? shaping.forAgent : undefined;
   // A fallback is correct HERE and nowhere upstream: this reads a JSON payload
   // off the relay bus, so the field can be absent for reasons the binding never
   // controls (an older publisher, a hand-built envelope). It lands on the
@@ -411,6 +452,29 @@ export async function handleAgentMessage(
       `[CCA] refusing ${envelope.id} for ${agentId}: the message expired before this turn could start`
     );
     controller.abort();
+  }
+
+  // **The desk guard, for a folder the SENDER named** (spec `agent-home-desk`
+  // §3.4). Any agent can publish a payload `cwd`, so without this one agent
+  // could stand another's turn in a room's shared files or in a third agent's
+  // folder. Refused through the same door as an expired message: nothing starts,
+  // and the reply reader still gets its terminal error. A check that throws
+  // refuses too — a folder nobody could vouch for is not a desk.
+  if (payloadCwd !== undefined && deps.checkTurnDesk && !controller.signal.aborted) {
+    const refusal = await deps
+      .checkTurnDesk({
+        cwd: payloadCwd,
+        agentDirectory: context?.agent?.directory,
+        forAgent: payloadForAgent,
+        sessionKey: ccaSessionKey,
+      })
+      .catch((err: unknown) =>
+        err instanceof Error ? err.message : 'This turn’s folder could not be checked.'
+      );
+    if (refusal !== null) {
+      log.warn(`[CCA] refusing ${envelope.id} for ${agentId}: ${refusal}`);
+      controller.abort(new DeskRefusal(refusal));
+    }
   }
 
   // Stopped before it could start — expired above, or stopped while it waited in

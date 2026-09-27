@@ -60,7 +60,7 @@ export function OfferScheduleRows({
       )}
       {checkFailed && (
         <div className="flex items-start gap-2" data-testid={`${testIdPrefix}-offer-check-failed`}>
-          <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" />
+          <AlertTriangle className="text-status-warning-dot mt-0.5 size-4 shrink-0" />
           <dt className="text-muted-foreground shrink-0">Not checked</dt>
           <dd className="min-w-0">
             DorkOS could not find out whether this agent brings work on a timer. Anything it does

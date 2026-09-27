@@ -27,6 +27,7 @@
  * @module services/notifications/notification-registry
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import { windowLabel } from '@dorkos/shared/account-usage';
 import {
   NOTIFICATION_KINDS,
   type NotificationActionDTO,
@@ -269,6 +270,36 @@ export interface NotificationPayloads {
     /** What it was running last time. Absent on the very first boot that records one. */
     previousVersion?: string;
   };
+  /**
+   * A Claude account hit a hard usage limit, so the session that was using it
+   * stopped (spec `claude-account-fleet` D4).
+   *
+   * About the ACCOUNT's episode, not the session: every session on that
+   * account hits the same limit, and {@link dedupeKey} collapses them into one.
+   * The session is the one that noticed, and where "Open" goes.
+   */
+  'account.limited': {
+    sessionId: string;
+    agentId?: string;
+    /** What to call the session in a sentence. See `ask.pending`. */
+    sessionLabel: string;
+    /** The account's registry id, or `null` when its folder is not registered. */
+    accountId: string | null;
+    /**
+     * A short hash of an unregistered account's folder (`accountId` null): its
+     * identity in the dedupe key. A hash, not the path, because this payload
+     * is stored and served by `/api/notifications`. Never shown.
+     */
+    accountRef?: string;
+    /** What the operator calls the account. */
+    accountLabel: string;
+    /** The ledger window key that ran out, such as `seven_day`, or `unknown`. */
+    window: string;
+    /** When that window resets, ISO 8601, or `null` when unknown. */
+    resetsAt: string | null;
+    /** When the limit was hit, ISO 8601: the episode's identity when the reset is unknown. */
+    since: string;
+  };
   /** The daily digest. */
   'report.daily': {
     /** The day it covers, `YYYY-MM-DD` (the boundary's own date — see
@@ -440,6 +471,33 @@ const UNREACHABLE_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
  * NEXT day's report, which carries a different key regardless.
  */
 const REPORT_DAILY_DEDUPE_WINDOW_MS = 25 * 60 * 60 * 1000;
+
+/**
+ * How long one account-limit episode stays deduped.
+ *
+ * Its key already names the episode (the account, the window and when it
+ * resets), so this only has to outlast the longest window: a weekly limit can
+ * stop one session on Monday and another on Friday, and that is still the one
+ * limit. Eight days is a week plus a margin; a later episode of the same window
+ * resets at a different time and so carries a different key.
+ */
+const ACCOUNT_LIMITED_DEDUPE_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
+
+/** A reset time in the server's local zone, short, e.g. `9/27/26, 8:00 PM`. */
+function formatResetTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
+    date
+  );
+}
+
+/** A window's name inside a sentence: `weekly`, `5-hour window`, or `usage` when unknown. */
+function limitWindowPhrase(window: string): string {
+  if (window === 'unknown') return 'usage';
+  const label = windowLabel(window);
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
 
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
@@ -803,6 +861,32 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
+  'account.limited': {
+    // Raised by `emitters/session-lifecycle.ts` INSTEAD of `session.error` when
+    // the turn that stopped carried a usage limit. `notable`, not `blocking`:
+    // a limit ends at a known time on its own, which is not breakage to page
+    // somebody about, so it rides no escalation.
+    kind: 'account.limited',
+    tier: 'notable',
+    storage: 'event',
+    subjectType: 'session',
+    locate: (p) => ({ subjectId: p.sessionId, sessionId: p.sessionId, agentId: p.agentId }),
+    title: (p) =>
+      p.resetsAt
+        ? `${p.accountLabel} is out until ${formatResetTime(p.resetsAt)}`
+        : `${p.accountLabel} hit its ${limitWindowPhrase(p.window)} limit`,
+    actions: () => OPEN_ACTION,
+    // Per account EPISODE: five sessions hitting one account's weekly limit
+    // are one thing to be told. The reset time names the episode; when it is
+    // unknown, the hour the limit was hit stands in for it.
+    dedupeKey: (p) =>
+      `account-limited:${p.accountId ?? p.accountRef ?? 'unregistered'}:${p.window}:${
+        p.resetsAt ?? p.since.slice(0, 13)
+      }`,
+    dedupeWindowMs: ACCOUNT_LIMITED_DEDUPE_WINDOW_MS,
+    relay: 'never',
+  },
+
   'report.daily': {
     // The one kind whose title AND body are already fully written when they
     // arrive — `shift-report.ts` composes both from the day's actual counts,
@@ -892,6 +976,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'signin.required',
   'update.installed',
   'report.daily',
+  'account.limited',
 ];
 
 /**

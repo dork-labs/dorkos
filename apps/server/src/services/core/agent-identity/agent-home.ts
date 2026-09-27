@@ -4,10 +4,12 @@
  * An agent's identity — its persona, `SOUL.md`, `NOPE.md`, memory, tool groups,
  * account pin and runtime choice — lives in exactly one place: the folder the
  * agent is registered at, its **home**. A turn does not always stand there. It
- * may stand in a git worktree of the agent's own repo, a managed checkout the
- * agent owns, or (until spec task T4) a room worktree. Each of those can carry
- * a committed `.dork/` that is stale or somebody else's, so reading identity
- * off the folder a turn stands in let a branch decide who an agent is.
+ * may stand in a git worktree of the agent's own repo or a managed checkout the
+ * agent owns. Each of those can carry a committed `.dork/` that is stale or
+ * somebody else's, so reading identity off the folder a turn stands in let a
+ * branch decide who an agent is. A room turn stands at home and reaches the
+ * room's files through folder grants (§5), so a room worktree is never a desk
+ * and a folder inside one resolves to no agent.
  *
  * This module is the one answer to "whose home is this folder?", and its
  * answer is a branded {@link AgentHome}. The identity readers take that brand,
@@ -16,17 +18,14 @@
  *
  * ## The owner sources, first match wins
  *
- * 1. **A room working copy** the room worktree manager handed out, anchored to
- *    the agent it was handed to (DOR-2091), or refused when it cannot vouch for
- *    one. Kept until T4 moves room turns home.
- * 2. **Exact.** The folder is a registered home.
- * 3. **A managed workspace** whose checkout is exactly this folder and whose
- *    owner is a registered agent. Checked before source 4 because a managed
+ * 1. **Exact.** The folder is a registered home.
+ * 2. **A managed workspace** whose checkout is exactly this folder and whose
+ *    owner is a registered agent. Checked before source 3 because a managed
  *    checkout is itself a linked worktree of its SOURCE repo, and an agent can
  *    own a checkout of another agent's repo (01-ideation decision 9): the owner,
  *    not the source, is who works there — and a record whose owner is no
  *    longer registered is refused, never handed on to the source's agent.
- * 4. **A linked worktree of a home repo**, read from the filesystem with no
+ * 3. **A linked worktree of a home repo**, read from the filesystem with no
  *    `git` process: the folder's `.git` file, git's own backlink to it, and the
  *    repo's `commondir`. The folder at the same relative position in the main
  *    worktree must itself be a registered home — never a walk up past it.
@@ -51,6 +50,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readManifest } from '@dorkos/shared/manifest';
+import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 
 /**
  * A registered agent home. Only {@link resolveAgentHome} mints one, so an
@@ -59,8 +59,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 export type AgentHome = string & { readonly __brand: 'AgentHome' };
 
 /** How a folder resolved to a home. */
-export type HomeVia =
-  'exact' | 'room-worktree' | 'managed-workspace' | 'linked-worktree' | 'turn-agent';
+export type HomeVia = 'exact' | 'managed-workspace' | 'linked-worktree' | 'turn-agent';
 
 /**
  * The answer for one folder.
@@ -75,7 +74,7 @@ export type HomeResolution =
   | { kind: 'none' }
   | {
       kind: 'refused';
-      reason: 'not-the-turns-agent' | 'unregistered-owner' | 'unowned-working-copy';
+      reason: 'not-the-turns-agent' | 'unregistered-owner';
     };
 
 /**
@@ -104,27 +103,7 @@ export interface AgentHomeRegistry {
   roomsDir: string | null;
 }
 
-/**
- * What the room worktree manager knows about one directory.
- *
- * Declared here and implemented in the rooms domain, so a runtime can ask this
- * question without importing a room type. Removed with the room-worktree owner
- * source in spec task T4.
- */
-export interface WorkingCopyOwnerPort {
-  /**
-   * Whether `dir` is a room working copy, and if so, whose.
-   *
-   * @param dir - An absolute directory.
-   * @returns `null` when `dir` is not a room working-copy location at all;
-   *   otherwise `{ owner }`, where `owner` is the agent path the manager handed
-   *   this exact directory to, or `null` when it cannot vouch for one.
-   */
-  ownerOf(dir: string): { owner: string | null } | null;
-}
-
 let registry: AgentHomeRegistry | undefined;
-let workingCopies: WorkingCopyOwnerPort | undefined;
 
 /**
  * Register (or clear) the registry side of the resolver.
@@ -134,15 +113,6 @@ let workingCopies: WorkingCopyOwnerPort | undefined;
 export function setAgentHomeRegistry(port: AgentHomeRegistry | undefined): void {
   registry = port;
   linkedWorktreeMemo.clear();
-}
-
-/**
- * Register (or clear) the room worktree manager's owner record.
- *
- * @param port - The manager's lookup, or `undefined` to clear it.
- */
-export function setWorkingCopyOwnerPort(port: WorkingCopyOwnerPort | undefined): void {
-  workingCopies = port;
 }
 
 /**
@@ -208,16 +178,6 @@ export function readHomeManifest(home: AgentHome): ReturnType<typeof readManifes
  * @param dir - The folder.
  */
 function resolveFolder(dir: string): HomeResolution {
-  // A room working copy first: the manager's record is the only answer for a
-  // folder it handed out, and one it cannot vouch for is refused outright.
-  const workingCopy = safeOwnerOf(dir);
-  if (workingCopy) {
-    if (workingCopy.owner === null) return { kind: 'refused', reason: 'unowned-working-copy' };
-    const owner = canonicalHome(path.resolve(workingCopy.owner));
-    if (owner === null) return { kind: 'refused', reason: 'unregistered-owner' };
-    return { kind: 'home', home: owner, via: 'room-worktree' };
-  }
-
   const exact = canonicalHome(dir);
   if (exact !== null) return { kind: 'home', home: exact, via: 'exact' };
 
@@ -262,19 +222,6 @@ function canonicalHome(dir: string): AgentHome | null {
     return null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Ask the room worktree manager, failing CLOSED: a lookup that throws cannot
- * vouch for anybody, so it answers "a working copy with no owner".
- */
-function safeOwnerOf(dir: string): { owner: string | null } | null {
-  if (!workingCopies) return null;
-  try {
-    return workingCopies.ownerOf(dir);
-  } catch {
-    return { owner: null };
   }
 }
 
@@ -380,6 +327,17 @@ function nearestGitAncestor(dir: string): string | null {
   }
 }
 
+/**
+ * Whether `target` is the rooms directory or anywhere inside it — a room's
+ * shared files, its agents' copies, its canvas (spec `agent-home-desk` I3).
+ * No turn ever stands there. `false` when no rooms directory is wired.
+ *
+ * @param target - An absolute folder.
+ */
+export function isInsideRoomsDir(target: string): boolean {
+  return insideRoomsDir(path.resolve(target));
+}
+
 function insideRoomsDir(target: string): boolean {
   const roomsDir = registry?.roomsDir;
   if (!roomsDir) return false;
@@ -394,6 +352,188 @@ function insideRoomsDir(target: string): boolean {
 
 function sameRealPath(a: string, b: string): boolean {
   return realPathOr(a) === realPathOr(b);
+}
+
+/**
+ * How the turn's folder was chosen, as the desk guard needs to know it.
+ *
+ * - `home` — the agent's own home was asked for (the default binding, and
+ *   every room turn).
+ * - `managed` — the agent's manifest asked for a checkout of its own.
+ * - `none` — the agent is configured `workspace.mode: 'none'` and shares the
+ *   operator's default folder.
+ * - `boundary-refused` — the agent's home is outside what this server may
+ *   touch, so the default folder answered instead.
+ */
+export type DeskBinding = 'home' | 'managed' | 'none' | 'boundary-refused';
+
+/**
+ * Map the session-cwd chain's answer to a {@link DeskBinding} (spec
+ * `agent-home-desk` §3.4).
+ *
+ * The chain reports ONE rung, `default`, for both an agent configured
+ * `workspace.mode: 'none'` and an agent whose home the boundary refused; only
+ * the second carries a `degraded` reason. Anything else that names a folder
+ * outright (`explicit`) is held to the strictest reading, `home`.
+ *
+ * @param resolved - The rung that answered and why it degraded, if it did.
+ */
+export function deskBindingFor(resolved: { rung: string; degraded?: string }): DeskBinding {
+  if (resolved.rung === 'agent-managed') return 'managed';
+  if (resolved.rung === 'default') return resolved.degraded ? 'boundary-refused' : 'none';
+  return 'home';
+}
+
+/**
+ * A named-agent turn was about to stand somewhere that is not its desk
+ * (spec `agent-home-desk` §3.4, invariant I3, DOR-2356). Thrown before the
+ * runtime is called, so nothing ran.
+ */
+export class DeskNotOwnError extends Error {
+  /** The stable code callers and logs key on. */
+  readonly code = 'DESK_NOT_OWN';
+
+  /**
+   * Build the refusal.
+   *
+   * @param message - What happened and what to change, in plain words.
+   * @param cwd - The folder that was refused.
+   * @param forAgent - The home of the agent the turn was for.
+   */
+  constructor(
+    message: string,
+    readonly cwd: string,
+    readonly forAgent: string
+  ) {
+    super(message);
+    this.name = 'DeskNotOwnError';
+  }
+}
+
+/**
+ * Refuse a turn dispatched AS `forAgent` that would stand anywhere but its own
+ * desk (spec `agent-home-desk` §3.4). Checked in this order:
+ *
+ * 1. `cwd` is inside `<dorkHome>/rooms/` → refused: a room's folder is never a
+ *    desk, and a room turn reaches the room's files through grants.
+ * 2. `cwd` resolves to a home other than `forAgent` → refused: another agent's
+ *    home, or a private copy of it. A folder whose owner cannot be shown is
+ *    refused too.
+ * 3. `cwd` is `forAgent`'s home, or resolves to it → allowed.
+ * 4. `cwd` is the operator's default folder and `binding` is `none` or
+ *    `boundary-refused` → allowed, unless that folder sits inside another
+ *    agent's home; identity still comes from `forAgent`.
+ * 5. Anything else → refused.
+ *
+ * **Step 2 wins over step 4 on purpose.** In a DorkOS dev checkout the default
+ * folder falls back to the repo root, which is the `dorkos` agent's own home;
+ * a `none` agent's task there would read and write that agent's folder.
+ *
+ * @param forAgent - The home of the agent the turn is dispatched as.
+ * @param cwd - Where the turn is about to stand.
+ * @param binding - How `cwd` was chosen — see {@link deskBindingFor}.
+ * @param defaultCwd - The operator's default folder; the server's own by default.
+ * @throws {DeskNotOwnError} When `cwd` is not this agent's desk.
+ */
+export function assertOwnDesk(
+  forAgent: string,
+  cwd: string,
+  binding: DeskBinding,
+  defaultCwd: string = DEFAULT_CWD
+): void {
+  const dir = path.resolve(cwd);
+  const refuse = (message: string): never => {
+    throw new DeskNotOwnError(message, dir, forAgent);
+  };
+  if (insideRoomsDir(dir)) {
+    refuse(
+      `This turn was about to run inside a room's files ("${dir}"), which is never where an ` +
+        `agent works. It reaches a room's files from its own folder instead.`
+    );
+  }
+  const own = canonicalHome(path.resolve(forAgent)) ?? realPathOr(forAgent);
+  const found = resolveFolder(dir);
+  if (found.kind === 'refused' || (found.kind === 'home' && found.home !== own)) {
+    const shared = binding === 'none' || binding === 'boundary-refused';
+    refuse(
+      `"${dir}" belongs to another agent, so this agent can't work there. ` +
+        (shared
+          ? `This agent is set to use the default folder, and that folder is another agent's ` +
+            `home. Set a default folder that belongs to no agent, or give this agent a folder ` +
+            `of its own.`
+          : `Give this agent a folder of its own.`)
+    );
+  }
+  if (found.kind === 'home' || realPathOr(dir) === realPathOr(forAgent)) return;
+  if ((binding === 'none' || binding === 'boundary-refused') && sameRealPath(dir, defaultCwd)) {
+    // The default folder is only a shared desk when it is nobody's: one INSIDE
+    // another agent's home (the CLI sets it from wherever `dorkos` started) is
+    // that agent's folder, even though no home sits at exactly that path.
+    const owner = enclosingOtherHome(dir, own);
+    if (owner !== null) {
+      refuse(
+        `"${dir}" is inside another agent's folder (${owner}), so this agent can't work there. ` +
+          `This agent is set to use the default folder. Set a default folder that belongs to ` +
+          `no agent, or give this agent a folder of its own.`
+      );
+    }
+    return;
+  }
+  refuse(
+    `"${dir}" is not this agent's own folder or a private copy of it, so the turn was not ` +
+      `started. Check where this agent is set to work.`
+  );
+}
+
+/**
+ * Refuse a turn that names NO agent but would stand in a folder that is some
+ * agent's or a room's — a room's files, a registered home, a folder inside one,
+ * or a private copy of one. Standing there would read and write that agent's
+ * folder, and resolve to its identity, on nobody's say-so.
+ *
+ * @param cwd - Where the turn is about to stand.
+ * @throws {DeskNotOwnError} When the folder belongs to an agent or a room.
+ */
+export function assertNobodysDesk(cwd: string): void {
+  const dir = path.resolve(cwd);
+  const owned =
+    insideRoomsDir(dir) ||
+    resolveFolder(dir).kind !== 'none' ||
+    enclosingOtherHome(dir, '\0nobody') !== null;
+  if (owned) {
+    throw new DeskNotOwnError(
+      `"${dir}" belongs to an agent or a room, and this message names no agent to run as ` +
+        `there, so it was not run.`,
+      dir,
+      ''
+    );
+  }
+}
+
+/**
+ * The registered home, other than `own`, that `dir` sits in (at any depth), or
+ * `null`. Compared on real paths, so a symlinked spelling cannot slip past.
+ *
+ * @param dir - An absolute folder.
+ * @param own - The turn's agent's home, which never counts.
+ */
+function enclosingOtherHome(dir: string, own: string): string | null {
+  if (!registry) return null;
+  let homes: readonly string[];
+  try {
+    homes = registry.listRegisteredHomes();
+  } catch {
+    return null;
+  }
+  const target = realPathOr(dir);
+  const ownReal = realPathOr(own);
+  for (const home of homes) {
+    const real = realPathOr(home);
+    if (real === ownReal) continue;
+    const rel = path.relative(real, target);
+    if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return home;
+  }
+  return null;
 }
 
 /**

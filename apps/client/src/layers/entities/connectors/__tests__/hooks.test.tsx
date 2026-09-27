@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -12,6 +12,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import {
   useConnectorAppConnections,
+  useConnectorCatalog,
   useConnectorProviders,
   useSaveConnectorCredential,
   useDeleteConnectorCredential,
@@ -139,5 +140,84 @@ describe('useDeleteConnectorCredential', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.deleteConnectorCredential).toHaveBeenCalledWith('composio');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors'] });
+  });
+});
+
+describe('useConnectorCatalog', () => {
+  const page = { services: [], warnings: [] };
+
+  it('reuses a catalog page on the next mount instead of fetching it again', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue(page);
+    const { wrapper } = createWrapper(transport);
+
+    const first = renderHook(() => useConnectorCatalog('gmail'), { wrapper });
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+    first.unmount();
+    const second = renderHook(() => useConnectorCatalog('gmail'), { wrapper });
+    await waitFor(() => expect(second.result.current.isSuccess).toBe(true));
+
+    expect(transport.getConnectorCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again on the next mount when a page came back with a warning', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [],
+      warnings: [{ code: 'catalog_provider_unavailable', message: 'Composio is unavailable.' }],
+    });
+    const { wrapper } = createWrapper(transport);
+
+    const first = renderHook(() => useConnectorCatalog('gmail'), { wrapper });
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+    first.unmount();
+    const second = renderHook(() => useConnectorCatalog('gmail'), { wrapper });
+
+    await waitFor(() => expect(transport.getConnectorCatalog).toHaveBeenCalledTimes(2));
+    expect(second.result.current.isSuccess).toBe(true);
+  });
+
+  it('asks again on the next mount when only a later page carried a warning', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog)
+      .mockResolvedValueOnce({ services: [], warnings: [], nextCursor: 'page-2' })
+      .mockResolvedValue({
+        services: [],
+        warnings: [{ code: 'catalog_provider_unavailable', message: 'Composio is unavailable.' }],
+      });
+    const { wrapper } = createWrapper(transport);
+
+    const first = renderHook(() => useConnectorCatalog(''), { wrapper });
+    await waitFor(() => expect(first.result.current.hasNextPage).toBe(true));
+    await act(async () => {
+      await first.result.current.fetchNextPage();
+    });
+    await waitFor(() => expect(first.result.current.data?.pages).toHaveLength(2));
+    expect(transport.getConnectorCatalog).toHaveBeenCalledTimes(2);
+    first.unmount();
+    renderHook(() => useConnectorCatalog(''), { wrapper });
+
+    // An infinite query refetches every loaded page, starting from the first.
+    await waitFor(() =>
+      expect(vi.mocked(transport.getConnectorCatalog).mock.calls.length).toBeGreaterThan(2)
+    );
+  });
+
+  it('fetches again once a saved key sweeps the connector scope', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue(page);
+    vi.mocked(transport.putConnectorCredential).mockResolvedValue({
+      ...providerStatus,
+      configured: true,
+      registered: true,
+    });
+    const { wrapper } = createWrapper(transport);
+
+    const catalog = renderHook(() => useConnectorCatalog(''), { wrapper });
+    await waitFor(() => expect(catalog.result.current.isSuccess).toBe(true));
+    const save = renderHook(() => useSaveConnectorCredential(), { wrapper });
+    save.result.current.mutate({ provider: 'composio', secret: 'sk-test' });
+
+    await waitFor(() => expect(transport.getConnectorCatalog).toHaveBeenCalledTimes(2));
   });
 });

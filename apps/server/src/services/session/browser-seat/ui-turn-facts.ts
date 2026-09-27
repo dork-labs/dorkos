@@ -52,9 +52,11 @@ export interface UiRoomTurn {
   authorId: string;
   /** This dispatch's id, which the room's per-turn canvas ceiling counts. */
   turnId: string;
-  /** The directory this turn was placed in, when the room has one. */
+  /** The directory this turn was placed in — the agent's home for a room turn. */
   cwd?: string;
-  /** Commits ahead of main in that directory, or `null` when git could not say. */
+  /** The agent's copy of the room's files, when the room has files of its own. */
+  worktree?: string;
+  /** Commits ahead of main in that copy, or `null` when git could not say. */
   aheadOfMain?: number | null;
 }
 

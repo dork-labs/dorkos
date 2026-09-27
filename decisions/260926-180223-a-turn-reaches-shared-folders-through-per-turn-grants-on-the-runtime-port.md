@@ -28,7 +28,13 @@ room turn. DOR-2029 (multi-repo projects) needs the same capability for sibling 
 
 We will add `additionalDirectories: { path, access: 'read' | 'write' }[]` to the per-turn runtime
 options, recomputed by the dispatcher every turn. A project-room turn gets its worktree `write`, the
-room's `repo/` `read`, and `repo/.git` `write` (a commit in a linked worktree writes there). Claude
+room's `repo/` `read`, and `write` on exactly the parts of `repo/.git` a commit and a `git merge main`
+in a linked worktree write: `objects/`, `refs/heads/room/`, `logs/refs/heads/room/` and its own
+`worktrees/<slug>/` (amended in T4, DOR-2410). Never all of `repo/.git`: that would hand every agent
+the room's shared `hooks/`, `config` and `info/`, which run for the other agents' commits and can
+name programs git executes. The server's own git in a worktree is pinned to the room's storage
+(`GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE` from the layout), so a rewritten `.git` pointer or
+`commondir` in an agent-writable folder cannot hand it a config an agent wrote. Claude
 Code receives them as `settings.permissions.additionalDirectories` plus deny rules for file tools on
 read grants — never `--add-dir`, which loads the folder's skills; Codex as writable sandbox roots;
 OpenCode as a per-session `external_directory` allow and an `edit` deny. `runtimeConformance` proves
@@ -47,6 +53,21 @@ each backend was handed exactly each turn's set.
 
 - Read-only is advisory for anything that runs a shell, on every runtime; Codex has no per-folder
   read-only at all. The server's `MAIN_CHECKOUT_DIRTY` stop remains the real guard for `repo/`.
+- The narrowed `.git` grant is enforced for file tools and sandboxed shells only. A shell that is not
+  sandboxed (Claude Code's Bash under `bypassPermissions`) can still write the room's shared git
+  storage, as it can any folder; agents' own sessions keep a person's hooks on purpose
+  (`SESSION_GIT_CONFIG`), so such a write can run in another agent's commit. That is the same
+  exposure as that shell writing anywhere else, and is stated, not solved, here. Such a shell can
+  also write `repo/.git/config` (a plain `git config` in a copy lands there); the server audits that
+  config before every git command in the room and refuses (`ROOM_REPO_CONFIG_UNSAFE`) rather than
+  run any filter, driver, include, fsmonitor or credential helper it defines.
+- The `objects/` and `refs/heads/room/` grants are shared folders. An agent can overwrite a loose
+  object (git does not re-hash on read, so `main`'s content can change without a commit) and can
+  move or erase another agent's `room/<slug>` branch and reflog. No code runs; closing both needs a
+  per-agent object store and per-agent refs (follow-up).
+- The server's git in a room never recurses into submodules (`diff.ignoreSubmodules=all`): a
+  submodule an agent commits carries its own git config, whose filter program a status read would
+  otherwise run as the server.
 - Three implementations and a conformance case to maintain — the cost 260807-233816 declined.
 - Agents work on files they do not stand among: `git -C` and absolute paths, taught by the context
   block and the skill.

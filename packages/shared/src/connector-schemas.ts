@@ -508,7 +508,8 @@ export type ConnectorReconciliationEveryAgentSelection = z.infer<
 /**
  * The every-agent grant as a reconciliation snapshot sees it. `available` is
  * false where "every agent" cannot be offered for this connection (a connection
- * through a DorkOS account today), and then `operationRevisionIds` is empty.
+ * through a DorkOS account while this process cannot reach hosted authority),
+ * and then `operationRevisionIds` is empty.
  */
 export const ConnectorReconciliationEveryAgentStateSchema = z
   .object({

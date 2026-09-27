@@ -75,6 +75,7 @@ vi.mock('../../core/config-manager.js', () => ({
 }));
 
 const mockScheduledCleanup = vi.fn();
+const mockReleaseAccounts = vi.fn();
 const mockCreateDataProviderContext = vi.fn().mockReturnValue({
   ctx: {
     secrets: {},
@@ -85,6 +86,7 @@ const mockCreateDataProviderContext = vi.fn().mockReturnValue({
     extensionDir: '/fake/extensions/test-ext',
   },
   getScheduledCleanups: () => [mockScheduledCleanup],
+  releaseAccounts: () => mockReleaseAccounts(),
 });
 vi.mock('../extension-server-api-factory.js', () => ({
   createDataProviderContext: (...args: unknown[]) => mockCreateDataProviderContext(...args),
@@ -297,11 +299,14 @@ describe('ExtensionManager — server lifecycle', () => {
       });
 
       await manager.initialize(null);
+      mockReleaseAccounts.mockClear();
 
       const result = await manager.initializeServer('throw-srv');
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('register failed');
+      // An account listener or advisor it added before throwing does not outlive it.
+      expect(mockReleaseAccounts).toHaveBeenCalledTimes(1);
     });
 
     it('returns ok:false when module does not export a function', async () => {
@@ -520,6 +525,8 @@ describe('ExtensionManager — server lifecycle', () => {
 
         expect(manager.getServerRouter('reload-ext')).not.toBe(router);
         expect(mockScheduledCleanup).toHaveBeenCalled();
+        // Its account listeners and advisor go with the old instance.
+        expect(mockReleaseAccounts).toHaveBeenCalledTimes(1);
       });
     });
   });
@@ -549,6 +556,7 @@ describe('ExtensionManager — server lifecycle', () => {
 
       expect(manager.getServerRouter('shutdown-ext')).toBeNull();
       expect(mockScheduledCleanup).toHaveBeenCalled();
+      expect(mockReleaseAccounts).toHaveBeenCalledTimes(1);
     });
 
     it('is a no-op for extensions without an active server', async () => {

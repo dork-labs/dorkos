@@ -131,6 +131,7 @@ import { ConnectorEventNativeDestination } from './services/connectors/events/ch
 import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
+import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
 import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
 import {
   ConnectorProviderBootstrapper,
@@ -358,7 +359,6 @@ import {
   resolveAgentHome,
   canonicalDir,
   setAgentHomeRegistry,
-  setWorkingCopyOwnerPort,
   createCapabilityAttributionObserver,
   createCapabilityGateAuditObserver,
   createAgentIdentityUnregisterCascade,
@@ -442,7 +442,13 @@ import {
   setRoomMergeService,
 } from './services/rooms/index.js';
 import { visibleRoomsForCaller } from './services/rooms/visible-rooms-for-caller.js';
-import { roomSessionPlace } from './services/rooms/repo/room-worktree-cwd.js';
+import { roomSessionPlace } from './services/rooms/repo/room-turn-place.js';
+import {
+  frozenRoomWorktrees,
+  migrateRoomTranscripts,
+  roomWorktreesOfAgent,
+} from './services/runtimes/claude-code/migrate-room-transcripts.js';
+import { resolveClaudeRootSet } from './services/runtimes/claude-code/claude-config-dir.js';
 import {
   readRoomRepoConfig,
   RoomFileEditor,
@@ -528,6 +534,8 @@ import {
   setMessageQueueStore,
   setSessionEventStore,
   setStagedContextStore,
+  SessionLimitStore,
+  setSessionLimitStore,
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
@@ -999,6 +1007,9 @@ async function start() {
   const connectorRegistry = new ConnectorRegistry({
     db,
     configuredOwner: { ownerKind: 'local_install', ownerId: connectorInstallationId },
+    catalogCache: new ConnectorCatalogCache({
+      dir: path.join(dorkHome, 'cache', 'connectors', 'catalog'),
+    }),
   });
   const connectorAuthorityCleanup = new ConnectorAuthorityCleanupService({ db });
   const connectorBootEpoch = randomUUID();
@@ -1038,6 +1049,11 @@ async function start() {
   // the person "Added context for the next reply" on a stream that survives a
   // restart, so what that receipt points at has to survive one too (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
+
+  // A session's usage limit, kept so a restart or an idle eviction does not
+  // turn a limited session back into a merely failed one (spec
+  // claude-account-fleet D4).
+  setSessionLimitStore(new SessionLimitStore(db));
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read
@@ -1848,22 +1864,16 @@ async function start() {
     hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
     listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
     reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
-    // The claim map is the only live record that an agent is mid-turn, and once
-    // the cwd rung landed (DOR-1597) its worktree IS that turn's working
-    // directory. Without this the sweep can delete the directory a turn is
-    // standing in — a turn that only reads leaves no mark on any timestamp.
+    // The claim map is the only live record that an agent is mid-turn, and a
+    // live room turn is granted its worktree and works on it by path. Without
+    // this the sweep can delete the copy a turn is working on — a turn that
+    // only reads leaves no mark on any timestamp.
     busyAgentPaths: () => roomService.listBusyAgentPaths(),
   });
-  // And the cwd rung can now find it: every room turn asks this manager where
-  // to run before its context is built (`resolve-session-cwd.ts` rung 2, spec
-  // §3.5).
+  // Every room turn in a room with files is granted its agent's copy through
+  // this manager before its context is built (`room-turn-place.ts`, spec
+  // `agent-home-desk` §5.1).
   setRoomWorktreeManager(roomWorktrees);
-  // And every runtime can tell whose a worktree is (DOR-2091): a turn standing
-  // in one acts as the agent the manager handed it to, not as nobody — which,
-  // with login on, refused every DorkOS tool the agent called, and with login
-  // off fell through to the operator. The manager's own record, never a path
-  // prefix; see `core/agent-identity/agent-home.ts`.
-  setWorkingCopyOwnerPort({ ownerOf: (dir) => roomWorktrees.ownerOf(dir) });
   // Which folders are agent homes, for every identity read (spec
   // `agent-home-desk` §3.1). Each lookup is read per call off the live
   // registry (assigned later in boot), so an agent unregistered a moment ago is
@@ -1886,13 +1896,16 @@ async function start() {
     },
     roomsDir: path.join(dorkHome, 'rooms'),
   });
-  // The other half of a turn running somewhere new: session storage is derived
-  // per working directory (ADR-0310), so a room turn's conversation is filed
-  // under the WORKTREE it ran in and an agent's own folder no longer holds all
-  // of its history. The fan-out behind Recent and the daily counts is told
-  // where else to look, and which rows are bound to whom.
+  // Where else an agent's conversations are: session storage is derived per
+  // working directory (ADR-0310), and room turns stood in their agent's copy of
+  // the room's files until spec `agent-home-desk` moved them home. Claude Code's
+  // transcripts are moved home at startup (below); Codex lists by the folder a
+  // thread was first seen in and OpenCode cannot move a session, so the folders
+  // those turns stood in stay scanned — a FROZEN list, read once at startup and
+  // never grown, because no turn stands in a room's copy any more (§8.1).
+  let frozenWorktrees: readonly string[] = [];
   setAgentSessionSources({
-    extraDirs: (agentPath) => roomWorktrees.listWorktreesForAgent(agentPath),
+    extraDirs: (agentPath) => Promise.resolve(roomWorktreesOfAgent(frozenWorktrees, agentPath)),
     boundSessionIds: (agentPath) =>
       Promise.resolve(runtimeRegistry.listSessionIdsForAgentPath(agentPath)),
   });
@@ -2228,6 +2241,24 @@ async function start() {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
 
+    // Move room transcripts filed under worktree folders to their agents' homes
+    // (spec `agent-home-desk` §8.1): room turns stand at home now, so that is
+    // where Claude Code resumes them and where DorkOS reads them. HERE because
+    // it needs the loaded registry (it decides whose a worktree is, and an
+    // empty list would write the marker having moved nothing) and must finish
+    // before any room turn can launch — rooms start answering once relay and
+    // HTTP are up, below. It can throw; a throw leaves the marker unwritten, so
+    // the next start tries again, and must never stop this one.
+    try {
+      await migrateRoomTranscripts({
+        dorkHome,
+        claudeRoots: resolveClaudeRootSet(),
+        agentPaths: meshCore.listWithPaths().map((agent) => agent.projectPath),
+      });
+    } catch (err) {
+      logger.warn('[rooms] could not move room transcripts to agent homes yet', logError(err));
+    }
+
     // The permission upgrade (spec `agent-permissions` D13), after the mesh and
     // Activity are up: on every boot, fold whatever retired permission setting is
     // still on disk (a manifest's `enabledToolGroups`/`tierCeiling`, the config's
@@ -2369,6 +2400,10 @@ async function start() {
     setMeshInitError(errInfo.error);
     // Mesh failure is non-fatal: server continues without mesh routes.
   }
+
+  // The room worktree folders room turns stood in before they moved home, read
+  // once and never grown — see `setAgentSessionSources` above.
+  frozenWorktrees = await frozenRoomWorktrees(dorkHome).catch(() => []);
 
   // Carry any Claude account the '0.87.0' config migration renamed (a row called
   // `default`, now `default-N`) through to its references: agent manifests,
@@ -4003,6 +4038,7 @@ async function start() {
     bindings: roomStore.sessionLedger,
     authors: roomAuthors,
     worktrees: () => roomWorktrees,
+    sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).

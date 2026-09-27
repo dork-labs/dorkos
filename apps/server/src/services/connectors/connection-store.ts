@@ -207,9 +207,11 @@ export class ConnectionStore {
           .run();
       }
       if (existing && existing.mode !== 'managed' && mode === 'managed') {
-        // Hosted authority cannot honor an every-agent grant (ADR 260926-192625),
-        // so moving an instance to managed ends it for good rather than leaving
-        // it dormant to reappear if the instance ever moves back.
+        // A grant given on the owner's own key was never sent to hosted
+        // authority, which now decides every call (ADR 260926-192625). Moving
+        // an instance to managed ends it for good rather than leaving it
+        // dormant to reappear if the instance ever moves back; the owner shares
+        // again through a review, which reaches hosted authority (DOR-2439).
         const instanceConnections = tx
           .select({ id: connections.id })
           .from(connections)

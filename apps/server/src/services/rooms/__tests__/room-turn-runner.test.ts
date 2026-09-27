@@ -8,13 +8,11 @@
  *
  * Seeded defects, each run red before the code stood:
  *
- * - Stamping `request.agentPath` where `request.cwd` belongs reddens "runs the
- *   turn — and projects its files — in the directory the room resolved": the
- *   dispatch and the projector both go to the agent's home instead of the tree
- *   the room placed the turn in.
- * - Projecting attachments under `agentPath` reddens the same test, and does it
- *   silently in production: the model is told a relative path that resolves to
- *   nothing from where it is standing.
+ * - Dropping the grants, `forAgent` or the copy from the dispatch reddens "hands
+ *   the runtime its home, exactly its grants, and its copy": a room turn would
+ *   run at home unable to reach the room's files (spec `agent-home-desk` §5.1).
+ * - Dropping the desk guard reddens "refuses a turn that would stand anywhere
+ *   but the agent's home": the runtime is called in a room's folder.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { InterruptReceipt } from '@dorkos/shared/types';
@@ -127,6 +125,13 @@ let roomToolDirectories: string[] | null = [];
 const sessionOwners = new Map<string, string>();
 
 /**
+ * The folder each session was created in, as its runtime reports it
+ * (`getSession`). Empty by default: a runtime that cannot describe a session
+ * is carried on as before.
+ */
+const sessionDirectories = new Map<string, string>();
+
+/**
  * Which runtime TYPE the runner asked the registry for, in order.
  *
  * Recorded rather than inferred from the stub it gets back, because the claim
@@ -181,6 +186,12 @@ vi.mock('../../core/runtime-registry.js', () => ({
           return interruptQuery(sessionId);
         },
         getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
+        getSession: (_dir: string, sessionId: string) =>
+          Promise.resolve(
+            sessionDirectories.has(sessionId)
+              ? { id: sessionId, cwd: sessionDirectories.get(sessionId) }
+              : null
+          ),
         ...(roomToolDirectories === null
           ? {}
           : {
@@ -281,8 +292,16 @@ interface TriggerCall {
    * — which is a thing worth being able to model, and {@link openTurn} is how.
    */
   onTurnStart?: (seq: number) => void;
-  /** The directory the turn was dispatched into — `request.cwd`, never its identity. */
+  /** The directory the turn was dispatched into — `request.cwd`, the agent's home. */
   cwd?: string;
+  /** The agent the turn is dispatched as. */
+  forAgent?: string;
+  /** The folders the turn is granted. */
+  additionalDirectories?: unknown;
+  /** The room marker handed to the runtime. */
+  roomTurn?: Record<string, unknown>;
+  /** The launch-time step, which the dispatcher runs. */
+  prepareLaunch?: () => Promise<unknown>;
   /** What the room asked the dispatcher to do with a session already working. */
   whenBusy?: string;
   /**
@@ -429,12 +448,12 @@ function request(
     // Also a no-op by default — only the activity tests below listen.
     onActivity: () => undefined,
     onSessionBound: () => undefined,
+    additionalDirectories: [],
+    worktree: null,
     ...rest,
     // **Last, and computed, because it TRACKS `agentPath` by default.** A room
-    // with no files of its own runs its turn in the agent's own directory, so
-    // every test that moves the agent moves the turn with it and nothing here
-    // has to say so twice. A project room is the case that passes `cwd`
-    // explicitly, and it is the only one.
+    // turn stands in its agent's home, so every test that moves the agent moves
+    // the turn with it. Only the desk-guard test passes a different `cwd`.
     cwd: rest.cwd ?? rest.agentPath ?? '/repo/ana',
   };
 }
@@ -991,27 +1010,16 @@ describe('createSessionRoomTurnRunner', () => {
   });
 
   describe('the posting posture it asks about, and which path it asks with', () => {
-    it('asks about where the turn RUNS, not about the agent identity path', async () => {
-      // **DOR-1597, and getting it wrong names the wrong thing.** Since the cwd
-      // rung split identity from where a turn stands, a turn in a room with
-      // files runs in that agent's WORKTREE — and both runtimes that can be
-      // given the room tools gate their injection on the directory the session
-      // actually launches in (codex asks `meshCore.getByPath(cwd)` before it
-      // builds the `dorkos` entry; opencode's reconcile is keyed by the same
-      // cwd). A worktree hosts no registered agent, so neither injects.
-      //
-      // Asking this question about the IDENTITY path would answer for a session
-      // nobody configured — no warning where there is a real gap, which is the
-      // one thing this question is still here to produce. Recording the
-      // ARGUMENT rather than the answer is what makes this discriminating: a
-      // stub that ignored its cwd could not tell the two paths apart.
+    it('asks about where the turn RUNS — the agent`s home', async () => {
+      // Both runtimes that can be given the room tools gate their injection on
+      // the directory the session actually launches in, and a room turn
+      // launches in its agent's home (spec `agent-home-desk` §5.1). Recording
+      // the ARGUMENT rather than the answer is what makes this discriminating.
       roomToolDirectories = ['/repo/ana'];
 
-      await createSessionRoomTurnRunner().run(
-        request({ agentPath: '/repo/ana', cwd: '/rooms/build/worktrees/ana' })
-      );
+      await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
 
-      expect(roomToolsAskedFor).toEqual(['/rooms/build/worktrees/ana']);
+      expect(roomToolsAskedFor).toEqual(['/repo/ana']);
     });
 
     it('runs the turn anyway when the session carries no posting tool', async () => {
@@ -1023,9 +1031,7 @@ describe('createSessionRoomTurnRunner', () => {
       // chose to send.
       roomToolDirectories = [];
 
-      const result = await createSessionRoomTurnRunner().run(
-        request({ agentPath: '/repo/ana', cwd: '/rooms/build/worktrees/ana' })
-      );
+      const result = await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
 
       expect(result.text).toBe('green');
       expect(result.unanswered).toBeUndefined();
@@ -1043,25 +1049,26 @@ describe('createSessionRoomTurnRunner', () => {
     });
   });
 
-  it('runs the turn — and projects its files — in the directory the room resolved', async () => {
-    // **The identity/files split, at the one seam where it could be undone**
-    // (DOR-1597). The dispatcher resolves a project room's turn into that
-    // agent's working copy of the room's repo and hands the runner both values;
-    // everything about WHERE — the dispatch, the projector's own cwd, and the
-    // tree the attachments land in — must follow `cwd`, while everything about
-    // WHO still follows `agentPath`. Stamping `agentPath` in any of the three
-    // reddens this, and in the third case silently: the model would be told a
-    // path that resolves to nothing from where it is standing.
+  it('hands the runtime its home, exactly its grants, and its copy — and projects files at home', async () => {
+    // Spec `agent-home-desk` §5.1: the turn stands in the agent's home and is
+    // granted the room's folders; §5.4: attachments land under the turn's own
+    // folder, the home; §5.6: the copy rides the room marker so the canvas can
+    // label a file inside it.
     const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-home-'));
     const agentPath = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-agent-'));
-    const worktree = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-worktree-'));
+    const worktree = '/dork/rooms/r1/worktrees/ana-1a2b3c4d';
+    const grants = [
+      { path: worktree, access: 'write' as const },
+      { path: '/dork/rooms/r1/repo', access: 'read' as const },
+    ];
     try {
       const store = new LocalRoomAttachmentStore(dorkHome);
       setRoomAttachmentStores({ attachments: store, rows: {} as never });
 
       const turnRequest = request({
         agentPath,
-        cwd: worktree,
+        additionalDirectories: grants,
+        worktree,
         attachmentProjection: [
           {
             entryId: 'entry-x',
@@ -1087,23 +1094,137 @@ describe('createSessionRoomTurnRunner', () => {
       await runner.run(turnRequest);
 
       const call = triggered[triggered.length - 1]!;
-      expect(call.cwd).toBe(worktree);
-      expect(projectorCwd).toBe(worktree);
-      // The bytes are in the tree the turn stands in, at the path the plan
-      // named relative to it — and nowhere near the agent's own folder.
-      const inWorktree = path.join(
-        worktree,
-        PROJECTED_ATTACHMENTS_ROOT,
-        'entry-x',
-        'att1-crash.log'
-      );
-      expect(await readFile(inWorktree)).toEqual(Buffer.from('crash!'));
-      expect(existsSync(path.join(agentPath, PROJECTED_ATTACHMENTS_ROOT))).toBe(false);
+      expect(call.cwd).toBe(agentPath);
+      expect(call.forAgent).toBe(agentPath);
+      expect(call.additionalDirectories).toEqual(grants);
+      expect(call.roomTurn).toMatchObject({ cwd: agentPath, worktree, agentPath });
+      expect(projectorCwd).toBe(agentPath);
+      // The bytes are under the home, at the path the plan named relative to it.
+      expect(
+        await readFile(
+          path.join(agentPath, PROJECTED_ATTACHMENTS_ROOT, 'entry-x', 'att1-crash.log')
+        )
+      ).toEqual(Buffer.from('crash!'));
     } finally {
       await rm(dorkHome, { recursive: true, force: true });
       await rm(agentPath, { recursive: true, force: true });
-      await rm(worktree, { recursive: true, force: true });
     }
+  });
+
+  it('grants nothing and names no copy for a room without files', async () => {
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    await createSessionRoomTurnRunner().run(request({ agentPath: '/repo/ana' }));
+
+    const call = triggered[triggered.length - 1]!;
+    expect(call).not.toHaveProperty('additionalDirectories');
+    expect(call.roomTurn).not.toHaveProperty('worktree');
+    expect(call).not.toHaveProperty('prepareLaunch');
+  });
+
+  it('hands the dispatcher a launch step bound to the session the turn launches on', async () => {
+    const launchedOn: string[] = [];
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    await createSessionRoomTurnRunner().run(
+      request({
+        agentPath: '/repo/ana',
+        sessionId: 'sess-bound',
+        prepareLaunch: (sessionId) => {
+          launchedOn.push(sessionId);
+          return Promise.resolve({});
+        },
+      })
+    );
+
+    const call = triggered[triggered.length - 1]!;
+    // Not run by the runner: the DISPATCHER runs it, at launch.
+    expect(launchedOn).toEqual([]);
+    await call.prepareLaunch!();
+    expect(launchedOn).toEqual(['sess-bound']);
+  });
+
+  describe('an OpenCode session that stood in the room’s copy (spec `agent-home-desk` §8.1)', () => {
+    // OpenCode routes every session call by the folder the session was created
+    // in and cannot move it, so a room session from before room turns moved
+    // home cannot be resumed at home: its next turn starts a fresh session,
+    // which the room then binds. Seeded: dropping the check reddens the first.
+    const COPY = '/dork/rooms/r1/worktrees/ana-1a2b3c4d';
+
+    afterEach(() => {
+      sessionOwners.clear();
+      sessionDirectories.clear();
+    });
+
+    function answering(): void {
+      turnBehaviour = (opts) => {
+        openTurn(opts);
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+    }
+
+    it('starts a fresh session at home, and hands the room the new id', async () => {
+      answering();
+      sessionOwners.set('oc-old', 'opencode');
+      sessionDirectories.set('oc-old', COPY);
+
+      const result = await createSessionRoomTurnRunner().run(
+        request({ agentPath: '/repo/ana', sessionId: 'oc-old', worktree: COPY })
+      );
+
+      const call = triggered[triggered.length - 1]!;
+      expect(call.sessionId).not.toBe('oc-old');
+      expect(result.sessionId).toBe(call.sessionId);
+      expect(call.cwd).toBe('/repo/ana');
+    });
+
+    it('carries on an OpenCode session that already stands at home', async () => {
+      answering();
+      sessionOwners.set('oc-home', 'opencode');
+      sessionDirectories.set('oc-home', '/repo/ana');
+
+      await createSessionRoomTurnRunner().run(
+        request({ agentPath: '/repo/ana', sessionId: 'oc-home', worktree: COPY })
+      );
+
+      expect(triggered[triggered.length - 1]!.sessionId).toBe('oc-home');
+    });
+
+    it('resumes a Claude Code session from the copy at home — it can move', async () => {
+      // Measured (§8.1): claude-code resumes a moved transcript at the home.
+      answering();
+      sessionOwners.set('cc-old', 'claude-code');
+      sessionDirectories.set('cc-old', COPY);
+
+      await createSessionRoomTurnRunner().run(
+        request({ agentPath: '/repo/ana', sessionId: 'cc-old', worktree: COPY })
+      );
+
+      expect(triggered[triggered.length - 1]!.sessionId).toBe('cc-old');
+    });
+  });
+
+  it('refuses a turn that would stand anywhere but the agent`s home (the desk guard)', async () => {
+    // Spec §3.4 step 5 (and steps 1-2 with a registry wired, pinned in
+    // `agent-home.test.ts`): a room turn's cwd is the home, and nothing else
+    // reaches the runtime. A refusal is a throw out of `run` before anything
+    // is dispatched — a turn that never started.
+    const before = triggered.length;
+    await expect(
+      createSessionRoomTurnRunner().run(
+        request({ agentPath: '/repo/ana', cwd: '/dork/rooms/r1/worktrees/ana-1a2b3c4d' })
+      )
+    ).rejects.toMatchObject({ code: 'DESK_NOT_OWN' });
+    expect(triggered).toHaveLength(before);
   });
 
   it('has the files on disk BEFORE the turn is triggered', async () => {

@@ -295,35 +295,36 @@ any of them watched. Tests never edit source, so nothing is lost by not watching
   `http://localhost:6244` unless `SITE_BASE_URL` says otherwise — so set
   `DORKOS_SITE_PORT` and `SITE_BASE_URL` together.
 
-## CI runs this suite in three shards
+## CI runs this suite in six shards
 
-A whole run takes about 41 minutes, so `.github/workflows/browser-test.yml` cuts
-it three ways (`playwright test --shard=i/3`) and runs the thirds side by side.
-On a pull request you will see four checks, not one:
+A whole run takes about 58 minutes (about 5 of boot, 53 of tests), so
+`.github/workflows/browser-test.yml` cuts it six ways (`playwright test
+--shard=i/6`) and runs the sixths side by side, in the merge queue. A queue
+build shows seven checks, not one:
 
-- **`browser-shard (1/3)`, `(2/3)`, `(3/3)`** — a third of the tests each. Each
+- **`browser-shard (1/6)` to `(6/6)`** — a sixth of the tests each. Each
   one boots all six webServer legs, because a shard does not know which projects
   it drew until after the config is loaded. A failing shard uploads its Playwright
   report as `playwright-report-shard-<n>` — traces, screenshots and videos.
 - **`browser-test`** — the one that matters. It fails unless every shard passed,
   and it is where `scripts/assert-browser-tests-executed.sh` proves the suite
-  really executed: no single shard sees every spec file, so the script takes all
-  three shards' JSON reports and asserts against their union.
+  really executed: no single shard sees every spec file, so the script takes every
+  shard's JSON report and asserts against their union.
 
 Local runs are never sharded — you always get the whole suite. If you need to
 reproduce one shard exactly, pass the same flag: `pnpm --filter @dorkos/e2e e2e
---shard=2/3`. Add `--list` to see which spec files a shard draws without
+--shard=2/6`. Add `--list` to see which spec files a shard draws without
 running them.
 
-### How the thirds are cut
+### How the sixths are cut
 
 Not by test count. `reporters/balanced-shard-reporter.ts` takes over
 `--shard`: it weighs every spec file (per project) by how long it took in real
 merge-queue runs, recorded in `reporters/shard-timings.json`, and deals the
 files out heaviest first to whichever shard has the least so far. A file is
 never split, so its `beforeAll` and serial tests run together. Each shard prints
-one line with its estimate, for example `balanced shard 3/3: 32 of 91 spec
-units, ~17.4 min of tests (shards: 17.4 / 17.4 / 17.4 min)`.
+one line with its estimate, for example `balanced shard 3/6: 17 of 101 spec
+units, ~8.8 min of tests (shards: 8.8 / 8.8 / 8.8 / 8.8 / 8.8 / 8.8 min)`.
 
 A new spec needs nothing: it is weighed at its project's average time per test.
 Refresh the timings when those printed estimates drift away from the shards'

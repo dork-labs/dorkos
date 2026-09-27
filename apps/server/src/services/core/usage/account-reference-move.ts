@@ -6,8 +6,16 @@
  * A reference names an account by id, and three kinds live outside the config
  * file: an agent manifest's `account` (moved through the mesh registry, which
  * writes the file first), a schedule's `account` with its approval, and the
- * schedule's `SKILL.md` (`services/tasks/approvals/account-rename.ts`). Until
- * all three move, the launch ladder and the usage store keep resolving
+ * schedule's `SKILL.md` (`services/tasks/approvals/account-rename.ts`).
+ *
+ * A stored session limit (`session_limits.account_id`, spec
+ * claude-account-fleet D4) is deliberately NOT a reference to move. Its table
+ * is newer than the `'0.87.0'` migration, so every row was written after the
+ * rename, from the folder the session actually ran in: a row saying `default`
+ * means this computer's own sign-in, and moving it to `default-N` would
+ * mislabel it whenever the renamed row's folder is a different one.
+ *
+ * Until all three move, the launch ladder and the usage store keep resolving
  * `default` to the renamed row, so nothing bills a different account.
  *
  * The marker is dropped only when every site moved. A site that is not wired

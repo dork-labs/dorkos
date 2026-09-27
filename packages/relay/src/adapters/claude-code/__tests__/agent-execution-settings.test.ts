@@ -47,6 +47,9 @@ function createMockRelay(): RelayPublisher {
   };
 }
 
+/** A person through a chat binding: a sender whose payload may shape the turn (DOR-2446). */
+const BINDING_SENDER = 'relay.human.telegram.123';
+
 function createTestEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope {
   return {
     id: 'msg-001',
@@ -144,6 +147,7 @@ describe('a relay turn runs on the agent it addressed', () => {
     // session still runs in the directory the payload named.
     await adapter.start(relay);
     const envelope = createTestEnvelope({
+      from: BINDING_SENDER,
       payload: { content: 'What is the status?', cwd: '/projects/other' },
     });
 
@@ -163,6 +167,7 @@ describe('a relay turn runs on the agent it addressed', () => {
   it("hands the runtime the binding's agent as the turn's agent (DOR-2355)", async () => {
     await adapter.start(relay);
     const envelope = createTestEnvelope({
+      from: BINDING_SENDER,
       payload: { content: 'hi', cwd: '/ws/ana-fix', forAgent: '/projects/ana' },
     });
 
@@ -191,6 +196,7 @@ describe('a relay turn runs on the agent it addressed', () => {
     // manifest than nothing.
     await adapter.start(relay);
     const envelope = createTestEnvelope({
+      from: BINDING_SENDER,
       payload: { content: 'What is the status?', cwd: '/projects/other' },
     });
 
@@ -245,7 +251,10 @@ describe('a relay turn runs on the agent it addressed', () => {
     // absence is not consent (DOR-604), so the binding's mode — or `default` —
     // stays exactly what it was.
     await adapter.start(relay);
+    // From a person through a binding: the one kind of sender whose payload may
+    // carry a permission mode (DOR-2446).
     const envelope = createTestEnvelope({
+      from: 'relay.human.telegram.123',
       payload: {
         content: 'What is the status?',
         __bindingPermissions: { permissionMode: 'bypassPermissions' },

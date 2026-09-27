@@ -466,11 +466,11 @@ export interface RoomTurnFiles {
 For a project room: `ensureWorktree` (unchanged lazy creation, minus seeding and projection, §5.9),
 then grants:
 
-| Grant                     | Access  | Why                                                                                               |
-| ------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| `<room>/worktrees/<slug>` | `write` | The agent's own copy                                                                              |
-| `<room>/repo`             | `read`  | Reading `main` and the room's other files                                                         |
-| `<room>/repo/.git`        | `write` | A commit in a linked worktree writes objects, its index and its ref here (01-ideation decision 8) |
+| Grant                                                                                 | Access  | Why                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<room>/worktrees/<slug>`                                                             | `write` | The agent's own copy                                                                                                                                                                                                                     |
+| `<room>/repo`                                                                         | `read`  | Reading `main` and the room's other files                                                                                                                                                                                                |
+| `<room>/repo/.git/{objects, refs/heads/room, logs/refs/heads/room, worktrees/<slug>}` | `write` | A commit and a `git merge main` in a linked worktree write exactly these (01-ideation decision 8). **Amended in T4 (DOR-2410):** never all of `.git`, which would grant the shared `hooks/`, `config` and `info/`; see ADR 260926-180223 |
 
 The dispatcher keeps its load-bearing order (spec project-rooms §3.5): place → build context →
 runner. The refresh is **not** part of placement: it runs at launch (§6.1), and fills the files
@@ -492,6 +492,15 @@ permission mode allows, on every runtime — including `repo/` and `main`'s ref 
 already true. The protection is unchanged and server-side: `repo/` found dirty or off `main` stops
 every write path with `MAIN_CHECKOUT_DIRTY` and the operator's repair (ADR 260829-115626); merging is
 still the only sanctioned write path.
+
+The git grants are folders, and two are shared (amended in T4, DOR-2410): write access to
+`repo/.git/objects/` lets an agent overwrite a loose object — git does not re-hash on read, so
+`main`'s content can change without a commit — and `refs/heads/room/` plus its reflog folder let one
+agent move or erase another agent's `room/<slug>` branch. Neither executes code; closing them needs a
+per-agent object store and per-agent refs, which is follow-up work. A shell that is not sandboxed can
+also write `repo/.git/config` (a plain `git config` in a copy lands there); the server audits it
+before every git command in the room and refuses with `ROOM_REPO_CONFIG_UNSAFE` — never runs — any
+filter, diff or merge driver, include, fsmonitor or credential helper it defines.
 
 ### 5.3 The room context block
 
@@ -903,6 +912,10 @@ records the request, in temp config directories. The operator's real sign-in was
   them. So **the next turn of that (room, agent) must start a fresh opencode session** when the bound
   one's directory is a room worktree, and **`extraDirs` must be kept for opencode, fed from the
   frozen list**, so the old session stays listed. The room log carries the conversation either way.
+  Picking that old session up in the app is refused before launch (`ROOM_SESSION_MOVED`, `409`)
+  with a sentence pointing back to the room: no turn stands in a room's files, and its transcript
+  stays readable. Every app launch is also refused (`DESK_NOT_OWN`) when its folder is inside the
+  rooms directory, whatever named it.
 
 ### 8.2 ADR status
 

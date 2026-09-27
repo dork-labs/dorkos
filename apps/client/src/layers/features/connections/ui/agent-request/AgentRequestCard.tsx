@@ -129,7 +129,10 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
         className={frameClass}
       >
         <p role="alert" className="text-sm" data-testid="agent-request-unanswered">
-          <Check className="text-success mr-1.5 inline size-4 align-text-bottom" aria-hidden />
+          <Check
+            className="text-status-success mr-1.5 inline size-4 align-text-bottom"
+            aria-hidden
+          />
           The access is saved, but {agentName}’s request wasn’t answered: {reason}
         </p>
         {retry && (

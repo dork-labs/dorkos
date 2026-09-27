@@ -6,6 +6,8 @@
  *
  * @module services/relay/adapter-factory
  */
+import { createTurnDeskCheck } from '../core/agent-identity/turn-desk-check.js';
+import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { dirname } from 'node:path';
 import type {
   RelayAdapter,
@@ -170,6 +172,13 @@ export async function createAdapter(
         // resolves which runtime a message belongs to and asks about THAT one,
         // so the answer is per turn rather than per adapter (DOR-1614).
         resolveExecutionSettings: createTurnExecutionSettingsResolver(),
+        // The desk guard for a folder a payload names (spec `agent-home-desk`
+        // §3.4): any agent can publish a `cwd`, so the answering agent stands
+        // there only when it is that agent's desk.
+        checkTurnDesk: createTurnDeskCheck({
+          sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+          placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
+        }),
         // Who answers a message addressed to an AGENT rather than a session —
         // the shape an agent-to-agent `relay_send` arrives on. The same single
         // copy of the binding-then-manifest ladder rooms and the chat bindings

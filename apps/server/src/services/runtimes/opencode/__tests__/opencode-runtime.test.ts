@@ -20,7 +20,6 @@ import {
 } from '../../../session/session-state-projector.js';
 import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
-import { setWorkingCopyOwnerPort } from '../../../core/agent-identity/index.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 import {
   checkOpenCodeDependencies,
@@ -2742,38 +2741,21 @@ describe('OpenCodeRuntime', () => {
       }
     });
 
-    describe('in a room with files (DOR-2091)', () => {
-      // The turn stands in the agent's WORKTREE, which hosts no registered
-      // agent. Looked up exactly, it got no binding and no `dorkos` server, so
-      // an opencode agent in a room with files could never answer. The worktree
-      // anchors to the agent the manager handed it to, and only for a turn for
-      // that agent. Seeded: reverting to `getByPath(cwd)` reddens the first;
-      // dropping the room-turn cross-check reddens the second.
-      const WORKTREE = path.join(path.dirname(DIRECTORY), 'rooms', '01ROOM', 'worktrees', 'a-1a2b');
-
-      beforeEach(() => {
-        setWorkingCopyOwnerPort({
-          ownerOf: (dir) =>
-            path.dirname(dir) === path.dirname(WORKTREE)
-              ? { owner: dir === WORKTREE ? DIRECTORY : null }
-              : null,
-        });
-      });
-
-      afterEach(() => {
-        setWorkingCopyOwnerPort(undefined);
-      });
-
-      /** Run one room turn for `agentPath` standing in the worktree, to completion. */
+    describe('a room turn (DOR-2091, spec `agent-home-desk` §5.1)', () => {
+      // A room turn stands in its agent's HOME and names that agent: it is bound
+      // as the agent and asks for its `dorkos` server; a turn naming ANOTHER
+      // agent gets no binding. Seeded: dropping the room-turn cross-check
+      // reddens the second.
+      /** Run one room turn for `agentPath` standing in the agent's home, to completion. */
       async function roomTurnFor(harness: ReturnType<typeof makeRuntime>, agentPath: string) {
         const { finished } = consume(
           harness.runtime.sendMessage(nextSessionId(), 'hello', {
-            cwd: WORKTREE,
+            cwd: DIRECTORY,
             roomTurn: {
               roomId: '01ROOM',
               authorId: 'author-1',
               turnId: 'turn-1',
-              cwd: WORKTREE,
+              cwd: DIRECTORY,
               agentPath,
             },
           })
@@ -2798,7 +2780,7 @@ describe('OpenCodeRuntime', () => {
         expect(resolveDorkosMcpInjection).toHaveBeenCalledWith(DIRECTORY, expect.anything());
       });
 
-      it("gives a turn for ANOTHER agent no binding in this agent's worktree", async () => {
+      it("gives a turn for ANOTHER agent no binding in this agent's home", async () => {
         const harness = makeRuntime();
         const principals = enableConnectorTools(harness);
 

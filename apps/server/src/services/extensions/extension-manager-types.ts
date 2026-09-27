@@ -19,6 +19,13 @@ export interface ActiveServerExtension {
   cleanup: (() => void) | null;
   scheduledCleanups: Array<() => void>;
   /**
+   * Removes every account usage listener and account advisor the extension
+   * registered through `ctx.accounts`, so a shutdown or reload never leaves one
+   * behind even when the extension's own cleanup forgot it. Absent for a
+   * proxy-only extension, which has no context.
+   */
+  releaseAccounts?: () => void;
+  /**
    * What this instance was built from — see `buildSourceKey` in
    * `extension-server-lifecycle.ts`. An `initialize` call carrying the same key
    * is answered without a restart, which is what keeps the client's per-page-load

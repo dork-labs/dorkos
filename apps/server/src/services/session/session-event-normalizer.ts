@@ -728,6 +728,10 @@ function toStatusChange(data: StreamData): RawSessionEvent | null {
   // subscription fields), so it merges whole-object like `model`/`cost`.
   if (data.usage !== undefined) status.usage = data.usage as StatusChangePayload['usage'];
 
+  // A hard usage limit (spec claude-account-fleet D4), or `null` to clear one.
+  // Whole-object like `usage`; absent leaves the held limit alone.
+  if (data.limit !== undefined) status.limit = data.limit as StatusChangePayload['limit'];
+
   const contextUsage = toPartialContextUsage(data);
   if (contextUsage !== null) status.contextUsage = contextUsage;
 

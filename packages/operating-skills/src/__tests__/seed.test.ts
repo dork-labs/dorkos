@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseFrontmatter, stringifyFrontmatter } from '@dorkos/skills/frontmatter';
-import { seedOperatingSkills } from '../seed.js';
+import { isUnmodifiedSeededSkill, seedOperatingSkills } from '../seed.js';
 import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '../pack.js';
 
 const UMBRELLA = 'operating-dorkos';
@@ -141,5 +141,36 @@ describe('seedOperatingSkills', () => {
       const { content } = parseFrontmatter(await readFile(skillFile(skill.name), 'utf-8'));
       expect(content.trim()).toBe(skill.body.trim());
     }
+  });
+});
+
+describe('isUnmodifiedSeededSkill', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'operating-skills-unmodified-'));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('recognises a file the seeder wrote and nobody touched', async () => {
+    await seedOperatingSkills(root);
+    const file = path.join(root, '.agents', 'skills', OPERATING_SKILLS_PACK[0]!.name, 'SKILL.md');
+
+    expect(isUnmodifiedSeededSkill(file, await readFile(file, 'utf-8'))).toBe(true);
+  });
+
+  it('refuses an edited copy, a person`s own skill, and something unparseable', async () => {
+    await seedOperatingSkills(root);
+    const file = path.join(root, '.agents', 'skills', OPERATING_SKILLS_PACK[0]!.name, 'SKILL.md');
+    const seeded = await readFile(file, 'utf-8');
+
+    expect(isUnmodifiedSeededSkill(file, `${seeded}\nMy own note.\n`)).toBe(false);
+    expect(
+      isUnmodifiedSeededSkill(file, '---\nname: mine\ndescription: mine\n---\n\n# Mine\n')
+    ).toBe(false);
+    expect(isUnmodifiedSeededSkill(file, 'not a skill at all')).toBe(false);
   });
 });

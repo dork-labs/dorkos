@@ -958,7 +958,10 @@ registry.registerPath({
     'in a queue behind a still-running turn, and `outcome` carries the requested and ' +
     'applied disposition (queue/steer/stage), not whether a turn began. A busy session ' +
     'is never a `409` here — read and edit what is waiting through ' +
-    '`/api/sessions/{id}/queue`. The `202` also carries the CANONICAL session id: for a ' +
+    '`/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would ' +
+    "run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own " +
+    'folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the ' +
+    "room's files), and nothing was started. The `202` also carries the CANONICAL session id: for a " +
     'brand-new session this is the real id assigned during the turn (it differs from ' +
     'the client-supplied id), so the client re-keys its URL and `/events` subscription ' +
     'to it. To avoid missing the turn, a client should be subscribed to `/events` ' +
@@ -978,6 +981,12 @@ registry.registerPath({
     },
     400: {
       description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'Refused before anything started, for where the turn would run ' +
+        '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`); the body says what to do instead',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

@@ -160,6 +160,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   ScopeSchema: 'scopes are abilities the protocol defines',
   AuthenticationKindSchema: 'which authentication flow to run; names no vendor',
   ConnectionStatusSchema: 'the lifecycle of a connection',
+  ConnectionGrantSubjectSchema: 'whose calls a grant answers for: one agent or every agent',
   RemoteAccessCapabilitySchema: 'how the tunnel behaves, not what was bought',
   CustomAddressCapabilitySchema: 'whether the mechanism is available, not its price',
   SupportCapabilitySchema: 'which channel, not which subscription',
