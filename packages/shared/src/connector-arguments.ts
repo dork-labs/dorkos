@@ -119,8 +119,20 @@ function withoutDefaults(node: unknown): unknown {
  * The schema a value is checked against: the provider's schema with its
  * `default` annotations removed and, when the root declares its properties and
  * says nothing about other keys, closed to keys it does not declare.
+ *
+ * Exported for its tests alone: zod 4.6 happens to ignore a root's
+ * `additionalProperties: false` beside `allOf`, `anyOf`, `oneOf`, `$ref` and
+ * `patternProperties`, so behaviour alone cannot show the root was left open
+ * for them, and standard JSON Schema (or a later zod) would refuse keys their
+ * parts declare.
+ *
+ * @param providerSchema - The provider's schema, as stored.
+ * @returns The schema {@link checkConnectorArguments} validates against.
+ * @internal
  */
-function validationSchema(providerSchema: Record<string, unknown>): Record<string, unknown> {
+export function connectorValidationSchema(
+  providerSchema: Record<string, unknown>
+): Record<string, unknown> {
   const schema = withoutDefaults(providerSchema) as Record<string, unknown>;
   const closable =
     isRecord(schema.properties) && OPEN_OBJECT_KEYWORDS.every((keyword) => !(keyword in schema));
@@ -153,7 +165,7 @@ export function checkConnectorArguments(
 ): ConnectorArgumentsCheck {
   let validator: z.ZodType;
   try {
-    validator = z.fromJSONSchema(validationSchema(providerSchema));
+    validator = z.fromJSONSchema(connectorValidationSchema(providerSchema));
   } catch {
     return { ok: false, reason: 'schema_unreadable' };
   }

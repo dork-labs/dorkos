@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(connectors): stop refusing every connected-app action whose settings have defaults'
+  - 'fix(connectors): refuse a corrupt stored schema cleanly and pin the open-root rule'
 ---
 
 ### Fixed

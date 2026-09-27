@@ -495,6 +495,50 @@ describe('ConnectorExecutionBroker', () => {
     expect(provider.commands).toEqual([]);
   });
 
+  it('refuses cleanly, before dispatch, when a stored schema is not readable JSON', async () => {
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'revision-corrupt',
+        providerInstanceId: provider.instanceId,
+        toolkit: 'gmail',
+        operationSlug: 'gmail.corrupt',
+        toolkitVersion: '2026-09-01',
+        schemaHash: 'sha256:revision-corrupt',
+        capabilityClassification: 'write',
+        retryPolicy: 'never',
+        providerRevisionRef: '10000000-0000-4000-8000-000000000009',
+        inputSchemaJson: '{"type":"object",',
+        discoveredAt: '2026-09-06T12:00:00.000Z',
+      })
+      .run();
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-revision-corrupt',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: CONNECTION_ID,
+        operationRevisionId: 'revision-corrupt',
+        createdBy: 'operator',
+        createdAt: '2026-09-06T12:00:00.000Z',
+      })
+      .run();
+
+    await expect(
+      authorization.prepare({
+        capabilityId: 'connectors.execute_write',
+        target: { ...target, operationRevisionId: 'revision-corrupt' },
+        principal: principal(),
+      })
+    ).rejects.toMatchObject({
+      payload: {
+        code: 'CONNECTOR_ARGUMENTS_INVALID',
+        error: expect.stringContaining('cannot be checked'),
+      },
+    });
+    expect(provider.commands).toEqual([]);
+  });
+
   it('refuses arguments that do not exactly match the immutable schema', async () => {
     await expect(
       authorization.prepare({

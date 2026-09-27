@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { checkConnectorArguments } from '../connector-arguments.js';
+import { checkConnectorArguments, connectorValidationSchema } from '../connector-arguments.js';
 
 /**
  * Composio's `GMAIL_FETCH_EMAILS` input schema, byte for byte as a live install
@@ -59,7 +59,9 @@ describe('checkConnectorArguments', () => {
     expect(check).toMatchObject({ ok: false, reason: 'mismatch' });
     const problem = check.ok ? '' : (check as { problem?: string }).problem;
     expect(problem?.startsWith(`${path}: `)).toBe(true);
-    expect(problem).not.toContain(JSON.stringify(Object.values(value)[0]));
+    const sent = Object.values(value)[0];
+    const raw = Array.isArray(sent) ? sent.map(String) : [String(sent)];
+    for (const fragment of raw) expect(problem).not.toContain(fragment);
   });
 
   it('refuses a missing required field', () => {
@@ -122,6 +124,52 @@ describe('checkConnectorArguments', () => {
       ],
     };
     expect(checkConnectorArguments(composed, { a: 'x', b: 1 })).toEqual({ ok: true });
+  });
+
+  it.each([
+    [
+      'allOf',
+      {
+        type: 'object',
+        properties: { a: { type: 'string' } },
+        allOf: [{ type: 'object', properties: { b: { type: 'number' } } }],
+      },
+    ],
+    [
+      '$ref',
+      {
+        type: 'object',
+        properties: { a: { type: 'string' } },
+        $ref: '#/$defs/Extra',
+        $defs: { Extra: { type: 'object', properties: { b: { type: 'number' } } } },
+      },
+    ],
+  ])(
+    'does not close a root that also has %s, whose parts may declare more keys',
+    (_label, schema) => {
+      expect(checkConnectorArguments(schema, { a: 'x', b: 1 })).toEqual({ ok: true });
+    }
+  );
+
+  it.each([
+    'additionalProperties',
+    'patternProperties',
+    'unevaluatedProperties',
+    '$ref',
+    'allOf',
+    'anyOf',
+    'oneOf',
+  ])('leaves the root open when it carries %s', (keyword) => {
+    // zod 4.6 lets these keys through even beside a closed root, so the
+    // behaviour tests above cannot see a dropped opener; the schema itself can.
+    const schema = { type: 'object', properties: { a: { type: 'string' } }, [keyword]: {} };
+    expect(connectorValidationSchema(schema)).toEqual(schema);
+  });
+
+  it('closes a plain root that says nothing about other keys', () => {
+    expect(
+      connectorValidationSchema({ type: 'object', properties: { a: { type: 'string' } } })
+    ).toMatchObject({ additionalProperties: false });
   });
 
   it('reports a schema it cannot turn into a validator separately from a bad value', () => {

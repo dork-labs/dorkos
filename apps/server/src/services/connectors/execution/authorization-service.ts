@@ -625,10 +625,16 @@ export class ConnectorExecutionAuthorizationService {
     if (!isPlainJson(argumentsValue)) {
       return refuse('CONNECTOR_ARGUMENTS_INVALID', 'Connector arguments must be plain JSON data.');
     }
-    const check = checkConnectorArguments(
-      JSON.parse(inputSchemaJson) as Record<string, unknown>,
-      argumentsValue
-    );
+    let inputSchema: unknown;
+    try {
+      inputSchema = JSON.parse(inputSchemaJson);
+    } catch {
+      inputSchema = undefined;
+    }
+    const check =
+      inputSchema !== null && typeof inputSchema === 'object' && !Array.isArray(inputSchema)
+        ? checkConnectorArguments(inputSchema as Record<string, unknown>, argumentsValue)
+        : ({ ok: false, reason: 'schema_unreadable' } as const);
     if (check.ok) return argumentsValue;
     if (check.reason === 'schema_unreadable') {
       return refuse(
