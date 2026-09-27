@@ -3969,6 +3969,14 @@ export const ServerConfigSchema = z
               label: z.string().nullable().openapi({
                 description: 'What the operator calls this account, or null if unnamed',
               }),
+              color: z.string().openapi({
+                description:
+                  "The color DorkOS draws this account's dot and badge in, as lowercase #rrggbb: the stored color, else the default for the account's position in the list",
+              }),
+              colorIsDefault: z.boolean().openapi({
+                description:
+                  'True when `color` is the default for its position rather than a color the operator stored. A write sends `color: null` for such a row so it keeps following the palette',
+              }),
               isAccountRoot: z.boolean().openapi({
                 description:
                   'Whether DorkOS can currently find a Claude account here — the directory exists AND holds a `projects/` directory (the structural check, spec claude-code-accounts D4). Deliberately not named `exists`: a directory that exists without `projects/` reports false. False means it contributes no sessions',

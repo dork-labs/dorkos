@@ -315,8 +315,22 @@ function AccountsProbe() {
 /** Server config registering `count` named Claude accounts, the first one active. */
 function withAccounts(count: number): Partial<ServerConfig> {
   const all = [
-    { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
-    { id: 'acme-corp', path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
+    {
+      id: 'personal',
+      path: '/Users/dev/.claude',
+      label: 'Personal',
+      color: '#3b82f6',
+      colorIsDefault: true,
+      isAccountRoot: true,
+    },
+    {
+      id: 'acme-corp',
+      path: '/Users/dev/.claude2',
+      label: 'Acme Corp',
+      color: '#3b82f6',
+      colorIsDefault: true,
+      isAccountRoot: true,
+    },
   ];
   return {
     claudeCode: {
@@ -342,6 +356,7 @@ function makeCaps(type: string): RuntimeCapabilities {
     supportsManagedMcpServers: false,
     supportsQuestionPrompt: false,
     supportsPlugins: false,
+    supportsAccounts: false,
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
@@ -1029,9 +1044,18 @@ describe('RuntimeItem', () => {
                 id: 'personal',
                 path: '/Users/dev/.claude',
                 label: 'Personal',
+                color: '#3b82f6',
+                colorIsDefault: true,
                 isAccountRoot: true,
               },
-              { id: 'third', path: '/Users/dev/.claude3', label: 'Third', isAccountRoot: true },
+              {
+                id: 'third',
+                path: '/Users/dev/.claude3',
+                label: 'Third',
+                color: '#3b82f6',
+                colorIsDefault: true,
+                isAccountRoot: true,
+              },
             ],
           },
         });
@@ -1145,11 +1169,20 @@ describe('RuntimeItem', () => {
           resolvedAccount: '/Users/dev/.claude-adhoc',
           inherited: false,
           accounts: [
-            { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+            {
+              id: 'personal',
+              path: '/Users/dev/.claude',
+              label: 'Personal',
+              color: '#3b82f6',
+              colorIsDefault: true,
+              isAccountRoot: true,
+            },
             {
               id: 'acme-corp',
               path: '/Users/dev/.claude2',
               label: 'Acme Corp',
+              color: '#3b82f6',
+              colorIsDefault: true,
               isAccountRoot: true,
             },
             // A row of the synthesized, display-only kind.
@@ -1157,6 +1190,8 @@ describe('RuntimeItem', () => {
               id: null,
               path: '/Users/dev/.claude-adhoc',
               label: null,
+              color: '#3b82f6',
+              colorIsDefault: true,
               isAccountRoot: true,
             },
           ],
@@ -1194,11 +1229,20 @@ describe('RuntimeItem', () => {
           resolvedAccount: '/Users/dev/.claude',
           inherited: true,
           accounts: [
-            { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+            {
+              id: 'personal',
+              path: '/Users/dev/.claude',
+              label: 'Personal',
+              color: '#3b82f6',
+              colorIsDefault: true,
+              isAccountRoot: true,
+            },
             {
               id: 'acme-corp',
               path: '/Users/dev/.claude2',
               label: 'Acme Corp',
+              color: '#3b82f6',
+              colorIsDefault: true,
               isAccountRoot: false,
             },
           ],

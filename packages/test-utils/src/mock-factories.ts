@@ -641,6 +641,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsManagedMcpServers: true,
           supportsQuestionPrompt: true,
           supportsPlugins: true,
+          supportsAccounts: true,
           permissionModes: {
             supported: true,
             // The mode a claude-code session runs when nothing is stored for it
@@ -716,6 +717,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsMcp: false,
           supportsQuestionPrompt: false,
           supportsPlugins: false,
+          supportsAccounts: false,
           permissionModes: {
             supported: true,
             default: 'default',
@@ -761,6 +763,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsMcp: false,
           supportsQuestionPrompt: false,
           supportsPlugins: false,
+          supportsAccounts: false,
           permissionModes: {
             supported: true,
             default: 'default',

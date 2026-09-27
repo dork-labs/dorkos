@@ -1,3 +1,4 @@
+import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
@@ -155,7 +156,7 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const roots = resolveClaudeRootSet(
       fakeConfig({
         defaultAccount: account,
-        accounts: [{ id: 'acme', path: account, label: 'Acme' }],
+        accounts: [{ id: 'acme', path: account, label: 'Acme', color: null }],
       })
     );
     expect(roots).toEqual([account]);
@@ -166,7 +167,7 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const roots = resolveClaudeRootSet(
       fakeConfig({
         defaultAccount: account,
-        accounts: [{ id: 'acme', path: `${account}${path.sep}`, label: 'Acme' }],
+        accounts: [{ id: 'acme', path: `${account}${path.sep}`, label: 'Acme', color: null }],
       })
     );
     expect(roots).toEqual([account]);
@@ -179,8 +180,8 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
       fakeConfig({
         defaultAccount: active,
         accounts: [
-          { id: 'beta-inc', path: other, label: 'Beta Inc' },
-          { id: 'acme-corp', path: active, label: 'Acme Corp' },
+          { id: 'beta-inc', path: other, label: 'Beta Inc', color: null },
+          { id: 'acme-corp', path: active, label: 'Acme Corp', color: null },
         ],
       })
     );
@@ -218,7 +219,9 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const roots = resolveClaudeRootSet(
       fakeConfig({
         defaultAccount: account,
-        accounts: [{ id: 'not-an-account', path: notAnAccount, label: 'not an account' }],
+        accounts: [
+          { id: 'not-an-account', path: notAnAccount, label: 'not an account', color: null },
+        ],
       })
     );
     expect(roots).toEqual([account]);
@@ -230,7 +233,7 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     const roots = resolveClaudeRootSet(
       fakeConfig({
         defaultAccount: account,
-        accounts: [{ id: 'moved', path: gone, label: 'moved' }],
+        accounts: [{ id: 'moved', path: gone, label: 'moved', color: null }],
       })
     );
     expect(roots).toEqual([account]);
@@ -296,14 +299,29 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       describeClaudeCodeAccounts(
         fakeConfig({
           accounts: [
-            { id: 'acme-corp', path: real, label: 'Acme Corp' },
-            { id: 'gone', path: missing, label: null },
+            { id: 'acme-corp', path: real, label: 'Acme Corp', color: '#12ab9f' },
+            { id: 'gone', path: missing, label: null, color: null },
           ],
         })
       ).accounts
     ).toEqual([
-      { id: 'acme-corp', path: real, label: 'Acme Corp', isAccountRoot: true },
-      { id: 'gone', path: missing, label: null, isAccountRoot: false },
+      {
+        id: 'acme-corp',
+        path: real,
+        label: 'Acme Corp',
+        color: '#12ab9f',
+        colorIsDefault: false,
+        isAccountRoot: true,
+      },
+      {
+        id: 'gone',
+        path: missing,
+        label: null,
+        // No stored color: the default for its position, the second one.
+        color: DEFAULT_ACCOUNT_COLORS[1],
+        colorIsDefault: true,
+        isAccountRoot: false,
+      },
     ]);
   });
 

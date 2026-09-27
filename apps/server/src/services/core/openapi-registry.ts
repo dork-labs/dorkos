@@ -1368,6 +1368,10 @@ const RuntimeCapabilitiesSchema = z.object({
   supportsPlugins: z.boolean().openapi({
     description: 'Whether this runtime can load plugins.',
   }),
+  supportsAccounts: z.boolean().openapi({
+    description:
+      'Whether this runtime can run sessions on more than one registered billing account. The account chip, dots and badge show only when this is true and two or more accounts are registered.',
+  }),
   permissionModes: z
     .object({
       supported: z.boolean(),

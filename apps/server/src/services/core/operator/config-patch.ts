@@ -23,6 +23,7 @@ import { configManager } from '../config-manager.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
+import { planClaudeAccountWrite } from './claude-account-patch.js';
 
 /** Keys that must be filtered during deep merge to prevent prototype pollution. */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -371,6 +372,24 @@ export type ConfigPatchResult =
  * errors — persisting them is allowed, matching the route's long-standing
  * behavior.
  *
+ * ## The Claude account registry is merged, not replaced
+ *
+ * `runtimes.claudeCode.accounts` is shared with flow, which may add a row while
+ * the server runs, and the settings screen only sees the rows and fields
+ * `GET /api/config` shows. So this merges each patched row onto the stored row
+ * with the same id (else the same path), keeps every field the patch leaves
+ * out, and keeps every stored row the read rules skip, exactly as stored (see
+ * `planClaudeAccountWrite`). A consequence worth stating: **no write through
+ * this function can delete a row the read rules skip** — not the settings
+ * screen, and not the operator `config_patch` tool, which reaches the same
+ * path. Removing one is a hand edit of `config.json`. A new or changed id must
+ * match the contract's pattern and must not be `default`; an unchanged id is
+ * never refused.
+ *
+ * The merge base is the file as it is NOW: `configManager.getAll()` reads the
+ * file from disk on every call (conf's `store` getter), so a row flow added a
+ * moment ago is in `current` and survives this write.
+ *
  * @param patch - The partial config to merge (must be a JSON object).
  * @returns `{ ok: true, config, warnings }` on success, else `{ ok: false, error, details? }`.
  */
@@ -390,6 +409,24 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   // BACK, turning "go back to inheriting" into "pin to the old account, for
   // good". See `settleLegacyAccountAlias`.
   settleLegacyAccountAlias(merged, patchObj);
+
+  // The registry: validate only the rows a reader lists (merged with the patch
+  // when it names them), and carry the rest across untouched.
+  const patchedClaude = (patchObj.runtimes as { claudeCode?: unknown } | undefined)?.claudeCode;
+  const namesAccounts = isPlainObject(patchedClaude) && 'accounts' in patchedClaude;
+  const storedAccounts = (current.runtimes?.claudeCode as { accounts?: unknown } | undefined)
+    ?.accounts;
+  const accountPlan = planClaudeAccountWrite(
+    storedAccounts,
+    namesAccounts ? (patchedClaude as { accounts?: unknown }).accounts : undefined
+  );
+  if (!accountPlan.ok) {
+    return { ok: false, error: 'Validation failed', details: accountPlan.details };
+  }
+  const mergedClaude = (merged.runtimes as { claudeCode?: unknown } | undefined)?.claudeCode;
+  if (isPlainObject(mergedClaude) && (namesAccounts || Array.isArray(storedAccounts))) {
+    mergedClaude.accounts = accountPlan.accounts;
+  }
   const parseResult = UserConfigSchema.safeParse(merged);
 
   if (!parseResult.success) {
@@ -410,8 +447,20 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
     }
   }
 
-  // Apply each patched top-level key from the validated result.
+  // Apply each patched top-level key from the validated result, with the
+  // registry rows the reader skips put back behind the listed ones.
   const validated = parseResult.data;
+  if (Array.isArray(accountPlan.accounts)) {
+    type Row = (typeof validated.runtimes.claudeCode.accounts)[number];
+    const raw = accountPlan.accounts;
+    validated.runtimes.claudeCode.accounts = [
+      // The schema strips fields it does not declare; a row keeps them.
+      ...validated.runtimes.claudeCode.accounts.map((row, index) =>
+        isPlainObject(raw[index]) ? ({ ...raw[index], ...row } as Row) : row
+      ),
+      ...(accountPlan.unlisted as Row[]),
+    ];
+  }
   for (const key of Object.keys(patchObj)) {
     if (key in validated) {
       const configKey = key as keyof typeof validated;

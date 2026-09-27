@@ -1267,8 +1267,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     expect(result.runtimes.claudeCode).toEqual({
       defaultAccount: '/Users/me/.claude2',
       accounts: [
-        { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
-        { id: 'claude2', path: '/Users/me/.claude2', label: null },
+        { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp', color: null },
+        { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
       ],
       defaultModel: null,
       defaultEffort: null,
@@ -1294,8 +1294,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       },
     });
     expect(parsed.runtimes.claudeCode.accounts).toEqual([
-      { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
-      { id: 'claude3', path: '/Users/me/.claude3', label: null },
+      { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp', color: null },
+      { id: 'claude3', path: '/Users/me/.claude3', label: null, color: null },
     ]);
   });
 

@@ -330,6 +330,7 @@ export class FakeAgentRuntime implements AgentRuntime {
     supportsManagedMcpServers: false,
     supportsQuestionPrompt: true,
     supportsPlugins: false,
+    supportsAccounts: false,
     // The double declares what every real runtime declares today (spec
     // `persistent-session-runtime` P2): the contract exists, no behavior does.
     supportsPersistentSession: false,

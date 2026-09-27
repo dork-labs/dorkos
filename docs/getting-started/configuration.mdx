@@ -610,9 +610,15 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
     },
     'runtimes.claudeCode.accounts': {
       description:
-        'The Claude accounts you have told DorkOS about, each with a short id, a path, and a name you choose (or `null` for no name). The id is how an agent or a single chat says which account to bill. DorkOS never goes looking for accounts on its own.',
-      type: 'Array<{ id: string; path: string; label: string | null }>',
+        'The Claude accounts you have told DorkOS about, each with a short id, a path, and a name you choose (or `null` for no name). The id is how an agent or a single chat says which account to bill. It uses lowercase letters, digits and single hyphens, and `default` is kept for your main account, so DorkOS will not save an account under that name. DorkOS never goes looking for accounts on its own.',
+      type: 'Array<{ id: string; path: string; label: string | null; color: string | null }>',
       default: '[]',
+    },
+    'runtimes.claudeCode.accounts[].color': {
+      description:
+        "The color DorkOS uses for this account's dot and badge. Leave it empty to use the default for its position.",
+      type: 'string | null',
+      default: 'null',
     },
     'runtimes.claudeCode.defaultModel': {
       description:

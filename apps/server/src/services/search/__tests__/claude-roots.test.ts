@@ -222,7 +222,9 @@ describe('the shipped claude-code source reads every account, not the active one
 
     const configured = createClaudeCodeSource(() =>
       resolveClaudeRootSet(
-        fakeConfig({ accounts: [{ id: 'acme', path: registered.root, label: 'Acme' }] })
+        fakeConfig({
+          accounts: [{ id: 'acme', path: registered.root, label: 'Acme', color: null }],
+        })
       ).map((root) => path.join(root, 'projects'))
     );
     await sweep(configured);

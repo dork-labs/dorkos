@@ -44,8 +44,22 @@ function config(resolvedAccount: string): Partial<ServerConfig> {
       resolvedAccount,
       inherited: false,
       accounts: [
-        { id: 'personal', path: HOME, label: 'Personal', isAccountRoot: true },
-        { id: 'acme-corp', path: WORK, label: 'Acme Corp', isAccountRoot: true },
+        {
+          id: 'personal',
+          path: HOME,
+          label: 'Personal',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
       ],
     },
   };

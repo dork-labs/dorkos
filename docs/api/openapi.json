@@ -17222,6 +17222,10 @@
                             "type": "boolean",
                             "description": "Whether this runtime can load plugins."
                           },
+                          "supportsAccounts": {
+                            "type": "boolean",
+                            "description": "Whether this runtime can run sessions on more than one registered billing account. The account chip, dots and badge show only when this is true and two or more accounts are registered."
+                          },
                           "permissionModes": {
                             "type": "object",
                             "properties": {
@@ -17363,6 +17367,7 @@
                           "supportsManagedMcpServers",
                           "supportsQuestionPrompt",
                           "supportsPlugins",
+                          "supportsAccounts",
                           "permissionModes",
                           "settings",
                           "features"

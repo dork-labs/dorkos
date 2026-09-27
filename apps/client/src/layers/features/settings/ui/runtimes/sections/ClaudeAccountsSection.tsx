@@ -42,8 +42,11 @@ type Account = NonNullable<ServerConfig['claudeCode']>['accounts'][number];
 /** The `runtimes.claudeCode` slice a write may carry. */
 type ClaudeCodePatch = {
   defaultAccount?: string | null;
-  accounts?: { id: string; path: string; label: string | null }[];
+  accounts?: WritableAccount[];
 };
+
+/** One registry row as a write carries it. */
+type WritableAccount = { id: string; path: string; label: string | null; color: string | null };
 
 /**
  * The registry rows as a WRITE carries them — ids included, because the id is
@@ -60,19 +63,25 @@ type ClaudeCodePatch = {
  * row already owns — two rows with one id, which the server now refuses outright
  * and which would otherwise make one account unreachable.
  *
+ * **Each row carries its stored color**, `null` when it shows the default for
+ * its position, so adding or removing an account never resets a color the
+ * operator chose and never freezes a default into the file. The server merges
+ * each row onto the stored one, so fields this screen does not know survive.
+ *
  * @param accounts - The registered accounts as `GET /api/config` reported them.
  * @returns Rows shaped for `PATCH /api/config`.
  */
-function toWritableAccounts(accounts: readonly Account[]): {
-  id: string;
-  path: string;
-  label: string | null;
-}[] {
+function toWritableAccounts(accounts: readonly Account[]): WritableAccount[] {
   const taken = new Set(accounts.flatMap((account) => (account.id ? [account.id] : [])));
   return accounts.map((account) => {
     const id = account.id ?? claudeAccountId({ label: account.label, path: account.path, taken });
     taken.add(id);
-    return { id, path: account.path, label: account.label };
+    return {
+      id,
+      path: account.path,
+      label: account.label,
+      color: account.colorIsDefault ? null : account.color,
+    };
   });
 }
 
@@ -178,6 +187,7 @@ export function ClaudeAccountsSection() {
               }),
               path: trimmedPath,
               label,
+              color: null,
             },
           ];
         })(),
