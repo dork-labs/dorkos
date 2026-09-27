@@ -860,6 +860,17 @@ export interface MessageOpts extends SessionSettings {
     aheadOfMain?: number | null;
   };
   /**
+   * The home of the agent this turn is dispatched AS, when a server path names
+   * one (a room, a relay binding, a scheduled task). Server-derived, never from
+   * a client.
+   *
+   * Runtimes resolve the turn's identity against it (spec `agent-home-desk`
+   * §3.1): a folder that resolves to a different agent's home is refused, and
+   * a folder that resolves to no home carries this agent's identity. It
+   * generalises `roomTurn.agentPath`, which runtimes read when this is absent.
+   */
+  forAgent?: string;
+  /**
    * Title to assign the session on its first turn, skipping auto-generation.
    * Useful for sessions with a known purpose (e.g. Tasks- or relay-initiated runs).
    * Only honored on the first turn — ignored once the session has started.

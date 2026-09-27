@@ -1,0 +1,39 @@
+{
+  "orgId": "org_0001",
+  "period": "2026-09",
+  "ceilings": [
+    {
+      "ceiling": "example_hours",
+      "limit": 37,
+      "used": 12.5,
+      "unit": "hours",
+      "fraction": 0.3378,
+      "alertFraction": 0.65,
+      "state": "clear",
+      "enforceable": true,
+      "provenance": { "source": "a placeholder source", "measuredAt": "2026-09-01T00:00:00.000Z" }
+    },
+    {
+      "ceiling": "example_transfer",
+      "limit": 11,
+      "used": 8,
+      "unit": "GB",
+      "fraction": 0.7273,
+      "alertFraction": 0.65,
+      "state": "alert",
+      "enforceable": true,
+      "provenance": { "source": "a placeholder source", "measuredAt": null }
+    },
+    {
+      "ceiling": "example_concurrent",
+      "limit": 3,
+      "used": 3,
+      "unit": "count",
+      "fraction": 1,
+      "alertFraction": 0.65,
+      "state": "reached",
+      "enforceable": false,
+      "provenance": { "source": "a placeholder source", "measuredAt": null }
+    }
+  ]
+}

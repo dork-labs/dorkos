@@ -69,7 +69,6 @@ import {
   resolveClaudeCliPath,
   createIdlePrompt,
 } from './sdk/sdk-utils.js';
-import { readManifest } from '@dorkos/shared/manifest';
 import {
   claudeConfigDirEnv,
   resolveActiveClaudeRoot,
@@ -88,7 +87,12 @@ import { executeSdkQuery } from './messaging/message-sender.js';
 import type { McpServerFactory, MessageSenderOpts } from './messaging/message-sender-shared.js';
 import { PersistentDispatch } from './sessions/persistent-dispatch.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
-import { anchorPath, resolveIdentityAnchor } from '../../core/agent-identity/index.js';
+import {
+  homeOf,
+  readHomeManifest,
+  resolveAgentHome,
+  turnAgentOf,
+} from '../../core/agent-identity/index.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import {
   disposeProjector,
@@ -554,12 +558,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
 
-    // The agent this turn acts as: the directory's own agent, or the one a room
-    // worktree was handed to, and never another than the room turn names
-    // (DOR-2091, `core/agent-identity/identity-anchor.ts`). The same answer the
-    // launch resolves its token from, so the connections below and the token
-    // cannot name two different agents.
-    const agentPath = anchorPath(resolveIdentityAnchor(cwdKey, opts?.roomTurn?.agentPath));
+    // The agent this turn acts as: the home the folder resolves to, and never
+    // another than the turn is dispatched as (DOR-2091, DOR-2355,
+    // `core/agent-identity/agent-home.ts`). The same answer the launch resolves
+    // its token from, so the connections below and the token cannot name two
+    // different agents.
+    const agentPath = homeOf(resolveAgentHome(cwdKey, turnAgentOf(opts)));
     const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
 
     const connectorTurn =
@@ -960,8 +964,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * question it has no notion of.
    *
    * @param sessionId - DorkOS or SDK session id.
-   * @param projectDir - The session's working directory (keys both the
-   *   transcript probe and the agent manifest read).
+   * @param projectDir - The session's working directory. Keys the transcript
+   *   probe; the account pin is read from the home it resolves to, never from a
+   *   `.dork/` the folder carries (spec `agent-home-desk` I1).
    * @returns An absolute Claude config directory.
    */
   async accountRootForSession(sessionId: string, projectDir: string): Promise<string> {
@@ -971,7 +976,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       projectDir
     );
     if (settled) return settled;
-    const manifest = await readManifest(projectDir).catch(() => null);
+    const home = homeOf(resolveAgentHome(projectDir));
+    const manifest = home ? await readHomeManifest(home).catch(() => null) : null;
     return resolveLaunchAccountRoot({ agentAccountId: manifest?.account });
   }
 

@@ -71,7 +71,7 @@ import {
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
-import { anchorPath, resolveIdentityAnchor } from '../../core/agent-identity/index.js';
+import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { buildOpenCodeTurnContext } from './messaging/turn-context.js';
 import {
@@ -330,7 +330,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
     // Who a room turn is for, which every identity decision below is checked
     // against (DOR-2091). Absent on every turn a room did not trigger.
-    const forAgent = opts?.roomTurn?.agentPath;
+    const forAgent = turnAgentOf(opts);
     this.registry.recordMessage(sessionId, content, {
       cwd,
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
@@ -345,7 +345,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         // verbs describe what this exact turn can actually call.
         // The agent this turn acts as — anchored, so a room worktree reads as its
         // agent and a room turn as nobody but the agent it is for (DOR-2091).
-        const agentPath = anchorPath(resolveIdentityAnchor(cwd, forAgent));
+        const agentPath = homeOf(resolveAgentHome(cwd, forAgent));
         const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied, agentPath);
         const model = parseModelSelection(settings.model);
         const agent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
@@ -492,10 +492,10 @@ export class OpenCodeRuntime implements AgentRuntime {
 
       // Whose identity this turn carries: the directory's own agent, or the one
       // a room worktree was handed to — never by prefix, and never another agent
-      // than the room turn names (DOR-2091, `identity-anchor.ts`). A worktree
+      // than the room turn names (DOR-2091, `agent-home.ts`). A worktree
       // looked up exactly hosts nobody, which is how opencode agents in a room
       // with files used to get no `dorkos` server at all.
-      const agentPath = anchorPath(resolveIdentityAnchor(cwd, opts?.forAgent));
+      const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
       const meshAgent =
         opts?.connectorTurn && agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
       if (this.connectorRuntimeTools && meshAgent && agentPath) {

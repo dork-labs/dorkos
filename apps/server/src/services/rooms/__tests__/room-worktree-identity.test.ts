@@ -40,7 +40,7 @@
  * - Removing that fallback AND answering `none` for a missing directory when
  *   the turn names its agent also reddens the Ben row: his turn posts as the
  *   operator with the cross-check never run. Either layer alone holds it; the
- *   second is pinned on its own in `identity-anchor.test.ts`.
+ *   second is pinned on its own in `agent-home.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
@@ -88,6 +88,7 @@ import {
   getAgentIdentityService,
   initAgentIdentityService,
   resetAgentIdentityService,
+  setAgentHomeRegistry,
   setWorkingCopyOwnerPort,
 } from '../../core/agent-identity/index.js';
 import { resolveLaunch } from '../../runtimes/claude-code/messaging/launch-resolver.js';
@@ -103,6 +104,7 @@ import {
   scriptedRunner,
   type RoomHarness,
 } from './room-test-harness.js';
+import { clearTestHomes } from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 
 const ANA = '/agents/ana';
 const BEN = '/agents/ben';
@@ -167,8 +169,14 @@ describe('a room turn in a room with files', () => {
       harness.human
     ).id;
     // The manager's record: Ana was handed her worktree, and nobody the stray.
+    // The registry, read live, so a test that unregisters an agent is seen at once.
+    setAgentHomeRegistry({
+      isRegisteredHome: (p) => registered.has(p),
+      listRegisteredHomes: () => [...registered],
+      managedWorkspaceOwner: () => null,
+      roomsDir: null,
+    });
     setWorkingCopyOwnerPort({
-      isRegisteredAgent: (p) => registered.has(p),
       ownerOf: (dir) =>
         path.dirname(path.resolve(dir)) === WORKTREES
           ? { owner: path.resolve(dir) === ANA_WORKTREE ? ANA : null }
@@ -178,6 +186,7 @@ describe('a room turn in a room with files', () => {
 
   afterEach(() => {
     setWorkingCopyOwnerPort(undefined);
+    clearTestHomes();
     resetAgentIdentityService();
   });
 
@@ -287,7 +296,7 @@ describe('a room turn in a room with files', () => {
       expect(token, 'the worktree hosts no agent; the anchor must find Ana anyway').toBeDefined();
       const identity = await getAgentIdentityService()!.resolve(token!);
       expect(identity?.agentPath).toBe(ANA);
-      expect(toolLaunch.identity).toEqual({ kind: 'path', agentPath: ANA });
+      expect(toolLaunch.identity).toEqual({ kind: 'home', home: ANA, via: 'room-worktree' });
     });
 
     it('posts as the agent, not as nobody and not as the operator', async () => {

@@ -222,18 +222,22 @@ export async function connectDesktop(
   installName: string,
   signInEmail: string | null
 ): Promise<string> {
-  await local.page.goto(local.origin + '/connections?region=messaging');
-  await expect(local.page.getByRole('heading', { name: 'Communities', exact: true })).toBeVisible({
-    timeout: 60_000,
-  });
+  await local.page.goto(local.origin + '/');
+  // Connect lives in the sidebar's switcher, under Add community.
+  await expect(trigger(local)).toBeVisible({ timeout: 60_000 });
+  await trigger(local).click();
+  await local.page.locator('[data-menu-item-id="add-community"]').hover();
+  await local.page.getByRole('menuitem', { name: 'Connect a community…' }).click();
+  const dialog = local.page.getByRole('dialog', { name: 'Connect a community' });
+  await expect(dialog).toBeVisible();
   const before = (await externalOpens(local)).length;
-  await local.page.getByLabel('Community address').fill(origin);
-  await local.page.getByLabel('Name for this installation').fill(installName);
+  await dialog.getByLabel('Community address').fill(origin);
+  await dialog.getByLabel('Name for this installation').fill(installName);
   const started = local.page.waitForResponse(
     (r) =>
       r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/community-connections'
   );
-  await local.page.getByRole('button', { name: 'Connect community', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Connect community', exact: true }).click();
   const response = await started;
   assert.equal(response.status(), 201, 'connection start');
   const result = (await response.json()) as { approvalUrl: string; connection: { ref: string } };
@@ -258,11 +262,15 @@ export async function connectDesktop(
   }
   await approver.getByRole('button', { name: 'Approve connection', exact: true }).click();
   await expect(approver.getByRole('status')).toContainText('Approved');
-  // The newest row for this Community, since an earlier, ended connection can share its name.
-  const row = local.page.locator('li').filter({ hasText: communityName });
-  await expect(row.getByText('Connected', { exact: true }).first()).toBeVisible({
+  // Approved: the dialog closes by itself and the app selects the new
+  // connection, by its ref, since an earlier, ended connection can share its name.
+  await expect(local.page.getByRole('dialog', { name: `Approve on ${communityName}` })).toBeHidden({
     timeout: 90_000,
   });
+  await expect(local.page).toHaveURL(
+    new RegExp(`[?&]community=${encodeURIComponent(result.connection.ref)}(&|$)`),
+    { timeout: 30_000 }
+  );
   return result.connection.ref;
 }
 

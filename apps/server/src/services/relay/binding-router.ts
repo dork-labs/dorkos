@@ -765,6 +765,12 @@ export class BindingRouter {
               ? {
                   ...(envelope.payload as Record<string, unknown>),
                   cwd: dispatchCwd,
+                  // Who this turn is FOR, so the runtime reads identity from the
+                  // bound agent's home wherever `dispatchCwd` stands — its
+                  // managed checkout, or the default directory for an agent
+                  // configured `workspace.mode: 'none'` (spec `agent-home-desk`
+                  // §3.2 row 12).
+                  forAgent: projectPath,
                   __bindingPermissions: {
                     canReply: binding.canReply,
                     canInitiate: binding.canInitiate,

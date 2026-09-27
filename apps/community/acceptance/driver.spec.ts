@@ -108,18 +108,23 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         // that already-authenticated browser cookie into the local browser so
         // this test can activate the local app's own approval link.
         await localContext.addCookies(await ownerPage.context().cookies(origin));
-        await localPage.goto(`${env.local}/connections?region=messaging`);
-        await expect(
-          localPage.getByRole('heading', { name: 'Communities', exact: true })
-        ).toBeVisible();
-        await localPage.getByLabel('Community address').fill(origin);
-        await localPage.getByLabel('Name for this installation').fill(installName);
+        // Connect lives in the sidebar's community switcher, under Add community.
+        await localPage.goto(env.local);
+        const switcher = localPage.getByTestId('sidebar-header-block');
+        await expect(switcher).toBeVisible();
+        await switcher.click();
+        await localPage.locator('[data-menu-item-id="add-community"]').hover();
+        await localPage.getByRole('menuitem', { name: 'Connect a community…' }).click();
+        const dialog = localPage.getByRole('dialog', { name: 'Connect a community' });
+        await expect(dialog).toBeVisible();
+        await dialog.getByLabel('Community address').fill(origin);
+        await dialog.getByLabel('Name for this installation').fill(installName);
         const startedResponse = localPage.waitForResponse(
           (response) =>
             response.request().method() === 'POST' &&
             new URL(response.url()).pathname === '/api/community-connections'
         );
-        await localPage.getByRole('button', { name: 'Connect community', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Connect community', exact: true }).click();
         const started = await startedResponse;
         expect(started.ok(), `local connection start returned ${started.status()}`).toBe(true);
         const connection = (await started.json()) as { connection: { ref: string } };
@@ -136,9 +141,25 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         ).toBeVisible();
         await approvalPage.getByRole('button', { name: 'Approve connection' }).click();
         await expect(approvalPage.getByRole('status')).toContainText('Approved');
-        const row = localPage.locator('li').filter({ hasText: communityName });
-        await expect(row.getByText('Connected', { exact: true })).toBeVisible({ timeout: 90_000 });
-        return connection.connection.ref;
+        // Approved: the dialog closes by itself and the app selects the new
+        // Community, and the local server reports it connected.
+        const ref = connection.connection.ref;
+        await expect(
+          localPage.getByRole('dialog', { name: `Approve on ${communityName}` })
+        ).toBeHidden({ timeout: 90_000 });
+        await expect(localPage).toHaveURL(
+          new RegExp(`[?&]community=${encodeURIComponent(ref)}(&|$)`),
+          { timeout: 30_000 }
+        );
+        await eventually(
+          () =>
+            json<{ connection: { status: string } | null }>(
+              `${env.local}/api/community-connections/${ref}`
+            ),
+          (result) => result.connection?.status === 'connected',
+          `the local server did not report ${communityName} connected`
+        );
+        return ref;
       };
 
       const refA = await connect(

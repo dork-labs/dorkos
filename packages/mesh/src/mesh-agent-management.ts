@@ -33,8 +33,10 @@ import { upsertAutoImported } from './mesh-discovery.js';
  * - `no-manifest` — there is no readable `.dork/agent.json` there.
  * - `duplicate-id` — the manifest names an id another directory still holds, so
  *   nothing was written.
+ * - `inside-room-files` — the directory is inside a room's files, where no agent
+ *   registers (spec `agent-home-desk` §3.3); nothing was written.
  */
-export type SyncFromDiskResult = 'synced' | 'no-manifest' | 'duplicate-id';
+export type SyncFromDiskResult = 'synced' | 'no-manifest' | 'duplicate-id' | 'inside-room-files';
 
 /** Dependencies required by agent management functions. */
 export interface AgentManagementDeps {
@@ -491,7 +493,9 @@ export async function removeAgent(
  * @param discoveryDeps - Discovery dependencies (needed for upsertAutoImported)
  * @returns `'synced'` when the manifest reached the DB (a genuine relocation
  *   included), `'no-manifest'` when the directory holds none, `'duplicate-id'`
- *   when another directory still holds this identity and nothing was written.
+ *   when another directory still holds this identity and nothing was written,
+ *   `'inside-room-files'` when the directory is inside a room's files, where no
+ *   agent registers.
  */
 export async function syncFromDisk(
   projectPath: string,
@@ -500,7 +504,7 @@ export async function syncFromDisk(
   const manifest = await readManifest(projectPath, discoveryDeps.logger);
   if (!manifest) return 'no-manifest';
   const result = await upsertAutoImported(manifest, projectPath, discoveryDeps);
-  return result === 'duplicate-id' ? 'duplicate-id' : 'synced';
+  return result === 'duplicate-id' || result === 'inside-room-files' ? result : 'synced';
 }
 
 // --- Health & Observability ---

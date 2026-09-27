@@ -160,6 +160,31 @@ describe('a relay turn runs on the agent it addressed', () => {
     );
   });
 
+  it("hands the runtime the binding's agent as the turn's agent (DOR-2355)", async () => {
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({
+      payload: { content: 'hi', cwd: '/ws/ana-fix', forAgent: '/projects/ana' },
+    });
+
+    await adapter.deliver(envelope.subject, envelope, undefined);
+
+    expect(agentManager.sendMessage).toHaveBeenCalledWith(
+      'agent-ulid-1',
+      expect.any(String),
+      expect.objectContaining({ cwd: '/ws/ana-fix', forAgent: '/projects/ana' })
+    );
+  });
+
+  it('names no turn agent when the payload carries none', async () => {
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({ payload: { content: 'hi', cwd: '/projects/other' } });
+
+    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
+
+    const opts = vi.mocked(agentManager.sendMessage).mock.calls[0]![2];
+    expect(opts).not.toHaveProperty('forAgent');
+  });
+
   it("falls back to the payload's directory when no agent was resolved", async () => {
     // A binding-created session whose subject Mesh cannot resolve still has a
     // project directory, and a project directory is a better guess at a

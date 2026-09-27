@@ -27,6 +27,15 @@ import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
 import { globalEvent, serverConnected, sessionIdle, sessionInfo } from './opencode-sse-fixtures.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../providers/check-dependencies.js', () => ({
   checkOpenCodeDependencies: vi.fn(() => []),

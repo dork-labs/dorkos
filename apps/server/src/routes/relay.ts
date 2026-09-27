@@ -29,7 +29,7 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
 import { isServerOnlyPrincipal } from '../services/relay/initiate-consent.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { readManifest } from '@dorkos/shared/manifest';
+import { readHomeManifest } from '../services/core/agent-identity/index.js';
 import { createAdapterRouter } from './relay-adapters.js';
 import { logger } from '../lib/logger.js';
 
@@ -329,7 +329,7 @@ export function createRelayRouter(
             return null;
           }
         },
-        readManifest: async (cwd: string) => readManifest(cwd),
+        readManifest: readHomeManifest,
       };
       const labelMap = await resolveSubjectLabels(allSubjects, resolverDeps);
 

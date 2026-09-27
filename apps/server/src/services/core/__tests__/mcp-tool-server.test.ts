@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtempSync } from 'node:fs';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { NotifyBudget } from '../../relay/notify-budget.js';
 import {
@@ -18,6 +18,15 @@ import {
   createRelayDispatchHandler,
   createRelayUnregisterEndpointHandler,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../../../lib/version.js', () => ({
   SERVER_VERSION: '1.0.0',

@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { isMarkdownPreferred, rewritePath } from 'fumadocs-core/negotiation';
 import { env } from '@/env';
-import { decideCloudAccountsForward, parseCloudAccountsOrigin } from '@/lib/cloud-accounts/forward';
+import {
+  decideCloudAccountsForward,
+  parseCloudAccountsOrigin,
+  proxiedRequestHeaders,
+} from '@/lib/cloud-accounts/forward';
 import { classifyRegion, REGION_COOKIE } from '@/lib/region';
 
 /**
@@ -102,7 +106,20 @@ export function proxy(request: NextRequest): NextResponse {
     response.headers.set('cache-control', 'private, no-store');
     return response;
   }
-  if (forward?.kind === 'proxy') return NextResponse.rewrite(forward.url);
+  if (forward?.kind === 'proxy') {
+    // Who the caller is, for the service's per-address limits (DOR-2443): only
+    // with the shared secret, only on Vercel, and never a caller's own copy.
+    const headers = proxiedRequestHeaders(request.headers, {
+      secret: env.DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET,
+      // `VERCEL_ENV` alone can come from a pulled `.env.local`; the platform
+      // itself sets `VERCEL=1` at runtime.
+      onVercel:
+        env.VERCEL === '1' && (env.VERCEL_ENV === 'production' || env.VERCEL_ENV === 'preview'),
+    });
+    return headers
+      ? NextResponse.rewrite(forward.url, { request: { headers } })
+      : NextResponse.rewrite(forward.url);
+  }
 
   // The account API paths are in the matcher only so they can be forwarded.
   // Served locally, they get exactly what they got before the matcher named

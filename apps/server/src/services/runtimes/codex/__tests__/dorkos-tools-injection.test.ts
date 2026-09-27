@@ -35,6 +35,15 @@ import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import type { ConnectorTurnLeaseSupervisorFactory } from '../../connectors/connector-turn-lease-supervisor.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../check-dependencies.js', () => ({ checkCodexDependencies: vi.fn(() => []) }));
 vi.mock('../enumerate-mcp-servers.js', () => ({
@@ -778,7 +787,6 @@ describe('the dorkos tool server on a Codex turn', () => {
       worktree = path.join(agentDir, 'rooms', '01ROOM', 'worktrees', 'researcher-1a2b3c4d');
       await mkdir(worktree, { recursive: true });
       setWorkingCopyOwnerPort({
-        isRegisteredAgent: () => true,
         ownerOf: (dir) =>
           path.dirname(dir) === path.dirname(worktree)
             ? { owner: dir === worktree ? agentDir : null }

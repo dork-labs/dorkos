@@ -19,7 +19,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { logger } from '../../../lib/logger.js';
 import { getAgentIdentityService, type AgentIdentity } from './agent-identity-service.js';
 import type { CapabilityInvocationContext } from '../capabilities/index.js';
-import { anchorPath, type IdentityAnchor } from './identity-anchor.js';
+import { homeOf, type HomeResolution } from './agent-home.js';
 
 /** The env var a spawned agent reads its identity token from. */
 export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
@@ -118,8 +118,9 @@ export async function ensureInSessionAgentIdentity(
  * session, so there is no HTTP request and no `X-DorkOS-Agent` header to
  * resolve. The caller is instead structurally known — it is the agent whose
  * session this is — so identity comes from the session's
- * {@link IdentityAnchor}: its working directory, or the agent a room working
- * copy was handed to (DOR-2091). This is the same reasoning
+ * {@link HomeResolution}: the registered home its working directory resolves
+ * to — the folder itself, a room working copy's agent (DOR-2091), or the agent
+ * whose repo a worktree or managed checkout belongs to (DOR-2355). This is the same reasoning
  * `resolveSenderIdentity` uses for Relay.
  *
  * The lookup is memoized for the life of the server instance (one per SDK
@@ -134,19 +135,19 @@ export async function ensureInSessionAgentIdentity(
  * answers `agentIdentityPresented` with no identity, which every consumer reads
  * as "a machine this surface cannot verify" and refuses.
  *
- * @param anchor - The session's identity anchor, or `undefined` when the
+ * @param anchor - The session's resolved home, or `undefined` when the
  *   server is built without a session (the external/introspection path).
  * @returns A memoized resolver for `capabilityMcpTools`.
  */
 export function createInSessionContextResolver(
-  anchor: IdentityAnchor | undefined
+  anchor: HomeResolution | undefined
 ): () => Promise<CapabilityInvocationContext | undefined> {
   let pending: Promise<CapabilityInvocationContext | undefined> | undefined;
 
   return () => {
     pending ??= (async () => {
       if (anchor?.kind === 'refused') return { agentIdentityPresented: true };
-      const agentPath = anchor ? anchorPath(anchor) : undefined;
+      const agentPath = anchor ? homeOf(anchor) : undefined;
       if (!agentPath) return undefined;
 
       const service = getAgentIdentityService();

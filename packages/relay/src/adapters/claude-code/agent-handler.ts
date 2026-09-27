@@ -342,6 +342,14 @@ export async function handleAgentMessage(
   // Resolve CWD: payload cwd > Mesh agent context directory > deferred
   const payloadCwd = payloadObj?.cwd as string | undefined;
   const effectiveCwd = payloadCwd ?? context?.agent?.directory;
+  // The agent a binding dispatched this turn AS (spec `agent-home-desk` §3.2
+  // row 12). Read off the same payload as `cwd`, which alone already decides
+  // whose identity a turn carries — so this can only NARROW what a forged
+  // payload could claim: a `cwd` resolving to another agent's home is refused.
+  const payloadForAgent =
+    typeof payloadObj?.forAgent === 'string' && payloadObj.forAgent !== ''
+      ? payloadObj.forAgent
+      : undefined;
   // A fallback is correct HERE and nowhere upstream: this reads a JSON payload
   // off the relay bus, so the field can be absent for reasons the binding never
   // controls (an older publisher, a hand-built envelope). It lands on the
@@ -492,6 +500,7 @@ export async function handleAgentMessage(
     : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
         permissionMode: effectivePermissionMode,
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+        ...(payloadForAgent ? { forAgent: payloadForAgent } : {}),
         ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
         // Sent again, for the same reason the permission mode and the cwd are:
         // the runtime contract resolves a turn as per-send override → persisted

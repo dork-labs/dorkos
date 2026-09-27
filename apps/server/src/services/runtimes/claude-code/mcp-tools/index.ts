@@ -28,11 +28,11 @@ import {
   registerClaudeConnectorCapabilityTools,
 } from './capability-mcp-tools.js';
 import {
-  anchorPath,
+  homeOf,
   createInSessionContextResolver,
-  resolveIdentityAnchor,
+  resolveAgentHome,
 } from '../../../core/agent-identity/index.js';
-import type { AgentIdentity, IdentityAnchor } from '../../../core/agent-identity/index.js';
+import type { AgentIdentity, HomeResolution } from '../../../core/agent-identity/index.js';
 import {
   createHandToolReach,
   gateHandRegisteredMcpTools,
@@ -150,7 +150,7 @@ export interface HandRegisteredInSessionOptions {
    * `session.cwd` itself; a launch passes the one it resolved, which also
    * knows who the turn is for.
    */
-  identity?: IdentityAnchor;
+  identity?: HomeResolution;
   /** Resolves the calling agent for this session; see `mcp-tool-gate.ts`. */
   resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>;
   /**
@@ -178,12 +178,12 @@ export function handRegisteredInSessionToolSet(
   options: HandRegisteredInSessionOptions = {}
 ): { tools: SdkMcpTool[]; reach: HandToolReach } {
   const { session, sessionId, resolveContext, hold } = options;
-  const identity = options.identity ?? resolveIdentityAnchor(session?.cwd);
+  const identity = options.identity ?? resolveAgentHome(session?.cwd);
   // Resolve the caller's trusted Relay identity from the session's identity
   // anchor (its agent manifest), not from tool arguments — this is what relay
   // `from`/namespace access rules key on.
   const relayIdentity = resolveSenderIdentity(deps, session?.cwd, identity);
-  const identityPath = anchorPath(identity);
+  const identityPath = homeOf(identity);
   // Which relay envelope THIS turn is answering, if the bus started it (DOR-791).
   // The adapter that dispatched the turn bound it under the session key the turn
   // runs under, which is the id handed to this factory; the SDK's canonical id is
@@ -346,9 +346,9 @@ export function createDorkOsToolServer(
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry,
   hiddenToolNames: ReadonlySet<string> = new Set(),
-  launchIdentity?: IdentityAnchor
+  launchIdentity?: HomeResolution
 ) {
-  const identity = launchIdentity ?? resolveIdentityAnchor(session?.cwd);
+  const identity = launchIdentity ?? resolveAgentHome(session?.cwd);
   // Operator + marketplace + self-description tools, all generated from the
   // Capability Registry (shared boot instance, or composed on the spot).
   const capabilityRegistry =

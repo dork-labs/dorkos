@@ -74,7 +74,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -139,6 +139,16 @@ import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../mcp-tools/types.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { RelayContextDeps } from '../context-builder.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+  testHome,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const CWD = '/tmp/dor-1292-probe-cwd';
 
@@ -282,7 +292,7 @@ function tagsIn(text: string): string[] {
  * @returns The blocks, and the tags they were confirmed to contain.
  */
 async function sharedBlocks(): Promise<{ blocks: string[]; tags: string[] }> {
-  const agentContext = (await buildAgentContextAppend(CWD)).text;
+  const agentContext = (await buildAgentContextAppend(testHome(CWD), CWD)).text;
   const blocks = [GEN_UI_CONTEXT, agentContext];
   return { blocks, tags: blocks.flatMap(tagsIn) };
 }
@@ -294,7 +304,7 @@ async function sharedBlocks(): Promise<{ blocks: string[]; tags: string[] }> {
  * @returns The prose, and the shared blocks that were subtracted out of it.
  */
 async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
-  const assembled = (await buildSystemPromptAppend(CWD)).text;
+  const assembled = (await buildSystemPromptAppend(testHome(CWD), CWD)).text;
   const { blocks: shared } = await sharedBlocks();
   let prose = assembled;
   for (const block of shared) prose = prose.split(block).join('');
@@ -553,7 +563,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // never renders needs the same guard, or a name could rot in the half of the
     // prose only agents read.
     const advertised = await advertisedToolNames();
-    const prompt = (await buildSystemPromptAppend(CWD, undefined, { agentSession: true })).text;
+    const prompt = (
+      await buildSystemPromptAppend(testHome(CWD), CWD, undefined, { agentSession: true })
+    ).text;
 
     const unknown = [
       ...new Set(
@@ -585,7 +597,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // and searching the wrong string. The five always-loaded tools are the other
     // half — the prompt has to say they need no lookup, or a room turn spends one
     // anyway out of caution.
-    const prompt = (await buildSystemPromptAppend(CWD)).text;
+    const prompt = (await buildSystemPromptAppend(testHome(CWD), CWD)).text;
     expect(prompt).toContain('<dorkos_tools>');
     expect(prompt).toContain('already in your tool list');
     expect(prompt).toContain('deferred, not missing');

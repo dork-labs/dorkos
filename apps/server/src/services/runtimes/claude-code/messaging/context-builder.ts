@@ -11,6 +11,7 @@ import { isTasksEnabled } from '../../../tasks/task-state.js';
 import type { ToolDocGates } from './tool-doc-gates.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
+import type { AgentHome } from '../../../core/agent-identity/index.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import { buildCanvasContentCatalog, buildUiActionCatalog } from '../../shared/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
@@ -635,7 +636,11 @@ export interface SystemPromptAppend {
  * prepended to the user message via {@link renderContextEntry} from the
  * per-turn additional-context bag (ADR-0273).
  *
- * @param cwd - Working directory for the session
+ * @param home - The home of the agent this session acts as, resolved through
+ *   `resolveAgentHome`, or `undefined` for a session about a directory. The
+ *   agent's identity, persona and memory are read from here and nowhere else
+ *   (spec `agent-home-desk` I1).
+ * @param cwd - Working directory for the session (the `<env>` block)
  * @param toolConfig - The agent's tool-doc gates (`toolDocGates`), when the
  *   caller resolved them; without them only the server feature flags decide
  * @param options - Per-session facts the prose has to agree with. `agentSession`
@@ -645,6 +650,7 @@ export interface SystemPromptAppend {
  *   (DOR-1337 / F8). Callers must not compute it themselves.
  */
 export async function buildSystemPromptAppend(
+  home: AgentHome | undefined,
   cwd: string,
   toolConfig?: ToolDocGates,
   options: { agentSession?: boolean; blockedAreaLines?: string } = {}
@@ -680,7 +686,7 @@ export async function buildSystemPromptAppend(
 
   // Runtime-neutral identity + env (async: reads files, but content is stable
   // between agent config changes)
-  const agentContext = await buildAgentContextAppend(cwd);
+  const agentContext = await buildAgentContextAppend(home, cwd);
 
   // 1. Static tool documentation — fully cacheable, never changes.
   //    The naming rule comes first, because every block after it is written in

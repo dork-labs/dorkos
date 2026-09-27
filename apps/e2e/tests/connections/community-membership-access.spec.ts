@@ -1,13 +1,12 @@
 import { test, expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { BasePage } from '../../pages/BasePage.js';
-import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { describeViolation, runAxe } from '../../axe.js';
 import { ALPHA, mockCommunities, type CommunitySpec } from './community-mocks.js';
 
 /**
  * Accessibility proof for the DorkOS app's side of Community membership
- * (spec `specs/community-membership-journeys`, task 3.2): the Communities list
- * on Connections, the join-with-invitation dialog, the switcher's Manage and
+ * (spec `specs/community-membership-journeys`, task 3.2): the switcher's
+ * connect dialog, the join-with-invitation dialog, the switcher's Manage and
  * Add actions, and the disconnect confirmation. Each passes axe at desktop and
  * 390px phone width in light and dark, is operable by keyboard with focus
  * placed on every step, announces its outcome, and keeps phone targets at the
@@ -120,17 +119,21 @@ async function shortTargets(scope: Locator, selector: string, floor: number) {
 }
 
 test.describe('Community membership in the DorkOS app is accessible (task 3.2)', () => {
-  test('the Communities list: axe, keyboard pairing, announced outcomes, phone targets', async ({
+  test('connecting a community in the switcher: axe, keyboard pairing, announced outcomes, phone targets', async ({
     page,
   }, testInfo) => {
+    // Two page loads and eight axe passes.
+    test.slow();
     await mockCommunities(page, [ALPHA, DELTA]);
     let started = false;
+    let deltaRemoved = false;
     let listed: Array<{ ref: string }> = [];
     page.on('response', async (response) => {
       if (
         new URL(response.url()).pathname === '/api/community-connections' &&
         response.request().method() === 'GET' &&
-        !started
+        !started &&
+        !deltaRemoved
       )
         listed = ((await response.json()) as { connections: Array<{ ref: string }> }).connections;
     });
@@ -145,7 +148,8 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
       access: null,
       attention: null,
     };
-    // Registered after the shared mock, so these answers win for the list and pairing.
+    // Registered after the shared mock, so these answers win for the list,
+    // pairing and removal.
     await page.route('**/api/community-connections**', async (route) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
@@ -162,61 +166,73 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
       }
       if (path === '/api/community-connections/gamma/poll')
         return route.fulfill({ json: { connection: pending, status: 'pending' } });
-      // Once pairing has started, the local server lists the pending connection too.
-      if (path === '/api/community-connections' && request.method() === 'GET' && started)
-        return route.fulfill({ json: { connections: [...listed, pending] } });
+      if (path === '/api/community-connections/delta' && request.method() === 'DELETE') {
+        deltaRemoved = true;
+        return route.fulfill({ json: { remoteRevoked: true } });
+      }
+      if (path === '/api/community-connections' && request.method() === 'GET') {
+        if (!started && !deltaRemoved) return route.fallback();
+        const rows = listed.filter((row) => !(deltaRemoved && row.ref === 'delta'));
+        return route.fulfill({ json: { connections: started ? [...rows, pending] : rows } });
+      }
       return route.fallback();
     });
 
-    const connections = new ConnectionsPage(page);
-    await connections.goto();
-    const section = connections.messaging.getByRole('region', { name: 'Communities' });
-    await expect(section.getByRole('listitem').filter({ hasText: 'Alpha' })).toContainText(
-      'Connected'
-    );
-    await expect(section.getByRole('listitem').filter({ hasText: 'Delta' })).toContainText(
-      'Reconnect required'
-    );
+    await page.goto('/tasks');
+    await new BasePage(page).waitForAppReady();
 
-    // Keyboard only: address, name, submit. The outcome is announced, and focus
+    // A Community whose access was withdrawn opens its way back in place, not
+    // on Connections: disconnect here, then the form to connect again.
+    await page.getByTestId('sidebar-header-block').click();
+    await page.getByRole('menuitemradio', { name: /Delta/ }).click();
+    const reconnect = page.getByRole('dialog', { name: 'Reconnect Delta' });
+    await expect(reconnect).toContainText('Disconnect here, then connect again.');
+    await expect(page).not.toHaveURL(/\/connections/);
+    await axeBothSchemes(page, '[role="dialog"]', 'reconnect-desktop', testInfo);
+    await reconnect.getByRole('button', { name: 'Disconnect', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Connect a community' });
+    await expect(dialog.getByRole('status')).toHaveText(
+      'Delta is disconnected. Connect again to continue.'
+    );
+    expect(deltaRemoved).toBe(true);
+    const address = dialog.getByLabel('Community address');
+    await expect(address).toBeFocused();
+    await axeBothSchemes(page, '[role="dialog"]', 'connect-desktop', testInfo);
+
+    // Keyboard only: address, then Enter. The outcome is announced, and focus
     // moves to the one next step — the approval link on the Community's site.
-    const address = section.getByLabel('Community address');
-    await address.focus();
     await page.keyboard.type('https://gamma.example.test/c/remote-gamma');
     await page.keyboard.press('Enter');
-    const approve = section.getByRole('link', { name: 'Open Gamma to approve' });
+    const waiting = page.getByRole('dialog', { name: 'Approve on Gamma' });
+    const approve = waiting.getByRole('link', { name: 'Open Gamma to approve' });
     await expect(approve).toBeFocused();
-    await expect(section.getByRole('status')).toHaveText(
-      'Open the community below to approve this installation.'
-    );
+    await expect(waiting.getByRole('status')).toHaveText('Next, approve this DorkOS on Gamma.');
     await expect(approve).toHaveAttribute('target', '_blank');
+    await axeBothSchemes(page, '[role="dialog"]', 'waiting-desktop', testInfo);
 
-    // Disconnect asks inline; focus goes to the safe choice and comes back.
-    const alphaRow = section.getByRole('listitem').filter({ hasText: 'Alpha' });
-    await alphaRow.getByRole('button', { name: 'Disconnect Alpha' }).focus();
-    await page.keyboard.press('Enter');
-    await expect(alphaRow.getByRole('button', { name: 'Keep connected' })).toBeFocused();
-    await expect(alphaRow).toContainText('Your community account will remain.');
+    // Closing keeps the wait. Choosing Gamma in the switcher picks it back up,
+    // link and all, instead of sending the person to Connections.
+    // The footer's Close, which the phone sheet needs; on desktop the dialog's
+    // own corner button shares the name and comes after it.
+    await waiting.getByRole('button', { name: 'Close', exact: true }).first().click();
+    await expect(waiting).toBeHidden();
+    await page.getByTestId('sidebar-header-block').click();
+    await page.getByRole('menuitemradio', { name: /Gamma/ }).click();
+    await expect(approve).toBeVisible();
+    await expect(page).not.toHaveURL(/\/connections/);
+    await page.keyboard.press('Escape');
+    await expect(waiting).toBeHidden();
 
-    await axeBothSchemes(
-      page,
-      '[aria-labelledby="region-messaging"]',
-      'communities-desktop',
-      testInfo
-    );
-
-    await page.keyboard.press('Enter');
-    await expect(alphaRow.getByRole('button', { name: 'Disconnect Alpha' })).toBeFocused();
-
+    // The phone sheet: the same dialog, from the Add group, at the touch floor.
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(address).toBeVisible();
-    await axeBothSchemes(
-      page,
-      '[aria-labelledby="region-messaging"]',
-      'communities-phone',
-      testInfo
-    );
-    expect(await shortTargets(section, 'button, input', TOUCH_FLOOR)).toEqual([]);
+    await page.goto('/tasks');
+    await new BasePage(page).waitForAppReady();
+    await page.getByTestId('sidebar-header-block').click();
+    await page.getByRole('menuitem', { name: 'Connect a community…' }).click();
+    await expect(dialog).toBeVisible();
+    await expect(page.locator('[role="dialog"]', { hasText: 'Switch context' })).toHaveCount(0);
+    await axeBothSchemes(page, '[role="dialog"]', 'connect-phone', testInfo);
+    await expect.poll(() => shortTargets(dialog, 'button, input', TOUCH_FLOOR)).toEqual([]);
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
       .toBe(true);
@@ -298,15 +314,18 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
     await axeBothSchemes(page, '[role="menu"]', 'manage-desktop', testInfo);
 
     // Disconnect confirms in an alert dialog that opens on the safe choice.
+    // Radix moves focus after the key event, so each press waits for focus to
+    // land before reading it; reading at once can step past Disconnect onto
+    // Leave, whose Enter opens the Community's site instead.
+    const disconnect = page.getByRole('menuitem', { name: 'Disconnect…', exact: true });
+    const focusedText = () => page.evaluate(() => document.activeElement?.textContent ?? '');
     for (let step = 0; step < 6; step++) {
-      if (
-        await page
-          .getByRole('menuitem', { name: 'Disconnect…', exact: true })
-          .evaluate((element) => element === document.activeElement)
-      )
-        break;
+      if (await disconnect.evaluate((element) => element === document.activeElement)) break;
+      const before = await focusedText();
       await page.keyboard.press('ArrowDown');
+      await expect.poll(focusedText).not.toBe(before);
     }
+    await expect(disconnect).toBeFocused();
     await page.keyboard.press('Enter');
     const confirm = page.getByRole('alertdialog', { name: 'Disconnect this DorkOS from Alpha?' });
     await expect(confirm.getByRole('button', { name: 'Keep connected' })).toBeFocused();

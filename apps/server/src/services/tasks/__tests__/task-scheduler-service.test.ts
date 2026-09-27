@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
-import { mkdir, realpath } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { initBoundary } from '../../../lib/boundary.js';
 import {
@@ -2037,6 +2037,8 @@ describe('TaskSchedulerService', () => {
       // The unattended briefing the direct path builds, carried on the wire so
       // the receiving process can hand it to the agent (DOR-1567).
       expect(dispatch.systemPromptAppend).toContain('Job: Payload Test');
+      // An agent-less task names no turn agent (DOR-2355).
+      expect(dispatch).not.toHaveProperty('forAgent');
       expect(dispatch.systemPromptAppend).toContain('Do not ask questions');
 
       // Verify publish options
@@ -2050,6 +2052,29 @@ describe('TaskSchedulerService', () => {
       expect(options.budget.callBudgetRemaining).toBe(5);
 
       await service.stop();
+    });
+
+    it('names the task`s agent on the wire, so the receiver reads identity from its home (DOR-2355)', async () => {
+      const agentHome = await mkdtemp(path.join(tmpdir(), 'relay-task-agent-'));
+      try {
+        const task = store.createTask(taskInput({ name: 'Agent relay', agentId: 'agent-r' }));
+        const service = new TaskSchedulerService({
+          store,
+          runtimes: singleRuntimeSource(mockAgent),
+          config: DEFAULT_CONFIG,
+          relay: mockRelay as unknown as RelayCore,
+          meshCore: createMockMeshCore({ 'agent-r': agentHome }),
+        });
+
+        await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+        await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+
+        const dispatch = mockRelay.publish.mock.calls[0][1] as TaskDispatchPayload;
+        expect(dispatch.forAgent).toBe(agentHome);
+        await service.stop();
+      } finally {
+        await rm(agentHome, { recursive: true, force: true });
+      }
     });
 
     it('carries a raised level onto the wire, not the one the clamp put there (DOR-2100)', async () => {
@@ -2598,6 +2623,15 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       expect(mockAgent.ensureSession).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ cwd: agentDir })
+      )
+    );
+    // And the turn names its agent, so identity is read from that home
+    // wherever the run stands (DOR-2355).
+    await vi.waitFor(() =>
+      expect(mockAgent.sendMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        'test',
+        expect.objectContaining({ forAgent: agentDir })
       )
     );
     // This run came from `triggerManualRun`, so it is NOT unattended: somebody

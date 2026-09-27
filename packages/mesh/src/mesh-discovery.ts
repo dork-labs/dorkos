@@ -7,6 +7,7 @@
  * @module mesh/mesh-discovery
  */
 import path from 'path';
+import { realpathSync } from 'fs';
 import { monotonicFactory } from 'ulidx';
 import type { AgentManifest, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
@@ -37,7 +38,7 @@ export const DEFAULT_REGISTRAR = 'mesh';
  * - `duplicate-id` — another directory still holds this manifest (or its state
  *   could not be read), so nothing was written anywhere.
  */
-export type AutoImportResult = 'registered' | 'relocated' | 'duplicate-id';
+export type AutoImportResult = 'registered' | 'relocated' | 'duplicate-id' | 'inside-room-files';
 
 /**
  * Every duplicate manifest one scan refused, so the scan says it once.
@@ -117,6 +118,11 @@ export interface DiscoveryDeps {
    * particular scan came in on — see {@link managedScanRoot}.
    */
   agentsHomeDir?: string;
+  /**
+   * A room's files (`{dorkHome}/rooms`), when the host has rooms. Nothing under
+   * it registers — see {@link isInsideRoomFiles}.
+   */
+  roomFilesDir?: string;
   logger: import('@dorkos/shared/logger').Logger;
   generateUlid: ReturnType<typeof monotonicFactory>;
   /**
@@ -153,6 +159,58 @@ function managedScanRoot(projectPath: string, deps: DiscoveryDeps): string | und
   const relative = path.relative(home, projectPath);
   const inside = relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
   return inside ? home : undefined;
+}
+
+/**
+ * Whether `projectPath` is inside a room's files, where no agent may register.
+ *
+ * A room repo is shared by every member and written by the server; its main
+ * checkout and each agent's worktree of it are working copies, not homes. A
+ * `.dork/agent.json` committed there — by an agent, a person or an import — is
+ * just a file, and registering it would let a room's content decide who an
+ * agent is (spec `agent-home-desk` I2, §3.3).
+ *
+ * @param projectPath - The candidate's directory.
+ * @param deps - Discovery dependencies (for the configured rooms directory).
+ */
+export function isInsideRoomFiles(projectPath: string, deps: DiscoveryDeps): boolean {
+  const rooms = deps.roomFilesDir;
+  if (!rooms) return false;
+  // Lexically AND through real paths: a symlink pointing into a room's repo
+  // is that repo, and a rooms folder reached by another spelling is the same
+  // folder. Either match refuses.
+  return (
+    isWithin(path.resolve(rooms), path.resolve(projectPath)) ||
+    isWithin(realPathOr(rooms), realPathOr(projectPath))
+  );
+}
+
+function isWithin(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/** The real path, or the lexical one for a path that does not exist (yet). */
+function realPathOr(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/** Thrown when a registration names a folder inside a room's files. */
+export class InsideRoomFilesError extends Error {
+  /** The refusal reason, for callers that branch on it. */
+  readonly reason = 'inside-room-files' as const;
+
+  constructor(projectPath: string) {
+    super(
+      `Refusing to register ${projectPath}: it is inside a room's files, and a room's folder is ` +
+        `never an agent's home.`
+    );
+    this.name = 'InsideRoomFilesError';
+  }
 }
 
 /**
@@ -382,6 +440,7 @@ export async function register(
   approver = DEFAULT_REGISTRAR,
   scanRoot?: string
 ): Promise<AgentManifest> {
+  if (isInsideRoomFiles(candidate.path, deps)) throw new InsideRoomFilesError(candidate.path);
   const adopted = await adoptExistingManifest(candidate.path, deps, scanRoot);
   if (adopted) return adopted;
 
@@ -456,6 +515,7 @@ export async function registerByPath(
   approver = DEFAULT_REGISTRAR,
   scanRoot?: string
 ): Promise<AgentManifest> {
+  if (isInsideRoomFiles(projectPath, deps)) throw new InsideRoomFilesError(projectPath);
   const adopted = await adoptExistingManifest(projectPath, deps, scanRoot);
   if (adopted) return adopted;
 
@@ -607,6 +667,16 @@ export async function upsertAutoImported(
   scanRoot?: string,
   duplicates?: DuplicateManifestReport
 ): Promise<AutoImportResult> {
+  // Refused before anything is read or written: a scan walking past a room's
+  // files, or a sync pointed into one, registers nothing there (§3.3).
+  if (isInsideRoomFiles(projectPath, deps)) {
+    deps.logger.warn("[mesh] refused to register an agent inside a room's files", {
+      event: 'mesh.identity.inside_room_files',
+      agentId: manifest.id,
+      projectPath,
+    });
+    return 'inside-room-files';
+  }
   const existing = deps.registry.getByPath(projectPath);
   // Registry rows persist scanRoot as '' when unknown — treat that as absent.
   // Taken from whatever row sits at this path, same id or not: a scan root

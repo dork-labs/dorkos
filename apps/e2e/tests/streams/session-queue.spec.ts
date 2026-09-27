@@ -109,6 +109,12 @@ test.describe('the queue every window can see', () => {
     await request.post(`${API_URL}/api/test/scenario`, { data: { name: 'long-turn' } });
   });
 
+  // `long-turn` is the server-wide default above, so put the default back:
+  // left on, later specs on this test-mode leg get turns that run long.
+  test.afterEach(async ({ request }) => {
+    await request.post(`${API_URL}/api/test/reset`);
+  });
+
   test('one queue: two windows agree, edits cross, and a refresh keeps it', async ({ browser }) => {
     // ONE context, so both pages share a profile the way two real windows do
     // (trap 2).

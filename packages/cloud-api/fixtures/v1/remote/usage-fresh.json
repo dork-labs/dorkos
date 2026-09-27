@@ -1,0 +1,17 @@
+{
+  "orgId": "org_0001",
+  "period": "2026-09",
+  "ceilings": [
+    {
+      "ceiling": "example_hours",
+      "limit": 37,
+      "used": 0,
+      "unit": "hours",
+      "fraction": 0,
+      "alertFraction": 0.65,
+      "state": "clear",
+      "enforceable": true,
+      "provenance": { "source": "a placeholder source", "measuredAt": null }
+    }
+  ]
+}
