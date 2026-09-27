@@ -144,7 +144,7 @@ export const MOCK_ACCOUNT_USAGE: AccountUsage[] = [
     plan: null,
     credits: null,
     spend: {
-      periodStart: new Date(Date.now() - 10 * 24 * HOUR_MS).toISOString(),
+      periodStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
       costUsd: 4.2,
       limitUsd: null,
       observedAt: OBSERVED_AT,

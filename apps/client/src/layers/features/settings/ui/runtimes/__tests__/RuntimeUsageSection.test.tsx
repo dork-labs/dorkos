@@ -49,8 +49,11 @@ function codexUsage(over: Partial<AccountUsage> = {}): AccountUsage {
   });
 }
 
+/** The start of the current local month, so the spend reading is "this month" whenever the test runs. */
+const THIS_MONTH_START = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
 const SPEND = {
-  periodStart: '2026-09-01T00:00:00.000Z',
+  periodStart: THIS_MONTH_START,
   costUsd: 4.2,
   limitUsd: null,
   observedAt: '2026-09-27T12:00:00.000Z',
@@ -95,6 +98,20 @@ describe('RuntimeUsageSection', () => {
     ]);
     expect(screen.getByText('$4.20 spent this month')).toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('hides a spend total from an earlier month rather than calling it this month', () => {
+    // A spend reading never goes stale, so last month's total must not read as this month's.
+    const lastMonth = new Date(
+      new Date().getFullYear(),
+      new Date().getMonth() - 1,
+      15
+    ).toISOString();
+    renderWith(<RuntimeUsageSection type="opencode" />, [
+      codexUsage({ runtime: 'opencode', windows: [], spend: { ...SPEND, periodStart: lastMonth } }),
+    ]);
+    expect(screen.queryByText(/spent this month/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Usage' })).not.toBeInTheDocument();
   });
 
   it('shows no row when the account has no windows and no spend', () => {

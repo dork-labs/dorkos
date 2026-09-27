@@ -24,8 +24,29 @@ const CARD_WINDOWS = [
  *
  * @param usage - The account's usage, or nothing when there is no record.
  */
-export function hasUsageToShow(usage: AccountUsage | null | undefined): usage is AccountUsage {
-  return !!usage && (usage.windows.length > 0 || usage.spend !== null);
+export function hasUsageToShow(
+  usage: AccountUsage | null | undefined,
+  now: Date = new Date()
+): usage is AccountUsage {
+  return !!usage && (usage.windows.length > 0 || isThisMonthsSpend(usage.spend, now));
+}
+
+/**
+ * Whether a spend reading belongs to the current local calendar month. A spend
+ * reading never goes stale, so a total from an earlier month must not be shown
+ * as "this month"; it is hidden until the runtime reports this month's spend.
+ *
+ * @param spend - The account's spend reading, or nothing.
+ * @param now - The moment to read from.
+ */
+export function isThisMonthsSpend(
+  spend: AccountUsage['spend'] | undefined,
+  now: Date = new Date()
+): spend is NonNullable<AccountUsage['spend']> {
+  if (!spend) return false;
+  const start = new Date(spend.periodStart);
+  if (Number.isNaN(start.getTime())) return false;
+  return start.getFullYear() === now.getFullYear() && start.getMonth() === now.getMonth();
 }
 
 /**
@@ -47,6 +68,8 @@ export interface AccountUsageBarsProps {
   usage: AccountUsage | null | undefined;
   /** The account's name, printed above the bars; omit to print none. */
   name?: string;
+  /** The moment to read from (tests pin it); defaults to now. */
+  now?: Date;
 }
 
 /**
@@ -55,8 +78,8 @@ export interface AccountUsageBarsProps {
  * A window the record lacks is drawn by the bar's unknown branch (a dashed
  * track and the word "unknown"), never as an empty 0% bar.
  */
-export function AccountUsageBars({ usage, name }: AccountUsageBarsProps) {
-  if (!hasUsageToShow(usage)) return null;
+export function AccountUsageBars({ usage, name, now = new Date() }: AccountUsageBarsProps) {
+  if (!hasUsageToShow(usage, now)) return null;
   const hasWindows = usage.windows.length > 0;
   return (
     <div className="space-y-2" data-slot="account-usage-bars">
@@ -65,7 +88,7 @@ export function AccountUsageBars({ usage, name }: AccountUsageBarsProps) {
         ? CARD_WINDOWS.map(({ key, label }) => (
             <UsageBar key={key} window={accountWindow(usage, key)} label={label} />
           ))
-        : usage.spend && <SpendLine spend={usage.spend} />}
+        : isThisMonthsSpend(usage.spend, now) && <SpendLine spend={usage.spend} />}
     </div>
   );
 }
