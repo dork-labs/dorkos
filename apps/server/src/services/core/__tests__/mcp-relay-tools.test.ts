@@ -792,7 +792,7 @@ describe('bare relay.agent.<agentId> targets are canonicalized before publish', 
 
   it('leaves every non-agent subject alone', async () => {
     const deps = depsKnowingA1();
-    for (const subject of ['relay.inbox.a1', 'relay.system.console', 'relay.human.console.c1']) {
+    for (const subject of ['relay.inbox.a1', 'relay.test.topic', 'relay.human.console.c1']) {
       await createRelaySendHandler(deps, SENDER)({ subject, payload: {} });
       expect(deps.relayCore!.publish).toHaveBeenCalledWith(subject, {}, expect.anything());
     }
@@ -1355,5 +1355,95 @@ describe('relay endpoint ownership (DOR-506)', () => {
         { owner: SENDER.subject }
       );
     });
+  });
+});
+
+describe('server-owned destinations are refused before anything is sent (DOR-2432)', () => {
+  // A handler on relay.system.* or relay.control.* acts on what the message
+  // says — run this task, approve this tool call, stop this run. These tools
+  // are how an agent reaches the bus, in session and on the external /mcp
+  // surface alike (both project the same handlers), so the refusal lives here.
+  const RULE =
+    'relay.system.* and relay.control.* addresses belong to DorkOS; agents cannot send to them.';
+  const refused = [
+    'relay.system.tasks.task-1',
+    'relay.system.approval.agent-1',
+    'relay.system.console',
+    'relay.control.task-cancel.run-1',
+    'relay.*.approval.agent-1',
+    'relay.>',
+  ];
+
+  function expectRefusal(result: { isError?: boolean; content: Array<{ text: string }> }) {
+    expect(result.isError).toBe(true);
+    const body = JSON.parse(result.content[0].text) as { error: string; code: string };
+    expect(body.code).toBe('RESERVED_SUBJECT');
+    expect(body.error).toContain(RULE);
+  }
+
+  for (const subject of refused) {
+    it(`relay_send refuses ${subject}`, async () => {
+      const deps = makeMockDeps({});
+      expectRefusal(await createRelaySendHandler(deps, SENDER)({ subject, payload: {} }));
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+
+    it(`relay_send_and_wait refuses ${subject}, minting no inbox`, async () => {
+      const deps = makeMockDeps({});
+      expectRefusal(
+        await createRelayQueryHandler(deps, SENDER)({ to_subject: subject, payload: {} })
+      );
+      expect(deps.relayCore!.registerEndpoint).not.toHaveBeenCalled();
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+
+    it(`relay_send_async refuses ${subject}, minting no inbox`, async () => {
+      const deps = makeMockDeps({});
+      expectRefusal(
+        await createRelayDispatchHandler(deps, SENDER)({ to_subject: subject, payload: {} })
+      );
+      expect(deps.relayCore!.registerEndpoint).not.toHaveBeenCalled();
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+  }
+
+  it('relay_send refuses a server-owned reply address, which would have the recipient send there', async () => {
+    const deps = makeMockDeps({});
+    expectRefusal(
+      await createRelaySendHandler(
+        deps,
+        SENDER
+      )({
+        subject: 'relay.agent.other',
+        payload: {},
+        replyTo: 'relay.system.approval.agent-1',
+      })
+    );
+    expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+  });
+
+  it('refuses from the external /mcp identity too', async () => {
+    const deps = makeMockDeps({});
+    const external = resolveSenderIdentity(deps, undefined);
+    expect(external.subject).toBe(EXTERNAL_MCP_SENDER);
+    expectRefusal(
+      await createRelaySendHandler(
+        deps,
+        external
+      )({
+        subject: 'relay.system.tasks.task-1',
+        payload: {},
+      })
+    );
+    expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+  });
+
+  it('still sends to an address that only looks similar', async () => {
+    const deps = makeMockDeps({});
+    for (const subject of ['relay.systems.x', 'relay.agent.system', 'relay.inbox.system.x']) {
+      const result = await createRelaySendHandler(deps, SENDER)({ subject, payload: {} });
+      expect(result.isError).toBeUndefined();
+    }
+    expect(deps.relayCore!.publish).toHaveBeenCalledTimes(3);
   });
 });

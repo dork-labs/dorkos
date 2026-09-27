@@ -30,6 +30,8 @@ export const V1_ROUTES = {
   usage: '/v1/usage',
   priceList: '/v1/price-list',
   nudge: '/v1/nudge',
+  /** Everything the service will sell the caller, answered with `OffersResponseSchema`. */
+  offers: '/v1/offers',
   checkout: '/v1/checkout',
   topup: '/v1/topup',
   portal: '/v1/portal',

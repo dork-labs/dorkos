@@ -17,6 +17,8 @@
  */
 import { getAuth } from '@/lib/auth';
 import { runCleanup } from '@/lib/cleanup-service';
+import { env } from '@/env';
+import { cloudAccountsForwarding } from '@/lib/cloud-accounts/forward';
 import { rejectUnauthorizedCron } from '@/lib/cron/auth';
 
 export const runtime = 'nodejs';
@@ -26,6 +28,14 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request): Promise<Response> {
   const unauthorized = rejectUnauthorizedCron(request);
   if (unauthorized) return unauthorized;
+
+  // Once accounts are handed to the accounts service (DOR-2441), the account
+  // and device-link rows this sweeps belong to that service, and it runs the
+  // sweep itself. Answer 200 so the scheduler sees a healthy job, and touch
+  // nothing.
+  if (cloudAccountsForwarding(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN)) {
+    return Response.json({ ok: true, skipped: 'accounts-service' }, { status: 200 });
+  }
 
   const counts = await runCleanup(getAuth(), {});
   return Response.json({ ok: true, counts }, { status: 200 });

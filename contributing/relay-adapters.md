@@ -1776,6 +1776,8 @@ When the user clicks Approve or Deny, the adapter publishes this payload to `rel
 }
 ```
 
+Publish it as the adapter's own approval principal, `approvalBridgePrincipal(platform, this.id)` from `packages/relay/src/lib/approval-principal.ts` (`relay.system.approval-bridge.{platform}.{adapterId}`). The Claude Code adapter refuses an approval from any other sender, and one whose `platform` differs from the principal's, before the server-side authorizer runs (DOR-2431). Nothing in the payload proves who clicked, because the agent waiting on the card knows its own session id and tool call id; the `from` is the one field it cannot choose.
+
 ### Platform Implementations
 
 **Slack** registers Bolt action handlers for `tool_approve` and `tool_deny` action IDs. Button clicks are acknowledged via `ack()`, the approval response is published, and the original message is updated to show the decision result with `chat.update`.
@@ -1796,7 +1798,7 @@ To support tool approvals in a custom adapter:
 
 3. **Set a timeout**: Start a timer using `timeoutMs` from the `ApprovalData`. If the user does not respond before the timeout, the agent runtime auto-denies. You may want to update the UI to reflect expiry.
 
-4. **Handle the user response**: When the user clicks Approve or Deny, publish an `approval_response` payload (see schema above) to `relay.system.approval.{agentId}` and cancel the timeout. Update the approval UI to reflect the decision.
+4. **Handle the user response**: When the user clicks Approve or Deny, publish an `approval_response` payload (see schema above) to `relay.system.approval.{agentId}`, from your adapter's approval principal, and cancel the timeout. Update the approval UI to reflect the decision.
 
 5. **Clean up**: Remove any stored state for the approval (callback mappings, timers) after the response is published.
 

@@ -133,7 +133,7 @@ export class ExtensionServerLifecycle {
     // `dataProxy`-only branch below as well as the `require()` of a server entry:
     // a proxy hands extension-authored config the server's outbound reach and its
     // stored secrets, which is the same consent question one step quieter.
-    if (!mayRunExtensionCode(id, record.origin, configManager.get('extensions').approvedToRun)) {
+    if (!mayRunExtensionCode(record, configManager.get('extensions'))) {
       logger.warn(
         `[Extensions] Server init refused for ${id}: waiting for a person to approve it ` +
           `(${EXTENSION_NOT_APPROVED_CODE})`

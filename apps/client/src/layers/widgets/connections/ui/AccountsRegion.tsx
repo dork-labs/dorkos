@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import {
   AccountsList,
   AgentRequests,
@@ -8,9 +7,10 @@ import {
   ConnectionAccessDialog,
   ConnectionDetailSheet,
   ManagementReviews,
-  ProviderSetup,
   ServiceGrid,
 } from '@/layers/features/connections';
+import { useSettingsDeepLink } from '@/layers/shared/model';
+import { Button } from '@/layers/shared/ui';
 import { useChatAppSetup } from './ChatAppSetup';
 
 interface AccountsRegionProps {
@@ -32,7 +32,11 @@ interface AccountsRegionProps {
   onCloseRequest?: () => void;
 }
 
-/** Account services, stable connections, owner reviews, and advanced provider setup. */
+/**
+ * Account services, stable connections and owner reviews. How DorkOS reaches
+ * these services (your own Composio or Nango key) is set in Settings ›
+ * Connections, not here.
+ */
 export function AccountsRegion({
   selectedReviewId = null,
   selectedFlowId = null,
@@ -60,6 +64,7 @@ export function AccountsRegion({
           <p className="text-muted-foreground mt-1 text-sm">
             Services your agents can act on for you.
           </p>
+          <OwnKeyPointer />
         </div>
         <ServiceGrid onConnect={setSelectedService} onConnectChat={chatAppSetup.open} />
       </header>
@@ -87,18 +92,6 @@ export function AccountsRegion({
       {selectedFlowId && !selectedService && (
         <p className="text-muted-foreground text-xs">Your saved sign-in is ready to continue.</p>
       )}
-
-      <Collapsible>
-        <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-ring rounded-md text-sm font-medium">
-          Advanced account setup
-        </CollapsibleTrigger>
-        <CollapsibleContent className="space-y-3 pt-3">
-          <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
-            Use your own Composio or Nango account to manage its billing and setup yourself.
-          </p>
-          <ProviderSetup />
-        </CollapsibleContent>
-      </Collapsible>
 
       <ManagementReviews
         selectedReviewId={selectedReviewId}
@@ -152,5 +145,28 @@ export function AccountsRegion({
         }}
       />
     </section>
+  );
+}
+
+/**
+ * The page's one pointer to Settings › Connections, where your own Composio or
+ * Nango key lives. It sits under the region's heading in every state (linked
+ * or not, with or without apps), so the way to use your own key is never
+ * hidden behind a failure or a first connect. Static on purpose: it reads
+ * nothing, so it can't fail and it never waits on a server call.
+ */
+function OwnKeyPointer() {
+  const settings = useSettingsDeepLink();
+  return (
+    <p className="text-muted-foreground mt-1 text-xs">
+      Prefer your own Composio or Nango account?{' '}
+      <Button
+        variant="link"
+        className="h-auto p-0 text-xs"
+        onClick={() => settings.open('connections', 'ways')}
+      >
+        Set it up in Settings › Connections
+      </Button>
+    </p>
   );
 }

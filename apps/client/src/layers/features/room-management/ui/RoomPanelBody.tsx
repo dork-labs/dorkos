@@ -8,7 +8,12 @@ import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { Button, Skeleton } from '@/layers/shared/ui';
 import { useAgentCreationStore, useIsTouchOnly, useProfileDeepLink } from '@/layers/shared/model';
-import { RoomLoudnessLine, roomDisplayTitle, type LoudnessPreview } from '@/layers/entities/room';
+import {
+  RoomLoudnessLine,
+  isRoomMember,
+  roomDisplayTitle,
+  type LoudnessPreview,
+} from '@/layers/entities/room';
 import { useRoomDetailsView } from '../model/use-room-details-view';
 import { useRoomDetailsWrites } from '../model/use-room-details-writes';
 import { useRoomPanelFocusStore, type RoomPanelFocusRequest } from '../model/room-panel-focus';
@@ -582,7 +587,13 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
           // files at all, so a skeleton here would flash on every room that
           // does not.
           <Suspense fallback={null}>
-            <RoomFilesSection roomId={roomId} />
+            <RoomFilesSection
+              roomId={roomId}
+              // Changing a room's files is for somebody IN the room, while it
+              // is live: an archived room and a reader who only sees it would
+              // both be refused, so neither is offered the controls.
+              canChange={!detail.archived && isRoomMember(detail.members, detail.viewerAuthorId)}
+            />
           </Suspense>
         )}
 

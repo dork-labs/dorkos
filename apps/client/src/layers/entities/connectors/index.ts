@@ -96,3 +96,8 @@ export { accessLevelWords, serviceName } from './lib/access-copy';
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
 export { EveryAgentAccessNotice } from './ui/EveryAgentAccessNotice';
 export type { EveryAgentAccessNoticeProps } from './ui/EveryAgentAccessNotice';
+
+// --- What removing a way to reach apps would stop (shared by every confirm) ---
+export { appCount, dorkosAccountApps, splitByImpact, toImpactApp } from './lib/connection-impact';
+export type { ImpactApp } from './lib/connection-impact';
+export { ConnectionImpactList } from './ui/ConnectionImpactList';

@@ -284,6 +284,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
       'connectors.rawMcpServers[].url',
+      // Not a secret: absolute paths on this machine that no agent needs (DOR-2383).
+      'extensions.approvedSources',
       'mcp.apiKey',
       'providers',
       'runtimes.codex.credentialRef',

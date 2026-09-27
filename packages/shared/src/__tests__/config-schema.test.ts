@@ -164,7 +164,7 @@ describe('UserConfigSchema', () => {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
       memory: { provider: 'builtin' },
-      extensions: { enabled: [], disabled: [], approvedToRun: [] },
+      extensions: { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -534,7 +534,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
       memory: { provider: 'builtin' },
-      extensions: { enabled: [], disabled: [], approvedToRun: [] },
+      extensions: { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -1874,7 +1874,12 @@ describe('SmartGroupRulesSchema + SidebarGroupSchema kind/rules (smart-agent-gro
 describe('UserConfigSchema extensions (deviation lists)', () => {
   it('defaults to empty enabled and disabled when omitted', () => {
     const result = UserConfigSchema.parse({ version: 1 });
-    expect(result.extensions).toEqual({ enabled: [], disabled: [], approvedToRun: [] });
+    expect(result.extensions).toEqual({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [],
+      approvedSources: {},
+    });
   });
 
   it('defaults disabled to [] when only enabled is provided', () => {
@@ -1886,6 +1891,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       enabled: ['linear-issues'],
       disabled: [],
       approvedToRun: [],
+      approvedSources: {},
     });
   });
 
@@ -1898,6 +1904,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       enabled: [],
       disabled: ['marketplace'],
       approvedToRun: [],
+      approvedSources: {},
     });
   });
 
@@ -1910,6 +1917,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       enabled: ['hello-world'],
       disabled: ['marketplace'],
       approvedToRun: [],
+      approvedSources: {},
     });
   });
 
@@ -1942,12 +1950,34 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       enabled: [],
       disabled: [],
       approvedToRun: ['my-ext'],
+      approvedSources: {},
     });
   });
 
   it('rejects a non-array approvedToRun', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, extensions: { approvedToRun: 'my-ext' } })
+    ).toThrow();
+  });
+
+  it('round-trips the copy an approval was given to (DOR-2383)', () => {
+    const approvedSources = {
+      flow: { path: '/h/.dork/plugins/flow/.dork/extensions/flow', plugin: 'flow' },
+      'my-ext': { path: '/h/.dork/extensions/my-ext' },
+    };
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { approvedToRun: ['flow', 'my-ext'], approvedSources },
+    });
+    expect(result.extensions.approvedSources).toEqual(approvedSources);
+  });
+
+  it('rejects an approved copy with no path', () => {
+    expect(() =>
+      UserConfigSchema.parse({
+        version: 1,
+        extensions: { approvedSources: { flow: { plugin: 'flow' } } },
+      })
     ).toThrow();
   });
 });

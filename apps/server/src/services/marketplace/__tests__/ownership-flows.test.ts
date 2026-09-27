@@ -397,6 +397,7 @@ describe('a schedule declared by skillRef (DOR-2318)', () => {
     const result = await new UninstallFlow({
       dorkHome,
       extensionManager: {
+        get: () => undefined,
         disable: async () => undefined,
         forgetRunApproval: async () => undefined,
       },

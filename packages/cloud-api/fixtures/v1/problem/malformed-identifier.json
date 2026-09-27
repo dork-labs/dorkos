@@ -1,0 +1,7 @@
+{
+  "code": "malformed_identifier",
+  "status": 400,
+  "title": "There is no such seat.",
+  "detail": "The address names a seat identifier this service never issues.",
+  "instance": "req_0a1b2c3e"
+}

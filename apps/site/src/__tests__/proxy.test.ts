@@ -1,9 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
+import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server';
+import { env } from '@/env';
+import {
+  CLOUD_ACCOUNT_API_EXACT,
+  CLOUD_ACCOUNT_API_PREFIXES,
+  CLOUD_ACCOUNT_PAGE_PREFIXES,
+} from '@/lib/cloud-accounts/forward';
 import { config, proxy } from '../proxy';
 
-function request(path: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(`https://dorkos.ai${path}`, { headers });
+function request(path: string, headers: Record<string, string> = {}, method = 'GET'): NextRequest {
+  return new NextRequest(`https://dorkos.ai${path}`, { headers, method });
 }
 
 /** The rewrite destination Next.js records on the response, if any. */
@@ -153,5 +160,114 @@ describe('proxy config.matcher', () => {
     // bypass the proxy entirely.
     expect(matcher.test('/docs/getting-started/quickstart.md')).toBe(false);
     expect(matcher.test('/docs/getting-started/quickstart.mdx')).toBe(false);
+  });
+});
+
+// DOR-2441: the accounts hand-over, in both positions of its variable.
+describe('proxy accounts hand-over', () => {
+  const SERVICE = 'https://accounts.example.test';
+
+  afterEach(() => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = undefined;
+  });
+
+  describe('with the variable unset', () => {
+    it('serves account pages locally, with the region cookie as before', () => {
+      const response = proxy(request('/activate?user_code=ABCD-EFGH'));
+      expect(response.status).toBe(200);
+      expect(response.headers.get('location')).toBeNull();
+      expect(rewriteTarget(response)).toBeNull();
+      expect(response.headers.get('set-cookie')).toContain('dorkos_region');
+    });
+
+    it('serves the account API locally, with no region cookie', () => {
+      const response = proxy(
+        request('/api/instances/heartbeat', { authorization: 'Bearer t' }, 'POST')
+      );
+      expect(rewriteTarget(response)).toBeNull();
+      expect(response.headers.get('location')).toBeNull();
+      expect(response.headers.get('set-cookie')).toBeNull();
+    });
+  });
+
+  describe('with the variable set', () => {
+    it('redirects the activation link with its code, uncached and without a cookie', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      const response = proxy(request('/activate?user_code=ABCD-EFGH'));
+      expect(response.status).toBe(307);
+      expect(response.headers.get('location')).toBe(`${SERVICE}/activate?user_code=ABCD-EFGH`);
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+      expect(response.headers.get('set-cookie')).toBeNull();
+    });
+
+    it('proxies a heartbeat to the same path on the service', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      const response = proxy(
+        request('/api/instances/heartbeat', { authorization: 'Bearer t' }, 'POST')
+      );
+      expect(rewriteTarget(response)).toBe(`${SERVICE}/api/instances/heartbeat`);
+      expect(response.headers.get('location')).toBeNull();
+    });
+
+    it('proxies the device-code request a released CLI makes', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      const response = proxy(
+        request('/api/auth/device/code', { 'content-type': 'application/json' }, 'POST')
+      );
+      expect(rewriteTarget(response)).toBe(`${SERVICE}/api/auth/device/code`);
+    });
+
+    it('leaves managed connections and the rest of the site alone', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      for (const response of [
+        proxy(request('/blog')),
+        proxy(request('/connectors/managed/authorize')),
+        proxy(request('/api/instances/connectors/events/pull', {}, 'POST')),
+      ]) {
+        expect(response.headers.get('location')).toBeNull();
+        expect(rewriteTarget(response)).toBeNull();
+      }
+    });
+
+    it('serves locally when the variable is not a usable origin', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = 'accounts.example.test';
+      const original = console.error;
+      console.error = () => {};
+      try {
+        const response = proxy(request('/signin'));
+        expect(response.headers.get('location')).toBeNull();
+      } finally {
+        console.error = original;
+      }
+    });
+  });
+
+  describe('config.matcher', () => {
+    // Next's own matcher, not a model of it: a hand-compiled regex would only
+    // repeat what this file assumes about `:path*`.
+    const matched = (path: string) =>
+      unstable_doesMiddlewareMatch({ config, url: `https://dorkos.ai${path}` });
+
+    it('reaches every path the hand-over forwards, with or without a trailing slash', () => {
+      const paths = [
+        ...CLOUD_ACCOUNT_PAGE_PREFIXES.flatMap((p) => [p, `${p}/child`]),
+        ...CLOUD_ACCOUNT_API_PREFIXES.flatMap((p) => [p, `${p}/`, `${p}/child`]),
+        ...CLOUD_ACCOUNT_API_EXACT.flatMap((p) => [p, `${p}/`]),
+      ];
+      for (const path of paths) expect(matched(path), path).toBe(true);
+    });
+
+    it('still does not run on other API routes', () => {
+      for (const path of [
+        '/api/feedback',
+        '/api/cron/instance-expiry',
+        '/api/instances/connectors/catalog',
+        '/api/telemetry/heartbeat',
+        '/api/accounts',
+        '/api/authx',
+      ]) {
+        expect(matched(path), path).toBe(false);
+      }
+    });
   });
 });

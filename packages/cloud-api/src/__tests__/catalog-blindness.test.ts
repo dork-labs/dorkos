@@ -164,6 +164,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   CustomAddressCapabilitySchema: 'whether the mechanism is available, not its price',
   SupportCapabilitySchema: 'which channel, not which subscription',
   CostBasisSchema: 'where a price came from, not what the price is',
+  OfferIntervalSchema: 'how often a charge repeats, not what is on sale',
   AmountKindSchema: 'whether an amount counts money or credits, not what either is worth',
   UsageStateSchema: 'how a credit or subscription position reads at a glance',
   UsageGroupBySchema: 'how to group a query',

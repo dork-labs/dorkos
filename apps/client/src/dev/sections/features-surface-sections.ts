@@ -232,7 +232,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     title: 'MessagingRegion',
     page: 'home-inbox',
     category: 'Connections',
-    keywords: ['messaging', 'region', 'composed', 'health bar', 'policy', 'claim feed'],
+    keywords: ['messaging', 'region', 'composed', 'health bar', 'claim feed'],
+  },
+  {
+    id: 'connectionways',
+    title: 'ConnectionWays',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['settings', 'composio', 'nango', 'key', 'dorkos account', 'remove', 'ways'],
   },
   // McpServerCardShowcases
   {

@@ -111,6 +111,15 @@ const webEnvSchema = z.object({
         .filter(Boolean)
     ),
 
+  // The origin of a separate DorkOS accounts service (DOR-2441). UNSET BY
+  // DEFAULT, and unset means this site serves sign-in, the device link, the
+  // instance registry and the admin console itself, exactly as before. When set
+  // (an https origin, no path), the site sends those pages and their API to that
+  // origin instead, and its two scheduled jobs stand down. See
+  // `lib/cloud-accounts/forward.ts` for which paths move and why pages are redirected
+  // while API calls are proxied.
+  DORKOS_CLOUD_ACCOUNTS_ORIGIN: z.string().optional(),
+
   // Shared secret gating the scheduled-cleanup cron (DOR-194). Vercel Cron sends
   // it as `Authorization: Bearer <CRON_SECRET>` when this env var is set. Optional
   // by design: when unset, the cron route refuses to run (401) so it can never be

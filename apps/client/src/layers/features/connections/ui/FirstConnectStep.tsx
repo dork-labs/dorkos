@@ -10,7 +10,7 @@ import {
   QueryErrorState,
   Skeleton,
 } from '@/layers/shared/ui';
-import { ProviderSetupCard } from './ProviderSetupCard';
+import { KeyEntry } from './KeyEntry';
 
 interface FirstConnectStepProps {
   /** Why the step shows although something is set up; `null` when nothing is. */
@@ -58,7 +58,7 @@ export function FirstConnectStep({ reason }: FirstConnectStepProps) {
 
       {composio &&
         (showComposio ? (
-          <ProviderSetupCard status={composio} />
+          <KeyEntry status={composio} />
         ) : (
           <div className="space-y-1.5">
             <Button size="lg" className="w-full" onClick={() => setShowComposio(true)}>
@@ -84,7 +84,7 @@ export function FirstConnectStep({ reason }: FirstConnectStepProps) {
             <p className="text-muted-foreground text-xs">
               My own Nango server: you run Nango yourself, and sign-ins stay in your database.
             </p>
-            <ProviderSetupCard status={nango} />
+            <KeyEntry status={nango} />
           </CollapsibleContent>
         </Collapsible>
       )}

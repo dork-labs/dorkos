@@ -130,3 +130,31 @@ describe('managed connector configuration', () => {
     }
   });
 });
+
+// DOR-2441: managed flows authenticate against the account tables, which the
+// site no longer holds once accounts are handed to the accounts service.
+describe('managed connector configuration with accounts handed over', () => {
+  it('reads as not enabled from the deployment while the hand-over is on', async () => {
+    const { env } = await import('@/env');
+    const before = {
+      forward: env.DORKOS_CLOUD_ACCOUNTS_ORIGIN,
+      enabled: env.DORKOS_MANAGED_CONNECTORS_ENABLED,
+    };
+    try {
+      env.DORKOS_MANAGED_CONNECTORS_ENABLED = '1';
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = undefined;
+      expect(readManagedConnectorConfig().enabled).toBe(true);
+
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = 'https://accounts.example.test';
+      const config = readManagedConnectorConfig();
+      expect(config.enabled).toBe(false);
+      expect(managedCapabilityAvailability(config, 'catalog')).toEqual({
+        status: 'unavailable',
+        reason: 'Managed connections are not enabled here.',
+      });
+    } finally {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = before.forward;
+      env.DORKOS_MANAGED_CONNECTORS_ENABLED = before.enabled;
+    }
+  });
+});

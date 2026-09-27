@@ -948,6 +948,12 @@ export const RoomFileChangeEventSchema = z
       .string()
       .optional()
       .describe('For a rename, the file or folder as it was named before.'),
+    target: z
+      .string()
+      .optional()
+      .describe(
+        'What the sentence names: the file edited or added; the folder an upload or a save from the chat went into (empty for the top folder); where a rename went; or the file or folder a delete removed. A folder ends in `/`. Absent on entries written before it existed.'
+      ),
     commit: z.string().min(1).describe('The commit on the room’s main branch.'),
   })
   .openapi('RoomFileChangeEvent');

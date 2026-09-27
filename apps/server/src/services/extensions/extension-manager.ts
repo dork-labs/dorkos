@@ -17,6 +17,7 @@
 import path from 'path';
 import type { Router } from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
+import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
@@ -33,7 +34,12 @@ import {
   type ReloadExtensionResult,
   type TestExtensionResult,
 } from './extension-manager-types.js';
-import { EXTENSION_NOT_APPROVED_CODE, mayRunExtensionCode } from './extension-load-policy.js';
+import {
+  EXTENSION_NOT_APPROVED_CODE,
+  approvedSourceOf,
+  isApprovedCopy,
+  mayRunExtensionCode,
+} from './extension-load-policy.js';
 import { logger } from '../../lib/logger.js';
 
 export type { CreateExtensionResult, ReloadExtensionResult, TestExtensionResult };
@@ -150,6 +156,7 @@ export class ExtensionManager {
     for (const rec of records) {
       this.extensions.set(rec.id, rec);
     }
+    this.bindUnsourcedApprovals(records);
 
     await this.compileEnabled();
     return this.listPublic();
@@ -248,8 +255,47 @@ export class ExtensionManager {
 
   /** Get all extensions as public records (for API responses). */
   listPublic(): ExtensionRecordPublic[] {
-    const { approvedToRun } = configManager.get('extensions');
-    return Array.from(this.extensions.values()).map((record) => toPublic(record, approvedToRun));
+    const approvals = configManager.get('extensions');
+    return Array.from(this.extensions.values()).map((record) => toPublic(record, approvals));
+  }
+
+  /**
+   * Bind each approval given before approvals recorded their copy to the one copy
+   * it could have been about: the extension installed directly under
+   * `{dorkHome}/extensions/<id>` (DOR-2383).
+   *
+   * Before that change, discovery never read a plugin's extensions and dropped a
+   * project copy of an approved id, so the direct install was the only copy an
+   * id-only approval ever let run. Binding it on first sight keeps it running with
+   * nothing to click. An approved id this pass finds only inside a plugin, or only
+   * in a project, stays unbound and so counts as not approved: that copy is asked
+   * about on its own. The config migration cannot do this, because it runs before
+   * anything has looked at the disk.
+   *
+   * @param records - The records this discovery pass produced.
+   */
+  private bindUnsourcedApprovals(records: readonly ExtensionRecord[]): void {
+    const before = configManager.get('extensions');
+    const sources = before.approvedSources ?? {};
+    const additions: Record<string, ExtensionApprovedSource> = {};
+    for (const record of records) {
+      if (!before.approvedToRun.includes(record.id) || sources[record.id]) continue;
+      if (record.origin === 'core' || record.sourcePlugin) continue;
+      const directInstall = path.join(path.resolve(this.dorkHome), 'extensions', record.id);
+      if (path.resolve(record.path) !== directInstall) continue;
+      additions[record.id] = approvedSourceOf(record);
+    }
+    if (Object.keys(additions).length === 0) return;
+    configManager.set('extensions', {
+      ...before,
+      approvedSources: { ...sources, ...additions },
+    });
+    logConfigWrite(
+      'recording which copy an earlier extension approval was for',
+      'extensions',
+      before,
+      configManager.get('extensions')
+    );
   }
 
   /** Get a single extension by ID. */
@@ -261,6 +307,10 @@ export class ExtensionManager {
   async enable(
     id: string
   ): Promise<{ extension: ExtensionRecordPublic; reloadRequired: boolean } | null> {
+    // An id this manager has not seen may have just arrived on disk: the
+    // marketplace plugin install enables each extension it carries right after
+    // moving the plugin into place, before anything re-scanned (DOR-2383).
+    if (!this.extensions.has(id)) await this.reload();
     const record = this.extensions.get(id);
     if (!record) return null;
     if (record.status === 'incompatible' || record.status === 'invalid') return null;
@@ -291,7 +341,7 @@ export class ExtensionManager {
     }
 
     return {
-      extension: toPublic(record, configManager.get('extensions').approvedToRun),
+      extension: toPublic(record, configManager.get('extensions')),
       reloadRequired: true,
     };
   }
@@ -322,7 +372,7 @@ export class ExtensionManager {
     record.error = undefined;
 
     return {
-      extension: toPublic(record, configManager.get('extensions').approvedToRun),
+      extension: toPublic(record, configManager.get('extensions')),
       reloadRequired: true,
     };
   }
@@ -347,11 +397,17 @@ export class ExtensionManager {
     const record = this.extensions.get(id);
     if (!record) return null;
 
+    // The approval is for THIS copy (DOR-2383): record its directory and carrying
+    // plugin beside the id, replacing whatever copy an earlier approval named.
     const extensions = configManager.get('extensions');
-    if (!extensions.approvedToRun.includes(id)) {
+    const source = approvedSourceOf(record);
+    if (!isApprovedCopy(record, extensions)) {
       configManager.set('extensions', {
         ...extensions,
-        approvedToRun: [...extensions.approvedToRun, id],
+        approvedToRun: extensions.approvedToRun.includes(id)
+          ? extensions.approvedToRun
+          : [...extensions.approvedToRun, id],
+        approvedSources: { ...(extensions.approvedSources ?? {}), [id]: source },
       });
       logConfigWrite(
         'approving an extension to run',
@@ -368,7 +424,7 @@ export class ExtensionManager {
       }
     }
 
-    return toPublic(record, configManager.get('extensions').approvedToRun);
+    return toPublic(record, configManager.get('extensions'));
   }
 
   /**
@@ -387,33 +443,46 @@ export class ExtensionManager {
 
     await this.forgetRunApproval(id);
 
-    return toPublic(record, configManager.get('extensions').approvedToRun);
+    return toPublic(record, configManager.get('extensions'));
   }
 
   /**
    * Drop a stored run approval and stop the extension, for an id whose code is
    * being REPLACED or removed rather than judged (DOR-516).
    *
-   * The marketplace uninstall flow calls this for every extension a package
-   * bundled, which is also what makes an update re-ask: an update is an uninstall
-   * followed by a fresh install (`MarketplaceInstaller.update`), so `foo` v2
-   * arriving under the name of an approved `foo` v1 is different code and gets a
-   * different decision. Without it, `marketplace_install` — tier `act`, always
-   * allowed — could put any code at all behind an approval a person gave to
-   * something else.
+   * The marketplace uninstall flow calls this for every extension a removed
+   * package bundled, and, on an update, for every extension the new version no
+   * longer carries (DOR-2383: an update from the same package keeps the rest).
+   * Without it, `marketplace_install` — tier `act`, always allowed — could put
+   * any code at all behind an approval a person gave to something else.
    *
    * Unlike {@link revokeRunApproval} this needs no discovery record: by the time
    * an uninstall runs, the extension's files may already be staged away, and the
    * approval has to be forgotten regardless.
    *
    * @param id - Extension id whose approval is no longer about the code on disk.
+   * @param installRoot - The package being removed, when an uninstall asks. An
+   *   approval recorded for a copy outside it is about another package that
+   *   carries the same id (DOR-2383), so it is kept, and that copy keeps running.
    */
-  async forgetRunApproval(id: string): Promise<void> {
+  async forgetRunApproval(id: string, installRoot?: string): Promise<void> {
     const extensions = configManager.get('extensions');
-    if (extensions.approvedToRun.includes(id)) {
+    const sources = extensions.approvedSources ?? {};
+    const recorded = sources[id];
+    if (installRoot && recorded && !isPathWithin(recorded.path, installRoot)) {
+      logger.info(
+        `[Extensions] Kept the run approval for ${id}: it is for the copy at ${recorded.path}, ` +
+          `not the one being removed from ${installRoot}`
+      );
+      return;
+    }
+    if (extensions.approvedToRun.includes(id) || sources[id]) {
+      const remainingSources = { ...sources };
+      delete remainingSources[id];
       configManager.set('extensions', {
         ...extensions,
         approvedToRun: extensions.approvedToRun.filter((eid) => eid !== id),
+        approvedSources: remainingSources,
       });
       logConfigWrite(
         'withdrawing an extension run approval',
@@ -471,7 +540,7 @@ export class ExtensionManager {
     if (!record || !['compiled', 'active'].includes(record.status) || !record.sourceHash) {
       return null;
     }
-    if (!mayRunExtensionCode(id, record.origin, configManager.get('extensions').approvedToRun)) {
+    if (!mayRunExtensionCode(record, configManager.get('extensions'))) {
       logger.warn(
         `[Extensions] Bundle withheld for ${id}: waiting for a person to approve it ` +
           `(${EXTENSION_NOT_APPROVED_CODE})`
@@ -571,4 +640,15 @@ export class ExtensionManager {
       }
     }
   }
+}
+
+/**
+ * Whether `target` is `root` or lies inside it, compared lexically.
+ *
+ * @param target - Path to test.
+ * @param root - Directory that may contain it.
+ */
+function isPathWithin(target: string, root: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(target));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }

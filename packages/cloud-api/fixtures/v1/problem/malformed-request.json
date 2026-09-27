@@ -1,0 +1,7 @@
+{
+  "code": "malformed_request",
+  "status": 400,
+  "title": "That page of the inbox could not be read.",
+  "detail": "The cursor is not one this service issued for this inbox. Start again from the first page.",
+  "instance": "req_0a1b2c3f"
+}
