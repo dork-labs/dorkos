@@ -127,7 +127,28 @@ Spec: §14 (all resolved), §6.5, §6.7, §7.3 N10.
 
 - A first-visit state that explains the three roles in one plain line each (Main: yours, kept in reserve and used last; Rotation: flow may use it fully; Kept out: flow never uses it), with a link to the guide `docs/use-all-your-accounts.mdx`.
 - When no account is in rotation: "Nothing is in rotation yet, so flow only uses your main account."
-- Built as a notice above the approved rows; anything beyond that is a design question. Open: the link's words (Q22) and the case with roles stored but no Main and nothing in Rotation (Q23).
-- A core "we found ~/.claude2 on this computer, add it?" prompt in Settings → Runtimes is being taken to the operator as a design question; not built.
+- Built as a notice above the approved rows; anything beyond that is a design question.
+- A core "we found ~/.claude2 on this computer, add it?" prompt was taken to the operator; decided in §8.
 
 Spec: §8.3.
+
+## 8. "Found on this computer" (operator decision, 2026-09-27)
+
+Mockup: [`design/found-accounts.html`](design/found-accounts.html). **Option A chosen** (a list under your accounts); option B (a notice that opens a picker) was not.
+
+- Below the registered accounts in Settings → Runtimes → Claude accounts, a dashed "Found on this computer" group lists unregistered Claude account folders: each with its name (the folder's name), "used N ago" and its path, plus **Add** (primary) and **Dismiss**.
+- A folder that shows org-managed policy files gets an amber "managed by an organization" flag, and its Add is **not** primary: adding it must be deliberate.
+- Dismissed folders stay hidden (saved).
+- The group shows only when at least one unregistered folder exists, and disappears when empty.
+- Nothing is added without a click.
+
+Spec: §6.9, §7.4.
+
+## 9. Four more calls (orchestrator, 2026-09-27)
+
+- **Q22:** the Flow tab's guide link reads "How to use all your accounts".
+- **Q23:** when roles are saved but no account is Main or Rotation, flow has nothing it may use, so the Flow tab shows a notice in the same style as the first-visit notice: "Flow can't use any account yet. Make one account Main or Rotation."
+- Account dots and compact usage bars are not keyboard tab stops. They keep their screen-reader names and show the name in a tooltip on hover; the row or chip around them carries the account name.
+- A window with no reading shows the word "unknown" in the compact usage bar too (with the dashed empty track, Q6).
+
+Spec: §6.0, §8.3, §14.

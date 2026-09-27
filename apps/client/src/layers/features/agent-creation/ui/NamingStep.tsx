@@ -157,7 +157,9 @@ export function NamingStep({
           )}
           {form.conflictStatus === 'exists-has-dork' && (
             <div data-testid="conflict-status">
-              <p className="text-warning text-xs font-medium">Existing project detected</p>
+              <p className="text-status-warning-fg text-xs font-medium">
+                Existing project detected
+              </p>
               <button
                 type="button"
                 className="text-primary text-xs hover:underline"

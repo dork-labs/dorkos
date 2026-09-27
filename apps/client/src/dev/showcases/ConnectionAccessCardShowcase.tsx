@@ -54,7 +54,8 @@ function preview(connectionId: string, label: string): ConnectorReconciliationPr
     })),
     currentGrants: [{ agentId: 'mailroom', operationRevisionIds: ['list-messages'] }],
     // "shared" starts shared with every agent (read); "managed" is through a
-    // DorkOS account, where every agent isn't offered yet (DOR-2420).
+    // DorkOS account on a computer that cannot reach the service keeping its
+    // access, the one case where every agent isn't offered (DOR-2439).
     everyAgent:
       connectionId === 'gmail-managed'
         ? { available: false, operationRevisionIds: [] }
@@ -207,7 +208,9 @@ export function ConnectionAccessCardShowcase() {
         />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Page: through a DorkOS account, where every agent isn’t offered</ShowcaseLabel>
+      <ShowcaseLabel>
+        Page: through a DorkOS account that can’t be reached, where every agent isn’t offered
+      </ShowcaseLabel>
       <ShowcaseDemo>
         <CardDemo
           answer="ready"

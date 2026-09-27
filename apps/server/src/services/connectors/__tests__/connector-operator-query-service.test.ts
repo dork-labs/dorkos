@@ -377,14 +377,102 @@ describe('ConnectorOperatorQueryService', () => {
       signal: new AbortController().signal,
     });
 
+    // The whole list is kept, so the search runs over it rather than upstream.
     expect(requests).toEqual([
-      { version: 1, query: 'mail', cursor: undefined, limit: 100 },
-      { version: 1, query: 'mail', cursor: 'page-2', limit: 100 },
+      { version: 1, cursor: undefined, limit: 100 },
+      { version: 1, cursor: 'page-2', limit: 100 },
     ]);
     expect(catalog.warnings).toEqual([]);
     expect(catalog.services).toHaveLength(100);
     expect(catalog.services).toContainEqual(
       expect.objectContaining({ serviceSlug: 'mail-000', displayName: 'Mail 000' })
+    );
+  });
+
+  it('answers every page, search and agent lookup from one upstream listing per service', async () => {
+    const listToolkitPage = vi.spyOn(provider, 'listToolkitPage');
+    const bulk = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('provider-bulk'),
+      type: 'bulk',
+      toolkits: Array.from({ length: 850 }, (_, index) => ({
+        slug: `bulk-${String(index).padStart(3, '0')}`,
+        displayName: `Bulk ${index}`,
+        authKind: 'oauth2' as const,
+      })),
+    });
+    const bulkPages = vi.spyOn(bulk, 'listToolkitPage');
+    registry.register(bulk, 'material-bulk');
+    const listings = (spy: typeof bulkPages) =>
+      spy.mock.calls.filter(([request]) => request.cursor === undefined).length;
+
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    for (let page = 0; page < 5; page += 1) {
+      const result = await service.catalog({
+        limit: 24,
+        ...(cursor !== undefined && { cursor }),
+        signal: new AbortController().signal,
+      });
+      for (const entry of result.services) seen.add(entry.serviceSlug);
+      cursor = result.nextCursor;
+    }
+    const search = await service.catalog({
+      query: 'bulk 84',
+      signal: new AbortController().signal,
+    });
+    await service.catalog({ query: 'gmail', signal: new AbortController().signal });
+    await service.catalog({
+      query: 'bulk',
+      includeAuthenticationSetup: true,
+      signal: new AbortController().signal,
+    });
+    const directory = await service.serviceDirectory(new AbortController().signal);
+
+    expect(seen.size).toBe(120);
+    // Search now also matches the service id, and runs over the kept list.
+    expect(search.services.map((entry) => entry.serviceSlug)).toEqual([
+      'bulk-084',
+      'bulk-840',
+      'bulk-841',
+      'bulk-842',
+      'bulk-843',
+      'bulk-844',
+      'bulk-845',
+      'bulk-846',
+      'bulk-847',
+      'bulk-848',
+      'bulk-849',
+    ]);
+    expect(directory.services.some((entry) => entry.serviceSlug === 'bulk-849')).toBe(true);
+    expect(listings(bulkPages)).toBe(1);
+    expect(listings(listToolkitPage)).toBe(1);
+    // 850 apps at 100 a page, once.
+    expect(bulkPages).toHaveBeenCalledTimes(9);
+  });
+
+  it('lists a service again as soon as its key or setup changes', async () => {
+    const listToolkitPage = vi.spyOn(provider, 'listToolkitPage');
+    await service.catalog({ signal: new AbortController().signal });
+    await service.catalog({ query: 'linear', signal: new AbortController().signal });
+    expect(listToolkitPage).toHaveBeenCalledTimes(1);
+
+    // A key save reloads the provider: unregister, then register what answered.
+    registry.unregisterProviderInstance(PROVIDER_ID);
+    const rekeyed = new FakeConnectorProvider({
+      instanceId: PROVIDER_ID,
+      type: 'fake',
+      toolkits: [{ slug: 'notion', displayName: 'Notion', authKind: 'oauth2' }],
+    });
+    registry.register(rekeyed, 'material-b');
+    const page = await service.catalog({ query: 'notion', signal: new AbortController().signal });
+
+    expect(page.services.find((entry) => entry.serviceSlug === 'notion')?.intents).toContainEqual(
+      expect.objectContaining({ kind: 'account', routes: [expect.anything()] })
+    );
+    const gmail = await service.catalog({ query: 'gmail', signal: new AbortController().signal });
+    // Gmail is a popular app, so it stays listed — but no longer reachable.
+    expect(gmail.services[0]?.intents).toContainEqual(
+      expect.objectContaining({ kind: 'account', routes: [] })
     );
   });
 

@@ -17,7 +17,7 @@ gates:
   # --- browser-test.yml ---
   - id: wf.browser-test.browser-shard
     source: .github/workflows/browser-test.yml
-    purpose: Runs one third of the Playwright browser suite against the merge queue's combined tree.
+    purpose: Runs one sixth of the Playwright browser suite against the merge queue's combined tree.
   - id: wf.browser-test.browser-test
     source: .github/workflows/browser-test.yml
     purpose: The required browser-test check; fails the queue build unless every shard passed and the suite provably executed, and passes through on PRs.

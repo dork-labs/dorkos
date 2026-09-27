@@ -17,7 +17,7 @@ import {
   type ManagedConnectorAuthorityCommandStatus,
 } from '@dorkos/shared/connector-managed-schemas';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import { and, desc, eq, exists, gt, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { schema } from '@/db/client';
 import type { getTransactionDb } from '@/db/transaction-client';
@@ -90,33 +90,78 @@ export async function lockLiveAuthorityPrincipal(
   if (!live) throw new ManagedAuthorityUnauthorizedError();
 }
 
+/**
+ * The grant-row agent id that stands for every agent of the connection's owner
+ * (ADR 260926-192625, DOR-2439).
+ *
+ * Only a `replace_every_agent_grants` command writes it and only an execution
+ * that says `grantSubject: 'every_agent'` matches it. A named-agent command or
+ * execution that presents it as an agent id is refused, so no agent can reach
+ * the owner-wide rows by choosing its own name.
+ */
+export const EVERY_AGENT_GRANT_ROW = '*';
+
+/**
+ * The grant-row agent id one execution must match, or null when the request
+ * cannot be authorized at all.
+ *
+ * @param request - The execution's claimed agent and grant subject.
+ */
+export function grantRowAgentId(request: {
+  agentId: string;
+  grantSubject?: 'agent' | 'every_agent';
+}): string | null {
+  if (request.grantSubject === 'every_agent') return EVERY_AGENT_GRANT_ROW;
+  return request.agentId === EVERY_AGENT_GRANT_ROW ? null : request.agentId;
+}
+
+/** The authority scope one command advances. */
+function authorityScopeKey(
+  command: Exclude<
+    ReturnType<typeof ManagedConnectorAuthorityCommandSchema.parse>,
+    { kind: 'set_event_subscription' }
+  >
+): string {
+  if (command.kind === 'replace_agent_grants') return `agent:${command.agentId}`;
+  if (command.kind === 'replace_every_agent_grants') return 'every_agent';
+  return 'lifecycle';
+}
+
 /** Hash a strict wire request without retaining its contents in an idempotency key. */
 export function managedRequestHash(value: unknown): string {
   return createHash('sha256').update(stableStringify(value)).digest('hex');
 }
 
-/** Load or atomically create the one random connector tenant for an owner. */
+/**
+ * Load the owner's connector tenant, creating it on first use.
+ *
+ * The owner index on `connector_tenant` may not be unique, so this never leans
+ * on it: an `ON CONFLICT` naming a non-unique index fails every call. A
+ * transaction-scoped advisory lock per owner serializes first requests instead,
+ * so concurrent callers create one tenant between them. Should several rows
+ * exist for one owner anyway, every caller picks the same one: the oldest, with
+ * the id breaking a tie.
+ */
 export async function resolveConnectorTenant(
   db: ManagedConnectorDatabase,
   ownerId: string
 ): Promise<{ id: string; ownerUserId: string; providerUserId: string }> {
   return db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(schema.connectorTenant)
-      .values({ ownerUserId: ownerId })
-      .onConflictDoNothing({ target: schema.connectorTenant.ownerUserId })
-      .returning();
-    if (created) {
-      await tx.insert(schema.managedConnectorEventCapacity).values({ tenantId: created.id });
-      return created;
-    }
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`connector_tenant:${ownerId}`}))`);
     const [existing] = await tx
       .select()
       .from(schema.connectorTenant)
       .where(eq(schema.connectorTenant.ownerUserId, ownerId))
+      .orderBy(asc(schema.connectorTenant.createdAt), asc(schema.connectorTenant.id))
       .limit(1);
-    if (!existing) throw new Error('Connector tenant could not be resolved.');
-    return existing;
+    if (existing) return existing;
+    const [created] = await tx
+      .insert(schema.connectorTenant)
+      .values({ ownerUserId: ownerId })
+      .returning();
+    if (!created) throw new Error('Connector tenant could not be resolved.');
+    await tx.insert(schema.managedConnectorEventCapacity).values({ tenantId: created.id });
+    return created;
   });
 }
 
@@ -406,8 +451,15 @@ export async function applyManagedAuthorityCommand(
         )
       )
       .limit(1);
-    const scopeKey =
-      command.kind === 'replace_agent_grants' ? `agent:${command.agentId}` : 'lifecycle';
+    const scopeKey = authorityScopeKey(command);
+    const isGrantCommand =
+      command.kind === 'replace_agent_grants' || command.kind === 'replace_every_agent_grants';
+    const grantsAgentId =
+      command.kind === 'replace_agent_grants'
+        ? command.agentId
+        : command.kind === 'replace_every_agent_grants'
+          ? EVERY_AGENT_GRANT_ROW
+          : null;
     const [latest] = await tx
       .select()
       .from(schema.managedConnectorAuthorityCommand)
@@ -438,12 +490,19 @@ export async function applyManagedAuthorityCommand(
     ) {
       state = 'rejected';
       rejectionCode = 'connection_unavailable';
+    } else if (
+      command.kind === 'replace_agent_grants' &&
+      command.agentId === EVERY_AGENT_GRANT_ROW
+    ) {
+      // A named agent can never stand for every agent.
+      state = 'rejected';
+      rejectionCode = 'scope_conflict';
     } else if (latest && latest.scopeVersion >= command.scopeVersion) {
       state = 'superseded';
     }
 
     let revisionRows: Array<typeof schema.managedConnectorOperationRevision.$inferSelect> = [];
-    if ((state === 'applied' || state === 'pending') && command.kind === 'replace_agent_grants') {
+    if ((state === 'applied' || state === 'pending') && isGrantCommand && grantsAgentId !== null) {
       for (const revision of command.revisions) {
         const rows = await tx
           .select()
@@ -484,7 +543,7 @@ export async function applyManagedAuthorityCommand(
     }
 
     const now = new Date();
-    if (state === 'applied' && command.kind === 'replace_agent_grants') {
+    if (state === 'applied' && isGrantCommand && grantsAgentId !== null) {
       await tx
         .update(schema.managedConnectorGrant)
         .set({ active: false, revokedAt: now })
@@ -493,7 +552,7 @@ export async function applyManagedAuthorityCommand(
             eq(schema.managedConnectorGrant.tenantId, principal.tenantId),
             eq(schema.managedConnectorGrant.instanceId, principal.instanceId),
             eq(schema.managedConnectorGrant.connectionId, command.managedConnectionId),
-            eq(schema.managedConnectorGrant.agentId, command.agentId)
+            eq(schema.managedConnectorGrant.agentId, grantsAgentId)
           )
         );
       if (revisionRows.length > 0) {
@@ -504,7 +563,7 @@ export async function applyManagedAuthorityCommand(
               tenantId: principal.tenantId,
               instanceId: principal.instanceId,
               connectionId: command.managedConnectionId,
-              agentId: command.agentId,
+              agentId: grantsAgentId,
               operationRevisionId: revision.id,
               scopeVersion: command.scopeVersion,
               active: true,

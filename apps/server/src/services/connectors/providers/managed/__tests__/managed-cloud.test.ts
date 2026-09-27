@@ -151,7 +151,7 @@ function command(
   };
 }
 
-function provider(cloud: ManagedConnectorCloudPort) {
+function provider(cloud: ManagedConnectorCloudPort, grantSubject?: 'agent' | 'every_agent') {
   return new ManagedCloudConnectorProvider({
     instanceId,
     cloud,
@@ -160,6 +160,7 @@ function provider(cloud: ManagedConnectorCloudPort) {
       agentId: 'agent-a',
       attemptIndex: 1,
       grantScopeVersion: 4,
+      ...(grantSubject ? { grantSubject } : {}),
       attribution: {
         surface: 'mcp',
         actorKind: 'agent',
@@ -246,6 +247,24 @@ describe('ManagedCloudConnectorProvider', () => {
     );
     expect(events).toEqual(['authorize', 'cloud']);
     expect(result).toEqual({ status: 'success', data: { ok: true } });
+  });
+
+  it('names the owner-wide scope only when "Every agent" authorizes the call (DOR-2439)', async () => {
+    const sent: unknown[] = [];
+    vi.mocked(cloud.executeManagedConnectorOperation).mockImplementation(async (request) => {
+      sent.push(request);
+      return { state: 'completed', result: { status: 'success', data: null }, receipt };
+    });
+    await provider(cloud, 'every_agent').execute(command());
+    await provider(cloud, 'agent').execute(command());
+    // The agent making the call is still named; the scope is what differs.
+    expect(sent[0]).toMatchObject({
+      agentId: 'agent-a',
+      grantSubject: 'every_agent',
+      grantScopeVersion: 4,
+    });
+    // A named-agent call keeps the exact bytes an older hosted service accepts.
+    expect(sent[1]).not.toHaveProperty('grantSubject');
   });
 
   it('fails closed before the cloud call when trusted context or authority is absent', async () => {

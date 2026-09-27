@@ -52,7 +52,10 @@ export function RequestReceipt({
         className
       )}
     >
-      <Icon className={cn('mt-0.5 size-4 shrink-0', granted && 'text-success')} aria-hidden />
+      <Icon
+        className={cn('mt-0.5 size-4 shrink-0', granted && 'text-status-success')}
+        aria-hidden
+      />
       <span className={cn('min-w-0', granted && 'text-foreground')}>
         {receiptLine(request, serviceName)}
       </span>

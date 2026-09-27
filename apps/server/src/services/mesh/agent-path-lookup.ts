@@ -18,7 +18,7 @@
  * @module services/mesh/agent-path-lookup
  */
 import { logger } from '../../lib/logger.js';
-import { homeOf, resolveAgentHome } from '../core/agent-identity/agent-home.js';
+import { homeOf, resolveAgentHome } from '../core/agent-identity/index.js';
 
 /**
  * The subset of `MeshCore` this module needs. Structural rather than a

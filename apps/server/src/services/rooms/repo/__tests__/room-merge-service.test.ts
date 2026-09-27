@@ -487,7 +487,10 @@ describe('RoomMergeService', () => {
       // Cloned in rather than hand-written into the index, so the working copy
       // is genuinely CLEAN afterwards — otherwise the dirty check refuses first
       // and the test would pass for the wrong reason.
-      await git(['clone', '--quiet', foreign, 'vendor'], dir);
+      // As the agent's own shell would, from outside the copy: the server's own
+      // git in a room worktree is pinned to the room's storage, which a clone
+      // into it would inherit.
+      await runGit(['clone', '--quiet', foreign, path.join(dir, 'vendor')], scratch, scratch);
       await git(['add', 'vendor'], dir);
       await git(
         ['-c', 'user.name=A', '-c', 'user.email=a@dorkos.local', 'commit', '-q', '-m', 'submodule'],

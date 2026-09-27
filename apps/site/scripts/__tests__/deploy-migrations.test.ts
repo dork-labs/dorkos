@@ -124,6 +124,7 @@ describe('the control-plane history grows only on purpose', () => {
     expect(journal.entries.map((entry) => entry.tag)).toEqual([
       '0000_baseline',
       '0001_account_issuer_optional',
+      '0002_connector_tenant_owner_not_unique',
     ]);
   });
 });

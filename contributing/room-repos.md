@@ -12,39 +12,43 @@ The whole feature is additive. A room with no repo behaves exactly as it did bef
 this touches, and `config.rooms.repo.enabled = false` makes every surface behave that way for every
 room.
 
-Spec: `specs/project-rooms/02-specification.md`. Decisions: `260829-115621`, `260829-115622`,
-`260829-115623`, `260829-115625`, `260829-115626`.
+Spec: `specs/project-rooms/02-specification.md`, amended by `specs/agent-home-desk/` (room turns
+stand at home). Decisions: `260829-115621`, `260829-115622`, `260829-115623`, `260829-115625`,
+`260829-115626`, `260926-172251`, `260926-180223`.
 
 ## Key Files
 
-| Concept                             | Location                                                            |
-| ----------------------------------- | ------------------------------------------------------------------- |
-| Sidecar schema, caps, mode union    | `packages/shared/src/room-repo.ts`                                  |
-| Files API request/response schemas  | `packages/shared/src/room-files.ts`                                 |
-| Enable / repair / home lifecycle    | `apps/server/src/services/rooms/repo/room-repo-service.ts`          |
-| Sidecar + cache store (file-first)  | `apps/server/src/services/rooms/repo/room-repo-store.ts`            |
-| Cache reconciler (5-min sweep)      | `apps/server/src/services/rooms/repo/room-repo-reconciler.ts`       |
-| All raw git, hardened               | `apps/server/src/services/rooms/repo/room-repo-git.ts`              |
-| Per-room serialized write queue     | `apps/server/src/services/rooms/repo/room-repo-mutex.ts`            |
-| Worktree create / status / reap     | `apps/server/src/services/rooms/repo/room-worktree-manager.ts`      |
-| Merge contract + `room_repo_status` | `apps/server/src/services/rooms/repo/room-merge-service.ts`         |
-| Read-only listing and file content  | `apps/server/src/services/rooms/repo/room-files.ts`                 |
-| People's file operations            | `apps/server/src/services/rooms/repo/room-file-editor.ts`           |
-| Change sets: checks, commit, undo   | `apps/server/src/services/rooms/repo/room-file-ops.ts`              |
-| A person's change → room entry text | `apps/server/src/services/rooms/repo/room-file-change-text.ts`      |
-| Dirty-main detection                | `apps/server/src/services/rooms/repo/room-main-checkout.ts`         |
-| `ROOM.md` → prompt block            | `apps/server/src/services/rooms/repo/room-conventions.ts`           |
-| `ROOM.md` seed template             | `apps/server/src/services/rooms/repo/room-md.ts`                    |
-| Live config reader                  | `apps/server/src/services/rooms/repo/room-repo-config.ts`           |
-| HTTP routes                         | `apps/server/src/routes/rooms.ts`                                   |
-| Refusal → HTTP status map           | `apps/server/src/routes/room-error-response.ts`                     |
-| Agent tools (`rooms` domain)        | `apps/server/src/services/rooms/room-capabilities.ts`               |
-| Turn cwd resolution                 | `apps/server/src/services/workspace/resolve-session-cwd.ts`         |
-| Context-block files section         | `apps/server/src/services/runtimes/shared/room-context-block.ts`    |
-| Unified explorer (sessions + rooms) | `apps/client/src/layers/features/file-explorer/`                    |
-| Agent-facing how-to                 | `packages/operating-skills/src/skills/working-in-room-repos.ts`     |
-| Cache table + migration             | `packages/db/src/schema/rooms.ts`, `packages/db/drizzle/0081_*.sql` |
-| Config schema                       | `packages/shared/src/config-schema.ts` (`rooms.repo`)               |
+| Concept                              | Location                                                               |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| Sidecar schema, caps, mode union     | `packages/shared/src/room-repo.ts`                                     |
+| Files API request/response schemas   | `packages/shared/src/room-files.ts`                                    |
+| Enable / repair / home lifecycle     | `apps/server/src/services/rooms/repo/room-repo-service.ts`             |
+| Sidecar + cache store (file-first)   | `apps/server/src/services/rooms/repo/room-repo-store.ts`               |
+| Cache reconciler (5-min sweep)       | `apps/server/src/services/rooms/repo/room-repo-reconciler.ts`          |
+| All raw git, hardened                | `apps/server/src/services/rooms/repo/room-repo-git.ts`                 |
+| Per-room serialized write queue      | `apps/server/src/services/rooms/repo/room-repo-mutex.ts`               |
+| Worktree create / status / reap      | `apps/server/src/services/rooms/repo/room-worktree-manager.ts`         |
+| Merge contract + `room_repo_status`  | `apps/server/src/services/rooms/repo/room-merge-service.ts`            |
+| Read-only listing and file content   | `apps/server/src/services/rooms/repo/room-files.ts`                    |
+| People's file operations             | `apps/server/src/services/rooms/repo/room-file-editor.ts`              |
+| Change sets: checks, commit, undo    | `apps/server/src/services/rooms/repo/room-file-ops.ts`                 |
+| A person's change → room entry text  | `apps/server/src/services/rooms/repo/room-file-change-text.ts`         |
+| Dirty-main detection                 | `apps/server/src/services/rooms/repo/room-main-checkout.ts`            |
+| `ROOM.md` → prompt block             | `apps/server/src/services/rooms/repo/room-conventions.ts`              |
+| `ROOM.md` seed template              | `apps/server/src/services/rooms/repo/room-md.ts`                       |
+| Live config reader                   | `apps/server/src/services/rooms/repo/room-repo-config.ts`              |
+| HTTP routes                          | `apps/server/src/routes/rooms.ts`                                      |
+| Refusal → HTTP status map            | `apps/server/src/routes/room-error-response.ts`                        |
+| Agent tools (`rooms` domain)         | `apps/server/src/services/rooms/room-capabilities.ts`                  |
+| Where a room turn stands, its grants | `apps/server/src/services/rooms/repo/room-turn-place.ts`               |
+| Turn-start refresh + "what moved"    | `apps/server/src/services/rooms/repo/room-worktree-refresh.ts`         |
+| App-resumed room session placement   | `apps/server/src/services/workspace/room-session-place.ts`             |
+| Context-block files section          | `apps/server/src/services/runtimes/shared/room-context-block.ts`       |
+| Its refresh lines                    | `apps/server/src/services/runtimes/shared/room-files-refresh-lines.ts` |
+| Unified explorer (sessions + rooms)  | `apps/client/src/layers/features/file-explorer/`                       |
+| Agent-facing how-to                  | `packages/operating-skills/src/skills/working-in-room-repos.ts`        |
+| Cache table + migration              | `packages/db/src/schema/rooms.ts`, `packages/db/drizzle/0081_*.sql`    |
+| Config schema                        | `packages/shared/src/config-schema.ts` (`rooms.repo`)                  |
 
 ## On-disk layout
 
@@ -75,17 +79,20 @@ destructive half belongs on the delete path, where the intent is.
 
 ## Who may write what
 
-| Tree                       | Writer                                    | How                                                        |
-| -------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
-| `repo/` (integration tree) | The server, and only the server           | `merge_to_room_main`, `.../files/*` writes, enable, repair |
-| `worktrees/<agentSlug>/`   | That one agent, and only during its turns | Ordinary git and ordinary tools                            |
-| Any other agent's worktree | Nobody                                    | There is no code path                                      |
+| Tree                       | Writer                                                                                      | How                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `repo/` (integration tree) | The server, and only the server                                                             | `merge_to_room_main`, `.../files/*` writes, enable, repair           |
+| `worktrees/<agentSlug>/`   | That one agent, during its turns; the server's turn-start fast-forward when none is running | Full paths and `git -C`, through its folder grant; `merge --ff-only` |
+| Any other agent's worktree | Nobody                                                                                      | There is no code path                                                |
 
 This is DOR-500 applied to rooms. Every write to `repo/` goes through `RoomRepoMutex.run(roomId, …)`,
 so merges, human saves, enable, and repair are serialized against each other per room.
 
-**The server never mutates a worktree.** Syncing is the agent's own act, in its own turn, and is
-plain `git merge main` rather than a tool.
+**The server writes a worktree in exactly two cases**, both at a room turn's launch and never while
+another turn of that agent in that room runs: retiring what older releases put there (below), and
+the turn-start fast-forward (next section) when it cannot lose anything. Merging `main` into a copy
+that holds work is the agent's own act, in its own turn, and is plain `git -C <copy> merge main`
+rather than a tool.
 
 ## When to use what
 
@@ -95,52 +102,135 @@ plain `git merge main` rather than a tool.
 | Let an agent land work          | `merge_to_room_main` → `RoomMergeService` | The only agent write path; validated and serialized               |
 | Let a person change files       | `PUT`/`POST /api/rooms/:id/files/*`       | One commit as the person, per-path lock, one quiet room entry     |
 | Know if a room has files        | `RoomRepoService.hasRepo(roomId)`         | One predicate over "never enabled" and "switched off"             |
-| Decide where a room turn runs   | `resolveSessionCwd` at **turn dispatch**  | Context is built after cwd, and it names attachments by that path |
+| Decide where a room turn runs   | `resolveRoomTurnPlace` at **dispatch**    | Always the home; grants and the files section come with it        |
 | Compose the `ROOM.md` block     | `RoomConventions.compose`                 | Reads `main:ROOM.md`, caches on `(roomId, commitSha)`             |
 | Add a new git command           | `room-repo-git.ts`                        | One hardened environment; nothing spawns git anywhere else        |
 
-## Turn cwd resolution
+## Where a room turn stands
 
-`resolve-session-cwd.ts` owns one precedence chain, first match wins:
+A room turn stands in its agent's **home** — always (spec `agent-home-desk` §5.1, invariant I4). Its
+persona, `SOUL.md`, `NOPE.md`, memory and skills are the ones it has everywhere, and it can change
+its own code in the same turn it works on the room's files. `resolveRoomTurnPlace`
+(`room-turn-place.ts`) answers, at dispatch, before `buildRoomContext`:
 
-1. explicit `cwd` on the request
-2. **room worktree** — the session is a room turn and the room has a repo
-3. the agent's `workspace` binding (`home` → agent path, `managed` → owned Workspace)
-4. `DEFAULT_CWD`
+- `cwd` — the agent's home;
+- `additionalDirectories` — for a room with files, the per-turn folder grants below; none otherwise;
+- `worktree` and `files` — the agent's copy of the room's files, and what the context block says
+  about it.
 
-**Resolution happens at turn dispatch, in `RoomTriggerDispatcher`, before `buildRoomContext`.** That
-ordering is not incidental: the room context names each attachment by an absolute path anchored on
-the turn's directory, and the runner then projects the bytes there (DOR-1266). A cwd decided after
-the context was built would describe files the model cannot open.
+The grants are exactly what a commit and a `git merge main` in a linked worktree write, and no more:
 
-**Rungs 3 and 4 are deliberately not wired for room turns.** A room request resolves on rung 2 or on
-the agent's own directory and stops. Falling through would relocate every repo-less room turn
-belonging to an agent that opted into `managed` or `none`, the latter into `DEFAULT_CWD`, which is
-the shared tree every other agent writes in.
+| Folder                                  | Access  | Why                                       |
+| --------------------------------------- | ------- | ----------------------------------------- |
+| `<room>/worktrees/<slug>`               | `write` | the agent's own copy                      |
+| `<room>/repo`                           | `read`  | reading `main` and everybody's files      |
+| `<room>/repo/.git/objects`              | `write` | a commit writes its objects               |
+| `<room>/repo/.git/refs/heads/room`      | `write` | …moves its `room/<slug>` branch           |
+| `<room>/repo/.git/logs/refs/heads/room` | `write` | …and that branch's reflog                 |
+| `<room>/repo/.git/worktrees/<slug>`     | `write` | …and the copy's own index, `HEAD` and log |
 
-**Identity and files are two values from here down.** `agentPath` keeps carrying identity: it selects
-the runtime, keys the claim map and both busy ceilings, and names the worktree. The resolved cwd is
-only where the turn stands.
+**Never all of `repo/.git`.** That would hand every agent the room's shared `hooks/`, `config` and
+`info/`, which run for the other agents' commits and can name programs git executes, so a file tool
+or a sandboxed shell in one agent's turn could plant code for another's commit. The server's own git
+in a worktree is pinned to the room's storage (`GIT_DIR`/`GIT_COMMON_DIR`/`GIT_WORK_TREE`, set in
+`room-repo-git.ts` from the layout), so a rewritten `.git` pointer or `commondir` in an
+agent-writable folder cannot hand the server a config the agent wrote. A shell that is not sandboxed
+can still write anywhere its permission mode allows; that limit is the user docs' too.
+
+**The desk guard** (`assertOwnDesk`, spec §3.4) runs in the runner before the runtime is called: a
+room turn whose cwd is not its agent's home is refused `DESK_NOT_OWN` and the room gets the ordinary
+failure notice. Relay bindings and scheduled tasks run the same guard at their dispatch.
+
+**Launch-time work** rides `DispatchMessageOpts.prepareLaunch`, which the dispatcher runs under the
+session's write lock when the turn launches — never at placement or while it waits in the queue.
+`roomTurnLaunchStep` builds it: nothing touches the copy while another session bound to the
+(room, agent) has a turn in flight (`isTurnInFlight`, which reads the runtime's lock as well as the
+dispatcher's slot). It retires legacy plumbing, then runs the turn-start refresh below, and hands
+the files section as it now stands back to the runner, which puts it into the room context before
+the runtime renders it.
+
+An app-resumed room session (`POST /api/sessions/:id/messages`) is placed the same way through
+`resolveSessionCwdWithRoom`: the home, the room's agent as `forAgent`, and the same grants. A `cwd`
+naming the agent's copy is replaced by the home; any other `cwd` must pass the desk guard or the
+launch answers `409 DESK_NOT_OWN`. An OpenCode session created in the copy before room turns moved
+home cannot move, so its launch answers `409 ROOM_SESSION_MOVED` and points the person back to the
+room; its transcript stays readable. Independently, `dispatchSessionMessage` refuses any launch whose
+folder is inside the rooms directory, and `getGitStatus` never runs git there — a room's shared git
+settings are only read through `room-repo-git.ts`, which audits them first
+(`ROOM_REPO_CONFIG_UNSAFE`).
+
+## The turn-start refresh: bringing a copy up to date
+
+ADR 260926-180308, spec `agent-home-desk` §6. When a room turn launches, `room-worktree-refresh.ts`
+fast-forwards the agent's copy to `main` — the one place the server writes into an agent's worktree
+— but only when nothing in it could be lost:
+
+0. The room's shared git settings name no program git would run
+   (`assertRoomRepoConfigSafe`). The same audit sits at the top of `runGitRaw`, so every read
+   and the fast-forward re-ask it, and settings written mid-refresh stop the write before its
+   checkout could run a smudge filter. A refusal is `held: unsafe-config`: the log names the
+   entries and how to remove them, and the agent is told a person must.
+1. `main`'s tip is captured once; every later step uses that sha, never `main` by name.
+2. The copy is on its own branch, `room/<slug>` (a detached `HEAD` or another branch is
+   `off-branch`).
+3. `git status --untracked-files=all` is empty, and `ls-files -v` shows no file marked
+   assume-unchanged or skip-worktree, whose edits `status` cannot see (else `changes`).
+4. The copy has no commit `main` lacks (else `ahead`).
+5. Already at the tip is `current`.
+6. **No untracked or ignored file sits at, inside, or above any path the fast-forward touches**
+   (else `changes`). Git's own fast-forward silently overwrites an ignored file `main` now tracks,
+   and silently deletes ignored files under a folder `main` turns into a file, both exiting 0. This
+   step is the only thing that stops either. Paths compare case- and normalization-folded, which can
+   only hold more copies, never fewer.
+7. `git merge --ff-only <tip>`. A failure is `unreadable`, logged, and nothing else is tried.
+   It gets a 120-second timeout, not a read's 30. If it is killed partway, the
+   `index.lock` it held is removed — only after a kill, never after an ordinary failure (the
+   usual one is another process holding the lock, which is that process's) and never one that
+   was there before, and nothing is
+   reset, because a reset is a second write on a tree in an unknown state. The honest cost:
+   the copy then holds files `main` wrote that its branch does not have, so it reads as
+   changed, every later launch holds it as `changes`, and `git merge main` refuses until
+   those files are discarded. The operator gets a warning naming the copy; nothing is lost,
+   but the agent (or a person) has to clear the half-written files by hand.
+
+Before any git call, and again right before the write, it asks whether **any session bound to this
+(room, agent)** has a turn in flight: the id `room_sessions` holds and every retired id that still
+resolves to it (`RoomSessionLedger.retiredIdsFor`), since an app-resumed turn on any of them is
+granted the same copy. A busy answer (or a busy read that throws) is `held: busy` with no git call.
+Every git command goes through `room-repo-git.ts`, pinned to the room's own storage with hooks off.
+
+A refresh forgets diff baselines (`EditBaselineStore.forget`) for the moved files in every bound
+session, so the review surface never reports other people's work as the agent's.
+
+When the copy is held, the turn is told what moved on `main` since the copy branched:
+`--first-parent` history (merges are `--no-ff`, so an agent's 12-commit branch is one line), at most
+eight commits, each **named from the room entry that announced it** (`merge.commit` or
+`fileChange.commit`, via `RoomStore.commitAnnouncements`) and never from git's author fields; a
+commit nobody announced is "someone". Commit subjects and file names are members' words, so they are
+quoted inside the untrusted fence under a nonced `WHAT MOVED ON MAIN` heading; the files section
+outside it only points there, and names the sync command when the agent has changed some of the same
+files.
 
 ## The merge contract
 
 `RoomMergeService.merge` checks everything server-side and refuses with a specific code. Each code
 implies its own remedy, which is why the operating skill can teach recovery without a person.
 
-| Code                    | Meaning                                                  | Agent's fix                          |
-| ----------------------- | -------------------------------------------------------- | ------------------------------------ |
-| `ROOM_REPOS_DISABLED`   | `rooms.repo.enabled` is off install-wide                 | Ask the operator                     |
-| `NOT_A_PROJECT_ROOM`    | This room has no repo                                    | Nothing to do here                   |
-| `UNCOMMITTED_WORK`      | The agent's worktree is dirty                            | Commit, then retry                   |
-| `BEHIND_MAIN`           | Branch does not contain main's tip (answer says how far) | `git merge main`, resolve, retry     |
-| `NOTHING_TO_MERGE`      | Branch is level with main                                | Nothing to do                        |
-| `SYMLINK_ESCAPES_REPO`  | A symlink targets outside the repo                       | Publish-on-change: copy and commit   |
-| `SUBMODULE_NOT_ALLOWED` | The delta adds a submodule                               | Vendor the content instead           |
-| `FILE_TOO_LARGE`        | One file over `maxFileBytes` (named)                     | Use an attachment                    |
-| `REPO_CAP_EXCEEDED`     | Repo would pass `maxRepoBytes`                           | Prune, or raise the cap (owner-only) |
-| `MAIN_CHECKOUT_DIRTY`   | Somebody edited `repo/` out of band                      | Operator repair, then retry          |
-| `MERGE_IN_FLIGHT`       | Waited out `mergeQueueWaitMs`                            | Retry (HTTP answers `429`)           |
-| `MERGE_CONFLICT`        | Unreachable through the ordinary path                    | Kept for a hand-committed tree       |
+| Code                      | Meaning                                                                              | Agent's fix                               |
+| ------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------- |
+| `ROOM_REPOS_DISABLED`     | `rooms.repo.enabled` is off install-wide                                             | Ask the operator                          |
+| `NOT_A_PROJECT_ROOM`      | This room has no repo                                                                | Nothing to do here                        |
+| `UNCOMMITTED_WORK`        | The agent's worktree is dirty                                                        | Commit, then retry                        |
+| `BEHIND_MAIN`             | Branch does not contain main's tip (answer says how far)                             | `git merge main`, resolve, retry          |
+| `NOTHING_TO_MERGE`        | Branch is level with main                                                            | Nothing to do                             |
+| `SYMLINK_ESCAPES_REPO`    | A symlink targets outside the repo                                                   | Publish-on-change: copy and commit        |
+| `SUBMODULE_NOT_ALLOWED`   | The delta adds a submodule                                                           | Vendor the content instead                |
+| `ROOM_REPO_CONFIG_UNSAFE` | The room's shared git settings name a program (a filter, driver, include, hook path) | Ask the operator to remove the named keys |
+| `FILE_TOO_LARGE`          | One file over `maxFileBytes` (named)                                                 | Use an attachment                         |
+| `REPO_CAP_EXCEEDED`       | Repo would pass `maxRepoBytes`                                                       | Prune, or raise the cap (owner-only)      |
+| `MAIN_CHECKOUT_DIRTY`     | Somebody edited `repo/` out of band                                                  | Operator repair, then retry               |
+| `MERGE_IN_FLIGHT`         | Waited out `mergeQueueWaitMs`                                                        | Retry (HTTP answers `429`)                |
+| `MERGE_CONFLICT`          | Unreachable through the ordinary path                                                | Kept for a hand-committed tree            |
 
 On success: `git merge --no-ff room/<agentSlug>` in `repo/`, under the mutex, with the agent's
 summary as the merge message. A failure mid-merge aborts cleanly (`git merge --abort`), so `main` is
@@ -295,49 +385,25 @@ prove neither must declare `systemPromptAppendUnprovenReason` as a sentence rath
 ## Worktrees and the reap
 
 `RoomWorktreeManager.ensureWorktree` lazily creates `worktrees/<agentSlug>/` on branch
-`room/<agentSlug>` at the first room turn that resolves cwd for a project room, seeds the agent's
-Operating DorkOS pack into it, and runs harness projection there. The worktree is standing: it
+`room/<agentSlug>` at the first room turn placed in a project room. Nothing is written into it: the
+agent's pack and instructions are in its home, where the turn stands. The worktree is standing: it
 persists across turns, and uncommitted work survives.
 
-**The pack is seeded into the WORKTREE, not just the agent's home** (DOR-1640). A turn's cwd is the
-worktree and every harness resolves project-scoped skills against the cwd, so a pack that lives only
-in `<agentDir>/` is unreachable from the one directory `working-in-room-repos` is about. Widening the
-setting-source chain instead is not available: `settingSources` is a closed three-value enum whose
-`user` slot is already spoken for by account pinning. Seeding runs before projection, which is what
-reaches all three runtimes — codex and opencode read `.agents/skills/` natively, claude-code reads
-the projected `.claude/skills/` links.
-
-Two rules follow, and both are pinned by test:
-
-- **The seeded paths are hidden in the repo's shared `info/exclude`, DERIVED from
-  `OPERATING_SKILLS_PACK`.** A clean `git status` gates both the reap below and the §3.6 merge, so a
-  hand-written list that falls one skill behind leaves every worktree in the install permanently
-  dirty. Each entry names the one `SKILL.md` the seeder writes, never `.agents/skills/` — that
-  directory is where the room authors skills of its own, and a room-authored skill sharing a pack
-  name is preserved, never overwritten. The cost, accepted and documented at the constant: those
-  seven names are reserved, so an UNCOMMITTED room-authored file at one of them is hidden from
-  `git status` and goes with the tree when the reap takes it.
-- **Seeding widened the projection, so the block covers its scaffolds too.** The projection used to
-  return early without an `.agents/skills/`; now it always runs, and it writes more than skill
-  symlinks — `planInstruction` scaffolds `.claude/CLAUDE.md` whenever the tree root has an
-  `AGENTS.md`. That entry is obtained by running the planner, never spelled. Completeness is pinned
-  by a test that runs the real planner over a created worktree and asks `git check-ignore` about
-  every target, so a new engine target reddens without anybody remembering this page. A room that
-  commits a manifest enabling other harnesses is outside the guarantee on purpose: `GEMINI.md` and
-  friends are paths a person may author, so they stay visible (dirty ⇒ spared, never deleted).
-  Narrow the room projection if that ever needs fixing; do not widen this block.
-- **`repo/` is never seeded.** No turn runs in the integration tree, and its contents are the room's
-  committed files.
-
-Seeding at create alone would freeze a standing worktree on the pack it was born with, so the first
-resolution after a restart re-seeds if `OPERATING_SKILLS_VERSION` moved — once per worktree per
-process, since only a new binary can raise that constant. It refreshes the exclude block _before_
-writing, or a worktree whose repo carries a pre-DOR-1640 block goes permanently dirty on upgrade.
+**Legacy plumbing.** Releases that stood room turns in the worktree seeded the Operating DorkOS pack
+there (DOR-1640), projected `.claude/skills/` links, a harness manifest and a `.claude/CLAUDE.md`
+scaffold, and projected attachments under `.dork/.temp/room-attachments/` — all hidden by a marker
+block in the repo's shared `info/exclude`. `retireLegacyPlumbing` removes them once per worktree per
+process, at the worktree's next turn launch and only when no bound session is busy: an untracked,
+block-hidden file is deleted only when DorkOS provably wrote it (an unmodified seeded skill, a link
+into the pack or the agent's home, the scaffolds byte for byte, anything under the attachment
+folder). Anything else is somebody's own file and stays. The block goes only when no worktree of the
+repo still holds an untracked file it hides — removing it earlier would make that tree read dirty,
+never reaped and never mergeable.
 
 `reapRoom` removes one only when **four independent gates agree**:
 
-1. The agent is not mid-turn (`busyAgentPaths`). Since the cwd rung shipped, a live turn _runs in_
-   that worktree.
+1. The agent is not mid-turn (`busyAgentPaths`). A live turn is granted that worktree and works on
+   it by path.
 2. It is not in `listStrandedWorktrees` — not dirty, not ahead of main, and readable by git.
 3. Nothing in it was touched inside `worktreeReapDays` (default 14), read from `HEAD`'s committer
    date.
@@ -430,7 +496,18 @@ const filePath = normalizeRoomFilePath(raw);
 
 // ❌ Writing into an agent's worktree from the server.
 await fs.writeFile(path.join(worktree, 'note.md'), text);
-// ✅ Nothing. Syncing is the agent's own act, in its own turn.
+// ✅ Nothing — except the turn-start fast-forward in room-worktree-refresh.ts,
+//    which only moves a copy that is clean, not ahead, on its own branch, with
+//    nothing untracked or ignored in the way, and no bound session running.
+
+// ❌ Naming who changed main from git's author fields.
+const who = await runGit(['log', '-1', '--format=%an', sha], …);
+// ✅ RoomStore.commitAnnouncements: the room entry that announced the commit.
+
+// ❌ Granting a room turn all of the room's git storage.
+grants.push({ path: path.join(repo, '.git'), access: 'write' });
+// ✅ roomTurnGrants: objects, the room branch refs and reflogs, the copy's own
+//    admin folder. Never the shared hooks, config or info.
 
 // ❌ Asking "does this room have files" before asking "is the caller a member".
 if (!repo.hasRepo(roomId)) return res.status(409)…
@@ -491,6 +568,7 @@ the file is over `maxRoomMdBytes`, which sends a notice instead of the body.
 - `docs/concepts/rooms.mdx` — the user-facing version of everything here.
 - `contributing/configuration.md` § `rooms.repo` — the config verdicts in full.
 - `contributing/workspace-manager.md` — the other checkout system, and why a room repo is not one.
-- `contributing/harness-sync.md` — what runs in a worktree at create and after a sync.
+- `contributing/harness-sync.md` — what runs in an agent's home at create and after a sync.
+- `specs/agent-home-desk/02-specification.md` — home, desk and shared folders.
 - `specs/channel-workspace/` — superseded by `project-rooms`; read its supersession note for what
   carried over.

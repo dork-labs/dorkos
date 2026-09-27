@@ -497,6 +497,19 @@ export class AccountUsageStore {
   }
 
   /**
+   * The accounts the registry and each runtime's `default` resolve to, in
+   * registry order with a standalone `default` last (an alias `default` is its
+   * row, not a second entry). Memory-only roots are not accounts and are left out.
+   *
+   * @param runtime - Only this runtime's accounts; every runtime when omitted.
+   */
+  listAccounts(runtime?: LedgerRuntime): readonly RuntimeAccount[] {
+    return runtime === undefined
+      ? [...this.accounts]
+      : this.accounts.filter((a) => a.runtime === runtime);
+  }
+
+  /**
    * Named accounts' usage, from memory only (synchronous). `default` resolves to
    * its alias. Unknown ids are left out.
    *
@@ -529,7 +542,12 @@ export class AccountUsageStore {
     return record ? this.usageOfRecord(record) : null;
   }
 
-  private usageOfAccount(account: RuntimeAccount): AccountUsage {
+  /**
+   * One account's usage, from memory (synchronous).
+   *
+   * @param account - An account from {@link listAccounts}.
+   */
+  usageOfAccount(account: RuntimeAccount): AccountUsage {
     return usageOfAccount(account, this.records, this.now());
   }
 

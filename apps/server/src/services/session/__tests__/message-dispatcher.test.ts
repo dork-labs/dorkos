@@ -41,6 +41,7 @@ import {
   deliverSteer,
   dispatchMessage,
   dispatchCommandIntent,
+  isTurnInFlight,
   listQueuedMessages,
   noteSessionOrphaned,
   noteTurnBoundary,
@@ -66,6 +67,7 @@ import {
   editQueuedMessage,
 } from '../queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
+import { roomTurnLaunchStep } from '../../rooms/repo/room-turn-place.js';
 import { ROOMS } from '../../../config/constants.js';
 import {
   getOrCreateProjector,
@@ -2373,5 +2375,266 @@ describe('folder grants reach the runtime, including from the queue (spec `agent
     // And the turn that carried none was handed none.
     const firstOpts = runtime.sendMessage.mock.calls[0]![2] as Record<string, unknown>;
     expect('additionalDirectories' in firstOpts).toBe(false);
+  });
+});
+
+describe('prepareLaunch runs at LAUNCH and its result reaches the runtime (spec `agent-home-desk` §5.9, §6.1)', () => {
+  // A room turn's launch-time work — retiring legacy plumbing now, the
+  // turn-start refresh in T5 — must run when the turn is about to call the
+  // runtime, never when it is accepted: a turn waiting behind another on the
+  // same session would otherwise do its work under that running turn. The
+  // result replaces the accepted room context before the context bag renders it.
+  //
+  // Seeded: dropping `prepareLaunch` from the launch spread reddens both cases
+  // (it never runs, and the stale context is rendered).
+  const accepted = { room: { name: 'accepted' } } as never;
+  const prepared = { room: { name: 'prepared-at-launch' } } as never;
+
+  /** Render the room context's name into the bag, so the spy can see which one ran. */
+  function renderRoomName(): void {
+    vi.mocked(assembleAdditionalContext).mockImplementation(async (input) =>
+      input.roomContext
+        ? ([
+            { kind: 'probe', name: (input.roomContext as { room: { name: string } }).room.name },
+          ] as never)
+        : []
+    );
+  }
+
+  afterEach(() => {
+    vi.mocked(assembleAdditionalContext).mockImplementation(async () => []);
+  });
+
+  it('runs for a dequeued turn when it launches, not when it is queued', async () => {
+    renderRoomName();
+    const prepareLaunch = vi.fn(async () => ({ roomContext: prepared }));
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('the turn already running');
+    const queued = await send('a room turn that waits', {
+      roomContext: accepted,
+      prepareLaunch,
+      whenBusy: 'refuse-foreign',
+    });
+    expect(queued.queued).toBe(true);
+    await settle();
+    expect(prepareLaunch, 'ran at acceptance, under the running turn').not.toHaveBeenCalled();
+
+    first.open();
+    await settle();
+
+    expect(prepareLaunch).toHaveBeenCalledTimes(1);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    const opts = runtime.sendMessage.mock.calls[1]![2] as { additionalContext?: unknown[] };
+    expect(opts.additionalContext).toEqual([{ kind: 'probe', name: 'prepared-at-launch' }]);
+  });
+
+  it('runs once for a turn on an idle session, before the runtime is called', async () => {
+    renderRoomName();
+    const order: string[] = [];
+    const prepareLaunch = vi.fn(async () => {
+      order.push('prepare');
+      return { roomContext: prepared };
+    });
+    runtime.withScenarios([quickTurn({ order, label: 'turn' })]);
+
+    await send('a room turn', { roomContext: accepted, prepareLaunch });
+    await settle();
+
+    expect(order).toEqual(['prepare', 'turn:start']);
+    const opts = runtime.sendMessage.mock.calls[0]![2] as { additionalContext?: unknown[] };
+    expect(opts.additionalContext).toEqual([{ kind: 'probe', name: 'prepared-at-launch' }]);
+  });
+
+  it('starts the turn as accepted when preparation fails', async () => {
+    renderRoomName();
+    runtime.withScenarios([quickTurn()]);
+
+    await send('a room turn', {
+      roomContext: accepted,
+      prepareLaunch: () => Promise.reject(new Error('git is gone')),
+    });
+    await settle();
+
+    const opts = runtime.sendMessage.mock.calls[0]![2] as { additionalContext?: unknown[] };
+    expect(opts.additionalContext).toEqual([{ kind: 'probe', name: 'accepted' }]);
+  });
+});
+
+describe('isTurnInFlight (spec `agent-home-desk` §6.1)', () => {
+  it('is true while a dispatched turn runs and false once it has settled', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait)]);
+
+    await send('working');
+    await settle();
+    expect(isTurnInFlight(session, runtime)).toBe(true);
+
+    first.open();
+    await settle();
+    expect(isTurnInFlight(session, runtime)).toBe(false);
+  });
+
+  it('stays in flight across a budget-exhausted launch, and clears when it ends', async () => {
+    // The shape `deliverSteer` names: a budget-exhausted launch never takes the
+    // dispatcher's slot. This end-to-end case does NOT isolate the lock — other
+    // authorities may also answer while the turn runs — so the lock's own
+    // weight is pinned by the lock-only case below, which reds without it.
+    const locks = new Map<string, string>();
+    runtime.acquireLock.mockImplementation((sid: string, cid: string) => {
+      if (locks.has(sid) && locks.get(sid) !== cid) return false;
+      locks.set(sid, cid);
+      return true;
+    });
+    runtime.releaseLock.mockImplementation((sid: string) => {
+      locks.delete(sid);
+    });
+    runtime.isLocked.mockImplementation(
+      (sid: string, cid?: string) => locks.has(sid) && (cid === undefined || locks.get(sid) !== cid)
+    );
+    const first = gate();
+    const second = gate();
+    runtime.withScenarios([heldTurn(first.wait), heldTurn(second.wait)]);
+
+    await send('the turn ahead');
+    await send('waits past its budget', { queueWaitMs: 30 });
+    // Its budget runs out: it launches anyway, as a stranger would — no slot.
+    first.open();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2), {
+      timeout: 2_000,
+    });
+    await settle();
+
+    expect(isTurnInFlight(session, runtime)).toBe(true);
+    second.open();
+    await settle();
+    expect(isTurnInFlight(session, runtime)).toBe(false);
+  });
+
+  it('is true on the runtime`s lock ALONE: no slot, no open projector turn (the lossy case)', () => {
+    // A budget-exhausted launch holds the runtime's real lock without the
+    // dispatcher's slot. Here nothing but the lock is held, so this is the case
+    // that fails when the lock is not asked.
+    runtime.isLocked.mockReturnValue(true);
+    expect(isTurnInFlight(session, runtime)).toBe(true);
+    runtime.isLocked.mockReturnValue(false);
+    expect(isTurnInFlight(session, runtime)).toBe(false);
+  });
+});
+
+describe('a room turn`s launch step asks every bound session (spec `agent-home-desk` §6.1)', () => {
+  /**
+   * The room turn's launch step for session `room-session`, with `session` (the
+   * one these cases dispatch on) as the SECOND session bound to the same
+   * (room, agent) — an app-resumed conversation. The step's busy read is the
+   * dispatcher's own `isTurnInFlight`; `reached` records whether the step got
+   * past it to anything that touches the copy.
+   */
+  function launchStep() {
+    const reached: string[] = [];
+    const step = roomTurnLaunchStep(
+      {
+        boundSessionIds: () => ['room-session', session],
+        isTurnInFlight: (id) => Promise.resolve(isTurnInFlight(id, runtime)),
+        worktrees: {
+          retireLegacyPlumbing: () => {
+            reached.push('retire');
+            return Promise.resolve({ removed: 0, blockRemoved: false });
+          },
+          refreshTarget: () => {
+            reached.push('refresh');
+            return null;
+          },
+        },
+        describeCommits: () => new Map(),
+        forgetBaselines: () => {},
+      },
+      {
+        roomId: 'room-1',
+        worktree: '/rooms/room-1/worktrees/ana-1',
+        agentPath: '/agents/ana',
+        files: {
+          worktreePath: '/rooms/room-1/worktrees/ana-1',
+          branch: 'room/ana-1',
+          repoPath: '/rooms/room-1/repo',
+          behind: 1,
+          ahead: 0,
+        },
+      }
+    );
+    return { step, reached };
+  }
+
+  it('is held busy while the second session`s turn runs, and goes ahead once it settles', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait)]);
+    await send('an app-resumed turn');
+    await settle();
+    const { step, reached } = launchStep();
+
+    const held = await step('room-session');
+    expect(held.files?.refresh).toEqual({ kind: 'held', reason: 'busy', moved: null });
+    expect(reached).toEqual([]);
+
+    first.open();
+    await settle();
+    await step('room-session');
+    expect(reached).toEqual(['retire', 'refresh']);
+  });
+
+  it('is held busy by a second-session turn holding only the runtime lock (no dispatcher slot)', async () => {
+    // The lossy case the spec names: a turn launched with its queue budget
+    // exhausted runs holding the runtime's real lock and never takes the slot.
+    // Modelled directly — lock held on the second session, nothing dispatched —
+    // because in this harness the budget-exhausted launch ends up holding a
+    // slot by the time it runs, which would let a slot-only read pass.
+    let locked = true;
+    runtime.isLocked.mockImplementation((sid: string) => locked && sid === session);
+    const { step, reached } = launchStep();
+
+    const held = await step('room-session');
+    expect(held.files?.refresh).toEqual({ kind: 'held', reason: 'busy', moved: null });
+    expect(reached).toEqual([]);
+
+    locked = false;
+    await step('room-session');
+    expect(reached).toEqual(['retire', 'refresh']);
+  });
+});
+
+describe('a queued room turn across a restart (spec `agent-home-desk` §5.10)', () => {
+  it('is gone after a restart, so nothing ever runs it without its grants and agent', async () => {
+    // Its grants, its agent and its launch step live only on the in-memory
+    // plan: a room turn writes no queue row (DOR-1242), so a restart cannot
+    // resurrect it with any of them missing. The room's own recovery decides
+    // whether to trigger it again, placed and granted from scratch.
+    const prepareLaunch = vi.fn(async () => ({}));
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('the turn already running');
+    const queued = await send('a room turn that waits', {
+      whenBusy: 'refuse-foreign',
+      forAgent: '/agents/ana',
+      additionalDirectories: [{ path: '/rooms/r1/worktrees/ana', access: 'write' }],
+      prepareLaunch,
+    });
+    expect(queued.queued).toBe(true);
+    expect(store.list(session)).toEqual([]);
+
+    // The restart: in-memory state dies, the store is all that carries over.
+    resetMessageDispatcher();
+    expect(
+      adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime })
+    ).toBe(0);
+    first.open();
+    await settle();
+    noteTurnBoundary(session);
+    await settle();
+
+    // Only the turn that was already running ever reached the runtime.
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(prepareLaunch).not.toHaveBeenCalled();
   });
 });

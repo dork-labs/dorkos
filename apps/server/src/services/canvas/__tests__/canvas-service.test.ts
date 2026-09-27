@@ -706,6 +706,70 @@ describe('RoomCanvasService.apply', () => {
     });
   });
 
+  describe('which tree a file document came from, at home (spec `agent-home-desk` §5.6)', () => {
+    /** A project room whose repo is at `/rooms/general/repo`, and Ana's copy of it. */
+    function projectRoom() {
+      const harness = createRoomHarness({
+        agents,
+        runner: scriptedRunner(() => null),
+        roomRepoPath: () => '/rooms/general/repo',
+      });
+      const project = harness.service.createRoom(
+        { kind: 'channel', title: 'Project', members: [], agentPaths: [ANA, BEN] },
+        harness.human
+      );
+      const author = harness.authors.resolveAgent(ANA, 'Ana').id;
+      const open = (sourcePath: string, aheadOfMain: number | null = 2) => {
+        const opened = harness.service.canvas.apply({
+          roomId: project.id,
+          authorId: author,
+          turnId: `t-${sourcePath}`,
+          command: { action: 'open_file', sourcePath },
+          // The turn stands at home and names room files by full path.
+          cwd: ANA,
+          worktree: '/rooms/general/worktrees/ana-1a2b3c4d',
+          aheadOfMain,
+        });
+        return harness.service.canvas.get(project.id, opened.applied ? opened.documentId : '')!;
+      };
+      return { open, canvas: harness.service.canvas, roomId: project.id };
+    }
+
+    it('labels an absolute path inside the agent`s copy as its copy, with the ahead count', () => {
+      const { open, canvas, roomId } = projectRoom();
+      const document = open('/rooms/general/worktrees/ana-1a2b3c4d/PLAN.md');
+
+      expect(document.treeKind).toBe('worktree');
+      expect(document.aheadOfMain).toBe(2);
+      expect(document.sourceLabel).toContain('2 ahead of main');
+      expect(canvas.resolvedTreeOf(roomId, document.id)).toBe(
+        '/rooms/general/worktrees/ana-1a2b3c4d'
+      );
+    });
+
+    it('labels an absolute path inside the room`s shared copy as main', () => {
+      const { open, canvas, roomId } = projectRoom();
+      const document = open('/rooms/general/repo/ROOM.md');
+
+      expect(document.treeKind).toBe('room-main');
+      expect(document.sourceLabel ?? null).toBeNull();
+      expect(canvas.resolvedTreeOf(roomId, document.id)).toBe('/rooms/general/repo');
+      // Every member can read the room's own files.
+      expect(canvas.mayReadContent(document, '/somewhere/else')).toBe(true);
+    });
+
+    it('labels anything else — a relative path, or a path elsewhere — as the agent`s project', () => {
+      const { open, canvas, roomId } = projectRoom();
+      for (const sourcePath of ['src/router.ts', `${ANA}/notes.md`]) {
+        const document = open(sourcePath);
+        expect(document.treeKind).toBe('agent-cwd');
+        expect(document.sourceLabel).toContain('project');
+        expect(document.aheadOfMain).toBeNull();
+        expect(canvas.resolvedTreeOf(roomId, document.id)).toBe(ANA);
+      }
+    });
+  });
+
   describe('the frames a change fans out', () => {
     it('publishes the whole document, not a delta', async () => {
       const frames = await collectFrames(broadcaster, room.id, async () => {

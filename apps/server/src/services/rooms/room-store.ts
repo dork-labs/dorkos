@@ -43,6 +43,7 @@ import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type {
   Room,
   RoomEntry,
+  RoomEntryBody,
   RoomKind,
   RoomMember,
   RoomMomentKind,
@@ -1662,6 +1663,60 @@ export class RoomStore {
       .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.id, entryId)))
       .get();
     return row ? toEntry(row) : null;
+  }
+
+  /**
+   * The room entries that announced these commits on the room's `main`, by sha
+   * (spec `agent-home-desk` §6.2): an agent's merge (`body.merge.commit`) or a
+   * person's file change (`body.fileChange.commit`), with the member the entry
+   * is about.
+   *
+   * The turn-start heads-up names each commit that moved on `main` from here and
+   * never from git, whose author fields are whatever a committer typed. A sha no
+   * entry announced is simply absent from the answer. Asked for at most a
+   * handful of shas, and only when an agent's copy was held with `main` ahead of
+   * it.
+   *
+   * @param roomId - The room.
+   * @param shas - Full commit shas.
+   * @returns `sha → { kind, subjectAuthorId }` for every sha an entry announced.
+   */
+  commitAnnouncements(
+    roomId: string,
+    shas: readonly string[]
+  ): Map<string, { kind: 'merge' | 'person'; subjectAuthorId: string | null }> {
+    const found = new Map<string, { kind: 'merge' | 'person'; subjectAuthorId: string | null }>();
+    if (shas.length === 0) return found;
+    const wanted = [...shas];
+    const rows = this.db
+      .select({ body: roomEntries.body })
+      .from(roomEntries)
+      .where(
+        and(
+          eq(roomEntries.roomId, roomId),
+          or(
+            inArray(sql`json_extract(${roomEntries.body}, '$.merge.commit')`, wanted),
+            inArray(sql`json_extract(${roomEntries.body}, '$.fileChange.commit')`, wanted)
+          )
+        )
+      )
+      .all();
+    for (const row of rows) {
+      let body: RoomEntryBody;
+      try {
+        body = JSON.parse(row.body) as RoomEntryBody;
+      } catch {
+        continue;
+      }
+      const subjectAuthorId = body.subjectAuthorId ?? null;
+      const merged = body.merge?.commit;
+      if (merged && wanted.includes(merged)) found.set(merged, { kind: 'merge', subjectAuthorId });
+      const changed = body.fileChange?.commit;
+      if (changed && wanted.includes(changed)) {
+        found.set(changed, { kind: 'person', subjectAuthorId });
+      }
+    }
+    return found;
   }
 
   /**

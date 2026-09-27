@@ -11,9 +11,9 @@
  *    only the session's own grants. Neither the agent's grants nor an
  *    every-agent grant can widen a session the owner scoped by hand.
  * 2. With no override, a named-agent grant or an every-agent grant allows
- *    (ADR 260926-192625). An every-agent grant never counts on a managed
- *    account: hosted authority keys grants per named agent and cannot see an
- *    owner-wide subject.
+ *    (ADR 260926-192625), on an account connected with the owner's own key and
+ *    on one connected through a DorkOS account alike (DOR-2439): hosted
+ *    authority honours the owner-wide subject too.
  *
  * @module services/connectors/execution/agent-grant-scope
  */
@@ -45,8 +45,6 @@ export interface AgentGrantScopeInput {
   readonly sessionId: string | undefined;
   /** The account. */
   readonly connectionId: string;
-  /** Managed accounts never honour an every-agent grant. */
-  readonly providerMode: 'managed' | 'byo';
 }
 
 /**
@@ -55,7 +53,7 @@ export interface AgentGrantScopeInput {
  * connection, revision and `revokedAt IS NULL` filters the caller needs.
  *
  * @param db - The database or open transaction to read the override from.
- * @param input - Agent, session, account and account kind.
+ * @param input - Agent, session and account.
  */
 export function agentGrantScope(
   db: Db | DbTransaction,
@@ -100,7 +98,6 @@ export function agentGrantScope(
   }
   return {
     kind: 'scope',
-    subject:
-      input.providerMode === 'managed' ? namedAgent : or(namedAgent, everyAgentGrantSubject())!,
+    subject: or(namedAgent, everyAgentGrantSubject())!,
   };
 }

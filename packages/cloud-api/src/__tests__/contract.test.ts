@@ -551,6 +551,14 @@ describe('the seat reconciliation additions', () => {
     ).toBe(true);
   });
 
+  it('names exactly two hosted grant subjects: one agent, or every agent of the owner', () => {
+    expect(contract.ConnectionGrantSubjectSchema.options).toEqual(['agent', 'every_agent']);
+    expect(contract.ConnectionGrantSubjectSchema.safeParse('every_agent').success).toBe(true);
+    // No wildcard or owner-chosen subject: anything else is refused.
+    expect(contract.ConnectionGrantSubjectSchema.safeParse('*').success).toBe(false);
+    expect(contract.ConnectionGrantSubjectSchema.safeParse('owner').success).toBe(false);
+  });
+
   it('lets a grant list say what zero rows resolves to', () => {
     // Zero stored rows means the organization's default, not an empty
     // permission set — and `effective` is the only way an interface can show it.

@@ -190,7 +190,10 @@ export function ArrivalConfirm({
       {/* Actions */}
       <div className="flex flex-col gap-2">
         {!canSubmit && (
-          <p className="text-warning text-center text-xs" data-testid="arrival-needs-name">
+          <p
+            className="text-status-warning-fg text-center text-xs"
+            data-testid="arrival-needs-name"
+          >
             This agent still needs a name. Choose “Customize first” to give it one.
           </p>
         )}

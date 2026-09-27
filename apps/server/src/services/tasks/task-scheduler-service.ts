@@ -53,6 +53,7 @@ import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
+import { assertOwnDesk, deskBindingFor } from '../core/agent-identity/index.js';
 import {
   resolveRunExecution,
   type RunExecution,
@@ -920,6 +921,8 @@ export class TaskSchedulerService {
    * @param task - The task to resolve CWD for
    * @returns Where the run works, and where its agent's manifest lives
    * @throws When agentId is set but the agent is not found in the Mesh registry
+   * @throws {DeskNotOwnError} When the agent's folder resolves to another agent's
+   *   (spec `agent-home-desk` §3.4)
    */
   private async resolveRunPlacement(task: Task): Promise<RunPlacement> {
     if (task.agentId && this.meshCore) {
@@ -930,10 +933,13 @@ export class TaskSchedulerService {
             'The agent may have been unregistered. Re-link the task to a valid agent or directory.'
         );
       }
-      return {
-        cwd: (await resolveSessionCwd({ agentPath: projectPath })).cwd,
-        agentPath: projectPath,
-      };
+      const resolved = await resolveSessionCwd({ agentPath: projectPath });
+      // **The desk guard** (spec `agent-home-desk` §3.4, DOR-2356): a run for
+      // this agent never stands in another agent's home, a copy of it, or a
+      // room's folder. A refusal throws, and the run is recorded failed with
+      // the reason — nothing reaches a runtime.
+      assertOwnDesk(projectPath, resolved.cwd, deskBindingFor(resolved));
+      return { cwd: resolved.cwd, agentPath: projectPath };
     }
     // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
     // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an

@@ -847,18 +847,26 @@ export interface MessageOpts extends SessionSettings {
     /** The room turn's dispatch id. The per-turn canvas ceiling is counted against it. */
     turnId: string;
     /**
-     * Where the turn is standing, so a canvas document that names a FILE records
-     * the tree its path was resolved against.
+     * Where the turn is standing — always the agent's home for a room turn
+     * (spec `agent-home-desk` §5.1) — so a canvas document that names a file by
+     * a RELATIVE path records the folder that path was resolved against.
      */
     cwd?: string;
     /**
-     * The directory of the agent this turn is FOR — its identity anchor, which
-     * since DOR-1597 is not where it stands in a room with files.
+     * This agent's own copy of the room's files, when the room has files of its
+     * own. The turn does not stand in it; it reaches it through a folder grant
+     * ({@link MessageOpts.additionalDirectories}). Carried so a canvas document
+     * that names a file by an ABSOLUTE path inside it is labelled as this
+     * agent's copy without a rooms lookup (spec `agent-home-desk` §5.6).
+     */
+    worktree?: string;
+    /**
+     * The directory of the agent this turn is FOR — its home.
      *
-     * Runtimes resolve the turn's identity against it (DOR-2091): the agent a
-     * worktree belongs to is accepted only when it is this agent, so a turn for
-     * one agent can never be minted another's identity, whatever directory it
-     * ended up in. Server-derived, like every field here.
+     * Runtimes resolve the turn's identity against it (DOR-2091): a folder that
+     * resolves to another agent's home is refused, so a turn for one agent can
+     * never be minted another's identity. Server-derived, like every field
+     * here, and generalised by {@link MessageOpts.forAgent}.
      */
     agentPath?: string;
     /**

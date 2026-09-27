@@ -2,7 +2,19 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
+import {
+  __resetAccountAdvisorForTests,
+  accountAdvisorOwner,
+  hasAccountAdvisor,
+} from '../../core/usage/account-advisor.js';
+import { setAccountUsageStore } from '../../core/usage/current-usage-store.js';
+import type { AccountUsageStore } from '../../core/usage/account-usage-store.js';
+import {
+  CONTINUATION_UNAVAILABLE_MESSAGE,
+  setContinuationRecorder,
+} from '../../core/usage/session-continuation.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: {
@@ -265,6 +277,176 @@ describe('createDataProviderContext', () => {
       await vi.advanceTimersByTimeAsync(20_000);
       expect(fn1).not.toHaveBeenCalled();
       expect(fn2).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('dorkHome and accounts (claude-account-fleet X1-X3)', () => {
+    const work = {
+      runtime: 'claude-code',
+      id: 'work',
+      path: '/a/work',
+      canonicalPath: '/a/work',
+      label: 'Work',
+      color: '#111111',
+      routable: true,
+      implicit: false,
+      isDefault: false,
+      ledgerId: 'work',
+    };
+    const codexDefault = {
+      ...work,
+      runtime: 'codex',
+      id: 'default',
+      label: null,
+      color: '#222222',
+      implicit: true,
+      isDefault: true,
+      ledgerId: 'default',
+    };
+    const usageRow = {
+      runtime: 'claude-code',
+      accountId: 'work',
+      path: '/Users/kai/.claude-work',
+    } as AccountUsage;
+    const { path: _hidden, ...extensionUsageRow } = usageRow;
+    let listeners: Set<(u: AccountUsage) => void>;
+    let storeList: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      __resetAccountAdvisorForTests();
+      listeners = new Set();
+      storeList = vi.fn().mockReturnValue([usageRow]);
+      const store = {
+        listAccounts: () => [work, codexDefault],
+        list: storeList,
+        onChange: (listener: (u: AccountUsage) => void) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      };
+      setAccountUsageStore(store as unknown as AccountUsageStore);
+    });
+
+    afterEach(() => {
+      setAccountUsageStore(undefined);
+      setContinuationRecorder(undefined);
+    });
+
+    it('exposes the resolved DorkOS data directory', () => {
+      expect(buildCtx().ctx.dorkHome).toBe(tmpDir);
+    });
+
+    it("lists every runtime's accounts, implicit defaults included", async () => {
+      expect(await buildCtx().ctx.accounts.list()).toEqual([
+        { runtime: 'claude-code', id: 'work', label: 'Work', color: '#111111', implicit: false },
+        { runtime: 'codex', id: 'default', label: null, color: '#222222', implicit: true },
+      ]);
+    });
+
+    it('reads usage for every runtime or one, and nothing for an unknown runtime', async () => {
+      const { ctx } = buildCtx();
+      expect(await ctx.accounts.usage()).toEqual([extensionUsageRow]);
+      expect(storeList).toHaveBeenLastCalledWith();
+      await ctx.accounts.usage('codex');
+      expect(storeList).toHaveBeenLastCalledWith('codex');
+      expect(await ctx.accounts.usage('not-a-runtime')).toEqual([]);
+    });
+
+    it('answers empty before the usage store exists', async () => {
+      setAccountUsageStore(undefined);
+      const { ctx } = buildCtx();
+      expect(await ctx.accounts.list()).toEqual([]);
+      expect(await ctx.accounts.usage()).toEqual([]);
+    });
+
+    it('delivers usage changes until the listener is removed, by hand or on release', () => {
+      const { ctx, releaseAccounts } = buildCtx();
+      const kept = vi.fn();
+      const removed = vi.fn();
+      ctx.accounts.onUsage(kept);
+      const stop = ctx.accounts.onUsage(removed);
+      stop();
+      for (const l of listeners) l(usageRow);
+      expect(kept).toHaveBeenCalledWith(extensionUsageRow);
+      expect(removed).not.toHaveBeenCalled();
+
+      releaseAccounts();
+      expect(listeners.size).toBe(0);
+    });
+
+    it('never hands an extension an account folder path', async () => {
+      const { ctx } = buildCtx();
+      const seen = vi.fn();
+      ctx.accounts.onUsage(seen);
+      for (const l of listeners) l(usageRow);
+      const rows = [...(await ctx.accounts.usage()), ...(await ctx.accounts.usage('claude-code'))];
+      for (const row of [...rows, seen.mock.calls[0]?.[0]]) {
+        expect(row).toBeDefined();
+        expect(row).not.toHaveProperty('path');
+      }
+    });
+
+    it('closes after release: a late registerAdvisor or onUsage registers nothing', async () => {
+      const old = buildCtx({ extensionId: 'reloaded-ext' });
+      old.releaseAccounts();
+
+      expect(() =>
+        old.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) })
+      ).toThrow(/shut down or reloaded/);
+      expect(() => old.ctx.accounts.onUsage(vi.fn())).toThrow(/shut down or reloaded/);
+      await expect(
+        old.ctx.accounts.markContinued('old', { sessionId: 'n', runtime: 'x', accountId: 'y' })
+      ).rejects.toThrow(/shut down or reloaded/);
+      expect(hasAccountAdvisor()).toBe(false);
+      expect(listeners.size).toBe(0);
+
+      // The instance that replaced it keeps its advisor when the old one calls late.
+      const current = buildCtx({ extensionId: 'reloaded-ext' });
+      current.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) });
+      expect(() =>
+        old.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) })
+      ).toThrow();
+      old.releaseAccounts();
+      expect(accountAdvisorOwner()).toBe('reloaded-ext');
+      expect(hasAccountAdvisor()).toBe(true);
+      // Reads still answer.
+      expect(await old.ctx.accounts.list()).toHaveLength(2);
+    });
+
+    it('registers the advisor under the extension id and removes it on release', () => {
+      const { ctx, releaseAccounts } = buildCtx();
+      ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) });
+      expect(accountAdvisorOwner()).toBe(extensionId);
+      releaseAccounts();
+      expect(hasAccountAdvisor()).toBe(false);
+    });
+
+    it("a replaced extension's release leaves the new advisor in place", () => {
+      const first = buildCtx({ extensionId: 'first-ext' });
+      const second = buildCtx({ extensionId: 'second-ext' });
+      const advisor = { rank: () => ({ accounts: [], recommendedId: null }) };
+      first.ctx.accounts.registerAdvisor(advisor);
+      second.ctx.accounts.registerAdvisor(advisor);
+      first.releaseAccounts();
+      expect(accountAdvisorOwner()).toBe('second-ext');
+    });
+
+    it('markContinued hands the move to the recorder, naming the extension', async () => {
+      const recorder = vi.fn().mockResolvedValue(undefined);
+      setContinuationRecorder(recorder);
+      const to = { sessionId: 'new', runtime: 'claude-code', accountId: 'client' };
+      await buildCtx().ctx.accounts.markContinued('old', to);
+      expect(recorder).toHaveBeenCalledWith(extensionId, 'old', to);
+    });
+
+    it('markContinued refuses a malformed call, and refuses while nothing records moves', async () => {
+      const { ctx } = buildCtx();
+      await expect(
+        ctx.accounts.markContinued('old', { sessionId: '', runtime: 'x', accountId: 'y' })
+      ).rejects.toThrow(TypeError);
+      await expect(
+        ctx.accounts.markContinued('old', { sessionId: 'n', runtime: 'x', accountId: 'y' })
+      ).rejects.toThrow(CONTINUATION_UNAVAILABLE_MESSAGE);
     });
   });
 });

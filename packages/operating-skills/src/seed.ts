@@ -108,6 +108,24 @@ async function decide(filePath: string): Promise<SeedAction> {
 }
 
 /**
+ * Whether a file is a pack skill this seeder wrote and nobody has edited since:
+ * it carries the pack marker, and its body still hashes to the stamp written
+ * with it — whichever pack version wrote it. The same test the seeder uses to
+ * decide it may overwrite a copy; a caller retiring copies DorkOS left behind
+ * uses it to decide it may delete one.
+ *
+ * @param filePath - Where the file is, for the parser's messages.
+ * @param raw - The file's contents.
+ */
+export function isUnmodifiedSeededSkill(filePath: string, raw: string): boolean {
+  const parsed = parseSkillFile(filePath, raw, SkillFrontmatterSchema, { requireNameMatch: false });
+  if (!parsed.ok) return false;
+  const meta = parsed.definition.meta.metadata;
+  if (!meta || meta[META_PACK_KEY] !== META_PACK_VALUE) return false;
+  return meta[META_HASH_KEY] === hashBody(parsed.definition.body);
+}
+
+/**
  * Seed (or re-seed) the Operating DorkOS skill pack into a workspace.
  *
  * @param rootDir - Absolute path to the workspace root (the agent's home). The

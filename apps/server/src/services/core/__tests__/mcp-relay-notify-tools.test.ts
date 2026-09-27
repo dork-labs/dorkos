@@ -8,10 +8,11 @@ import { NotifyBudget } from '../../relay/notify-budget.js';
 import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
 import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { createCanUseTool } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
-import { resolveAgentHome, setWorkingCopyOwnerPort } from '../agent-identity/index.js';
+import { resolveAgentHome } from '../agent-identity/index.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
+  registerTestHomes,
 } from '../agent-identity/__tests__/agent-home-fixture.js';
 
 // Every scratch folder counts as a registered home here, so this suite's
@@ -1029,28 +1030,22 @@ describe('relay_notify_user', () => {
 });
 
 describe('relay_notify_user, by identity anchor', () => {
-  describe('from a room worktree (DOR-2091)', () => {
-    // A turn in a room with files stands in the agent's WORKTREE. The sender was
-    // looked up by that directory, which the mesh does not place, so the agent
-    // got `NOT_AN_AGENT` and could not reach its person. It is now looked up by
-    // the session's identity anchor: the agent the worktree was handed to.
-    // Seeded: reverting `resolveSenderIdentity` to ask the mesh about `cwd`
-    // reddens the first case; ignoring the anchor it is handed reddens the
-    // second.
-    const WORKTREES = '/dork/rooms/01ROOM/worktrees';
-    const ANA_WORKTREE = `${WORKTREES}/ana-1a2b3c4d`;
+  describe('from a folder that is nobody’s home (DOR-2091, spec `agent-home-desk` §3.1)', () => {
+    // A named-agent turn can stand in a folder that resolves to no home — the
+    // operator's default folder for an agent configured `workspace.mode:
+    // 'none'`. The sender is looked up by the session's identity anchor, which
+    // carries the turn's agent there, never by that directory, which the mesh
+    // does not place. Seeded: reverting `resolveSenderIdentity` to ask the mesh
+    // about `cwd` reddens the first case; ignoring the anchor it is handed
+    // reddens the second.
+    const SHARED_DEFAULT = '/work/shared-default';
 
     beforeEach(() => {
-      setWorkingCopyOwnerPort({
-        ownerOf: (dir) =>
-          dir.startsWith(`${WORKTREES}/`)
-            ? { owner: dir === ANA_WORKTREE ? '/agents/ana' : null }
-            : null,
-      });
+      registerTestHomes(['/agents/ana', '/agents/ben']);
     });
 
     afterEach(() => {
-      setWorkingCopyOwnerPort(undefined);
+      clearTestHomes();
     });
 
     /** A mesh that places exactly one directory: Ana's own folder. */
@@ -1067,21 +1062,25 @@ describe('relay_notify_user, by identity anchor', () => {
       });
     }
 
-    it('sends as the agent the worktree belongs to', async () => {
+    it('sends as the agent the turn is for', async () => {
       const deps = anaMeshDeps();
-      const identity = resolveSenderIdentity(deps, ANA_WORKTREE);
+      const identity = resolveSenderIdentity(
+        deps,
+        SHARED_DEFAULT,
+        resolveAgentHome(SHARED_DEFAULT, '/agents/ana')
+      );
       expect(identity.agentId).toBe('agent-1');
 
       const result = await createRelayNotifyUserHandler(deps, identity)({ message: 'done' });
       expect(JSON.parse(result.content[0].text).sent).toBe(true);
     });
 
-    it('sends as nobody for a turn for ANOTHER agent standing in that worktree', async () => {
+    it('sends as nobody for a turn for ANOTHER agent standing in Ana’s home', async () => {
       const deps = anaMeshDeps();
       const identity = resolveSenderIdentity(
         deps,
-        ANA_WORKTREE,
-        resolveAgentHome(ANA_WORKTREE, '/agents/ben')
+        '/agents/ana',
+        resolveAgentHome('/agents/ana', '/agents/ben')
       );
       expect(identity.agentId).toBeUndefined();
 

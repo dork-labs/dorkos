@@ -5,6 +5,8 @@ import {
   and,
   connectionOperationGrants,
   connections,
+  connectorManagedAuthorityOutbox,
+  connectorManagedAuthorityScopes,
   connectorOperationRevisions,
   connectorProviderInstances,
   connectorReconciliationAgents,
@@ -17,7 +19,9 @@ import {
   or,
   type Db,
   type DbTransaction,
+  type SQL,
 } from '@dorkos/db';
+import { ManagedConnectorAuthorityCommandSchema } from '@dorkos/shared/connector-managed-schemas';
 import {
   ConnectorReconciliationApplyRequestSchema,
   ConnectorReconciliationApplyResponseSchema,
@@ -98,7 +102,9 @@ export interface ConnectorReconciliationServiceOptions {
   /** Durable hosted authority synchronizer for managed provider instances. */
   readonly managedAuthority?: Pick<
     ManagedAuthoritySyncService,
-    'stageAgentGrantReplacement' | 'deliverAgentGrantReplacement'
+    | 'stageAgentGrantReplacement'
+    | 'stageEveryAgentGrantReplacement'
+    | 'deliverAgentGrantReplacement'
   >;
   /** Activity trail for every-agent changes; absent in a process that has none. */
   readonly activity?: EveryAgentActivitySink;
@@ -146,12 +152,88 @@ function operationIdentity(operation: DiscoveredOperation): string {
   ].join('\n');
 }
 
+/**
+ * The hosted selectors of the chosen local revisions, paired positionally with
+ * their local ids, in selection order.
+ */
+function managedSelectors(
+  tx: DbTransaction,
+  operationRevisionIds: readonly string[]
+): {
+  revisions: Array<{
+    operationSlug: string;
+    toolkitVersion: string;
+    schemaHash: string;
+    hostedRevisionId: string;
+  }>;
+  operationRevisionIds: string[];
+} {
+  const rows = operationRevisionIds.length
+    ? tx
+        .select({
+          id: connectorOperationRevisions.id,
+          operationSlug: connectorOperationRevisions.operationSlug,
+          toolkitVersion: connectorOperationRevisions.toolkitVersion,
+          schemaHash: connectorOperationRevisions.schemaHash,
+          providerRevisionRef: connectorOperationRevisions.providerRevisionRef,
+        })
+        .from(connectorOperationRevisions)
+        .where(inArray(connectorOperationRevisions.id, [...operationRevisionIds]))
+        .all()
+    : [];
+  const byId = new Map(rows.map((revision) => [revision.id, revision]));
+  const ordered = operationRevisionIds.map((id) => byId.get(id)!);
+  return {
+    revisions: ordered.map((revision) => ({
+      operationSlug: revision.operationSlug,
+      toolkitVersion: revision.toolkitVersion,
+      schemaHash: revision.schemaHash,
+      hostedRevisionId: revision.providerRevisionRef,
+    })),
+    operationRevisionIds: ordered.map((revision) => revision.id),
+  };
+}
+
+/** How long stopping a managed share waits on hosted authority before answering. */
+const HOSTED_STOP_WAIT_MS = 10_000;
+
 interface EveryAgentState {
   readonly operationRevisionIds: readonly string[];
   readonly classifications: EveryAgentChange['after'];
 }
 
 function readEveryAgentState(tx: DbTransaction, connectionId: string): EveryAgentState {
+  return everyAgentStateWhere(
+    tx,
+    and(
+      eq(connectionOperationGrants.connectionId, connectionId),
+      everyAgentGrantSubject(),
+      isNull(connectionOperationGrants.revokedAt)
+    )!
+  );
+}
+
+/**
+ * The state a managed every-agent replacement asks for. Its rows stay closed
+ * until hosted authority applies the command, so the live rows cannot say it.
+ */
+function requestedEveryAgentState(
+  tx: DbTransaction,
+  connectionId: string,
+  operationRevisionIds: readonly string[]
+): EveryAgentState {
+  if (operationRevisionIds.length === 0) return { operationRevisionIds: [], classifications: [] };
+  return everyAgentStateWhere(
+    tx,
+    and(
+      eq(connectionOperationGrants.connectionId, connectionId),
+      everyAgentGrantSubject(),
+      inArray(connectionOperationGrants.operationRevisionId, [...operationRevisionIds])
+    )!
+  );
+}
+
+function everyAgentStateWhere(tx: DbTransaction, where: SQL): EveryAgentState {
   const rows = tx
     .select({
       id: connectionOperationGrants.operationRevisionId,
@@ -162,13 +244,7 @@ function readEveryAgentState(tx: DbTransaction, connectionId: string): EveryAgen
       connectorOperationRevisions,
       eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
     )
-    .where(
-      and(
-        eq(connectionOperationGrants.connectionId, connectionId),
-        everyAgentGrantSubject(),
-        isNull(connectionOperationGrants.revokedAt)
-      )
-    )
+    .where(where)
     .all();
   return {
     operationRevisionIds: [...new Set(rows.map((row) => row.id))].sort(),
@@ -180,9 +256,9 @@ function readEveryAgentState(tx: DbTransaction, connectionId: string): EveryAgen
 function describeEveryAgentChange(
   tx: DbTransaction,
   connectionId: string,
-  before: EveryAgentState
+  before: EveryAgentState,
+  after: EveryAgentState = readEveryAgentState(tx, connectionId)
 ): EveryAgentChange | undefined {
-  const after = readEveryAgentState(tx, connectionId);
   if (after.operationRevisionIds.join('\n') === before.operationRevisionIds.join('\n')) {
     return undefined;
   }
@@ -210,7 +286,9 @@ export class ConnectorReconciliationService {
   private readonly managedAuthority:
     | Pick<
         ManagedAuthoritySyncService,
-        'stageAgentGrantReplacement' | 'deliverAgentGrantReplacement'
+        | 'stageAgentGrantReplacement'
+        | 'stageEveryAgentGrantReplacement'
+        | 'deliverAgentGrantReplacement'
       >
     | undefined;
   private readonly activity: EveryAgentActivitySink | undefined;
@@ -452,7 +530,7 @@ export class ConnectorReconciliationService {
         agents,
         candidateIds,
         createdAt,
-        context.mode !== 'managed'
+        context.mode !== 'managed' || this.managedAuthority !== undefined
       )
     );
   }
@@ -619,12 +697,12 @@ export class ConnectorReconciliationService {
         }
       }
       if (request.everyAgent) {
-        // Hosted authority keys grants per named agent and has no owner-wide
-        // subject, so a managed connection cannot honor "every agent" yet.
-        if (provider.mode === 'managed') {
+        // A managed connection's owner-wide grant lives in hosted authority
+        // too (DOR-2439), so it needs the synchronizer that carries it there.
+        if (provider.mode === 'managed' && !this.managedAuthority) {
           throw new ConnectorReconciliationError(
             'every_agent_unavailable',
-            'Every agent isn’t available for apps connected through your DorkOS account yet. Pick the agents one by one.'
+            'Every agent isn’t available for this app right now. Pick the agents one by one, or relink this computer and try again.'
           );
         }
         if (request.everyAgent.operationRevisionIds.some((id) => !supported.has(id))) {
@@ -661,33 +739,13 @@ export class ConnectorReconciliationService {
               'Managed connection synchronization is unavailable. Relink and try again.'
             );
           }
-          const revisionRows = selection.operationRevisionIds.length
-            ? tx
-                .select({
-                  id: connectorOperationRevisions.id,
-                  operationSlug: connectorOperationRevisions.operationSlug,
-                  toolkitVersion: connectorOperationRevisions.toolkitVersion,
-                  schemaHash: connectorOperationRevisions.schemaHash,
-                  providerRevisionRef: connectorOperationRevisions.providerRevisionRef,
-                })
-                .from(connectorOperationRevisions)
-                .where(inArray(connectorOperationRevisions.id, selection.operationRevisionIds))
-                .all()
-            : [];
-          const byId = new Map(revisionRows.map((revision) => [revision.id, revision]));
-          const ordered = selection.operationRevisionIds.map((id) => byId.get(id)!);
+          const selectors = managedSelectors(tx, selection.operationRevisionIds);
           managedCommandIds.push(
             this.managedAuthority.stageAgentGrantReplacement(tx, {
               connectionId: ConnectionIdSchema.parse(preview.connectionId),
               managedConnectionId: provider.managedConnectionId,
               agentId: selection.agentId,
-              revisions: ordered.map((revision) => ({
-                operationSlug: revision.operationSlug,
-                toolkitVersion: revision.toolkitVersion,
-                schemaHash: revision.schemaHash,
-                hostedRevisionId: revision.providerRevisionRef,
-              })),
-              operationRevisionIds: ordered.map((revision) => revision.id),
+              ...selectors,
               providerInstanceId: ConnectorProviderInstanceIdSchema.parse(
                 preview.providerInstanceId
               ),
@@ -737,14 +795,42 @@ export class ConnectorReconciliationService {
       let everyAgentChange: EveryAgentChange | undefined;
       if (request.everyAgent) {
         const before = readEveryAgentState(tx, preview.connectionId);
-        replaceEveryAgentGrants(tx, {
-          connectionId: preview.connectionId,
-          operationRevisionIds: request.everyAgent.operationRevisionIds,
-          createdBy: ownerRow.ownerId,
-          now,
-          createId: this.createId,
-        });
-        everyAgentChange = describeEveryAgentChange(tx, preview.connectionId, before);
+        if (provider.mode === 'managed') {
+          // Close-first: what is left out stops now, and what is newly shared
+          // opens once hosted authority applies the owner-wide command.
+          managedCommandIds.push(
+            this.managedAuthority!.stageEveryAgentGrantReplacement(tx, {
+              connectionId: ConnectionIdSchema.parse(preview.connectionId),
+              managedConnectionId: provider.managedConnectionId,
+              ...managedSelectors(tx, request.everyAgent.operationRevisionIds),
+              providerInstanceId: ConnectorProviderInstanceIdSchema.parse(
+                preview.providerInstanceId
+              ),
+              executionConfigGeneration: preview.executionConfigGeneration,
+              owner,
+              createdBy: ownerRow.ownerId,
+            })
+          );
+          everyAgentChange = describeEveryAgentChange(
+            tx,
+            preview.connectionId,
+            before,
+            requestedEveryAgentState(
+              tx,
+              preview.connectionId,
+              request.everyAgent.operationRevisionIds
+            )
+          );
+        } else {
+          replaceEveryAgentGrants(tx, {
+            connectionId: preview.connectionId,
+            operationRevisionIds: request.everyAgent.operationRevisionIds,
+            createdBy: ownerRow.ownerId,
+            now,
+            createId: this.createId,
+          });
+          everyAgentChange = describeEveryAgentChange(tx, preview.connectionId, before);
+        }
       }
       if (provider.mode !== 'managed' || managedCommandIds.length === 0) {
         tx.update(connections)
@@ -794,32 +880,148 @@ export class ConnectorReconciliationService {
     connectionId: string
   ): Promise<{ connectionId: string; revokedCount: number }> {
     const expected = ownerColumns(owner);
-    const row = this.db
-      .select({
-        ownerKind: connectorProviderInstances.ownerKind,
-        ownerId: connectorProviderInstances.ownerId,
-      })
-      .from(connections)
-      .innerJoin(
-        connectorProviderInstances,
-        eq(connectorProviderInstances.id, connections.providerInstanceId)
-      )
-      .where(and(eq(connections.id, connectionId), isNull(connections.removedAt)))
-      .get();
-    if (!row || row.ownerKind !== expected.ownerKind || row.ownerId !== expected.ownerId) {
+    const readBinding = (db: Db | DbTransaction) =>
+      db
+        .select({
+          ownerKind: connectorProviderInstances.ownerKind,
+          ownerId: connectorProviderInstances.ownerId,
+          mode: connectorProviderInstances.mode,
+          providerInstanceId: connectorProviderInstances.id,
+          executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,
+          managedConnectionId: connections.externalAccountRef,
+        })
+        .from(connections)
+        .innerJoin(
+          connectorProviderInstances,
+          eq(connectorProviderInstances.id, connections.providerInstanceId)
+        )
+        .where(and(eq(connections.id, connectionId), isNull(connections.removedAt)))
+        .get();
+    const owned = (row: ReturnType<typeof readBinding>) =>
+      row !== undefined && row.ownerKind === expected.ownerKind && row.ownerId === expected.ownerId;
+    if (!owned(readBinding(this.db))) {
       throw new ConnectorReconciliationError('connection_not_found', 'Connection not found.');
     }
     const now = this.now().toISOString();
+    const managedAuthority = this.managedAuthority;
     const result = this.db.transaction((tx) => {
-      const before = readEveryAgentState(tx, connectionId);
+      // Read the binding again inside the transaction, so the hosted command
+      // below is derived from exactly the binding this revocation sees.
+      const row = readBinding(tx);
+      if (!row || !owned(row)) {
+        throw new ConnectorReconciliationError('connection_not_found', 'Connection not found.');
+      }
+      const managed = row.mode === 'managed' && managedAuthority ? managedAuthority : null;
+      const live = readEveryAgentState(tx, connectionId);
+      const requested = managed
+        ? this.lastRequestedEveryAgent(tx, row.managedConnectionId, row.providerInstanceId)
+        : undefined;
       const revokedCount = revokeEveryAgentGrants(tx, [connectionId], now);
+      // Local access ends here, on the next call. A managed connection also
+      // tells hosted authority, which re-checks every call on its side; the
+      // command waits in the outbox if the service cannot be reached. A share
+      // hosted authority has not applied yet is stopped too, or it would open
+      // when it lands.
+      const commandId =
+        managed && (revokedCount > 0 || requested?.sharing)
+          ? managed.stageEveryAgentGrantReplacement(tx, {
+              connectionId: ConnectionIdSchema.parse(connectionId),
+              managedConnectionId: row.managedConnectionId,
+              revisions: [],
+              operationRevisionIds: [],
+              providerInstanceId: ConnectorProviderInstanceIdSchema.parse(row.providerInstanceId),
+              executionConfigGeneration: row.executionConfigGeneration,
+              owner,
+              createdBy: expected.ownerId,
+            })
+          : undefined;
+      // The trail says what the owner stopped: what every agent had plus any
+      // share still on its way to hosted authority.
+      const before = requested
+        ? requestedEveryAgentState(tx, connectionId, [
+            ...new Set([...live.operationRevisionIds, ...requested.operationRevisionIds]),
+          ])
+        : live;
       return {
         revokedCount,
-        change: revokedCount > 0 ? describeEveryAgentChange(tx, connectionId, before) : undefined,
+        commandId,
+        managed,
+        change: describeEveryAgentChange(tx, connectionId, before, {
+          operationRevisionIds: [],
+          classifications: [],
+        }),
       };
     });
     if (result.change) await this.record(result.change);
+    if (result.managed && result.commandId) {
+      // Access already ended locally; don't hold the owner's request on a slow
+      // service. An undelivered stop stays pending and is retried.
+      await result.managed.deliverAgentGrantReplacement(
+        result.commandId,
+        AbortSignal.timeout(HOSTED_STOP_WAIT_MS)
+      );
+    }
     return { connectionId, revokedCount: result.revokedCount };
+  }
+
+  /**
+   * What the last owner-wide command sent to hosted authority for this managed
+   * connection asked for, whether or not it was applied. `sharing` is true when
+   * it shared anything, or when it can no longer be read (a compacted command
+   * cannot prove the sharing ended).
+   */
+  private lastRequestedEveryAgent(
+    tx: DbTransaction,
+    managedConnectionId: string,
+    providerInstanceId: string
+  ): { sharing: boolean; operationRevisionIds: string[] } | undefined {
+    const last = tx
+      .select({ requestJson: connectorManagedAuthorityOutbox.requestJson })
+      .from(connectorManagedAuthorityScopes)
+      .innerJoin(
+        connectorManagedAuthorityOutbox,
+        eq(connectorManagedAuthorityOutbox.commandId, connectorManagedAuthorityScopes.lastCommandId)
+      )
+      .where(
+        and(
+          eq(connectorManagedAuthorityScopes.managedConnectionId, managedConnectionId),
+          eq(connectorManagedAuthorityScopes.scopeKind, 'every_agent_grants')
+        )
+      )
+      .get();
+    if (!last) return undefined;
+    let json: unknown;
+    try {
+      json = JSON.parse(last.requestJson);
+    } catch {
+      json = undefined;
+    }
+    const parsed = ManagedConnectorAuthorityCommandSchema.safeParse(json);
+    if (!parsed.success || parsed.data.kind !== 'replace_every_agent_grants') {
+      return { sharing: true, operationRevisionIds: [] };
+    }
+    const wanted = new Set(
+      parsed.data.revisions.map(
+        (revision) =>
+          `${revision.hostedRevisionId}\0${revision.operationSlug}\0${revision.toolkitVersion}\0${revision.schemaHash}`
+      )
+    );
+    const operationRevisionIds = wanted.size
+      ? tx
+          .select({
+            id: connectorOperationRevisions.id,
+            ref: connectorOperationRevisions.providerRevisionRef,
+            slug: connectorOperationRevisions.operationSlug,
+            version: connectorOperationRevisions.toolkitVersion,
+            hash: connectorOperationRevisions.schemaHash,
+          })
+          .from(connectorOperationRevisions)
+          .where(eq(connectorOperationRevisions.providerInstanceId, providerInstanceId))
+          .all()
+          .filter((row) => wanted.has(`${row.ref}\0${row.slug}\0${row.version}\0${row.hash}`))
+          .map((row) => row.id)
+      : [];
+    return { sharing: parsed.data.revisions.length > 0, operationRevisionIds };
   }
 
   private async record(change: EveryAgentChange): Promise<void> {
