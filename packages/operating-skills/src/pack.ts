@@ -299,8 +299,12 @@ export interface OperatingSkill {
  *   (DOR-1517, caught by DOR-2068). An agent seeded at 30 would repeat it to the person it
  *   works for. The banned-words guard now scans this package, which is how it
  *   was caught.
+ * - 32: the tier ceiling is retired (agent permissions, DOR-2278). The refusal
+ *   an agent reads is now `permission_blocked` with `approvable: true` (it may
+ *   ask with `request_permission`), not `tier_ceiling`. An agent seeded at 31
+ *   would stop and give up on a refusal it can now ask past.
  */
-export const OPERATING_SKILLS_VERSION = 31;
+export const OPERATING_SKILLS_VERSION = 32;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

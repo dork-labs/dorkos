@@ -160,8 +160,12 @@ import {
   RoomCanvasDiffReviewSchema,
   RoomCanvasDiffWriteRequestSchema,
   RoomCanvasDiffWriteResultSchema,
+  RoomFileChangeResponseSchema,
   RoomFileConflictResponseSchema,
   RoomFileContentQuerySchema,
+  RoomFileDeleteRequestSchema,
+  RoomFileFromAttachmentRequestSchema,
+  RoomFileMoveRequestSchema,
   RoomFileContentResponseSchema,
   RoomFileListResponseSchema,
   RoomFileSaveRequestSchema,
@@ -232,6 +236,7 @@ import {
   ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
+  ConnectorAppConnectionsSchema,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
@@ -248,6 +253,9 @@ import {
   PatchPermissionDefaultsBodySchema,
   PermissionHistoryQuerySchema,
   PermissionHistoryResponseSchema,
+  UndoConflictResponseSchema,
+  UndoPermissionChangeBodySchema,
+  UndoPermissionChangeResponseSchema,
   PermissionsResponseSchema,
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
@@ -3504,13 +3512,17 @@ registry.registerPath({
   description:
     'Reference-free setup state per credential-gated provider: configured/registered booleans, ' +
     'the custody stance with its plain-language disclosure, and — when a configured provider ' +
-    'refused to register — the honest error text. Never carries a secret or a credential reference.',
+    'refused to register — the honest error text. `appConnections` lists every way set up to ' +
+    'reach apps and names the one new apps use. Never carries a secret or a credential reference.',
   responses: {
     200: {
       description: 'Provider setup statuses',
       content: {
         'application/json': {
-          schema: z.object({ providers: z.array(ConnectorProviderStatusSchema) }),
+          schema: z.object({
+            providers: z.array(ConnectorProviderStatusSchema),
+            appConnections: ConnectorAppConnectionsSchema,
+          }),
         },
       },
     },
@@ -3574,7 +3586,9 @@ registry.registerPath({
   tags: ['Connectors'],
   summary: 'List the provider-neutral connector catalog',
   description:
-    'Returns one bounded account-free page. Native message adapters remain distinct from account routes.',
+    'Returns one bounded account-free page. Hand-picked popular apps are always listed, even ' +
+    'before any way to reach apps is set up; live services merge into them by service id. ' +
+    'Native message adapters remain distinct from account routes.',
   request: {
     query: z.object({
       q: z.string().max(200).optional(),
@@ -4381,6 +4395,46 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: 'post',
+  path: '/api/approvals/{id}/dismiss-suggestion',
+  tags: ['Approvals'],
+  summary: 'Stop suggesting Always allow',
+  description:
+    '"Not now" on a card that suggests Always allow: the suggestion never comes back for this ' +
+    'agent and action. Recorded as a `permission.suggestion_dismissed` Activity event. Who may ' +
+    'call it is exactly as for grant.',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'The suggestion is off for this agent and action',
+      content: {
+        'application/json': {
+          schema: z.object({ ok: z.literal(true), approvalId: z.string() }),
+        },
+      },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description:
+        'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such approval',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'This request never suggests Always allow (`SUGGESTION_NOT_OFFERED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // === Permissions (spec `agent-permissions` D10) ===
 
 /** What every permission write answers with: the changes and the fresh view. */
@@ -4564,6 +4618,48 @@ registry.registerPath({
     409: {
       description:
         '`template_needs_review` (with `template`), `disclosure_changed`, or a collision',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/permissions/history/{eventId}/undo',
+  tags: ['Permissions'],
+  summary: 'Undo one permission change',
+  description:
+    'Sets every key a recorded `permission.changed` event moved back to its value before, as ' +
+    "one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed " +
+    'since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each ' +
+    'conflict) and writes nothing, while a change that reached several targets sets back the ' +
+    'ones that still match and reports the rest in `skipped`. `force` sets every key back. A ' +
+    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and ' +
+    'moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a ' +
+    '"Not now" on the Always allow suggestion lets the suggestion come back ' +
+    '(`suggestionRestored`). A key already back where the change found it is nothing to do.',
+  request: {
+    params: z.object({ eventId: z.string() }),
+    body: { content: { 'application/json': { schema: UndoPermissionChangeBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'What the Undo changed, and what it left alone',
+      content: { 'application/json': { schema: UndoPermissionChangeResponseSchema } },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
+    404: {
+      description: 'No such permission change (`UNKNOWN_EVENT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a ' +
+        'change, such as an answer on a request card (`NOT_UNDOABLE`)',
+      content: { 'application/json': { schema: UndoConflictResponseSchema } },
+    },
+    428: {
+      description: 'The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -5429,7 +5525,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Save one of a room's files",
   description:
-    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link), `ROOM_FILE_NOT_FOUND` (a folder the room does not have; saving does not make new folders), `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `REQUEST_TOO_LARGE` by the request parser, where a save that fits the request and not the room is refused 409 `FILE_TOO_LARGE`.",
+    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. A save that commits posts one quiet entry in the room (`body.fileChange`, `kind: 'edit'` or `'add'`) that addresses nobody and wakes no agent. With login on, the commit is authored as the signed-in person (`person-<authorId>@dorkos.local`); with login off, as the operator. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link — or a name that differs only in capital letters from a file or folder the room already has, which is the same name on macOS and Windows; the message names the real one), **missing folders above the file are created**, and a folder in the path that is really a file is `ROOM_FILE_PATH_INVALID`, `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `REQUEST_TOO_LARGE` by the request parser, where a save that fits the request and not the room is refused 409 `FILE_TOO_LARGE`.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileSaveRequestSchema } } },
@@ -5451,7 +5547,7 @@ registry.registerPath({
     },
     404: {
       description:
-        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such folder in the room’s files (`ROOM_FILE_NOT_FOUND`)',
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
@@ -5470,6 +5566,117 @@ registry.registerPath({
     },
     429: {
       description: 'Another write held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+/** The shared answers of the four file-change routes below (spec `agent-home-desk` §7.1). */
+const roomFileChangeResponses = {
+  200: {
+    description:
+      'The change is one commit on the room’s `main`, authored as the person, and one quiet room entry',
+    content: { 'application/json': { schema: RoomFileChangeResponseSchema } },
+  },
+  400: {
+    description:
+      'A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`ROOM_FILE_PATH_INVALID`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`ROOM_FILE_NOT_READABLE`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  401: roomAgentUnverified,
+  403: {
+    description: 'The caller is an agent; only people change a room’s files (`PEOPLE_ONLY`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  404: {
+    description:
+      'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file or folder (`ROOM_FILE_NOT_FOUND`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  409: {
+    description:
+      'A path changed since the person read it — `FILE_CHANGED`, the ONLY code that carries `conflict` — or the room already holds that path (`ROOM_FILE_EXISTS`, naming it), or one of the room-state refusals a save gives (`MAIN_CHECKOUT_DIRTY`, `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, `ROOM_ARCHIVED`, `ROOM_HAS_NO_REPO`, `ROOM_REPOS_DISABLED`, `ROOM_REPO_GIT_UNAVAILABLE`). Switch on `code`',
+    content: {
+      'application/json': {
+        schema: z.union([RoomFileConflictResponseSchema, ErrorResponseSchema]),
+      },
+    },
+  },
+  429: {
+    description: 'Another write held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+};
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/files/upload',
+  tags: ['Rooms'],
+  summary: "Upload files into a room's files",
+  description:
+    "Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/` (`to the top folder` for the root), authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `ROOM_FILE_EXISTS`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `FILE_TOO_LARGE`); more than 20 files is 400 `ROOM_UPLOAD_TOO_MANY_FILES`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.",
+  request: {
+    params: RoomIdParams,
+    body: {
+      content: {
+        'multipart/form-data': {
+          schema: z.object({
+            files: z.array(z.string().openapi({ type: 'string', format: 'binary' })),
+            dir: z.string().optional(),
+            baseCommit: z.string().optional(),
+            replace: z.string().optional().describe('A JSON array of file names.'),
+          }),
+        },
+      },
+    },
+  },
+  responses: roomFileChangeResponses,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/files/move',
+  tags: ['Rooms'],
+  summary: "Rename or move one of a room's files or folders",
+  description:
+    "One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `FILE_CHANGED` with the conflict. `to` must not exist (409 `ROOM_FILE_EXISTS`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.",
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: RoomFileMoveRequestSchema } } },
+  },
+  responses: roomFileChangeResponses,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/files/delete',
+  tags: ['Rooms'],
+  summary: "Delete one of a room's files or folders",
+  description:
+    "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `FILE_CHANGED`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.",
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: RoomFileDeleteRequestSchema } } },
+  },
+  responses: roomFileChangeResponses,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/files/from-attachment',
+  tags: ['Rooms'],
+  summary: "Keep a chat attachment as one of the room's files",
+  description:
+    "Copies a file somebody attached to a message in THIS room into the room's files, under `name` (the attachment's own name when omitted) in `dir`. One commit, `Add <path> from the chat`, authored as the person, and one quiet room entry (`kind: 'from-attachment'`). The attachment must be on a posted message in this room — another room's attachment, an unposted upload and an unknown id are all 404 `ATTACHMENT_NOT_FOUND`, the attachments route's own answer. A name the folder already holds is 409 `ROOM_FILE_EXISTS`.",
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: RoomFileFromAttachmentRequestSchema } } },
+  },
+  responses: {
+    ...roomFileChangeResponses,
+    404: {
+      description:
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`), or no such attachment on a message in this room (`ATTACHMENT_NOT_FOUND`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

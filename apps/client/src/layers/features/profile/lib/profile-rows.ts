@@ -372,7 +372,7 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
         {
           id: 'tools',
           kind: 'nav',
-          label: 'Tools & MCP',
+          label: 'MCP servers',
           value: countValue(ctx.facts?.tools, 'server', 'servers'),
           page: 'tools',
         },
@@ -491,7 +491,7 @@ function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRo
         {
           id: 'tools',
           kind: 'nav',
-          label: 'Tools & MCP',
+          label: 'MCP servers',
           value: countValue(ctx.facts?.tools, 'server', 'servers'),
           page: 'tools',
         },

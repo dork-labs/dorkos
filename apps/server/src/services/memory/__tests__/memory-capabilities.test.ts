@@ -39,7 +39,6 @@ function identityAt(agentPath: string, displayName: string): AgentIdentity {
   return {
     agentPath,
     displayName,
-    tierCeiling: 'act',
     createdAt: new Date().toISOString(),
   };
 }

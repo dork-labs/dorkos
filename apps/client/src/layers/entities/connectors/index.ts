@@ -92,6 +92,7 @@ export type {
   ConnectorSessionEffectiveAccess,
 } from '@dorkos/shared/connector-resource-schemas';
 
+export { accessLevelWords, serviceName } from './lib/access-copy';
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
 export { EveryAgentAccessNotice } from './ui/EveryAgentAccessNotice';
 export type { EveryAgentAccessNoticeProps } from './ui/EveryAgentAccessNotice';

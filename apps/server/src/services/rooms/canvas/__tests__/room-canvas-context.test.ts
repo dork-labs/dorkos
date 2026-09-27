@@ -59,7 +59,6 @@ const BEN = '/agents/ben';
 const identityFor = (agentPath: string, displayName: string): AgentIdentity => ({
   agentPath,
   displayName,
-  tierCeiling: 'act',
   createdAt: '2026-09-11T10:00:00.000Z',
 });
 

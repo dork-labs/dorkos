@@ -1,0 +1,107 @@
+<style>
+  .card-image{display:block!important;height:auto!important;min-height:0!important;aspect-ratio:auto!important;overflow:visible!important}
+  .pg{background:#fff;border:1px solid #e5e5e5;border-radius:12px;max-width:760px;overflow:hidden}
+  .row{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0}
+  .logo{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:14px;flex:none}
+  .nm{font-weight:600;font-size:14px}
+  .ds{font-size:12px;color:#777}
+  .right{margin-left:auto;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .btn{font-size:12px;padding:6px 12px;border-radius:7px;border:1px solid #ddd;background:#fff}
+  .btn.dark{background:#111;color:#fff;border-color:#111}
+  .btn.amber{background:#b45309;color:#fff;border-color:#b45309}
+  .dot{font-size:12px}
+  .g{color:#1a7f37}.a{color:#b45309}.m{color:#888}
+  .tag{font-size:10px;padding:2px 6px;border-radius:5px;background:#f1f1f1;color:#666;margin-left:6px;font-weight:500}
+  .note{font-size:11px;color:#6d28d9;background:#f5f3ff;border-radius:6px;padding:3px 8px;margin-left:8px;white-space:nowrap}
+  .sec{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#999;padding:14px 16px 4px}
+  .search{margin:12px 16px;padding:9px 12px;border:1px solid #ddd;border-radius:8px;color:#999;font-size:13px}
+  .chips{display:flex;gap:6px;padding:0 16px 8px;flex-wrap:wrap}
+  .chips span{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid #e3e3e3;color:#555}
+  .chips span.on{background:#111;color:#fff;border-color:#111}
+  .flow{display:flex;gap:10px;align-items:stretch;padding:14px;flex-wrap:wrap;text-align:left}
+  .scr{flex:1;min-width:150px;border:1px solid #e5e5e5;border-radius:10px;padding:12px;background:#fff;font-size:12px}
+  .scr b{display:block;font-size:13px;margin-bottom:6px}
+  .scr .bx{border:1px solid #eee;border-radius:6px;padding:6px 8px;margin:4px 0;color:#444}
+  .arrow{align-self:center;color:#bbb;font-size:18px}
+  .chat{background:#f7f7f7;border-radius:10px;padding:8px 10px;margin:4px 0;color:#333}
+  .prompt{border:1px solid #ddd;border-radius:10px;padding:10px;margin-top:6px;background:#fff}
+</style>
+
+<h2>Step 2 — Every state a row can be in</h2>
+<p class="subtitle">One list. The <b>row itself</b> tells you the state. The right side is always the one thing you can do next. Purple notes are for you, not the product.</p>
+
+<div class="pg">
+  <div style="padding:16px 16px 0"><div style="font-size:18px;font-weight:700">Connections</div><div class="ds" style="font-size:13px">Apps your agents can use, and places you can reach them.</div></div>
+  <div class="search">🔍  Search apps</div>
+
+  <div class="sec">Yours</div>
+  <div class="row" style="background:#fffbeb"><div class="logo" style="background:#000">N</div><div><div class="nm">Notion</div><div class="ds a">Signed out. Agents can't use it until you sign in again.</div></div><div class="right"><span class="btn amber">Sign in again</span><span class="note">broken: loud, floats up</span></div></div>
+  <div class="row"><div class="logo" style="background:#ea4335">M</div><div><div class="nm">Gmail</div><div class="ds">you@gmail.com · DorkBot and 1 more</div></div><div class="right"><span class="dot g">● Connected</span><span class="note">healthy: quiet</span></div></div>
+  <div class="row"><div class="logo" style="background:#ea4335">M</div><div><div class="nm">Gmail</div><div class="ds">work@acme.com · no agents yet</div></div><div class="right"><span class="dot g">● Connected</span><span class="note">2nd account = 2nd row</span></div></div>
+  <div class="row"><div class="logo" style="background:#229ED9">✈</div><div><div class="nm">Telegram <span class="tag">Chat</span></div><div class="ds">@lifeos_bot · answered by DorkBot</div></div><div class="right"><span class="dot g">● Connected</span></div></div>
+  <div class="row"><div class="logo" style="background:#181717">⌥</div><div><div class="nm">GitHub</div><div class="ds">Waiting for you to finish signing in on GitHub…</div></div><div class="right"><span class="dot m">◌ Connecting</span><span class="btn">Cancel</span></div></div>
+  <div class="row" style="opacity:.6"><div class="logo" style="background:#4a154b">#</div><div><div class="nm">Slack <span class="tag">Chat</span></div><div class="ds">Paused · no messages in or out</div></div><div class="right"><span class="btn">Resume</span></div></div>
+
+  <div class="sec">All apps</div>
+  <div class="chips"><span class="on">Popular</span><span>Email &amp; calendar</span><span>Chat</span><span>Docs</span><span>Code</span><span>More…</span></div>
+  <div class="row"><div class="logo" style="background:#4285f4">31</div><div><div class="nm">Google Calendar</div><div class="ds">Read and add events</div></div><div class="right"><span class="btn dark">Connect</span></div></div>
+  <div class="row"><div class="logo" style="background:#5e6ad2">L</div><div><div class="nm">Linear</div><div class="ds">Read and update issues</div></div><div class="right"><span class="btn dark">Connect</span></div></div>
+  <div class="row" style="border:none"><div class="logo" style="background:#0f9d58">▦</div><div><div class="nm">Google Sheets</div><div class="ds">Read and edit spreadsheets</div></div><div class="right"><span class="btn dark">Connect</span><span class="note">Composio not set up? Still listed. Click → one-time setup step, inline</span></div></div>
+</div>
+
+<div style="margin-top:10px;font-size:13px;color:#555;max-width:760px">
+  <b>First visit (nothing connected):</b> no "Yours" section at all. Just the search and "All apps". The list <i>is</i> the empty state.
+</div>
+
+<h2 style="margin-top:36px">The choice — when do you pick agents?</h2>
+<p class="subtitle">After you connect Gmail, which agents can use it? Two ways to answer.</p>
+
+<div class="cards">
+  <div class="card" data-choice="ask-when-needed" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fafafa;padding:0">
+      <div class="flow">
+        <div class="scr"><b>1. Click Connect</b><div class="bx">"You'll sign in on Google's page."</div></div>
+        <div class="arrow">→</div>
+        <div class="scr"><b>2. Google sign-in</b><div class="bx">Popup. Allow. Back.</div></div>
+        <div class="arrow">→</div>
+        <div class="scr"><b>3. Done</b><div class="bx">Row turns green. No agent can use it yet.</div></div>
+      </div>
+      <div style="padding:0 14px 14px;text-align:left;font-size:12px">
+        <b style="font-size:13px">Later, in a chat:</b>
+        <div class="chat">You: "Summarise my inbox from today."</div>
+        <div class="prompt"><b>DorkBot wants to read your Gmail</b> <span class="m">(you@gmail.com)</span><br>
+          <span class="btn dark" style="display:inline-block;margin-top:6px">Allow</span>
+          <span class="btn" style="display:inline-block">Allow once</span>
+          <span class="btn" style="display:inline-block">Don't allow</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Ask when needed (recommended)</h3>
+      <p>Like your phone asking "Allow access to Photos?" the first time an app needs it. Connecting is 2 clicks. You decide at the moment it makes sense, with the real task in front of you. If an agent needs an app you haven't connected, the same card says <b>Connect Gmail</b>.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="ask-upfront" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fafafa;padding:0">
+      <div class="flow">
+        <div class="scr"><b>1. Click Connect</b><div class="bx">"You'll sign in on Google's page."</div></div>
+        <div class="arrow">→</div>
+        <div class="scr"><b>2. Google sign-in</b><div class="bx">Popup. Allow. Back.</div></div>
+        <div class="arrow">→</div>
+        <div class="scr"><b>3. Who can use it?</b>
+          <div class="bx">☑ DorkBot</div><div class="bx">☐ mailroom</div><div class="bx">☐ 33 more…</div>
+          <div class="bx">Read only ▾</div></div>
+      </div>
+      <div style="padding:0 14px 14px;text-align:left;font-size:12px;color:#555">Agents not picked here still ask in chat, like A.</div>
+    </div>
+    <div class="card-body">
+      <h3>B · Ask right away</h3>
+      <p>One more step when you connect: tick the agents and pick "Read only" or "Read and write". Everything is set up front, but you're choosing from 35 agents before you know which ones will need it.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;max-width:760px">
+  <p class="label">What clicking a row opens (progressive disclosure)</p>
+  <p style="font-size:13px;color:#555">A small panel with just two things: <b>the account</b> and <b>the agents that can use it</b> (with a remove ×). Everything else sits behind one "More" fold: rename, pause, notifications, exact actions per agent, disconnect.</p>
+</div>

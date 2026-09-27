@@ -19,7 +19,6 @@ import {
   Spinner,
 } from '@/layers/shared/ui';
 import { formatRelativeTime } from '@/layers/shared/lib';
-import type { ChipState } from '@/layers/entities/agent';
 import type { TaskRun, Task } from '@dorkos/shared/types';
 
 // ---------------------------------------------------------------------------
@@ -145,18 +144,18 @@ function RecentRunItem({ run, scheduleName }: RecentRunItemProps) {
 // ---------------------------------------------------------------------------
 
 interface TasksViewProps {
-  /** Per-agent Tasks chip state from useAgentToolStatus */
-  toolStatus: ChipState;
+  /** Whether this server runs scheduled tasks at all; nothing is read while it does not. */
+  available: boolean;
   /** When non-null, only show schedules assigned to this agent. */
   agentId: string | null;
 }
 
 /** Schedule runs summary for the sidebar Schedules tab. */
-export function TasksView({ toolStatus, agentId }: TasksViewProps) {
+export function TasksView({ available, agentId }: TasksViewProps) {
   const tasksDeepLink = useTasksDeepLink();
   const setTasksAgentFilter = useAppStore((s) => s.setTasksAgentFilter);
   const setTasksEditScheduleId = useAppStore((s) => s.setTasksEditScheduleId);
-  const enabled = toolStatus !== 'disabled-by-server';
+  const enabled = available;
   const { data: allSchedules = [] } = useTasks(enabled);
   const { data: activeRunCount = 0 } = useActiveTaskRunCount(enabled);
   const { data: allRuns = [] } = useTaskRuns(undefined, enabled);
@@ -227,20 +226,6 @@ export function TasksView({ toolStatus, agentId }: TasksViewProps) {
     setTasksAgentFilter(null);
     tasksDeepLink.open();
   };
-
-  if (toolStatus === 'disabled-by-agent') {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 px-4 py-8">
-        <p className="text-muted-foreground/60 text-sm">Scheduled tasks are off for this agent</p>
-        <button
-          onClick={openTasks}
-          className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-        >
-          Open Schedules →
-        </button>
-      </div>
-    );
-  }
 
   if (schedules.length === 0) {
     return (

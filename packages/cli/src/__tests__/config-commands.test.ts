@@ -287,6 +287,33 @@ describe('handleConfigSet', () => {
     vi.restoreAllMocks();
   });
 
+  it('points a permissions key at `dorkos permissions`', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
+    const message =
+      'Permissions are changed on the Permissions page, so every change is recorded. DorkOS changed nothing.';
+    const writer = createMockWriter({
+      refusal: {
+        status: 400,
+        code: 'USE_PERMISSIONS_API',
+        error: message,
+        message,
+        paths: ['permissions'],
+      },
+    });
+
+    await expect(
+      handleConfigSet(createMockStore(), 'permissions.preset', 'full', writer)
+    ).rejects.toThrow('exit');
+
+    expect(errorSpy.mock.calls[0][0]).toBe(message);
+    expect(errorSpy.mock.calls[1][0]).toContain('dorkos permissions');
+    vi.restoreAllMocks();
+  });
+
   it('says a setting does not exist rather than claiming it was set', async () => {
     // Zod drops what the schema does not declare, so the guarded write lands
     // nothing and `getDot` still reports undefined. The old path wrote the key

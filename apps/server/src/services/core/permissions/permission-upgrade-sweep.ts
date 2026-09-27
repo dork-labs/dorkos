@@ -1,26 +1,38 @@
 /**
- * The boot-time permission upgrade sweep (spec `agent-permissions` D13).
+ * The boot-time permission upgrade (spec `agent-permissions` D13).
  *
- * Two things an upgrade has to do that a config migration cannot:
+ * What an upgrade has to do that a config migration cannot:
  *
  * - **Rewrite agent manifests.** A manifest has no migration mechanism of its
- *   own (`AgentManifestSchema` carries no version), so a file still holding the
- *   retired `enabledToolGroups.roomsManage` is folded on every read but keeps
- *   the old key on disk. The sweep writes the folded manifest back once.
+ *   own (`AgentManifestSchema` carries no version), so a file still holding a
+ *   retired field (`enabledToolGroups`, `tierCeiling`) is folded on every read
+ *   but keeps the old field on disk. {@link runPermissionRetirements} writes the
+ *   folded manifest back.
+ * - **Retire the global context switches.** `agentContext.*Tools` becomes a
+ *   Blocked area default for each switch a person had turned off
+ *   ({@link PermissionUpgradeSweepDeps.retireAgentContext}).
  * - **Record what the upgrade changed.** Config migrations run before the
  *   Activity service exists, so they cannot write the audit event a permission
- *   change owes. The sweep writes it for them.
+ *   change owes. This module writes it for them.
  *
- * It runs once per server version, after the mesh and Activity services are up,
- * behind the `permissions.upgradeSweptVersion` marker. It is a LIST of steps,
- * each returning the events it produced, so later phases add steps (the
- * `tierCeiling` and `agentContext` folds) without rewriting it. Ended standing
- * permissions are recorded beside it, not in it (`ended-standing-grants.ts`):
- * they are owed whenever their capture file exists, not once per version. A step that fails on one agent logs it and moves on: an
- * unreadable manifest must never stop the server from booting.
+ * Two kinds of step, run at two cadences:
  *
- * Agents discovered after the sweep are folded on read and written back on
- * their next manifest write, with no extra code.
+ * - **Retirements run on every boot** and act only on what is still there to
+ *   retire: a manifest still carrying a retired field, a config still carrying
+ *   `agentContext`. Keyed on PRESENCE rather than on a version, so an install
+ *   that already ran an earlier build at the same version number (the operator's
+ *   own dogfood install is always one) is still upgraded, and running twice is a
+ *   no-op because the first run removed what it folded.
+ * - **Once-per-version steps** ({@link runPermissionUpgradeSweep}) record a
+ *   config migration's effect, behind the `permissions.upgradeSweptVersion`
+ *   marker.
+ *
+ * Ended standing permissions are recorded beside these, not in them
+ * (`ended-standing-grants.ts`). A step that fails on one agent logs it and moves
+ * on: an unreadable manifest must never stop the server from booting.
+ *
+ * Agents discovered later are folded on read and written back on their next
+ * manifest write, with no extra code.
  *
  * @module services/core/permissions/permission-upgrade-sweep
  */
@@ -29,10 +41,12 @@ import path from 'node:path';
 
 import { MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { foldLegacyPermissionFields } from '@dorkos/shared/mesh-schemas';
-import type {
-  AgentPermissions,
-  PermissionConfigInput,
-  PermissionState,
+import {
+  PERMISSION_AREA_IDS,
+  type AgentPermissions,
+  type PermissionAreaId,
+  type PermissionChange,
+  type PermissionConfigInput,
 } from '@dorkos/shared/permissions';
 import type { Logger } from '@dorkos/shared/logger';
 
@@ -53,11 +67,18 @@ export interface PermissionUpgradeSweepDeps {
   agents: () => PermissionAgentRef[];
   /** Read an agent's manifest file as raw JSON, before any schema. `undefined` = none. */
   readRawManifest: (projectPath: string) => Promise<unknown>;
-  /** Write an agent's folded fields back through the manifest write-through. */
-  writeFolded: (
-    agentId: string,
-    fields: { permissions?: AgentPermissions; enabledToolGroups: Record<string, boolean> }
-  ) => Promise<void>;
+  /**
+   * Write an agent's folded permissions back through the manifest write-through.
+   * The write drops the retired fields: the manifest schema no longer declares
+   * them, so the file that comes out of the write-through has none.
+   */
+  writeFolded: (agentId: string, fields: { permissions?: AgentPermissions }) => Promise<void>;
+  /**
+   * Fold the retired `agentContext` switches into the permission defaults and
+   * remove the section. Returns the areas it set to Blocked (`[]` when every
+   * switch was on), or `null` when the config no longer carries the section.
+   */
+  retireAgentContext?: () => PermissionAreaId[] | null;
   /** The Activity writer. */
   activity: Pick<ActivityService, 'emit'>;
   /** Where a per-agent failure is reported. */
@@ -72,46 +93,57 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** The note an upgrade event carries for an agent that was limited to reading. */
+export const OBSERVE_CEILING_NOTE =
+  'This agent was limited to reading. Every area is now Blocked for it, but it can still ' +
+  'post and react in its conversations, save its own notes, and use its own window.';
+
+/** The raw area map of a manifest's `permissions`, or an empty one. */
+function rawAreas(raw: Record<string, unknown>): Record<string, unknown> {
+  const permissions = raw.permissions;
+  if (!isObject(permissions) || !isObject(permissions.areas)) return {};
+  return permissions.areas;
+}
+
 /**
- * Step 1: write back every manifest that still carries `roomsManage`, folded,
- * and record one event per agent whose Rooms setting the fold decided.
+ * Write back every manifest that still carries a retired permission field
+ * (`enabledToolGroups`, `tierCeiling`), folded, and record one event per agent
+ * whose areas the fold decided. Runs on every boot; see the module doc.
  */
-const foldRoomsManageStep: PermissionUpgradeStep = async (deps) => {
+const foldLegacyManifestsStep: PermissionUpgradeStep = async (deps) => {
   let events = 0;
   for (const agent of deps.agents()) {
     try {
       const raw = await deps.readRawManifest(agent.projectPath);
       if (!isObject(raw)) continue;
-      const groups = raw.enabledToolGroups;
-      if (!isObject(groups) || !Object.hasOwn(groups, 'roomsManage')) continue;
-      const hadRooms =
-        isObject(raw.permissions) &&
-        isObject(raw.permissions.areas) &&
-        Object.hasOwn(raw.permissions.areas, 'rooms');
+      if (!Object.hasOwn(raw, 'enabledToolGroups') && !Object.hasOwn(raw, 'tierCeiling')) {
+        continue;
+      }
+      const before = rawAreas(raw);
       const folded = foldLegacyPermissionFields(raw) as Record<string, unknown>;
       const permissions = folded.permissions as AgentPermissions | undefined;
-      await deps.writeFolded(agent.id, {
-        ...(permissions ? { permissions } : {}),
-        enabledToolGroups: (folded.enabledToolGroups as Record<string, boolean> | undefined) ?? {},
-      });
-      const rooms = permissions?.areas?.rooms as PermissionState | undefined;
-      if (hadRooms || !rooms) continue;
+      await deps.writeFolded(agent.id, permissions ? { permissions } : {});
+      const after = permissions?.areas ?? {};
+      const target: PermissionChange['target'] = {
+        kind: 'agent',
+        agentId: agent.id,
+        agentPath: agent.projectPath,
+        agentName: agent.displayName || agent.name,
+      };
+      const changes: PermissionChange[] = PERMISSION_AREA_IDS.filter(
+        (area) => Object.hasOwn(after, area) && !Object.hasOwn(before, area)
+      ).map((area) => ({
+        target,
+        key: { kind: 'area', area },
+        before: null,
+        after: after[area] ?? null,
+      }));
+      if (changes.length === 0) continue;
       await recordPermissionChange(deps.activity, {
-        changes: [
-          {
-            target: {
-              kind: 'agent',
-              agentId: agent.id,
-              agentPath: agent.projectPath,
-              agentName: agent.displayName || agent.name,
-            },
-            key: { kind: 'area', area: 'rooms' },
-            before: null,
-            after: rooms,
-          },
-        ],
+        changes,
         surface: 'upgrade',
         writer: UPGRADE_WRITER,
+        ...(raw.tierCeiling === 'observe' ? { note: OBSERVE_CEILING_NOTE } : {}),
       });
       events += 1;
     } catch (err) {
@@ -122,6 +154,27 @@ const foldRoomsManageStep: PermissionUpgradeStep = async (deps) => {
     }
   }
   return events;
+};
+
+/**
+ * Fold the retired `agentContext` switches into the permission defaults and
+ * record the areas that fold Blocked, as one event for everyone. Runs on every
+ * boot and does nothing once the section is gone.
+ */
+const retireAgentContextStep: PermissionUpgradeStep = async (deps) => {
+  const blocked = deps.retireAgentContext?.() ?? null;
+  if (!blocked || blocked.length === 0) return 0;
+  await recordPermissionChange(deps.activity, {
+    changes: blocked.map((area) => ({
+      target: { kind: 'default' },
+      key: { kind: 'area', area },
+      before: null,
+      after: 'blocked',
+    })),
+    surface: 'upgrade',
+    writer: UPGRADE_WRITER,
+  });
+  return 1;
 };
 
 /**
@@ -142,17 +195,36 @@ const recordPresetMigrationStep: PermissionUpgradeStep = async (deps) => {
   return 1;
 };
 
-/** The phase-1 steps, in order. Later phases append theirs. */
-const PERMISSION_UPGRADE_STEPS: readonly PermissionUpgradeStep[] = [
-  foldRoomsManageStep,
-  recordPresetMigrationStep,
+/** The once-per-version steps, in order. */
+const PERMISSION_UPGRADE_STEPS: readonly PermissionUpgradeStep[] = [recordPresetMigrationStep];
+
+/** The retirements, which run on every boot and act only on what is left. */
+const PERMISSION_RETIREMENT_STEPS: readonly PermissionUpgradeStep[] = [
+  retireAgentContextStep,
+  foldLegacyManifestsStep,
 ];
 
 /**
- * Run the sweep once for this server version.
+ * Run the retirements: fold whatever retired permission field is still on disk
+ * or in the config, and record what that decided. Safe on every boot.
  *
  * @param deps - The config, agents, manifest I/O, Activity writer and logger.
- * @param steps - The steps to run; the phase-1 list by default.
+ * @returns How many events the retirements wrote.
+ */
+export async function runPermissionRetirements(deps: PermissionUpgradeSweepDeps): Promise<number> {
+  let events = 0;
+  for (const step of PERMISSION_RETIREMENT_STEPS) events += await step(deps);
+  if (events > 0) {
+    deps.logger.info('[Permissions] upgrade folded retired permission settings', { events });
+  }
+  return events;
+}
+
+/**
+ * Run the once-per-version steps for this server version.
+ *
+ * @param deps - The config, agents, manifest I/O, Activity writer and logger.
+ * @param steps - The steps to run; the production list by default.
  * @returns How many events the sweep wrote, or `null` when it had already run.
  */
 export async function runPermissionUpgradeSweep(

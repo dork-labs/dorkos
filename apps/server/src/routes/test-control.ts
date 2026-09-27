@@ -34,7 +34,6 @@ import {
   tryGetRoomWorktreeManager,
 } from '../services/rooms/index.js';
 import { commitAll } from '../services/rooms/repo/room-repo-git.js';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
 import { hashApprovalInput, type ApprovalService } from '../services/core/approvals/index.js';
 import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
@@ -492,27 +491,6 @@ const agentTokenSchema = z.object({
 });
 
 /**
- * The highest tier a token minted here may ever reach.
- *
- * **`mint` defaults to `destructive`, which is the top of the ladder** — higher
- * than the ceiling an unidentified caller gets (`DEFAULT_ANONYMOUS_TIER_CEILING`
- * in `tier-enforcement.ts`). So a test seam that took the default would hand out
- * a MORE powerful identity than presenting no identity at all, which is the
- * wrong direction for a route that exists only to let a test pretend.
- *
- * `act` is the narrowest ceiling that still covers what this seam is for: the
- * rooms verbs a test drives as an agent — `post_to_room`, `react_to_room_entry`
- * — are `act` (`room-capabilities.ts`). Anything destructive is refused, which
- * is a property worth having on a token handed out over an unauthenticated
- * local route.
- *
- * It is a deliberate divergence from production, where nothing passes a ceiling
- * yet and every real spawn is therefore `destructive`. Named here rather than
- * silently inherited so the difference is a decision somebody can read.
- */
-const TEST_TOKEN_TIER_CEILING: CapabilityTier = 'act';
-
-/**
  * `POST /api/test/agent-token` — mint an identity token for an agent that is
  * really registered here, and hand it to the test.
  *
@@ -585,7 +563,6 @@ testControlRouter.post('/agent-token', async (req, res) => {
   const token = await service.mint({
     agentPath,
     displayName: agent.displayName ?? agent.name,
-    tierCeiling: TEST_TOKEN_TIER_CEILING,
   });
   res.json({ token });
 });
@@ -688,12 +665,49 @@ testControlRouter.get('/connect-approved', (_req, res) => {
 
 const seedAgentSchema = z
   .object({
-    slot: z.enum(['shared', 'denied-access', 'permission-requester']).default('shared'),
+    slot: z
+      .enum(['shared', 'denied-access', 'permission-requester', 'suggestion-requester'])
+      .default('shared'),
+    /**
+     * A fresh agent in the same slot: a spec whose checks read history that
+     * outlives an attempt (the Always allow suggestion counts a week of
+     * answers, and "Not now" is kept) seeds a new instance per attempt, so a
+     * retry or a rerun on the same server starts clean. Bounded, so the
+     * directory stays inside the slot's own by construction.
+     */
+    instance: z
+      .string()
+      .regex(/^[a-z0-9-]{1,40}$/)
+      .optional(),
   })
   .default({ slot: 'shared' });
 
 /** A fixed, enum-bounded test identity slot. */
 type SeedAgentSlot = z.infer<typeof seedAgentSchema>['slot'];
+
+/**
+ * Each slot's name and description. The requesters are agents of their own so
+ * the permission specs' changes, their per-agent request limits and the
+ * Always allow suggestion's count never touch DorkBot or each other.
+ */
+const SEED_AGENT_COPY: Record<SeedAgentSlot, { name: string; description: string }> = {
+  shared: {
+    name: 'E2E Test Agent',
+    description: 'Seeded by test setup — runs on the server default runtime',
+  },
+  'denied-access': {
+    name: 'E2E Denied Agent',
+    description: 'Requests access that the owner denies.',
+  },
+  'permission-requester': {
+    name: 'E2E Permission Requester',
+    description: 'Asks for permissions a person answers on the request card.',
+  },
+  'suggestion-requester': {
+    name: 'E2E Suggestion Requester',
+    description: 'Asks for the same thing until the card suggests Always allow.',
+  },
+};
 
 /**
  * Fixture directory for a seeded test agent, derived from the RESOLVED
@@ -715,8 +729,8 @@ type SeedAgentSlot = z.infer<typeof seedAgentSchema>['slot'];
  * Resolved per request rather than at module load: `app.ts` imports this router
  * statically, which runs before `initBoundary()` does at startup.
  */
-function e2eAgentDir(slot: SeedAgentSlot = 'shared'): string {
-  const suffix = slot === 'shared' ? '' : `-${slot}`;
+function e2eAgentDir(slot: SeedAgentSlot = 'shared', instance?: string): string {
+  const suffix = `${slot === 'shared' ? '' : `-${slot}`}${instance ? `-${instance}` : ''}`;
   return path.join(getBoundary(), 'tmp', `dorkos-e2e-agent${suffix}`);
 }
 
@@ -788,7 +802,7 @@ function fixtureAgentId(agentDir: string): string {
 const FIXTURE_AGENT_RUNTIME = 'codex';
 
 /**
- * Seed a test agent in one of three fixed slots inside the directory boundary —
+ * Seed a test agent in one of four fixed slots inside the directory boundary —
  * on disk AND in the mesh registry.
  *
  * Overwrites any existing manifest so tests always start with a clean agent.
@@ -815,8 +829,9 @@ const FIXTURE_AGENT_RUNTIME = 'codex';
  * uses for a manifest already written by hand: it adopts the id on disk, adds
  * exactly one registry row, and announces nothing.
  *
- * **No cleanup is owed, because none accumulates.** Each of the three slots maps
- * to one fixed directory and stable id. Re-seeding replaces that slot's row
+ * **No cleanup is owed, because little accumulates.** Each of the four slots maps
+ * to one fixed directory and stable id; an `instance` adds one agent per
+ * attempt, inside the leg's throwaway data directory. Re-seeding replaces that slot's row
  * rather than stacking rows. `POST /api/test/reset` does not touch mesh, and
  * does not need to.
  *
@@ -838,25 +853,12 @@ testControlRouter.post('/seed-agent', async (req, res) => {
         `this server does not register.`,
     });
   }
-  const { slot } = input.data;
-  const agentDir = e2eAgentDir(slot);
+  const { slot, instance } = input.data;
+  const agentDir = e2eAgentDir(slot, instance);
   const fixtureId = fixtureAgentId(agentDir);
-  const deniedAccess = slot === 'denied-access';
-  // Its own agent, so the request-card spec's permission changes and its
-  // per-agent request limits never touch DorkBot, which other specs drive.
-  const requester = slot === 'permission-requester';
   const manifest: AgentManifest = {
     id: fixtureId,
-    name: deniedAccess
-      ? 'E2E Denied Agent'
-      : requester
-        ? 'E2E Permission Requester'
-        : 'E2E Test Agent',
-    description: deniedAccess
-      ? 'Requests access that the owner denies.'
-      : requester
-        ? 'Asks for permissions a person answers on the request card.'
-        : 'Seeded by test setup — runs on the server default runtime',
+    ...SEED_AGENT_COPY[slot],
     runtime: FIXTURE_AGENT_RUNTIME,
     capabilities: [],
     // A fixture agent wears a face for the same reason a real one does: no
@@ -869,7 +871,6 @@ testControlRouter.post('/seed-agent', async (req, res) => {
     registeredBy: 'dorkos-e2e',
     personaEnabled: false,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
     workspace: { mode: 'home' },
   };
@@ -1067,7 +1068,6 @@ testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
     registeredBy: 'dorkos-e2e',
     personaEnabled: false,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: 'granola',

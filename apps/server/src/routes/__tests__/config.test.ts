@@ -306,7 +306,7 @@ describe('PATCH /api/config', () => {
     // asserts the STORE as well as the status: a refusal that still wrote would
     // pass a status-only test.
     //
-    // The ten share ONE test per direction rather than getting a case each.
+    // They share ONE test per direction rather than getting a case each.
     // That is a memory decision, not a style one: every test in this file mints
     // a fresh app, a fresh config directory and a fresh module graph
     // (`vi.resetModules()`), and twenty more of those took the worker past the
@@ -326,30 +326,6 @@ describe('PATCH /api/config', () => {
         protective: false,
         agentWants: true,
         patch: { runtimes: { claudeCode: { persistentSession: true } } },
-      },
-      {
-        path: 'agentContext.relayTools',
-        protective: false,
-        agentWants: true,
-        patch: { agentContext: { relayTools: true } },
-      },
-      {
-        path: 'agentContext.meshTools',
-        protective: false,
-        agentWants: true,
-        patch: { agentContext: { meshTools: true } },
-      },
-      {
-        path: 'agentContext.adapterTools',
-        protective: false,
-        agentWants: true,
-        patch: { agentContext: { adapterTools: true } },
-      },
-      {
-        path: 'agentContext.tasksTools',
-        protective: false,
-        agentWants: true,
-        patch: { agentContext: { tasksTools: true } },
       },
       {
         path: 'harness.autoSync',
@@ -407,7 +383,7 @@ describe('PATCH /api/config', () => {
 
     it('lets the PERSON write every one of them through the same door', async () => {
       // The other half, and the one that decides whether the fix is usable.
-      // Every surface that owns one of these ten writes through THIS route: the
+      // Every surface that owns one of these writes through THIS route: the
       // Control Center's 'Warm agents' switch and its 'Scheduled runs at once'
       // stepper, Settings → Tools for the four tool switches and the same
       // concurrency stepper, and `dorkos config set` for `uploads.*` and
@@ -455,36 +431,19 @@ describe('PATCH /api/config', () => {
       // value's reversal in behind a legitimate change and have the legitimate
       // half land as cover.
       const { configManager } = await import('../../services/core/config-manager.js');
-      configManager.setDot('agentContext.relayTools', false);
+      configManager.setDot('harness.autoSync', false);
 
       agentHeader = 'agent-token';
       signedInUser = undefined;
 
       const refused = await request(server)
         .patch('/api/config')
-        .send({ ui: { theme: 'dark' }, agentContext: { relayTools: true } })
+        .send({ ui: { theme: 'dark' }, harness: { autoSync: true } })
         .expect(403);
 
-      expect(refused.body.paths).toEqual(['agentContext.relayTools']);
-      expect(configManager.getDot('agentContext.relayTools')).toBe(false);
+      expect(refused.body.paths).toEqual(['harness.autoSync']);
+      expect(configManager.getDot('harness.autoSync')).toBe(false);
       expect(configManager.getDot('ui.theme')).not.toBe('dark');
-    });
-
-    it('tells the agent what a tool-group switch is, and nothing more', async () => {
-      // The refusal text lands in a model's context, so it has to be true. These
-      // switches feed the tool-documentation blocks: nothing is loaded, nothing
-      // is attached, nobody gets in, and access is still the tier gate's call
-      // (DOR-1044).
-      agentHeader = 'agent-token';
-      signedInUser = undefined;
-
-      const refused = await request(server)
-        .patch('/api/config')
-        .send({ agentContext: { relayTools: true } })
-        .expect(403);
-
-      expect(refused.body.message).toContain('Which DorkOS tool groups your agents are told about');
-      expect(refused.body.message).not.toMatch(/who can reach this instance/i);
     });
   });
 

@@ -314,6 +314,16 @@ export interface ApprovalServiceOptions {
    * would not. Omitted in tests and in boots without rooms.
    */
   roomForSession?: (sessionId: string) => string | undefined;
+  /**
+   * Whether a card for this agent and action should suggest Always allow (spec
+   * `agent-permissions`, the gentle suggestion). Asked only of a card that
+   * offers Always allow, when it is read. Omitted in tests and in boots without
+   * the Activity log, where no card suggests it.
+   */
+  suggestAlways?: (request: {
+    agentPath: string;
+    capabilityId: string;
+  }) => { allowedThisWeek: number } | null;
 }
 
 /** What a requester gets back: an id to watch, and a token to retry with. */
@@ -484,18 +494,25 @@ type ApprovalRow = typeof approvals.$inferSelect;
  * too. So a card carrying that binding never offers it, whatever area a future
  * connector action is given.
  *
+ * A card that shows a change to read, old → new (`describeApprovalChange`,
+ * DOR-2328) or a text in full (`approvalDetailField`), never offers it either:
+ * the promise of those cards is that a person sees every such change before it
+ * happens, and a standing yes would let the next change through unseen.
+ *
  * @param row - The stored approval.
  */
 export function isAlwaysOffered(row: {
   requestedByPath: string | null;
   area: string | null;
   authorityBindingDigest: string | null;
+  detail?: string | null;
 }): boolean {
   return (
     row.requestedByPath !== null &&
     row.area !== null &&
     !isFloorArea(row.area) &&
-    row.authorityBindingDigest === null
+    row.authorityBindingDigest === null &&
+    (row.detail ?? null) === null
   );
 }
 
@@ -509,8 +526,16 @@ function recordedArea(area: string | null): PermissionAreaId | null {
  *
  * @param row - The stored approval.
  * @param roomId - The room whose turn raised it, when there is one.
+ * @param suggestAlways - Whether the card should suggest Always allow; asked
+ *   only of a card that offers it.
  */
-function toPendingApproval(row: ApprovalRow, roomId?: string): PendingApproval {
+function toPendingApproval(
+  row: ApprovalRow,
+  roomId?: string,
+  suggestAlways?: (row: ApprovalRow) => { allowedThisWeek: number } | null
+): PendingApproval {
+  const alwaysOffered = isAlwaysOffered(row);
+  const suggestion = alwaysOffered ? (suggestAlways?.(row) ?? null) : null;
   return {
     approvalId: row.id,
     capabilityId: row.capabilityId,
@@ -533,7 +558,10 @@ function toPendingApproval(row: ApprovalRow, roomId?: string): PendingApproval {
     // goes out is the one bit a surface needs, which is whether there is one.
     hasAgentPath: row.requestedByPath !== null,
     area: recordedArea(row.area),
-    alwaysOffered: isAlwaysOffered(row),
+    alwaysOffered,
+    ...(suggestion
+      ? { suggestAlways: true as const, allowedThisWeek: suggestion.allowedThisWeek }
+      : {}),
     ...(row.blockedRequest ? { blockedRequest: true as const } : {}),
     ...(row.blockedRequest && row.requestReason ? { requestReason: row.requestReason } : {}),
     ...(roomId ? { roomId } : {}),
@@ -693,7 +721,7 @@ export class ApprovalService {
     };
     this.db.insert(approvals).values(row).run();
 
-    const pending = toPendingApproval(row, this.roomFor(row.requestingSessionId));
+    const pending = this.toCard(row);
     broadcastApprovalPending(pending);
     // The escalation clock starts HERE, at the write that creates the condition
     // — the same place a parked schedule arms one, and for the same reason: an
@@ -1087,9 +1115,7 @@ export class ApprovalService {
       .where(and(eq(approvals.state, 'pending'), isNull(approvals.consumedAt)))
       .orderBy(asc(approvals.createdAt))
       .all();
-    return rows
-      .filter((row) => !this.isExpired(row))
-      .map((row) => toPendingApproval(row, this.roomFor(row.requestingSessionId)));
+    return rows.filter((row) => !this.isExpired(row)).map((row) => this.toCard(row));
   }
 
   /**
@@ -1106,7 +1132,34 @@ export class ApprovalService {
    */
   getPending(approvalId: string): PendingApproval | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
-    return row ? toPendingApproval(row, this.roomFor(row.requestingSessionId)) : undefined;
+    return row ? this.toCard(row) : undefined;
+  }
+
+  /** One stored row as the card a surface draws. */
+  private toCard(row: ApprovalRow): PendingApproval {
+    return toPendingApproval(row, this.roomFor(row.requestingSessionId), (r) =>
+      this.suggestsAlways(r)
+    );
+  }
+
+  /**
+   * Whether this card suggests Always allow, and after how many one-time
+   * Allows. A lookup that throws reads as "no":
+   * a suggestion is a nicety, and a card must still be a card without it.
+   */
+  private suggestsAlways(row: ApprovalRow): { allowedThisWeek: number } | null {
+    if (!this.options.suggestAlways || row.requestedByPath === null) return null;
+    try {
+      return this.options.suggestAlways({
+        agentPath: row.requestedByPath,
+        capabilityId: row.capabilityId,
+      });
+    } catch (err) {
+      logger.warn('[approvals] could not tell whether to suggest Always allow', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
   /**

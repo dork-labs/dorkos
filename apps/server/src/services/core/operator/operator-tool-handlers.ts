@@ -18,12 +18,12 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { SidebarPrefs } from '@dorkos/shared/config-schema';
 import { buildIssueDraft, gatherFeedbackReport, type FeedbackKind } from '@dorkos/shared/feedback';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { CapabilityHandlerContext } from '../capabilities/registry.js';
+import type { GrantedApproval } from '../capabilities/tier-enforcement.js';
 import type { DisplayNameWriter } from '../../identity/display-name-provenance.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
@@ -42,6 +42,7 @@ import { sanitizedConfigSnapshot } from './config-patch.js';
 import {
   applyGuardedConfigWrite,
   OPERATOR_TOOL_AUTHORITY,
+  PERSON_APPROVED_AUTHORITY,
   type GuardedConfigWriteResult,
 } from './config-write.js';
 import {
@@ -146,11 +147,8 @@ export interface UpdateAgentArgs {
   color?: string | null;
   icon?: string | null;
   soulContent?: string;
-  /**
-   * The most this agent may ever do. Lowering it is the agent's own call;
-   * raising or clearing it is refused by `agent-updater.ts` (DOR-486).
-   */
-  tierCeiling?: CapabilityTier | null;
+  /** Retired; present only so the updater can refuse it by name. */
+  tierCeiling?: unknown;
   /** Present only so the handler can refuse it — see the guard in the handler. */
   nopeContent?: unknown;
   /** Present only so the handler can refuse them (DOR-2328) — see `agent-execution.ts`. */
@@ -539,6 +537,10 @@ function agentWriter(identity?: AgentIdentity): DisplayNameWriter {
  *
  * A patch that touches even one operator-only path is refused whole: no partial
  * write, so an agent cannot smuggle a posture change in behind a legitimate one.
+ * The one way through is a person's yes: such a patch is decided in every floor
+ * area it touches, by the strictest of them (`operatorOnlyAreasForPatch`, spec
+ * `agent-permissions` D6), and asks on a card unless one of them is Blocked; and when the gate spent that approval the write goes through
+ * {@link PERSON_APPROVED_AUTHORITY}, because the change is then the person's.
  *
  * **This is also where an agent-set display name gets its receipt** (DOR-1022).
  * `profile.displayName` stays writable here — DorkBot saving "call me Dorian" is
@@ -549,14 +551,20 @@ function agentWriter(identity?: AgentIdentity): DisplayNameWriter {
  * write or clear it directly.
  *
  * @param identity - The calling agent, when the surface resolved one. Read only
- *   for the display-name receipt; nothing about the write depends on it.
+ *   for the display-name receipt.
+ * @param approval - What the gate concluded about this exact call. A person's
+ *   approval (`via: 'approval'`) lets an operator-only setting through; nothing
+ *   else does.
  * @returns The bound handler (no deps; writes via the config singleton).
  */
-export function createConfigPatchHandler(identity?: AgentIdentity) {
+export function createConfigPatchHandler(identity?: AgentIdentity, approval?: GrantedApproval) {
   return async (args: { patch?: Record<string, unknown> }): Promise<OperatorToolResult> => {
     const result = applyGuardedConfigWrite({
       patch: args.patch,
-      authority: OPERATOR_TOOL_AUTHORITY,
+      // A person approved THIS patch on a card (the gate asks in the floor area
+      // an operator-only setting belongs to): the change is theirs. Without
+      // that, the agent may change preferences only, exactly as before.
+      authority: approval?.via === 'approval' ? PERSON_APPROVED_AUTHORITY : OPERATOR_TOOL_AUTHORITY,
       source: 'the config_patch tool',
       writer: agentWriter(identity),
     });

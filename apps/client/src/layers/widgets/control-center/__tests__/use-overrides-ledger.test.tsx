@@ -20,6 +20,14 @@ const navigate = vi.fn();
 const openSettings = vi.fn();
 const openConnections = vi.fn();
 const setControlCenterOpen = vi.fn();
+const openProfile = vi.fn();
+/** An overview with nobody set differently: the ledger's permissions half, answered. */
+const NO_EXCEPTIONS = { areas: [], exceptions: [], filesAndCommands: { exceptions: [] } };
+const usePermissions = vi.fn((): { data?: unknown; isError?: boolean } => ({
+  data: NO_EXCEPTIONS,
+  isError: false,
+}));
+const resetMutate = vi.fn();
 
 vi.mock('@/layers/entities/config', () => ({ useConfig: () => useConfig() }));
 vi.mock('@/layers/entities/runtime', () => ({
@@ -32,10 +40,22 @@ vi.mock('@/layers/entities/tasks', () => ({
   useTasksEnabled: () => useTasksEnabled(),
 }));
 vi.mock('@/layers/entities/binding', () => ({ useBindings: () => useBindings() }));
+vi.mock('@/layers/entities/permissions', () => ({
+  usePermissions: () => usePermissions(),
+  useResetAgentPermission: () => ({ mutate: resetMutate, isPending: false }),
+}));
+vi.mock('@/layers/features/permissions', () => ({
+  STATE_LABEL: { blocked: 'Blocked', ask: 'Ask', allowed: 'Allowed' },
+  stateWhy: (input: { state: string; source: string; agentName?: string }) =>
+    `${input.state} from ${input.source} for ${input.agentName}`,
+  filesWhy: (stop: string, source: string, agentName?: string) =>
+    `${stop} from ${source} for ${agentName}`,
+}));
 vi.mock('@/layers/shared/model', () => ({
   useSafeNavigate: () => navigate,
   useOpenConnections: () => openConnections,
   useSettingsDeepLink: () => ({ open: openSettings }),
+  useProfileDeepLink: () => ({ open: openProfile }),
   useAppStore: (selector: (s: { setControlCenterOpen: typeof setControlCenterOpen }) => unknown) =>
     selector({ setControlCenterOpen }),
 }));
@@ -86,6 +106,7 @@ beforeEach(() => {
   useSessions.mockReturnValue({ sessions: [] });
   useTasks.mockReturnValue({ data: [] });
   useBindings.mockReturnValue({ data: [] });
+  usePermissions.mockReturnValue({ data: NO_EXCEPTIONS, isError: false });
   seedCaps();
 });
 
@@ -186,5 +207,103 @@ describe('useOverridesLedger', () => {
     const { result } = renderHook(() => useOverridesLedger());
     expect(result.current.rows).toHaveLength(0);
     expect(result.current.isEmpty).toBe(true);
+  });
+
+  it("lists each agent's own permission, opens its page, and resets it in one tap", () => {
+    const CHANGE = {
+      eventId: 'evt-1',
+      occurredAt: '2026-09-23T10:00:00.000Z',
+      actorLabel: 'Someone on this computer',
+      attribution: 'local-trust',
+      surface: 'settings',
+    };
+    usePermissions.mockReturnValue({
+      data: {
+        areas: [
+          {
+            id: 'rooms',
+            label: 'Rooms',
+            actions: [{ id: 'rooms.create', title: 'create rooms' }],
+          },
+        ],
+        exceptions: [
+          {
+            agentId: 'a1',
+            agentName: 'security-auditor',
+            area: 'rooms',
+            state: 'blocked',
+            lastChange: CHANGE,
+          },
+          {
+            agentId: 'a2',
+            agentName: 'DorkBot',
+            area: 'rooms',
+            action: 'rooms.create',
+            state: 'allowed',
+          },
+        ],
+        filesAndCommands: {
+          exceptions: [{ agentId: 'a1', agentName: 'security-auditor', stop: 'ask' }],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useOverridesLedger());
+    const rows = result.current.rows.filter((r) => r.kind === 'agent-permission');
+    expect(rows.map((r) => `${r.name}: ${r.detail}`)).toEqual([
+      'security-auditor: Rooms Blocked',
+      'DorkBot: create rooms Allowed',
+      'security-auditor: Files & commands Ask first',
+    ]);
+
+    // Each explains itself: where it comes from, and the last change behind it.
+    expect(rows.map((r) => r.why?.question)).toEqual([
+      'Why is Rooms set to Blocked for security-auditor?',
+      'Why is create rooms set to Allowed for DorkBot?',
+      'Why is Files & commands set to Ask first for security-auditor?',
+    ]);
+    expect(rows[0]!.why).toMatchObject({
+      sentence: 'blocked from agent-area for security-auditor',
+      lastChange: CHANGE,
+    });
+    expect(rows[1]!.why?.sentence).toBe('allowed from agent-action for DorkBot');
+    expect(rows[1]!.why?.lastChange).toBeUndefined();
+
+    rows[0]!.onOpen?.();
+    expect(openProfile).toHaveBeenCalledWith('a1', 'permissions');
+
+    rows[0]!.onReset?.();
+    expect(resetMutate).toHaveBeenCalledWith({
+      agentId: 'a1',
+      key: { kind: 'area', area: 'rooms' },
+      surface: 'control-center',
+    });
+    rows[1]!.onReset?.();
+    expect(resetMutate).toHaveBeenLastCalledWith({
+      agentId: 'a2',
+      key: { kind: 'action', action: 'rooms.create' },
+      surface: 'control-center',
+    });
+    rows[2]!.onReset?.();
+    expect(resetMutate).toHaveBeenLastCalledWith({
+      agentId: 'a1',
+      key: { kind: 'files' },
+      surface: 'control-center',
+    });
+  });
+
+  it('waits for the permissions before saying nothing is overridden', () => {
+    usePermissions.mockReturnValue({ data: undefined, isError: false });
+    const { result } = renderHook(() => useOverridesLedger());
+    expect(result.current.isResolving).toBe(true);
+    expect(result.current.isEmpty).toBe(false);
+  });
+
+  it('says it could not read them, rather than that nothing differs, when the read fails', () => {
+    usePermissions.mockReturnValue({ data: undefined, isError: true });
+    const { result } = renderHook(() => useOverridesLedger());
+    expect(result.current.isResolving).toBe(false);
+    expect(result.current.isEmpty).toBe(false);
+    expect(result.current.permissionsUnreadable).toBe(true);
   });
 });

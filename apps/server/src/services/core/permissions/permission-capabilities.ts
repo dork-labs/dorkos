@@ -22,12 +22,15 @@
  * Blocked is gated exactly as if it had been called directly (Allowed runs, Ask
  * raises the ordinary card), and `blockedRequest` changes nothing for it.
  *
- * ### What it can reach in this phase
+ * ### What it can reach
  *
- * Registry capabilities, by id or MCP tool name. Hand-registered MCP tools
- * (`tasks_create`, `mesh_list`, …) carry no area yet (they are assigned one in
- * phase 3), so none of them can be Blocked and none needs asking for; a request
- * naming one is told to call it directly. Phase 3 extends this to them.
+ * Registry capabilities, by id or MCP tool name, among the ones the calling
+ * surface lists. And the hand-registered MCP tools (`tasks_create`,
+ * `mesh_unregister`, …) on the two servers that build them, the claude-code
+ * in-session server and the external `/mcp` server: each hands the request tool
+ * a reach over every tool it built, the ones a Blocked permission left out of
+ * the list included (`context.handTools`). Over HTTP there is no such server,
+ * and a request naming a hand-registered tool is told so.
  *
  * ## `permissions.list`
  *
@@ -63,6 +66,24 @@ import {
   type CapabilityRegistry,
 } from '../capabilities/index.js';
 import { titleForMcpTool } from '../mcp-tool-tiers.js';
+import { agentRequestWriter } from './permission-history.js';
+import { PermissionError, type PermissionService } from './permission-service.js';
+
+/**
+ * Extend the shared dependency bag with the permission write owner, so an
+ * approved `permissions.change` writes through the same service Settings uses
+ * (spec `agent-permissions` D9). Optional: a registry composed without it (the
+ * docs registry, a unit test) answers that the change cannot be made here.
+ */
+declare module '../capabilities/capability-definition.js' {
+  interface CapabilityDeps {
+    /** The permission write owner. */
+    permissionService?: Pick<PermissionService, 'setDefaults' | 'setAgent' | 'agentByPath'>;
+  }
+}
+
+/** The capability id an agent asks to change a permission with. */
+export const CHANGE_PERMISSION_ID = 'permissions.change';
 
 /** The request tool's own capability id, which it may never be asked to run. */
 export const REQUEST_ACCESS_ID = 'permissions.request_access';
@@ -287,10 +308,22 @@ async function requestAccess(
   const registry = requireRegistry(deps);
   const target = findRequestedAction(registry, input.action, callingSurface(context));
   if (!target) {
-    if (titleForMcpTool(bareToolName(input.action)) !== undefined) {
+    const bare = bareToolName(input.action);
+    if (context.handTools?.has(bare)) {
+      // A hand-registered tool this server built, hidden or not. The reach runs
+      // it through the same gate a direct call meets, as a request past Blocked;
+      // a card or a refusal comes back as the gate's own refusal.
+      return context.handTools.request(bare, input.arguments, {
+        identity,
+        reason: input.reason,
+        ...(context.approvalToken ? { approvalToken: context.approvalToken } : {}),
+      });
+    }
+    if (titleForMcpTool(bare) !== undefined) {
       refuse(
-        'CALL_IT_DIRECTLY',
-        `"${input.action}" is not something you need to ask for: it is not blocked. Call it directly.`
+        'NOT_ON_THIS_SURFACE',
+        `"${input.action}" is a DorkOS tool this connection cannot reach. Ask from a DorkOS ` +
+          'session, or ask the person directly.'
       );
     }
     refuse(
@@ -323,6 +356,97 @@ async function requestAccess(
     retryChannel: context.retryChannel ?? 'mcp-argument',
     blockedRequest: { reason: input.reason },
   });
+}
+
+/** `permissions.change` input. Explicit fields, no records (the in-session schema rule). */
+const ChangePermissionInputSchema = z.object({
+  target: z
+    .union([z.literal('everyone'), z.string().min(1).max(200)])
+    .describe("'everyone' for the default every agent follows, or an agent id"),
+  area: PermissionAreaIdSchema.optional().describe(
+    'The area to change (rooms, tasks, agents, messages, connections, packages, settings, ' +
+      'safety, permissions, reach). Send this or action, not both.'
+  ),
+  action: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('One action to change, by capability id or tool name. Send this or area, not both.'),
+  state: z
+    .enum(['blocked', 'ask', 'allowed', 'default'])
+    .describe("The new state. 'default' removes the change, so the setting falls back a layer."),
+});
+
+/**
+ * Apply an approved `permissions.change` through the permission service.
+ *
+ * The gate asked the person first, every time: the capability sits in the
+ * Permissions area, which is never Allowed, so no stored setting can let it run
+ * on its own. The handler still refuses anything that did not come through a
+ * person's yes on this exact call, so a trusted caller's direct invocation
+ * (which skips the gate) is pointed at the real controls instead.
+ *
+ * @param deps - The boot dependency bag (for the permission service).
+ * @param input - Who, what, and the new state.
+ * @param context - The caller, and the approval the gate spent.
+ */
+async function changePermission(
+  deps: CapabilityDeps,
+  input: z.infer<typeof ChangePermissionInputSchema>,
+  context: CapabilityHandlerContext
+): Promise<unknown> {
+  const approval = context.approval;
+  if (approval?.via !== 'approval') {
+    refuse(
+      'NEEDS_A_PERSON',
+      'A permission changes only when the person says yes on a card. People change their own ' +
+        'permissions in Settings, or with `dorkos permissions`.'
+    );
+  }
+  if ((input.area === undefined) === (input.action === undefined)) {
+    refuse('AREA_OR_ACTION', 'Name exactly one of area or action.');
+  }
+  const service = deps.permissionService;
+  if (!service) {
+    refuse('UNAVAILABLE', 'DorkOS cannot change permissions from here right now.');
+  }
+  const identity = context.identity;
+  const asker = identity
+    ? (() => {
+        const agent = service.agentByPath(identity.agentPath);
+        return {
+          ...(agent ? { id: agent.id } : {}),
+          name: identity.displayName || agent?.displayName || agent?.name || identity.agentPath,
+        };
+      })()
+    : { name: 'An agent' };
+  const state = input.state === 'default' ? null : input.state;
+  const patch = input.area
+    ? { areas: { [input.area]: state } }
+    : { actions: { [bareToolName(input.action!)]: state } };
+  const common = {
+    ...patch,
+    surface: 'agent-request' as const,
+    approvalId: approval.approvalId,
+  };
+  const writer = agentRequestWriter(asker);
+  try {
+    const changes =
+      input.target === 'everyone'
+        ? await service.setDefaults(common, writer)
+        : await service.setAgent(input.target, common, writer);
+    return {
+      changed: changes.length,
+      message:
+        changes.length === 0
+          ? 'Nothing changed: it was already set that way.'
+          : 'Done. The person said yes, and the permission is changed.',
+    };
+  } catch (err) {
+    if (err instanceof PermissionError) refuse(err.code, err.message);
+    throw err;
+  }
 }
 
 /** The `permissions` capability domain. */
@@ -372,6 +496,27 @@ export const permissionsDomain: CapabilityDomain = {
         },
       },
       invoke: async (_deps, _input, context) => listOwnPermissions(context),
+    }),
+    defineCapability({
+      id: CHANGE_PERMISSION_ID,
+      title: 'Change a permission',
+      description:
+        'Ask the person to change what an agent may do: one area or one action, for one agent ' +
+        '(by id) or for everyone. The person decides on a card every time; this can never be ' +
+        "allowed ahead of time. 'default' removes a change so the setting falls back a layer. " +
+        'Safety limits, Permissions, and Reach & secrets can be Blocked or Ask, never Allowed. ' +
+        'Say plainly what you want changed and why before you ask.',
+      tier: 'act',
+      // A floor area: never Allowed, so every call is a person's yes.
+      area: 'permissions',
+      approvalDisplayFields: ['target', 'area', 'action', 'state'],
+      approvalSubject: { field: 'target', kind: 'agent' },
+      input: ChangePermissionInputSchema,
+      output: z.unknown(),
+      surfaces: {
+        mcp: { toolName: 'change_permission', servers: ['in-session', 'external'] },
+      },
+      invoke: changePermission,
     }),
   ],
 };

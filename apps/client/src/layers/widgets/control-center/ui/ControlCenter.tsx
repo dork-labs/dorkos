@@ -26,7 +26,9 @@ import { ControlCenterBody } from './ControlCenterBody';
  * always present" choice.)
  *
  * `modal`, because the flyout is a task — you change something and dismiss it —
- * not a glance. Escape and an outside click both close it.
+ * not a glance. Escape and an outside click both close it. `autoFocus`, so the
+ * phone's sheet puts focus on its first control, the preset picker, the way
+ * the desktop popover does, rather than leaving it on the glyph the sheet hides.
  */
 export function ControlCenter() {
   const open = useAppStore((s) => s.controlCenterOpen);
@@ -34,7 +36,7 @@ export function ControlCenter() {
   const isMobile = useIsMobile();
 
   return (
-    <ResponsivePopover open={open} onOpenChange={setOpen} modal>
+    <ResponsivePopover open={open} onOpenChange={setOpen} modal autoFocus>
       <ResponsivePopoverTrigger asChild>
         <button
           type="button"

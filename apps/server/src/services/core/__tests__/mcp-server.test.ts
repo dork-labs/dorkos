@@ -134,7 +134,7 @@ describe('createExternalMcpServer', () => {
     expect(typeof server.connect).toBe('function');
   });
 
-  it('registers all 55 tools', () => {
+  it('registers all 56 tools', () => {
     // Purpose: regression guard against accidental tool omissions or additions.
     // This count changes intentionally when new MCP tools are added: 40 legacy
     // hand-registered + 10 operator capabilities + `list_capabilities` from the
@@ -157,13 +157,15 @@ describe('createExternalMcpServer', () => {
     // 54 → 55 for `update_agent_execution`, an agent's runtime, model and
     // effort split out of `update_agent` so it can be tier `destructive`
     // (DOR-2328).
+    // 55 → 56 for `change_permission`, an agent asking to change a permission,
+    // always a person's yes (spec `agent-permissions` D9).
     //
     // These deps carry no `marketplaceDeps`, so the 9 marketplace capabilities are
     // absent here. `docs/integrations/mcp-server.mdx` states the total for a fully
-    // wired server (these 55 + 9 marketplace), and that number is pinned by no
+    // wired server (these 56 + 9 marketplace), and that number is pinned by no
     // test, so update both together when this one moves.
     createExternalMcpServer(createMinimalDeps());
-    expect(registeredTools).toHaveLength(55);
+    expect(registeredTools).toHaveLength(56);
   });
 
   it('registers all expected tool names', () => {
@@ -287,7 +289,7 @@ describe('createExternalMcpServer', () => {
     const bindingTools = toolNames.filter((n) => n.startsWith('binding_'));
     const meshTools = toolNames.filter((n) => n.startsWith('mesh_'));
 
-    expect(coreTools).toHaveLength(26); // 4 core + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions
+    expect(coreTools).toHaveLength(27); // 4 core + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
     expect(taskTools).toHaveLength(5);
     expect(relayTools).toHaveLength(13); // 7 relay + 4 adapter + 2 trace
     expect(bindingTools).toHaveLength(3);

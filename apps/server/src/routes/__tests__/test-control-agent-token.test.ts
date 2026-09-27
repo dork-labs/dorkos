@@ -12,9 +12,7 @@
  * would let anything that can reach this port speak as an agent that does not
  * exist.
  *
- * These tests are the pinning for that, and for the tier ceiling — `mint`
- * defaults to `destructive`, the TOP of the ladder, so taking the default here
- * would have handed out a more powerful identity than presenting none.
+ * These tests are the pinning for that.
  *
  * The router is mounted on a bare express app rather than reached through
  * `createApp`, because `app.ts` mounts `/api/test/*` only under
@@ -89,9 +87,6 @@ describe('POST /api/test/agent-token', () => {
     // message an agent writes to whatever label its token carries.
     expect(row.displayName).not.toBe('ana');
     expect(row.displayName).toBe('Ana');
-    // NOT the `destructive` default. `act` covers the rooms verbs a test drives
-    // (`post_to_room`, `react_to_room_entry`) and refuses everything above them.
-    expect(row.tierCeiling).toBe('act');
   });
 
   it('refuses a path no agent is registered at, and mints nothing', async () => {

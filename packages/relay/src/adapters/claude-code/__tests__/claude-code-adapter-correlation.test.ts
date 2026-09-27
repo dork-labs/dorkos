@@ -184,7 +184,7 @@ describe('ClaudeCodeAdapter correlation ID', () => {
     const tasksEnvelope: RelayEnvelope = {
       id: 'tasks-msg-001',
       subject: 'relay.system.tasks.sched-1',
-      from: 'system:tasks',
+      from: 'relay.system.tasks.scheduler',
       replyTo: 'relay.human.console.client-1',
       budget: {
         hopCount: 0,

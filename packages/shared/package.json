@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./account-usage": {
+      "types": "./src/account-usage.ts",
+      "default": "./dist/account-usage.js"
+    },
     "./capabilities": {
       "types": "./src/capabilities.ts",
       "default": "./dist/capabilities.js"
@@ -101,10 +105,6 @@
       "types": "./src/mesh-schemas.ts",
       "default": "./dist/mesh-schemas.js"
     },
-    "./mcp-tool-groups": {
-      "types": "./src/mcp-tool-groups.ts",
-      "default": "./dist/mcp-tool-groups.js"
-    },
     "./manifest": {
       "types": "./src/manifest.ts",
       "default": "./dist/manifest.js"
@@ -124,6 +124,10 @@
     "./agent-runtime": {
       "types": "./src/agent-runtime.ts",
       "default": "./dist/agent-runtime.js"
+    },
+    "./directory-grants": {
+      "types": "./src/directory-grants.ts",
+      "default": "./dist/directory-grants.js"
     },
     "./connector-provider": {
       "types": "./src/connector-provider.ts",

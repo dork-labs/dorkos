@@ -336,18 +336,6 @@ describe('SettingsDialog', () => {
     expect(resetBtn?.textContent).toBe('Reset to defaults');
   });
 
-  // The Tools reset rides the tab def's actions slot (DOR-918); nothing else
-  // pins it, so deleting `actions:` from the tools tab would pass silently
-  // without this.
-  it('renders a "Reset to defaults" button in the Tools tab header', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/tools/i);
-    const heading = screen.getByRole('heading', { name: 'Tools' });
-    const panel = heading.closest('[data-slot="navigation-layout-panel"]')!;
-    const resetBtn = panel.querySelector('button');
-    expect(resetBtn?.textContent).toBe('Reset to defaults');
-  });
-
   // Verifies the Feature suggestions toggle renders in the Preferences tab
   it('renders "Feature suggestions" toggle in Preferences tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });

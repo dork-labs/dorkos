@@ -3,7 +3,8 @@
  * §Detailed Design 1) — the write path that makes the credential-gated
  * providers reachable without a restart.
  *
- * - `GET    /api/connectors/providers` — setup status per provider.
+ * - `GET    /api/connectors/providers` — setup status per provider, plus every
+ *   way set up to reach apps and the one new apps use.
  * - `PUT    /api/connectors/providers/:provider/credential` — store the vendor
  *   key (body `{ secret }`), reload the provider live, return the fresh status.
  * - `DELETE /api/connectors/providers/:provider/credential` — remove the key
@@ -56,7 +57,11 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
   });
 
   router.get('/', async (_req, res) => {
-    res.json({ providers: await bootstrapper.listStatuses() });
+    const [providers, appConnections] = await Promise.all([
+      bootstrapper.listStatuses(),
+      bootstrapper.appConnections(),
+    ]);
+    res.json({ providers, appConnections });
   });
 
   router.put('/:provider/credential', async (req, res) => {

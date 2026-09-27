@@ -118,6 +118,7 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     filePath: '/tmp/tasks/daily-review/SKILL.md',
     nextRun: new Date(Date.now() + 86400000).toISOString(),
     nextRuns: [],
@@ -166,7 +167,6 @@ const mockAgent: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
   workspace: { mode: 'home' },
 };
@@ -1077,24 +1077,43 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockImplementation((approvalId: string) =>
         Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
       ),
+    dismissAlwaysSuggestion: vi
+      .fn()
+      .mockImplementation((approvalId: string) => Promise.resolve({ ok: true, approvalId })),
     // Permissions (spec `agent-permissions`)
     getPermissions: vi.fn().mockResolvedValue({
       preset: null,
       defaults: { areas: {}, actions: {} },
       changeCount: 0,
+      filesAndCommands: {
+        stop: null,
+        presetStop: null,
+        runtimes: [],
+        exceptions: [],
+        followingAgentIds: [],
+      },
       areas: [],
       exceptions: [],
       agentCount: 0,
     }),
-    getAgentPermissions: vi
-      .fn()
-      .mockImplementation((agentId: string) =>
-        Promise.resolve({ agentId, agentName: agentId, overrides: {}, areas: [] })
-      ),
+    getAgentPermissions: vi.fn().mockImplementation((agentId: string) =>
+      Promise.resolve({
+        agentId,
+        agentName: agentId,
+        overrides: {},
+        areas: [],
+        filesAndCommands: {
+          stop: null,
+          source: 'runtime-own',
+          inherited: { stop: null, source: 'runtime-own' },
+        },
+      })
+    ),
     setPermissionPreset: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     patchPermissionDefaults: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     patchAgentPermissions: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     getPermissionHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    undoPermissionChange: vi.fn().mockResolvedValue({ changes: [], skipped: [] }),
     // Team roster (spec `identity-consistency` §W2.2). Honest-empty by default:
     // `warnings` is OMITTED on a clean read, never `[]`, so a test that does
     // not opt into degradation never renders the banner by accident.

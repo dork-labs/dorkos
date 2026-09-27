@@ -11,6 +11,7 @@ import {
   useReconnectConnectorConnection,
   useResumeConnectorConnection,
   useStopSharingWithEveryAgent,
+  serviceName,
 } from '@/layers/entities/connectors';
 import {
   AlertDialog,
@@ -36,14 +37,6 @@ import {
 } from '@/layers/shared/ui';
 import { connectionStatusLabel } from '../lib/presentation';
 import { ConnectionNotifications } from './ConnectionNotifications';
-
-function displayToolkit(toolkit: string): string {
-  return toolkit
-    .split(/[-_]/u)
-    .filter(Boolean)
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(' ');
-}
 
 interface ConnectionDetailSheetProps {
   /** Stable connection selected from inventory. */
@@ -123,7 +116,7 @@ export function ConnectionDetailSheet({
           <ResponsiveDialogHeader>
             <ResponsiveDialogTitle>
               {connection
-                ? `${displayToolkit(connection.toolkit)} (${connection.label})`
+                ? `${serviceName(connection.toolkit)} (${connection.label})`
                 : 'Account details'}
             </ResponsiveDialogTitle>
             <ResponsiveDialogDescription>

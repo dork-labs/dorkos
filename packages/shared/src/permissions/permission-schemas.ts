@@ -97,6 +97,8 @@ export const PERMISSION_SOURCES = [
   'unchanged',
   'floor',
   'inactive',
+  /** A stored Allowed on an action whose card shows what changes, kept at Ask. */
+  'always-asks',
 ] as const;
 
 /** One of {@link PERMISSION_SOURCES}. */
@@ -172,7 +174,11 @@ export const PermissionChangeKeySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('preset') }),
   z.object({ kind: z.literal('area'), area: PermissionAreaIdSchema }),
   z.object({ kind: z.literal('action'), action: z.string(), area: PermissionAreaIdSchema }),
-  z.object({ kind: z.literal('files') }),
+  z.object({
+    kind: z.literal('files'),
+    /** The runtime whose own stop changed; absent for the global one. */
+    runtime: z.string().optional(),
+  }),
 ]);
 
 /** One change inside a `permission.changed` event. */
@@ -199,6 +205,18 @@ export const PermissionChangedMetadataSchema = z.object({
   attribution: PermissionAttributionSchema,
   approvalId: z.string().optional(),
   undoOf: z.string().optional(),
+  /**
+   * What made the change, when it was not a write anyone asked for:
+   * `arrival-screen` is DorkOS declining the settings a new agent's own folder
+   * brought. Such a line has no Undo.
+   */
+  origin: z.enum(['arrival-screen']).optional(),
+  /**
+   * One plain sentence the history shows beside the change, when the change
+   * alone would mislead: an upgrade that Blocked every area of an agent that
+   * used to be limited to reading says the conversation verbs still work.
+   */
+  note: z.string().max(500).optional(),
   /** What the preset, the defaults and the trust stop were BEFORE a preset write. */
   presetSnapshot: z
     .object({
@@ -254,3 +272,58 @@ export type PermissionAnsweredMetadata = z.infer<typeof PermissionAnsweredMetada
 
 /** The Activity event type every request-card answer lands as. */
 export const PERMISSION_ANSWERED_EVENT = 'permission.answered';
+
+// === The gentle suggestion (`permission.suggestion_dismissed`) ===
+
+/**
+ * The metadata a `permission.suggestion_dismissed` Activity event carries: a
+ * person tapped "Not now" on a request card that was suggesting Always allow
+ * (spec `agent-permissions`, User Experience). The suggestion never comes back
+ * for that agent and action.
+ */
+export const PermissionSuggestionDismissedMetadataSchema = z.object({
+  /** The agent the card was for, when DorkOS knows its id. */
+  agentId: z.string().optional(),
+  /** The agent's project directory: the key the suggestion is matched on. */
+  agentPath: z.string(),
+  /** The capability id or hand-registered tool name. */
+  action: z.string(),
+  /** The approval whose card was dismissed. */
+  approvalId: z.string(),
+});
+
+/** The metadata of a `permission.suggestion_dismissed` Activity event. */
+export type PermissionSuggestionDismissedMetadata = z.infer<
+  typeof PermissionSuggestionDismissedMetadataSchema
+>;
+
+/** The Activity event type a dismissed Always allow suggestion lands as. */
+export const PERMISSION_SUGGESTION_DISMISSED_EVENT = 'permission.suggestion_dismissed';
+
+/**
+ * The metadata a `permission.suggestion_restored` Activity event carries: an
+ * Undo of a "Not now", so the suggestion can come back for that agent and
+ * action. The latest of the two events for an agent and action decides.
+ */
+export const PermissionSuggestionRestoredMetadataSchema =
+  PermissionSuggestionDismissedMetadataSchema.extend({
+    /** The `permission.suggestion_dismissed` event this undid. */
+    undoOf: z.string(),
+  });
+
+/** The metadata of a `permission.suggestion_restored` Activity event. */
+export type PermissionSuggestionRestoredMetadata = z.infer<
+  typeof PermissionSuggestionRestoredMetadataSchema
+>;
+
+/** The Activity event type an undone "Not now" lands as. */
+export const PERMISSION_SUGGESTION_RESTORED_EVENT = 'permission.suggestion_restored';
+
+/**
+ * How many one-time Allows for the same agent and action, inside
+ * {@link ALWAYS_SUGGESTION_WINDOW_MS}, make the next card suggest Always allow.
+ */
+export const ALWAYS_SUGGESTION_THRESHOLD = 3;
+
+/** The window the one-time Allows are counted in: seven days. */
+export const ALWAYS_SUGGESTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;

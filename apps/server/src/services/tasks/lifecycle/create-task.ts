@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { CreateTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
@@ -195,17 +196,26 @@ function resolveTaskHome(
  *
  * @param data - The create request.
  * @param deps - The lifecycle collaborators.
- * @returns The runtime to read the stop in, or undefined for the default.
+ * @returns The runtime to read the stop in (absent for the default), and the
+ *   target agent's own Files & commands stop.
  */
 async function resolveCreateRuntime(
   data: z.infer<typeof CreateTaskRequestSchema>,
   deps: TaskLifecycleDeps
-): Promise<string | undefined> {
-  if (data.runtime) return data.runtime;
-  if (data.target === 'global' || !deps.meshCore) return undefined;
-  const projectPath = deps.meshCore.getProjectPath(data.target);
-  if (!projectPath) return undefined;
-  return (await readAgentExecutionDefaults(projectPath)).runtime;
+): Promise<{ runtime?: string; agent: { filesAndCommands?: PermissionStop } }> {
+  const projectPath =
+    data.target === 'global' || !deps.meshCore
+      ? undefined
+      : deps.meshCore.getProjectPath(data.target);
+  const agentDefaults = await readAgentExecutionDefaults(projectPath ?? undefined);
+  // The target agent's own Files & commands stop rides along: it beats the
+  // server's when this schedule's power is resolved (spec `agent-permissions`
+  // D16).
+  const agent = agentDefaults.filesAndCommands
+    ? { filesAndCommands: agentDefaults.filesAndCommands }
+    : {};
+  const runtime = data.runtime ?? agentDefaults.runtime;
+  return { ...(runtime ? { runtime } : {}), agent };
 }
 
 /**
@@ -254,10 +264,12 @@ export async function createScheduledTask(
   // filed under an agent pinned to it — must not have its trust stop mapped
   // through Claude Code's mode ids, because the mode this resolves is the one
   // stored on the row and the one that actually executes.
+  const target = data.permissionMode ? undefined : await resolveCreateRuntime(data, deps);
   const permissionMode =
     data.permissionMode ??
     resolveScheduledRunPermissionMode({
-      capabilities: capabilitiesForTaskRuntime(await resolveCreateRuntime(data, deps)),
+      capabilities: capabilitiesForTaskRuntime(target?.runtime),
+      agent: target?.agent ?? {},
     });
 
   // …and clamped ONCE, for every caller that did not clear the agent bar. This is
@@ -373,6 +385,7 @@ export async function createScheduledTask(
       runtime: data.runtime || undefined,
       model: data.model || undefined,
       effort: data.effort || undefined,
+      account: data.account || undefined,
       // The CLAMPED mode, so the file and the row agree. A SKILL.md declaring more
       // power than its row holds is a standing request from disk that nobody made
       // and no screen shows.
@@ -431,6 +444,7 @@ export async function createScheduledTask(
       ...(data.runtime !== undefined && { runtime: data.runtime }),
       ...(data.model !== undefined && { model: data.model }),
       ...(data.effort !== undefined && { effort: data.effort }),
+      ...(data.account !== undefined && { account: data.account }),
       filePath,
     });
   }

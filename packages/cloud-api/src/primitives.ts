@@ -55,7 +55,7 @@ export const MicroAmountSchema = z
     'must be a base-10 integer count of micro-units carried as a string'
   )
   .describe(
-    'An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number.'
+    'An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number. A micro-unit is a millionth of the major unit of the currency the response names.'
   );
 
 /**
@@ -80,6 +80,111 @@ export const PositiveMicroAmountSchema = z
   .describe(
     'A strictly positive exact integer count of micro-units, carried as a string so no amount goes through a JavaScript number.'
   );
+
+/**
+ * The metadata key that says what kind of amount a field carries.
+ *
+ * Set with `.meta()` on {@link MoneyMicroSchema} and {@link CreditMicroSchema},
+ * so it reaches the generated JSON Schema as an `amountKind` keyword as well as
+ * the runtime registry (`z.globalRegistry.get(schema)`). A renderer reads it to
+ * decide whether an amount is shown as money or as credits.
+ */
+export const AMOUNT_KIND_META = 'amountKind' as const;
+
+/**
+ * The two kinds of amount this contract carries.
+ *
+ * Mechanism, not catalog: it says how an amount is counted, never what anybody
+ * bought.
+ */
+export const AmountKindSchema = z
+  .enum(['money', 'credit'])
+  .describe(
+    'What an amount counts: money paid, refunded, offered or capped, or credits held, spent or priced.'
+  );
+
+/** What an amount counts. */
+export type AmountKind = z.infer<typeof AmountKindSchema>;
+
+const INTEGER_STRING = /^-?(0|[1-9][0-9]*)$/;
+const POSITIVE_INTEGER_STRING = /^[1-9][0-9]*$/;
+
+/**
+ * An amount of money, as an exact integer count of micro-units carried as a
+ * string.
+ *
+ * The same wire shape and the same TypeScript type as {@link MicroAmountSchema};
+ * only the description and the {@link AMOUNT_KIND_META} mark differ. Render it
+ * in the response's `denomination.currency`, never as credits.
+ */
+export const MoneyMicroSchema = z
+  .string()
+  .regex(INTEGER_STRING, 'must be a base-10 integer count of micro-units carried as a string')
+  .describe(
+    "An exact integer count of micro-units of the response's currency: money paid, refunded, offered or capped."
+  )
+  .meta({ [AMOUNT_KIND_META]: 'money' });
+
+/**
+ * A strictly positive amount of money: the shape of an amount a purchase is
+ * made of.
+ *
+ * The same wire shape as {@link PositiveMicroAmountSchema}, marked as money.
+ */
+export const PositiveMoneyMicroSchema = z
+  .string()
+  .regex(
+    POSITIVE_INTEGER_STRING,
+    'must be a positive base-10 integer count of micro-units carried as a string'
+  )
+  .describe(
+    'A strictly positive exact integer count of micro-units of money to be paid, in the currency the service names.'
+  )
+  .meta({ [AMOUNT_KIND_META]: 'money' });
+
+/**
+ * An amount of credits, as an exact integer count of micro-units carried as a
+ * string.
+ *
+ * The same wire shape and the same TypeScript type as {@link MicroAmountSchema};
+ * only the description and the {@link AMOUNT_KIND_META} mark differ. Divide by
+ * the response's `denomination.microPerCredit` to get credits. The scale is
+ * served, never assumed: this package publishes no value for it.
+ */
+export const CreditMicroSchema = z
+  .string()
+  .regex(INTEGER_STRING, 'must be a base-10 integer count of micro-units carried as a string')
+  .describe(
+    "An exact integer count of micro-units of the response's currency, counted as credits: divide by the response's denomination.microPerCredit to get credits."
+  )
+  .meta({ [AMOUNT_KIND_META]: 'credit' });
+
+/**
+ * The unit a response's amounts are in: which currency the micro-units are
+ * millionths of, and how many of them one credit is.
+ *
+ * Served by the service at runtime on every response that carries an amount.
+ * This package publishes no value for either field, and a client never
+ * hard-codes one. A response without it came from an older service; a client
+ * that receives none shows that it could not read the amount rather than
+ * guessing a unit.
+ */
+export const DenominationSchema = z
+  .object({
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/, 'must be an ISO 4217 currency code')
+      .describe('An ISO 4217 code. Rendered, never enumerated.'),
+    microPerCredit: PositiveMicroAmountSchema.describe(
+      'How many micro-units of currency one credit is. Served by the service; a client never hard-codes it.'
+    ),
+  })
+  .describe(
+    'The unit these amounts are in: the currency their micro-units are millionths of, and how many micro-units one credit is.'
+  );
+
+/** The unit a response's amounts are in. */
+export type Denomination = z.infer<typeof DenominationSchema>;
 
 /**
  * A value returned once and never again.

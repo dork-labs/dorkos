@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { HostedAccountSetup } from './HostedAccountSetup';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import {
@@ -12,6 +11,7 @@ import {
   ProviderSetup,
   ServiceGrid,
 } from '@/layers/features/connections';
+import { useChatAppSetup } from './ChatAppSetup';
 
 interface AccountsRegionProps {
   /** URL-selected management request. */
@@ -48,6 +48,7 @@ export function AccountsRegion({
   const [accessConnectionId, setAccessConnectionId] = useState<string | null>(null);
   const [connectingForRequest, setConnectingForRequest] = useState(false);
   const detailOpenerRef = useRef<HTMLElement | null>(null);
+  const chatAppSetup = useChatAppSetup();
 
   return (
     <section aria-labelledby="region-accounts" className="space-y-6">
@@ -60,10 +61,8 @@ export function AccountsRegion({
             Services your agents can act on for you.
           </p>
         </div>
-        <ServiceGrid onConnect={setSelectedService} />
+        <ServiceGrid onConnect={setSelectedService} onConnectChat={chatAppSetup.open} />
       </header>
-
-      <HostedAccountSetup />
 
       <AccountsList
         onOpenDetail={(connectionId) => {
@@ -143,6 +142,7 @@ export function AccountsRegion({
           onSelectFlow(flowId);
         }}
       />
+      {chatAppSetup.dialog}
       <ConnectionAccessDialog
         key={accessConnectionId ?? 'closed'}
         connectionId={accessConnectionId}

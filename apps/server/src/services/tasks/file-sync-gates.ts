@@ -120,6 +120,7 @@ export function fileSettingsOf(def: TaskDefinition): ScheduleSettings {
     effort: schedule.effort ?? null,
     maxRuntime: schedule['max-runtime'] ? parseDuration(schedule['max-runtime']) : null,
     sticky: schedule.sticky,
+    account: schedule.account ?? null,
   };
 }
 

@@ -63,7 +63,6 @@ const AGENT: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
 };
 
 describe('external MCP dorkos:// resources (real resources/list + resources/read pipeline)', () => {

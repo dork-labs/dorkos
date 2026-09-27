@@ -136,12 +136,6 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     completedAt: null,
     runtimeDefaultSetAt: null,
   },
-  agentContext: {
-    relayTools: true,
-    meshTools: true,
-    adapterTools: true,
-    tasksTools: true,
-  },
   agents: {
     defaultDirectory: '/Users/dev/dorkos/agents',
     defaultAgent: 'dorkbot',
@@ -237,7 +231,6 @@ const MOCK_AGENT_MANIFEST: AgentManifest = {
   color: '#3b82f6',
   icon: '🤖',
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
 };
 
@@ -594,7 +587,6 @@ export const MOCK_MESH_AGENTS: { agents: AgentManifest[] } = {
       registeredBy: 'system',
       personaEnabled: true,
       isSystem: true,
-      enabledToolGroups: {},
       mcpServers: [],
     },
     MOCK_AGENT_MANIFEST,

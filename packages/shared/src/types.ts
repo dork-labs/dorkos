@@ -196,7 +196,6 @@ export type {
   AgentRuntime,
   AgentHealthStatus,
   AgentBehavior,
-  EnabledToolGroups,
   AgentManifest,
   AgentHints,
   DiscoveryCandidate,

@@ -325,37 +325,38 @@ This pattern centralizes the aggregation logic, avoids scattered queries, and le
 When a hook needs to combine TanStack Query data with non-query state (feature flags, config), use `useMemo` to produce a derived result:
 
 ```typescript
-// apps/client/src/layers/entities/agent/model/use-agent-tool-status.ts
-export function useAgentToolStatus(projectPath: string | null): AgentToolStatus {
-  const { data: agent } = useCurrentAgent(projectPath); // TanStack Query
+// apps/client/src/layers/entities/permissions/model/use-agent-permissions.ts
+export function useAgentToolStatus(agentId: string | null): AgentToolStatus {
+  const { data: permissions } = useAgentPermissions(agentId); // TanStack Query, GET /api/agents/:id/permissions
   const relayEnabled = useRelayEnabled(); // Feature flag (config query)
-  const pulseEnabled = usePulseEnabled(); // Feature flag (config query)
+  const tasksEnabled = useTasksEnabled(); // Feature flag (config query)
 
   return useMemo((): AgentToolStatus => {
-    const groups = agent?.enabledToolGroups ?? {};
+    const area = (id: PermissionAreaId) =>
+      permissions?.areas.find((a) => a.id === id)?.resolved.state;
     return {
-      pulse: !pulseEnabled
+      tasks: !tasksEnabled
         ? 'disabled-by-server'
-        : groups.pulse === false
+        : area('tasks') === 'blocked'
           ? 'disabled-by-agent'
           : 'enabled',
-      relay: !relayEnabled
+      messages: !relayEnabled
         ? 'disabled-by-server'
-        : groups.relay === false
+        : area('messages') === 'blocked'
           ? 'disabled-by-agent'
           : 'enabled',
-      mesh: groups.mesh === false ? 'disabled-by-agent' : 'enabled',
-      adapter: !relayEnabled
+      agents: area('agents') === 'blocked' ? 'disabled-by-agent' : 'enabled',
+      connections: !relayEnabled
         ? 'disabled-by-server'
-        : groups.adapter === false
+        : area('connections') === 'blocked'
           ? 'disabled-by-agent'
           : 'enabled',
     };
-  }, [agent, relayEnabled, pulseEnabled]);
+  }, [permissions, relayEnabled, tasksEnabled]);
 }
 ```
 
-This pattern is useful when the derived state depends on multiple independent sources with different update frequencies. Each source updates independently (agent manifest changes infrequently, feature flags almost never), but the derived value recomputes correctly via `useMemo` dependency tracking.
+This pattern is useful when the derived state depends on multiple independent sources with different update frequencies. Each source updates independently (an agent's resolved permissions change infrequently, feature flags almost never), but the derived value recomputes correctly via `useMemo` dependency tracking.
 
 ### Pre-loading Data with staleTime
 
@@ -976,7 +977,7 @@ export function useMcpConfig(projectPath: string | null, runtime?: string | null
 }
 ```
 
-The optional `runtime` param scopes the list to the runtime that owns the agent, so a Codex agent sees its own servers rather than the default runtime's, and keys the cache so switching runtime refetches instead of serving a stale list. Used by `AgentMcpServers` (`layers/features/agent-settings/`) — the managed-MCP-server UI behind an agent profile's Tools & MCP page — alongside the sibling `useAgentMcpServers` hook, which layers live per-server status (connected/error/pending) onto this entry list by server `name`.
+The optional `runtime` param scopes the list to the runtime that owns the agent, so a Codex agent sees its own servers rather than the default runtime's, and keys the cache so switching runtime refetches instead of serving a stale list. Used by `AgentMcpServers` (`layers/features/agent-settings/`) — the managed-MCP-server UI behind an agent profile's MCP servers page — alongside the sibling `useAgentMcpServers` hook, which layers live per-server status (connected/error/pending) onto this entry list by server `name`.
 
 ## References
 

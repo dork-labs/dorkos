@@ -69,11 +69,11 @@ async function registerAgent(): Promise<{ mesh: MeshCore; agentId: string; agent
 describe('update() refuses a manifest it cannot read', () => {
   it('rejects, and leaves the file exactly as it found it', async () => {
     const { mesh, agentId, agentDir } = await registerAgent();
-    // A ceiling only the FILE can carry — the DB row has no column for it, so a
-    // rebuild from the cache is precisely how it would disappear.
-    await mesh.update(agentId, { tierCeiling: 'observe' });
+    // A permission only the FILE can carry — the DB row has no column for it, so
+    // a rebuild from the cache is precisely how it would disappear.
+    await mesh.update(agentId, { permissions: { areas: { rooms: 'blocked' } } });
     const capped = await fs.readFile(manifestPath(agentDir), 'utf-8');
-    expect(JSON.parse(capped).tierCeiling).toBe('observe');
+    expect(JSON.parse(capped).permissions).toEqual({ areas: { rooms: 'blocked' } });
 
     // Now the file is present and unreadable — a half-written edit, a bad merge.
     const corrupt = capped.slice(0, capped.length / 2);

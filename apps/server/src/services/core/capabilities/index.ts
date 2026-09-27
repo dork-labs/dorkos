@@ -6,7 +6,6 @@
  * @module services/core/capabilities
  */
 export {
-  AREA_PENDING_PHASE_3,
   defineCapability,
   type CapabilityDefinition,
   type CapabilityDeps,
@@ -18,6 +17,7 @@ export {
   computeCatalogVersion,
   type CapabilityRegistry,
   type CapabilityHandlerContext,
+  type HandToolReach,
   type CapabilityInvocationContext,
   type CapabilityInvocationObserver,
   type CapabilityPreflightResult,

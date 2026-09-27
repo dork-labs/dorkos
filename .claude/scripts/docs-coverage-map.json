@@ -761,7 +761,7 @@
     },
     {
       "doc": "docs/guides/agent-browser.mdx",
-      "description": "Signed-in browser: `dorkos browser`, the Tools & MCP card, bare-CLI setup, the security trade-off",
+      "description": "Signed-in browser: `dorkos browser`, the MCP servers card, bare-CLI setup, the security trade-off",
       "patterns": [
         "packages/cli/src/commands/browser",
         "packages/cli/src/lib/agent-browser/",
@@ -1131,11 +1131,6 @@
       "oldTerm": "pulse.db",
       "newTerm": "dork.db",
       "affectedDocs": "task-scheduler, architecture"
-    },
-    {
-      "oldTerm": "agentContext.pulseTools",
-      "newTerm": "agentContext.tasksTools",
-      "affectedDocs": "configuration"
     }
   ]
 }

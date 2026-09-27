@@ -415,7 +415,6 @@ export async function register(
     ...seedAgentFace(id, { color: overrides?.color, icon: overrides?.icon }),
     model: overrides?.model,
     effort: overrides?.effort,
-    enabledToolGroups: overrides?.enabledToolGroups ?? {},
     mcpServers: [],
     workspace: overrides?.workspace ?? { mode: 'home' },
   };
@@ -492,7 +491,6 @@ export async function registerByPath(
     ...seedAgentFace(id, { color: partial.color, icon: partial.icon }),
     model: partial.model,
     effort: partial.effort,
-    enabledToolGroups: partial.enabledToolGroups ?? {},
     mcpServers: [],
     workspace: partial.workspace ?? { mode: 'home' },
   };

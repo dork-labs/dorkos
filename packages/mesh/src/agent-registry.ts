@@ -701,23 +701,12 @@ export class AgentRegistry {
       // preference" rather than travelling into the launch ladder as a
       // reference that always misses.
       account: row.account || undefined,
-      // enabledToolGroups is not persisted in the DB schema, so this cache cannot
-      // answer for it and hands back the empty default.
-      //
-      // `permissions` is absent for the same reason, and nothing may make an
-      // authorization decision from its absence here: the capability gate reads
-      // `.dork/agent.json` directly (spec `agent-permissions` D6), because asking
-      // this cache would report every agent as inheriting the defaults AND
-      // silently ignore a setting a person had made. The manifest file is the
-      // only place the answer exists.
-      enabledToolGroups: {},
-      // `tierCeiling` is absent for the same reason and with the same rule
-      // attached (DOR-486): no DB column, so this cache cannot answer, and
-      // absent here would read as the WIDEST ceiling. Nothing may decide what an
-      // agent is allowed to do from this value — `resolveAgentTokenEnv` reads
-      // `.dork/agent.json` directly, which is the only place the answer exists.
-      // Listing it in a roster view needs a real column first, on the pattern
-      // `model`/`effort` set.
+      // `permissions` is not persisted in the DB schema, so this cache cannot
+      // answer for it, and nothing may make an authorization decision from its
+      // absence here: the capability gate reads `.dork/agent.json` directly
+      // (spec `agent-permissions` D6), because asking this cache would report
+      // every agent as inheriting the defaults AND silently ignore a setting a
+      // person had made. The manifest file is the only place the answer exists.
       //
       // mcpServers is manifest-file-only by design (no DB column, no reconciler
       // diff — ADR 260803-233420). The derived cache carries the empty default;

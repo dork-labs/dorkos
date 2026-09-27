@@ -22,14 +22,6 @@ vi.mock('../context-builder.js', () => ({
     .mockResolvedValue({ text: '<env>mock</env>', stable: '<env>mock</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
-vi.mock('../../tooling/tool-filter.js', () => ({
-  resolveToolConfig: vi.fn().mockReturnValue({
-    tasks: true,
-    relay: true,
-    mesh: true,
-    adapter: true,
-  }),
-}));
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/project'),
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/mock/project'),

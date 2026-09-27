@@ -11,7 +11,7 @@ import type {
 } from '@dorkos/shared/connector-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { ConnectionAccessDialog } from '../ui/ConnectionAccessDialog';
+import { ConnectionAccessDialog } from '../ui/access/ConnectionAccessDialog';
 import { ManagementReviews } from '../ui/ManagementReviews';
 
 afterEach(cleanup);

@@ -184,7 +184,6 @@ describe('marketplace install → cockpit approval → retry', () => {
       res.locals.agentIdentity = {
         agentPath: '/Users/dev/agents/dorkbot',
         displayName: 'DorkBot',
-        tierCeiling: 'destructive',
         createdAt: new Date().toISOString(),
       };
       next();

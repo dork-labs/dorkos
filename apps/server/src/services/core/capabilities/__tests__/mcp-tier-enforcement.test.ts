@@ -39,7 +39,6 @@ import { createServerPrincipal } from '../../../connectors/principal/server-prin
 const AGENT: AgentIdentity = {
   agentPath: '/projects/prober',
   displayName: 'Prober',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 
@@ -172,12 +171,12 @@ describe('invokeCapabilityAsMcpResult — tier enforcement', () => {
     expect(ran[0].context.approval).toBeUndefined();
   });
 
-  it('refuses an agent whose ceiling forbids the tier', async () => {
+  it('refuses an agent whose access was turned off', async () => {
     const result = await invokeCapabilityAsMcpResult(
       registry,
       'gated.destroy',
       { name: 'production' },
-      { identity: { ...AGENT, tierCeiling: 'act' } }
+      { identity: { ...AGENT, inactive: 'revoked' } }
     );
     expect(payloadOf(result).status).toBe('denied');
     expect(payloadOf(result).approvable).toBe(false);

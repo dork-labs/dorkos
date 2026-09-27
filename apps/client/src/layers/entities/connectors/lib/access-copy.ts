@@ -5,9 +5,17 @@
  */
 import type { ConnectorOperationClassification } from '@dorkos/shared/connector-schemas';
 
-/** A service's display name from its toolkit id, e.g. `gmail` → `Gmail`. */
+/**
+ * A service's display name from its toolkit id when no catalog name is at hand:
+ * `gmail` → `Gmail`, `google_calendar` → `Google Calendar`. The one helper for
+ * this in the client; prefer the catalog's own `displayName` when you have it.
+ */
 export function serviceName(toolkit: string): string {
-  return toolkit.charAt(0).toUpperCase() + toolkit.slice(1);
+  return toolkit
+    .split(/[._-]/u)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 const LEVEL_WORDS: Record<ConnectorOperationClassification, string> = {

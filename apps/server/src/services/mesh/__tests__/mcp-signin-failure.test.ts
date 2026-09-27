@@ -236,7 +236,6 @@ async function setupCapabilityDeps(fetchImpl: typeof fetch): Promise<CapabilityD
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: SERVER,

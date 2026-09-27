@@ -90,7 +90,15 @@ describe('PermissionObserver', () => {
     observer = newObserver();
     read = observedPermissionReader(observer);
     service = new PermissionService({
-      config: { get: () => world.config, set: () => {}, trustStop: () => null },
+      config: {
+        get: () => world.config,
+        set: () => {},
+        trustStops: () => ({ global: null, perRuntime: {} }),
+        setGlobalTrustStop: () => {},
+        setRuntimeTrustStop: () => false,
+        hasAutonomyAck: () => false,
+        recordAutonomyAck: () => {},
+      },
       agents: {
         list: () => [{ id: 'agent-ana', name: 'Ana', projectPath: agentPath }],
         readPermissions: read,

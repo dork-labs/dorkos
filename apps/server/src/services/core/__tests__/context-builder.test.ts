@@ -60,6 +60,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { isRelayEnabled } from '../../relay/relay-state.js';
 import { isTasksEnabled } from '../../tasks/task-state.js';
 import { configManager } from '../config-manager.js';
+import { toolDocGates } from '../../runtimes/claude-code/messaging/tool-doc-gates.js';
 import type { GitStatusResponse } from '@dorkos/shared/types';
 // The real Zod input shapes the marketplace tools are registered with — imported
 // (not re-typed) so the signature-pin test below diffs against the schema itself,
@@ -221,19 +222,12 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<marketplace_tools>');
   });
 
-  it('includes the marketplace tools block even when every other toggle is off (DOR-529)', async () => {
-    // Marketplace has no enabledToolGroups entry and no feature flag — it is
-    // unconditional, like <ui_tools>, so it must survive every other group
-    // being switched off.
+  it('includes the marketplace tools block even when every other feature is off (DOR-529)', async () => {
+    // Marketplace has no feature flag — only its permission area can take it
+    // away, so it must survive every other block being switched off.
     vi.mocked(isRelayEnabled).mockReturnValue(false);
     vi.mocked(isTasksEnabled).mockReturnValue(false);
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: false,
-      meshTools: false,
-      adapterTools: false,
-      tasksTools: false,
-    });
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend('/test/dir', toolDocGates(['agents']))).text;
     expect(result).not.toContain('<relay_tools>');
     expect(result).not.toContain('<mesh_tools>');
     expect(result).not.toContain('<adapter_tools>');
@@ -287,19 +281,15 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<env>');
   });
 
-  it('excludes all tool blocks when all config toggles are off', async () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: false,
-      meshTools: false,
-      adapterTools: false,
-      tasksTools: false,
-    });
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+  it('excludes every switchable tool block when every area it documents is Blocked', async () => {
+    const gates = toolDocGates(['messages', 'agents', 'connections', 'tasks', 'packages']);
+    const result = (await buildSystemPromptAppend('/test/dir', gates)).text;
     expect(result).toContain('<env>');
     expect(result).not.toContain('<relay_tools>');
     expect(result).not.toContain('<mesh_tools>');
     expect(result).not.toContain('<adapter_tools>');
     expect(result).not.toContain('<tasks_tools>');
+    expect(result).not.toContain('<marketplace_tools>');
   });
 });
 
@@ -676,14 +666,8 @@ describe('buildRelayToolsBlock', () => {
     expect(_buildRelayToolsBlock()).toBe('');
   });
 
-  it('returns empty string when config toggle is off', () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: false,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: true,
-    });
-    expect(_buildRelayToolsBlock()).toBe('');
+  it('returns empty string when its permission area is Blocked for the agent', () => {
+    expect(_buildRelayToolsBlock(toolDocGates(['messages']))).toBe('');
   });
 
   it('returns relay context when config is undefined (default behavior)', () => {
@@ -726,14 +710,8 @@ describe('buildMeshToolsBlock', () => {
     expect(result).toContain('</mesh_tools>');
   });
 
-  it('returns empty string when config toggle is off', () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: false,
-      adapterTools: true,
-      tasksTools: true,
-    });
-    expect(_buildMeshToolsBlock()).toBe('');
+  it('returns empty string when its permission area is Blocked for the agent', () => {
+    expect(_buildMeshToolsBlock(toolDocGates(['agents']))).toBe('');
   });
 
   it('returns mesh context when config is undefined (default behavior)', () => {
@@ -780,14 +758,8 @@ describe('buildAdapterToolsBlock', () => {
     expect(_buildAdapterToolsBlock()).toBe('');
   });
 
-  it('returns empty string when config toggle is off', () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: true,
-      adapterTools: false,
-      tasksTools: true,
-    });
-    expect(_buildAdapterToolsBlock()).toBe('');
+  it('returns empty string when its permission area is Blocked for the agent', () => {
+    expect(_buildAdapterToolsBlock(toolDocGates(['connections']))).toBe('');
   });
 
   it('returns adapter context when config is undefined (default behavior)', () => {
@@ -835,14 +807,8 @@ describe('buildTasksToolsBlock', () => {
     expect(_buildTasksToolsBlock()).toBe('');
   });
 
-  it('returns empty string when config toggle is off', () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: false,
-    });
-    expect(_buildTasksToolsBlock()).toBe('');
+  it('returns empty string when its permission area is Blocked for the agent', () => {
+    expect(_buildTasksToolsBlock(toolDocGates(['tasks']))).toBe('');
   });
 
   it('returns tasks context when config is undefined (default behavior)', () => {

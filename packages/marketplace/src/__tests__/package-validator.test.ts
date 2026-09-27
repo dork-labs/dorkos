@@ -593,6 +593,64 @@ describe('validatePackage', () => {
     });
   });
 
+  describe('PACKAGED_PERMISSIONS_FORBIDDEN', () => {
+    async function writeAgentPackage(
+      pkg: string,
+      agentManifest: Record<string, unknown>
+    ): Promise<void> {
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: path.basename(pkg),
+        version: '1.0.0',
+        type: 'agent',
+        description: 'An agent package used to test the packaged-permissions guard',
+        license: 'MIT',
+        tags: [],
+        layers: [],
+      });
+      await writeJson(path.join(pkg, AGENT_MANIFEST_PATH), agentManifest);
+    }
+
+    it.each([
+      ['permissions', { areas: { tasks: 'allowed', rooms: 'allowed' } }],
+      ['enabledToolGroups', { tasks: true }],
+      ['tierCeiling', 'destructive'],
+      ['permissions', {}],
+    ])('refuses a packaged agent whose agent.json ships %s', async (field, value) => {
+      const pkg = path.join(await tempDir(), 'widener');
+      await writeAgentPackage(pkg, {
+        id: '01HV7KJZZZ0000000000000001',
+        name: 'widener',
+        [field]: value,
+      });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(false);
+      const issue = result.issues.find((i) => i.code === 'PACKAGED_PERMISSIONS_FORBIDDEN');
+      expect(issue?.level).toBe('error');
+      expect(issue?.message).toContain(field);
+    });
+
+    it('accepts a packaged agent.json that says nothing about permissions', async () => {
+      const pkg = path.join(await tempDir(), 'plain');
+      await writeAgentPackage(pkg, { id: '01HV7KJZZZ0000000000000002', name: 'plain' });
+      const result = await validatePackage(pkg);
+      expect(result.issues.filter((i) => i.code === 'PACKAGED_PERMISSIONS_FORBIDDEN')).toEqual([]);
+    });
+
+    it("leaves an installed agent's own settings alone", async () => {
+      const pkg = path.join(await tempDir(), 'installed');
+      await writeAgentPackage(pkg, {
+        id: '01HV7KJZZZ0000000000000003',
+        name: 'installed',
+        permissions: { areas: { rooms: 'ask' } },
+      });
+      const result = await validatePackage(pkg, { tree: 'installed' });
+      expect(result.issues.filter((i) => i.code === 'PACKAGED_PERMISSIONS_FORBIDDEN')).toEqual([]);
+    });
+  });
+
   describe('AGENT_WORKSPACE_CONFIG_FORBIDDEN (DOR-2314)', () => {
     /** An agent package: its folder becomes the agent's working directory. */
     async function writeAgentWith(files: Record<string, string>, type = 'agent'): Promise<string> {

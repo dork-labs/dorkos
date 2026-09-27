@@ -10,15 +10,10 @@
  * @module features/profile/model/use-managed-agent-facts
  */
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import {
-  findMatchingPreset,
-  useAgentMcpServers,
-  useAgentToolStatus,
-  useCurrentAgent,
-} from '@/layers/entities/agent';
+import { findMatchingPreset, useAgentMcpServers, useCurrentAgent } from '@/layers/entities/agent';
 import { useHarnessStatusCached } from '@/layers/entities/harness';
 import { useAgentSessions } from '@/layers/entities/session';
-import { useTasks } from '@/layers/entities/tasks';
+import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
 import type { ProfileAgentFacts } from '../lib/profile-rows';
 
 /** Nothing known — what a person's profile, or an agent with no folder, gets. */
@@ -53,11 +48,11 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
     isLoading: sessionsLoading,
     isError: sessionsFailed,
   } = useAgentSessions(projectPath);
-  const toolStatus = useAgentToolStatus(projectPath);
+  const tasksOnServer = useTasksEnabled();
   // `useTasks` takes one flag for the whole query. Off when the server has
   // tasks disabled — there is nothing to count — and off on a profile that
   // shows no tasks row at all.
-  const tasksEnabled = projectPath !== null && toolStatus.tasks !== 'disabled-by-server';
+  const tasksEnabled = projectPath !== null && tasksOnServer;
   const { data: schedules } = useTasks(tasksEnabled);
   // The Skills row's number, read from whatever the Skills page has already put
   // under this folder's key — and NEVER asked for (Decision 28).
@@ -116,6 +111,6 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
         : harnessStatus.counts.skills + harnessStatus.counts.globalSkills,
     tools: mcpServers ? mcpServers.filter((server) => server.enabled).length : null,
     personality,
-    tasksAvailable: toolStatus.tasks !== 'disabled-by-server',
+    tasksAvailable: tasksOnServer,
   };
 }

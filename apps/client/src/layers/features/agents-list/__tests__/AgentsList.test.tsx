@@ -131,7 +131,6 @@ const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): Topology
     registeredAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
     registeredBy: 'user',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
     projectPath: overrides.projectPath ?? `/${overrides.id}`,
     healthStatus: overrides.healthStatus ?? 'active',

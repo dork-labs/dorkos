@@ -64,6 +64,7 @@ import {
   persistenceModeFor,
   resolveUnattendedSessionDefaults,
   resolveUnattendedPermissionMode,
+  readAgentExecutionDefaults,
   type SessionStateProjector,
 } from '../session/index.js';
 import type {
@@ -614,9 +615,18 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // the bridged path strictly looser than the binding beside it, for the
       // same sender, which is the one thing the amended ADR promises it is not.
       // The row half of that rule is `externalAuthor` on the turn origin.
+      // The addressed agent's own Files & commands stop beats the operator's
+      // (spec `agent-permissions` D16), exactly as it does for the row's seed.
+      const agentStop =
+        isNewSession && !request.externalAuthor
+          ? (await readAgentExecutionDefaults(request.agentPath)).filesAndCommands
+          : undefined;
       const unattendedMode =
         isNewSession && !request.externalAuthor
-          ? resolveUnattendedPermissionMode({ capabilities: runtime.getCapabilities() })
+          ? resolveUnattendedPermissionMode({
+              capabilities: runtime.getCapabilities(),
+              ...(agentStop ? { agent: { filesAndCommands: agentStop } } : {}),
+            })
           : undefined;
       const seed = isNewSession
         ? await resolveUnattendedSessionDefaults({

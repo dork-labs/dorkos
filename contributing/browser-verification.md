@@ -61,7 +61,7 @@ Things that are easy to get wrong:
   test; the runtime behaviour is expected, not measured.
 - **The dev server looks somewhere else.** `pnpm dev` without `DORK_HOME` resolves
   the data directory to `apps/server/.temp/.dork`, while the CLI defaults to
-  `~/.dork`. The Tools & MCP card then offers a state file the CLI never writes. Run
+  `~/.dork`. The MCP servers card then offers a state file the CLI never writes. Run
   `DORK_HOME=apps/server/.temp/.dork dorkos browser login` (absolute path) against
   a dev server, or set the same `DORK_HOME` for both.
 - **Agents can read the saved cookies through their own browser tools.** Playwright
@@ -70,7 +70,7 @@ Things that are easy to get wrong:
   (checked in 0.0.82's `filteredTools`). Give the browser only to agents trusted
   with every account in the file.
 
-Inside DorkOS, give an agent the browser from Tools & MCP → Signed-in browser (the
+Inside DorkOS, give an agent the browser from MCP servers → Signed-in browser (the
 `mcp.browser_preset` read feeds the gated `mcp.add`). Outside DorkOS, register it
 under a name other than `playwright` (the Claude Code Playwright plugin owns that
 one); the guide has the exact `claude`, `codex` and `opencode` config.

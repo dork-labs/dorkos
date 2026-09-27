@@ -519,7 +519,6 @@ export async function createAgentWorkspace(
       registeredBy: 'dorkos-ui',
       personaEnabled: true,
       isSystem: false,
-      enabledToolGroups: {},
       // Managed MCP servers are added post-creation through the gated `mcp.*`
       // capabilities, never at scaffold time (a packaged agent may not ship
       // auto-injectable servers — ADR 260803-233420). A fresh agent starts empty.

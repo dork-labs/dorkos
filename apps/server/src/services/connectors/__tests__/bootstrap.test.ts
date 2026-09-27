@@ -694,4 +694,177 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(serialized).not.toContain('file:');
     });
   });
+
+  describe('appConnections — which way new apps use', () => {
+    function managedCloud(linked: () => boolean, create: () => FakeConnectorProvider) {
+      return {
+        instanceId: 'managed-provider' as never,
+        configured: linked,
+        executionConfigDigest: () => (linked() ? 'linked-material' : undefined),
+        create,
+      };
+    }
+
+    it('needs the one-time step on a bare install, and raw MCP is never a way', async () => {
+      const bootstrapper = makeBootstrapper();
+      await bootstrapper.registerBootProviders();
+      await expect(bootstrapper.appConnections()).resolves.toEqual({
+        ways: [],
+        newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+      });
+    });
+
+    it('uses the one working key silently, naming the service it signs in through', async () => {
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live-test');
+      const bootstrapper = makeBootstrapper();
+      await bootstrapper.registerBootProviders();
+      const composio = registry.resolveProvider('composio')!;
+
+      const result = await bootstrapper.appConnections();
+      const way = {
+        kind: 'own_key',
+        type: 'composio',
+        status: 'ready',
+        providerInstanceId: composio.instanceId,
+        signInThrough: 'Composio',
+      };
+      expect(result).toEqual({ ways: [way], newApps: { status: 'ready', way } });
+      expect(JSON.stringify(result)).not.toContain('ck-live-test');
+    });
+
+    it('prefers the person’s own key over a working DorkOS account', async () => {
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live-test');
+      const managed = new FakeConnectorProvider({
+        instanceId: 'managed-provider' as never,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      const bootstrapper = makeBootstrapper({
+        managedCloud: managedCloud(
+          () => true,
+          () => managed
+        ),
+      });
+      await bootstrapper.registerBootProviders();
+
+      const { ways, newApps } = await bootstrapper.appConnections();
+      expect(ways.map((way) => [way.kind, way.status])).toEqual([
+        ['own_key', 'ready'],
+        ['dorkos_account', 'ready'],
+      ]);
+      expect(newApps).toMatchObject({
+        status: 'ready',
+        way: { kind: 'own_key', type: 'composio' },
+      });
+    });
+
+    it('uses a working DorkOS account when it is the only way, signing in through Composio', async () => {
+      const managed = new FakeConnectorProvider({
+        instanceId: 'managed-provider' as never,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      const bootstrapper = makeBootstrapper({
+        managedCloud: managedCloud(
+          () => true,
+          () => managed
+        ),
+      });
+      await bootstrapper.registerBootProviders();
+
+      await expect(bootstrapper.appConnections()).resolves.toMatchObject({
+        newApps: {
+          status: 'ready',
+          way: {
+            kind: 'dorkos_account',
+            type: 'dorkos-managed',
+            providerInstanceId: 'managed-provider',
+            signInThrough: 'Composio',
+          },
+        },
+      });
+    });
+
+    it('says why when the linked DorkOS account cannot connect apps', async () => {
+      const refusing = new FakeConnectorProvider({
+        instanceId: 'managed-provider' as never,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      Object.defineProperty(refusing, 'listAccounts', {
+        value: () => Promise.reject(new Error('app connections are not available')),
+      });
+      const bootstrapper = makeBootstrapper({
+        managedCloud: managedCloud(
+          () => true,
+          () => refusing
+        ),
+      });
+      await bootstrapper.registerBootProviders();
+
+      await expect(bootstrapper.appConnections()).resolves.toEqual({
+        ways: [
+          {
+            kind: 'dorkos_account',
+            type: 'dorkos-managed',
+            status: 'unavailable',
+            signInThrough: 'Composio',
+          },
+        ],
+        newApps: { status: 'setup_needed', reason: 'dorkos_account_unavailable' },
+      });
+    });
+
+    it('does not count a registered way whose provider reports sign-in unavailable', async () => {
+      const managed = new FakeConnectorProvider({
+        instanceId: 'managed-provider' as never,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      const capabilities = managed.getCapabilities();
+      Object.defineProperty(managed, 'getCapabilities', {
+        value: () => ({
+          ...capabilities,
+          capabilities: {
+            ...capabilities.capabilities,
+            authentication: { status: 'unsupported', reason: 'Not available for this account.' },
+          },
+        }),
+      });
+      const bootstrapper = makeBootstrapper({
+        managedCloud: managedCloud(
+          () => true,
+          () => managed
+        ),
+      });
+      await bootstrapper.registerBootProviders();
+      // Registered — it answered — but not a way new apps can use.
+      expect(registry.resolveProviderInstance(managed.instanceId)).toBe(managed);
+
+      await expect(bootstrapper.appConnections()).resolves.toEqual({
+        ways: [
+          {
+            kind: 'dorkos_account',
+            type: 'dorkos-managed',
+            status: 'unavailable',
+            signInThrough: 'Composio',
+          },
+        ],
+        newApps: { status: 'setup_needed', reason: 'dorkos_account_unavailable' },
+      });
+    });
+
+    it('says why when the saved key failed its check', async () => {
+      secrets.set(COMPOSIO_API_KEY_REF, 'uak-wrong-kind');
+      const bootstrapper = makeBootstrapper({
+        composioProbeError: new ComposioApiError(401, 'Invalid API key'),
+      });
+      await bootstrapper.registerBootProviders();
+
+      await expect(bootstrapper.appConnections()).resolves.toMatchObject({
+        ways: [{ kind: 'own_key', type: 'composio', status: 'unavailable' }],
+        newApps: { status: 'setup_needed', reason: 'own_key_unavailable' },
+      });
+    });
+  });
 });

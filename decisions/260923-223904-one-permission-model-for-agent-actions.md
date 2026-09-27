@@ -1,7 +1,7 @@
 ---
 id: 260923-223904
 title: One permission model for agent actions, areas with three states, a default and per-agent overrides
-status: draft
+status: accepted
 created: 2026-09-23
 spec: agent-permissions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: agent-permissions). When accepted it will supersede `260828-123331` (the first hard tool filter at `registry.invoke`, no global twin), `260726-171347` (tool-group toggles gate context, not access) and `0071` (implicit tool-group hierarchy). Their statuses flip when this ADR is accepted, not while it is a draft.
+Accepted (extracted from spec: agent-permissions; implemented in phases 1–3, DOR-2278). Supersedes `260828-123331` (the first hard tool filter at `registry.invoke`, no global twin), `260726-171347` (tool-group toggles gate context, not access), `0069` and `0071` (implicit tool-group hierarchy).
 
 ## Context
 
