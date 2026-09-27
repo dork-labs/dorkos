@@ -11,6 +11,7 @@ covers:
   - "fix(permissions): Undo can't put back what the arrival screen declined, and a folder that isn't an agent follows the defaults"
   - 'fix(permissions): mark the arrival screen history line by what made it, not by its wording'
   - 'fix(permissions): keep arrival lines written before the marker without an Undo'
+  - 'fix(permissions): name a Files & commands stop as the stop in Undo and history wording'
 ---
 
 ### Added

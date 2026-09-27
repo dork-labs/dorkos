@@ -226,6 +226,26 @@ describe('dorkos permissions', () => {
     expect(out()).toMatch(/Auditor\s+rooms\s+Blocked\s+changed since: now Ask/);
   });
 
+  it('names a Files & commands stop as the stop, not the state that shares its value', async () => {
+    apiCallMock.mockResolvedValue({
+      changes: [],
+      skipped: [
+        {
+          change: {
+            target: { kind: 'default' },
+            key: { kind: 'files' },
+            before: 'ask',
+            after: 'autonomy',
+          },
+          current: 'act',
+          reason: 'changed-since',
+        },
+      ],
+    });
+    expect(await runPermissionsDispatcher(['undo', 'e2'])).toBe(0);
+    expect(out()).toMatch(/Everyone\s+files\s+Ask first\s+changed since: now Act/);
+  });
+
   it('on a conflict, names it and the --force next step', async () => {
     apiCallMock.mockRejectedValue(
       new ApiError(409, {

@@ -509,13 +509,15 @@ function defaultKeyOf(
   return area ? { kind: 'action', action: target.id, area: area.id } : undefined;
 }
 
-/** A recorded value as the undo report says it. */
-function valueText(value: string | null): string {
+/**
+ * A recorded value as the undo report says it, read by what the key is: `ask`
+ * is the state Ask for an area and the stop Ask first for Files & commands.
+ */
+function valueText(value: string | null, key: PermissionUndoSkip['change']['key']): string {
   if (value === null) return 'not set';
-  if (value in STATE_LABEL) return STATE_LABEL[value as PermissionState];
-  if (value in PRESET_LABEL) return PRESET_LABEL[value as PermissionPreset];
-  if (value in STOP_LABEL) return STOP_LABEL[value as PermissionStop];
-  return value;
+  const labels: Record<string, string> =
+    key.kind === 'files' ? STOP_LABEL : key.kind === 'preset' ? PRESET_LABEL : STATE_LABEL;
+  return labels[value] ?? value;
 }
 
 /** One skipped or conflicting change, as a table row. */
@@ -532,11 +534,11 @@ function skipRow(skip: PermissionUndoSkip): string[] {
           : 'preset';
   const why =
     skip.reason === 'changed-since'
-      ? `changed since: now ${valueText(skip.current)}`
+      ? `changed since: now ${valueText(skip.current, change.key)}`
       : skip.reason === 'floor'
         ? 'would set something that always asks to Allowed'
         : 'no longer exists';
-  return [who, what, valueText(change.before), why];
+  return [who, what, valueText(change.before, change.key), why];
 }
 
 /**

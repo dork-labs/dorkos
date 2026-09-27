@@ -11,7 +11,9 @@ import {
   useUndoPermission,
 } from '@/layers/entities/permissions';
 import { formatRelativeTime } from '@/layers/shared/lib';
-import { Button, Skeleton } from '@/layers/shared/ui';
+import { Button, Skeleton, stopLabel } from '@/layers/shared/ui';
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
 import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { PRESET_LABEL, STATE_LABEL } from '../lib/permission-copy';
 import { reportPermissionFailure } from '../lib/report-failure';
@@ -23,12 +25,27 @@ export interface PermissionHistoryProps {
   agentId?: string;
 }
 
-/** A recorded value as the conflict question says it: "Ask", "the default". */
-function valueWord(value: string | null, target: PermissionUndoSkip['change']['target']): string {
-  if (value === null) return target.kind === 'agent' ? 'the default' : 'the preset';
-  if (value in STATE_LABEL) return STATE_LABEL[value as keyof typeof STATE_LABEL];
-  if (value in PRESET_LABEL) return PRESET_LABEL[value as keyof typeof PRESET_LABEL];
-  return value;
+/**
+ * A recorded value as the conflict question says it: "Ask", "Ask first",
+ * "Full power", "the default". Read by what the key is, never by the value
+ * alone: `ask` is the state Ask for an area and the stop Ask first for Files
+ * & commands.
+ */
+function valueWord(value: string | null, change: PermissionUndoSkip['change']): string {
+  if (value === null) return change.target.kind === 'agent' ? 'the default' : 'the preset';
+  switch (change.key.kind) {
+    case 'files':
+      return isStop(value) ? stopLabel(value) : value;
+    case 'preset':
+      return value in PRESET_LABEL ? PRESET_LABEL[value as keyof typeof PRESET_LABEL] : value;
+    default:
+      return value in STATE_LABEL ? STATE_LABEL[value as keyof typeof STATE_LABEL] : value;
+  }
+}
+
+/** True for a Files & commands stop. */
+function isStop(value: string): value is PermissionStop {
+  return (PERMISSION_STOPS as readonly string[]).includes(value);
 }
 
 /**
@@ -40,7 +57,7 @@ function valueWord(value: string | null, target: PermissionUndoSkip['change']['t
 export function conflictQuestion(conflicts: readonly PermissionUndoSkip[]): string {
   if (conflicts.length === 1) {
     const { change } = conflicts[0]!;
-    return `This has changed since. Set it back to ${valueWord(change.before, change.target)} anyway?`;
+    return `This has changed since. Set it back to ${valueWord(change.before, change)} anyway?`;
   }
   return 'Some of this has changed since. Set it all back anyway?';
 }

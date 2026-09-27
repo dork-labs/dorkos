@@ -384,6 +384,16 @@ describe('PermissionService.undo', () => {
     });
   });
 
+  it('words a Files & commands change as the stop in its history line', async () => {
+    const world = createPermissionWorld({ agents: TWO_AGENTS, autonomyAcknowledged: true });
+    await world.service.setAgent(
+      'agent-test',
+      { filesAndCommands: 'ask', surface: 'agent-page' },
+      LOCAL
+    );
+    expect(world.events[0]!.summary).toBe('Test Bot: Files & commands Ask first');
+  });
+
   it('restores a per-runtime Files & commands stop', async () => {
     const world = createPermissionWorld({ runtimeStops: { codex: 'ask' } });
     await recordPermissionChange(world.activity, {

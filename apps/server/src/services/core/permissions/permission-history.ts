@@ -106,7 +106,23 @@ export function agentRequestWriter(agent: { id?: string; name: string }): Permis
   };
 }
 
-/** How a state reads in a sentence. */
+/** How a Files & commands stop reads in a sentence. */
+const STOP_WORD: Record<string, string> = {
+  ask: 'Ask first',
+  act: 'Act',
+  autonomy: 'Full autonomy',
+};
+
+/**
+ * How a recorded value reads in a sentence, by what its key is: `ask` is the
+ * state Ask for an area and the stop Ask first for Files & commands.
+ */
+function valueWord(value: string | null, key: PermissionChange['key']): string {
+  if (key.kind === 'files' && value !== null) return STOP_WORD[value] ?? value;
+  return stateWord(value);
+}
+
+/** How a state or a preset reads in a sentence. */
 function stateWord(value: string | null): string {
   switch (value) {
     case 'allowed':
@@ -149,14 +165,14 @@ function subjectOf(change: PermissionChange, actionTitle: (id: string) => string
 function describeOne(change: PermissionChange, actionTitle: (id: string) => string): string {
   const subject = subjectOf(change, actionTitle);
   if (change.target.kind === 'default') {
-    if (change.key.kind === 'preset') return `Preset set to ${stateWord(change.after)}`;
+    if (change.key.kind === 'preset') return `Preset set to ${valueWord(change.after, change.key)}`;
     return change.after === null
       ? `${subject} set back to the preset for everyone`
-      : `${subject} set to ${stateWord(change.after)} for everyone`;
+      : `${subject} set to ${valueWord(change.after, change.key)} for everyone`;
   }
   return change.after === null
     ? `${change.target.agentName}: ${subject} back to the default`
-    : `${change.target.agentName}: ${subject} ${stateWord(change.after)}`;
+    : `${change.target.agentName}: ${subject} ${valueWord(change.after, change.key)}`;
 }
 
 /**

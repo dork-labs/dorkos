@@ -384,6 +384,22 @@ describe('Undo in the history', () => {
         { change, current: 'blocked', reason: 'changed-since' },
       ])
     ).toBe('Some of this has changed since. Set it all back anyway?');
+    // A Files & commands stop reads as the stop, never as the state that
+    // shares its value.
+    const files = {
+      target: { kind: 'default' as const },
+      key: { kind: 'files' as const },
+      before: 'ask',
+      after: 'autonomy',
+    };
+    expect(conflictQuestion([{ change: files, current: 'act', reason: 'changed-since' }])).toBe(
+      'This has changed since. Set it back to Ask first anyway?'
+    );
+    expect(
+      conflictQuestion([
+        { change: { ...files, before: 'autonomy' }, current: 'act', reason: 'changed-since' },
+      ])
+    ).toBe('This has changed since. Set it back to Full autonomy anyway?');
     expect(partialUndoNote({ changes: [change], skipped: [] })).toBeNull();
     expect(partialUndoNote({ changes: [], skipped: [] })).toBe(
       'Nothing to undo. It was already back the way it was.'
