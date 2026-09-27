@@ -1617,7 +1617,9 @@ export const ClaudeCodeAccountsSchema = z.preprocess(
  * the screen never saw would read as one the operator removed. With it, the
  * server removes only a stored row whose id is in this list and that the patch
  * left out; every other stored row is kept. A patch naming `accounts` without
- * this list removes nothing.
+ * this list is a full replace of the listed rows, as before (the CLI's
+ * `dorkos config set` and the `config_patch` tool); rows the read rules skip
+ * are kept either way.
  */
 export const ClaudeAccountsSeenSchema = z.array(z.string());
 

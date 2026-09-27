@@ -119,7 +119,10 @@ function withReadableLabel(row: Record<string, unknown>): Record<string, unknown
  *   leaves out is removed only when its id is in `seen` (the writer's
  *   `accountsSeen`): the writer was shown it and dropped it. Any other row,
  *   such as one flow added after the settings screen loaded, is kept after the
- *   patched rows. Without `seen`, nothing is removed.
+ *   patched rows. Without `seen` (the CLI's `dorkos config set`, the
+ *   `config_patch` tool), every listed row counts as seen: the patch is a full
+ *   replace of the listed rows, which is how those writers remove an account.
+ *   Settings always sends `seen`.
  * - **Unlisted rows** (skipped by the read rules: not an object, no absolute
  *   path, or a later duplicate of an id) are kept exactly as stored and
  *   appended after the listed ones, which keeps a duplicate behind the row it
@@ -180,7 +183,10 @@ export function planClaudeAccountWrite(
 
   if (details.length > 0) return { ok: false, details };
   const kept = listed
-    .filter((view) => !claimed.has(view.index) && !seen?.has(view.row.id as string))
+    // No `seen` means the writer claims the whole list: every listed row counts as seen.
+    .filter(
+      (view) => !claimed.has(view.index) && seen !== undefined && !seen.has(view.row.id as string)
+    )
     .map(({ row }) => withReadableLabel(row));
   return { ok: true, accounts: [...merged, ...kept], unlisted };
 }

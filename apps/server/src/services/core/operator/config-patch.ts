@@ -381,8 +381,11 @@ export type ConfigPatchResult =
  * out, and keeps every stored row the read rules skip, exactly as stored (see
  * `planClaudeAccountWrite`). A listed row the patch leaves out is removed only
  * when the patch's `runtimes.claudeCode.accountsSeen` names it, so a row flow
- * added after the screen loaded survives a save from that screen. A consequence worth stating: **no write through
- * this function can delete a row the read rules skip** — not the settings
+ * added after the screen loaded survives a save from that screen. A patch with
+ * no `accountsSeen` (the CLI's `dorkos config set`, the `config_patch` tool)
+ * replaces the listed rows in full, which is how those writers remove one. A
+ * consequence worth stating: **no write through this function can delete a row
+ * the read rules skip** — not the settings
  * screen, and not the operator `config_patch` tool, which reaches the same
  * path. Removing one is a hand edit of `config.json`. A new or changed id must
  * match the contract's pattern and must not be `default`; an unchanged id is

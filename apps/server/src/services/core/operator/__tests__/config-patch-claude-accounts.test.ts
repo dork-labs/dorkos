@@ -196,7 +196,7 @@ describe('applyConfigPatch on the Claude account registry', () => {
     expect(accountsOnDisk().map((r) => r.id)).toEqual(['a']);
   });
 
-  it('removes nothing when the writer does not say what it was shown', () => {
+  it('treats every listed row as seen when the writer sends no list (the CLI, config_patch)', () => {
     writeAccountsExternally([
       { id: 'a', path: '/a', label: null },
       { id: 'b', path: '/b', label: null },
@@ -206,7 +206,7 @@ describe('applyConfigPatch on the Claude account registry', () => {
       runtimes: { claudeCode: { accounts: [{ id: 'a', path: '/a', label: 'A' }] } },
     });
 
-    expect(accountsOnDisk().map((r) => r.id)).toEqual(['a', 'b']);
+    expect(accountsOnDisk().map((r) => r.id)).toEqual(['a']);
   });
 
   it('never stores accountsSeen, and refuses one that is not a list of ids', () => {
