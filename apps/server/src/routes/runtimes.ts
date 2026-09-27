@@ -550,6 +550,11 @@ router.post('/claude-code/accounts/:id/probe', async (req, res) => {
  * this computer that are not registered, not the machine default and not
  * dismissed (spec `claude-account-ui` §7.4). Read-only: it stats folders and
  * never opens a file.
+ *
+ * Readable by any caller the API already lets in, with no operator bar: the
+ * answer is folder paths under the home folder, the same class of fact
+ * `GET /api/config` and the agent-facing config snapshot already disclose
+ * (`runtimes.claudeCode.accounts[].path`, `dismissedFolders`).
  */
 router.get('/claude-code/accounts/found', (_req, res) => {
   try {
@@ -572,6 +577,11 @@ router.get('/claude-code/accounts/found', (_req, res) => {
  * `dismissedFolders` is operator-only, and this route is its only writer, so
  * it holds the same two bars `PATCH /api/config` holds for such a leaf: with
  * login on, a signed-in person; and never a caller that names itself an agent.
+ *
+ * The write is `configManager.setDot` on purpose, not `applyConfigPatch`: a
+ * patch replaces arrays, and the append has to read the stored list and write
+ * it back in one synchronous step. Skipping the patch path also skips its
+ * operator-only check, which is why this route enforces that bar itself above.
  */
 router.post('/claude-code/accounts/found/dismiss', (req, res) => {
   const cookieRefusal = requireOperatorCookieUnderLogin(res, 'which account folders are hidden');

@@ -58,20 +58,48 @@ import {
 type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
 
 /**
- * The OS home folder Claude Code keeps its account folders in (`~/.claude`,
- * `~/.claude2`, …), the same `homedir()` the SDK subprocess resolves its own
- * default from.
+ * Every `<home>/.claude*` folder on this computer (`.claude` itself included),
+ * following symlinks, sorted by name: the places Claude Code keeps an account.
+ * No other check is made here; the caller decides which of them is an
+ * account folder.
  *
- * Exported for `found-claude-folders.ts`, which looks for unregistered account
- * folders there (spec `claude-account-ui` §7.4). It lives here because this
- * file is the Hard Rule 3 carve-out and the carve-out is BY FILENAME: no
- * sibling module may ask the OS for the home folder itself. Never use it for a
- * DorkOS path; that is `lib/dork-home.ts`.
+ * For `accounts/found-claude-folders.ts` (spec `claude-account-ui` §7.4). It
+ * lives here because this file is the Hard Rule 3 carve-out, which is BY
+ * FILENAME: the folders are handed out, never the home folder itself.
  *
- * @returns The absolute OS home folder.
+ * @param home - The home folder to list. Default: the OS home. Tests pass a temp one.
+ * @returns Absolute folder paths; empty when the home folder cannot be read.
  */
-export function claudeAccountsHome(): string {
-  return os.homedir();
+export function listClaudeAccountFolderCandidates(home: string = os.homedir()): string[] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(home);
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => name.startsWith('.claude'))
+    .sort()
+    .map((name) => path.join(home, name))
+    .filter((dir) => {
+      try {
+        return fs.statSync(dir).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+}
+
+/**
+ * A Claude account folder in comparable form ({@link canonicalAccountPath}),
+ * with a leading `~` expanded against the OS home: how a registered row or a
+ * dismissed folder written as `~/.claude2` is compared with a found folder.
+ *
+ * @param dir - A folder as written in config or sent by the client.
+ * @returns The folder's real path when it exists, else its normalized form.
+ */
+export function canonicalClaudeAccountPath(dir: string): string {
+  return canonicalAccountPath(dir, os.homedir());
 }
 
 /**

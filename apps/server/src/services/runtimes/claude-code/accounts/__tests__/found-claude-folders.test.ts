@@ -1,7 +1,8 @@
 /**
  * Finding the Claude account folders on this computer (spec
- * `claude-account-ui` §7.4). Every case builds a temp home and passes it as
- * `deps.home`, so nothing here ever looks at a real home folder.
+ * `claude-account-ui` §7.4). Every case builds a temp home and passes it,
+ * with the carve-out's listing of it, as `deps`, so nothing here ever looks at
+ * a real home folder.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
@@ -12,6 +13,7 @@ import {
   planDismissFoundFolder,
   MAX_DISMISSED_FOLDERS,
 } from '../found-claude-folders.js';
+import { listClaudeAccountFolderCandidates } from '../../claude-config-dir.js';
 
 let home: string;
 let elsewhere: string;
@@ -29,8 +31,13 @@ function config(claudeCode: Record<string, unknown> = {}): unknown {
   return { runtimes: { claudeCode: { defaultAccount: null, accounts: [], ...claudeCode } } };
 }
 
+/** The finder's inputs for the temp home, listed the way the carve-out lists the real one. */
+function deps(dir: string = home) {
+  return { home: dir, candidates: listClaudeAccountFolderCandidates(dir) };
+}
+
 function names(cfg: unknown = config()): string[] {
-  return findUnregisteredClaudeFolders(cfg, { home }).map((f) => f.name);
+  return findUnregisteredClaudeFolders(cfg, deps()).map((f) => f.name);
 }
 
 beforeEach(() => {
@@ -48,7 +55,7 @@ describe('findUnregisteredClaudeFolders', () => {
   it('finds a .claude2 folder holding projects/, with its path and name', () => {
     const dir = folder('.claude2', 'projects');
 
-    const found = findUnregisteredClaudeFolders(config(), { home });
+    const found = findUnregisteredClaudeFolders(config(), deps());
 
     expect(found).toEqual([
       {
@@ -124,7 +131,7 @@ describe('findUnregisteredClaudeFolders', () => {
       const dir = folder('.claude-ab1', 'projects');
       fs.writeFileSync(path.join(dir, marker), '{}');
 
-      expect(findUnregisteredClaudeFolders(config(), { home })).toMatchObject([
+      expect(findUnregisteredClaudeFolders(config(), deps())).toMatchObject([
         { name: '.claude-ab1', orgManaged: true, orgMarker: marker },
       ]);
     }
@@ -132,7 +139,7 @@ describe('findUnregisteredClaudeFolders', () => {
 
   it('does not flag a marker that is a folder, not a file', () => {
     folder('.claude-ab1', 'projects', 'remote-settings.json');
-    expect(findUnregisteredClaudeFolders(config(), { home })).toMatchObject([
+    expect(findUnregisteredClaudeFolders(config(), deps())).toMatchObject([
       { orgManaged: false, orgMarker: null },
     ]);
   });
@@ -149,7 +156,7 @@ describe('findUnregisteredClaudeFolders', () => {
     // Appending to a file changes its time, not its folder's.
     fs.utimesSync(transcript, appended, appended);
 
-    expect(findUnregisteredClaudeFolders(config(), { home })[0]!.lastUsedAt).toBe(
+    expect(findUnregisteredClaudeFolders(config(), deps())[0]!.lastUsedAt).toBe(
       appended.toISOString()
     );
   });
@@ -169,16 +176,14 @@ describe('findUnregisteredClaudeFolders', () => {
       vi.spyOn(fs.promises, 'readFile'),
     ];
 
-    const found = findUnregisteredClaudeFolders(config(), { home });
+    const found = findUnregisteredClaudeFolders(config(), deps());
 
     expect(found).toHaveLength(1);
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
   });
 
   it('answers empty for a home that cannot be read', () => {
-    expect(findUnregisteredClaudeFolders(config(), { home: path.join(home, 'missing') })).toEqual(
-      []
-    );
+    expect(findUnregisteredClaudeFolders(config(), deps(path.join(home, 'missing')))).toEqual([]);
   });
 });
 
@@ -188,32 +193,36 @@ describe('planDismissFoundFolder', () => {
     fs.symlinkSync(dir, path.join(elsewhere, 'alias'));
 
     expect(
-      planDismissFoundFolder(path.join(elsewhere, 'alias'), config({ dismissedFolders: ['/x'] }), {
-        home,
-      })
+      planDismissFoundFolder(
+        path.join(elsewhere, 'alias'),
+        config({ dismissedFolders: ['/x'] }),
+        deps()
+      )
     ).toEqual({ outcome: 'save', dismissed: ['/x', dir] });
   });
 
   it('changes nothing for a folder that is already dismissed, registered or the default', () => {
     const dir = folder('.claude2', 'projects');
     const def = folder('.claude', 'projects');
-    expect(planDismissFoundFolder(dir, config({ dismissedFolders: [dir] }), { home })).toEqual({
+    expect(planDismissFoundFolder(dir, config({ dismissedFolders: [dir] }), deps())).toEqual({
       outcome: 'unchanged',
     });
     expect(
-      planDismissFoundFolder(dir, config({ accounts: [{ id: 'a', path: dir, label: null }] }), {
-        home,
-      })
+      planDismissFoundFolder(
+        dir,
+        config({ accounts: [{ id: 'a', path: dir, label: null }] }),
+        deps()
+      )
     ).toEqual({ outcome: 'unchanged' });
-    expect(planDismissFoundFolder(def, config(), { home })).toEqual({ outcome: 'unchanged' });
+    expect(planDismissFoundFolder(def, config(), deps())).toEqual({ outcome: 'unchanged' });
   });
 
   it('refuses a folder the list does not offer', () => {
     folder('.claude-sessions', 'sessions');
-    expect(planDismissFoundFolder(path.join(home, '.claude-sessions'), config(), { home })).toEqual(
-      { outcome: 'not-a-candidate' }
-    );
-    expect(planDismissFoundFolder('/etc', config(), { home })).toEqual({
+    expect(planDismissFoundFolder(path.join(home, '.claude-sessions'), config(), deps())).toEqual({
+      outcome: 'not-a-candidate',
+    });
+    expect(planDismissFoundFolder('/etc', config(), deps())).toEqual({
       outcome: 'not-a-candidate',
     });
   });
@@ -222,7 +231,7 @@ describe('planDismissFoundFolder', () => {
     const dir = folder('.claude2', 'projects');
     const full = Array.from({ length: MAX_DISMISSED_FOLDERS }, (_, i) => `/old/${i}`);
 
-    const plan = planDismissFoundFolder(dir, config({ dismissedFolders: full }), { home });
+    const plan = planDismissFoundFolder(dir, config({ dismissedFolders: full }), deps());
 
     expect(plan).toMatchObject({ outcome: 'save' });
     const dismissed = (plan as { dismissed: string[] }).dismissed;

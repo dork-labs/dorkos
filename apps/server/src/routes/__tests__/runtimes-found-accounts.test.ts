@@ -1,8 +1,7 @@
 /**
  * The "Found on this computer" routes (spec `claude-account-ui` §7.4), on a
- * real config file. The OS home the finder scans is a temp folder injected in
- * place of the carve-out's `claudeAccountsHome`, so nothing here ever scans a
- * real home.
+ * real config file. The carve-out's folder listing, comparable form and default
+ * folder are pointed at a temp home, so nothing here ever scans a real home.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
@@ -14,10 +13,23 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 
 const fake = vi.hoisted(() => ({ home: '' }));
 
-vi.mock('../../services/runtimes/claude-code/claude-config-dir.js', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  claudeAccountsHome: () => fake.home,
-}));
+// The carve-out's three answers, pointed at the temp home instead of the OS one.
+vi.mock('../../services/runtimes/claude-code/claude-config-dir.js', async (importOriginal) => {
+  const real =
+    await importOriginal<
+      typeof import('../../services/runtimes/claude-code/claude-config-dir.js')
+    >();
+  const accounts = await import('../../services/core/usage/runtime-accounts.js');
+  return {
+    ...real,
+    listClaudeAccountFolderCandidates: () => real.listClaudeAccountFolderCandidates(fake.home),
+    canonicalClaudeAccountPath: (dir: string) => accounts.canonicalAccountPath(dir, fake.home),
+    claudeDefaultAccountFolder: (config: unknown) => ({
+      path: accounts.defaultAccountFolder('claude-code', config, fake.home).path!,
+      warnings: [],
+    }),
+  };
+});
 vi.mock('../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   logError: (err: unknown) => ({ err: String(err) }),
@@ -25,6 +37,7 @@ vi.mock('../../lib/logger.js', () => ({
 
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import runtimesRouter from '../runtimes.js';
+import { OPERATOR_COOKIE_REQUIRED_CODE } from '../../lib/caller-authority.js';
 
 const app = express();
 app.use(express.json());
@@ -88,6 +101,18 @@ describe('GET /api/runtimes/claude-code/accounts/found', () => {
   });
 });
 
+describe('GET …/found when the default account is another folder', () => {
+  it('offers ~/.claude, which is then neither the default nor registered', async () => {
+    accountFolder('.claude');
+    const other = accountFolder('.claude2');
+    configManager.setDot('runtimes.claudeCode.defaultAccount', other);
+
+    const res = await request(server).get('/api/runtimes/claude-code/accounts/found');
+
+    expect(res.body.folders.map((f: { name: string }) => f.name)).toEqual(['.claude']);
+  });
+});
+
 describe('POST /api/runtimes/claude-code/accounts/found/dismiss', () => {
   it('keeps two dismissals in a row, and the folders stop being offered', async () => {
     const a = accountFolder('.claude2');
@@ -134,6 +159,18 @@ describe('POST /api/runtimes/claude-code/accounts/found/dismiss', () => {
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it('refuses a signed-out caller while login is on, and writes nothing', async () => {
+    const a = accountFolder('.claude2');
+    configManager.setDot('auth.enabled', true);
+
+    const res = await dismiss(a);
+
+    // The more specific answer: sign in first (the cookie bar runs before the agent bar).
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe(OPERATOR_COOKIE_REQUIRED_CODE);
+    expect(configManager.get('runtimes').claudeCode.dismissedFolders).toEqual([]);
   });
 
   it('refuses a caller that names itself an agent', async () => {

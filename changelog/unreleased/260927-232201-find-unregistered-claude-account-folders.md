@@ -7,4 +7,4 @@ covers:
 
 ### Added
 
-- Settings → Runtimes → Claude accounts now lists other Claude account folders it finds on your computer, like `~/.claude2`, under "Found on this computer". Nothing is added until you click Add. Dismiss hides a folder for good. A folder that looks like a company manages it says "managed by an organization", so you can decide whether to add it (DOR-2387)
+- Settings → Runtimes → Claude accounts now lists other Claude account folders it finds on your computer, like `~/.claude2`, under "Found on this computer". Nothing is added until you click Add. Dismiss hides a folder for good. A folder that looks company-managed is marked "managed by an organization", so you can decide whether to add it (DOR-2387)

@@ -20,9 +20,10 @@
  * reads an account's settings or its sign-in. The org marker is a file's
  * EXISTENCE, as in flow.
  *
- * Every path resolves against `deps.home`, which defaults to the OS home the
- * Hard Rule 3 carve-out (`claude-config-dir.ts`) reports; tests pass a temp
- * folder, so nothing here ever scans a real home under test.
+ * It never learns the OS home folder. The Hard Rule 3 carve-out
+ * (`claude-config-dir.ts`) hands it the `.claude*` folders, the comparable
+ * form of a folder and the machine default folder; tests pass `deps` (a
+ * candidate list and a temp home), so nothing here scans a real home under test.
  *
  * @module services/runtimes/claude-code/accounts/found-claude-folders
  */
@@ -33,7 +34,11 @@ import {
   canonicalAccountPath,
   defaultAccountFolder,
 } from '../../../core/usage/runtime-accounts.js';
-import { claudeAccountsHome } from '../claude-config-dir.js';
+import {
+  canonicalClaudeAccountPath,
+  claudeDefaultAccountFolder,
+  listClaudeAccountFolderCandidates,
+} from '../claude-config-dir.js';
 
 /**
  * The files Claude Code leaves in an account folder when an organization
@@ -48,10 +53,38 @@ export const MAX_DISMISSED_FOLDERS = 200;
 /** The most entries one folder's last-use scan stats, so a huge history stays cheap. */
 const MAX_STATS_PER_FOLDER = 2_000;
 
-/** What the finder reads besides config. */
+/**
+ * What the finder reads besides config, for tests. Without it the finder asks
+ * `claude-config-dir.ts`, the only module that may look at the OS home.
+ */
 export interface FoundFolderDeps {
-  /** The OS home folder. Default: the one `claude-config-dir.ts` reports. */
-  home?: string;
+  /** The `.claude*` folders to consider, as {@link listClaudeAccountFolderCandidates} lists them. */
+  candidates: readonly string[];
+  /** The home folder, for `~` in config and the machine default folder. */
+  home: string;
+}
+
+/** How the finder compares folders and finds the default one. */
+interface FolderEnv {
+  candidates: readonly string[];
+  canonical: (dir: string) => string;
+  defaultFolder: (config: unknown) => string | null;
+}
+
+/** The environment `deps` describes, or the real one from the carve-out. */
+function folderEnv(deps: FoundFolderDeps | undefined): FolderEnv {
+  if (deps) {
+    return {
+      candidates: deps.candidates,
+      canonical: (dir) => canonicalAccountPath(dir, deps.home),
+      defaultFolder: (config) => defaultAccountFolder('claude-code', config, deps.home).path,
+    };
+  }
+  return {
+    candidates: listClaudeAccountFolderCandidates(),
+    canonical: canonicalClaudeAccountPath,
+    defaultFolder: (config) => claudeDefaultAccountFolder(config).path,
+  };
 }
 
 /** Outcome of {@link planDismissFoundFolder}. */
@@ -96,13 +129,13 @@ function isFolder(dir: string): boolean {
  * default folder, every registered row's path (rows the reader skips
  * included, when they carry a path), and every dismissed folder.
  */
-function hiddenFolders(config: unknown, home: string): Set<string> {
+function hiddenFolders(config: unknown, env: FolderEnv): Set<string> {
   const hidden = new Set<string>();
-  const add = (dir: string) => hidden.add(canonicalAccountPath(dir, home));
+  const add = (dir: string) => hidden.add(env.canonical(dir));
 
   // A `default` that aliases a registered row names that row's folder, which
   // the registered rows below cover; one that stands alone is its own account.
-  const machineDefault = defaultAccountFolder('claude-code', config, home).path;
+  const machineDefault = env.defaultFolder(config);
   if (machineDefault !== null) add(machineDefault);
 
   const rows = claudeCodeSection(config).accounts;
@@ -171,24 +204,14 @@ function lastUsedAt(dir: string): string | null {
   return Number.isFinite(newest) ? new Date(newest).toISOString() : null;
 }
 
-/**
- * Every `<home>/.claude*` folder (`.claude` itself included) that holds a
- * `projects/` folder, by name, each real folder once.
- */
-function candidateFolders(home: string): { dir: string; canonical: string }[] {
-  let names: string[];
-  try {
-    names = fs.readdirSync(home);
-  } catch {
-    return [];
-  }
+/** The candidates that hold a `projects/` folder, each real folder once. */
+function candidateFolders(env: FolderEnv): { dir: string; canonical: string }[] {
   const seen = new Set<string>();
   const out: { dir: string; canonical: string }[] = [];
-  for (const name of names.filter((entry) => entry.startsWith('.claude')).sort()) {
-    const dir = path.join(home, name);
+  for (const dir of env.candidates) {
     if (!isFolder(dir) || !isFolder(path.join(dir, 'projects'))) continue;
     // A symlink and its target are one folder; the first by name is kept.
-    const canonical = canonicalAccountPath(dir, home);
+    const canonical = env.canonical(dir);
     if (seen.has(canonical)) continue;
     seen.add(canonical);
     out.push({ dir, canonical });
@@ -201,16 +224,19 @@ function candidateFolders(home: string): { dir: string; canonical: string }[] {
  * the machine default and not dismissed, sorted by folder name.
  *
  * @param config - The parsed config (at least its `runtimes` section).
- * @param deps - The OS home folder (tests pass a temp one).
+ * @param deps - For tests: the candidate folders and a home. Default: this computer.
  * @returns The folders to offer; empty when there is nothing new.
  */
 export function findUnregisteredClaudeFolders(
   config: unknown,
-  deps: FoundFolderDeps = {}
+  deps?: FoundFolderDeps
 ): FoundClaudeFolder[] {
-  const home = deps.home ?? claudeAccountsHome();
-  const hidden = hiddenFolders(config, home);
-  return candidateFolders(home)
+  return findWith(config, folderEnv(deps));
+}
+
+function findWith(config: unknown, env: FolderEnv): FoundClaudeFolder[] {
+  const hidden = hiddenFolders(config, env);
+  return candidateFolders(env)
     .filter(({ canonical }) => !hidden.has(canonical))
     .map(({ dir }) => {
       const orgMarker = orgMarkerOf(dir);
@@ -235,19 +261,17 @@ export function findUnregisteredClaudeFolders(
  *
  * @param dir - The folder, as the found list gave it.
  * @param config - The parsed config, read just before the write.
- * @param deps - The OS home folder (tests pass a temp one).
+ * @param deps - For tests: the candidate folders and a home. Default: this computer.
  */
 export function planDismissFoundFolder(
   dir: string,
   config: unknown,
-  deps: FoundFolderDeps = {}
+  deps?: FoundFolderDeps
 ): DismissFoundFolderPlan {
-  const home = deps.home ?? claudeAccountsHome();
-  const canonical = canonicalAccountPath(dir, home);
-  if (hiddenFolders(config, home).has(canonical)) return { outcome: 'unchanged' };
-  const offered = findUnregisteredClaudeFolders(config, { home }).some(
-    (folder) => canonicalAccountPath(folder.path, home) === canonical
-  );
+  const env = folderEnv(deps);
+  const canonical = env.canonical(dir);
+  if (hiddenFolders(config, env).has(canonical)) return { outcome: 'unchanged' };
+  const offered = findWith(config, env).some((folder) => env.canonical(folder.path) === canonical);
   if (!offered) return { outcome: 'not-a-candidate' };
   return {
     outcome: 'save',
