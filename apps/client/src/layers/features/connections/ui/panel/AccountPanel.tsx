@@ -14,7 +14,19 @@ import {
 import { useMeshAgentPaths, useRegisteredAgents } from '@/layers/entities/mesh';
 import { formatRelativeTime, getAgentDisplayName, toSession } from '@/layers/shared/lib';
 import { useSafeNavigate } from '@/layers/shared/model';
-import { Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+  QueryErrorState,
+  Skeleton,
+} from '@/layers/shared/ui';
 import { accountAppName } from '../../lib/app-list';
 import { tryItPrompts, usageLine } from '../../lib/app-panel-copy';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
@@ -200,6 +212,7 @@ function DisconnectedFix({
   onFinishDisconnecting: () => void;
   finishing: boolean;
 }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const cleanup = detail.connection.externalCleanup;
   const cleanedUp = cleanup === 'complete' || cleanup === 'not_required';
   if (!cleanedUp) {
@@ -213,23 +226,42 @@ function DisconnectedFix({
     );
   }
   return (
-    <PanelFix
-      message={`Disconnected. Agents can’t use ${appName}.`}
-      action="Connect again"
-      pending={reconnecting}
-      onAction={onSignInAgain}
-      secondary={
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onRemove}
-          disabled={removing}
-          data-testid="remove-account"
-        >
-          Remove from your apps
-        </Button>
-      }
-    />
+    <>
+      <PanelFix
+        message={`Disconnected. Agents can’t use ${appName}.`}
+        action="Connect again"
+        pending={reconnecting}
+        onAction={onSignInAgain}
+        secondary={
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setConfirmRemove(true)}
+            disabled={removing}
+            data-testid="remove-account"
+          >
+            Remove from your apps
+          </Button>
+        }
+      />
+      <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {appName} from your apps?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It leaves this list. What agents did with it stays on record. If you connect it again,
+              you choose who can use it again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction disabled={removing} onClick={onRemove}>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

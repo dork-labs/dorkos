@@ -36,6 +36,7 @@ export function ManagementReviewDialog({
   reviewRequestId,
   open,
   onOpenChange,
+  onCloseAutoFocus,
 }: {
   /** The request to show. */
   reviewRequestId: string | null;
@@ -43,6 +44,11 @@ export function ManagementReviewDialog({
   open: boolean;
   /** Close the dialog. */
   onOpenChange: (open: boolean) => void;
+  /**
+   * Where focus goes once the dialog closes. The opener can be gone by then
+   * (a decided request leaves the "Needs you" strip), so the page decides.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const reviewQuery = useConnectorManagementReview(reviewRequestId);
   const resolve = useResolveConnectorManagementReview();
@@ -88,6 +94,7 @@ export function ManagementReviewDialog({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
         data-testid="connector-review-dialog"
+        onCloseAutoFocus={onCloseAutoFocus}
         className="max-h-[90vh] sm:max-w-xl [&>[data-slot=dialog-content-close]]:absolute [&>[data-slot=dialog-content-close]]:top-4 [&>[data-slot=dialog-content-close]]:right-4 [&>[data-slot=dialog-content-close]]:m-0 [&>[data-slot=dialog-content-close]]:opacity-100"
       >
         <ResponsiveDialogHeader>

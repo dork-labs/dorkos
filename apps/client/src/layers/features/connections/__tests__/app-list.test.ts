@@ -21,7 +21,7 @@ function connection(over: Partial<ConnectorConnectionSummary> = {}): ConnectorCo
     connectionId: 'c-gmail' as never,
     providerInstanceId: 'provider-1' as never,
     toolkit: 'gmail',
-    label: 'personal',
+    label: 'gmail',
     identityHint: 'you@gmail.com',
     lifecycle: 'connected',
     authenticationStatus: 'active',
@@ -116,7 +116,7 @@ function input(over: Partial<YourAppsInput> = {}): YourAppsInput {
 
 describe('accountRow', () => {
   it('is ready only when every fact the server reports says agents can use it', () => {
-    const row = accountRow(connection(), SERVICES);
+    const row = accountRow(connection({ label: 'gmail' }), SERVICES);
     expect(row).toMatchObject({
       name: 'Gmail',
       tone: 'ready',
@@ -178,6 +178,19 @@ describe('accountRow', () => {
   it('shows an access update in flight as busy, not ready', () => {
     const row = accountRow(connection({ authoritySync: { status: 'pending' } }), SERVICES);
     expect(row.tone).toBe('busy');
+  });
+
+  it('goes by the name the person gave it, keeping the address for the panel', () => {
+    expect(accountRow(connection({ label: 'work' }), SERVICES)).toMatchObject({
+      account: 'work',
+      identity: 'you@gmail.com',
+      detail: 'work · 2 agents',
+    });
+    // Unnamed, the label is just the app's id, so the address stands in.
+    expect(accountRow(connection({ label: 'gmail' }), SERVICES)).toMatchObject({
+      account: 'you@gmail.com',
+      identity: null,
+    });
   });
 
   it('says "No agents yet" and names an app the catalog doesn’t list', () => {

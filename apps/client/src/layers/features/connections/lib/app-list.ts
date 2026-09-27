@@ -40,8 +40,13 @@ export interface YourAppRow {
   name: string;
   /** Icon key for {@link ServiceMark}. */
   iconKey: string;
-  /** Which account or bot it is ("you@gmail.com", "@lifeos_bot"), when known. */
+  /**
+   * Which account or bot it is: the name the person gave it ("work"), else its
+   * address ("you@gmail.com"), else the bot's name ("@lifeos_bot").
+   */
   account: string | null;
+  /** The account's address when the row goes by a name, shown beside it in the panel. */
+  identity: string | null;
   /** The plain line under the name: which account, who can use it, or what is wrong. */
   detail: string;
   /** How the row reads. */
@@ -119,6 +124,26 @@ export function namesLine(names: readonly string[]): string {
 }
 
 /**
+ * What an account is called. An account nobody named carries its app's id as
+ * its label ("gmail"), which says nothing, so its address stands in; a name the
+ * person chose always wins, with the address kept for the panel.
+ *
+ * @param connection - The connection summary.
+ */
+export function accountNames(connection: ConnectorConnectionSummary): {
+  account: string;
+  identity: string | null;
+} {
+  const named = connection.label.toLowerCase() !== connection.toolkit.toLowerCase();
+  if (!named) return { account: connection.identityHint ?? connection.label, identity: null };
+  const identity =
+    connection.identityHint && connection.identityHint !== connection.label
+      ? connection.identityHint
+      : null;
+  return { account: connection.label, identity };
+}
+
+/**
  * One account's row, decided from the server's own facts about it. Order
  * matters: the first fact that stops agents wins, so a signed-out account
  * never reads as merely "updating".
@@ -135,7 +160,7 @@ export function accountRow(
     kind: 'account' as const,
     name: accountAppName(connection.toolkit, services),
     iconKey: connection.toolkit,
-    account: connection.identityHint ?? connection.label,
+    ...accountNames(connection),
     waiting: 0,
   };
   const who = base.account;
@@ -232,6 +257,7 @@ export function chatAppRow(
     name: manifest.displayName,
     iconKey: manifest.iconId ?? manifest.type,
     account: botName,
+    identity: null,
     waiting: input.waitingByChatApp[instance.id] ?? 0,
   };
   const withBot = (line: string) => (botName ? `${botName} · ${line}` : line);
@@ -324,6 +350,7 @@ export function buildYourApps(input: YourAppsInput): YourAppRow[] {
       name,
       iconKey: pending.toolkit,
       account: null,
+      identity: null,
       detail: `Waiting for you to finish signing in on ${service?.signInName ?? name}…`,
       tone: 'busy',
       action: 'cancel',

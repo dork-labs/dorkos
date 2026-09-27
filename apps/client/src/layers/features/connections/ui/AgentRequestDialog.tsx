@@ -67,6 +67,7 @@ export function AgentRequestDialog({
   open,
   onOpenChange,
   onConnectService,
+  onCloseAutoFocus,
 }: {
   /** The request to show. */
   requestId: string | null;
@@ -76,6 +77,11 @@ export function AgentRequestDialog({
   onOpenChange: (open: boolean) => void;
   /** Open the sign-in flow for the exact app the agent asked for. */
   onConnectService: (service: ConnectorCatalogService) => void;
+  /**
+   * Where focus goes once the dialog closes. The opener can be gone by then
+   * (a decided request leaves the "Needs you" strip), so the page decides.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const request = useConnectorAgentRequest(requestId);
   const connections = useConnectorConnections();
@@ -191,6 +197,7 @@ export function AgentRequestDialog({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
         data-testid="agent-request-dialog"
+        onCloseAutoFocus={onCloseAutoFocus}
         className="max-h-[90vh] sm:max-w-2xl [&>[data-slot=dialog-content-close]]:absolute [&>[data-slot=dialog-content-close]]:top-4 [&>[data-slot=dialog-content-close]]:right-4 [&>[data-slot=dialog-content-close]]:m-0 [&>[data-slot=dialog-content-close]]:opacity-100"
       >
         <ResponsiveDialogHeader>

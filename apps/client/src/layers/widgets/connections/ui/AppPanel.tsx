@@ -63,7 +63,11 @@ export function AppPanel({ row, open, onOpenChange, children }: AppPanelProps) {
           mobile={mobile}
           className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs"
         >
-          {row.account && <span className="truncate">{row.account}</span>}
+          {row.account && (
+            <span className="truncate">
+              {row.identity ? `${row.account} · ${row.identity}` : row.account}
+            </span>
+          )}
           {row.tone === 'ready' && (
             <span className="flex shrink-0 items-center gap-1.5">
               {row.account && <span aria-hidden>·</span>}

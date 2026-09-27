@@ -9,12 +9,16 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 # Connections
 
-The **Connections** page brings the outside world into one place. It has two regions:
+The **Connections** page is one list of apps. **Yours** shows every app you connected, one row each, with what state it is in and the one thing to do next. **All apps** shows everything you could connect.
 
-- **Messaging** lets people reach your agents through services such as Slack and Telegram. See [Relay Messaging](/docs/guides/relay-messaging).
-- **Accounts** lets agents use services such as Gmail. You choose an account, a named agent, and the exact actions or notifications it may use.
+Apps come in two kinds, and both live in the same list:
 
-This guide covers Accounts.
+- Apps your agents **use**, such as Gmail. You choose an account, a named agent, and the exact actions or notifications it may use.
+- **Chat** apps, such as Telegram and Slack, where people reach your agents. They carry a small **Chat** tag. See [Relay Messaging](/docs/guides/relay-messaging).
+
+Click a connected app to open its side panel: who can use it, what agents did with it lately, and a few things to try. Everything else (its name, notifications, exact actions, pause, disconnect) is under **More**.
+
+This guide covers apps your agents use.
 
 <Callout type="warn">
   DorkOS-managed Accounts are available in alpha. A real Gmail sign-in, profile read, usage record,
@@ -30,7 +34,7 @@ This guide covers Accounts.
 
 ### Choose a service
 
-Open **Connections** and find **Accounts**. Select **Connect service**, search for a service, then choose its account button, such as **Use a Gmail account**. Popular apps are always listed, even before anything is set up.
+Open **Connections** and find the app in **All apps**, or search for it. Select **Connect** on its row. Popular apps are always listed, even before anything is set up. An app that does two things, such as Slack, asks which one you want first.
 
 The first time you connect an app, DorkOS asks how it should reach your apps. If a way already works (for example, your DorkOS account is linked in **Settings → Access**, or you saved your own key), it skips this step and goes straight to sign-in.
 
@@ -50,13 +54,13 @@ Read where the service will keep your login access. Add a label such as “work�
 
 ### Choose agent access
 
-Open the new connection and choose **Agent access**. Pick a named agent, then review the exact actions it may use. OAuth scopes decide which service actions are available; your agent grant decides which of those actions this agent may run. Notification access is a separate choice. New or changed actions stay off until you review them.
+Right after sign-in, DorkOS asks **Who can use it?** Tick the agents and choose **Read** or **Read and write**. To change it later, click the app's row. For exact actions, open **More** in its side panel and choose **Exact actions per agent**. OAuth scopes decide which service actions are available; your agent grant decides which of those actions this agent may run. Notification access is a separate choice. New or changed actions stay off until you review them.
 
 </Step>
 
 </Steps>
 
-You can connect several accounts for one service. Labels keep a personal account separate from a work account. Access always belongs to the exact connection you selected.
+You can connect several accounts for one service: each account is its own row. To add another, open the app's side panel and choose **More → Connect another account**. Labels keep a personal account separate from a work account. Access always belongs to the exact connection you selected.
 
 ## Agents can ask, but you decide
 

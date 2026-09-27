@@ -1,16 +1,14 @@
 import { test, expect } from '../../fixtures';
 
 /**
- * The /connections page, as it exists today.
+ * The /connections page, as it exists today: one plain list of apps (DOR-2418).
  *
- * This spec used to drive a dialog opened by `?relay=open` with an
- * "Integrations / Activity" tab strip. That was not selector drift — the
- * surface was replaced (DOR-857). It is a page now, with two regions on one
- * scroll: Messaging and Accounts.
+ * It used to be a dialog opened by `?relay=open` (DOR-857 replaced it with a
+ * page), then a page with two regions, Messaging and Accounts. Now every
+ * connection is a row in one list, and chat apps carry a small "Chat" tag.
  *
- * The messaging region has an empty state for an install with no connection at
- * all. It is not reachable here: DorkOS registers a built-in `claude-code`
- * connection of its own, so a running server always has at least one.
+ * The suite shares one server, so another spec may have set up an app; these
+ * tests assert what holds either way rather than a first-visit page.
  */
 test.describe('Connections page @smoke', () => {
   test.beforeEach(async ({ basePage }) => {
@@ -18,15 +16,16 @@ test.describe('Connections page @smoke', () => {
     await basePage.waitForAppReady();
   });
 
-  test('both regions are on one page, no tabs between them', async ({ connectionsPage }) => {
+  test('is one list of apps, with no tabs and no regions to learn', async ({ connectionsPage }) => {
     await connectionsPage.goto();
 
     await expect(connectionsPage.heading).toBeAttached();
-    await expect(connectionsPage.messaging).toBeVisible();
-    await expect(connectionsPage.accounts).toBeVisible();
-    // The separation is a heading and a scroll, not a click. A tab strip here
-    // would mean one region's consent story is hidden behind the other.
+    await expect(connectionsPage.allApps).toBeVisible();
     await expect(connectionsPage.page.getByRole('tablist')).toHaveCount(0);
+    await expect(connectionsPage.page.getByRole('region', { name: 'Messaging' })).toHaveCount(0);
+    await expect(
+      connectionsPage.page.getByRole('region', { name: 'Accounts', exact: true })
+    ).toHaveCount(0);
   });
 
   test('the command palette lands on the page', async ({ connectionsPage }) => {
@@ -36,68 +35,70 @@ test.describe('Connections page @smoke', () => {
     await expect(connectionsPage.page).toHaveURL(/\/connections/);
   });
 
-  test('a link to the retired messaging dialog lands on the messaging region', async ({
-    connectionsPage,
-  }) => {
+  test('a link to the retired messaging dialog lands on the list', async ({ connectionsPage }) => {
     await connectionsPage.page.goto('/?relay=open');
 
     await expect(connectionsPage.page).toHaveURL(/\/connections/);
-    await expect(connectionsPage.page).toHaveURL(/region=messaging/);
-    await expect(connectionsPage.messaging).toBeVisible();
+    await expect(connectionsPage.page).not.toHaveURL(/region=/);
+    await expect(connectionsPage.allApps).toBeVisible();
   });
 
   test('a retired Settings link lands there too', async ({ connectionsPage }) => {
     await connectionsPage.page.goto('/?settings=integrations');
 
     await expect(connectionsPage.page).toHaveURL(/\/connections/);
-    await expect(connectionsPage.messaging).toBeVisible();
+    await expect(connectionsPage.allApps).toBeVisible();
   });
 
-  test('messaging lists the built-in Claude Code connection, switched on', async ({
+  test('an old ?region= link still lands on the list', async ({ connectionsPage }) => {
+    await connectionsPage.page.goto('/connections?region=messaging');
+
+    await expect(connectionsPage.allApps).toBeVisible();
+  });
+
+  test('never shows the built-in agent relay as something to connect', async ({
+    connectionsPage,
+  }) => {
+    await connectionsPage.goto();
+
+    // DorkOS's own Claude Code relay is how it works inside, not an app.
+    await expect(connectionsPage.list.getByText('Claude Code')).toHaveCount(0);
+  });
+
+  test('lists chat apps as ordinary rows with a Chat tag', async ({ connectionsPage }) => {
+    await connectionsPage.goto();
+
+    const telegram = connectionsPage
+      .catalogApp('telegram')
+      .or(connectionsPage.yourApp('Telegram'))
+      .first();
+    await expect(telegram).toBeVisible();
+    await expect(telegram).toContainText('Chat');
+  });
+
+  test('keeps the webhook with the tools for developers', async ({ connectionsPage }) => {
+    await connectionsPage.goto();
+
+    const developers = connectionsPage.page.getByRole('region', { name: 'For developers' });
+    const setUp = connectionsPage.yourApp('Webhook');
+    // Set up once, a webhook moves to "Yours"; otherwise it waits in its group.
+    await expect(developers.getByText('Webhook').or(setUp).first()).toBeVisible();
+    await expect(
+      connectionsPage.page.getByTestId('all-apps-list').getByText('Webhook')
+    ).toHaveCount(0);
+  });
+
+  test('lists the popular apps even with nothing set up to reach them', async ({
     connectionsPage,
   }) => {
     await connectionsPage.goto();
 
     await expect(
-      connectionsPage.messaging.getByRole('heading', { name: 'Live now' })
+      connectionsPage.connect('Gmail').or(connectionsPage.yourApp('Gmail')).first()
     ).toBeVisible();
-    await expect(connectionsPage.liveConnection('Claude Code').getByRole('switch')).toBeChecked();
-  });
-
-  test('messaging offers a way to reach agents that is not set up yet', async ({
-    connectionsPage,
-  }) => {
-    await connectionsPage.goto();
-
-    await expect(
-      connectionsPage.messaging.getByRole('heading', { name: 'Add a way to reach them' })
-    ).toBeVisible();
-    await expect(connectionsPage.addConnection('Telegram')).toBeVisible();
-  });
-
-  test('accounts names its carriers rather than inventing a word for them', async ({
-    connectionsPage,
-  }) => {
-    await connectionsPage.goto();
-
     // The page names Composio and Nango where it points at Settings ›
-    // Connections, where those keys now live. Both "engine" and "provider"
-    // failed to mean anything to the people using this, so it says who they are.
+    // Connections, where those keys live. "provider" meant nothing to people.
     await expect(connectionsPage.carrierSection).toBeVisible();
-    await expect(connectionsPage.accounts.getByText(/\bprovider\b/i)).toHaveCount(0);
-  });
-
-  test('accounts renders something honest even with nothing connectable', async ({
-    connectionsPage,
-  }) => {
-    await connectionsPage.goto();
-
-    // The region never vanishes. With no connected account it names the empty
-    // state and the next useful step without implying that setup is complete.
-    await expect(connectionsPage.accounts).toBeVisible();
-    await expect(connectionsPage.accounts).toContainText('No accounts connected');
-    await expect(connectionsPage.accounts).toContainText(
-      'Connect a service, then choose exactly which agents may use it.'
-    );
+    await expect(connectionsPage.list.getByText(/\bprovider\b/i)).toHaveCount(0);
   });
 });

@@ -77,7 +77,7 @@ export function formatAccountsAccess(
     data.accountCount === null
       ? 'Current account access could not be checked; this does not mean there are no accounts.'
       : `Currently granted accounts for this agent session: ${data.accountCount}.`;
-  return `DorkOS Connections has Accounts (service actions) and Messaging (Slack/Telegram conversations).
+  return `DorkOS Connections is one list of apps: apps agents use (service actions) and chat apps (Slack/Telegram conversations).
 ${status}${data.changed ? ' Access changed since this session last received its account snapshot.' : ''}
 This snapshot describes grants, not a verified service connection; access may change during a turn. Use the injected tools below for current authority, not shell/config files or a generic app/MCP inventory.
 Call ${tool('list_granted_connections')} with {} before claiming which accounts you can use. Then call ${tool('list_granted_operations')} with the returned connectionId.

@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
@@ -23,7 +23,7 @@ import {
   type YourAppRow,
 } from '@/layers/features/connections';
 import { useSettingsDeepLink } from '@/layers/shared/model';
-import { Button, PageContainer, PageHeading } from '@/layers/shared/ui';
+import { Button, focusPageHeading, PageContainer, PageHeading } from '@/layers/shared/ui';
 import { AppPanel } from './AppPanel';
 import { AppUseChoice } from './AppUseChoice';
 import { ChatAppPanel } from './ChatAppPanel';
@@ -74,6 +74,16 @@ export function ConnectionsPage() {
   const [accessConnectionId, setAccessConnectionId] = useState<string | null>(null);
   const [useChoice, setUseChoice] = useState<ConnectorCatalogService | null>(null);
   const chatAppSetup = useChatAppSetup();
+  // What opened a "Needs you" dialog, so closing it can hand focus back. A
+  // decided item leaves the strip, and then focus lands on the page heading.
+  const decisionOpener = useRef<HTMLElement | null>(null);
+  const returnDecisionFocus = (event: Event) => {
+    event.preventDefault();
+    const opener = decisionOpener.current;
+    decisionOpener.current = null;
+    if (opener?.isConnected) opener.focus();
+    else void focusPageHeading();
+  };
 
   // A sign-in left open in the address (the dialog closed, or the page
   // reloaded) is a "Connecting" row until it finishes or is cancelled.
@@ -188,8 +198,14 @@ export function ConnectionsPage() {
       <div className="space-y-8">
         <NeedsYou
           services={data.services}
-          onOpenRequest={(requestId) => setSearch({ request: requestId })}
-          onOpenReview={(reviewRequestId) => setSearch({ review: reviewRequestId })}
+          onOpenRequest={(requestId) => {
+            decisionOpener.current = document.activeElement as HTMLElement | null;
+            setSearch({ request: requestId });
+          }}
+          onOpenReview={(reviewRequestId) => {
+            decisionOpener.current = document.activeElement as HTMLElement | null;
+            setSearch({ review: reviewRequestId });
+          }}
         />
 
         <AppList
@@ -276,6 +292,7 @@ export function ConnectionsPage() {
           setConnectingForRequest(true);
           startAccount(service);
         }}
+        onCloseAutoFocus={returnDecisionFocus}
       />
 
       <ManagementReviewDialog
@@ -285,6 +302,7 @@ export function ConnectionsPage() {
         onOpenChange={(open) => {
           if (!open) setSearch({ review: undefined });
         }}
+        onCloseAutoFocus={returnDecisionFocus}
       />
 
       <ConnectionAccessDialog

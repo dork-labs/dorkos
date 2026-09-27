@@ -69,13 +69,12 @@ test('popular apps are listed before anything is set up, and the first connect a
   await expect(
     page.getByRole('button', { name: 'Set it up in Settings › Connections' })
   ).toHaveCount(1);
-  await page.getByRole('button', { name: 'Connect service' }).click();
-  const catalog = page.getByRole('dialog', { name: 'Connect a service' });
-  await catalog.getByLabel('Search services').fill('Gmail');
-  const gmail = catalog.getByTestId('service-result-gmail');
+  // The popular apps are rows in the list from the first visit: no dialog to
+  // open, no search needed, and never "No app matches".
+  const gmail = page.getByTestId('catalog-app-gmail');
   await expect(gmail).toContainText('Read, search and send email.');
-  await expect(catalog.getByText('No app matches', { exact: false })).toHaveCount(0);
-  await gmail.getByRole('button', { name: 'Use a Gmail account' }).click();
+  await expect(page.getByText('No app matches', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Connect Gmail' }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Connect Gmail' });
   await expect(dialog).toContainText('First, pick how DorkOS reaches your apps.');
@@ -141,11 +140,18 @@ async function connectGmail(
     capture?: { testInfo: TestInfo; viewport: 'desktop' | 'phone' };
   }
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Connect service' }).click();
-  const catalog = page.getByRole('dialog', { name: 'Connect a service' });
-  await catalog.getByLabel('Search services').fill('Gmail');
-  await catalog.getByRole('button', { name: 'Use a Gmail account' }).click();
-  await expect(catalog).toBeHidden();
+  // The first Gmail is a Connect in "All apps"; once one is connected, Gmail
+  // lives in "Yours" and another account is added from its side panel.
+  const connections = new ConnectionsPage(page);
+  const connectRow = page.getByRole('button', { name: 'Connect Gmail' });
+  if (await connectRow.isVisible()) {
+    await connectRow.click();
+  } else {
+    await connections.openPanel('Gmail');
+    const more = await connections.openMore();
+    await more.getByRole('button', { name: 'Connect another Gmail account' }).click();
+    await expect(connections.panel).toBeHidden();
+  }
 
   let dialog = page.getByRole('dialog', { name: 'Connect Gmail' });
   await expect(dialog).toBeVisible();
@@ -272,10 +278,11 @@ test.describe('Connections — save key, connect, multi-account', () => {
   }, testInfo) => {
     await gotoConnections(page);
 
-    // With nothing connectable, the region leads with its own first-run card
-    // rather than an empty service grid (DOR-857) — the grid's own empty copy
-    // is no longer what a person in this state is shown.
-    await expect(page.getByText('No accounts connected')).toBeVisible();
+    // Nothing connected yet: no Gmail row in "Yours", and Gmail waits in
+    // "All apps" (the list is the empty state).
+    const connections = new ConnectionsPage(page);
+    await expect(connections.yourApp('Gmail')).toHaveCount(0);
+    await expect(page.getByTestId('catalog-app-gmail')).toBeVisible();
 
     // Before any key: Settings › Connections has no way set up, and the
     // custody stance is disclosed on the key's entry BEFORE any key exists.
@@ -286,14 +293,12 @@ test.describe('Connections — save key, connect, multi-account', () => {
     // Save the key → the provider registers live, no restart: the way's row
     // says Working and the scripted toolkits appear as service tiles.
     await saveKeyThroughUi(page);
-    await page.getByRole('button', { name: 'Connect service' }).click();
-    const catalog = page.getByRole('dialog', { name: 'Connect a service' });
-    await expect(catalog.getByText('Gmail', { exact: true })).toBeVisible();
-    const slack = catalog.getByTestId('service-result-slack');
-    await expect(slack.getByText('Slack', { exact: true })).toBeVisible();
-    await expect(slack.getByRole('button', { name: 'Use a Slack account' })).toBeVisible();
-    await slack.getByRole('button', { name: 'Messages through a Slack bot' }).click();
-    await expect(catalog).toBeHidden();
+    // Slack does two things, so its one row asks which, in plain words.
+    await page.getByRole('button', { name: 'Connect Slack' }).click();
+    const choice = page.getByTestId('app-use-choice');
+    await expect(choice.getByRole('button', { name: /Let agents use my Slack/ })).toBeVisible();
+    await choice.getByRole('button', { name: /Talk to my agents in Slack/ }).click();
+    await expect(choice).toBeHidden();
     // A chat app goes straight to its own setup, never the account sign-in.
     const slackSetup = page.getByRole('dialog', { name: 'Add Slack' });
     await expect(slackSetup).toBeVisible();
@@ -307,29 +312,27 @@ test.describe('Connections — save key, connect, multi-account', () => {
       capture: { testInfo, viewport: 'desktop' },
     });
 
-    // The new account's row carries its own server-composed custody sentence.
-    const workRow = page.locator('[data-testid^="connection-row-"]', { hasText: 'Gmail (work)' });
-    await expect(workRow).toBeVisible();
-    await workRow.getByRole('button').click();
-    const detail = page.getByRole('dialog', { name: 'Gmail (work)' });
-    await expect(detail).toContainText(CUSTODY_FRAGMENT);
+    // The new account is a row in "Yours"; its side panel carries the server's
+    // own custody sentence under More › How it's connected.
+    await expect(connections.yourApp('Gmail', 'work')).toBeVisible();
+    await connections.openPanel('Gmail', 'work');
+    await expect(page).toHaveURL(/(?:\?|&)app=/);
+    const more = await connections.openMore();
+    await expect(more).toContainText(CUSTODY_FRAGMENT);
     await page.keyboard.press('Escape');
+    await expect(connections.panel).toBeHidden();
 
     // Second account of the SAME service: the label input arrives pre-filled
     // with the suggested 'personal', and both rows are visibly distinct.
     await page.setViewportSize({ width: 390, height: 844 });
     await connectGmail(page, 'personal', { capture: { testInfo, viewport: 'phone' } });
     await page.setViewportSize({ width: 1280, height: 720 });
-    await expect(
-      page.locator('[data-testid^="connection-row-"]', { hasText: 'Gmail (work)' })
-    ).toBeVisible();
-    await expect(
-      page.locator('[data-testid^="connection-row-"]', { hasText: 'Gmail (personal)' })
-    ).toBeVisible();
+    // A second account of the same app is a second row.
+    await expect(connections.yourApp('Gmail', 'work')).toBeVisible();
+    await expect(connections.yourApp('Gmail', 'personal')).toBeVisible();
 
-    const connections = new ConnectionsPage(page);
-    await connections.accounts.scrollIntoViewIfNeeded();
-    const accessibility = await runAxe(page, '[aria-labelledby="region-accounts"]');
+    await connections.yours.scrollIntoViewIfNeeded();
+    const accessibility = await runAxe(page, '[aria-labelledby="connections-yours"]');
     expect(
       accessibility.violations.map(describeViolation),
       'the canonical account inventory should have no automated accessibility violations'
@@ -339,7 +342,7 @@ test.describe('Connections — save key, connect, multi-account', () => {
       contentType: 'application/json',
     });
     await testInfo.attach('connections-inventory-aria.txt', {
-      body: Buffer.from(await connections.accounts.ariaSnapshot()),
+      body: Buffer.from(await connections.yours.ariaSnapshot()),
       contentType: 'text/plain',
     });
     await page.emulateMedia({ colorScheme: 'light' });
@@ -355,16 +358,21 @@ test.describe('Connections — save key, connect, multi-account', () => {
       contentType: 'image/png',
     });
 
-    const personalRow = connections.account('Gmail (personal)').getByRole('button');
+    // The row is a keyboard target: Enter opens its panel, Escape closes it.
+    const personalRow = connections.yourApp('Gmail', 'personal').getByRole('button').first();
     await personalRow.focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('dialog', { name: 'Gmail (personal)' })).toBeVisible();
+    await expect(connections.panel).toBeVisible();
+    await expect(
+      connections.panel.getByRole('heading', { name: 'Who can use Gmail?' })
+    ).toBeVisible();
     await page.keyboard.press('Escape');
+    await expect(connections.panel).toBeHidden();
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await connections.accounts.scrollIntoViewIfNeeded();
-    await expect(connections.account('Gmail (work)')).toBeVisible();
-    await expect(connections.account('Gmail (personal)')).toBeVisible();
+    await connections.yours.scrollIntoViewIfNeeded();
+    await expect(connections.yourApp('Gmail', 'work')).toBeVisible();
+    await expect(connections.yourApp('Gmail', 'personal')).toBeVisible();
     await page.emulateMedia({ colorScheme: 'light' });
     await settleFiniteAnimations(page.locator('body'));
     await testInfo.attach('connections-inventory-phone-light.png', {
@@ -565,7 +573,7 @@ test.describe('Connections — session access status', () => {
     await group.getByRole('button', { name: 'Manage agent access' }).click();
     await expect(page).toHaveURL(/\/connections/);
     const connections = new ConnectionsPage(page);
-    const access = await connections.openAccess('Gmail (work)');
+    const access = await connections.openAccess('Gmail', 'work');
     const agentAccess = access.getByRole('group', { name: /E2E Test Agent/ });
     const dorkBotAccess = access.getByRole('group', { name: /DorkBot/ });
     await expect(agentAccess).toContainText('Read');
