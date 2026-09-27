@@ -450,9 +450,17 @@ describe('working-in-room-repos', () => {
     );
   });
 
+  it('says a clean copy is brought up to date at turn start, and a busy one is left alone', () => {
+    // Spec `agent-home-desk` §6: the one server write into a copy. An agent that
+    // does not know it happens reads a refreshed tree as someone else's edit.
+    expect(rooms).toContain('DorkOS brings it up to date with main first');
+    expect(rooms).toContain('your copy is left exactly as it is');
+  });
+
   it('teaches syncing as plain git, never as a tool', () => {
-    // Deliberately not a tool (spec §3.7): the server must never write into a
-    // working copy an agent owns. An agent that goes looking for a sync tool
+    // Deliberately not a tool (spec §3.7): merging main into a copy that holds
+    // work is the agent's own act — the server only fast-forwards a clean one
+    // (spec `agent-home-desk` §6). An agent that goes looking for a sync tool
     // finds nothing and has no fallback unless the page says this.
     expect(rooms).toContain('merge main`');
     expect(rooms).toContain('This is plain git, not a tool');

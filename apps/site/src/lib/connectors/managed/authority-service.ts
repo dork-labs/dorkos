@@ -17,7 +17,7 @@ import {
   type ManagedConnectorAuthorityCommandStatus,
 } from '@dorkos/shared/connector-managed-schemas';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import { and, desc, eq, exists, gt, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { schema } from '@/db/client';
 import type { getTransactionDb } from '@/db/transaction-client';
@@ -132,28 +132,36 @@ export function managedRequestHash(value: unknown): string {
   return createHash('sha256').update(stableStringify(value)).digest('hex');
 }
 
-/** Load or atomically create the one random connector tenant for an owner. */
+/**
+ * Load the owner's connector tenant, creating it on first use.
+ *
+ * The owner index on `connector_tenant` may not be unique, so this never leans
+ * on it: an `ON CONFLICT` naming a non-unique index fails every call. A
+ * transaction-scoped advisory lock per owner serializes first requests instead,
+ * so concurrent callers create one tenant between them. Should several rows
+ * exist for one owner anyway, every caller picks the same one: the oldest, with
+ * the id breaking a tie.
+ */
 export async function resolveConnectorTenant(
   db: ManagedConnectorDatabase,
   ownerId: string
 ): Promise<{ id: string; ownerUserId: string; providerUserId: string }> {
   return db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(schema.connectorTenant)
-      .values({ ownerUserId: ownerId })
-      .onConflictDoNothing({ target: schema.connectorTenant.ownerUserId })
-      .returning();
-    if (created) {
-      await tx.insert(schema.managedConnectorEventCapacity).values({ tenantId: created.id });
-      return created;
-    }
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`connector_tenant:${ownerId}`}))`);
     const [existing] = await tx
       .select()
       .from(schema.connectorTenant)
       .where(eq(schema.connectorTenant.ownerUserId, ownerId))
+      .orderBy(asc(schema.connectorTenant.createdAt), asc(schema.connectorTenant.id))
       .limit(1);
-    if (!existing) throw new Error('Connector tenant could not be resolved.');
-    return existing;
+    if (existing) return existing;
+    const [created] = await tx
+      .insert(schema.connectorTenant)
+      .values({ ownerUserId: ownerId })
+      .returning();
+    if (!created) throw new Error('Connector tenant could not be resolved.');
+    await tx.insert(schema.managedConnectorEventCapacity).values({ tenantId: created.id });
+    return created;
   });
 }
 

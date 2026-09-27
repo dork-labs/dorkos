@@ -13,6 +13,8 @@ import type {
   UiCanvasContent,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import type { LimitPlan, SessionLimit } from '@dorkos/shared/session-stream';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type {
   CanvasDocument,
@@ -72,6 +74,88 @@ export function createMockSessionWithReading(overrides: Partial<Session> = {}): 
     lastAutoCompactAt: '2026-07-01T00:00:00.000Z',
     ...overrides,
   });
+}
+
+/**
+ * Create a mock {@link AccountUsage}: a registered Claude Code account on the
+ * Max plan, its 5-hour window at 40% and its weekly window at 72%, both
+ * allowed, so the account reads `ok`. Every time is fixed, so tests never
+ * depend on the clock.
+ *
+ * @param overrides - Fields to replace, such as `state`, `windows` or `label`.
+ */
+export function createMockAccountUsage(overrides: Partial<AccountUsage> = {}): AccountUsage {
+  const observedAt = '2026-09-27T12:00:00.000Z';
+  return {
+    runtime: 'claude-code',
+    accountId: 'acct-2',
+    path: '/Users/test/.claude-acct-2',
+    label: 'Acct 2',
+    color: '#1d8a4a',
+    subscriptionType: 'max',
+    plan: { name: 'max', observedAt, source: 'sdk_event' },
+    credits: null,
+    spend: null,
+    windows: [
+      {
+        key: 'five_hour',
+        label: '5-hour window',
+        usedPct: 40,
+        resetsAt: '2026-09-27T15:00:00.000Z',
+        status: 'allowed',
+        expired: false,
+        observedAt,
+        source: 'sdk_event',
+      },
+      {
+        key: 'seven_day',
+        label: 'Weekly',
+        usedPct: 72,
+        resetsAt: '2026-10-04T09:00:00.000Z',
+        status: 'allowed',
+        expired: false,
+        observedAt,
+        source: 'sdk_event',
+      },
+    ],
+    state: 'ok',
+    limit: null,
+    updatedAt: observedAt,
+    ...overrides,
+  };
+}
+
+/**
+ * Create a mock {@link SessionLimit} with the given plan: account `acct-4` out
+ * of its weekly window since a fixed time, resetting Tuesday 3pm UTC.
+ *
+ * - `ask`: nothing happens until the person picks.
+ * - `auto`: the work carries over to `acct-2` ten seconds after the limit.
+ * - `waiting`: the person chose to wait for the reset.
+ * - `continued`: the work carried over to session `session-moved` on `acct-2`.
+ *
+ * @param mode - The plan's mode.
+ * @param overrides - Fields to replace on the limit.
+ */
+export function createMockSessionLimit(
+  mode: LimitPlan['mode'] = 'ask',
+  overrides: Partial<SessionLimit> = {}
+): SessionLimit {
+  const since = '2026-09-27T16:00:00.000Z';
+  const plans: Record<LimitPlan['mode'], LimitPlan> = {
+    ask: { mode: 'ask' },
+    auto: { mode: 'auto', target: 'acct-2', fireAt: '2026-09-27T16:00:10.000Z' },
+    waiting: { mode: 'waiting' },
+    continued: { mode: 'continued', sessionId: 'session-moved', accountId: 'acct-2' },
+  };
+  return {
+    accountId: 'acct-4',
+    window: 'seven_day',
+    resetsAt: '2026-09-29T15:00:00.000Z',
+    since,
+    plan: plans[mode],
+    ...overrides,
+  };
 }
 
 /** Create a mock StreamEvent with the given type and data. */
