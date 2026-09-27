@@ -42,6 +42,7 @@ import type {
   UserConfig,
 } from '@dorkos/shared/config-schema';
 import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
+import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
@@ -238,12 +239,19 @@ export function resolveLaunchAccountRoot(
  * The registered row a reference names: the row with that id, else a row the
  * `'0.87.0'` migration renamed FROM that id.
  *
- * The second half is a bridge. `'0.87.0'` renames a row called `default` to
- * `default-N` and marks it `renamedFrom: 'default'`, but the references to it
- * (agent manifests, schedules) live outside the config file and are moved by
- * the account reconcile, not by the migration. Until they are, a reference that
- * still says `default` means the account it always meant, so work keeps billing
- * where it did the day before the upgrade.
+ * A row whose id is still `default` is never matched. `default` names the
+ * default account (contract `flow-cli-core` §1.1a, revision 6d), and the reader
+ * lists such a row with an `id-reserved` warning as not routable, for example
+ * one an older flow wrote after `'0.87.0'` ran. A reference to `default`
+ * therefore falls through to the next rung of the ladder.
+ *
+ * **The `renamedFrom` half is temporary**, until task 2.1's account reconcile
+ * (spec `claude-account-fleet` §6 R) moves every reference to the new id and
+ * removes both this fallback and the marker. `'0.87.0'` renames a row called
+ * `default` to `default-N` and marks it `renamedFrom: 'default'`, but the
+ * references to it (agent manifests, schedules) live outside the config file.
+ * Until they move, a reference that says `default` keeps billing the account it
+ * named the day before the upgrade, and so does a new one.
  *
  * @param accounts - The listed registry rows.
  * @param id - The id a hint, manifest or schedule names.
@@ -252,9 +260,10 @@ function findRegisteredAccount(
   accounts: readonly ReadClaudeAccount[],
   id: string
 ): ReadClaudeAccount | undefined {
+  const routable = accounts.filter((account) => account.id !== IMPLICIT_ACCOUNT_ID);
   return (
-    accounts.find((account) => account.id === id) ??
-    accounts.find((account) => account.renamedFrom === id)
+    routable.find((account) => account.id === id) ??
+    routable.find((account) => account.renamedFrom === id)
   );
 }
 

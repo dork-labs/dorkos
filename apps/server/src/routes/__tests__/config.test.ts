@@ -609,7 +609,7 @@ describe('PATCH /api/config', () => {
 
       const emptied = await request(server)
         .patch('/api/config')
-        .send({ runtimes: { claudeCode: { accounts: [] } } })
+        .send({ runtimes: { claudeCode: { accounts: [], accountsSeen: ['acct-2'] } } })
         .expect(200);
       expect(emptied.body.config.runtimes.claudeCode.accounts).toEqual([]);
     });

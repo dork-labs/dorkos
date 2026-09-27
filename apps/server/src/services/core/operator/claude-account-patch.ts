@@ -12,7 +12,11 @@
  * @module services/core/operator/claude-account-patch
  */
 import { ACCOUNT_ID_PATTERN, IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import { classifyClaudeAccountRows } from '@dorkos/shared/config-schema';
+import {
+  CLAUDE_ACCOUNTS_SEEN_KEY,
+  ClaudeAccountsSeenSchema,
+  classifyClaudeAccountRows,
+} from '@dorkos/shared/config-schema';
 
 /** Outcome of {@link planClaudeAccountWrite}. */
 export type ClaudeAccountWritePlan =
@@ -53,6 +57,56 @@ function idRefusal(id: unknown): string | null {
   return null;
 }
 
+/** Outcome of {@link takeAccountsSeen}. */
+export type AccountsSeenTake =
+  | {
+      ok: true;
+      /** The patch without `runtimes.claudeCode.accountsSeen`; the caller's object is untouched. */
+      patch: Record<string, unknown>;
+      /** The account ids the writer was shown, or `undefined` when it did not say. */
+      seen: ReadonlySet<string> | undefined;
+    }
+  | { ok: false; details: string[] };
+
+/**
+ * Take `runtimes.claudeCode.accountsSeen` out of a config patch
+ * (`ClaudeAccountsSeenSchema`). It is not a setting, so it must never reach the
+ * merge, and it is validated here so a malformed list is refused rather than
+ * read as "saw nothing".
+ *
+ * @param patch - The patch as the caller sent it.
+ * @returns The patch without the key, and the ids it carried.
+ */
+export function takeAccountsSeen(patch: Record<string, unknown>): AccountsSeenTake {
+  const runtimes = patch.runtimes;
+  if (!isRecord(runtimes)) return { ok: true, patch, seen: undefined };
+  const claudeCode = runtimes.claudeCode;
+  if (!isRecord(claudeCode) || !(CLAUDE_ACCOUNTS_SEEN_KEY in claudeCode)) {
+    return { ok: true, patch, seen: undefined };
+  }
+  const { [CLAUDE_ACCOUNTS_SEEN_KEY]: raw, ...rest } = claudeCode;
+  const parsed = ClaudeAccountsSeenSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      details: [`runtimes.claudeCode.${CLAUDE_ACCOUNTS_SEEN_KEY}: must be a list of account ids.`],
+    };
+  }
+  return {
+    ok: true,
+    patch: { ...patch, runtimes: { ...runtimes, claudeCode: rest } },
+    seen: new Set(parsed.data),
+  };
+}
+
+/**
+ * A stored row with a label that is not text read as unnamed, so the schema,
+ * which wants every field stated, does not refuse a write over a hand edit.
+ */
+function withReadableLabel(row: Record<string, unknown>): Record<string, unknown> {
+  return typeof row.label === 'string' || row.label === null ? row : { ...row, label: null };
+}
+
 /**
  * Decide what a config write stores for the Claude account registry.
  *
@@ -60,7 +114,12 @@ function idRefusal(id: unknown): string | null {
  *   see, so they are the ones it edits. Each patched row is merged onto the
  *   stored row with the same id, or, when its id changed, the stored row with
  *   the same path. A field the patch sets wins, `color: null` included; a field
- *   it leaves out survives. A stored listed row the patch omits is removed.
+ *   it leaves out survives.
+ * - **Removal is only of what the writer saw.** A stored listed row the patch
+ *   leaves out is removed only when its id is in `seen` (the writer's
+ *   `accountsSeen`): the writer was shown it and dropped it. Any other row,
+ *   such as one flow added after the settings screen loaded, is kept after the
+ *   patched rows. Without `seen`, nothing is removed.
  * - **Unlisted rows** (skipped by the read rules: not an object, no absolute
  *   path, or a later duplicate of an id) are kept exactly as stored and
  *   appended after the listed ones, which keeps a duplicate behind the row it
@@ -75,9 +134,14 @@ function idRefusal(id: unknown): string | null {
  *
  * @param stored - The stored `runtimes.claudeCode.accounts`, as read from disk.
  * @param patched - The patch's `accounts` value; `undefined` when the patch does not name it.
+ * @param seen - The account ids the writer was shown (`accountsSeen`), if it said.
  * @returns The rows to validate and the rows to carry, or the refusal details.
  */
-export function planClaudeAccountWrite(stored: unknown, patched: unknown): ClaudeAccountWritePlan {
+export function planClaudeAccountWrite(
+  stored: unknown,
+  patched: unknown,
+  seen?: ReadonlySet<string>
+): ClaudeAccountWritePlan {
   const { rows } = classifyClaudeAccountRows(stored);
   const storedArray = Array.isArray(stored) ? stored : [];
   const listed = rows.filter((view) => view.listed && view.row) as {
@@ -87,12 +151,7 @@ export function planClaudeAccountWrite(stored: unknown, patched: unknown): Claud
   const unlisted = rows.filter((view) => !view.listed).map((view) => storedArray[view.index]);
 
   if (patched === undefined) {
-    // A hand-edited row with no label reads as unnamed; spelled out here so the
-    // schema, which wants every field stated, does not refuse an unrelated write.
-    const rowsBack = listed.map(({ row }) =>
-      typeof row.label === 'string' || row.label === null ? row : { ...row, label: null }
-    );
-    return { ok: true, accounts: rowsBack, unlisted };
+    return { ok: true, accounts: listed.map(({ row }) => withReadableLabel(row)), unlisted };
   }
   // Not an array: nothing to merge, and the schema says what is wrong with it.
   if (!Array.isArray(patched)) return { ok: true, accounts: patched, unlisted };
@@ -120,5 +179,8 @@ export function planClaudeAccountWrite(stored: unknown, patched: unknown): Claud
   });
 
   if (details.length > 0) return { ok: false, details };
-  return { ok: true, accounts: merged, unlisted };
+  const kept = listed
+    .filter((view) => !claimed.has(view.index) && !seen?.has(view.row.id as string))
+    .map(({ row }) => withReadableLabel(row));
+  return { ok: true, accounts: [...merged, ...kept], unlisted };
 }

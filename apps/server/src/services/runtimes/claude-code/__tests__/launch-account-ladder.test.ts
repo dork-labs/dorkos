@@ -244,3 +244,19 @@ describe('a reference to a row the 0.87.0 migration renamed (DOR-2379)', () => {
     ).toBe(HINT_ROOT);
   });
 });
+
+describe('a registered row still called default (DOR-2379)', () => {
+  // The reader lists it as `id-reserved`, not routable: `default` names the
+  // default account, so a reference to it must not land on this row.
+  it('is never routed to, and the reference falls through', () => {
+    expect(
+      resolveLaunchAccountRoot({
+        agentAccountId: 'default',
+        config: fakeConfig({
+          accounts: [{ id: 'default', path: HINT_ROOT, label: null, color: null }],
+          defaultAccount: DEFAULT_ROOT,
+        }),
+      })
+    ).toBe(DEFAULT_ROOT);
+  });
+});

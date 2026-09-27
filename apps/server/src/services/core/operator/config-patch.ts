@@ -23,7 +23,7 @@ import { configManager } from '../config-manager.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
-import { planClaudeAccountWrite } from './claude-account-patch.js';
+import { planClaudeAccountWrite, takeAccountsSeen } from './claude-account-patch.js';
 
 /** Keys that must be filtered during deep merge to prevent prototype pollution. */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -379,7 +379,9 @@ export type ConfigPatchResult =
  * `GET /api/config` shows. So this merges each patched row onto the stored row
  * with the same id (else the same path), keeps every field the patch leaves
  * out, and keeps every stored row the read rules skip, exactly as stored (see
- * `planClaudeAccountWrite`). A consequence worth stating: **no write through
+ * `planClaudeAccountWrite`). A listed row the patch leaves out is removed only
+ * when the patch's `runtimes.claudeCode.accountsSeen` names it, so a row flow
+ * added after the screen loaded survives a save from that screen. A consequence worth stating: **no write through
  * this function can delete a row the read rules skip** — not the settings
  * screen, and not the operator `config_patch` tool, which reaches the same
  * path. Removing one is a hand edit of `config.json`. A new or changed id must
@@ -397,7 +399,11 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     return { ok: false, error: 'Request body must be a JSON object' };
   }
-  const patchObj = patch as Record<string, unknown>;
+  // `accountsSeen` rides beside the account list but is not a setting: taken
+  // out here, before anything merges or validates it.
+  const taken = takeAccountsSeen(patch as Record<string, unknown>);
+  if (!taken.ok) return { ok: false, error: 'Validation failed', details: taken.details };
+  const patchObj = taken.patch;
 
   const current = configManager.getAll();
   const merged = deepMerge(current as unknown as Record<string, unknown>, patchObj);
@@ -418,7 +424,8 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
     ?.accounts;
   const accountPlan = planClaudeAccountWrite(
     storedAccounts,
-    namesAccounts ? (patchedClaude as { accounts?: unknown }).accounts : undefined
+    namesAccounts ? (patchedClaude as { accounts?: unknown }).accounts : undefined,
+    taken.seen
   );
   if (!accountPlan.ok) {
     return { ok: false, error: 'Validation failed', details: accountPlan.details };

@@ -99,6 +99,47 @@ describe('a config.json flow created', () => {
   });
 });
 
+describe('a hand-edited registry with rows of the wrong type', () => {
+  it.each([
+    ['null', null],
+    ['a string', 'x'],
+    ['a numeric label', { id: 'l', path: '/l', label: 5 }],
+    ['a numeric path', { id: 'p', path: 5, label: null }],
+    ['a numeric id', { id: 7, path: '/i', label: null }],
+    ['a numeric color', { id: 'c', path: '/c', label: null, color: 3 }],
+  ])('boots with %s as a row and keeps the good rows', (_what, bad) => {
+    const good = { id: 'good', path: '/g', label: 'Good', color: null };
+    const rows = [good, bad];
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ runtimes: { claudeCode: { accounts: rows } } }),
+      'utf-8'
+    );
+
+    initConfigManager(dir);
+
+    const { accounts } = readClaudeAccountSettings(configManager.get('runtimes').claudeCode);
+    expect(accounts[0]).toMatchObject({ id: 'good', path: '/g' });
+    expect(accountsOnDisk()).toEqual(rows);
+    expect(fs.readdirSync(dir).filter((name) => name.includes('.bak'))).toEqual([]);
+  });
+
+  it('reads a numeric color as the default, and writes around it', () => {
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        runtimes: { claudeCode: { accounts: [{ id: 'c', path: '/c', label: null, color: 3 }] } },
+      }),
+      'utf-8'
+    );
+    initConfigManager(dir);
+
+    const { accounts } = readClaudeAccountSettings(configManager.get('runtimes').claudeCode);
+    expect(accounts[0]).toMatchObject({ colorIsDefault: true });
+    expect(applyConfigPatch({ ui: { theme: 'light' } }).ok).toBe(true);
+  });
+});
+
 describe('applyConfigPatch on the Claude account registry', () => {
   beforeEach(() => {
     fs.writeFileSync(configPath, JSON.stringify({}), 'utf-8');
@@ -137,17 +178,117 @@ describe('applyConfigPatch on the Claude account registry', () => {
     ]);
   });
 
-  it('removes a listed row the patch omits', () => {
+  it('removes a row the writer was shown and left out', () => {
     writeAccountsExternally([
       { id: 'a', path: '/a', label: null },
       { id: 'b', path: '/b', label: null },
     ]);
 
     applyConfigPatch({
-      runtimes: { claudeCode: { accounts: clientRows().filter((r) => r.id !== 'b') } },
+      runtimes: {
+        claudeCode: {
+          accounts: clientRows().filter((r) => r.id !== 'b'),
+          accountsSeen: ['a', 'b'],
+        },
+      },
     });
 
     expect(accountsOnDisk().map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('removes nothing when the writer does not say what it was shown', () => {
+    writeAccountsExternally([
+      { id: 'a', path: '/a', label: null },
+      { id: 'b', path: '/b', label: null },
+    ]);
+
+    applyConfigPatch({
+      runtimes: { claudeCode: { accounts: [{ id: 'a', path: '/a', label: 'A' }] } },
+    });
+
+    expect(accountsOnDisk().map((r) => r.id)).toEqual(['a', 'b']);
+  });
+
+  it('never stores accountsSeen, and refuses one that is not a list of ids', () => {
+    writeAccountsExternally([{ id: 'a', path: '/a', label: null }]);
+
+    expect(
+      applyConfigPatch({
+        runtimes: { claudeCode: { accounts: clientRows(), accountsSeen: ['a'] } },
+      }).ok
+    ).toBe(true);
+    const file = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      runtimes: { claudeCode: Record<string, unknown> };
+    };
+    expect(file.runtimes.claudeCode).not.toHaveProperty('accountsSeen');
+
+    const refused = applyConfigPatch({
+      runtimes: { claudeCode: { accounts: [], accountsSeen: 'a' } },
+    });
+    expect(refused.ok).toBe(false);
+    expect(accountsOnDisk().map((r) => r.id)).toEqual(['a']);
+  });
+
+  describe('a stale settings screen, and an account flow added after it loaded', () => {
+    beforeEach(() => {
+      writeAccountsExternally([{ id: 'a', path: '/a', label: null }]);
+    });
+
+    /** What the screen loaded, before flow wrote. */
+    function loadScreen() {
+      const rows = clientRows();
+      return { rows, seen: rows.map((row) => row.id) };
+    }
+
+    function flowAdds(): void {
+      writeAccountsExternally([
+        ...accountsOnDisk(),
+        { id: 'flow-added', path: '/f', label: null, color: null },
+      ]);
+    }
+
+    it('keeps it when the screen saves', () => {
+      const screen = loadScreen();
+      flowAdds();
+
+      applyConfigPatch({
+        runtimes: {
+          claudeCode: {
+            accounts: screen.rows.map((row) => ({ ...row, label: 'A' })),
+            accountsSeen: screen.seen,
+          },
+        },
+      });
+
+      expect(accountsOnDisk().map((r) => r.id)).toEqual(['a', 'flow-added']);
+    });
+
+    it('keeps it when the screen adds an account', () => {
+      const screen = loadScreen();
+      flowAdds();
+
+      applyConfigPatch({
+        runtimes: {
+          claudeCode: {
+            accounts: [...screen.rows, { id: 'new', path: '/n', label: null, color: null }],
+            accountsSeen: screen.seen,
+          },
+        },
+      });
+
+      expect(accountsOnDisk().map((r) => r.id)).toEqual(['a', 'new', 'flow-added']);
+    });
+
+    it('keeps it when the screen removes a different account', () => {
+      const screen = loadScreen();
+      flowAdds();
+
+      applyConfigPatch({
+        runtimes: { claudeCode: { accounts: [], accountsSeen: screen.seen } },
+      });
+
+      expect(accountsOnDisk().map((r) => r.id)).toEqual(['flow-added']);
+    });
   });
 
   it('matches a row whose id changed to its stored row by path', () => {

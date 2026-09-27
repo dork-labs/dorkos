@@ -4580,8 +4580,8 @@ function tolerateRetiredSidebarKeys(ctx: {
  *
  * The row tolerance is NOT back-compat and stays (spec `claude-account-fleet`
  * D1): the registry is a contract flow writes too, and its read rules skip a
- * bad row rather than refuse the file, so Ajv checks only field types on an
- * account row.
+ * bad row rather than refuse the file, so Ajv accepts any value as an account
+ * row.
  *
  * @param ctx - The `z.toJSONSchema` override context for one schema node.
  */
@@ -4613,21 +4613,17 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
   if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;
   // The registry is shared with flow and hand-editable (marketplace
   // `specs/flow-cli-core` §1.1a), and its readers SKIP a bad row with a warning
-  // rather than fail: a row with no absolute path, an empty id, a missing label
-  // or a color that is not lowercase `#rrggbb`. Ajv refusing any of those would
-  // condemn the whole file instead, so nothing but the field TYPES is checked
-  // here. `readClaudeAccountSettings` applies the read rules; the write path
-  // (`applyConfigPatch`) carries such a row across untouched.
-  ctx.jsonSchema.required = [];
-  const properties = ctx.jsonSchema.properties as
-    Record<string, Record<string, unknown>> | undefined;
-  if (!properties) return;
-  delete properties.id?.minLength;
-  delete properties.path?.minLength;
-  // No pattern and no `default`: conf builds Ajv with `useDefaults`, so a
-  // declared default would write `color: null` into every row it validates,
-  // including rows this build never listed.
-  properties.color = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+  // rather than fail: a row that is not an object, has no absolute path, an
+  // empty or non-string id, a non-string label, or a color that is not
+  // lowercase `#rrggbb`. Ajv refusing any of those would condemn the whole file
+  // instead, so an account row accepts ANY value here: no type, no required
+  // list, no per-field shape. `readClaudeAccountSettings` applies the read
+  // rules; the write path (`applyConfigPatch`) carries such a row across
+  // untouched. Emptied in place because the override is handed the node to
+  // edit. No `default` survives either: conf builds Ajv with `useDefaults`,
+  // so a declared default would write `color: null` into every row it
+  // validates, including rows this build never listed.
+  for (const key of Object.keys(ctx.jsonSchema)) delete ctx.jsonSchema[key];
 }
 
 /**

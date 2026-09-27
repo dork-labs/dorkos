@@ -1607,6 +1607,24 @@ export const ClaudeCodeAccountsSchema = z.preprocess(
 );
 
 /**
+ * The ids of the Claude accounts a writer was SHOWN, sent beside
+ * `runtimes.claudeCode.accounts` in a config PATCH as
+ * `runtimes.claudeCode.accountsSeen` (spec `claude-account-fleet` D1).
+ *
+ * Not a setting: the write path takes it out of the patch before merging, and
+ * nothing stores it. It exists because a PATCH replaces the account array, and
+ * flow can add an account while the settings screen is open. Without it, a row
+ * the screen never saw would read as one the operator removed. With it, the
+ * server removes only a stored row whose id is in this list and that the patch
+ * left out; every other stored row is kept. A patch naming `accounts` without
+ * this list removes nothing.
+ */
+export const ClaudeAccountsSeenSchema = z.array(z.string());
+
+/** The patch key {@link ClaudeAccountsSeenSchema} travels under, inside `runtimes.claudeCode`. */
+export const CLAUDE_ACCOUNTS_SEEN_KEY = 'accountsSeen';
+
+/**
  * The model a NEW session on one runtime starts on, or `null` to let that
  * runtime pick its own — which is exactly the behavior before this field existed.
  *

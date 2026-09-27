@@ -250,6 +250,8 @@ describe('ClaudeAccountsSection', () => {
             // because the operator typed only whitespace for a label.
             { id: 'claude2', path: WORK, label: null, color: null },
           ],
+          // What the screen showed, so the server removes only those it drops.
+          accountsSeen: ['personal'],
         },
       },
     });
@@ -399,6 +401,7 @@ describe('ClaudeAccountsSection', () => {
       runtimes: {
         claudeCode: {
           accounts: [{ id: 'personal', path: HOME, label: 'Personal', color: null }],
+          accountsSeen: ['personal', 'acme-corp'],
           defaultAccount: null,
         },
       },
@@ -439,6 +442,7 @@ describe('ClaudeAccountsSection', () => {
       runtimes: {
         claudeCode: {
           accounts: [{ id: 'acme-corp', path: WORK, label: 'Acme Corp', color: '#12ab9f' }],
+          accountsSeen: ['personal', 'acme-corp'],
         },
       },
     });

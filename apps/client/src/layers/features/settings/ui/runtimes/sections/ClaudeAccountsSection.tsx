@@ -43,7 +43,18 @@ type Account = NonNullable<ServerConfig['claudeCode']>['accounts'][number];
 type ClaudeCodePatch = {
   defaultAccount?: string | null;
   accounts?: WritableAccount[];
+  /**
+   * The ids of the accounts this screen showed. The server removes only those
+   * a write leaves out, so an account flow added after the screen loaded is
+   * kept rather than read as removed.
+   */
+  accountsSeen?: string[];
 };
+
+/** The ids of the registered accounts this screen is showing. */
+function shownIds(accounts: readonly Account[]): string[] {
+  return accounts.flatMap((account) => (account.id ? [account.id] : []));
+}
 
 /** One registry row as a write carries it. */
 type WritableAccount = { id: string; path: string; label: string | null; color: string | null };
@@ -191,6 +202,7 @@ export function ClaudeAccountsSection() {
             },
           ];
         })(),
+        accountsSeen: shownIds(accounts),
       },
       () => {
         setNewPath('');
@@ -206,7 +218,11 @@ export function ClaudeAccountsSection() {
     // or DorkOS would keep billing an account the operator just took off the
     // list. `defaultAccount` is a path, so nothing else can inherit the slot.
     const releasesActive = !inherited && resolvedAccount === path;
-    write({ accounts: remaining, ...(releasesActive && { defaultAccount: null }) });
+    write({
+      accounts: remaining,
+      accountsSeen: shownIds(accounts),
+      ...(releasesActive && { defaultAccount: null }),
+    });
   }
 
   return (
