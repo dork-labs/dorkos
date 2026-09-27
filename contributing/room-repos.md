@@ -184,7 +184,9 @@ fast-forwards the agent's copy to `main` — the one place the server writes int
    only hold more copies, never fewer.
 7. `git merge --ff-only <tip>`. A failure is `unreadable`, logged, and nothing else is tried.
    It gets a 120-second timeout, not a read's 30. If it is killed partway, the
-   `index.lock` it left is removed (never one that was there before), and nothing is
+   `index.lock` it held is removed — only after a kill, never after an ordinary failure (the
+   usual one is another process holding the lock, which is that process's) and never one that
+   was there before, and nothing is
    reset, because a reset is a second write on a tree in an unknown state. The honest cost:
    the copy then holds files `main` wrote that its branch does not have, so it reads as
    changed, every later launch holds it as `changes`, and `git merge main` refuses until

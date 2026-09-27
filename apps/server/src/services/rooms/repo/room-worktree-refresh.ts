@@ -111,14 +111,29 @@ function indexLockOf(target: RoomWorktreeRefreshTarget): string {
 }
 
 /**
- * Clean up after a fast-forward that failed or was killed.
+ * Whether a git call ended because it was KILLED — its timeout fired, or a
+ * signal stopped it — rather than because git exited with an error.
  *
- * **The lock is removed only when this write left it.** A git process killed
- * mid-checkout leaves `index.lock` behind, and every later git command in the
- * copy — the agent's own included — then refuses to run. No other process can
- * have taken it in between: every bound session was idle a moment before, and
- * that is what let the write start. A lock that was already there is somebody
- * else's and is left alone (the write failed on it).
+ * @param err - What `execFile` rejected with.
+ */
+function wasKilled(err: unknown): boolean {
+  const e = err as { killed?: unknown; signal?: unknown } | null;
+  return e !== null && typeof e === 'object' && (e.killed === true || typeof e.signal === 'string');
+}
+
+/**
+ * Clean up after a fast-forward that failed.
+ *
+ * **The lock is removed only when the write was KILLED.** A git process killed
+ * mid-checkout leaves the `index.lock` it held, and every later git command in
+ * the copy — the agent's own included — then refuses to run. A git that merely
+ * FAILED left nothing: git removes its own lock on every exit it controls. The
+ * common failure is the lock itself — a person's shell, a git GUI or a leftover
+ * process took it between the idle check and the write, and the merge refused
+ * with "index.lock: File exists" — and that lock belongs to a process that may
+ * still be running, so it is never touched. A lock that was there before the
+ * write started is never touched either. The residual, stated: another process
+ * taking the lock in the instant after ours was killed and before this runs.
  *
  * **What is NOT restored:** files the checkout had already written. Nothing is
  * reset, because a reset is a second write on a tree in an unknown state. The
@@ -129,9 +144,10 @@ function indexLockOf(target: RoomWorktreeRefreshTarget): string {
  *
  * @param lock - The copy's index lock.
  * @param lockedBefore - Whether it existed before the write started.
+ * @param err - What the write threw.
  */
-export function afterFailedWrite(lock: string, lockedBefore: boolean): void {
-  if (lockedBefore || !existsSync(lock)) return;
+export function afterFailedWrite(lock: string, lockedBefore: boolean, err: unknown): void {
+  if (lockedBefore || !wasKilled(err) || !existsSync(lock)) return;
   try {
     rmSync(lock, { force: true });
     logger.warn(
@@ -448,7 +464,7 @@ export async function refreshRoomWorktree(
       const landed = await query(target, ['rev-parse', '--verify', 'HEAD^{commit}']);
       if (landed !== mainTip) throw new Error(`landed on ${landed}, not ${mainTip}`);
     } catch (err) {
-      afterFailedWrite(lock, lockedBefore);
+      afterFailedWrite(lock, lockedBefore, err);
       // Some of the moved files may have been written before it stopped.
       deps.forgetMoved(movedAbsPaths(target.worktree, moved));
       return unreadable('fast-forward', err, mainTip, null);
