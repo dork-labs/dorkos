@@ -1299,59 +1299,22 @@ describe('ConnectorAgentRequestService', () => {
     expect(onChanged).toHaveBeenCalledTimes(2);
   });
 
-  it("names the room a request's turn belongs to and gives that turn no link", async () => {
+  it("names the room a request's turn belongs to, for the owner only", async () => {
     const requests = service({
       roomForSession: (sessionId) => (sessionId === 'session-1' ? 'room-1' : undefined),
-      appOrigin: () => 'https://tunnel.example',
-      // Even a session DorkOS thinks is a direct chat: the room rule wins.
-      directChatSession: () => true,
     });
     const created = await requests.create(principal(), INPUT);
 
-    // The room shows its owner the card, and a room can be shared, so a room
-    // turn gets no link to pass around.
-    expect(created).not.toHaveProperty('openUrl');
-    const owned = requests.getForOwner(OWNER, created.requestId);
-    expect(owned).toMatchObject({ roomId: 'room-1' });
-    expect(owned).not.toHaveProperty('openUrl');
+    expect(requests.getForOwner(OWNER, created.requestId)).toMatchObject({ roomId: 'room-1' });
     // The room is an owner-side fact; the agent's own status never carries it.
     expect(created).not.toHaveProperty('roomId');
   });
 
-  describe('the link to the card fails closed', () => {
-    const direct = (sessionId: string) => sessionId === 'session-dm';
-
-    it('links a session DorkOS knows answers a direct message', async () => {
-      const requests = service({
-        appOrigin: () => 'https://tunnel.example',
-        directChatSession: direct,
-      });
-      const created = await requests.create(principal({ canonicalSessionId: 'session-dm' }), INPUT);
-      expect(created.openUrl).toBe('https://tunnel.example/session?session=session-dm');
-    });
-
-    it('gives no link to a group chat, the app itself, or a session it cannot vouch for', async () => {
-      const requests = service({
-        appOrigin: () => 'https://tunnel.example',
-        directChatSession: direct,
-      });
-      // session-1 is not a known direct message: a group, an in-app chat (the
-      // card is on screen), or unknown all read the same.
-      const created = await requests.create(principal(), INPUT);
-      expect(created).not.toHaveProperty('openUrl');
-    });
-
-    it('gives no link after a restart, before DorkOS has seen the chat again', async () => {
-      const fresh = service({ appOrigin: () => 'https://tunnel.example' });
-      const created = await fresh.create(principal({ canonicalSessionId: 'session-dm' }), INPUT);
-      expect(created).not.toHaveProperty('openUrl');
-    });
-
-    it('gives no link without a remote address, even to a direct message', async () => {
-      const requests = service({ appOrigin: () => undefined, directChatSession: direct });
-      const created = await requests.create(principal({ canonicalSessionId: 'session-dm' }), INPUT);
-      expect(created).not.toHaveProperty('openUrl');
-    });
+  it('never hands the agent a link into DorkOS', async () => {
+    const requests = service();
+    const created = await requests.create(principal(), INPUT);
+    expect(JSON.stringify(created)).not.toMatch(/https?:\/\//);
+    expect(created).not.toHaveProperty('openUrl');
   });
 
   it("lists only one conversation's requests when asked for its session", async () => {

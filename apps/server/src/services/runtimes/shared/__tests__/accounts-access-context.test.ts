@@ -68,12 +68,12 @@ describe('Accounts turn awareness', () => {
           : 'mcp__dorkos__connector_list_toolkits'
       );
       expect(text).toContain('A command-line login in a shell');
-      // The owner answers in the conversation; off the app, the agent hands
-      // them the link back to it rather than a relative page path.
-      expect(text).toContain('a card in this conversation');
-      // The link rule is the server's: share openUrl only when it is present.
-      expect(text).toContain('if the result has an openUrl');
-      expect(text).toContain('if it has none, only say a request is waiting in DorkOS');
+      // The agent says where the owner answers, and never sends a link.
+      expect(text).toContain('on the card in the conversation where you asked');
+      expect(text).toContain('the owner can answer in DorkOS');
+      expect(text).toContain('under Agent requests on the Connections page');
+      expect(text).toContain('Never send a link to DorkOS');
+      expect(text).not.toContain('openUrl');
     }
   );
 

@@ -697,15 +697,6 @@ const ConnectorAgentRequestBaseSchema = z
   .object({
     requestId: z.string().min(1),
     reviewUrl: z.string().startsWith('/connections?request='),
-    /**
-     * An absolute link that opens the conversation holding this request's card
-     * in the DorkOS app, over the remote-access address. Only for a direct
-     * conversation: absent for a room's turn (the room shows its owner the card
-     * and may be shared) and when remote access is off (a link to this computer
-     * would not open on a phone). For an agent answering somewhere the card
-     * cannot draw (Telegram, Slack).
-     */
-    openUrl: z.string().url().optional(),
     serviceSlug: z.string().min(1),
     reason: z.string().min(1),
     requestedOperations: z.array(z.string().min(1)),

@@ -59,7 +59,6 @@ import type {
 import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
-import { sessionPath } from '@dorkos/shared/session-link';
 import { agentGrantScope, type AgentGrantDenial } from './execution/agent-grant-scope.js';
 import type {
   PreparedPrivateSessionMessage,
@@ -137,19 +136,6 @@ export interface ConnectorAgentRequestServiceOptions {
    * request's card to its owner.
    */
   readonly roomForSession?: (sessionId: string) => string | undefined;
-  /**
-   * The absolute origin the owner reaches the DorkOS app at right now (the
-   * tunnel when one is up), used to build a request's `openUrl`. Omitted or
-   * `undefined` leaves the link out.
-   */
-  readonly appOrigin?: () => string | undefined;
-  /**
-   * Whether DorkOS positively knows a session answers a direct message from a
-   * chat app (Telegram, Slack). Only such a session gets an `openUrl`; anything
-   * else (a group, a room, a conversation in the app where the card is already
-   * on screen, or a session it cannot vouch for) gets none. Fails closed.
-   */
-  readonly directChatSession?: (sessionId: string) => boolean;
   /**
    * Told whenever a request appears or changes state, so open windows can
    * re-read their owner-scoped request lists. Carries nothing: the listener
@@ -1287,7 +1273,6 @@ export class ConnectorAgentRequestService {
       requestId: request.id,
       reviewUrl:
         `/connections?request=${encodeURIComponent(request.id)}` as `/connections?request=${string}`,
-      ...this.openUrl(request.sessionId),
       serviceSlug: request.serviceSlug,
       reason: request.reason,
       requestedOperations: parseStringArray(request.requestedOperationsJson),
@@ -1332,29 +1317,6 @@ export class ConnectorAgentRequestService {
       agent: agent ?? { id: request.agentId, displayName: 'Removed agent' },
       ...(roomId ? { roomId } : {}),
     };
-  }
-
-  /**
-   * The absolute link to the conversation holding a request's card, given only
-   * when DorkOS positively knows the agent is answering the owner in a direct
-   * message on a chat app, where the card cannot draw.
-   *
-   * Fails closed, and enforced here rather than left to the prompt: no link for
-   * a room's turn (the room shows the owner the card, and a room can be shared),
-   * a group chat, a conversation in the app (the card is already on screen), or
-   * any session DorkOS cannot vouch for (never routed, or forgotten since a
-   * restart). Also none when the app has no address reachable from elsewhere.
-   */
-  private openUrl(sessionId: string): { openUrl?: string } {
-    if (this.options.roomForSession?.(sessionId)) return {};
-    if (!this.options.directChatSession?.(sessionId)) return {};
-    const origin = this.options.appOrigin?.();
-    if (!origin) return {};
-    try {
-      return { openUrl: new URL(sessionPath({ session: sessionId }), origin).toString() };
-    } catch {
-      return {};
-    }
   }
 
   /**
