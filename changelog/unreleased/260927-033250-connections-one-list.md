@@ -5,6 +5,8 @@ covers:
   - 'feat(connections): browser specs, docs and copy follow the one list (DOR-2418)'
   - 'fix(connections): every door into Connections lands on the list (DOR-2418)'
   - 'docs(decisions): the Connections page is one list of apps (DOR-2418)'
+  - 'docs(api): regenerate the providers response schema (DOR-2418)'
+  - 'fix(connections): hand focus back when the panel closes (DOR-2418)'
 ---
 
 ### Changed
