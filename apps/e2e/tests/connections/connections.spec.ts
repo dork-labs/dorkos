@@ -1,17 +1,10 @@
 import Database from 'better-sqlite3';
-import {
-  test,
-  expect,
-  type Page,
-  type APIRequestContext,
-  type Locator,
-  type TestInfo,
-} from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext, type TestInfo } from '@playwright/test';
 import { BasePage } from '../../pages/BasePage.js';
 import { ChatPage } from '../../pages/ChatPage.js';
 import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
-import { describeViolation, runAxe } from '../../axe.js';
+import { describeViolation, runAxe, settleAnimations } from '../../axe.js';
 import { registerOwnerManagementTests } from './owner-management.js';
 import { registerEventNotificationTests } from './event-notifications.js';
 import { registerChatConnectCardTests } from './chat-connect-card.js';
@@ -156,7 +149,7 @@ async function connectGmail(
 
   let dialog = page.getByRole('dialog', { name: 'Connect Gmail' });
   await expect(dialog).toBeVisible();
-  await settleFiniteAnimations(dialog);
+  await settleAnimations(page);
 
   const labelInput = dialog.getByLabel(/Account label/i);
   await labelInput.fill(label);
@@ -196,14 +189,14 @@ async function connectGmail(
     }
     for (const colorScheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme });
-      await settleFiniteAnimations(dialog);
+      await settleAnimations(page);
       await opts.capture.testInfo.attach(
         `connections-auth-${opts.capture.viewport}-${colorScheme}.png`,
         { body: await page.screenshot(), contentType: 'image/png' }
       );
     }
     await page.emulateMedia({ colorScheme: 'light' });
-    await settleFiniteAnimations(dialog);
+    await settleAnimations(page);
   }
   await dialog.getByRole('button', { name: 'Continue' }).click();
   await expect(page).toHaveURL(/(?:\?|&)flow=[^&]+/);
@@ -347,13 +340,13 @@ test.describe('Connections — save key, connect, multi-account', () => {
       contentType: 'text/plain',
     });
     await page.emulateMedia({ colorScheme: 'light' });
-    await settleFiniteAnimations(page.locator('body'));
+    await settleAnimations(page);
     await testInfo.attach('connections-inventory-desktop-light.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
     await page.emulateMedia({ colorScheme: 'dark' });
-    await settleFiniteAnimations(page.locator('body'));
+    await settleAnimations(page);
     await testInfo.attach('connections-inventory-desktop-dark.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -375,31 +368,19 @@ test.describe('Connections — save key, connect, multi-account', () => {
     await expect(connections.yourApp('Gmail', 'work')).toBeVisible();
     await expect(connections.yourApp('Gmail', 'personal')).toBeVisible();
     await page.emulateMedia({ colorScheme: 'light' });
-    await settleFiniteAnimations(page.locator('body'));
+    await settleAnimations(page);
     await testInfo.attach('connections-inventory-phone-light.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
     await page.emulateMedia({ colorScheme: 'dark' });
-    await settleFiniteAnimations(page.locator('body'));
+    await settleAnimations(page);
     await testInfo.attach('connections-inventory-phone-dark.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
   });
 });
-
-async function settleFiniteAnimations(locator: Locator): Promise<void> {
-  await locator.evaluate(async (element) => {
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
-    const finite = element
-      .getAnimations({ subtree: true })
-      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity);
-    await Promise.allSettled(finite.map((animation) => animation.finished));
-  });
-}
 
 registerOwnerManagementTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoConnections });
 registerEventNotificationTests({ apiUrl: API_URL, gotoConnections });

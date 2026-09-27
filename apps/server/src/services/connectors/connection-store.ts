@@ -38,6 +38,17 @@ import {
   type LegacyConnectionMigrationInput,
 } from './legacy-connection-migration.js';
 
+/**
+ * The test-mode provider type the credential route accepts under
+ * `DORKOS_TEST_RUNTIME`. Defined here — the lowest layer that needs it — and
+ * re-exported from `bootstrap.js`, which is where every other consumer
+ * (`test-mode.ts`, `index.ts`) already imports it from; this store is what
+ * enforces {@link ConnectionStore.purgeTestConnectorConnections}'s "only this
+ * type" guard, so it owns the constant rather than reaching up into
+ * `bootstrap.ts` for it.
+ */
+export const TEST_CONNECTOR_PROVIDER_TYPE = 'test-connector';
+
 /** Raised when connector identity migration failed and mixed-store writes are blocked. */
 export class ConnectorMigrationUnavailableError extends Error {
   /** Stable machine-readable health state. */
@@ -247,14 +258,22 @@ export class ConnectionStore {
   }
 
   /**
-   * Tombstone every live connection this provider instance ever reconciled,
-   * and revoke or drop everything that hangs off one (grants, agent
-   * attachments, session overrides, event subscriptions) — the deliberate
-   * opposite of {@link unregisterProvider}, which keeps a real provider's
-   * history on purpose so re-entering a rotated key doesn't forget which
-   * accounts were connected. `connections` rows cannot be hard-deleted (a DB
-   * trigger enforces tombstone-only), so this sets `removedAt` exactly as an
-   * owner's own remove would, rather than deleting the row.
+   * Tombstone every live connection ONE `test-connector` provider instance
+   * ever reconciled, and revoke or drop everything that hangs off one
+   * (grants, agent attachments, session overrides, event subscriptions) — the
+   * deliberate opposite of {@link unregisterProvider}, which keeps a real
+   * provider's history on purpose so re-entering a rotated key doesn't forget
+   * which accounts were connected. `connections` rows cannot be hard-deleted
+   * (a DB trigger enforces tombstone-only), so this sets `removedAt` exactly
+   * as an owner's own remove would, rather than deleting the row — but unlike
+   * an owner's remove, it writes no audit trail or Activity record: this is a
+   * blunt test-isolation reset nobody asked for on purpose, not a user action
+   * worth narrating back to them.
+   *
+   * Refuses (throws) an instance whose persisted type is not
+   * `TEST_CONNECTOR_PROVIDER_TYPE` — this is a scripted-provider-only reset,
+   * never a general-purpose "erase a provider's connections" tool a real
+   * (`composio`/`nango`) instance could reach by a wrong id.
    *
    * For an ephemeral, scripted provider only, whose own reload already
    * promises a clean slate (the test-mode connector's account map is
@@ -265,10 +284,21 @@ export class ConnectionStore {
    * `providerInstanceId` that outlives any one save: forever a second
    * "Gmail (work)" no test ever asked for.
    *
-   * @param instanceId - The ephemeral provider instance whose connections to tombstone.
+   * @param instanceId - The ephemeral `test-connector` instance whose connections to tombstone.
+   * @throws {Error} If a persisted provider instance exists at `instanceId` and its type isn't `test-connector`.
    */
-  purgeProvider(instanceId: ConnectorProviderInstanceId): void {
+  purgeTestConnectorConnections(instanceId: ConnectorProviderInstanceId): void {
     this.assertAvailable();
+    const provider = this.db
+      .select({ type: connectorProviderInstances.type })
+      .from(connectorProviderInstances)
+      .where(eq(connectorProviderInstances.id, instanceId))
+      .get();
+    if (provider && provider.type !== TEST_CONNECTOR_PROVIDER_TYPE) {
+      throw new Error(
+        `purgeTestConnectorConnections refuses provider type '${provider.type}' — only '${TEST_CONNECTOR_PROVIDER_TYPE}' connections may be purged this way.`
+      );
+    }
     const now = new Date().toISOString();
     this.db.transaction((tx) => {
       const ids = tx

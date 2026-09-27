@@ -41,9 +41,16 @@ const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js')
  * and a two-second cap guards against one that never reaches `finished` for
  * some other reason, so this can't hang a test.
  *
+ * {@link runAxe} calls this itself, so a scan never needs it directly — call
+ * it before a screenshot or any other sampling that isn't an axe scan
+ * instead of writing another locator-scoped copy (`connections.spec.ts` used
+ * to keep its own `settleFiniteAnimations(locator)`; this whole-page version
+ * is a superset of a subtree-scoped wait, so callers pass `page`, not a
+ * `Locator`).
+ *
  * @param page - The page whose in-flight animations to wait out.
  */
-async function settleAnimations(page: Page): Promise<void> {
+export async function settleAnimations(page: Page): Promise<void> {
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>

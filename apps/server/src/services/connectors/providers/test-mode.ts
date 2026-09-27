@@ -383,9 +383,11 @@ export class TestModeConnectorProvider implements ConnectorProvider {
  * @param opts - The credential read port, the local origin, and the purge callback.
  * @param opts.credentials - Resolves the `file:test-connector-api-key` reference.
  * @param opts.localOrigin - Local server origin for the provider's URLs.
- * @param opts.purgeConnections - Hard-delete this provider's persisted
- *   connections; called when the credential resolves absent, immediately
- *   before this factory hands back `null`.
+ * @param opts.purgeConnections - Tombstone this provider's persisted
+ *   connections (never a hard delete, and it writes no audit trail or
+ *   Activity record — see {@link ConnectionStore.purgeTestConnectorConnections});
+ *   called when the credential resolves absent, immediately before this
+ *   factory hands back `null`.
  */
 export async function maybeCreateTestModeConnectorProvider(opts: {
   credentials: CredentialProvider;

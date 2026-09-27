@@ -231,17 +231,21 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Hard-delete one provider instance's own connections — see
-   * {@link ConnectionStore.purgeProvider}. For an ephemeral, scripted
-   * provider only (the test-mode connector); never called for a real
+   * Tombstone one `test-connector` provider instance's own connections — see
+   * {@link ConnectionStore.purgeTestConnectorConnections}, which does the
+   * actual tombstoning (never a hard delete — a DB trigger refuses that) and
+   * refuses (throws) an instance whose persisted type isn't `test-connector`.
+   * For an ephemeral, scripted provider only; never reachable for a real
    * (`composio`/`nango`) instance, whose history is meant to survive a
-   * credential rotation.
+   * credential rotation, and never called for one — the guard is what makes
+   * that a refusal rather than a policy this method merely doesn't exercise.
    *
-   * @param instanceId - The ephemeral provider instance to purge.
+   * @param instanceId - The ephemeral `test-connector` instance to purge.
+   * @throws {Error} If a persisted provider instance exists at `instanceId` and its type isn't `test-connector`.
    */
-  purgeProviderConnections(instanceId: ConnectorProviderInstanceId): void {
+  purgeTestConnectorConnections(instanceId: ConnectorProviderInstanceId): void {
     if (this._connections.health().status === 'ready') {
-      this._connections.purgeProvider(instanceId);
+      this._connections.purgeTestConnectorConnections(instanceId);
     }
   }
 

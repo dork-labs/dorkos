@@ -3047,7 +3047,7 @@ async function start() {
             // from an earlier key save just sits there under the same
             // stable instance id forever.
             purgeConnections: () =>
-              connectorRegistry.purgeProviderConnections(
+              connectorRegistry.purgeTestConnectorConnections(
                 legacyDefaultProviderInstanceId(
                   TEST_CONNECTOR_PROVIDER_TYPE
                 ) as ConnectorProviderInstanceId
