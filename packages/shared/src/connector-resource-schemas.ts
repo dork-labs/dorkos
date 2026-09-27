@@ -204,7 +204,15 @@ export type ConnectorCatalogResourcePage = z.infer<typeof ConnectorCatalogResour
 /** Durable local-to-managed synchronization state shown to an owner. */
 export const ConnectorAuthoritySyncStateSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('ready') }).strict(),
-  z.object({ status: z.literal('pending') }).strict(),
+  z
+    .object({
+      status: z.literal('pending'),
+      /** Why the last try didn't settle, in plain words; absent while nothing went wrong. */
+      reason: z.string().min(1).max(1_000).optional(),
+      /** When DorkOS tries again; present exactly when `reason` is. */
+      retryAt: z.string().datetime().optional(),
+    })
+    .strict(),
   z.object({ status: z.literal('failed'), reason: z.string().min(1).max(1_000) }).strict(),
 ]);
 /** Durable local-to-managed synchronization state shown to an owner. */

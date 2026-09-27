@@ -34,6 +34,13 @@ export function useConnectorConnections() {
   });
 }
 
+/**
+ * How often a disconnected account whose sign-out is still finishing re-reads
+ * its detail. The server keeps retrying on its own; this only keeps the panel
+ * honest about it, and stops the moment the sign-out settles.
+ */
+const CLEANUP_PENDING_REFRESH_MS = 15_000;
+
 /** Read owner-visible detail for one stable connection. */
 export function useConnectorConnection(connectionId: string | null, enabled = true) {
   const transport = useTransport();
@@ -41,6 +48,12 @@ export function useConnectorConnection(connectionId: string | null, enabled = tr
     queryKey: connectorKeys.connection(connectionId ?? ''),
     queryFn: () => transport.getConnectorConnection(connectionId ?? ''),
     enabled: enabled && Boolean(connectionId),
+    refetchInterval: (query) => {
+      const connection = query.state.data?.connection;
+      return connection?.lifecycle === 'disconnected' && connection.externalCleanup === 'pending'
+        ? CLEANUP_PENDING_REFRESH_MS
+        : false;
+    },
   });
 }
 

@@ -736,6 +736,18 @@ describe('ConnectorOperatorQueryService', () => {
       .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
       .run();
     expect((await service.listConnections(OWNER))[0]?.authoritySync).toEqual({ status: 'pending' });
+    // A stalled command says why it is waiting and when it tries again, on the
+    // exact detail the account panel reads.
+    const retryAt = '2026-09-06T18:05:00.000Z';
+    db.update(connectorManagedAuthorityOutbox)
+      .set({ safeReason: 'DorkOS’s servers had a problem.', nextAttemptAt: retryAt })
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
+      .run();
+    await expect(service.getConnection(OWNER, 'connection-a')).resolves.toMatchObject({
+      connection: {
+        authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
+      },
+    });
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
       connections: [{ access: 'disabled', dominatingReason: 'authority_sync_required' }],
     });

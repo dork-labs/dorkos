@@ -27750,6 +27750,15 @@
                                     "enum": [
                                       "pending"
                                     ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
                                   }
                                 },
                                 "required": [
@@ -28793,6 +28802,15 @@
                                   "enum": [
                                     "pending"
                                   ]
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 1000
+                                },
+                                "retryAt": {
+                                  "type": "string",
+                                  "format": "date-time"
                                 }
                               },
                               "required": [
@@ -29339,6 +29357,15 @@
                                     "enum": [
                                       "pending"
                                     ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
                                   }
                                 },
                                 "required": [
@@ -29566,6 +29593,15 @@
                               "enum": [
                                 "pending"
                               ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": [
@@ -29721,6 +29757,15 @@
                               "enum": [
                                 "pending"
                               ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": [
@@ -30361,6 +30406,15 @@
                               "enum": [
                                 "pending"
                               ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": [
@@ -30517,6 +30571,15 @@
                               "enum": [
                                 "pending"
                               ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": [
@@ -30712,6 +30775,15 @@
                                     "enum": [
                                       "pending"
                                     ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
                                   }
                                 },
                                 "required": [

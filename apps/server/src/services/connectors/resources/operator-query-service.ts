@@ -1087,7 +1087,9 @@ export class ConnectorOperatorQueryService {
     const rows = this.db
       .select({
         state: connectorManagedAuthorityOutbox.state,
+        scopeKind: connectorManagedAuthorityOutbox.scopeKind,
         safeReason: connectorManagedAuthorityOutbox.safeReason,
+        nextAttemptAt: connectorManagedAuthorityOutbox.nextAttemptAt,
       })
       .from(connectorManagedAuthorityScopes)
       .innerJoin(
@@ -1096,7 +1098,22 @@ export class ConnectorOperatorQueryService {
       )
       .where(eq(connectorManagedAuthorityScopes.managedConnectionId, managedConnectionId))
       .all();
-    if (rows.some((row) => row.state === 'pending')) return { status: 'pending' };
+    const pending = rows.filter((row) => row.state === 'pending');
+    if (pending.length > 0) {
+      // Say why it is waiting: the account's own lifecycle first (a stalled
+      // disconnect), then whichever explained command tries again soonest.
+      const explained = pending
+        .filter((row) => row.safeReason && row.nextAttemptAt)
+        .sort(
+          (a, b) =>
+            Number(b.scopeKind === 'connection_lifecycle') -
+              Number(a.scopeKind === 'connection_lifecycle') ||
+            a.nextAttemptAt!.localeCompare(b.nextAttemptAt!)
+        )[0];
+      return explained
+        ? { status: 'pending', reason: explained.safeReason!, retryAt: explained.nextAttemptAt! }
+        : { status: 'pending' };
+    }
     const rejected = rows.find((row) => row.state === 'rejected');
     return rejected
       ? { status: 'failed', reason: rejected.safeReason ?? 'Managed access could not synchronize.' }

@@ -216,6 +216,50 @@ describe('AccountPanel', () => {
     }
   );
 
+  it('says why a stalled sign-out is waiting and when it tries again', async () => {
+    const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    renderPanel(
+      transportFor(
+        summary({
+          lifecycle: 'disconnected',
+          externalCleanup: 'pending',
+          authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
+        })
+      )
+    );
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('Disconnecting didn’t finish. Agents already can’t use Gmail.');
+    expect(fix).toHaveTextContent(/DorkOS’s servers had a problem\. Trying again at .+\./);
+  });
+
+  it('says it is still finishing after "Finish disconnecting", and keeps the button usable', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({ lifecycle: 'disconnected', externalCleanup: 'pending' })
+    );
+    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({
+      connectionId: 'c-1' as never,
+      lifecycle: 'disconnected',
+      authenticationStatus: 'active',
+      authoritySync: { status: 'pending' },
+      externalCleanup: 'pending',
+    });
+    renderPanel(transport);
+
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Finish disconnecting' }));
+    await waitFor(() =>
+      expect(fix).toHaveTextContent(
+        'Still finishing disconnecting Gmail. Agents already can’t use it.'
+      )
+    );
+    expect(fix).toHaveTextContent('DorkOS keeps trying on its own.');
+    const again = within(fix).getByRole('button', { name: 'Try again now' });
+    expect(again).toBeEnabled();
+    await user.click(again);
+    await waitFor(() => expect(transport.disconnectConnectorConnection).toHaveBeenCalledTimes(2));
+  });
+
   it('asks before disconnecting, naming who loses access, then closes', async () => {
     const user = userEvent.setup();
     const transport = transportFor(summary());

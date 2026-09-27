@@ -28,7 +28,7 @@ import {
   Skeleton,
 } from '@/layers/shared/ui';
 import { accountAppName } from '../../lib/app-list';
-import { tryItPrompts, usageLine } from '../../lib/app-panel-copy';
+import { retryLine, tryItPrompts, usageLine } from '../../lib/app-panel-copy';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
 import { AccountPanelMore } from './AccountPanelMore';
 import { PanelFix, PanelSection } from './panel-parts';
@@ -132,6 +132,7 @@ function AccountPanelBody({
           removing={remove.isPending}
           onFinishDisconnecting={() => disconnect.mutate({ connectionId, input: undefined })}
           finishing={disconnect.isPending}
+          triedToFinish={disconnect.isSuccess}
         />
       ) : connection.lifecycle === 'paused' ? (
         <PanelFix
@@ -208,6 +209,7 @@ function DisconnectedFix({
   removing,
   onFinishDisconnecting,
   finishing,
+  triedToFinish,
 }: {
   detail: ConnectorConnectionDetail;
   appName: string;
@@ -217,15 +219,41 @@ function DisconnectedFix({
   removing: boolean;
   onFinishDisconnecting: () => void;
   finishing: boolean;
+  /** "Finish disconnecting" ran in this panel and came back. */
+  triedToFinish: boolean;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const cleanup = detail.connection.externalCleanup;
   const cleanedUp = cleanup === 'complete' || cleanup === 'not_required';
-  if (!cleanedUp) {
+  if (cleanup === 'failed') {
     return (
       <PanelFix
         message={`Disconnecting didn’t finish. Agents already can’t use ${appName}.`}
-        action={cleanup === 'failed' ? 'Try disconnecting again' : 'Finish disconnecting'}
+        action="Try disconnecting again"
+        pending={finishing}
+        onAction={onFinishDisconnecting}
+      />
+    );
+  }
+  if (!cleanedUp) {
+    // Still pending: DorkOS keeps trying on its own. Say why it is waiting and
+    // when it tries next; the button asks for a try right now.
+    const sync = detail.connection.authoritySync;
+    const why =
+      sync.status === 'pending' && sync.reason && sync.retryAt
+        ? `${sync.reason} ${retryLine(sync.retryAt)}`
+        : triedToFinish
+          ? 'DorkOS keeps trying on its own.'
+          : undefined;
+    return (
+      <PanelFix
+        message={
+          triedToFinish
+            ? `Still finishing disconnecting ${appName}. Agents already can’t use it.`
+            : `Disconnecting didn’t finish. Agents already can’t use ${appName}.`
+        }
+        detail={why}
+        action={triedToFinish ? 'Try again now' : 'Finish disconnecting'}
         pending={finishing}
         onAction={onFinishDisconnecting}
       />

@@ -217,7 +217,15 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     title: 'AccountPanel',
     page: 'home-inbox',
     category: 'Connections',
-    keywords: ['side panel', 'who can use it', 'recently', 'try it', 'more', 'disconnect'],
+    keywords: [
+      'side panel',
+      'who can use it',
+      'recently',
+      'try it',
+      'more',
+      'disconnect',
+      'finish disconnecting',
+    ],
   },
   {
     id: 'chatapppanel',
