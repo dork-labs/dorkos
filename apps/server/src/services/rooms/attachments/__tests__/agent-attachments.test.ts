@@ -11,6 +11,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { RoomWorktreeManager } from '../../repo/room-worktree-manager.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,7 +59,11 @@ const PNG = Buffer.from(
 );
 
 let root: string;
-/** Ana's working copy, and Kai's — two worktrees under one boundary. */
+/**
+ * Ana's working directory, and Kai's — two agents' own folders under one
+ * boundary. A room turn stands in the agent's home, so these are homes; the
+ * room copies a turn is granted are set up in their own block below.
+ */
 let anaCwd: string;
 let kaiCwd: string;
 let bytesHome: string;
@@ -420,5 +425,95 @@ describe('an agent attaches a file it made', () => {
     expect(harness.service.readHistory(roomId, harness.human, { limit: 10 })).toHaveLength(1);
     expect(unboundRows()).toHaveLength(0);
     expect(await storedFiles()).toEqual([]);
+  });
+});
+
+describe('an agent attaches from its own copy of a room`s files (spec `agent-home-desk`)', () => {
+  // A room turn stands in the agent's HOME and is granted its copy of the
+  // room's files. A file it made in that copy is its own; the room's shared
+  // `repo/`, another member's copy, and anything a symlink reaches are not.
+  // Seeded: dropping `ownCopies` refuses the first case; dropping the rooms-dir
+  // fence lets the "home contains the rooms directory" case through.
+  let rooms: string;
+  let anaCopy: string;
+  let kaiCopy: string;
+  let repo: string;
+
+  beforeEach(async () => {
+    const dorkHome = path.join(root, 'data');
+    vi.stubEnv('DORK_HOME', dorkHome);
+    rooms = path.join(dorkHome, 'rooms');
+    const worktrees = path.join(rooms, 'room-1', 'worktrees');
+    anaCopy = path.join(worktrees, `ana-${RoomWorktreeManager.digestFor(ANA_PATH)}`);
+    kaiCopy = path.join(worktrees, `kai-${RoomWorktreeManager.digestFor(KAI_PATH)}`);
+    repo = path.join(rooms, 'room-1', 'repo');
+    for (const dir of [anaCopy, kaiCopy, repo]) await fs.mkdir(dir, { recursive: true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('attaches a file from its own copy by its full path, from its home', async () => {
+    await fs.writeFile(path.join(anaCopy, 'shot.png'), PNG);
+
+    const result = (await post({
+      roomId,
+      text: 'the chart',
+      attachments: [path.join(anaCopy, 'shot.png')],
+    })) as { attached: number };
+
+    expect(result.attached).toBe(1);
+  });
+
+  it('refuses the room`s shared files and another member`s copy, and writes nothing', async () => {
+    await fs.writeFile(path.join(repo, 'plan.png'), PNG);
+    await fs.writeFile(path.join(kaiCopy, 'secret.png'), PNG);
+
+    for (const named of [path.join(repo, 'plan.png'), path.join(kaiCopy, 'secret.png')]) {
+      await expect(post({ roomId, text: 'look', attachments: [named] })).rejects.toMatchObject({
+        payload: { code: 'ATTACHMENT_PATH_REFUSED' },
+      });
+    }
+    await nothingWasWritten();
+  });
+
+  it('refuses a symlink in its own copy that points at the shared files', async () => {
+    await fs.writeFile(path.join(repo, 'plan.png'), PNG);
+    await fs.symlink(path.join(repo, 'plan.png'), path.join(anaCopy, 'link.png'));
+
+    await expect(
+      post({ roomId, text: 'look', attachments: [path.join(anaCopy, 'link.png')] })
+    ).rejects.toMatchObject({ payload: { code: 'ATTACHMENT_PATH_REFUSED' } });
+    await nothingWasWritten();
+  });
+
+  it('does not count a copy folder that is a symlink to someone else`s', async () => {
+    await fs.writeFile(path.join(kaiCopy, 'secret.png'), PNG);
+    await fs.rm(anaCopy, { recursive: true });
+    await fs.symlink(kaiCopy, anaCopy);
+
+    await expect(
+      post({ roomId, text: 'look', attachments: [path.join(anaCopy, 'secret.png')] })
+    ).rejects.toMatchObject({ payload: { code: 'ATTACHMENT_PATH_REFUSED' } });
+    await nothingWasWritten();
+  });
+
+  it('refuses room folders even when its working directory contains the rooms directory', async () => {
+    // A DorkOS dev checkout keeps its data under the repo, which is the
+    // `dorkos` agent's home — so the home CONTAINS every room's files.
+    await fs.writeFile(path.join(repo, 'plan.png'), PNG);
+    await fs.writeFile(path.join(kaiCopy, 'secret.png'), PNG);
+    anaCwd = root;
+
+    for (const named of [
+      path.join('data', 'rooms', 'room-1', 'repo', 'plan.png'),
+      path.join(kaiCopy, 'secret.png'),
+    ]) {
+      await expect(post({ roomId, text: 'look', attachments: [named] })).rejects.toMatchObject({
+        payload: { code: 'ATTACHMENT_PATH_REFUSED' },
+      });
+    }
+    await nothingWasWritten();
   });
 });

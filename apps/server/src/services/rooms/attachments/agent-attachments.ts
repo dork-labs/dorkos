@@ -5,11 +5,21 @@
  *
  * `POST /api/rooms/:id/attachments` stays `PEOPLE_ONLY`, and this is not a
  * second copy of it. An agent gets a field on the verb it already has, and what
- * that field may name is settled by {@link resolveWithinCwd} against the
- * agent's OWN working directory — not `validateBoundary` alone, which confines
- * to the GLOBAL boundary and in a project room contains every other member's
- * working copy. A file an agent could not open today it cannot attach today,
- * and another member's copy is not attachable at all.
+ * that field may name is settled against the agent's OWN folders — not
+ * `validateBoundary` alone, which confines to the GLOBAL boundary and in a
+ * project room contains every other member's working copy:
+ *
+ * - its working directory (a room turn's is the agent's home, spec
+ *   `agent-home-desk`), by {@link resolveWithinCwd};
+ * - its own copies of rooms' files — the folders a room turn is granted to
+ *   write (`<rooms>/<room>/worktrees/<name>-<digest of its home>`), found from
+ *   its verified identity, never from the path it named.
+ *
+ * Every check is on real paths, so a symlink cannot carry a name out of the
+ * folder it appears in. Nothing inside the rooms directory is attachable except
+ * through the agent's own copy: never a room's shared `repo/`, never another
+ * member's copy, even when the working directory happens to contain the rooms
+ * directory (a DorkOS dev checkout keeps its data under the repo).
  *
  * ## It writes bytes before the entry, and gives them back if the entry fails
  *
@@ -23,11 +33,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ulid } from 'ulidx';
-import { BoundaryError } from '../../../lib/boundary.js';
+import { BoundaryError, validateBoundary } from '../../../lib/boundary.js';
 import { resolveWithinCwd } from '../../../lib/file-route-guards.js';
 import { logger } from '../../../lib/logger.js';
 import { sniffImageContentType } from '../../identity/image-sniff.js';
 import { RoomError } from '../room-errors.js';
+import { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import { sanitizeAttachmentName, storedExtension } from './attachment-paths.js';
 import type { AttachmentRowStore } from './attachment-row-store.js';
 import type { RoomAttachmentStore } from './room-attachment-store.js';
@@ -48,8 +59,15 @@ export interface AgentAttachmentRequest {
   roomId: string;
   /** The agent posting, resolved from its identity — never from the arguments. */
   authorId: string;
-  /** The agent's own working directory. The ONLY place a path may point. */
+  /** The agent's own working directory. Relative paths resolve against it. */
   cwd: string;
+  /**
+   * The agent's own copies of rooms' files, from {@link ownRoomCopies}.
+   * Absolute paths really inside one of them are attachable too.
+   */
+  ownCopies?: readonly string[];
+  /** The rooms directory, real or not; nothing under it is attachable but `ownCopies`. */
+  roomsDir?: string;
   /** What the agent named, in the order it should render. */
   paths: readonly string[];
   /** Where the bytes go. */
@@ -68,24 +86,95 @@ function megabytes(bytes: number): string {
   return mb >= 10 ? `${Math.round(mb)} MB` : `${Math.round(mb * 10) / 10} MB`;
 }
 
+/** Whether `target` is `root` or inside it; both are real paths. */
+function isWithin(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
 /**
- * Read one named file, refusing anything outside the agent's own directory.
+ * The agent's own copies of rooms' files: every
+ * `<roomsDir>/<room>/worktrees/<name>-<digest>` whose digest is the agent's
+ * home's, spelled under the rooms directory's real path. A named file must
+ * REALLY be inside that spelling, so a copy folder swapped for a symlink to
+ * someone else's contains nothing: its target's real path is elsewhere.
  *
- * @param cwd - The agent's working directory.
- * @param named - The path the agent wrote, absolute or relative to `cwd`.
+ * @param roomsDir - The rooms directory.
+ * @param agentPath - The agent's home, from its verified identity.
+ */
+export async function ownRoomCopies(roomsDir: string, agentPath: string): Promise<string[]> {
+  const suffix = `-${RoomWorktreeManager.digestFor(agentPath)}`;
+  const realRooms = await fs.realpath(roomsDir).catch(() => null);
+  if (!realRooms) return [];
+  const copies: string[] = [];
+  for (const room of await fs.readdir(realRooms).catch(() => [] as string[])) {
+    const worktrees = path.join(realRooms, room, 'worktrees');
+    for (const name of await fs.readdir(worktrees).catch(() => [] as string[])) {
+      if (!name.endsWith(suffix)) continue;
+      copies.push(path.join(worktrees, name));
+    }
+  }
+  return copies;
+}
+
+/**
+ * Where a named file really is, when it is somewhere the agent may attach
+ * from: its working directory or one of its own copies, and — inside the
+ * rooms directory — only its own copies.
+ */
+async function resolveOwnPath(
+  cwd: string,
+  ownCopies: readonly string[],
+  roomsDir: string | undefined,
+  named: string
+): Promise<string> {
+  let resolved: string | null = null;
+  try {
+    ({ resolved } = await resolveWithinCwd(cwd, named));
+  } catch (err) {
+    if (!(err instanceof BoundaryError) || !path.isAbsolute(named)) throw err;
+  }
+  if (resolved === null) {
+    for (const copy of ownCopies) {
+      try {
+        resolved = await validateBoundary(named, copy);
+        break;
+      } catch (err) {
+        if (!(err instanceof BoundaryError)) throw err;
+      }
+    }
+  }
+  if (resolved === null) {
+    throw new BoundaryError('Access denied: path outside your own folders', 'OUTSIDE_BOUNDARY');
+  }
+  const realRooms = roomsDir ? await fs.realpath(roomsDir).catch(() => null) : null;
+  if (realRooms && isWithin(realRooms, resolved) && !ownCopies.some((c) => isWithin(c, resolved))) {
+    throw new BoundaryError('Access denied: a room folder that is not yours', 'OUTSIDE_BOUNDARY');
+  }
+  return resolved;
+}
+
+/**
+ * Read one named file, refusing anything outside the agent's own folders.
+ *
+ * @param roots - The agent's working directory, its own copies and the rooms directory.
+ * @param named - The path the agent wrote, absolute or relative to the working directory.
  * @returns The bytes and the name to store them under.
  */
-async function readOwnFile(cwd: string, named: string): Promise<{ bytes: Buffer; name: string }> {
+async function readOwnFile(
+  roots: { cwd: string; ownCopies: readonly string[]; roomsDir?: string },
+  named: string
+): Promise<{ bytes: Buffer; name: string }> {
   const label = path.basename(named) || named;
   let resolved: string;
   try {
-    ({ resolved } = await resolveWithinCwd(cwd, named));
+    resolved = await resolveOwnPath(roots.cwd, roots.ownCopies, roots.roomsDir, named);
   } catch (err) {
     if (err instanceof BoundaryError) {
       throw new RoomError(
         'ATTACHMENT_PATH_REFUSED',
-        `${label} is not inside your own working directory, so you cannot attach it. Copy it ` +
-          'into your working directory first, then attach it from there.'
+        `${label} is not in your own folder or your own copy of a room's files, so you cannot ` +
+          'attach it. Copy it into one of those first, then attach it from there.'
       );
     }
     throw new RoomError('ATTACHMENT_UNREADABLE', `${label} could not be opened.`);
@@ -164,6 +253,7 @@ export async function discardStagedAttachments(request: {
  */
 export async function stageAgentAttachments(request: AgentAttachmentRequest): Promise<string[]> {
   const { roomId, authorId, cwd, paths, store, rows, limits, nameMax } = request;
+  const roots = { cwd, ownCopies: request.ownCopies ?? [], roomsDir: request.roomsDir };
   if (paths.length === 0) return [];
   if (paths.length > limits.maxFiles) {
     throw new RoomError(
@@ -176,7 +266,7 @@ export async function stageAgentAttachments(request: AgentAttachmentRequest): Pr
   try {
     const ids: string[] = [];
     for (const named of paths) {
-      const { bytes, name: original } = await readOwnFile(cwd, named);
+      const { bytes, name: original } = await readOwnFile(roots, named);
       if (bytes.byteLength > limits.maxFileSize) {
         throw new RoomError(
           'ATTACHMENT_TOO_LARGE',
