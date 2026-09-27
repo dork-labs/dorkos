@@ -6,6 +6,7 @@ covers:
   - "fix(rooms): refuse any turn or git read that would stand in a room's files (DOR-2410)"
   - "fix(relay): let only people and DorkOS choose a relay turn's folder, agent and permission mode (DOR-2410, DOR-2446)"
   - 'fix(rooms): say plainly where a room conversation runs and who may shape a relay turn (DOR-2410)'
+  - "fix(rooms): keep an agent's work reviewable and mergeable from the room's canvas (DOR-2410)"
   - 'fix(relay): name the agent a binding or scheduled task turn is for (DOR-2355)'
   - 'fix(server): refuse orphaned managed checkouts and match agent homes through symlinks (DOR-2355)'
   - 'fix(server): read every agent identity from its registered home (DOR-2355)'

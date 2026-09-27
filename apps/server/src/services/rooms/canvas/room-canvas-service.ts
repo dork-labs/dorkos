@@ -49,6 +49,7 @@
  *
  * @module server/services/rooms/canvas/room-canvas-service
  */
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument, RoomCanvasChange, RoomEvent } from '@dorkos/shared/room-schemas';
@@ -432,23 +433,26 @@ export class RoomCanvasService {
     // is about to write actually names (a `chart.png` resolves to an `image`,
     // which names no file path at all).
     const content = this.canvas.contentForCommand(command);
+    // A room's own question, answered here and handed down: which tree this
+    // file came out of, and whose copy it is.
+    const tree =
+      content === null
+        ? undefined
+        : this.resolveTree(
+            roomId,
+            authorId,
+            content,
+            input.cwd,
+            input.aheadOfMain ?? null,
+            input.worktree
+          );
     return this.canvas.apply({
       scope: roomScope(roomId),
       authorId,
-      command,
-      // A room's own question, answered here and handed down: which tree this
-      // file came out of, and whose copy it is.
-      tree:
-        content === null
-          ? undefined
-          : this.resolveTree(
-              roomId,
-              authorId,
-              content,
-              input.cwd,
-              input.aheadOfMain ?? null,
-              input.worktree
-            ),
+      // Stored relative to the tree it came out of, as every reader of a room
+      // file document expects (the review, the merge, the document key).
+      command: tree === undefined ? command : withTreeRelativeSource(command, tree),
+      tree,
       // A room has NO shared active document by design, so the only default that
       // cannot edit somebody else's work is the author's own last one (§5.6).
       defaultTarget: 'author-last',
@@ -1155,27 +1159,35 @@ export class RoomCanvasService {
     if (source === null || cwd === undefined) {
       return { resolvedCwd: null, sourceLabel: null, treeKind: null, aheadOfMain: null };
     }
-    const file = path.isAbsolute(source) ? path.resolve(source) : path.resolve(cwd, source);
-    const repoPath = this.roomRepoPath(roomId);
-    if (repoPath !== null && (isWithin(cwd, repoPath) || isWithin(file, repoPath))) {
+    // Compared by REAL path: a turn's grants name the copy by its real path
+    // (`/private/tmp/…` on macOS, a symlinked home anywhere), and an agent may
+    // name a file by either spelling. Two spellings of one folder are one tree.
+    const file = canonicalPath(
+      path.isAbsolute(source) ? path.resolve(source) : path.resolve(cwd, source)
+    );
+    const rawRepo = this.roomRepoPath(roomId);
+    const repoPath = rawRepo === null ? null : canonicalPath(rawRepo);
+    const realCwd = canonicalPath(cwd);
+    const realWorktree = worktree === undefined ? undefined : canonicalPath(worktree);
+    if (repoPath !== null && (isWithin(realCwd, repoPath) || isWithin(file, repoPath))) {
       // The room's own shared copy. Every member can already read it, so there
       // is nothing to warn anybody about and no count to carry — being ahead of
       // `main` is a thing a WORKING COPY is, and this is `main`.
       return {
-        resolvedCwd: isWithin(cwd, repoPath) ? cwd : repoPath,
+        resolvedCwd: isWithin(realCwd, repoPath) ? cwd : repoPath,
         sourceLabel: null,
         treeKind: 'room-main',
         aheadOfMain: null,
       };
     }
     const who = this.displayNameFor(authorId);
-    if (worktree !== undefined && isWithin(file, worktree)) {
+    if (worktree !== undefined && realWorktree !== undefined && isWithin(file, realWorktree)) {
       // A member's own working copy of the room's files. The count is a
       // SNAPSHOT taken when the document was opened, and `null` says nobody
       // measured — which is why the label drops the count rather than printing
       // a zero.
       return {
-        resolvedCwd: worktree,
+        resolvedCwd: realWorktree,
         sourceLabel:
           aheadOfMain !== null && aheadOfMain > 0
             ? `${who}'s copy · ${aheadOfMain} ahead of main`
@@ -1390,6 +1402,65 @@ export function discussionOpenedSentence(
  * @param parent - The directory it must be within.
  * @returns Whether `child` is `parent` or below it.
  */
+/**
+ * Name a room file by its path inside the tree it came out of (spec
+ * `agent-home-desk` §5.6).
+ *
+ * A room turn stands in its agent's home and names a file in its copy of the
+ * room's files — or in the room's shared checkout — by its FULL path. Every
+ * reader of a room file document takes the stored path as relative to the
+ * document's tree: the review refuses an absolute one, the merge reads `main`
+ * at it, and the document key is built from it, so the same file opened twice
+ * must name itself the same way. Anything that is not one of those two trees,
+ * or that does not sit inside it, is left exactly as the agent wrote it.
+ *
+ * @param command - The command as the turn sent it.
+ * @param tree - Where {@link RoomCanvasService.resolveTree} placed its file.
+ */
+function withTreeRelativeSource(command: UiCommand, tree: CanvasTreePlacement): UiCommand {
+  if (
+    tree.resolvedCwd === null ||
+    (tree.treeKind !== 'worktree' && tree.treeKind !== 'room-main')
+  ) {
+    return command;
+  }
+  const root = canonicalPath(tree.resolvedCwd);
+  const relative = (source: string): string | null => {
+    if (!path.isAbsolute(source)) return null;
+    const rel = path.relative(root, canonicalPath(source));
+    return rel === '' || rel.startsWith('..') || path.isAbsolute(rel) ? null : rel;
+  };
+  if ('sourcePath' in command && typeof command.sourcePath === 'string') {
+    const rel = relative(command.sourcePath);
+    return rel === null ? command : ({ ...command, sourcePath: rel } as UiCommand);
+  }
+  if ('content' in command && command.content && 'sourcePath' in command.content) {
+    const source = command.content.sourcePath;
+    const rel = typeof source === 'string' ? relative(source) : null;
+    return rel === null
+      ? command
+      : ({ ...command, content: { ...command.content, sourcePath: rel } } as UiCommand);
+  }
+  return command;
+}
+
+/**
+ * A path's real spelling: the real path of its deepest existing ancestor with
+ * the rest appended, so a file that does not exist yet still compares by the
+ * folder it would land in.
+ */
+function canonicalPath(p: string): string {
+  const resolved = path.resolve(p);
+  try {
+    return realpathSync.native(resolved);
+  } catch {
+    const parent = path.dirname(resolved);
+    return parent === resolved
+      ? resolved
+      : path.join(canonicalPath(parent), path.basename(resolved));
+  }
+}
+
 function isWithin(child: string, parent: string): boolean {
   if (child === parent) return true;
   const base = parent.endsWith('/') ? parent : `${parent}/`;
