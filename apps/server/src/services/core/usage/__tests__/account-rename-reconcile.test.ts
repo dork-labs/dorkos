@@ -24,6 +24,7 @@ import { TaskStore } from '../../../tasks/task-store.js';
 import type { TaskFileSync } from '../../../tasks/sync/task-file-sync.js';
 import { parseContentKey } from '../../../tasks/schedule-permission-clamp.js';
 import { renameScheduleAccount } from '../../../tasks/approvals/account-rename.js';
+import { SessionLimitStore } from '../../../session/fleet/session-limit-store.js';
 import {
   dropClaudeAccountRenameMarkers,
   resolveLaunchAccountRoot,
@@ -75,6 +76,7 @@ function sites(overrides: Partial<AccountReferenceSites> = {}): AccountReference
       },
     },
     renameScheduleAccount: (from, to) => renameScheduleAccount(db, from, to, async () => false),
+    renameSessionLimitAccount: (from, to) => new SessionLimitStore(db).renameAccount(from, to),
     ...overrides,
   };
 }
@@ -164,8 +166,28 @@ describe('carrying a renamed `default` row through to its references', () => {
   it('moves the manifest, the schedule with its approval, and the SKILL.md, then drops the marker', async () => {
     await writeConfig([renamedRow()]);
     const scheduleId = await scheduleOn('default');
+    const limits = new SessionLimitStore(db);
+    const limitOn = (sessionId: string, accountId: string) =>
+      limits.upsert({
+        sessionId,
+        limit: {
+          accountId,
+          window: 'seven_day',
+          resetsAt: null,
+          since: '2026-09-26T10:00:00.000Z',
+          plan: { mode: 'ask' },
+        },
+        scope: 'account',
+        accountPath: null,
+      });
+    limitOn('limited-on-default', 'default');
+    limitOn('limited-on-work', 'work');
     const store = makeStore();
     await store.reconcileAccounts();
+
+    // A limited session's stored limit follows the account it named.
+    expect(limits.get('limited-on-default')?.limit.accountId).toBe('default-2');
+    expect(limits.get('limited-on-work')?.limit.accountId).toBe('work');
 
     expect(agents.map((a) => [a.id, a.account])).toEqual([
       ['agent-a', 'default-2'],

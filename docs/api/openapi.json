@@ -13061,7 +13061,8 @@
           "agent.unreachable",
           "signin.required",
           "update.installed",
-          "report.daily"
+          "report.daily",
+          "account.limited"
         ]
       },
       "NotificationTier": {

@@ -3,11 +3,12 @@
  * renamed (a registry row called `default`, now `default-N` with
  * `renamedFrom: 'default'`), then lets the reconcile drop the marker.
  *
- * A reference names an account by id, and three kinds live outside the config
+ * A reference names an account by id, and four kinds live outside the config
  * file: an agent manifest's `account` (moved through the mesh registry, which
- * writes the file first), a schedule's `account` with its approval, and the
- * schedule's `SKILL.md` (`services/tasks/approvals/account-rename.ts`). Until
- * all three move, the launch ladder and the usage store keep resolving
+ * writes the file first), a schedule's `account` with its approval, the
+ * schedule's `SKILL.md` (`services/tasks/approvals/account-rename.ts`), and a
+ * limited session's `session_limits.account_id` (spec claude-account-fleet D4).
+ * Until all of them move, the launch ladder and the usage store keep resolving
  * `default` to the renamed row, so nothing bills a different account.
  *
  * The marker is dropped only when every site moved. A site that is not wired
@@ -66,6 +67,8 @@ export interface AccountReferenceSites {
     | undefined;
   /** Move every schedule (row, approval, file) from one account id to another; package-owned ones stay. */
   renameScheduleAccount(from: string, to: string): Promise<unknown>;
+  /** Point every stored session usage limit (`session_limits`) at the new id. */
+  renameSessionLimitAccount(from: string, to: string): unknown;
 }
 
 /**
@@ -101,6 +104,7 @@ export async function moveAccountReferences(
       await sites.agents.setAccount(agent.id, to);
     }
     await sites.renameScheduleAccount(from, to);
+    sites.renameSessionLimitAccount(from, to);
     logger.info('[account-usage] moved every reference to a renamed Claude account', { from, to });
   }
   return true;

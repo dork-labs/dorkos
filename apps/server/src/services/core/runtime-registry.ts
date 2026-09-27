@@ -30,6 +30,7 @@ import {
 } from '../session/origin/turn-origin.js';
 import { sessionMetadata, eq, inArray, isNull, sql, type Db, type SQL } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
+import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
@@ -773,6 +774,9 @@ export class RuntimeRegistry {
   async rekeySessionSettings(fromId: string, toId: string): Promise<void> {
     if (fromId === toId) return;
     const db = this.requireDb('rekeySessionSettings');
+    // A usage limit the session hit under its old id moves with it (spec
+    // claude-account-fleet D4), whether or not it has a settings row.
+    withSessionLimitStore('rekey', (store) => store.rekeySession(fromId, toId));
     const source = db
       .select()
       .from(sessionMetadata)

@@ -525,6 +525,8 @@ import {
   setMessageQueueStore,
   setSessionEventStore,
   setStagedContextStore,
+  SessionLimitStore,
+  setSessionLimitStore,
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
@@ -1035,6 +1037,12 @@ async function start() {
   // the person "Added context for the next reply" on a stream that survives a
   // restart, so what that receipt points at has to survive one too (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
+
+  // A session's usage limit, kept so a restart or an idle eviction does not
+  // turn a limited session back into a merely failed one (spec
+  // claude-account-fleet D4).
+  const sessionLimitStore = new SessionLimitStore(db);
+  setSessionLimitStore(sessionLimitStore);
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read
@@ -2401,6 +2409,7 @@ async function start() {
                 )
               )
             ),
+          renameSessionLimitAccount: (from, to) => sessionLimitStore.renameAccount(from, to),
         }),
       dropMarkers: async (ids) => {
         dropClaudeAccountRenameMarkers(configManager, ids);

@@ -661,6 +661,24 @@ describe('useSessionStreamStore', () => {
       expect(s.status?.lifecycle).toBe('streaming');
     });
 
+    it('holds a usage limit from a status_change and clears it at turn_start (projector parity)', () => {
+      const limit = {
+        accountId: 'work',
+        window: 'seven_day',
+        resetsAt: null,
+        since: '2026-09-26T10:00:00.000Z',
+        plan: { mode: 'ask' as const },
+      };
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, { type: 'status_change', seq: 2, status: { limit } });
+      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'error' });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.limit).toEqual(limit);
+      store.applyEvent(SID, { type: 'turn_start', seq: 4 });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.limit).toBeNull();
+    });
+
     it('turn_start clears the previous lastError (server-projector parity)', () => {
       const store = useSessionStreamStore.getState();
       store.applySnapshot(SID, snapshot({ cursor: 0 }));

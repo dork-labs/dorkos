@@ -512,6 +512,23 @@ export class AccountUsageStore {
     return out;
   }
 
+  /**
+   * The usage of whichever account a session running in `dir` bills, from
+   * memory only (synchronous): a registered account or the runtime's own
+   * `default` when the folder matches one, else a memory-only root the store
+   * has readings for, else `null`.
+   *
+   * @param runtime - The account's runtime.
+   * @param dir - The folder the session runs in.
+   */
+  usageAtPath(runtime: LedgerRuntime, dir: string): AccountUsage | null {
+    const account = accountForPath(this.accounts, runtime, dir, undefined, this.realpath);
+    if (account) return this.usageOfAccount(account);
+    const canonical = canonicalAccountPath(dir, undefined, this.realpath);
+    const record = this.records.get(`${runtime}@${canonical}`);
+    return record ? this.usageOfRecord(record) : null;
+  }
+
   private usageOfAccount(account: RuntimeAccount): AccountUsage {
     return usageOfAccount(account, this.records, this.now());
   }

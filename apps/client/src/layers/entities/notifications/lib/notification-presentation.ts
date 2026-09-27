@@ -15,6 +15,7 @@ import {
   CircleAlert,
   Clock,
   Download,
+  Hourglass,
   LogIn,
   Mail,
   MessageSquare,
@@ -77,6 +78,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'signin.required': LogIn,
   'update.installed': Download,
   'report.daily': Sparkles,
+  'account.limited': Hourglass,
 };
 
 /** How loudly a notification draws. */
