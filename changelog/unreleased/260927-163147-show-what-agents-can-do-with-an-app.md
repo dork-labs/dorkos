@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(connections): show what agents can do with an app, tied to the access choice (DOR-2465)'
+  - 'fix(connections): tie app actions to what a level grants on the account (DOR-2465)'
+  - 'chore(changelog): fold the DOR-2465 fix into its fragment'
 ---
 
 ### Added
