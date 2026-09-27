@@ -42,6 +42,8 @@ import { WhoCanUseChoice } from './WhoCanUseChoice';
 interface SharedCardProps {
   /** The app's display name, e.g. "Gmail". */
   serviceName: string;
+  /** The catalog's same-origin logo path for the app, when the caller has it. */
+  logo?: string;
   /** Leave without changing anything. Labelled "Skip" on the page and "Not now" for one agent. */
   onSkip?: () => void;
   /** Leave after a save has an outcome. Labelled "Done" once confirmed, "Close" otherwise. */
@@ -262,6 +264,8 @@ function AccessStep(
     <AccessCardFrame
       titleId={titleId}
       toolkit={connection?.toolkit ?? (props.mode === 'agent' ? props.toolkit : undefined)}
+      serviceName={props.serviceName}
+      logo={props.logo}
       title={title}
       // Embedded in a panel that already names the account, the line would repeat it.
       subtitle={props.variant === 'embedded' ? undefined : subtitle}

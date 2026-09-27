@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { type YourAppRow, ServiceMark } from '@/layers/features/connections';
+import { ServiceMark } from '@/layers/entities/connectors';
+import type { YourAppRow } from '@/layers/features/connections';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import {
@@ -54,7 +55,12 @@ export function AppPanel({ row, open, onOpenChange, onCloseAutoFocus, children }
 
   const header = row && (
     <div className="flex items-center gap-3 pr-8">
-      <ServiceMark iconKey={row.iconKey} displayName={row.name} className="size-10 rounded-lg" />
+      <ServiceMark
+        iconKey={row.iconKey}
+        displayName={row.name}
+        logo={row.logo}
+        className="size-10 rounded-lg"
+      />
       <div className="min-w-0 flex-1 text-left">
         <PanelTitle mobile={mobile} className="flex items-center gap-2 text-base font-semibold">
           <span className="truncate">{row.name}</span>

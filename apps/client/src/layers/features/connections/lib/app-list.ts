@@ -39,8 +39,10 @@ export interface YourAppRow {
   kind: 'account' | 'chat' | 'connecting';
   /** The app's name, e.g. "Gmail". A second account is a second row with the same name. */
   name: string;
-  /** Icon key for {@link ServiceMark}. */
+  /** Icon key for the app's `ServiceMark`. */
   iconKey: string;
+  /** The catalog's same-origin logo path for the app, when it has one. */
+  logo?: string;
   /**
    * Which account or bot it is: the name the person gave it ("work"), else its
    * address ("you@gmail.com"), else the bot's name ("@lifeos_bot").
@@ -132,6 +134,15 @@ export function accountNames(connection: ConnectorConnectionSummary): {
   return { account: connection.label, identity };
 }
 
+/** The app's catalog logo path as a row field, when the catalog has one. */
+function logoOf(
+  toolkit: string,
+  services: ReadonlyMap<string, ConnectorCatalogService>
+): { logo?: string } {
+  const logo = services.get(toolkit)?.logo;
+  return logo ? { logo } : {};
+}
+
 /**
  * One account's row, decided from the server's own facts about it. Order
  * matters: the first fact that stops agents wins, so a signed-out account
@@ -149,6 +160,7 @@ export function accountRow(
     kind: 'account' as const,
     name: accountAppName(connection.toolkit, services),
     iconKey: connection.toolkit,
+    ...logoOf(connection.toolkit, services),
     ...accountNames(connection),
     waiting: 0,
   };
@@ -343,6 +355,7 @@ export function buildYourApps(input: YourAppsInput): YourAppRow[] {
       kind: 'connecting',
       name,
       iconKey: pending.toolkit,
+      ...logoOf(pending.toolkit, input.services),
       account: null,
       identity: null,
       detail: `Waiting for you to finish signing in on ${service?.signInName ?? name}…`,

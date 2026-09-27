@@ -466,6 +466,37 @@ describe('ComposioConnectorProvider — degrade contract on transport failure', 
     });
   }
 
+  it('carries the app’s logo URL and description into the toolkit', async () => {
+    const client: ComposioHttpClient = {
+      listToolkits: () =>
+        Promise.resolve([
+          {
+            slug: 'notion',
+            name: 'Notion',
+            authScheme: 'OAUTH2',
+            logoUrl: 'https://logos.composio.dev/api/notion',
+            description: 'Notion is a workspace for notes and docs.',
+          },
+          { slug: 'bare', name: 'Bare', authScheme: 'API_KEY' },
+        ]),
+      initiateConnection: () => Promise.resolve({ connectionRequestId: 'cr_1', redirectUrl: '' }),
+      getConnectionState: () => Promise.resolve({ status: 'INITIATED' }),
+      listConnectedAccounts: () => Promise.resolve([]),
+      deleteConnectedAccount: () => Promise.resolve(),
+    };
+
+    await expect(providerWith(client).listToolkits()).resolves.toEqual([
+      {
+        slug: 'notion',
+        displayName: 'Notion',
+        authKind: 'oauth2',
+        logoUrl: 'https://logos.composio.dev/api/notion',
+        description: 'Notion is a workspace for notes and docs.',
+      },
+      { slug: 'bare', displayName: 'Bare', authKind: 'api-key' },
+    ]);
+  });
+
   it('startConnect throws a typed error when Composio returns no authorize URL', async () => {
     // A NullUrlClient returns a connection request with an empty redirectUrl —
     // the picker must not silently open an empty authorize URL.

@@ -147,6 +147,8 @@ export function RequestConnectStep({
     <AccessCardFrame
       titleId={titleId}
       toolkit={request.serviceSlug}
+      serviceName={serviceName}
+      logo={service?.logo}
       title={`Connect ${serviceName}`}
       subtitle={`So ${request.agent.displayName} can use it`}
       className={className}

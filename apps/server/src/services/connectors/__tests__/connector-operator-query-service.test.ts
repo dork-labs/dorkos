@@ -259,6 +259,84 @@ describe('ConnectorOperatorQueryService', () => {
     });
   });
 
+  it('gives each app a same-origin logo path and one line, never the service’s logo URL', async () => {
+    const logoRegistry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    logoRegistry.register(
+      new FakeConnectorProvider({
+        instanceId: ConnectorProviderInstanceIdSchema.parse('provider-logos'),
+        type: 'fake',
+        custody: 'managed',
+        toolkits: [
+          {
+            slug: 'gmail',
+            displayName: 'Gmail',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/gmail',
+            description: 'Gmail is Google’s email service.',
+          },
+          {
+            slug: 'zendesk',
+            displayName: 'Zendesk',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/zendesk',
+            description: 'Zendesk runs customer support tickets.',
+          },
+          // Only another app's kept logo can give this one a mark.
+          { slug: 'freshdesk', displayName: 'Freshdesk', authKind: 'oauth2' },
+          { slug: 'bare', displayName: 'Bare', authKind: 'oauth2' },
+          // Not a safe path segment, so it can never get a logo path.
+          {
+            slug: 'Odd.Slug',
+            displayName: 'Odd',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/odd',
+          },
+        ],
+      }),
+      'material-logos'
+    );
+    const logos = new ConnectorOperatorQueryService({
+      db,
+      registry: logoRegistry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+      keptLogos: () => Promise.resolve(new Set(['freshdesk'])),
+    });
+    const signal = new AbortController().signal;
+
+    const page = await logos.catalog({ limit: 100, signal });
+    const bySlug = new Map(page.services.map((entry) => [entry.serviceSlug, entry]));
+
+    // Our own line wins for a built-in app; the logo is the server's own path.
+    expect(bySlug.get('gmail')).toMatchObject({
+      description: 'Read, search and send email.',
+      logo: '/api/connectors/catalog/logos/gmail',
+    });
+    expect(bySlug.get('zendesk')).toMatchObject({
+      description: 'Zendesk runs customer support tickets.',
+      logo: '/api/connectors/catalog/logos/zendesk',
+    });
+    expect(bySlug.get('freshdesk')?.logo).toBe('/api/connectors/catalog/logos/freshdesk');
+    expect(bySlug.get('bare')).not.toHaveProperty('logo');
+    expect(bySlug.get('bare')).not.toHaveProperty('description');
+    expect(bySlug.get('Odd.Slug')).not.toHaveProperty('logo');
+    // A built-in app nothing sends a logo for has none either.
+    expect(bySlug.get('notion')).not.toHaveProperty('logo');
+    expect(JSON.stringify(page)).not.toContain('logos.composio.dev');
+
+    // The logo route's source: exactly the URLs the app list recorded.
+    await expect(logos.logoSources(signal)).resolves.toEqual(
+      new Map([
+        ['gmail', 'https://logos.composio.dev/api/gmail'],
+        ['Odd.Slug', 'https://logos.composio.dev/api/odd'],
+        ['zendesk', 'https://logos.composio.dev/api/zendesk'],
+      ])
+    );
+  });
+
   it('names the service an app will ask about on every route that signs in through one', async () => {
     const composio = new FakeConnectorProvider({
       instanceId: ConnectorProviderInstanceIdSchema.parse('provider-composio'),

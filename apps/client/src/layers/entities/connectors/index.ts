@@ -96,6 +96,7 @@ export type {
 
 export { accessLevelWords, serviceName } from './lib/access-copy';
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
+export { ServiceMark } from './ui/ServiceMark';
 export { EveryAgentAccessNotice } from './ui/EveryAgentAccessNotice';
 export type { EveryAgentAccessNoticeProps } from './ui/EveryAgentAccessNotice';
 

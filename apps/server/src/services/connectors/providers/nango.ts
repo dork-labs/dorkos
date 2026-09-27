@@ -316,6 +316,7 @@ export class NangoConnectorProvider implements ConnectorProvider {
       slug: it.uniqueKey,
       displayName: it.displayName ?? it.provider ?? it.uniqueKey,
       authKind: toAuthKind(it.authMode),
+      ...(it.logoUrl && { logoUrl: it.logoUrl }),
     }));
   }
 

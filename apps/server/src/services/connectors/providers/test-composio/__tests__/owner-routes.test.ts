@@ -124,7 +124,13 @@ async function fixture() {
   );
   app.use(
     '/api/connectors',
-    createConnectorResourcesRouter({ ...boundary, authentication, query, lifecycle })
+    createConnectorResourcesRouter({
+      ...boundary,
+      authentication,
+      query,
+      lifecycle,
+      logos: { get: () => Promise.resolve(undefined) },
+    })
   );
   app.use(
     '/api/connectors',

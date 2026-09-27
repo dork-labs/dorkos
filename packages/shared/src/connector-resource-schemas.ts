@@ -165,6 +165,19 @@ export const ConnectorCatalogIntentSchema = z.discriminatedUnion('kind', [
 /** One service intent in the unified catalog. */
 export type ConnectorCatalogIntent = z.infer<typeof ConnectorCatalogIntentSchema>;
 
+/** The same-origin path prefix every catalog logo is served under. */
+export const CONNECTOR_CATALOG_LOGO_PATH_PREFIX = '/api/connectors/catalog/logos/';
+
+/**
+ * A catalog logo reference: this server's own logo route for one app, with the
+ * service id as one lower-case path segment. The pattern refuses any other
+ * origin, scheme, query or extra path segment.
+ */
+export const ConnectorCatalogLogoPathSchema = z
+  .string()
+  .max(300)
+  .regex(/^\/api\/connectors\/catalog\/logos\/[a-z0-9][a-z0-9_-]*$/);
+
 /** One account-free service in the unified catalog. */
 export const ConnectorCatalogServiceSchema = z
   .object({
@@ -172,8 +185,18 @@ export const ConnectorCatalogServiceSchema = z
     displayName: z.string().min(1).max(200),
     iconKey: z.string().min(1).max(200),
     intents: z.array(ConnectorCatalogIntentSchema).min(1).max(20),
-    /** One plain line saying what agents can do with the app. Built-in apps only. */
+    /**
+     * One plain line about the app: DorkOS's own line for the built-in apps,
+     * otherwise the connection service's description cut to one short sentence.
+     */
     description: z.string().min(1).max(300).optional(),
+    /**
+     * Same-origin path to the app's logo, served by this server from its own
+     * cache (`GET /api/connectors/catalog/logos/:serviceSlug`). Never a
+     * third-party URL: the browser never asks another site for a logo. Absent
+     * when no connection service offers one.
+     */
+    logo: ConnectorCatalogLogoPathSchema.optional(),
     /** The shelf the app sits on in the list. Built-in apps only. */
     category: ConnectorCatalogCategorySchema.optional(),
     /** True for the hand-picked popular apps DorkOS always lists. */

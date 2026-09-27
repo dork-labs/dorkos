@@ -29,6 +29,7 @@ describe('connector resource routes', () => {
           .fn()
           .mockResolvedValue({ sessionId: 'session-a', agentId: 'agent-a', connections: [] }),
       },
+      logos: { get: vi.fn().mockResolvedValue(undefined) },
       authentication: {
         start: vi.fn().mockResolvedValue({ flowId: 'flow-a', state: 'pending' }),
         reconnect: vi.fn().mockResolvedValue({ flowId: 'flow-b', state: 'pending' }),
@@ -52,6 +53,37 @@ describe('connector resource routes', () => {
   function api() {
     return request(fixtureTarget.mount(app));
   }
+
+  it('serves a kept logo as an inert image a browser will not sniff or script', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>x()</script></svg>');
+    vi.mocked(deps.logos.get).mockResolvedValue({ bytes: svg, contentType: 'image/svg+xml' });
+
+    const response = await api().get('/api/connectors/catalog/logos/notion').expect(200);
+
+    expect(deps.logos.get).toHaveBeenCalledWith('notion');
+    expect(response.headers['content-type']).toBe('image/svg+xml');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    );
+    expect(response.headers['cache-control']).toBe('private, max-age=604800');
+    expect(Buffer.from(response.body as Buffer).equals(svg)).toBe(true);
+  });
+
+  it('answers 404 for an app with no logo, without asking an owner', async () => {
+    const resolveOwner = vi.fn(() => OWNER);
+    const ownerless = express();
+    ownerless.use('/api/connectors', createConnectorResourcesRouter({ ...deps, resolveOwner }));
+
+    const response = await request(fixtureTarget.mount(ownerless))
+      .get('/api/connectors/catalog/logos/unknown-app')
+      .expect(404);
+
+    expect(resolveOwner).not.toHaveBeenCalled();
+
+    expect(response.body).toEqual({ error: 'This app has no logo.' });
+    expect(response.headers['cache-control']).toBe('private, max-age=300');
+  });
 
   it('keeps catalog account-free and validates its bounded query', async () => {
     await api().get('/api/connectors/catalog?q=gmail&limit=20').expect(200, {

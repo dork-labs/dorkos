@@ -18,6 +18,8 @@ interface AccountAttentionStepProps {
   attention: AccountAttention;
   /** The app's display name. */
   serviceName: string;
+  /** The catalog's same-origin logo path for the app, when it has one. */
+  logo?: string;
   /** The agent asking. */
   agentName: string;
   /** Answer "Not now". */
@@ -53,6 +55,7 @@ export function AccountAttentionStep({
   account,
   attention,
   serviceName,
+  logo,
   agentName,
   onDecline,
   deciding,
@@ -69,6 +72,8 @@ export function AccountAttentionStep({
     <AccessCardFrame
       titleId={titleId}
       toolkit={account.toolkit}
+      serviceName={serviceName}
+      logo={logo}
       title={`Let ${agentName} use ${serviceName}?`}
       subtitle={account.label}
       className="max-w-xl"

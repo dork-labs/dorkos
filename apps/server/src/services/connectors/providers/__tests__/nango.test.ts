@@ -246,6 +246,34 @@ describe('NangoConnectorProvider — degrade contract on transport failure', () 
     await expect(provider.startConnect('gmail')).rejects.toThrow(/no authorize URL/);
   });
 
+  it('carries an integration’s logo URL into the toolkit', async () => {
+    const client: NangoHttpClient = {
+      listIntegrations: () =>
+        Promise.resolve([
+          {
+            uniqueKey: 'slack',
+            provider: 'slack',
+            displayName: 'Slack',
+            authMode: 'OAUTH2',
+            logoUrl: 'https://app.nango.dev/images/template-logos/slack.svg',
+          },
+        ]),
+      initiateConnection: () => Promise.resolve({ connectionRequestId: 'cs_1', authorizeUrl: '' }),
+      getConnectionState: () => Promise.resolve({ status: 'PENDING' }),
+      listConnections: () => Promise.resolve([]),
+      deleteConnection: () => Promise.resolve(),
+    };
+
+    await expect(new NangoConnectorProvider({ client }).listToolkits()).resolves.toEqual([
+      {
+        slug: 'slack',
+        displayName: 'Slack',
+        authKind: 'oauth2',
+        logoUrl: 'https://app.nango.dev/images/template-logos/slack.svg',
+      },
+    ]);
+  });
+
   it('does NOT swallow a non-transport error (a genuine bug still surfaces)', async () => {
     const client = new FakeNangoClient();
     client.failWith(new TypeError('bug in mapping'));

@@ -384,6 +384,8 @@ export class ComposioConnectorProvider implements ConnectorProvider {
       slug: tk.slug,
       displayName: tk.name,
       authKind: toAuthKind(tk.authScheme),
+      ...(tk.logoUrl && { logoUrl: tk.logoUrl }),
+      ...(tk.description && { description: tk.description }),
     }));
   }
 

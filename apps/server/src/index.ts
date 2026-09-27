@@ -142,6 +142,7 @@ import { ConnectorReconciliationService } from './services/connectors/reconcilia
 import { ConnectorAuthenticationFlowService } from './services/connectors/resources/authentication-flow-service.js';
 import { ConnectorLifecycleService } from './services/connectors/resources/lifecycle-service.js';
 import { ConnectorOperatorQueryService } from './services/connectors/resources/operator-query-service.js';
+import { CatalogLogoService } from './services/connectors/resources/catalog-logos.js';
 import { ManagedAuthoritySyncService } from './services/connectors/resources/managed-authority-sync-service.js';
 import { ManagedCloudConnectorProvider } from './services/connectors/providers/managed/managed-cloud.js';
 import { legacyDefaultProviderInstanceId } from './services/connectors/legacy-connection-migration.js';
@@ -3177,29 +3178,38 @@ async function start() {
         : undefined;
     }
   );
-  const connectorOperatorQueries = new ConnectorOperatorQueryService({
-    db,
-    registry: connectorRegistry,
-    recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
-    appConnections: () => connectorBootstrapper.appConnections(),
-    ...(adapterManager && { relay: adapterManager }),
-    agentOwnership: { ownsAgent: connectorOwnsAgent },
-    managedUsage: getCloudLinkManager(),
-    sessions: {
-      resolveSessionAgent: async (owner, sessionId) => {
-        if (
-          owner.kind !== connectorOwner.kind ||
-          owner.kind !== 'local_install' ||
-          owner.installationId !== connectorOwner.installationId
-        ) {
-          return undefined;
-        }
-        const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
-        const agent = agentPath ? meshCore?.getByPath(agentPath) : undefined;
-        return agent ? { agentId: agent.id } : undefined;
-      },
-    },
+  // The logo cache reads the catalog for a logo's source, and the catalog asks
+  // the cache which logos it already keeps; both closures run only per request.
+  const catalogLogos: CatalogLogoService = new CatalogLogoService({
+    dorkHome,
+    sources: (signal) => connectorOperatorQueries.logoSources(signal),
   });
+  const connectorOperatorQueries: ConnectorOperatorQueryService = new ConnectorOperatorQueryService(
+    {
+      db,
+      registry: connectorRegistry,
+      keptLogos: () => catalogLogos.keptServiceIds(),
+      recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
+      appConnections: () => connectorBootstrapper.appConnections(),
+      ...(adapterManager && { relay: adapterManager }),
+      agentOwnership: { ownsAgent: connectorOwnsAgent },
+      managedUsage: getCloudLinkManager(),
+      sessions: {
+        resolveSessionAgent: async (owner, sessionId) => {
+          if (
+            owner.kind !== connectorOwner.kind ||
+            owner.kind !== 'local_install' ||
+            owner.installationId !== connectorOwner.installationId
+          ) {
+            return undefined;
+          }
+          const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
+          const agent = agentPath ? meshCore?.getByPath(agentPath) : undefined;
+          return agent ? { agentId: agent.id } : undefined;
+        },
+      },
+    }
+  );
   const connectorAuthorization = new ConnectorExecutionAuthorizationService(db, connectorRegistry, {
     ownsAgent: connectorOwnsAgent,
   });
@@ -3889,6 +3899,7 @@ async function start() {
     '/api/connectors',
     createConnectorResourcesRouter({
       query: connectorOperatorQueries,
+      logos: catalogLogos,
       authentication: connectorAuthenticationFlows,
       lifecycle: connectorLifecycle,
       resolveOwner: () => connectorOwner,

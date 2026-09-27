@@ -387,6 +387,7 @@ export function ConnectDialog({
                   mode="page"
                   connectionId={activeFlow.connectionId}
                   serviceName={serviceName}
+                  logo={resolvedService?.logo}
                   onSkip={() => {
                     finish();
                     onConnected?.(activeFlow.connectionId);

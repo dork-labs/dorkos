@@ -59,6 +59,7 @@ import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
 import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';
+import { catalogLogoPath } from './catalog-logos.js';
 
 const CATALOG_PROVIDER_PAGE_SIZE = 100;
 const CATALOG_PROVIDER_PAGE_LIMIT = 100;
@@ -116,6 +117,12 @@ export interface ConnectorOperatorQueryServiceOptions {
   readonly recoverManagedProvider?: () => Promise<void>;
   /** Every way set up to reach apps, and the one new apps use. */
   readonly appConnections?: () => Promise<ConnectorAppConnections>;
+  /**
+   * The service ids whose logo this server already keeps. An app whose own
+   * list sends no logo (the DorkOS account's) still shows one another service
+   * brought for the same id.
+   */
+  readonly keptLogos?: () => Promise<ReadonlySet<string>>;
 }
 
 function ownerColumns(owner: ConnectorOwnerAuthority): {
@@ -168,6 +175,10 @@ interface CatalogServiceDraft {
   iconKey: string;
   accountRoutes: ConnectorCatalogProviderRoute[];
   builtIn?: BuiltInApp;
+  /** The first logo URL a live service sent for the app; the server's logo route fetches it. */
+  logoUrl?: string;
+  /** The first description a live service sent; the built-in line wins over it. */
+  description?: string;
 }
 
 /** A built-in app's place in the hand-picked order; every other service sorts after them. */
@@ -225,6 +236,7 @@ export class ConnectorOperatorQueryService {
   private readonly managedUsage: ConnectorManagedUsageQueryPort | undefined;
   private readonly recoverManagedProvider: (() => Promise<void>) | undefined;
   private readonly appConnections: (() => Promise<ConnectorAppConnections>) | undefined;
+  private readonly keptLogos: (() => Promise<ReadonlySet<string>>) | undefined;
 
   /** Construct owner projections over canonical connector state. */
   constructor(options: ConnectorOperatorQueryServiceOptions) {
@@ -236,6 +248,7 @@ export class ConnectorOperatorQueryService {
     this.managedUsage = options.managedUsage;
     this.recoverManagedProvider = options.recoverManagedProvider;
     this.appConnections = options.appConnections;
+    this.keptLogos = options.keptLogos;
   }
 
   /** Return a bounded account-free catalog page across every live provider. */
@@ -297,6 +310,20 @@ export class ConnectorOperatorQueryService {
       warnings,
       routeTypes: this.registry.listProviders().map((provider) => provider.type),
     };
+  }
+
+  /**
+   * Every listed app a live connection service sent a logo URL for: service id
+   * to that URL. The same read as {@link catalog}, so the logo route only ever
+   * fetches a URL the server's own app list recorded, never one a request names.
+   */
+  async logoSources(signal: AbortSignal): Promise<ReadonlyMap<string, string>> {
+    const { logoSources } = await this.collectCatalog({
+      query: '',
+      includeAuthenticationSetup: false,
+      signal,
+    });
+    return logoSources;
   }
 
   private async collectCatalog(input: {
@@ -375,6 +402,8 @@ export class ConnectorOperatorQueryService {
                 iconKey: toolkit.slug,
                 accountRoutes: [],
               };
+              current.logoUrl ??= toolkit.logoUrl;
+              current.description ??= toolkit.description;
               current.accountRoutes.push({
                 ...disclosure,
                 ...(toolkit.authentication && {
@@ -408,8 +437,15 @@ export class ConnectorOperatorQueryService {
       })
     );
 
+    const kept = await this.keptLogos?.();
+    const logoSources = new Map<string, string>();
     const all = [...services.values()]
-      .map(({ accountRoutes, builtIn, ...service }) => {
+      .map(({ accountRoutes, builtIn, logoUrl, description, ...service }) => {
+        if (logoUrl) logoSources.set(service.serviceSlug, logoUrl);
+        const logo =
+          logoUrl || kept?.has(service.serviceSlug)
+            ? catalogLogoPath(service.serviceSlug)
+            : undefined;
         const intents: ConnectorCatalogResourcePage['services'][number]['intents'] = [];
         if (builtIn?.chat || this.relay?.getManifest(service.serviceSlug)) {
           intents.push({
@@ -429,11 +465,14 @@ export class ConnectorOperatorQueryService {
             ),
           });
         }
+        // DorkOS's own line for a built-in app wins over the service's.
+        const line = builtIn?.description ?? description;
         return {
           ...service,
           intents,
+          ...(line && { description: line }),
+          ...(logo && { logo }),
           ...(builtIn && {
-            description: builtIn.description,
             category: builtIn.category,
             popular: true,
             ...(builtIn.signInName && { signInName: builtIn.signInName }),
@@ -447,7 +486,7 @@ export class ConnectorOperatorQueryService {
           left.displayName.localeCompare(right.displayName) ||
           left.serviceSlug.localeCompare(right.serviceSlug)
       );
-    return { all, warnings };
+    return { all, warnings, logoSources };
   }
 
   /** List every stable connection owned by the verified operator. */
