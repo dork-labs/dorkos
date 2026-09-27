@@ -15,8 +15,9 @@ interface WhoCanUseChoiceProps {
  * The page card's first question (DOR-2420): "Only agents I pick" or "Every
  * agent (including agents you add later)". Never shown in the chat's one-agent
  * card, where the person is answering for one agent. Where "Every agent" can't
- * be offered — an app connected through a DorkOS account today — it stays in
- * view, disabled, with the reason in plain words.
+ * be offered — an app connected through a DorkOS account while this computer
+ * cannot reach the service that keeps its access — it stays in view, disabled,
+ * with the reason in plain words.
  */
 export function WhoCanUseChoice({ value, onChange, everyAgentAvailable }: WhoCanUseChoiceProps) {
   const baseId = useId();
@@ -49,8 +50,7 @@ export function WhoCanUseChoice({ value, onChange, everyAgentAvailable }: WhoCan
           <span className="text-muted-foreground text-xs">Including agents you add later</span>
           {!everyAgentAvailable && (
             <span id={`${baseId}-every-unavailable`} className="text-muted-foreground text-xs">
-              Not available yet for apps connected through your DorkOS account. Pick agents one by
-              one.
+              Not available for this app right now. Pick agents one by one.
             </span>
           )}
         </Label>

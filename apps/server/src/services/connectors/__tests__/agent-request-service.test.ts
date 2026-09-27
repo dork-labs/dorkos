@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionOperationGrants,
   connectorAgentRequests,
+  connectorManagedAuthorityOutbox,
+  connectorManagedAuthorityScopes,
   connectorOperationRevisions,
   connectorProviderInstances,
   connectorReviewRequests,
@@ -948,7 +950,7 @@ describe('ConnectorAgentRequestService', () => {
       expect(db.select().from(connectionOperationGrants).all()).toEqual(before);
     });
 
-    it('does not count "Every agent" on a managed account, which the server never honours', async () => {
+    it('counts "Every agent" on a managed account once hosted authority has applied it', async () => {
       db.update(connectorProviderInstances)
         .set({ mode: 'managed', custody: 'managed' })
         .where(eq(connectorProviderInstances.id, 'provider-1'))
@@ -957,12 +959,55 @@ describe('ConnectorAgentRequestService', () => {
       const created = await requests.create(principal(), INPUT);
       shareWithEveryAgent(['revision-read']);
 
+      // Nothing hosted has applied yet: the answer waits (DOR-2439).
       await expect(
         requests.resolve(OWNER, created.requestId, {
           decision: 'current_access',
           connectionId: CONNECTION_ID,
         })
-      ).rejects.toMatchObject({ code: 'selection_invalid' });
+      ).rejects.toMatchObject({ code: 'authority_sync_failed' });
+
+      const stamp = NOW.toISOString();
+      db.insert(connectorManagedAuthorityOutbox)
+        .values({
+          commandId: 'every-agent-v1',
+          connectionId: 'connection-1',
+          providerInstanceId: 'provider-1',
+          executionConfigGeneration: 1,
+          ownerKind: 'local_install',
+          ownerId: 'install-1',
+          managedConnectionId: 'private-account-ref',
+          scopeKind: 'every_agent_grants',
+          subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+          scopeVersion: 1,
+          requestHash: 'hash',
+          requestJson: '{}',
+          state: 'applied',
+          createdAt: stamp,
+          updatedAt: stamp,
+        })
+        .run();
+      db.insert(connectorManagedAuthorityScopes)
+        .values({
+          managedConnectionId: 'private-account-ref',
+          scopeKind: 'every_agent_grants',
+          subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+          scopeVersion: 1,
+          lastCommandId: 'every-agent-v1',
+          lastCommandHash: 'hash',
+          updatedAt: stamp,
+        })
+        .run();
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).resolves.toMatchObject({
+        status: 'granted',
+        grantedOperationRevisionIds: ['revision-read'],
+      });
     });
 
     /** Scope this session's use of the account by hand, as Connections does. */

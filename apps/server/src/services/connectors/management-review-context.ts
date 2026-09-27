@@ -124,9 +124,7 @@ export class ConnectorManagementReviewContextBuilder {
           [...new Set(grants.map((grant) => grant.operationRevisionId))].sort()
         ),
         keptThroughEveryAgent: this.readOperationContext(
-          connection.providerMode === 'managed'
-            ? []
-            : this.everyAgentRevisionIds(action.connectionId)
+          this.everyAgentRevisionIds(action.connectionId)
         ),
       };
     }
@@ -156,9 +154,7 @@ export class ConnectorManagementReviewContextBuilder {
       kind: action.kind,
       connection: publicConnection,
       affectedAgentCount: agentIds.size,
-      everyAgent:
-        connection.providerMode !== 'managed' &&
-        this.everyAgentRevisionIds(action.connectionId).length > 0,
+      everyAgent: this.everyAgentRevisionIds(action.connectionId).length > 0,
       affectedOperations: this.readOperationContext(
         [...new Set(grants.map((grant) => grant.operationRevisionId))].sort()
       ),
@@ -179,17 +175,7 @@ export class ConnectorManagementReviewContextBuilder {
    */
   withLiveEveryAgent(context: ConnectorManagementReviewContext): ConnectorManagementReviewContext {
     if (context.kind !== 'remove_agent_access' && context.kind !== 'disconnect') return context;
-    const connectionId = context.connection.connectionId;
-    const mode = this.db
-      .select({ mode: connectorProviderInstances.mode })
-      .from(connections)
-      .innerJoin(
-        connectorProviderInstances,
-        eq(connectorProviderInstances.id, connections.providerInstanceId)
-      )
-      .where(eq(connections.id, connectionId))
-      .get()?.mode;
-    const shared = mode === 'byo' ? this.everyAgentRevisionIds(connectionId) : [];
+    const shared = this.everyAgentRevisionIds(context.connection.connectionId);
     return context.kind === 'disconnect'
       ? { ...context, everyAgent: shared.length > 0 }
       : { ...context, keptThroughEveryAgent: this.readOperationContext(shared) };
