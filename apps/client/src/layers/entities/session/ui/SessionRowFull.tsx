@@ -256,7 +256,10 @@ export function SessionRowFull({
                   />
                   <AccountMark account={account} tooltip={false} />
                   <div
-                    className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs"
+                    // Full muted, never dimmed further: the title must clear
+                    // 4.5:1 on the sidebar and on the red row tint in both
+                    // themes (the design system's muted rule, DOR-1098).
+                    className="text-muted-foreground min-w-0 flex-1 truncate text-xs"
                     title={onRename ? 'Click the pencil icon to rename' : undefined}
                   >
                     {sessionDisplayTitle(session.title)}

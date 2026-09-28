@@ -159,13 +159,16 @@ export function SessionRowCompact({
                 <span
                   className={cn(
                     'text-3xs whitespace-nowrap',
-                    limitDisplay.needsAction ? STATUS_TONE_TEXT.error : 'text-muted-foreground/60'
+                    limitDisplay.needsAction ? STATUS_TONE_TEXT.error : 'text-muted-foreground'
                   )}
                 >
                   {limitDisplay.text}
                 </span>
               ) : (
-                <span className="text-muted-foreground/60 text-3xs">{relativeTime}</span>
+                // Full muted, never dimmed further: a label on the sidebar and
+                // on the red row tint must clear 4.5:1 in both themes (the
+                // design system's muted rule, DOR-1098).
+                <span className="text-muted-foreground text-3xs">{relativeTime}</span>
               )}
             </span>
           </button>

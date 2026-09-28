@@ -191,13 +191,15 @@ export function AccountMarkShowcase() {
 
       <AccountsDemo>
         <ShowcaseLabel>{`Rows, top to bottom: ${ROWS.map((row) => row.label).join('; ')}.`}</ShowcaseLabel>
-        <ShowcaseLabel>Full rows</ShowcaseLabel>
+        <ShowcaseLabel>
+          Compact rows (the full rows are on the Components page, “SessionRow out of usage”)
+        </ShowcaseLabel>
         <ShowcaseDemo>
           <SidebarColumn>
             {ROWS.map(({ session }) => (
               <SessionRow
                 key={session.id}
-                variant="full"
+                variant="compact"
                 session={session}
                 isActive={false}
                 onClick={() => {}}
@@ -205,14 +207,32 @@ export function AccountMarkShowcase() {
             ))}
           </SidebarColumn>
         </ShowcaseDemo>
+      </AccountsDemo>
+    </PlaygroundSection>
+  );
+}
 
-        <ShowcaseLabel>Compact rows</ShowcaseLabel>
+/**
+ * The same out-of-usage states on FULL session rows, kept on the Components
+ * page rather than the Sidebar Model page. The full row is a `role="button"`
+ * that holds its own rename and details buttons, which axe reports as
+ * `nested-interactive`; the Sidebar Model page runs a zero-violation axe gate,
+ * and that defect belongs to the full row itself, not to these states.
+ */
+export function AccountFullRowsShowcase() {
+  return (
+    <PlaygroundSection
+      title="SessionRow out of usage"
+      description="Full session rows with two or more Claude accounts: the account dot before the title, and what a session that ran out says where its time sits."
+    >
+      <AccountsDemo>
+        <ShowcaseLabel>{`Top to bottom: ${ROWS.map((row) => row.label).join('; ')}.`}</ShowcaseLabel>
         <ShowcaseDemo>
           <SidebarColumn>
             {ROWS.map(({ session }) => (
               <SessionRow
                 key={session.id}
-                variant="compact"
+                variant="full"
                 session={session}
                 isActive={false}
                 onClick={() => {}}
