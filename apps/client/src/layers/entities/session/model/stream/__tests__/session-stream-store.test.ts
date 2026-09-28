@@ -1644,3 +1644,45 @@ describe('useSessionStreamStore — runtime-opened turn windows', () => {
     expect(store.getState().sessions[SID]?.turnOrigin).toBe('runtime');
   });
 });
+
+describe('the live-usage stamp (spec claude-account-ui §6.8)', () => {
+  const usageFrame = (seq: number, utilization: number): SessionEvent => ({
+    type: 'status_change',
+    seq,
+    status: { usage: { kind: 'subscription', utilization } },
+  });
+  const stamp = () => useSessionStreamStore.getState().sessions[SID]!.usageArrivedAt;
+
+  beforeEach(() => {
+    useSessionStreamStore.getState().removeSession(SID);
+  });
+
+  it('stamps a live usage frame, and never a snapshot', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    expect(stamp()).toBeNull();
+    store.applyEvent(SID, usageFrame(6, 0.4));
+    expect(stamp()).not.toBeNull();
+  });
+
+  it('keeps the previous stamp for frames replayed after a reconnect', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    // The laptop sleeps; the stream drops and comes back, replaying the gap.
+    store.setConnectionState(SID, 'reconnecting');
+    store.setConnectionState(SID, 'connected');
+    store.applyEvent(SID, usageFrame(6, 0.9));
+    expect(stamp()).toBeNull();
+  });
+
+  it('stamps again once a turn this window triggered starts', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    store.setConnectionState(SID, 'reconnecting');
+    store.setConnectionState(SID, 'connected');
+    store.setTriggerPending(SID, true);
+    store.applyEvent(SID, { type: 'turn_start', seq: 6 });
+    store.applyEvent(SID, usageFrame(7, 0.5));
+    expect(stamp()).not.toBeNull();
+  });
+});

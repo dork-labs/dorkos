@@ -66,6 +66,29 @@ function costHeading(usage: UsageStatus): string {
 }
 
 /**
+ * The rows under a subscription's utilization: the session's cost (named the
+ * way every cost is, "Estimated" when no price matched), the note on how it was
+ * priced, the runtime's detail line, and "Rate limit reached" when out. Shared
+ * by {@link UsageDetail} and the `/context` reveal's window bars, so the cost
+ * reads the same everywhere.
+ *
+ * @param props - The usage descriptor whose cost to show.
+ */
+export function UsageCostRows({ usage }: UsageDetailProps) {
+  const basisNote = costBasisNote(usage);
+  return (
+    <>
+      {usage.costUsd != null && (
+        <DetailRow label={costHeading(usage)}>{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+      )}
+      {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
+      {usage.detail && <div className="text-amber-500">{usage.detail}</div>}
+      {usage.state === 'exhausted' && <div className="text-red-500">Rate limit reached</div>}
+    </>
+  );
+}
+
+/**
  * The usage & cost detail body — utilization, window, resets, and cost for a
  * subscription; the cost figure for pay-as-you-go. Shared by the status-bar
  * item's hover tooltip and the pinned `/context` reveal so both read identically
@@ -77,7 +100,6 @@ export function UsageDetail({ usage }: UsageDetailProps) {
   const basisNote = costBasisNote(usage);
   if (usage.kind === 'subscription' && usage.utilization != null) {
     const pct = Math.round(usage.utilization * 100);
-    const isExhausted = usage.state === 'exhausted';
     const resetsAtLabel = usage.resetsAt
       ? new Date(usage.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : null;
@@ -88,12 +110,7 @@ export function UsageDetail({ usage }: UsageDetailProps) {
           <DetailRow label="Utilization">{`${pct}%`}</DetailRow>
           {usage.windowLabel && <DetailRow label="Window">{usage.windowLabel}</DetailRow>}
           {resetsAtLabel && <DetailRow label="Resets at">{resetsAtLabel}</DetailRow>}
-          {usage.costUsd != null && (
-            <DetailRow label="Session cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
-          )}
-          {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
-          {usage.detail && <div className="text-amber-500">{usage.detail}</div>}
-          {isExhausted && <div className="text-red-500">Rate limit reached</div>}
+          <UsageCostRows usage={usage} />
         </div>
       </div>
     );

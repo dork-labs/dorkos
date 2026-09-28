@@ -14,6 +14,7 @@ import {
   pickUsage,
   readableWindows,
   staleNumberClass,
+  withExpiredWindows,
 } from '../lib/account-usage-status';
 
 type UsageWindow = AccountUsage['windows'][number];
@@ -88,6 +89,26 @@ describe('accountUsageToStatus', () => {
     expect(status?.windowLabel).toBe('Weekly');
   });
 
+  it('reads the state again from the windows in force once one has reset', () => {
+    // The 5-hour window hit 100% and was limited, then reset; the week is at 30%.
+    const afterReset = account(
+      [
+        usageWindow({ usedPct: 100, status: 'rejected', resetsAt: '2026-09-28T11:30:00.000Z' }),
+        usageWindow({ key: 'seven_day', label: 'Weekly', usedPct: 30, resetsAt: null }),
+      ],
+      'limited'
+    );
+    expect(accountUsageToStatus(afterReset, NOW)?.state).toBe('ok');
+    const nearOnWeek = account(
+      [
+        usageWindow({ usedPct: 100, expired: true }),
+        usageWindow({ key: 'seven_day', label: 'Weekly', usedPct: 92, resetsAt: null }),
+      ],
+      'limited'
+    );
+    expect(accountUsageToStatus(nearOnWeek, NOW)?.state).toBe('warning');
+  });
+
   it('returns null for a spend-only record, so pay-as-you-go keeps showing', () => {
     const spendOnly = createMockAccountUsage({
       runtime: 'opencode',
@@ -109,6 +130,24 @@ describe('accountUsageToStatus', () => {
     expect(accountUsageToStatus(account([usageWindow({ usedPct: null })], 'unknown'), NOW)).toBe(
       null
     );
+  });
+});
+
+describe('withExpiredWindows', () => {
+  it('marks a window past its reset the way the server does, so every surface agrees', () => {
+    const past = account([
+      usageWindow({ usedPct: 95, status: 'allowed_warning', resetsAt: '2026-09-28T11:00:00.000Z' }),
+      usageWindow({ key: 'seven_day', usedPct: 30, resetsAt: null }),
+    ]);
+    const [fiveHour, week] = withExpiredWindows(past, NOW)!.windows;
+    expect(fiveHour).toMatchObject({ expired: true, usedPct: 0, status: null });
+    expect(week).toMatchObject({ expired: false, usedPct: 30 });
+  });
+
+  it('returns the same record when nothing has reset', () => {
+    const fresh = account([usageWindow({ resetsAt: null })]);
+    expect(withExpiredWindows(fresh, NOW)).toBe(fresh);
+    expect(withExpiredWindows(null, NOW)).toBeNull();
   });
 });
 

@@ -113,6 +113,29 @@ describe('UsageRevealPopover — the account windows (spec claude-account-ui §6
     expect(screen.getByText('as of 12 min ago')).toBeInTheDocument();
   });
 
+  it('keeps the cost worded as it is everywhere else under the bars', () => {
+    render(
+      <UsageRevealPopover
+        usage={{
+          kind: 'subscription',
+          utilization: 1,
+          state: 'exhausted',
+          costUsd: 1.5,
+          costBasis: 'unknown',
+          detail: 'Using overage capacity',
+        }}
+        accountUsage={account}
+        open
+        onOpenChange={vi.fn()}
+        now={NOW}
+      />
+    );
+    expect(screen.getByText('Estimated session cost')).toBeInTheDocument();
+    expect(screen.getByText('Estimated — no price was listed for this model.')).toBeInTheDocument();
+    expect(screen.getByText('Using overage capacity')).toBeInTheDocument();
+    expect(screen.getByText('Rate limit reached')).toBeInTheDocument();
+  });
+
   it('reads "just now" for a reading under a minute old', () => {
     render(
       <UsageRevealPopover

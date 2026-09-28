@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { DetailRow, Popover, PopoverAnchor, PopoverContent, UsageBar } from '@/layers/shared/ui';
+import { Popover, PopoverAnchor, PopoverContent, UsageBar } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { popoverWindowLabel } from '../lib/account-chip';
 import { hasRenderableUsage, newestObservedAt, readableWindows } from '../lib/account-usage-status';
-import { UsageDetail } from './UsageStatusItem';
+import { UsageCostRows, UsageDetail } from './UsageStatusItem';
 import { UsageFreshnessLine } from './UsageFreshnessLine';
 
 interface UsageRevealPopoverProps {
@@ -71,9 +71,9 @@ export function UsageRevealPopover({
             />
           ))}
         </div>
-        {usage?.costUsd != null && (
-          <div className="text-3xs">
-            <DetailRow label="Session cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+        {usage && (
+          <div className="text-3xs space-y-0.5">
+            <UsageCostRows usage={usage} />
           </div>
         )}
       </div>

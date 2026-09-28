@@ -326,6 +326,17 @@ describe('AccountPopover', () => {
     expect(within(dialog).getByText('reset')).toBeInTheDocument();
   });
 
+  it('reads "reset" for a window past its reset the server has not marked yet', async () => {
+    // A cached reading: the 5-hour window reset a minute ago, still at 97%.
+    const past = new Date(NOW.getTime() - 60_000).toISOString();
+    const cached = usage({
+      windows: [win('five_hour', '5-hour window', 97, past), win('seven_day', 'Weekly', 72, null)],
+    });
+    const { dialog } = await openPopover({ account: account({ usage: cached }) });
+    expect(within(dialog).getByRole('img', { name: '5-hour reset' })).toBeInTheDocument();
+    expect(within(dialog).queryByText(/97%/)).not.toBeInTheDocument();
+  });
+
   it('leaves the plan out when no source reported one', async () => {
     const { dialog } = await openPopover({
       account: account({ usage: usage({ plan: null, subscriptionType: null }) }),
