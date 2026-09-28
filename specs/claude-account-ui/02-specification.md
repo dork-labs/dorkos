@@ -412,10 +412,10 @@ A "Flow" tab in DorkOS's right-side panel, contributed by the Flow extension thr
   | in review      | `drain.phase` `reviewing`, `pr-ready` or `watching`                                                                                                                                                                                                                                                                                                                                                     |
   | building       | `drain.phase` `working`, `fixing`, `fixing-ci` or `closing`; a `queued` run; an interactive run with no drain record                                                                                                                                                                                                                                                                                    |
 
-- **Footer:** a "Pause flow" button and muted "· 2 of 3 slots busy": busy = live runs; total = the sum of each shown project's `drain.parallel`, where `0` (flow's sequential default) counts as 1. Pause acts on every project the panel shows runs or drain settings for (with none, the button is disabled), calling flow's `pauseFlow` for each; Resume calls flow's resume for each. When all are paused the button reads "Resume flow" and the slots text "paused" (Q25); when only some are, it reads "Pause flow" and pauses the rest. Resume cannot turn DorkOS schedules back on (the extension has no schedule API): when flow's resume reports schedules that `/flow:pause` switched off, the footer adds "Turn flow's schedules back on in Tasks." (Q28).
+- **Footer:** a "Pause flow" button and muted "· 2 of 3 slots busy": busy = live runs; total = the sum of each shown project's `drain.parallel`, where `0` (flow's sequential default) counts as 1. Pause acts on every project the panel shows runs or drain settings for (with none, the button is disabled), calling flow's `pauseFlow` for each; Resume calls flow's resume for each. When all are paused the button reads "Resume flow" and the slots text "paused" (Q25); when only some are, it reads "Pause flow" and pauses the rest. When Pause or Resume fails, the footer shows "Flow didn't respond, so nothing was changed. Try again." (never flow's raw error, which goes to the browser console). Resume cannot turn DorkOS schedules back on (the extension has no schedule API): when flow's resume reports schedules that `/flow:pause` switched off, the footer adds "Turn flow's schedules back on in Tasks." (Q28).
 - **Clicks:** a run opens its session with `api.navigate('/session?session=<sessionId>&dir=<encoded cwd>')`, where `cwd` is the run's `worktreePath`, else the project checkout; a run with no session yet (queued) is not clickable; an account opens a small details popover drawn by the extension to the decided account-popover content (§6.1: name and plan, one bar per window with its reset time), since an extension cannot open the host's own popover (Q26).
 - **Data:** the extension's server builds the model from flow's zod-free modules (fleet/accounts.ts, fleet/sessions.ts's lenient `readRunStore`, 4.2's drain-settings reader) plus `ctx.accounts.usage()`, served at `GET /api/ext/flow/panel`. For live updates the server calls `ctx.emit('panel', model)` (at most once a second) on `ctx.accounts.onUsage` and run-store changes; the host broadcasts that as `ext:flow:panel` on `/api/events`. An extension's client cannot subscribe to its own event through `api.events`, so the panel opens its own `EventSource` on the host's `/api/events` (through `resolveApiBaseUrl()`), listens for `ext:flow:panel`, and re-fetches every 30 s if the stream fails. The model holds nothing secret (this machine's own accounts and runs).
-- **Look:** built on host CSS variables like the Flow tab (§8.1), matching the mockup's sizes (10px uppercase captions, 12px rows, 8px dots, 4px bar tracks, pill badges). Anything beyond the mockup is an open question.
+- **Look:** built on host CSS variables like the Flow tab (§8.1), matching the mockup's sizes (10px uppercase captions, 12px rows, 8px dots, 4px bar tracks, pill badges). The details the mockup does not show (hover, focus ring, disabled state, icon, pill and bar colours) follow host patterns, decided in `04-design-decisions.md` §11; a window at 91% is amber by the host rule, not the mockup's illustrative red.
 - **Accessibility:** rows are buttons with the account or item named in full; the bars are `role="img"` with the same sentences the host uses; pills are text; the Pause button's pressed state is announced.
 
 ## 9. One account vs two or more
@@ -508,9 +508,9 @@ Per `maintaining-dev-playground`: render the real components with injected data,
 
 Data: `settings-mock-data.ts` gains `color`/`colorIsDefault` on `MOCK_SERVER_CONFIG_MULTI_ACCOUNT` and a `MOCK_ACCOUNT_USAGE` set (one per state, plus a Codex one); `createPlaygroundTransport()` answers `getAccountUsage`, `getContinueOptions` and `getLimitHistory` from fixtures and resolves the write methods without effect; banner showcases pass a `limit` built by `createMockSessionLimit`. The Flow tab lives in the marketplace and is not in the core playground.
 
-## 14. Design questions (Q0-Q23 resolved; Q24-Q28 open)
+## 14. Design questions (Q0-Q28 resolved)
 
-All resolved. The operator approved every proposed default on 2026-09-27, with the Q13 variant below; the orchestrator's behavioral answers are recorded with them. `04-design-decisions.md` §6 is the decision record.
+All resolved. The operator approved every proposed default on 2026-09-27, with the Q13 variant below; the orchestrator's behavioral answers are recorded with them. `04-design-decisions.md` §6 is the decision record; Q24-Q28 (the Flow panel) were decided by the orchestrator on 2026-09-28 and are recorded in §11 there.
 
 - ~~**Q0. Notice placement.**~~ Banner (A) that collapses into a transcript marker (§6.7).
 - ~~**Q1. Wait on a flow run.**~~ A "Wait for reset" on a flow run **delegates to flow** through the advisor (flow waits and resumes; core arms no resume of its own). Served by S4's single-writer rule (§7.3 N10).
@@ -536,11 +536,11 @@ All resolved. The operator approved every proposed default on 2026-09-27, with t
 - ~~**Q21. Implicit account color.**~~ Stone.
 - ~~**Q22. Guide link words.**~~ "How to use all your accounts" (orchestrator, 2026-09-27).
 - ~~**Q23. Roles saved but no Main and nothing in Rotation.**~~ Show a notice, since flow then has nothing it may use: "Flow can't use any account yet. Make one account Main or Rotation." (orchestrator, 2026-09-27).
-- **Q24 (open). The Flow panel with nothing running.** Proposed: one muted line "Nothing is running."
-- **Q25 (open). Paused state in the panel footer.** Proposed: the button reads "Resume flow" and the slots text reads "paused".
-- **Q26 (open). The account details popover in the panel.** An extension cannot open the host's account popover, so the panel draws its own with the decided content (§6.1). Proposed as that, styled like the host popover.
-- **Q27 (open). A run with no title** (runs claimed before flow records titles). Proposed: the item id alone.
-- **Q28 (open). Resuming after `/flow:pause` switched flow's schedules off.** The panel cannot turn DorkOS schedules back on. Proposed: a muted footer line "Turn flow's schedules back on in Tasks."
+- ~~**Q24. The Flow panel with nothing running.**~~ One muted line "Nothing is running." (orchestrator, 2026-09-28).
+- ~~**Q25. Paused state in the panel footer.**~~ The button reads "Resume flow" and the slots text reads "paused" (orchestrator, 2026-09-28).
+- ~~**Q26. The account details popover in the panel.**~~ The panel draws its own with the decided content (§6.1), styled like the host popover (orchestrator, 2026-09-28).
+- ~~**Q27. A run with no title.**~~ The item id alone (orchestrator, 2026-09-28).
+- ~~**Q28. Resuming after `/flow:pause` switched flow's schedules off.**~~ A muted footer line "Turn flow's schedules back on in Tasks." (orchestrator, 2026-09-28).
 
 ## 15. Decisions and assumptions (autonomy grant; reversible)
 
