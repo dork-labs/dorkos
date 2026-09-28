@@ -42,10 +42,15 @@ import type {
 import type {
   ConnectorAppConnections,
   ConnectorAppWay,
-  ConnectorWayProblem,
 } from '@dorkos/shared/connector-resource-schemas';
 import { logger } from '../../lib/logger.js';
-import { chooseNewAppsWay, signInThroughFor, wayProblemFor } from './app-connection-way.js';
+import {
+  chooseNewAppsWay,
+  signInThroughFor,
+  wayProblemFor,
+  type ConnectorWayProblem,
+} from './app-connection-way.js';
+import { wayHealthOf, type ConnectionWayHealth } from './readiness/connection-readiness.js';
 import type { CredentialProvider } from '../core/credential-provider.js';
 import { custodyDisclosure, MANAGED_CUSTODY_CANONICAL_SENTENCE } from './custody-disclosure.js';
 import type { ConnectorRegistry } from './registry.js';
@@ -511,6 +516,20 @@ export class ConnectorProviderBootstrapper {
     });
   }
 
+  /**
+   * The live health of the way one account goes through, as readiness reads
+   * it ({@link ConnectionWayHealth}): down with its fix when its route isn't
+   * registered, or up, and whether agents can act through it.
+   *
+   * @param providerInstanceId - The instance the account was connected through.
+   */
+  wayHealth(providerInstanceId: string): ConnectionWayHealth {
+    return wayHealthOf(
+      this._registry.resolveProviderInstance(providerInstanceId as ConnectorProvider['instanceId']),
+      () => this.wayProblem(providerInstanceId)
+    );
+  }
+
   private _way(
     kind: ConnectorAppWay['kind'],
     type: string,
@@ -523,7 +542,10 @@ export class ConnectorProviderBootstrapper {
       kind,
       type,
       status: ready ? 'ready' : 'unavailable',
-      ...(ready && { providerInstanceId: ready.instanceId }),
+      ...(ready && {
+        providerInstanceId: ready.instanceId,
+        canRunActions: ready.getCapabilities().capabilities.execution.status === 'available',
+      }),
       ...(signInThrough !== undefined && { signInThrough }),
     };
   }

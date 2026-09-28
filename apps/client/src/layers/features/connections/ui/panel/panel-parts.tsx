@@ -41,7 +41,9 @@ export function PanelSection({
 
 /**
  * The one fix a broken or paused app needs, on top of its panel: what is
- * wrong in one sentence, and one button. Nothing else in the panel moves.
+ * wrong in one sentence, and one button. With no button, the line stands
+ * alone: DorkOS is on it, or nothing can be done from here. Nothing else in
+ * the panel moves.
  */
 export function PanelFix({
   message,
@@ -55,10 +57,10 @@ export function PanelFix({
   message: string;
   /** One quieter line under the message: why, and what happens next. */
   detail?: string;
-  /** The fix's button label. */
-  action: string;
+  /** The fix's button label; absent when there is nothing to press. */
+  action?: string;
   /** Run the fix. */
-  onAction: () => void;
+  onAction?: () => void;
   /** True while the fix is running. */
   pending?: boolean;
   /** A second, quieter choice beside the fix. */
@@ -77,18 +79,22 @@ export function PanelFix({
           {detail && <span className="mt-1 block">{detail}</span>}
         </span>
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          onClick={onAction}
-          disabled={pending}
-          className="h-auto min-h-8 max-w-full whitespace-normal"
-        >
-          {pending && <Spinner size="xs" />}
-          {action}
-        </Button>
-        {secondary}
-      </div>
+      {((action && onAction) || secondary) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {action && onAction && (
+            <Button
+              size="sm"
+              onClick={onAction}
+              disabled={pending}
+              className="h-auto min-h-8 max-w-full whitespace-normal"
+            >
+              {pending && <Spinner size="xs" />}
+              {action}
+            </Button>
+          )}
+          {secondary}
+        </div>
+      )}
     </div>
   );
 }

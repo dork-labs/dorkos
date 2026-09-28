@@ -10,7 +10,7 @@ import type {
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectionWays } from '../ui/ConnectionWays';
 
@@ -81,7 +81,7 @@ function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnect
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: createMockConnectionReadiness(),
     ...over,
   };
 }
@@ -148,6 +148,59 @@ describe('ConnectionWays', () => {
     // Nango is not set up, so it is offered under "Add another way", not listed.
     expect(screen.queryByTestId('connection-way-nango')).toBeNull();
     expect(screen.getByRole('button', { name: 'Add another way' })).toBeInTheDocument();
+  });
+
+  it('says a linked DorkOS account that can’t reach apps is not working', async () => {
+    renderWays(
+      createMockTransport({
+        getCloudStatus: vi
+          .fn()
+          .mockResolvedValue({ linked: true, accountLabel: 'me', lastHeartbeatAt: null }),
+        getConnectorProviders: providersFrom([], {
+          ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unavailable' }],
+          newApps: { status: 'setup_needed', reason: 'dorkos_account_unavailable' },
+        }),
+        getConnectorConnections: vi.fn().mockResolvedValue({ connections: [] }),
+      })
+    );
+    const account = await screen.findByTestId('connection-way-dorkos-account');
+    await waitFor(() => expect(account).toHaveTextContent('Can’t reach apps'));
+    expect(account).not.toHaveTextContent('Working');
+    expect(account).toHaveTextContent('it can’t reach apps right now');
+  });
+
+  it('says a key that signs in but can’t run actions, and how to fix it', async () => {
+    const saved = provider({ configured: true, registered: true, keyKind: 'user' });
+    renderWays(
+      createMockTransport({
+        getConnectorProviders: providersFrom([saved], {
+          ways: [
+            {
+              kind: 'own_key',
+              type: 'composio',
+              status: 'ready',
+              providerInstanceId: 'cpi_composio' as never,
+              canRunActions: false,
+            },
+          ],
+          newApps: {
+            status: 'ready',
+            way: {
+              kind: 'own_key',
+              type: 'composio',
+              status: 'ready',
+              providerInstanceId: 'cpi_composio' as never,
+              canRunActions: false,
+            },
+          },
+        }),
+        getConnectorConnections: vi.fn().mockResolvedValue({ connections: [] }),
+      })
+    );
+    const key = await screen.findByTestId('connection-way-composio');
+    await waitFor(() => expect(key).toHaveTextContent('Can’t run actions'));
+    expect(key).toHaveTextContent('Change it to a project key');
+    expect(key).not.toHaveTextContent('Working');
   });
 
   it('marks the way new apps use, only when there is more than one way', async () => {

@@ -371,9 +371,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       revision = 'different-operation-same-count';
       await drain(runtime.sendMessage('s-awareness', 'what changed?', { cwd: agentDir }));
       expect(sdkMocks.prompts.at(-1)).toContain('Access changed');
-      expect(sdkMocks.prompts.at(-1)).toContain(
-        'Currently granted accounts for this agent session: 1'
-      );
+      expect(sdkMocks.prompts.at(-1)).toContain('Accounts this agent session can use right now: 1');
       expect(JSON.stringify(sdkMocks.constructorOptions.at(-1))).toContain('dorkos_connections');
       expect(sdkMocks.prompts.at(-1)).not.toContain(revision);
     });

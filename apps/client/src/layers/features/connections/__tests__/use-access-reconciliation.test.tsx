@@ -69,6 +69,7 @@ function readBack(
 ) {
   return {
     connection: {
+      readiness: { state: 'ready', reason: 'usable' },
       connectionId: 'connection-1',
       reconciliationStatus: connectionStatus,
       authoritySync: { status: 'ready' },

@@ -333,7 +333,10 @@ describe('every-agent grants', () => {
     // The runtime tool list agrees with the check, session by session.
     await expect(
       access.listRuntimeConnections(runtimePrincipal('agent-new', 'session-detached'))
-    ).resolves.toEqual({ connections: [] });
+    ).resolves.toEqual({
+      connections: [],
+      unavailable: [expect.objectContaining({ reason: 'off_for_this_chat' })],
+    });
     const attached = await access.listRuntimeOperations(
       runtimePrincipal('agent-new', 'session-attached'),
       CONNECTION_ID
@@ -463,6 +466,33 @@ describe('every-agent grants', () => {
     expect(await refusal(execute(agentPrincipal('agent-new'), read, 'read'))).toBe(
       'CONNECTOR_NOT_EXECUTABLE'
     );
+  });
+
+  it('refuses a call on an account that isn’t ready with the words for the agent: why, and what the person does', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    const read = revisionId(snapshot, 'gmail.read');
+    const payloadOf = async (promise: Promise<unknown>) => {
+      try {
+        await promise;
+        return undefined;
+      } catch (error) {
+        return (error as { payload?: Record<string, unknown> }).payload;
+      }
+    };
+
+    registry.setPaused(CONNECTION_ID, true);
+    expect(await payloadOf(execute(agentPrincipal('agent-new'), read, 'read'))).toEqual({
+      code: 'CONNECTOR_NOT_EXECUTABLE',
+      reason: 'paused',
+      error: expect.stringContaining('Ask them to resume it'),
+    });
+    registry.setPaused(CONNECTION_ID, false);
+
+    // The way goes: the refusal names that, never "the provider is unavailable".
+    registry.unregisterProviderInstance(provider.instanceId);
+    const gone = await payloadOf(execute(agentPrincipal('agent-new'), read, 'read'));
+    expect(gone).toMatchObject({ reason: 'way_unreachable' });
+    expect(String(gone?.error)).not.toMatch(/provider|connector/i);
   });
 
   it('records sharing that ends because the account was disconnected', async () => {

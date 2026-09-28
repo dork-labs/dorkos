@@ -3,6 +3,7 @@ import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resour
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import { appCount, splitByImpact } from '@/layers/entities/connectors';
 import { groupAppsByWay, keyWayName } from '../lib/connection-ways';
+import { createMockConnectionReadiness } from '@dorkos/test-utils';
 
 function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
   return {
@@ -22,7 +23,7 @@ function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnect
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: createMockConnectionReadiness(),
     ...over,
   };
 }

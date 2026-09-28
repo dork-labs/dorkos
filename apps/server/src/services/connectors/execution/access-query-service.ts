@@ -28,8 +28,12 @@ import {
   type ConnectorUsagePage,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-provider';
-import type { ConnectorWayProblem } from '@dorkos/shared/connector-resource-schemas';
-import { agentWayProblemNote } from '../app-connection-way.js';
+import type { ConnectionReadinessReason } from '@dorkos/shared/connector-schemas';
+import {
+  deriveConnectionReadiness,
+  registryWayHealth,
+  type ConnectionWayHealthPort,
+} from '../readiness/connection-readiness.js';
 import {
   isServerPrincipal,
   type ConnectorOwnerAuthority,
@@ -172,16 +176,38 @@ function grantApplies(
   return row.subjectType === 'session';
 }
 
+/**
+ * True when this chat turned the connection off for its agent: a current
+ * override for this agent says detached, so no other grant counts here.
+ */
+function turnedOffHere(override: SessionOverride | undefined, agentId: string): boolean {
+  return (
+    override !== undefined &&
+    override.agentId === agentId &&
+    !override.needsReconciliation &&
+    override.state === 'detached'
+  );
+}
+
 /** SQLite-backed, owner-scoped access and usage query service. */
 export class ConnectorAccessQueryService {
-  /** Construct owner-bound reads over canonical connector state. */
+  private readonly wayHealth: ConnectionWayHealthPort;
+
+  /**
+   * Construct owner-bound reads over canonical connector state.
+   *
+   * @param wayHealth - The live health of the way behind an account. Without
+   *   it, only the registry is read.
+   */
   constructor(
     private readonly db: Db,
     private readonly agentOwnership: ConnectorAgentOwnershipPort,
     private readonly registry: ConnectorRegistry,
     private readonly runtimePrincipals: ConnectorRuntimeDiscoveryPrincipalPort,
-    private readonly wayProblem?: (providerInstanceId: string) => ConnectorWayProblem | undefined
-  ) {}
+    wayHealth?: ConnectionWayHealthPort
+  ) {
+    this.wayHealth = wayHealth ?? registryWayHealth(registry);
+  }
 
   /** Build a private, server-only awareness snapshot for the next normal agent turn. */
   async accessSnapshot(owner: ConnectorOwnerAuthority, agentId: string, sessionId: string) {
@@ -370,19 +396,13 @@ export class ConnectorAccessQueryService {
     const rows = this.listRuntimeGrantRows(claims.owner, claims.agentId, claims.canonicalSessionId);
     const unique = new Map<string, (typeof rows)[number]>();
     for (const row of rows) unique.set(row.connectionId, row);
-    const unavailable = this.listWayBlockedConnections(
+    const unavailable = this.listUnavailableConnections(
       claims.owner,
       claims.agentId,
       claims.canonicalSessionId
     ).filter((row) => !unique.has(row.connectionId));
     return ConnectorAccessibleConnectionsResponseSchema.parse({
-      ...(unavailable.length > 0 && {
-        unavailable: unavailable.map((row) => ({
-          toolkit: row.toolkit,
-          label: row.label,
-          note: agentWayProblemNote(row.problem),
-        })),
-      }),
+      ...(unavailable.length > 0 && { unavailable }),
       connections: [...unique.values()]
         .sort(
           (left, right) =>
@@ -557,19 +577,25 @@ export class ConnectorAccessQueryService {
   }
 
   /**
-   * Accounts this agent was given that it cannot use only because the way they
-   * were connected through is not working (an unlinked DorkOS account, a key
-   * that stopped answering). Same owner, grant and session-override rules as
-   * {@link listRuntimeGrantRows}; nothing here is executable, it only lets the
-   * agent say why instead of "connect it" (DOR-2494). Empty without a way port.
+   * Accounts this agent was given that it cannot use right now, each with the
+   * readiness reason and what the agent tells the person (DOR-2494, DOR-2500).
+   * Same owner and grant rules as {@link listRuntimeGrantRows}, except that an
+   * account this chat turned off is listed (as off for this chat) rather than
+   * dropped. A disconnected account is not listed: it is no longer the
+   * agent's to use. Access sync is left out: it spans every agent's access,
+   * and execution checks this agent's own.
    */
-  private listWayBlockedConnections(
+  private listUnavailableConnections(
     owner: ConnectorOwnerAuthority,
     agentId: string,
     sessionId: string
-  ): Array<{ connectionId: string; toolkit: string; label: string; problem: ConnectorWayProblem }> {
-    const wayProblem = this.wayProblem;
-    if (!wayProblem) return [];
+  ): Array<{
+    connectionId: string;
+    toolkit: string;
+    label: string;
+    reason: ConnectionReadinessReason;
+    note: string;
+  }> {
     const ownerKey = ownerColumns(owner);
     const overrides = this.sessionOverrides(sessionId);
     const rows = this.db
@@ -579,6 +605,10 @@ export class ConnectorAccessQueryService {
         toolkit: connections.toolkit,
         label: connections.label,
         providerInstanceId: connections.providerInstanceId,
+        enabled: connections.enabled,
+        status: connections.status,
+        reconciliationStatus: connections.grantReconciliationStatus,
+        mode: connectorProviderInstances.mode,
       })
       .from(connectionOperationGrants)
       .innerJoin(connections, eq(connections.id, connectionOperationGrants.connectionId))
@@ -593,28 +623,42 @@ export class ConnectorAccessQueryService {
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
           isNull(connections.removedAt),
-          eq(connections.lifecycleState, 'connected'),
-          eq(connections.enabled, true),
-          eq(connections.status, 'active')
+          eq(connections.lifecycleState, 'connected')
         )
       )
       .all();
-    const blocked = new Map<
+    const unavailable = new Map<
       string,
-      { connectionId: string; toolkit: string; label: string; problem: ConnectorWayProblem }
+      {
+        connectionId: string;
+        toolkit: string;
+        label: string;
+        reason: ConnectionReadinessReason;
+        note: string;
+      }
     >();
     for (const row of rows) {
-      if (!grantApplies(row, overrides.get(row.connectionId), agentId)) continue;
-      const problem = wayProblem(row.providerInstanceId);
-      if (!problem) continue;
-      blocked.set(row.connectionId, {
+      const override = overrides.get(row.connectionId);
+      const offHere = turnedOffHere(override, agentId);
+      if (!offHere && !grantApplies(row, override, agentId)) continue;
+      const readiness = deriveConnectionReadiness({
+        lifecycle: row.enabled ? 'connected' : 'paused',
+        authenticationStatus: row.status,
+        reconciliationStatus: row.reconciliationStatus,
+        mode: row.mode,
+        way: this.wayHealth(row.providerInstanceId),
+        offForThisChat: offHere,
+      });
+      if (readiness.state === 'ready') continue;
+      unavailable.set(row.connectionId, {
         connectionId: row.connectionId,
         toolkit: row.toolkit,
         label: row.label,
-        problem,
+        reason: readiness.reason,
+        note: readiness.copy.agent,
       });
     }
-    return [...blocked.values()].sort(
+    return [...unavailable.values()].sort(
       (left, right) =>
         left.label.localeCompare(right.label) || left.connectionId.localeCompare(right.connectionId)
     );

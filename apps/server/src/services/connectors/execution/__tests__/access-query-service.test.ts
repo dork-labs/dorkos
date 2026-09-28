@@ -245,6 +245,7 @@ describe('ConnectorAccessQueryService', () => {
       .run();
     await expect(service.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
       connections: [],
+      unavailable: [expect.objectContaining({ reason: 'off_for_this_chat' })],
     });
 
     db.update(sessionConnectionOverrides)
@@ -272,7 +273,7 @@ describe('ConnectorAccessQueryService', () => {
     });
   });
 
-  it('says why an account it was given went quiet when its way is down, instead of dropping it silently', async () => {
+  it('says why each account it was given can’t be used, instead of dropping it silently', async () => {
     db.update(connections).set({ enabled: true }).where(eq(connections.id, 'connection-a')).run();
     const withWays = new ConnectorAccessQueryService(
       db,
@@ -281,13 +282,62 @@ describe('ConnectorAccessQueryService', () => {
       { revalidatePrincipal: async () => true },
       (providerInstanceId) =>
         registry.resolveProviderInstance(providerInstanceId as never)
-          ? undefined
-          : 'dorkos_account_unlinked'
+          ? { status: 'up', canRunActions: true }
+          : { status: 'down', problem: 'dorkos_account_unlinked' }
     );
     // Working: listed as usable, nothing under unavailable.
     await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
       connections: [expect.objectContaining({ connectionId: 'connection-a' })],
     });
+
+    // Paused, signed out, or waiting on a review: named, with what the person does.
+    for (const [patch, reason, words] of [
+      [{ enabled: false }, 'paused', 'Ask them to resume it'],
+      [{ status: 'expired' as const }, 'signed_out', 'sign in again'],
+      [
+        { grantReconciliationStatus: 'migration_needs_reconcile' as const },
+        'needs_review',
+        'check who can use this account',
+      ],
+    ] as const) {
+      db.update(connections).set(patch).where(eq(connections.id, 'connection-a')).run();
+      const listed = await withWays.listRuntimeConnections(RUNTIME_PRINCIPAL);
+      expect(listed.connections).toEqual([]);
+      expect(listed.unavailable).toEqual([
+        {
+          connectionId: 'connection-a',
+          toolkit: 'gmail',
+          label: 'Work Gmail',
+          reason,
+          note: expect.stringContaining(words),
+        },
+      ]);
+      db.update(connections)
+        .set({ enabled: true, status: 'active', grantReconciliationStatus: 'ready' })
+        .where(eq(connections.id, 'connection-a'))
+        .run();
+    }
+
+    // Turned off for this chat: named as such, never as "request it".
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'session-a',
+        agentId: 'agent-a',
+        connectionId: 'connection-a',
+        state: 'detached',
+        updatedAt: STARTED_AT,
+      })
+      .run();
+    await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
+      connections: [],
+      unavailable: [
+        expect.objectContaining({
+          reason: 'off_for_this_chat',
+          note: expect.stringContaining('turned this account off for this chat'),
+        }),
+      ],
+    });
+    db.delete(sessionConnectionOverrides).run();
 
     // The way goes (the DorkOS account was unlinked): not usable, but named with the fix.
     registry.unregisterProviderInstance(ConnectorProviderInstanceIdSchema.parse('provider-a'));
@@ -295,9 +345,11 @@ describe('ConnectorAccessQueryService', () => {
     expect(listed.connections).toEqual([]);
     expect(listed.unavailable).toEqual([
       {
+        connectionId: 'connection-a',
         toolkit: 'gmail',
         label: 'Work Gmail',
-        note: expect.stringContaining("isn't linked anymore"),
+        reason: 'dorkos_account_unlinked',
+        note: expect.stringContaining('isn’t linked anymore'),
       },
     ]);
     await expect(
@@ -318,28 +370,20 @@ describe('ConnectorAccessQueryService', () => {
     });
     await expect(withWays.listRuntimeConnections(foreign)).resolves.toEqual({ connections: [] });
 
-    // The same grant and session rules as usable accounts: a chat with the
-    // account turned off, or a paused account, is not named.
-    db.insert(sessionConnectionOverrides)
-      .values({
-        sessionId: 'session-a',
-        agentId: 'agent-a',
-        connectionId: 'connection-a',
-        state: 'detached',
-        updatedAt: STARTED_AT,
-      })
+    // A disconnected account is no longer the agent's: not named.
+    db.update(connections)
+      .set({ lifecycleState: 'disconnected' })
+      .where(eq(connections.id, 'connection-a'))
       .run();
-    await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
-      connections: [],
-    });
-    db.delete(sessionConnectionOverrides).run();
-    db.update(connections).set({ enabled: false }).where(eq(connections.id, 'connection-a')).run();
     await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
       connections: [],
     });
 
     // Another agent's grant on the account never names it to this one.
-    db.update(connections).set({ enabled: true }).where(eq(connections.id, 'connection-a')).run();
+    db.update(connections)
+      .set({ lifecycleState: 'connected' })
+      .where(eq(connections.id, 'connection-a'))
+      .run();
     db.update(connectionOperationGrants)
       .set({ revokedAt: STARTED_AT })
       .where(eq(connectionOperationGrants.id, 'grant-a'))

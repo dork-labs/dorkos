@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ConnectionReadinessSchema } from '../connector-schemas.js';
 import {
   ConnectorAuthoritySyncStateSchema,
   ConnectorAuthenticationFlowStateSchema,
@@ -130,7 +131,12 @@ describe('connector resource schemas', () => {
       everyAgent: null,
       subscriptionCount: 0,
       usage: { status: 'available', logicalOperationCount: 2, attemptCount: 3 },
-      warnings: [],
+      readiness: {
+        state: 'needs_you',
+        reason: 'signed_out',
+        fix: { action: 'sign_in_again', fixableBy: 'person' },
+        copy: { owner: 'Signed out.', agent: 'Ask the person to sign in again.' },
+      },
     } as const;
     const detail = {
       connection: summary,
@@ -228,6 +234,35 @@ describe('connectorCatalogLogoPath', () => {
     expect(ConnectorCatalogLogoPathSchema.safeParse(path).success).toBe(true);
     expect(
       ConnectorCatalogLogoPathSchema.safeParse('https://logos.composio.dev/api/gmail').success
+    ).toBe(false);
+  });
+
+  it('keeps readiness honest: only a usable account is ready, with nothing to fix, and waiting is DorkOS’s job', () => {
+    const copy = { owner: 'Line.', agent: 'Agent line.' };
+    expect(
+      ConnectionReadinessSchema.safeParse({ state: 'ready', reason: 'usable', copy }).success
+    ).toBe(true);
+    expect(
+      ConnectionReadinessSchema.safeParse({ state: 'ready', reason: 'paused', copy }).success
+    ).toBe(false);
+    expect(
+      ConnectionReadinessSchema.safeParse({
+        state: 'ready',
+        reason: 'usable',
+        fix: { action: 'retry', fixableBy: 'dorkos' },
+        copy,
+      }).success
+    ).toBe(false);
+    expect(
+      ConnectionReadinessSchema.safeParse({
+        state: 'finishing',
+        reason: 'access_updating',
+        fix: { action: 'wait', fixableBy: 'person' },
+        copy,
+      }).success
+    ).toBe(false);
+    expect(
+      ConnectionReadinessSchema.safeParse({ state: 'gone', reason: 'made_up', copy }).success
     ).toBe(false);
   });
 });

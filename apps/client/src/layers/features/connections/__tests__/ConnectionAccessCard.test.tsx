@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import {
   ConnectionAccessCard,
@@ -80,7 +80,7 @@ function account(connectionId: string, label: string): ConnectorConnectionSummar
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: createMockConnectionReadiness(),
   };
 }
 

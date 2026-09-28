@@ -39,6 +39,12 @@ import {
   type ServerPrincipalProof,
 } from '../principal/server-principal.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
+import {
+  deriveConnectionReadiness,
+  registryWayHealth,
+  type ConnectionReadinessFacts,
+  type ConnectionWayHealthPort,
+} from '../readiness/connection-readiness.js';
 import { agentGrantScope } from './agent-grant-scope.js';
 
 const CLASSIFICATION_BY_CAPABILITY = {
@@ -167,16 +173,59 @@ function authorityDigest(value: unknown): string {
   return createHash('sha256').update(stableStringify(value)).digest('hex');
 }
 
+/** What an agent reads when an account isn't ready but readiness can't name why. */
+const NOT_READY_FALLBACK =
+  'This account isn’t ready to use right now. Try again in a few minutes, and tell the person if it keeps happening.';
+
 /** SQLite-backed live connector authorization. */
 export class ConnectorExecutionAuthorizationService {
   private readonly preparedExecutions = new WeakSet<object>();
+  private readonly wayHealth: ConnectionWayHealthPort;
 
-  /** Construct the authorization service over canonical stores and live providers. */
+  /**
+   * Construct the authorization service over canonical stores and live providers.
+   *
+   * @param wayHealth - The live health of the way behind an account, for
+   *   refusals that say why it can't be used. Without it, only the registry is read.
+   */
   constructor(
     private readonly db: Db,
     private readonly registry: ConnectorRegistry,
-    private readonly agentOwnership: ConnectorAgentOwnershipPort
-  ) {}
+    private readonly agentOwnership: ConnectorAgentOwnershipPort,
+    wayHealth?: ConnectionWayHealthPort
+  ) {
+    this.wayHealth = wayHealth ?? registryWayHealth(registry);
+  }
+
+  /**
+   * Refuse a call on an account that isn't ready, with the readiness words for
+   * the agent: why, and what the person must do (DOR-2500).
+   */
+  private refuseNotReady(
+    code: string,
+    row: ExecutionRow,
+    extra: Partial<ConnectionReadinessFacts> = {}
+  ): never {
+    const readiness = deriveConnectionReadiness({
+      lifecycle:
+        row.lifecycleState === 'disconnected'
+          ? 'disconnected'
+          : row.enabled
+            ? 'connected'
+            : 'paused',
+      authenticationStatus: row.connectionStatus,
+      reconciliationStatus: row.reconciliationStatus,
+      mode: row.providerMode,
+      way: this.wayHealth(row.providerInstanceId),
+      ...extra,
+    });
+    if (readiness.state === 'ready') return refuse(code, NOT_READY_FALLBACK);
+    throw new CapabilityToolError({
+      error: readiness.copy.agent,
+      code,
+      reason: readiness.reason,
+    });
+  }
 
   /** Produce the authenticated preflight result consumed by the registry tier gate. */
   async preflight(input: PrepareConnectorExecutionInput): Promise<CapabilityPreflightResult> {
@@ -302,10 +351,7 @@ export class ConnectorExecutionAuthorizationService {
       !row.executionConfigDigest ||
       row.executionConfigGeneration < 1
     ) {
-      return refuse(
-        'CONNECTOR_NOT_EXECUTABLE',
-        'The selected connection is not ready for execution.'
-      );
+      return this.refuseNotReady('CONNECTOR_NOT_EXECUTABLE', row);
     }
     const expectedClassification = CLASSIFICATION_BY_CAPABILITY[input.capabilityId];
     if (row.classification !== expectedClassification) {
@@ -331,16 +377,10 @@ export class ConnectorExecutionAuthorizationService {
       ConnectorOperationRevisionSchema.shape.providerInstanceId.parse(row.providerInstanceId)
     );
     if (!provider || provider.type !== row.providerType) {
-      return refuse(
-        'CONNECTOR_PROVIDER_UNAVAILABLE',
-        'The selected connection provider is unavailable.'
-      );
+      return this.refuseNotReady('CONNECTOR_PROVIDER_UNAVAILABLE', row);
     }
     if (provider.getCapabilities().capabilities.execution.status !== 'available') {
-      return refuse(
-        'CONNECTOR_EXECUTION_UNSUPPORTED',
-        'This provider does not support operation execution.'
-      );
+      return this.refuseNotReady('CONNECTOR_EXECUTION_UNSUPPORTED', row);
     }
     const managedHostedRevisionId =
       row.providerMode === 'managed'
@@ -360,10 +400,9 @@ export class ConnectorExecutionAuthorizationService {
     const managedGrantScopeVersion = managedGrant?.scopeVersion;
     const managedGrantSubject = managedGrant?.subject;
     if (row.providerMode === 'managed' && managedGrantScopeVersion === undefined) {
-      return refuse(
-        'CONNECTOR_MANAGED_AUTHORITY_PENDING',
-        'Managed connector access is still synchronizing.'
-      );
+      return this.refuseNotReady('CONNECTOR_MANAGED_AUTHORITY_PENDING', row, {
+        authoritySync: { status: 'pending' },
+      });
     }
     const operation = ConnectorOperationRevisionSchema.parse({
       id: row.operationRevisionId,

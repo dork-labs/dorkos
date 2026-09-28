@@ -12,6 +12,7 @@ import {
   type ConnectionAccessCardProps,
 } from '@/layers/features/connections';
 import { TransportProvider } from '@/layers/shared/model';
+import { READY } from '../mock-samples';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -92,7 +93,7 @@ function account(connectionId: string, label: string): ConnectorConnectionSummar
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: READY,
   };
 }
 

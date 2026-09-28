@@ -155,36 +155,52 @@ describe('ConnectorOperatorQueryService', () => {
     expect(db.select().from(connectionOperationGrants).all()).toHaveLength(1);
   });
 
-  it('marks a kept account whose way is down, so the card asks for that fix, not a new sign-in', async () => {
-    const wayProblem = vi.fn((providerInstanceId: string) =>
-      providerInstanceId === PROVIDER_ID ? ('dorkos_account_unlinked' as const) : undefined
+  it('says on every account whether agents can use it, from its way’s live health', async () => {
+    const wayHealth = vi.fn((providerInstanceId: string) =>
+      providerInstanceId === PROVIDER_ID
+        ? ({ status: 'down', problem: 'dorkos_account_unlinked' } as const)
+        : ({ status: 'up', canRunActions: true } as const)
     );
     const withWays = new ConnectorOperatorQueryService({
       db,
       registry,
       sessions: { resolveSessionAgent: () => undefined },
       agentOwnership: { ownsAgent: () => false },
-      wayProblem,
+      wayHealth,
     });
 
     const [kept] = await withWays.listConnections(OWNER);
-    expect(kept).toMatchObject({
-      connectionId: 'connection-a',
-      wayProblem: 'dorkos_account_unlinked',
+    expect(kept).not.toHaveProperty('warnings');
+    expect(kept?.readiness).toMatchObject({
+      state: 'needs_you',
+      reason: 'dorkos_account_unlinked',
+      fix: { action: 'connect_new', fixableBy: 'person' },
     });
-    expect(wayProblem).toHaveBeenCalledWith(PROVIDER_ID);
+    expect(wayHealth).toHaveBeenCalledWith(PROVIDER_ID);
+    // The detail carries the same answer.
+    expect((await withWays.getConnection(OWNER, 'connection-a')).connection.readiness).toEqual(
+      kept?.readiness
+    );
 
-    // A disconnected account needs its own sign-in whatever its way's state.
+    // Disconnected with nothing owed: connect it again through a way that works.
     db.update(connections)
-      .set({ lifecycleState: 'disconnected' })
+      .set({ lifecycleState: 'disconnected', externalCleanupState: 'complete' })
       .where(eq(connections.id, 'connection-a'))
       .run();
     const [disconnected] = await withWays.listConnections(OWNER);
-    expect(disconnected).not.toHaveProperty('wayProblem');
+    expect(disconnected?.readiness).toMatchObject({
+      state: 'gone',
+      reason: 'disconnected',
+      fix: { action: 'connect_new' },
+    });
 
-    // Nothing is marked while the way works.
+    // A way that works, read from the live registry by default.
+    db.update(connections)
+      .set({ lifecycleState: 'connected' })
+      .where(eq(connections.id, 'connection-a'))
+      .run();
     const [working] = await service.listConnections(OWNER);
-    expect(working).not.toHaveProperty('wayProblem');
+    expect(working?.readiness).toMatchObject({ state: 'ready', reason: 'usable' });
   });
 
   it('returns one account-free catalog with per-route authentication and message intents', async () => {

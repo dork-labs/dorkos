@@ -838,6 +838,7 @@ describe('ConnectorProviderBootstrapper', () => {
         type: 'composio',
         status: 'ready',
         providerInstanceId: composio.instanceId,
+        canRunActions: true,
         signInThrough: 'Composio',
       };
       expect(result).toEqual({ ways: [way], newApps: { status: 'ready', way } });
@@ -1355,6 +1356,19 @@ describe('ConnectorProviderBootstrapper', () => {
       // route this server does not set up has no fix to name.
       expect(bootstrapper.wayProblem(registry.resolveProvider('mcp')!.instanceId)).toBeUndefined();
       expect(bootstrapper.wayProblem('raw-mcp-dropped-from-config')).toBeUndefined();
+
+      // The same facts as readiness reads them: down with the fix, or unreachable.
+      expect(bootstrapper.wayHealth('managed-provider')).toEqual({
+        status: 'down',
+        problem: 'dorkos_account_unavailable',
+      });
+      expect(bootstrapper.wayHealth('raw-mcp-dropped-from-config')).toEqual({
+        status: 'down',
+        problem: 'unreachable',
+      });
+      expect(bootstrapper.wayHealth(registry.resolveProvider('mcp')!.instanceId)).toMatchObject({
+        status: 'up',
+      });
     });
 
     it('says why when the saved key failed its check', async () => {

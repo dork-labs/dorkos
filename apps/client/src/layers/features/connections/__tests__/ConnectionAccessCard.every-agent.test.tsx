@@ -244,6 +244,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     vi.mocked(transport.previewConnectorReconciliation).mockRejectedValue(new Error('down'));
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
+        readiness: { state: 'ready', reason: 'usable' },
         everyAgent: { operationRevisionIds: ['read-v1'], classifications: ['read'] },
       },
     } as never);
@@ -291,6 +292,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     // Reading back: nothing is shared with every agent after all.
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
+        readiness: { state: 'ready', reason: 'usable' },
         connectionId: 'connection-1',
         reconciliationStatus: 'ready',
         authoritySync: { status: 'ready' },

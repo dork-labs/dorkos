@@ -13,6 +13,7 @@ import type {
 } from '@dorkos/shared/connector-resource-schemas';
 import { AgentRequestCard } from '@/layers/features/connections';
 import { TransportProvider } from '@/layers/shared/model';
+import { MOCK_READINESS, READY } from '../mock-samples';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -82,7 +83,7 @@ function account(connectionId: string, label: string): ConnectorConnectionSummar
     agentCount: 0,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: READY,
     everyAgent: null,
   };
 }
@@ -251,7 +252,7 @@ export function AgentRequestCardShowcase() {
             {
               ...account('gmail-work', 'work'),
               mode: 'managed',
-              wayProblem: 'dorkos_account_unlinked',
+              readiness: MOCK_READINESS.unlinked,
             },
           ]}
         />

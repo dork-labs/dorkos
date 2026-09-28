@@ -390,6 +390,148 @@ export const ConnectorExecutionResponseSchema = z
 /** Public response after at least one immutable attempt intent was persisted. */
 export type ConnectorExecutionResponse = z.infer<typeof ConnectorExecutionResponseSchema>;
 
+/**
+ * Whether agents can use one connected account right now, at a glance.
+ *
+ * - `ready` — agents can use it now. The only state shown green.
+ * - `paused` — the person turned it off; resuming it brings it back.
+ * - `needs_you` — it stopped working and one thing the person does fixes it.
+ * - `finishing` — DorkOS is still working on a change; nothing to do but wait.
+ * - `unavailable` — it can't be used right now and nobody can change that from
+ *   here right away (a way that isn't answering, a way that can't run
+ *   actions, an account turned off for one chat).
+ * - `gone` — it was disconnected. Agents can't use it.
+ */
+export const ConnectionReadinessStateSchema = z.enum([
+  'ready',
+  'paused',
+  'needs_you',
+  'finishing',
+  'unavailable',
+  'gone',
+]);
+/** Whether agents can use one connected account right now, at a glance. */
+export type ConnectionReadinessState = z.infer<typeof ConnectionReadinessStateSchema>;
+
+/**
+ * Why one connected account is in its readiness state. A closed set: the
+ * server's readiness function (`deriveConnectionReadiness`) is the only place
+ * that picks one, and its truth table documents the facts behind each.
+ */
+export const ConnectionReadinessReasonSchema = z.enum([
+  /** Agents can use it now. */
+  'usable',
+  /** Turned off for this one chat, so its agent can't use it here. */
+  'off_for_this_chat',
+  /** Connected through a DorkOS account that isn't linked anymore. */
+  'dorkos_account_unlinked',
+  /** Connected through a DorkOS account that can't reach apps right now. */
+  'dorkos_account_unavailable',
+  /** Connected through the person's own key, which isn't set up or didn't answer. */
+  'own_key_unavailable',
+  /** The way it was connected through isn't reachable, and DorkOS can't name a fix. */
+  'way_unreachable',
+  /** Connected through the person's own key, which signs in but can't run actions. */
+  'own_key_cannot_run_actions',
+  /** Connected a way that can sign in but can never run actions. */
+  'cannot_run_actions',
+  /** The person paused it. */
+  'paused',
+  /** The sign-in ended at the service (expired or revoked). */
+  'signed_out',
+  /** A sign-in started and never finished. */
+  'sign_in_unfinished',
+  /** Who can use it has to be checked again before agents can use it. */
+  'needs_review',
+  /** A change to who can use it did not go through. */
+  'access_update_failed',
+  /** A change to who can use it is still being applied. */
+  'access_updating',
+  /** Disconnected, and nothing is owed at the service. */
+  'disconnected',
+  /** Disconnected, and DorkOS is still removing its access at the service. */
+  'disconnect_finishing',
+  /** Disconnected, removing its access at the service failed, and trying again can work. */
+  'disconnect_failed',
+  /** Disconnected, and DorkOS can't finish removing its access at the service right now. */
+  'disconnect_stuck',
+]);
+/** Why one connected account is in its readiness state. */
+export type ConnectionReadinessReason = z.infer<typeof ConnectionReadinessReasonSchema>;
+
+/**
+ * The one fix for an account that is not ready, as the one control that makes
+ * it. A closed set every surface maps to exactly one control.
+ *
+ * - `sign_in_again` — sign in to this same account again.
+ * - `connect_again` — connect this same, disconnected account again.
+ * - `connect_new` — connect the app again through a way that works (the
+ *   one-time "how DorkOS reaches apps" step first when none does).
+ * - `resume` — resume the paused account.
+ * - `review_access` — check who can use it.
+ * - `fix_key` — fix the person's own key (Settings › Connections).
+ * - `retry` — try the unfinished step again now.
+ * - `wait` — nothing to press: DorkOS tries again on its own.
+ */
+export const ConnectionFixActionSchema = z.enum([
+  'sign_in_again',
+  'connect_again',
+  'connect_new',
+  'resume',
+  'review_access',
+  'fix_key',
+  'retry',
+  'wait',
+]);
+/** The one fix for an account that is not ready. */
+export type ConnectionFixAction = z.infer<typeof ConnectionFixActionSchema>;
+
+/** The one fix, who can make it, and when DorkOS tries again on its own. */
+export const ConnectionFixSchema = z
+  .object({
+    action: ConnectionFixActionSchema,
+    /** `person` when only the person can make it; `dorkos` when DorkOS makes it on its own. */
+    fixableBy: z.enum(['person', 'dorkos']),
+    /** When DorkOS tries again on its own, when it knows. */
+    retryAt: z.string().datetime().optional(),
+  })
+  .strict()
+  .refine((fix) => fix.action !== 'wait' || fix.fixableBy === 'dorkos', {
+    message: 'Waiting is DorkOS’s job, never the person’s.',
+  });
+/** The one fix, who can make it, and when DorkOS tries again on its own. */
+export type ConnectionFix = z.infer<typeof ConnectionFixSchema>;
+
+/**
+ * Whether agents can use one connected account right now and, if not, the one
+ * fix and who can make it, with the words for the owner and for the agent.
+ * Computed once on the server; every surface renders it and none re-derives it.
+ */
+export const ConnectionReadinessSchema = z
+  .object({
+    state: ConnectionReadinessStateSchema,
+    reason: ConnectionReadinessReasonSchema,
+    /** Absent when there is nothing to fix, or nothing anyone can do from here. */
+    fix: ConnectionFixSchema.optional(),
+    copy: z
+      .object({
+        /** One plain line for the account's owner. */
+        owner: z.string().min(1).max(500),
+        /** What an agent reads: why it can't use the account, and what the person must do. */
+        agent: z.string().min(1).max(1_000),
+      })
+      .strict(),
+  })
+  .strict()
+  .refine((readiness) => (readiness.state === 'ready') === (readiness.reason === 'usable'), {
+    message: 'Only a usable account is ready.',
+  })
+  .refine((readiness) => readiness.state !== 'ready' || readiness.fix === undefined, {
+    message: 'A ready account has nothing to fix.',
+  });
+/** Whether agents can use one connected account right now, and the one fix if not. */
+export type ConnectionReadiness = z.infer<typeof ConnectionReadinessSchema>;
+
 /** Connection metadata visible to an agent that already holds access. */
 export const AccessibleConnectorConnectionSchema = z
   .object({
@@ -424,16 +566,19 @@ export const ConnectorAccessibleConnectionsResponseSchema = z
   .object({
     connections: z.array(AccessibleConnectorConnectionSchema),
     /**
-     * Accounts this agent was given that cannot be used right now because the
-     * way they were connected through is not working. Each note says why, and
-     * what the person does about it.
+     * Accounts this agent was given that it cannot use right now: paused,
+     * signed out, waiting on a review, turned off for this chat, or reached
+     * through a way that is down or can't run actions. Each note says why, and
+     * what the person must do.
      */
     unavailable: z
       .array(
         z
           .object({
+            connectionId: ConnectionIdSchema,
             toolkit: z.string().min(1),
             label: z.string().min(1),
+            reason: ConnectionReadinessReasonSchema,
             note: z.string().min(1),
           })
           .strict()

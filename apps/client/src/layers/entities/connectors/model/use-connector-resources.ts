@@ -86,12 +86,9 @@ export function useConnectorConnection(connectionId: string | null, enabled = tr
     queryFn: () => transport.getConnectorConnection(connectionId ?? ''),
     enabled: enabled && Boolean(connectionId),
     refetchInterval: (query) => {
-      const connection = query.state.data?.connection;
-      // Only while the server is actually retrying: a refused sync waits on the
-      // owner, and re-reading it would change nothing.
-      return connection?.lifecycle === 'disconnected' &&
-        connection.externalCleanup === 'pending' &&
-        connection.authoritySync.status === 'pending'
+      // Only while DorkOS is actually retrying: a refused or stuck disconnect
+      // waits on the owner, and re-reading it would change nothing.
+      return query.state.data?.connection.readiness.reason === 'disconnect_finishing'
         ? CLEANUP_PENDING_REFRESH_MS
         : false;
     },

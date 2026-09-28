@@ -78,11 +78,7 @@ export function AgentConnectionAccessList({
       ) : (
         <ul className="space-y-1.5">
           {connections.map((connection) => {
-            const usable =
-              connection.lifecycle === 'connected' &&
-              connection.authenticationStatus === 'active' &&
-              connection.reconciliationStatus === 'ready' &&
-              connection.authoritySync.status === 'ready';
+            const usable = connection.readiness.state === 'ready';
             return (
               <li
                 key={connection.connectionId}
@@ -104,7 +100,11 @@ export function AgentConnectionAccessList({
                     {connection.everyAgent && ' · given to every agent'}
                   </p>
                 </div>
-                <Badge size="xs" variant={usable ? 'secondary' : 'outline'}>
+                <Badge
+                  size="xs"
+                  variant={usable ? 'secondary' : 'outline'}
+                  title={usable ? undefined : connection.readiness.copy.owner}
+                >
                   {usable ? 'Available' : 'Unavailable'}
                 </Badge>
               </li>

@@ -32,6 +32,7 @@ import {
   MOCK_CONNECTIONS,
   MOCK_GMAIL_ACTIONS,
   MOCK_GMAIL_USAGE,
+  MOCK_READINESS,
   mockAccessPreview,
   mockConnection,
   mockConnectionDetail,
@@ -305,7 +306,19 @@ export function ConnectionsShowcases() {
 
         <ShowcaseLabel>Signed out</ShowcaseLabel>
         <ShowcaseDemo>
-          <PanelFrame connection={mockConnection({ authenticationStatus: 'expired' })}>
+          <PanelFrame
+            connection={mockConnection({
+              authenticationStatus: 'expired',
+              readiness: MOCK_READINESS.signedOut,
+            })}
+          >
+            <AccountPanelDemo />
+          </PanelFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Connected through a DorkOS account that isn’t linked anymore</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PanelFrame connection={mockConnection({ readiness: MOCK_READINESS.unlinked })}>
             <AccountPanelDemo />
           </PanelFrame>
         </ShowcaseDemo>
@@ -321,19 +334,30 @@ export function ConnectionsShowcases() {
                 reason: 'DorkOS’s servers had a problem.',
                 retryAt: STALLED_RETRY_AT,
               },
+              readiness: {
+                state: 'gone',
+                reason: 'disconnect_finishing',
+                fix: { action: 'retry', fixableBy: 'dorkos', retryAt: STALLED_RETRY_AT },
+                copy: {
+                  owner:
+                    'Disconnected. Agents can’t use it. DorkOS is still removing its access at the service.',
+                  agent: 'The person disconnected this account.',
+                },
+              },
             })}
           >
             <AccountPanelDemo />
           </PanelFrame>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Disconnect refused</ShowcaseLabel>
+        <ShowcaseLabel>Disconnect can’t finish: the DorkOS account link ended</ShowcaseLabel>
         <ShowcaseDemo>
           <PanelFrame
             connection={mockConnection({
               lifecycle: 'disconnected',
               externalCleanup: 'pending',
               authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+              readiness: MOCK_READINESS.disconnectStuck,
             })}
           >
             <AccountPanelDemo />

@@ -31,7 +31,6 @@ import {
   ConnectorSessionConnectionsSchema,
   type ConnectorAgentConnections,
   type ConnectorAppConnections,
-  type ConnectorWayProblem,
   type ConnectorEveryAgentAccess,
   type ConnectorEveryAgentGrants,
   type ConnectorAuthoritySyncState,
@@ -54,6 +53,11 @@ import type {
   ManagedConnectorUsageResponse,
 } from '@dorkos/shared/connector-managed-usage-schemas';
 import { appReachProblem, signInThroughFor, type AppReachProblem } from '../app-connection-way.js';
+import {
+  deriveConnectionReadiness,
+  registryWayHealth,
+  type ConnectionWayHealthPort,
+} from '../readiness/connection-readiness.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
@@ -117,8 +121,11 @@ export interface ConnectorOperatorQueryServiceOptions {
   readonly recoverManagedProvider?: () => Promise<void>;
   /** Every way set up to reach apps, and the one new apps use. */
   readonly appConnections?: () => Promise<ConnectorAppConnections>;
-  /** Whether the way one connected account goes through is working, and if not, why. */
-  readonly wayProblem?: (providerInstanceId: string) => ConnectorWayProblem | undefined;
+  /**
+   * The live health of the way one connected account goes through. Without
+   * it, only the registry is read: a way that is down names no fix.
+   */
+  readonly wayHealth?: ConnectionWayHealthPort;
   /**
    * The service ids whose logo this server already keeps. An app whose own
    * list sends no logo (the DorkOS account's) still shows one another service
@@ -244,8 +251,7 @@ export class ConnectorOperatorQueryService {
   private readonly managedUsage: ConnectorManagedUsageQueryPort | undefined;
   private readonly recoverManagedProvider: (() => Promise<void>) | undefined;
   private readonly appConnections: (() => Promise<ConnectorAppConnections>) | undefined;
-  private readonly wayProblem:
-    ((providerInstanceId: string) => ConnectorWayProblem | undefined) | undefined;
+  private readonly wayHealth: ConnectionWayHealthPort;
   private readonly keptLogos: (() => Promise<ReadonlySet<string>>) | undefined;
 
   /** Construct owner projections over canonical connector state. */
@@ -258,7 +264,7 @@ export class ConnectorOperatorQueryService {
     this.managedUsage = options.managedUsage;
     this.recoverManagedProvider = options.recoverManagedProvider;
     this.appConnections = options.appConnections;
-    this.wayProblem = options.wayProblem;
+    this.wayHealth = options.wayHealth ?? registryWayHealth(options.registry);
     this.keptLogos = options.keptLogos;
   }
 
@@ -702,6 +708,7 @@ export class ConnectorOperatorQueryService {
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         externalAccountRef: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
         mode: connectorProviderInstances.mode,
         revisionId: connectionOperationGrants.operationRevisionId,
       })
@@ -737,6 +744,7 @@ export class ConnectorOperatorQueryService {
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         externalAccountRef: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
         mode: connectorProviderInstances.mode,
         revisionId: connectionOperationGrants.operationRevisionId,
       })
@@ -775,17 +783,29 @@ export class ConnectorOperatorQueryService {
     }
     return ConnectorAgentConnectionsSchema.parse({
       agentId,
-      connections: [...grouped.values()].map((row) => ({
-        connectionId: row.connectionId,
-        toolkit: row.toolkit,
-        label: row.label,
-        lifecycle: lifecycle(row),
-        authenticationStatus: row.authenticationStatus,
-        reconciliationStatus: row.reconciliationStatus,
-        operationRevisionIds: [...row.operationRevisionIds].sort(),
-        everyAgent: row.everyAgent,
-        authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
-      })),
+      connections: [...grouped.values()].map((row) => {
+        const authoritySync = this.authoritySync(row.mode, row.externalAccountRef);
+        return {
+          connectionId: row.connectionId,
+          toolkit: row.toolkit,
+          label: row.label,
+          lifecycle: lifecycle(row),
+          authenticationStatus: row.authenticationStatus,
+          reconciliationStatus: row.reconciliationStatus,
+          operationRevisionIds: [...row.operationRevisionIds].sort(),
+          everyAgent: row.everyAgent,
+          authoritySync,
+          readiness: deriveConnectionReadiness({
+            lifecycle: lifecycle(row),
+            authenticationStatus: row.authenticationStatus,
+            reconciliationStatus: row.reconciliationStatus,
+            authoritySync,
+            externalCleanup: row.externalCleanupState,
+            mode: row.mode,
+            way: this.wayHealth(row.providerInstanceId),
+          }),
+        };
+      }),
     });
   }
 
@@ -1055,10 +1075,8 @@ export class ConnectorOperatorQueryService {
       .where(eq(connectorEventSubscriptions.connectionId, row.connectionId))
       .all();
     const usage = await this.usageCounts(row, signal);
-    // A disconnected account needs a sign-in whatever its way's state, so only
-    // a kept one is marked as waiting on its way.
-    const wayProblem =
-      row.lifecycleState === 'disconnected' ? undefined : this.wayProblem?.(row.providerInstanceId);
+    const authoritySync = this.authoritySync(row.mode, row.externalAccountRef);
+    const rowLifecycle = lifecycle(row);
     return ConnectorConnectionSummarySchema.parse({
       connectionId: row.connectionId,
       providerInstanceId: row.providerInstanceId,
@@ -1066,10 +1084,10 @@ export class ConnectorOperatorQueryService {
       label: row.label,
       identityHint: row.identityHint,
       externalCleanup: row.externalCleanupState,
-      lifecycle: lifecycle(row),
+      lifecycle: rowLifecycle,
       authenticationStatus: row.authenticationStatus,
       reconciliationStatus: row.reconciliationStatus,
-      authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
+      authoritySync,
       mode: row.mode,
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
@@ -1077,8 +1095,15 @@ export class ConnectorOperatorQueryService {
       everyAgent: this.everyAgentAccess(row.connectionId),
       subscriptionCount: subscriptions.length,
       usage,
-      warnings: [],
-      ...(wayProblem && { wayProblem }),
+      readiness: deriveConnectionReadiness({
+        lifecycle: rowLifecycle,
+        authenticationStatus: row.authenticationStatus,
+        reconciliationStatus: row.reconciliationStatus,
+        authoritySync,
+        externalCleanup: row.externalCleanupState,
+        mode: row.mode,
+        way: this.wayHealth(row.providerInstanceId),
+      }),
     });
   }
 

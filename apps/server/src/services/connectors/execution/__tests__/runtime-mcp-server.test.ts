@@ -484,9 +484,15 @@ describe('createConnectorRuntimeMcpServer', () => {
     ).toMatchObject({ connections: [{ connectionId: 'connection-a' }] });
 
     registry.register(provider, 'material-b');
+    // Named, with what the person does, rather than silently dropped.
     expect(
       payload(await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} }))
-    ).toEqual({ connections: [] });
+    ).toEqual({
+      connections: [],
+      unavailable: [
+        expect.objectContaining({ connectionId: 'connection-a', reason: 'needs_review' }),
+      ],
+    });
     const staleMaterialExecution = await client.callTool({
       name: 'connectors.execute_read',
       arguments: {

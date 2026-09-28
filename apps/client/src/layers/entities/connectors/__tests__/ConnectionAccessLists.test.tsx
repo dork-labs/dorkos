@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 
 import {
@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe('AgentConnectionAccessList', () => {
-  it('reads canonical grants and keeps pending authority unavailable', async () => {
+  it('reads canonical grants and shows the server’s readiness for each', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getAgentConnectorConnections).mockResolvedValue({
       agentId: 'agent-1',
@@ -31,6 +31,12 @@ describe('AgentConnectionAccessList', () => {
           operationRevisionIds: ['operation-1'],
           everyAgent: false,
           authoritySync: { status: 'pending' },
+          readiness: createMockConnectionReadiness({
+            state: 'finishing',
+            reason: 'access_updating',
+            fix: { action: 'wait', fixableBy: 'dorkos' },
+            copy: { owner: 'Updating who can use it…', agent: 'Try again later.' },
+          }),
         },
       ],
     });
@@ -46,7 +52,7 @@ describe('AgentConnectionAccessList', () => {
 
     expect(await screen.findByText('Gmail (work)')).toBeInTheDocument();
     expect(screen.getByText('1 approved action')).toBeInTheDocument();
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Unavailable')).toHaveAttribute('title', 'Updating who can use it…');
     expect(transport.getAgentConnectorConnections).toHaveBeenCalledWith('agent-1');
   });
 
@@ -65,6 +71,7 @@ describe('AgentConnectionAccessList', () => {
           operationRevisionIds: ['operation-1'],
           everyAgent: false,
           authoritySync: { status: 'ready' },
+          readiness: createMockConnectionReadiness(),
         },
       ],
     });

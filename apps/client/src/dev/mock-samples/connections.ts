@@ -15,6 +15,63 @@ import type {
 } from '@dorkos/shared/connector-schemas';
 import type { AdapterBinding, CatalogEntry } from '@dorkos/shared/relay-schemas';
 
+/** A ready account's readiness, as the server words it. */
+export const READY: ConnectorConnectionSummary['readiness'] = {
+  state: 'ready',
+  reason: 'usable',
+  copy: { owner: 'Agents can use it.', agent: 'You can use this account.' },
+};
+
+/** The server's readiness for the not-ready accounts the showcases draw. */
+export const MOCK_READINESS = {
+  signedOut: {
+    state: 'needs_you',
+    reason: 'signed_out',
+    fix: { action: 'sign_in_again', fixableBy: 'person' },
+    copy: {
+      owner: 'Signed out. Agents can’t use it until you sign in again.',
+      agent: 'The sign-in for this account ended. Ask the person to sign in again.',
+    },
+  },
+  paused: {
+    state: 'paused',
+    reason: 'paused',
+    fix: { action: 'resume', fixableBy: 'person' },
+    copy: {
+      owner: 'Paused. Agents can’t use it until you resume it.',
+      agent: 'The person paused this account. Ask them to resume it.',
+    },
+  },
+  needsReview: {
+    state: 'needs_you',
+    reason: 'needs_review',
+    fix: { action: 'review_access', fixableBy: 'person' },
+    copy: {
+      owner: 'Check who can use it. Agents can’t use it until you do.',
+      agent: 'The person needs to check who can use this account.',
+    },
+  },
+  unlinked: {
+    state: 'needs_you',
+    reason: 'dorkos_account_unlinked',
+    fix: { action: 'connect_new', fixableBy: 'person' },
+    copy: {
+      owner:
+        'It was connected through your DorkOS account, which isn’t linked anymore. Connect it again to use it.',
+      agent: 'Ask the person to connect this app again.',
+    },
+  },
+  disconnectStuck: {
+    state: 'gone',
+    reason: 'disconnect_stuck',
+    copy: {
+      owner:
+        'Disconnected. Agents can’t use it. DorkOS can’t finish removing its access at the service, because your DorkOS account isn’t linked anymore. To be sure its access ended, remove it in that app’s own account settings.',
+      agent: 'The person disconnected this account.',
+    },
+  },
+} satisfies Record<string, ConnectorConnectionSummary['readiness']>;
+
 /** One connected account, healthy unless overridden. */
 export function mockConnection(
   over: Partial<ConnectorConnectionSummary> = {}
@@ -36,7 +93,7 @@ export function mockConnection(
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 16, attemptCount: 16 },
-    warnings: [],
+    readiness: READY,
     ...over,
   };
 }
@@ -56,12 +113,14 @@ export const MOCK_CONNECTIONS: ConnectorConnectionSummary[] = [
     label: 'Acme workspace',
     identityHint: null,
     authenticationStatus: 'expired',
+    readiness: MOCK_READINESS.signedOut,
   }),
   mockConnection({
     connectionId: 'conn-calendar' as ConnectorConnectionSummary['connectionId'],
     toolkit: 'googlecalendar',
     identityHint: 'you@gmail.com',
     lifecycle: 'paused',
+    readiness: MOCK_READINESS.paused,
   }),
   mockConnection({
     connectionId: 'conn-drive' as ConnectorConnectionSummary['connectionId'],
@@ -76,6 +135,23 @@ export const MOCK_CONNECTIONS: ConnectorConnectionSummary[] = [
     toolkit: 'linear',
     identityHint: 'you@acme.com',
     reconciliationStatus: 'migration_needs_reconcile',
+    readiness: MOCK_READINESS.needsReview,
+  }),
+  mockConnection({
+    connectionId: 'conn-outlook' as ConnectorConnectionSummary['connectionId'],
+    toolkit: 'outlook',
+    label: 'outlook',
+    identityHint: 'you@outlook.com',
+    readiness: MOCK_READINESS.unlinked,
+  }),
+  mockConnection({
+    connectionId: 'conn-slack' as ConnectorConnectionSummary['connectionId'],
+    toolkit: 'slack',
+    label: 'Acme',
+    identityHint: null,
+    lifecycle: 'disconnected',
+    externalCleanup: 'pending',
+    readiness: MOCK_READINESS.disconnectStuck,
   }),
 ];
 

@@ -27527,6 +27527,9 @@
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 100
+                              },
+                              "canRunActions": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -27580,6 +27583,9 @@
                                       "type": "string",
                                       "minLength": 1,
                                       "maxLength": 100
+                                    },
+                                    "canRunActions": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "required": [
@@ -28404,6 +28410,9 @@
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 100
+                              },
+                              "canRunActions": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -28457,6 +28466,9 @@
                                       "type": "string",
                                       "minLength": 1,
                                       "maxLength": 100
+                                    },
+                                    "canRunActions": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "required": [
@@ -28856,37 +28868,104 @@
                               }
                             ]
                           },
-                          "warnings": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "code": {
-                                  "type": "string",
-                                  "minLength": 1,
-                                  "maxLength": 100
-                                },
-                                "message": {
-                                  "type": "string",
-                                  "minLength": 1,
-                                  "maxLength": 1000
-                                }
+                          "readiness": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "paused",
+                                  "needs_you",
+                                  "finishing",
+                                  "unavailable",
+                                  "gone"
+                                ]
                               },
-                              "required": [
-                                "code",
-                                "message"
-                              ],
-                              "additionalProperties": false
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "usable",
+                                  "off_for_this_chat",
+                                  "dorkos_account_unlinked",
+                                  "dorkos_account_unavailable",
+                                  "own_key_unavailable",
+                                  "way_unreachable",
+                                  "own_key_cannot_run_actions",
+                                  "cannot_run_actions",
+                                  "paused",
+                                  "signed_out",
+                                  "sign_in_unfinished",
+                                  "needs_review",
+                                  "access_update_failed",
+                                  "access_updating",
+                                  "disconnected",
+                                  "disconnect_finishing",
+                                  "disconnect_failed",
+                                  "disconnect_stuck"
+                                ]
+                              },
+                              "fix": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "sign_in_again",
+                                      "connect_again",
+                                      "connect_new",
+                                      "resume",
+                                      "review_access",
+                                      "fix_key",
+                                      "retry",
+                                      "wait"
+                                    ]
+                                  },
+                                  "fixableBy": {
+                                    "type": "string",
+                                    "enum": [
+                                      "person",
+                                      "dorkos"
+                                    ]
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "copy": {
+                                "type": "object",
+                                "properties": {
+                                  "owner": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  }
+                                },
+                                "required": [
+                                  "owner",
+                                  "agent"
+                                ],
+                                "additionalProperties": false
+                              }
                             },
-                            "maxItems": 50
-                          },
-                          "wayProblem": {
-                            "type": "string",
-                            "enum": [
-                              "dorkos_account_unlinked",
-                              "dorkos_account_unavailable",
-                              "own_key_unavailable"
-                            ]
+                            "required": [
+                              "state",
+                              "reason",
+                              "copy"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -28906,7 +28985,7 @@
                           "everyAgent",
                           "subscriptionCount",
                           "usage",
-                          "warnings"
+                          "readiness"
                         ],
                         "additionalProperties": false
                       },
@@ -29916,37 +29995,104 @@
                             }
                           ]
                         },
-                        "warnings": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "code": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 100
-                              },
-                              "message": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 1000
-                              }
+                        "readiness": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "ready",
+                                "paused",
+                                "needs_you",
+                                "finishing",
+                                "unavailable",
+                                "gone"
+                              ]
                             },
-                            "required": [
-                              "code",
-                              "message"
-                            ],
-                            "additionalProperties": false
+                            "reason": {
+                              "type": "string",
+                              "enum": [
+                                "usable",
+                                "off_for_this_chat",
+                                "dorkos_account_unlinked",
+                                "dorkos_account_unavailable",
+                                "own_key_unavailable",
+                                "way_unreachable",
+                                "own_key_cannot_run_actions",
+                                "cannot_run_actions",
+                                "paused",
+                                "signed_out",
+                                "sign_in_unfinished",
+                                "needs_review",
+                                "access_update_failed",
+                                "access_updating",
+                                "disconnected",
+                                "disconnect_finishing",
+                                "disconnect_failed",
+                                "disconnect_stuck"
+                              ]
+                            },
+                            "fix": {
+                              "type": "object",
+                              "properties": {
+                                "action": {
+                                  "type": "string",
+                                  "enum": [
+                                    "sign_in_again",
+                                    "connect_again",
+                                    "connect_new",
+                                    "resume",
+                                    "review_access",
+                                    "fix_key",
+                                    "retry",
+                                    "wait"
+                                  ]
+                                },
+                                "fixableBy": {
+                                  "type": "string",
+                                  "enum": [
+                                    "person",
+                                    "dorkos"
+                                  ]
+                                },
+                                "retryAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "required": [
+                                "action",
+                                "fixableBy"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "copy": {
+                              "type": "object",
+                              "properties": {
+                                "owner": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 500
+                                },
+                                "agent": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 1000
+                                }
+                              },
+                              "required": [
+                                "owner",
+                                "agent"
+                              ],
+                              "additionalProperties": false
+                            }
                           },
-                          "maxItems": 50
-                        },
-                        "wayProblem": {
-                          "type": "string",
-                          "enum": [
-                            "dorkos_account_unlinked",
-                            "dorkos_account_unavailable",
-                            "own_key_unavailable"
-                          ]
+                          "required": [
+                            "state",
+                            "reason",
+                            "copy"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -29966,7 +30112,7 @@
                         "everyAgent",
                         "subscriptionCount",
                         "usage",
-                        "warnings"
+                        "readiness"
                       ],
                       "additionalProperties": false
                     },
@@ -31962,6 +32108,105 @@
                                 "additionalProperties": false
                               }
                             ]
+                          },
+                          "readiness": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "paused",
+                                  "needs_you",
+                                  "finishing",
+                                  "unavailable",
+                                  "gone"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "usable",
+                                  "off_for_this_chat",
+                                  "dorkos_account_unlinked",
+                                  "dorkos_account_unavailable",
+                                  "own_key_unavailable",
+                                  "way_unreachable",
+                                  "own_key_cannot_run_actions",
+                                  "cannot_run_actions",
+                                  "paused",
+                                  "signed_out",
+                                  "sign_in_unfinished",
+                                  "needs_review",
+                                  "access_update_failed",
+                                  "access_updating",
+                                  "disconnected",
+                                  "disconnect_finishing",
+                                  "disconnect_failed",
+                                  "disconnect_stuck"
+                                ]
+                              },
+                              "fix": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "sign_in_again",
+                                      "connect_again",
+                                      "connect_new",
+                                      "resume",
+                                      "review_access",
+                                      "fix_key",
+                                      "retry",
+                                      "wait"
+                                    ]
+                                  },
+                                  "fixableBy": {
+                                    "type": "string",
+                                    "enum": [
+                                      "person",
+                                      "dorkos"
+                                    ]
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "copy": {
+                                "type": "object",
+                                "properties": {
+                                  "owner": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  }
+                                },
+                                "required": [
+                                  "owner",
+                                  "agent"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "reason",
+                              "copy"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -31973,7 +32218,8 @@
                           "reconciliationStatus",
                           "operationRevisionIds",
                           "everyAgent",
-                          "authoritySync"
+                          "authoritySync",
+                          "readiness"
                         ],
                         "additionalProperties": false
                       },
@@ -57365,6 +57611,10 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "connectionId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
                           "toolkit": {
                             "type": "string",
                             "minLength": 1
@@ -57373,14 +57623,39 @@
                             "type": "string",
                             "minLength": 1
                           },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "usable",
+                              "off_for_this_chat",
+                              "dorkos_account_unlinked",
+                              "dorkos_account_unavailable",
+                              "own_key_unavailable",
+                              "way_unreachable",
+                              "own_key_cannot_run_actions",
+                              "cannot_run_actions",
+                              "paused",
+                              "signed_out",
+                              "sign_in_unfinished",
+                              "needs_review",
+                              "access_update_failed",
+                              "access_updating",
+                              "disconnected",
+                              "disconnect_finishing",
+                              "disconnect_failed",
+                              "disconnect_stuck"
+                            ]
+                          },
                           "note": {
                             "type": "string",
                             "minLength": 1
                           }
                         },
                         "required": [
+                          "connectionId",
                           "toolkit",
                           "label",
+                          "reason",
                           "note"
                         ],
                         "additionalProperties": false
