@@ -8,6 +8,9 @@
  * The launch service is real here, down to the dispatcher, so what reaches the
  * turn (the account hint, the origin, the cap) is what production sends.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { z } from 'zod';
 import type { MeshCore } from '@dorkos/mesh';
@@ -17,6 +20,8 @@ import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-sch
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
+/** The folders the mocked boundary lets through. */
+const boundaryRoots = vi.hoisted(() => ['/work']);
 
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
@@ -31,7 +36,9 @@ vi.mock('../../../../core/runtime-registry.js', () => ({
 }));
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => {
-    if (!p.startsWith('/work')) throw new Error('Access denied: path outside directory boundary');
+    if (!boundaryRoots.some((root) => p.startsWith(root))) {
+      throw new Error('Access denied: path outside directory boundary');
+    }
     return p;
   }),
 }));
@@ -88,6 +95,9 @@ import {
 import { resolveLaunchAccountRoot } from '../../claude-config-dir.js';
 import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
 import type { McpToolDeps } from '../types.js';
+import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
+import type { AgentIdentity } from '../../../../core/agent-identity/index.js';
+import { registerSessionTools } from '../../../../core/external-mcp/session-tools.js';
 import {
   NOT_THE_CALLER_MESSAGE,
   OTHER_AGENTS_HOME_MESSAGE,
@@ -102,13 +112,17 @@ const AGENT_HOME = '/work/agents/scout';
 const OTHER_HOME = '/work/agents/dorkbot';
 const ROOMS_DIR = '/work/rooms';
 
-/** Mesh that knows the calling agent and one other. */
-const mesh = {
-  listWithPaths: () => [
-    { id: 'a1', name: 'scout', displayName: 'Scout', projectPath: AGENT_HOME },
-    { id: 'a2', name: 'dorkbot', displayName: 'DorkBot', projectPath: OTHER_HOME },
-  ],
-} as unknown as MeshCore;
+interface MeshAgent {
+  id: string;
+  name: string;
+  displayName?: string;
+  projectPath: string;
+}
+
+/** The agents Mesh lists; reset to the calling agent and one other before each test. */
+let meshAgents: MeshAgent[] = [];
+
+const mesh = { listWithPaths: () => meshAgents } as unknown as MeshCore;
 
 type Deps = McpToolDeps & { activityService: { emit: ReturnType<typeof vi.fn> } };
 
@@ -195,6 +209,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   __resetAccountAdvisorForTests();
   registerTestHomes([AGENT_HOME, OTHER_HOME], { roomsDir: ROOMS_DIR });
+  meshAgents = [
+    { id: 'a1', name: 'scout', displayName: 'Scout', projectPath: AGENT_HOME },
+    { id: 'a2', name: 'dorkbot', displayName: 'DorkBot', projectPath: OTHER_HOME },
+  ];
+  boundaryRoots.splice(0, boundaryRoots.length, '/work');
   runtimes.clear();
   claude = new FakeAgentRuntime('claude-code');
   claude.getCapabilities.mockReturnValue({
@@ -383,6 +402,99 @@ describe('session_start', () => {
       expect(await expectRefused({ ...BASE, account: 'work' })).toMatchObject({
         error: NO_ADVISOR_REASON,
       });
+    });
+  });
+
+  describe("refuses a folder that is another agent's", () => {
+    async function expectOtherAgentsFolder(cwd: string) {
+      const result = await asScout()({ ...BASE, cwd });
+      expect(payloadOf(result)).toMatchObject({ code: 'OTHER_AGENTS_FOLDER' });
+      expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
+      expect(dispatchMessage).not.toHaveBeenCalled();
+    }
+
+    it("another agent's managed workspace", async () => {
+      // Outside every home by path; only the home resolver knows whose it is.
+      const workspace = '/work/workspaces/dorkbot-fix';
+      registerTestHomes([AGENT_HOME, OTHER_HOME], {
+        roomsDir: ROOMS_DIR,
+        managed: { [workspace]: OTHER_HOME },
+      });
+      await expectOtherAgentsFolder(workspace);
+    });
+
+    it("another agent's home nested inside the caller's own", async () => {
+      const nested = `${AGENT_HOME}/vendor/helper`;
+      registerTestHomes([AGENT_HOME, OTHER_HOME, nested], { roomsDir: ROOMS_DIR });
+      meshAgents.push({ id: 'a3', name: 'helper', projectPath: nested });
+      // Both homes contain the folder; the innermost one owns it.
+      await expectOtherAgentsFolder(`${nested}/src`);
+      // And the caller's own folders around it are still the caller's.
+      expect((await asScout()({ ...BASE, cwd: `${AGENT_HOME}/vendor` })).isError).toBeUndefined();
+    });
+
+    it('a home Mesh lists through a symlink, reached by its real path', async () => {
+      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'session-start-')));
+      try {
+        fs.mkdirSync(path.join(base, 'real', 'other', 'sub'), { recursive: true });
+        fs.symlinkSync(path.join(base, 'real'), path.join(base, 'link'));
+        boundaryRoots.push(base);
+        meshAgents.push({
+          id: 'a4',
+          name: 'linked',
+          projectPath: path.join(base, 'link', 'other'),
+        });
+        // The boundary check hands `cwd` back real-pathed, as production's does.
+        await expectOtherAgentsFolder(path.join(base, 'real', 'other', 'sub'));
+      } finally {
+        fs.rmSync(base, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('on the external /mcp server', () => {
+    /** Register the tool as the external server does, and return its handler. */
+    function externalHandler(identity?: AgentIdentity) {
+      let handler:
+        | ((args: typeof BASE) => Promise<{ isError?: boolean; content: { text: string }[] }>)
+        | undefined;
+      const registrar = {
+        registerTool: (_name: string, _config: unknown, fn: typeof handler) => {
+          handler = fn;
+        },
+      } as unknown as ToolRegistrar;
+      registerSessionTools(registrar, makeDeps(), identity);
+      return handler!;
+    }
+
+    const scout: AgentIdentity = {
+      agentPath: AGENT_HOME,
+      displayName: 'Scout',
+      createdAt: '2026-09-27T00:00:00.000Z',
+    };
+
+    it('starts a session as the agent the request token names', async () => {
+      const result = await externalHandler(scout)(BASE);
+      expect(result.isError).toBeUndefined();
+      expect(vi.mocked(dispatchMessage).mock.calls[0]![0]).toBeDefined();
+      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
+        expect.any(String),
+        'claude-code',
+        { kind: 'agent-launch' },
+        AGENT_HOME
+      );
+    });
+
+    it('refuses a revoked or expired identity, and a request with none', async () => {
+      for (const identity of [
+        { ...scout, inactive: 'revoked' as const },
+        { ...scout, inactive: 'expired' as const },
+        undefined,
+      ]) {
+        const result = await externalHandler(identity)(BASE);
+        expect(payloadOf(result)).toMatchObject({ code: 'UNKNOWN_CALLER' });
+      }
+      expect(dispatchMessage).not.toHaveBeenCalled();
     });
   });
 
