@@ -213,7 +213,7 @@
     {
       "path": "docs/marketplace/publishing.mdx",
       "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. 'Publishing a package' is a developer-authoring guide start to finish (its own description: 'Build an agent, plugin, skill pack, or adapter and share it'); 'Adapter' is a real marketplace package-type facet an author picks and the manifest key an author writes — the ADR's marketplace-author domain carve-out, same as apps/site's marketplace privacy page above. Narrower than the earlier docs/marketplace/ directory entry: docs/marketplace/index.mdx (browse/install, a general audience) uses line-scoped `vocab-allow` markers instead, per DOR-2508 code review."
+      "reason": "DOR-2508. 'Publishing a package' is a developer-authoring guide start to finish (its own description: 'Build an agent, plugin, skill pack, or adapter and share it'); 'Adapter' is a real marketplace package-type facet an author picks and the manifest key an author writes — the ADR's marketplace-author domain carve-out, same as apps/site's marketplace privacy page above. Narrower than the earlier docs/marketplace/ directory entry: docs/marketplace/index.mdx (browse/install, a general audience) uses line-scoped `vocab-allow` markers where they survive Prettier, and its own narrower allowlist entry below for the one spot they cannot, per DOR-2508 code review."
     },
     {
       "path": "docs/contributing/architecture.mdx",
@@ -224,6 +224,41 @@
       "path": "docs/guides/flow/",
       "terms": ["adapter", "adapters", "connector", "connectors"],
       "reason": "DOR-2508. The /flow engine's own tracker-adapter architecture (the linear-adapter skill, the typed PMClient the adapter realizes) is a distinct, named pattern unrelated to Connections/ConnectorProvider — developer/architecture docs for how /flow talks to a tracker, not a general-audience guide."
+    },
+    {
+      "path": "docs/contributing/development-setup.mdx",
+      "terms": ["integration", "integrations"],
+      "reason": "DOR-2508. `'pnpm smoke:integration'` is the real, unrenameable pnpm script name, used as a TypeTable object key. A `vocab-allow` marker cannot stay on that line: Prettier always moves a trailing `//` comment on a multi-property object's opening line onto its own following line, which was tried, committed, and confirmed broken (the marker no longer shares a line with the violation) before this entry replaced it."
+    },
+    {
+      "path": "docs/getting-started/configuration.mdx",
+      "terms": ["provider", "providers", "connector", "connectors"],
+      "reason": "DOR-2508. Three TypeTable object keys are real, unrenameable config field names — `memory.provider`, `connectors.rawMcpServers`, `runtimes.opencode.provider` — each on a multi-property object's opening line, the same Prettier comment-placement limitation as docs/contributing/development-setup.mdx above. The user-facing '### Connectors' heading and every 'integrations'/'AI provider' mention in this file's prose were reworded instead of allowlisted; only these three literal field-name keys remain."
+    },
+    {
+      "path": "docs/guides/workspaces.mdx",
+      "terms": ["provider", "providers"],
+      "reason": "DOR-2508. `provider:` is the real TypeTable object key for `workspace.defaultProvider` / `WorkspaceProvider` (the workspace-provisioning backend, unrelated to Connections or AI-model providers), same Prettier comment-placement limitation as development-setup.mdx above. Every other 'provider' mention in this file was reworded to 'checkout kind' instead."
+    },
+    {
+      "path": "docs/guides/agent-coordination.mdx",
+      "terms": ["adapter", "adapters"],
+      "reason": "DOR-2508. The 'Building Relay Adapters' Card links to the docs/integrations/ builder page by its own real title. A `vocab-allow` marker cannot stay on the Card's line: Prettier always moves a trailing JSX comment on a multi-child Card onto its own line (inserting a `{' '}` token), which was tried, committed, and confirmed broken before this entry replaced it. This page's own instructional line was reworded to point at Connections instead (no adapter/adapters left outside this one Card)."
+    },
+    {
+      "path": "docs/index.mdx",
+      "terms": ["integration", "integrations"],
+      "reason": "DOR-2508. The 'Building Integrations' Card links to docs/integrations/ by that section's own established title — same Prettier JSX-comment limitation as agent-coordination.mdx above."
+    },
+    {
+      "path": "docs/concepts/sessions.mdx",
+      "terms": ["integration", "integrations"],
+      "reason": "DOR-2508. The 'Building Integrations' Card (title and 'extension authors' body copy) has the same Prettier JSX-comment limitation as docs/index.mdx above."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["adapter", "adapters"],
+      "reason": "DOR-2508. The 'Building Relay Adapters' Card (title and body) has the same Prettier JSX-comment limitation as agent-coordination.mdx above. Two other lines in this file (the catalog summary and the Discord bullet) carry working `vocab-allow` markers instead, since plain prose and list items — unlike a multi-child Card — are not reformatted onto separate lines by Prettier; kept for the audit trail even though this entry would cover them too."
     }
   ]
 }
