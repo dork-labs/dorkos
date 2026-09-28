@@ -263,6 +263,79 @@ describe('readLedger, deleteLedger, listLedgerFiles', () => {
     expect(await readLedger(dir, 'work')).toBeNull();
   });
 
+  describe('one entry it does not understand never blanks the file (DOR-2471)', () => {
+    const good = { usedPct: 12, observedAt: '2026-09-26T15:59:00.000Z', source: 'sdk_event' };
+    const plan = { name: 'pro', observedAt: '2026-09-26T15:59:00.000Z', source: 'rollout' };
+
+    async function put(ledger: Record<string, unknown>): Promise<void> {
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, 'work.json'),
+        JSON.stringify({
+          v: 1,
+          runtime: 'claude-code',
+          accountId: 'work',
+          updatedAt: '2026-09-26T15:59:00.000Z',
+          ...ledger,
+        })
+      );
+    }
+
+    it('keeps every other window when one has a source it does not know', async () => {
+      await put({
+        windows: {
+          five_hour: { ...good, source: 'a-future-source' },
+          seven_day: good,
+        },
+      });
+      const ledger = await readLedger(dir, 'work');
+      expect(ledger?.windows).toEqual({ seven_day: { ...good, resetsAt: null, status: null } });
+    });
+
+    it('keeps the windows and the other facts when one fact is bad', async () => {
+      await put({
+        windows: { seven_day: good },
+        plan,
+        spend: {
+          periodStart: '2026-09-01T00:00:00.000Z',
+          costUsd: -1,
+          observedAt: plan.observedAt,
+          source: 'sidecar',
+        },
+      });
+      const ledger = await readLedger(dir, 'work');
+      expect(Object.keys(ledger?.windows ?? {})).toEqual(['seven_day']);
+      expect(ledger?.plan).toEqual(plan);
+      expect(ledger).not.toHaveProperty('spend');
+    });
+
+    it('reads a usedPct above 100 as 100 and below 0 as 0', async () => {
+      await put({
+        windows: { five_hour: { ...good, usedPct: 130 }, seven_day: { ...good, usedPct: -5 } },
+      });
+      const ledger = await readLedger(dir, 'work');
+      expect(ledger?.windows.five_hour?.usedPct).toBe(100);
+      expect(ledger?.windows.seven_day?.usedPct).toBe(0);
+    });
+
+    it('ignores unknown top-level keys on read and keeps them on write', async () => {
+      await put({ windows: { seven_day: good }, writer: 'flow 9.9', aNewBlock: { x: 1 } });
+      expect(Object.keys((await readLedger(dir, 'work'))?.windows ?? {})).toEqual(['seven_day']);
+      await writeLedger(dir, 'work', [obs('five_hour', 7)], NOW);
+      const onDisk = JSON.parse(await fs.readFile(path.join(dir, 'work.json'), 'utf8'));
+      expect(onDisk).toMatchObject({ writer: 'flow 9.9', aNewBlock: { x: 1 } });
+    });
+
+    it('returns the tolerant read from a write that changes nothing', async () => {
+      await put({
+        windows: { five_hour: { ...good, source: 'a-future-source' }, seven_day: good },
+      });
+      const result = await writeLedger(dir, 'work', [obs('seven_day', 12, good.observedAt)], NOW);
+      expect(result.written).toBe(false);
+      expect(Object.keys(result.ledger?.windows ?? {})).toEqual(['seven_day']);
+    });
+  });
+
   it('deletes under the lock, and a missing file or folder is fine', async () => {
     expect(await deleteLedger(dir, 'work')).toBe(true);
     await writeLedger(dir, 'work', [obs('five_hour', 1)], NOW);

@@ -193,8 +193,10 @@ export const LedgerSpendSchema = z
 export type LedgerSpend = z.infer<typeof LedgerSpendSchema>;
 
 /**
- * One account's usage ledger file. Loose, so fields a newer writer adds
- * survive a read-modify-write by an older one.
+ * One account's usage ledger file, as a writer may store it. Loose, so fields
+ * a newer writer adds survive a read-modify-write by an older one. Reading a
+ * file goes through {@link parseStoredLedger}, which sets aside the entries this
+ * schema refuses instead of refusing the whole file.
  */
 export const UsageLedgerSchema = z.looseObject({
   /** Contract version. */
@@ -272,9 +274,26 @@ function windowLengthMs(key: string, entry: LedgerEntry): number {
   return key === 'five_hour' ? FIVE_HOUR_MS : SEVEN_DAY_MS;
 }
 
-/** Validate a stored or observed window entry and normalize its times to UTC. */
+/**
+ * `value` with a finite `usedPct` clamped to 0 to 100, else `value` as given.
+ * Writers clamp, and a reader clamps whatever it finds anyway (contract 4.0.1):
+ * a reading of 130 means the window is full, not that the entry is broken.
+ */
+function withClampedUsedPct(value: unknown): unknown {
+  if (!isPlainObject(value)) return value;
+  const used = value.usedPct;
+  if (typeof used !== 'number' || !Number.isFinite(used) || (used >= 0 && used <= 100)) {
+    return value;
+  }
+  return { ...value, usedPct: Math.min(100, Math.max(0, used)) };
+}
+
+/**
+ * Validate a stored or observed window entry, clamping its `usedPct` to 0 to
+ * 100, and normalize its times to UTC.
+ */
 function parseEntry(value: unknown): LedgerEntry | null {
-  const parsed = LedgerEntrySchema.safeParse(value);
+  const parsed = LedgerEntrySchema.safeParse(withClampedUsedPct(value));
   if (!parsed.success) return null;
   const entry = parsed.data;
   return {
@@ -317,6 +336,73 @@ export function readWindow(entry: unknown, now: Date, key: string): ReadWindow |
   }
   if (nowMs - Date.parse(parsed.observedAt) > windowLengthMs(key, parsed)) return null;
   return { ...parsed, expired: false };
+}
+
+/** What {@link parseStoredLedger} made of a ledger file. */
+export interface StoredLedgerRead {
+  /** The readable ledger, or `null` when the file is not a version-1 ledger at all. */
+  ledger: UsageLedger | null;
+  /**
+   * What was set aside to read the rest: `windows.<key>` for a window, or the
+   * top-level field (`runtime`, `plan`, `credits`, `spend`). Empty when
+   * nothing was.
+   */
+  dropped: string[];
+}
+
+const FACT_SCHEMAS: Readonly<Record<LedgerFactKind, z.ZodType>> = {
+  plan: LedgerPlanSchema,
+  credits: LedgerCreditsSchema,
+  spend: LedgerSpendSchema,
+};
+
+/**
+ * Read a parsed ledger file the way the contract asks a reader to: one entry
+ * it does not understand is set aside on its own, never the whole file.
+ *
+ * The file must be an object with `v: 1`, a `windows` object, a valid
+ * `accountId` and `updatedAt`; anything else reads as no ledger. Within it, a
+ * window with a key or entry that fails the contract, a fact that fails its
+ * schema, or a `runtime` this version does not know (readers trust the path)
+ * is dropped and named in `dropped`, and the rest reads. A `usedPct` outside
+ * 0 to 100 is clamped, not dropped (contract 4.0.1). Unknown top-level fields
+ * pass through, as {@link UsageLedgerSchema} lets them.
+ *
+ * Pure. For display and memory only: writers merge the raw file
+ * ({@link mergeLedger}), so a dropped entry is still kept on disk.
+ *
+ * @param value - The file's content as parsed JSON.
+ */
+export function parseStoredLedger(value: unknown): StoredLedgerRead {
+  if (!isPlainObject(value) || value.v !== 1 || !isPlainObject(value.windows)) {
+    return { ledger: null, dropped: [] };
+  }
+  const dropped: string[] = [];
+  const windows: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value.windows)) {
+    const parsed = WINDOW_KEY_PATTERN.test(key)
+      ? LedgerEntrySchema.safeParse(withClampedUsedPct(entry))
+      : null;
+    if (parsed?.success) windows[key] = parsed.data;
+    else dropped.push(`windows.${key}`);
+  }
+  const candidate: Record<string, unknown> = { ...value, windows };
+  if (
+    candidate.runtime !== undefined &&
+    !(LEDGER_RUNTIMES as readonly unknown[]).includes(candidate.runtime)
+  ) {
+    delete candidate.runtime;
+    dropped.push('runtime');
+  }
+  for (const kind of LEDGER_FACT_KINDS) {
+    if (candidate[kind] === undefined || FACT_SCHEMAS[kind].safeParse(candidate[kind]).success) {
+      continue;
+    }
+    delete candidate[kind];
+    dropped.push(kind);
+  }
+  const parsed = UsageLedgerSchema.safeParse(candidate);
+  return { ledger: parsed.success ? parsed.data : null, dropped };
 }
 
 /** A warning code {@link mergeLedger} reports, as the contract's fixtures name them. */
@@ -437,7 +523,8 @@ function parseFact(kind: LedgerFactKind, value: Record<string, unknown>) {
  * observation more than 5 minutes after `now` is dropped, so one bad clock
  * cannot pin a window; an invalid one is dropped while the rest merge. A
  * stored entry that is not valid loses to any valid observation. `usedPct` is
- * clamped to 0 to 100 before validation, and times are stored in UTC.
+ * clamped to 0 to 100 before validation, stored or observed, and times are
+ * stored in UTC.
  *
  * The ledger's `runtime` and `accountId` are set to the owner's, and a change
  * to either rewrites the file. A ledger of another version is left alone; one
@@ -508,16 +595,7 @@ export function mergeLedger(
       warnings.push({ code: 'observation-invalid', key: String(key) });
       continue;
     }
-    const withNulls = {
-      usedPct: null,
-      resetsAt: null,
-      status: null,
-      ...rest,
-    } as Record<string, unknown>;
-    if (typeof withNulls.usedPct === 'number' && Number.isFinite(withNulls.usedPct)) {
-      withNulls.usedPct = Math.min(100, Math.max(0, withNulls.usedPct));
-    }
-    const entry = parseEntry(withNulls);
+    const entry = parseEntry({ usedPct: null, resetsAt: null, status: null, ...rest });
     if (!entry) {
       warnings.push({ code: 'observation-invalid', key });
       continue;

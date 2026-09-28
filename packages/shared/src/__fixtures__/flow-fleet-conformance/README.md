@@ -48,6 +48,11 @@ runner needs no filesystem; the cases' `env` exists only to prove it is ignored.
 keeps the stored one. Before it, a second reading from the same millisecond was
 dropped, even a `rejected` one.
 
+4.0.1 (rev 6f) is a patch: it pins what a reader does with a `usedPct`
+outside 0-100, which the rules left unwritten. Writers clamp, and so does a
+reader: 130 reads as 100 and -5 as 0 (`window-read` cases). A reader never
+treats such an entry as invalid, and never drops the file over it.
+
 ## What is here
 
 | File | What it pins | The call it drives |
@@ -63,7 +68,7 @@ dropped, even a `rejected` one.
 | `codex-rate-limits.cases.json` | Codex's `rate_limits` payload as ledger observations | `codexObservations(rateLimits, observedAt, source)` |
 | `prune.cases.json` | Which ledger files go when their account is no longer registered | `pruneTargets(registered, onDisk)` |
 | `flow-run.cases.json` | Reading `flow-state.json`, and keeping unknown fields when one run is written | the all-or-nothing reader, and an upsert by `issueId` |
-| `usage-ledger.schema.json` | The ledger file shape (JSON Schema draft-07) | |
+| `usage-ledger.schema.json` | The ledger file shape a WRITER may store (JSON Schema draft-07). Readers accept more: a `usedPct` outside 0-100 reads clamped (spec 1.2 "One entry"), and one entry a reader does not understand never makes it drop the file | |
 | `fleet-policy.schema.json` | The `fleet.json` shape a WRITER may store (JSON Schema draft-07). Readers accept more: no `v` reads as 1, and a bare key from before 2.0.0 reads as `claude-code:<key>` (see the `fleet-policy` cases and spec 1.1b) | |
 | `*.examples.json` | Values each schema must accept (`valid`) and reject (`invalid`) | |
 

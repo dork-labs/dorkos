@@ -1,6 +1,6 @@
 {
   "contract": "fleet",
-  "about": "Reading one ledger window (spec flow-cli-core 1.2 'Reading a window'). Call readWindow(entry, now, key). input.entry is the stored window entry, or null when the ledger has none. expected.reading is null for 'no reading' (no entry, an invalid entry, or a stale one), else { usedPct, resetsAt, windowMinutes (only when the entry has one), status, observedAt, source, expired } with timestamps as UTC ISO strings ending in 'Z' with milliseconds. Expired: resetsAt is set and now >= resetsAt; it reads usedPct 0, status 'allowed', expired true. Stale: resetsAt is null and now - observedAt is MORE than the window length: 1 hour for credits:<slug> and rate_limit:<slug>; else the entry's windowMinutes, or the minutes in a window:<minutes> key; else five_hour 5 h and every other key 7 days. A windowMinutes that is not an integer of 1 or more makes the entry invalid.",
+  "about": "Reading one ledger window (spec flow-cli-core 1.2 'Reading a window'). Call readWindow(entry, now, key). input.entry is the stored window entry, or null when the ledger has none. expected.reading is null for 'no reading' (no entry, an invalid entry, or a stale one), else { usedPct, resetsAt, windowMinutes (only when the entry has one), status, observedAt, source, expired } with timestamps as UTC ISO strings ending in 'Z' with milliseconds. Expired: resetsAt is set and now >= resetsAt; it reads usedPct 0, status 'allowed', expired true. Stale: resetsAt is null and now - observedAt is MORE than the window length: 1 hour for credits:<slug> and rate_limit:<slug>; else the entry's windowMinutes, or the minutes in a window:<minutes> key; else five_hour 5 h and every other key 7 days. A windowMinutes that is not an integer of 1 or more makes the entry invalid. A usedPct outside 0-100 does NOT make it invalid: writers clamp, but a reader clamps whatever it finds (130 reads as 100, -5 as 0) and never drops the entry or the file over it.",
   "cases": [
     {
       "name": "a current entry reads as stored",
@@ -196,6 +196,54 @@
           "status": "rejected",
           "observedAt": "2026-09-26T16:04:00.000Z",
           "source": "transcript",
+          "expired": false
+        }
+      }
+    },
+    {
+      "name": "a usedPct above 100 reads as 100, never as no reading",
+      "input": {
+        "key": "five_hour",
+        "now": "2026-09-26T16:05:00.000Z",
+        "entry": {
+          "usedPct": 130,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "allowed_warning",
+          "observedAt": "2026-09-26T16:04:10.000Z",
+          "source": "statusline"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 100,
+          "resetsAt": "2026-09-26T19:00:00.000Z",
+          "status": "allowed_warning",
+          "observedAt": "2026-09-26T16:04:10.000Z",
+          "source": "statusline",
+          "expired": false
+        }
+      }
+    },
+    {
+      "name": "a usedPct below 0 reads as 0, never as no reading",
+      "input": {
+        "key": "seven_day",
+        "now": "2026-09-26T16:05:00.000Z",
+        "entry": {
+          "usedPct": -5,
+          "resetsAt": "2026-09-30T00:00:00.000Z",
+          "status": null,
+          "observedAt": "2026-09-26T16:04:10.000Z",
+          "source": "sdk_usage"
+        }
+      },
+      "expected": {
+        "reading": {
+          "usedPct": 0,
+          "resetsAt": "2026-09-30T00:00:00.000Z",
+          "status": null,
+          "observedAt": "2026-09-26T16:04:10.000Z",
+          "source": "sdk_usage",
           "expired": false
         }
       }

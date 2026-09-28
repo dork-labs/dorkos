@@ -11,6 +11,7 @@ import {
   mergeLedger,
   modelWindowKey,
   nextAccountColor,
+  parseStoredLedger,
   readWindow,
   resolveAccountColor,
   toAccountUsage,
@@ -882,5 +883,73 @@ describe('account colors and ids', () => {
     expect(IMPLICIT_ACCOUNT_ID).toBe('default');
     expect(ACCOUNT_ID_PATTERN.test(IMPLICIT_ACCOUNT_ID)).toBe(true);
     expect(FLOW_FLEET_SETTINGS_TAB_ID).toBe('flow:fleet');
+  });
+});
+
+describe('parseStoredLedger (DOR-2471)', () => {
+  const good = { usedPct: 12, observedAt: '2026-09-26T11:00:00.000Z', source: 'sdk_event' };
+  const file = (extra: Record<string, unknown>) => ({
+    v: 1,
+    runtime: 'claude-code',
+    accountId: 'work',
+    updatedAt: '2026-09-26T11:00:00.000Z',
+    windows: { seven_day: good },
+    ...extra,
+  });
+
+  // Purpose: one entry a newer writer adds never blanks the account.
+  it('sets aside a bad window, key, fact or runtime and reads the rest', () => {
+    const read = parseStoredLedger(
+      file({
+        runtime: 'a-future-runtime',
+        windows: {
+          seven_day: good,
+          five_hour: { ...good, source: 'a-future-source' },
+          'Not-A-Key': good,
+        },
+        plan: { name: 'pro', observedAt: good.observedAt, source: 'rollout' },
+        credits: { hasCredits: 'yes' },
+      })
+    );
+    expect(read.ledger).not.toBeNull();
+    expect(Object.keys(read.ledger!.windows)).toEqual(['seven_day']);
+    expect(read.ledger).not.toHaveProperty('runtime');
+    expect(read.ledger).not.toHaveProperty('credits');
+    expect(read.ledger!.plan?.name).toBe('pro');
+    expect(read.dropped.sort()).toEqual(
+      ['credits', 'runtime', 'windows.Not-A-Key', 'windows.five_hour'].sort()
+    );
+  });
+
+  // Purpose: contract 4.0.1, a reader clamps a usedPct outside 0-100.
+  it('clamps a usedPct outside 0-100 instead of dropping it', () => {
+    const read = parseStoredLedger(
+      file({
+        windows: { five_hour: { ...good, usedPct: 130 }, seven_day: { ...good, usedPct: -5 } },
+      })
+    );
+    expect(read.dropped).toEqual([]);
+    expect(read.ledger!.windows.five_hour?.usedPct).toBe(100);
+    expect(read.ledger!.windows.seven_day?.usedPct).toBe(0);
+  });
+
+  it('keeps unknown top-level fields and reads a clean file unchanged', () => {
+    const clean = file({ writer: 'flow 9.9' });
+    const read = parseStoredLedger(clean);
+    expect(read).toEqual({ ledger: UsageLedgerSchema.parse(clean), dropped: [] });
+    expect(read.ledger).toMatchObject({ writer: 'flow 9.9' });
+  });
+
+  it('reads anything that is not a version-1 ledger as no ledger', () => {
+    for (const value of [
+      null,
+      [],
+      'x',
+      file({ v: 2 }),
+      file({ windows: [] }),
+      file({ accountId: '../x' }),
+    ]) {
+      expect(parseStoredLedger(value).ledger).toBeNull();
+    }
   });
 });

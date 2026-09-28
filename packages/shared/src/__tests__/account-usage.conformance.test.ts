@@ -211,9 +211,10 @@ describe('the flow fleet conformance fixture', () => {
 });
 
 /**
- * Invalid examples DorkOS's reader still accepts, on purpose. The JSON Schema
- * is what a writer may write; `UsageLedgerSchema` is what DorkOS reads, and it
- * trusts the file's path for the runtime, so a file without `runtime` still reads.
+ * Invalid examples `UsageLedgerSchema` still accepts, on purpose. The JSON
+ * Schema is what a writer may write; `UsageLedgerSchema` is the same shape, but
+ * it trusts the file's path for the runtime, so a file without `runtime` passes.
+ * DorkOS reads files more leniently still, through `parseStoredLedger`.
  */
 const READER_ACCEPTS = new Set(['no runtime']);
 

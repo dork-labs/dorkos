@@ -1,6 +1,6 @@
 {
   "contract": "fleet",
-  "about": "Merging observations into one account's usage ledger (spec flow-cli-core 1.2 'Merging'). Call mergeLedger(existing, observations, now, { runtime, accountId }). input.existing is the parsed ledger file, or null when there is none. An observation is either a window reading (it has a 'key'; an omitted usedPct, resetsAt or status reads as null, windowMinutes is optional) or a fact (it has a 'kind': 'plan' { name }, 'credits' { hasCredits, unlimited, balance } or 'spend' { periodStart, costUsd, limitUsd }, each with observedAt and source). Per fact, an observation replaces the stored one only when its observedAt is strictly later; an equal observedAt keeps the stored fact. Per window key, a strictly later observedAt wins, and on an EQUAL observedAt (two sessions on one account can see a limit in the same millisecond) the more severe reading wins: status rejected > allowed_warning > allowed > null, then the higher usedPct (null lowest), then the later resetsAt (null lowest), then the greater source (code-unit order), then the longer windowMinutes (missing lowest); a reading equal on all of these keeps the stored entry. Every comparison uses the NORMALIZED values: timestamps as instants (so '+02:00' and 'Z' can tie) and usedPct after clamping to 0-100. This is a strict total order, so the merge is deterministic, independent of observation order, and a replay is a no-op (contract 4.0.0; before it, an equal observedAt always kept the stored entry). An observation more than 5 minutes after now is dropped ('observation-future'); an invalid one is dropped ('observation-invalid'); the rest still merge. The merged window entry is { usedPct, resetsAt, windowMinutes (only when given), status, observedAt, source } with usedPct clamped to 0-100 and timestamps normalized to UTC ISO with milliseconds and 'Z'. A stored fact is the observation without 'kind', with timestamps normalized and a missing limitUsd or balance as null. The ledger's runtime and accountId are set to the owner's; a change to either rewrites the file. updatedAt becomes now only when something changed. Unknown ledger fields and unknown window keys are kept. expected.changed says whether the file must be rewritten; expected.ledger is the ledger after the merge; expected.warnings is a multiset of codes (compare sorted).",
+  "about": "Merging observations into one account's usage ledger (spec flow-cli-core 1.2 'Merging'). Call mergeLedger(existing, observations, now, { runtime, accountId }). input.existing is the parsed ledger file, or null when there is none. An observation is either a window reading (it has a 'key'; an omitted usedPct, resetsAt or status reads as null, windowMinutes is optional) or a fact (it has a 'kind': 'plan' { name }, 'credits' { hasCredits, unlimited, balance } or 'spend' { periodStart, costUsd, limitUsd }, each with observedAt and source). Per fact, an observation replaces the stored one only when its observedAt is strictly later; an equal observedAt keeps the stored fact. Per window key, a strictly later observedAt wins, and on an EQUAL observedAt (two sessions on one account can see a limit in the same millisecond) the more severe reading wins: status rejected > allowed_warning > allowed > null, then the higher usedPct (null lowest), then the later resetsAt (null lowest), then the greater source (code-unit order), then the longer windowMinutes (missing lowest); a reading equal on all of these keeps the stored entry. Every comparison uses the NORMALIZED values: timestamps as instants (so '+02:00' and 'Z' can tie) and usedPct after clamping to 0-100, the stored entry's as well as the observation's (a stored usedPct outside 0-100 is clamped, never treated as invalid). This is a strict total order, so the merge is deterministic, independent of observation order, and a replay is a no-op (contract 4.0.0; before it, an equal observedAt always kept the stored entry). An observation more than 5 minutes after now is dropped ('observation-future'); an invalid one is dropped ('observation-invalid'); the rest still merge. The merged window entry is { usedPct, resetsAt, windowMinutes (only when given), status, observedAt, source } with usedPct clamped to 0-100 and timestamps normalized to UTC ISO with milliseconds and 'Z'. A stored fact is the observation without 'kind', with timestamps normalized and a missing limitUsd or balance as null. The ledger's runtime and accountId are set to the owner's; a change to either rewrites the file. updatedAt becomes now only when something changed. Unknown ledger fields and unknown window keys are kept. expected.changed says whether the file must be rewritten; expected.ledger is the ledger after the merge; expected.warnings is a multiset of codes (compare sorted).",
   "cases": [
     {
       "name": "the first observation creates the ledger",
@@ -1425,6 +1425,58 @@
               "status": "rejected",
               "observedAt": "2026-09-26T15:00:00.000Z",
               "source": "sdk_event"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a stored usedPct above 100 is read as 100, not as invalid: an equal-time 99 does not replace it",
+      "input": {
+        "existing": {
+          "v": 1,
+          "runtime": "claude-code",
+          "accountId": "claude3",
+          "updatedAt": "2026-09-26T15:00:00.000Z",
+          "windows": {
+            "five_hour": {
+              "usedPct": 130,
+              "resetsAt": null,
+              "status": null,
+              "observedAt": "2026-09-26T15:00:00.000Z",
+              "source": "statusline"
+            }
+          }
+        },
+        "runtime": "claude-code",
+        "accountId": "claude3",
+        "now": "2026-09-26T15:05:00.000Z",
+        "observations": [
+          {
+            "key": "five_hour",
+            "usedPct": 99,
+            "resetsAt": null,
+            "status": null,
+            "observedAt": "2026-09-26T15:00:00.000Z",
+            "source": "statusline"
+          }
+        ]
+      },
+      "expected": {
+        "changed": false,
+        "warnings": [],
+        "ledger": {
+          "v": 1,
+          "runtime": "claude-code",
+          "accountId": "claude3",
+          "updatedAt": "2026-09-26T15:00:00.000Z",
+          "windows": {
+            "five_hour": {
+              "usedPct": 130,
+              "resetsAt": null,
+              "status": null,
+              "observedAt": "2026-09-26T15:00:00.000Z",
+              "source": "statusline"
             }
           }
         }
