@@ -54,6 +54,14 @@ export function SessionRowCompact({
   const account = useSessionRowAccount(session);
   const limitDisplay = account.limitDisplay;
   const borderState = useSessionBorderState(session.id, account.limitStatus);
+  // The row's tooltip names the account (the dot has none of its own, so two
+  // never open at once) and, when there is one, the row's state.
+  const tooltipText = [
+    account.visible && account.color ? account.name : null,
+    borderState.kind === 'idle' ? null : borderState.label,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   const now = useNow(60_000);
   const relativeTime = useMemo(
@@ -113,7 +121,7 @@ export function SessionRowCompact({
               className="size-1.5 shrink-0 rounded-full"
             />
             {/* The account's dot leads the title; its name is the dot's tooltip (Q4). */}
-            <AccountMark account={account} />
+            <AccountMark account={account} tooltip={false} />
             {isRenaming ? (
               <input
                 ref={renameInputRef}
@@ -163,9 +171,9 @@ export function SessionRowCompact({
           </button>
         </TooltipTrigger>
       </SessionContextMenu>
-      {borderState.kind !== 'idle' && (
+      {tooltipText && (
         <TooltipContent side="right" sideOffset={8}>
-          {borderState.label}
+          {tooltipText}
         </TooltipContent>
       )}
     </Tooltip>

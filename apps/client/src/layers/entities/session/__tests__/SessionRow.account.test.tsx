@@ -23,7 +23,10 @@ import {
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { formatRelativeTime } from '@/layers/shared/lib';
-import { TooltipProvider } from '@/layers/shared/ui';
+import { STATUS_TONE_SURFACE, TooltipProvider } from '@/layers/shared/ui';
+
+/** The red tint's background class, from the token itself, so removing the token fails these tests. */
+const RED_TINT = STATUS_TONE_SURFACE.error.split(' ').filter((c) => c.startsWith('bg-'));
 import {
   TransportProvider,
   seedAccountUsage,
@@ -162,8 +165,10 @@ describe('session row account dot', () => {
       // The row no longer prints the name beside the dot (Q4).
       expect(screen.queryByText('Acct 2')).toBeNull();
       await userEvent.hover(dot);
+      // One tooltip, the row's own, names the account: the dot nests none.
       const tooltips = await screen.findAllByRole('tooltip');
-      expect(tooltips.some((tip) => tip.textContent === 'Acct 2')).toBe(true);
+      expect(tooltips).toHaveLength(1);
+      expect(tooltips[0]).toHaveTextContent('Acct 2');
     }
   );
 
@@ -193,6 +198,7 @@ describe('session row account dot', () => {
     expect(screen.queryByRole('img', { name: /Acct/ })).toBeNull();
     expect(screen.queryByText(/^out ·/)).toBeNull();
     expect(screen.getByTestId('session-row')).not.toHaveAttribute('data-limit');
+    expect(screen.getByTestId('session-row')).not.toHaveClass(...RED_TINT);
   });
 
   it('draws no dot and no out text on a Codex session, even one that ran out', async () => {
@@ -224,6 +230,7 @@ describe('session row out of usage', () => {
       expect(screen.queryByText(formatRelativeTime(session.updatedAt))).toBeNull();
       expect(rowControl()).toHaveAccessibleName(expect.stringContaining('out · handing off'));
       expect(screen.getByTestId('session-row')).toHaveAttribute('data-limit', 'action');
+      expect(screen.getByTestId('session-row')).toHaveClass(...RED_TINT);
     }
   );
 
@@ -236,6 +243,7 @@ describe('session row out of usage', () => {
       // The border's tooltip and spoken state.
       expect(rowControl()).toHaveAccessibleName(expect.stringContaining('Out of usage'));
       expect(screen.getByTestId('session-row')).toHaveAttribute('data-limit', 'action');
+      expect(screen.getByTestId('session-row')).toHaveClass(...RED_TINT);
     }
   );
 
@@ -246,6 +254,7 @@ describe('session row out of usage', () => {
       expect(await screen.findByText('out · waiting for reset')).toBeInTheDocument();
       expect(rowControl()).toHaveAccessibleName(expect.stringContaining('out · waiting for reset'));
       expect(screen.getByTestId('session-row')).toHaveAttribute('data-limit', 'waiting');
+      expect(screen.getByTestId('session-row')).not.toHaveClass(...RED_TINT);
     }
   );
 
@@ -260,6 +269,7 @@ describe('session row out of usage', () => {
     expect(screen.queryByText(/^out ·/)).toBeNull();
     expect(screen.getByText(formatRelativeTime(session.updatedAt))).toBeInTheDocument();
     expect(screen.getByTestId('session-row')).not.toHaveAttribute('data-limit');
+    expect(screen.getByTestId('session-row')).not.toHaveClass(...RED_TINT);
     expect(rowControl()).not.toHaveAccessibleName(expect.stringContaining('Out of usage'));
   });
 
@@ -270,6 +280,7 @@ describe('session row out of usage', () => {
     expect(screen.queryByText(/^out ·/)).toBeNull();
     expect(screen.getByText(formatRelativeTime(session.updatedAt))).toBeInTheDocument();
     expect(screen.getByTestId('session-row')).not.toHaveAttribute('data-limit');
+    expect(screen.getByTestId('session-row')).not.toHaveClass(...RED_TINT);
   });
 
   it('shows nothing when the session carries no status', async () => {
@@ -324,7 +335,8 @@ describe('session row naming the standalone default (decision §12)', () => {
       expect(screen.queryByRole('img', { name: '.claude' })).toBeNull();
       await userEvent.hover(dot);
       const tooltips = await screen.findAllByRole('tooltip');
-      expect(tooltips.some((tip) => tip.textContent === MAIN)).toBe(true);
+      expect(tooltips).toHaveLength(1);
+      expect(tooltips[0]).toHaveTextContent(MAIN);
       expect(rowControl()).toHaveAccessibleName(expect.stringContaining(MAIN));
     }
   );

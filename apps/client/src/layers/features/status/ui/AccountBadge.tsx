@@ -1,5 +1,6 @@
 import { AccountDot, STATUS_TONE_SURFACE } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { sessionLimitDisplay } from '@/layers/entities/session';
 import { useSessionAccount, type SessionAccount } from '../model/use-session-account';
 
 /** Props for {@link AccountBadgeView}. */
@@ -12,39 +13,48 @@ export interface AccountBadgeViewProps {
 
 /**
  * The session header's account pill, drawn from an account already read: the
- * account's dot and name (`● Acct 2`), and on the error surface with `· out`
- * when the account ran out (`● Acct 4 · out`). A limit on one model only keeps
- * the normal pill, because the account still runs another model and the
- * status-bar chip carries that detail (spec `claude-account-ui` §6.3).
+ * account's dot and name (`● Acct 2`), and `· out` when the session ran out.
+ *
+ * It follows the sidebar row's rule exactly (`sessionLimitDisplay`, spec
+ * `claude-account-ui` §6.2 and §6.3), so the two never disagree: red while the
+ * account is out and the session needs action, neutral once the person chose
+ * to wait (Q13), and plain for a moved session (Q14), a limit on one model
+ * only, or no limit of its own. Its accessible name says what happened in the
+ * row's words (`Acct 4, out · needs you`), so color is never the only signal.
  *
  * Renders nothing unless the account identity gate is open and the account
- * can be named. The name is always printed, so color is never the only signal.
+ * can be named.
  */
 export function AccountBadgeView({ account, className }: AccountBadgeViewProps) {
   if (!account.visible || !account.name) return null;
-  const out = account.chipState === 'out';
+  const display = sessionLimitDisplay(account.limit);
+  const tone = display ? (display.needsAction ? 'action' : 'waiting') : 'ok';
   return (
     <span
+      role="group"
+      aria-label={display ? `${account.name}, ${display.text}` : account.name}
       data-slot="account-badge"
-      data-state={out ? 'out' : 'ok'}
+      data-state={tone}
       className={cn(
         'text-2xs inline-flex max-w-[10rem] min-w-0 shrink items-center gap-1 rounded-full border px-2 py-0.5',
-        out ? cn(STATUS_TONE_SURFACE.error, 'border-status-error-border') : 'text-muted-foreground',
+        display?.needsAction
+          ? cn(STATUS_TONE_SURFACE.error, 'border-status-error-border')
+          : 'text-muted-foreground',
         className
       )}
     >
       {/* The name is printed beside it, so the dot's own name would be said twice. */}
       {account.color && (
         <span aria-hidden className="inline-flex">
-          <AccountDot color={account.color} name={account.name} />
+          <AccountDot color={account.color} name={account.name} tooltip={false} />
         </span>
       )}
       <span className="min-w-0 truncate" title={account.name}>
         {account.name}
       </span>
-      {/* The space reads "Acct 4 · out" aloud and in a copy; flex layout ignores it. */}
-      {out && ' '}
-      {out && <span className="shrink-0 whitespace-nowrap">· out</span>}
+      {/* The space reads "Acct 4 · out" in a copy; flex layout ignores it. */}
+      {display && ' '}
+      {display && <span className="shrink-0 whitespace-nowrap">· out</span>}
     </span>
   );
 }

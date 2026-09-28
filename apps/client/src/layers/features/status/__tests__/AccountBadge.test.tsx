@@ -26,7 +26,8 @@ import {
   seedAccountUsage,
   useAppStore,
 } from '@/layers/shared/model';
-import { TooltipProvider } from '@/layers/shared/ui';
+import { STATUS_TONE_SURFACE, TooltipProvider } from '@/layers/shared/ui';
+import { SessionRow } from '@/layers/entities/session';
 
 // The session list: stubbed, because the real one needs a router.
 let mockSessions: Session[] = [];
@@ -37,6 +38,9 @@ vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOrigi
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => false }));
 
 import { AccountBadge } from '../ui/AccountBadge';
+
+/** The red surface's background class, from the token itself. */
+const RED = STATUS_TONE_SURFACE.error.split(' ').filter((c) => c.startsWith('bg-'));
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -78,7 +82,11 @@ function transportWith(count: number): Transport {
   return createMockTransport({ getConfig: vi.fn().mockResolvedValue(config) });
 }
 
-function renderBadge(transport: Transport, usage: AccountUsage[] = []): QueryClient {
+function renderBadge(
+  transport: Transport,
+  usage: AccountUsage[] = [],
+  { withRow = false } = {}
+): QueryClient {
   const queryClient = createTestQueryClient();
   seedAccountUsage(queryClient, usage);
   render(
@@ -88,6 +96,14 @@ function renderBadge(transport: Transport, usage: AccountUsage[] = []): QueryCli
           <div data-testid="header">
             <AccountBadge sessionId={SID} />
           </div>
+          {withRow && mockSessions[0] && (
+            <SessionRow
+              variant="compact"
+              session={mockSessions[0]}
+              isActive={false}
+              onClick={() => {}}
+            />
+          )}
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
@@ -122,13 +138,74 @@ describe('AccountBadge', () => {
     expect(screen.getByTestId('header')).toHaveTextContent(/^Acct 2$/);
   });
 
-  it('reads "Acct 4 · out" when the account ran out', async () => {
+  it('reads "Acct 4 · out" in red while the session needs action, and says why', async () => {
     mockSessions = [
       onAccount(4, { status: { lifecycle: 'idle', limit: createMockSessionLimit('ask') } }),
     ];
     renderBadge(transportWith(4));
-    await screen.findByText('Acct 4');
-    expect(screen.getByTestId('header')).toHaveTextContent('Acct 4 · out');
+    const badge = await screen.findByRole('group', { name: 'Acct 4, out · needs you' });
+    expect(badge).toHaveTextContent('Acct 4 · out');
+    expect(badge).toHaveClass(...RED);
+  });
+
+  it('says "handing off" while the work is about to move by itself', async () => {
+    mockSessions = [
+      onAccount(4, { status: { lifecycle: 'idle', limit: createMockSessionLimit('auto') } }),
+    ];
+    renderBadge(transportWith(4));
+    const badge = await screen.findByRole('group', { name: 'Acct 4, out · handing off' });
+    expect(badge).toHaveClass(...RED);
+  });
+
+  it.each(['waiting-reset', 'reset-ready'] as const)(
+    'stays neutral once the person chose to wait (`%s`, Q13)',
+    async (state) => {
+      mockSessions = [
+        onAccount(4, {
+          status: { lifecycle: 'idle', limit: createMockSessionLimit('waiting', { state }) },
+        }),
+      ];
+      renderBadge(transportWith(4));
+      const badge = await screen.findByRole('group', { name: 'Acct 4, out · waiting for reset' });
+      expect(badge).toHaveTextContent('Acct 4 · out');
+      expect(badge).not.toHaveClass(...RED);
+    }
+  );
+
+  it('stays plain when the account reads limited but this session has no limit of its own', async () => {
+    mockSessions = [onAccount(4)];
+    renderBadge(transportWith(4), [
+      createMockAccountUsage({
+        accountId: 'acct-4',
+        path: '/Users/test/.claude-acct-4',
+        label: 'Acct 4',
+        state: 'limited',
+      }),
+    ]);
+    const badge = await screen.findByRole('group', { name: 'Acct 4' });
+    expect(badge).toHaveTextContent(/^Acct 4$/);
+    expect(badge).not.toHaveClass(...RED);
+  });
+
+  it.each([
+    ['needs you', createMockSessionLimit('ask'), 'out · needs you'],
+    ['handing off', createMockSessionLimit('auto'), 'out · handing off'],
+    ['waiting', createMockSessionLimit('waiting'), 'out · waiting for reset'],
+    ['moved', createMockSessionLimit('continued'), null],
+    ['model only', createMockSessionLimit('ask', { scope: 'model', state: 'model-limited' }), null],
+  ])('agrees with the sidebar row (%s)', async (_case, limit, text) => {
+    mockSessions = [onAccount(4, { status: { lifecycle: 'idle', limit } })];
+    renderBadge(transportWith(4), [], { withRow: true });
+    const badge = await screen.findByRole('group', { name: text ? `Acct 4, ${text}` : 'Acct 4' });
+    const row = screen.getByTestId('session-row');
+    if (text) {
+      expect(row).toHaveTextContent(text);
+      expect(badge.classList.contains(RED[0]!)).toBe(row.classList.contains(RED[0]!));
+    } else {
+      expect(row).not.toHaveTextContent(/out ·/);
+      expect(badge).not.toHaveClass(...RED);
+      expect(row).not.toHaveClass(...RED);
+    }
   });
 
   it('keeps the normal badge when only one model ran out (chip state `model-out`)', async () => {
@@ -151,8 +228,9 @@ describe('AccountBadge', () => {
       onAccount(4, { status: { lifecycle: 'idle', limit: createMockSessionLimit('continued') } }),
     ];
     renderBadge(transportWith(4));
-    await screen.findByText('Acct 4');
-    expect(screen.getByTestId('header')).toHaveTextContent(/^Acct 4$/);
+    const badge = await screen.findByRole('group', { name: 'Acct 4' });
+    expect(badge).toHaveTextContent(/^Acct 4$/);
+    expect(badge).not.toHaveClass(...RED);
   });
 
   it.each([0, 1])('draws nothing with %i Claude account(s)', async (count) => {

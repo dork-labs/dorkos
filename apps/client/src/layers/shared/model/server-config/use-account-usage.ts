@@ -16,7 +16,7 @@
  * @module shared/model/server-config/use-account-usage
  */
 import { useMemo } from 'react';
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { skipToken, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { useTransport } from '../TransportContext';
 import { accountKeys } from './query-keys';
@@ -189,4 +189,31 @@ export function useAccountUsage(
     }
     return { byId, byPath, isLoading: query.isLoading };
   }, [records, query.isLoading]);
+}
+
+/**
+ * Read one account's usage record from the cache, and re-render only when THAT
+ * record changes. Never fetches: it is for lists that name many accounts at
+ * once (every sidebar row, every account name), where subscribing to the whole
+ * runtime's cache would re-render all of them on each `account_usage` event.
+ * The record is matched by registry id first, then by path.
+ *
+ * @param runtime - The runtime slug, or nothing to read nothing.
+ * @param account - The account's registry id and path, either may be `null`.
+ */
+export function useAccountUsageRecord(
+  runtime: string | null | undefined,
+  account: { accountId: string | null; path: string | null }
+): AccountUsage | null {
+  const { accountId, path } = account;
+  const { data } = useQuery({
+    queryKey: accountKeys.usage(runtime ?? ''),
+    // Cache only: `useAccountUsage` owns the request.
+    queryFn: skipToken,
+    select: (records: AccountUsage[]) =>
+      (accountId !== null ? records.find((usage) => usage.accountId === accountId) : undefined) ??
+      (path !== null ? records.find((usage) => usage.path === path) : undefined) ??
+      null,
+  });
+  return runtime ? (data ?? null) : null;
 }

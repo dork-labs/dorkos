@@ -75,9 +75,15 @@ export function SessionRowFull({
   const borderState = useSessionBorderState(session.id, account.limitStatus);
   // What the row says aloud: the title, the account the dot names, what
   // happened to it (the words replace the time on screen), and its state.
+  const accountName = account.visible && account.color ? account.name : null;
+  // The row's tooltip names the account (the dot has none of its own, so two
+  // never open at once) and, when there is one, the row's state.
+  const tooltipText = [accountName, borderState.kind === 'idle' ? null : borderState.label]
+    .filter(Boolean)
+    .join(' · ');
   const ariaLabel = [
     `Session: ${sessionDisplayTitle(session.title)}`,
-    account.visible && account.color ? account.name : null,
+    accountName,
     limitDisplay?.text,
     borderState.label,
   ]
@@ -135,7 +141,7 @@ export function SessionRowFull({
           onRename={onRename ? startRename : undefined}
           onFork={onFork ? () => onFork(session.id) : undefined}
         >
-          <TooltipTrigger asChild disabled={borderState.kind === 'idle'}>
+          <TooltipTrigger asChild disabled={!tooltipText}>
             <motion.div
               role="button"
               tabIndex={0}
@@ -248,7 +254,7 @@ export function SessionRowFull({
                     model={session.model}
                     className="text-muted-foreground/50"
                   />
-                  <AccountMark account={account} />
+                  <AccountMark account={account} tooltip={false} />
                   <div
                     className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs"
                     title={onRename ? 'Click the pencil icon to rename' : undefined}
@@ -261,7 +267,7 @@ export function SessionRowFull({
           </TooltipTrigger>
         </SessionContextMenu>
         <TooltipContent side="right" sideOffset={8}>
-          {borderState.label}
+          {tooltipText || borderState.label}
         </TooltipContent>
 
         <SessionDetailsPanel

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { claudeAccountName, type ClaudeAccountRef } from '../../lib/claude-accounts';
 import { useTransport } from '../TransportContext';
-import { useAccountUsage } from './use-account-usage';
+import { useAccountUsageRecord } from './use-account-usage';
 import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
 
 /** A registered account with the color its dot and badge are drawn in. */
@@ -86,9 +86,13 @@ export function useClaudeAccounts(): ClaudeAccountsView {
   const claudeCode = data?.claudeCode;
   const accounts: ClaudeAccountEntry[] = claudeCode?.accounts ?? [];
   // The standalone default's reading carries the host's label for it
-  // (decision §12). Read from the cache the session list and Settings seed;
-  // this never fetches.
-  const defaultReading = useAccountUsage('claude-code').byId.get(IMPLICIT_ACCOUNT_ID);
+  // (decision §12). Read from the cache the session list and Settings seed,
+  // subscribed to that one record so other accounts' updates re-render nothing,
+  // and never fetched here.
+  const defaultReading = useAccountUsageRecord('claude-code', {
+    accountId: IMPLICIT_ACCOUNT_ID,
+    path: null,
+  });
   const standaloneDefault =
     defaultReading && !accounts.some((account) => account.path === defaultReading.path)
       ? { path: defaultReading.path, label: defaultReading.label }

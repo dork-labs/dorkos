@@ -29,8 +29,8 @@ export { useSessionAccount, accountChipPromotion } from './model/use-session-acc
 export { useStatusUsage } from './model/use-status-usage';
 export type { StatusUsage } from './model/use-status-usage';
 export type { SessionAccount, SessionTrackerItem } from './model/use-session-account';
-// The two account rules other surfaces must agree with: the chip's tone (the
-// header badge) and when moving to another account is on offer (the banner).
+// The two account rules other surfaces must agree with: the chip's tone and
+// when moving to another account is on offer (the banner).
 export { canOfferContinue, chipToneFor, type AccountChipTone } from './lib/account-chip';
 export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
 export { AutonomyConfirmDialog } from './ui/AutonomyConfirmDialog';

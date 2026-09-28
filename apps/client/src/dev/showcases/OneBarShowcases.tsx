@@ -707,7 +707,7 @@ export function OneBarShowcases() {
 
       <PlaygroundSection
         title="AccountBadge"
-        description="The session header names the account the session spends, after the origin chip, once two or more Claude accounts are set up. It turns red and says “out” when that account ran out; a limit on one model only keeps the normal pill."
+        description="The session header names the account the session spends, after the origin chip, once two or more Claude accounts are set up. It says “out” when the session ran out, in red only while it needs you, exactly as its sidebar row does; a moved session or a limit on one model only keeps the normal pill."
       >
         <ShowcaseLabel>Normal</ShowcaseLabel>
         <ShowcaseDemo>
@@ -719,12 +719,22 @@ export function OneBarShowcases() {
           </BarFrame>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Out of usage</ShowcaseLabel>
+        <ShowcaseLabel>Out of usage and needs you: red</ShowcaseLabel>
         <ShowcaseDemo>
           <BarFrame>
             <OneBar
               identity={<BarTitle>DOR-2361 issuer column</BarTitle>}
-              chips={<AccountBadgeView account={badgeAccount(4, 'out')} />}
+              chips={<AccountBadgeView account={badgeAccount(4, 'limited')} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Out of usage, chose to wait for the reset: neutral (Q13)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            <OneBar
+              identity={<BarTitle>Main · groom check</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(3, 'waiting-reset')} />}
             />
           </BarFrame>
         </ShowcaseDemo>
@@ -737,8 +747,23 @@ export function OneBarShowcases() {
  * A started Claude session on the playground's account `n`, as
  * `useSessionAccount` reads it with the identity gate open.
  */
-function badgeAccount(n: number, chipState: SessionAccount['chipState'] = 'ok'): SessionAccount {
+function badgeAccount(n: number, limitState?: 'limited' | 'waiting-reset'): SessionAccount {
   const usage = MOCK_ACCOUNT_USAGE[n - 1]!;
+  const resetsAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+  const limit: SessionAccount['limit'] = limitState
+    ? {
+        accountId: usage.accountId,
+        window: 'seven_day',
+        resetsAt,
+        since: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+        plan:
+          limitState === 'limited'
+            ? { mode: 'ask' }
+            : { mode: 'waiting', resumeAt: resetsAt, autoResume: false },
+        scope: 'account',
+        state: limitState,
+      }
+    : null;
   return {
     visible: true,
     runtime: 'claude-code',
@@ -747,8 +772,8 @@ function badgeAccount(n: number, chipState: SessionAccount['chipState'] = 'ok'):
     name: usage.label,
     color: usage.color,
     usage,
-    limit: null,
-    chipState,
+    limit,
+    chipState: limit ? 'out' : 'ok',
     trackerItem: null,
     lifecycle: 'idle',
     pending: false,

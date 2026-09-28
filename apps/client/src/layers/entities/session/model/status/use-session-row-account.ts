@@ -13,7 +13,7 @@ import type { Session } from '@dorkos/shared/types';
 import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stream';
 import { useAccountIdentityGate } from '@/layers/entities/runtime';
 import { accountIdentity } from '@/layers/shared/lib';
-import { useAccountUsage, useClaudeAccounts } from '@/layers/shared/model';
+import { useAccountUsageRecord, useClaudeAccounts } from '@/layers/shared/model';
 import { sessionLimitDisplay, type SessionLimitDisplay } from '../../lib/session-limit-text';
 import { useSessionStreamStatus } from '../stream/session-stream-store';
 
@@ -40,24 +40,20 @@ export interface SessionRowAccount {
  *
  * The live status wins over the row's: once the session stream has a status,
  * its `limit` (even `null`, a limit that cleared) is the answer; before that,
- * the list's `status` is (absent reads as no limit). Reads the account usage
- * the session list seeded, and never fetches.
+ * the list's `status` is (absent reads as no limit). Reads only this row's
+ * account's usage from what the session list seeded, and never fetches.
  *
  * @param session - The row's session.
  */
 export function useSessionRowAccount(session: Session): SessionRowAccount {
   const visible = useAccountIdentityGate(session.runtime);
   const { accounts, nameFor, colorFor } = useClaudeAccounts();
-  // No account or path in the options, so this only reads what the list seeded.
-  const usageView = useAccountUsage(visible ? session.runtime : null);
   const streamStatus = useSessionStreamStatus(session.id);
-
   const accountId = session.accountId ?? null;
   const path = session.account ?? null;
-  const usage =
-    (accountId !== null ? usageView.byId.get(accountId) : undefined) ??
-    (path !== null ? usageView.byPath.get(path) : undefined) ??
-    null;
+  // This row's own account's reading only, from what the list seeded: another
+  // account's usage event re-renders no row, and nothing is fetched.
+  const usage = useAccountUsageRecord(visible ? session.runtime : null, { accountId, path });
   const { name, color } = accountIdentity({ accountId, path, accounts, usage, nameFor, colorFor });
 
   if (!visible) {
