@@ -53,6 +53,15 @@ The provider reports authentication status for its private account. DorkOS separ
 
 The registry may contain several instances of one type. Route active work by `instanceId`, not by `type`. Removing one instance must leave its same-type siblings registered and routable.
 
+### Keeping sign-in status fresh
+
+A sign-in can end at the service without DorkOS taking part, so DorkOS asks. `SignInRefresher` (`services/connectors/resources/sign-in-refresh.ts`) calls `ConnectorRegistry.refreshSignIns()` every 15 minutes and when the owner opens Connections (at most once a minute). That lists each instance's accounts and records the status each kept account is listed with, plus `connections.last_verified_at`: the last time the service itself confirmed that status. Every connection check the bootstrapper runs is also a listing, so boot records statuses the same way. Your adapter's part:
+
+- `listAccounts()` reports each account's real status (`active`, `expired`, `revoked`, or `pending` while a sign-in is unfinished) and throws when the listing fails. A listing that throws leaves every account as it was, and a partial listing only refreshes what it returns; neither may pretend an account ended.
+- A refresh never adds, closes, relabels or moves an account. It changes only the status and `last_verified_at`, and only on kept accounts that are still connected. A fact recorded after the listing began (a sign-in finishing, an action refused for an ended sign-in) wins over that listing.
+- When `execute` learns from the service that the account's own sign-in has ended, return an error with one of `CONNECTOR_SIGN_IN_ENDED_CODES` (`packages/shared/src/connector-provider.ts`) and `CONNECTOR_SIGN_IN_ENDED_MESSAGE`. The broker records the status at once and later calls are refused with the same message. Use these codes only on that precise signal, never for a rate limit, an outage, a refused key or an operation the service rejected for another reason.
+- A way whose check or listing fails for a reason that can pass is checked again by itself (`WAY_RECHECK_DELAYS_MS` in `bootstrap.ts`); an error carrying HTTP status 401 or 403 is treated as a refused key and waits for the owner. Put the HTTP status on your client's error as `status` so the bootstrapper can tell them apart.
+
 ### Operation classification
 
 Classification is part of an immutable operation revision fingerprint. A schema, toolkit version, or classification change creates a new revision and requires review before it can replace a grant.

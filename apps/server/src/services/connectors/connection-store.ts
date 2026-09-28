@@ -109,6 +109,24 @@ export interface ClosedConnection {
   readonly label: string;
 }
 
+/** A sign-in status the service reports once an account is connected; `pending` is mid-sign-in. */
+export type SignInStatus = Extract<ConnectedAccountStatus, 'active' | 'expired' | 'revoked'>;
+
+/** One kept account whose sign-in status a fresh fact from the service changed. */
+export interface SignInStatusChange {
+  /** Stable connection id. */
+  readonly connectionId: ConnectionId;
+  /** The status recorded before. */
+  readonly from: ConnectedAccountStatus;
+  /** The status the service reports now. */
+  readonly to: SignInStatus;
+}
+
+/** Whether a listed status is a settled sign-in status (not mid-sign-in, not a local pause). */
+function isSignInStatus(status: ConnectedAccountStatus): status is SignInStatus {
+  return status === 'active' || status === 'expired' || status === 'revoked';
+}
+
 /** Stable connection store and sole writer after the application backfill. */
 export class ConnectionStore {
   private readonly db: Db;
@@ -476,17 +494,6 @@ export class ConnectionStore {
     };
   }
 
-  /** Whether an account has been removed from owner and agent inventory. */
-  isRemoved(connectionId: string): boolean {
-    return Boolean(
-      this.db
-        .select({ removedAt: connections.removedAt })
-        .from(connections)
-        .where(eq(connections.id, connectionId))
-        .get()?.removedAt
-    );
-  }
-
   /** Read one private binding by stable public connection id. */
   binding(connectionId: ConnectionId): StableConnectionBinding | undefined {
     this.assertAvailable();
@@ -687,6 +694,100 @@ export class ConnectionStore {
       );
     }
     return unlisted;
+  }
+
+  /**
+   * Record the sign-in status a successful account listing from one instance
+   * reports for each kept account it lists, and when the service said so
+   * (`lastVerifiedAt`). Only the status and that time change: never the label,
+   * the app, the owner's pause or whether the account is kept. An account the
+   * listing leaves out is untouched, so a partial listing is safe; one it
+   * reports mid-sign-in (`pending`) is untouched too. A fact recorded after
+   * the listing began (a sign-in finishing, an action the service refused for
+   * an ended sign-in) is fresher than the listing and wins over it. Callers
+   * pass only a listing that succeeded: a failed one never reaches here.
+   *
+   * @param instanceId - The instance the listing came from.
+   * @param listed - Every account that listing returned.
+   * @param listingStartedAt - When the listing was requested (ISO-8601).
+   * @returns The accounts whose recorded status changed.
+   */
+  refreshSignInStatus(
+    instanceId: ConnectorProviderInstanceId,
+    listed: readonly ProviderConnectedAccount[],
+    listingStartedAt: string
+  ): SignInStatusChange[] {
+    this.assertAvailable();
+    const reported = new Map<string, SignInStatus>();
+    for (const account of listed) {
+      if (isSignInStatus(account.status)) reported.set(account.externalAccountRef, account.status);
+    }
+    if (reported.size === 0) return [];
+    const now = new Date().toISOString();
+    return this.db.transaction((tx) => {
+      const kept = tx
+        .select({
+          connectionId: connections.id,
+          externalAccountRef: connections.externalAccountRef,
+          status: connections.status,
+          lastVerifiedAt: connections.lastVerifiedAt,
+        })
+        .from(connections)
+        .where(
+          and(
+            eq(connections.providerInstanceId, instanceId),
+            eq(connections.lifecycleState, 'connected'),
+            isNull(connections.removedAt)
+          )
+        )
+        .all();
+      const changes: SignInStatusChange[] = [];
+      for (const row of kept) {
+        const status = reported.get(row.externalAccountRef);
+        if (status === undefined) continue;
+        if (row.lastVerifiedAt !== null && row.lastVerifiedAt > listingStartedAt) continue;
+        const changed = row.status !== status;
+        tx.update(connections)
+          .set({ status, lastVerifiedAt: now, ...(changed && { updatedAt: now }) })
+          .where(eq(connections.id, row.connectionId))
+          .run();
+        if (changed) {
+          changes.push({
+            connectionId: row.connectionId as ConnectionId,
+            from: row.status,
+            to: status,
+          });
+        }
+      }
+      return changes;
+    });
+  }
+
+  /**
+   * Record that the service refused an action because this account's sign-in
+   * has ended. Only a kept account still recorded as signed in changes; the
+   * owner's pause and whether the account is kept are left alone.
+   *
+   * @param connectionId - The account the action used.
+   * @param status - What the service reported: expired, or turned off.
+   * @returns Whether the recorded status changed.
+   */
+  markSignInEnded(connectionId: ConnectionId, status: 'expired' | 'revoked'): boolean {
+    this.assertAvailable();
+    const now = new Date().toISOString();
+    const result = this.db
+      .update(connections)
+      .set({ status, lastVerifiedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(connections.id, connectionId),
+          eq(connections.status, 'active'),
+          eq(connections.lifecycleState, 'connected'),
+          isNull(connections.removedAt)
+        )
+      )
+      .run();
+    return result.changes > 0;
   }
 
   /**

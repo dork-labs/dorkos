@@ -24,16 +24,18 @@
 import { createHash } from 'node:crypto';
 import type { ConnectorEventCapability } from '@dorkos/shared/connector-events';
 import { composioEventCapability } from './composio-events.js';
-import type {
-  ConnectorCapabilities,
-  ConnectorExternalAccountRef,
-  ConnectorKeyKind,
-  ConnectorProvider,
-  ConnectorProviderInstanceId,
-  ConnectorToolkit,
-  ConnectPoll,
-  ConnectStart,
-  ProviderConnectedAccount,
+import {
+  CONNECTOR_SIGN_IN_ENDED_MESSAGE,
+  type ConnectorCapabilities,
+  type ConnectorExternalAccountRef,
+  type ConnectorKeyKind,
+  type ConnectorProvider,
+  type ConnectorProviderInstanceId,
+  type ConnectorSignInEndedCode,
+  type ConnectorToolkit,
+  type ConnectPoll,
+  type ConnectStart,
+  type ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import type {
   ConnectorCatalogPageRequest,
@@ -142,6 +144,19 @@ function toPortStatus(status: ComposioAccountStatus): ProviderConnectedAccount['
     case 'FAILED':
       return 'revoked';
   }
+}
+
+/**
+ * The sign-in-ended code for a Composio account status that says an account
+ * which was signed in no longer is: `EXPIRED` (its sign-in could not be
+ * renewed) or `INACTIVE` (turned off at Composio). `FAILED` is left out on
+ * purpose: it describes a sign-in attempt that never finished, not one that
+ * ended, so it stays a plain "not active" answer.
+ */
+function signInEndedCode(status: ComposioAccountStatus): ConnectorSignInEndedCode | undefined {
+  if (status === 'EXPIRED') return 'ACCOUNT_SIGN_IN_EXPIRED';
+  if (status === 'INACTIVE') return 'ACCOUNT_SIGN_IN_REVOKED';
+  return undefined;
 }
 
 /** Construction options for {@link ComposioConnectorProvider}. */
@@ -323,6 +338,11 @@ export class ComposioConnectorProvider implements ConnectorProvider {
         toComposioAccountId(command.externalAccountRef)
       );
       if (state.status === 'ACTIVE' && state.account) account = this._toPortAccount(state.account);
+      // Composio's own word that this account's sign-in ended: the one precise
+      // signal DorkOS records as a signed-out account. A rate limit, an outage
+      // or a refused operation never reaches here.
+      const ended = signInEndedCode(state.status);
+      if (ended) return this._executionError(ended, CONNECTOR_SIGN_IN_ENDED_MESSAGE);
     } catch (error) {
       if (error instanceof ComposioApiError && error.status === 404) {
         return this._executionError(

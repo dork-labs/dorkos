@@ -22,9 +22,10 @@ import {
   type ConnectorOperationClassification,
   type ConnectorOperationRevision,
 } from '@dorkos/shared/connector-schemas';
-import type {
-  ConnectorExternalAccountRef,
-  ConnectorProvider,
+import {
+  CONNECTOR_SIGN_IN_ENDED_MESSAGE,
+  type ConnectorExternalAccountRef,
+  type ConnectorProvider,
 } from '@dorkos/shared/connector-provider';
 import type { CapabilityPreflightResult } from '../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
@@ -292,6 +293,14 @@ export class ConnectorExecutionAuthorizationService {
         'CONNECTOR_OWNER_MISMATCH',
         'The selected connection does not belong to this caller.'
       );
+    }
+    if (
+      row.lifecycleState === 'connected' &&
+      row.enabled &&
+      (row.connectionStatus === 'expired' || row.connectionStatus === 'revoked')
+    ) {
+      // The service said this sign-in ended; the one fix is the owner signing in again.
+      return refuse('CONNECTOR_SIGN_IN_ENDED', CONNECTOR_SIGN_IN_ENDED_MESSAGE);
     }
     if (
       row.lifecycleState !== 'connected' ||

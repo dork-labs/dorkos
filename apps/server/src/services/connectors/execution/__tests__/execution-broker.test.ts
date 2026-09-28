@@ -20,9 +20,10 @@ import {
   type ConnectorProviderExecuteCommand,
   type ConnectorProviderExecuteResult,
 } from '@dorkos/shared/connector-schemas';
-import type {
-  ConnectorExternalAccountRef,
-  ConnectorProvider,
+import {
+  CONNECTOR_SIGN_IN_ENDED_MESSAGE,
+  type ConnectorExternalAccountRef,
+  type ConnectorProvider,
 } from '@dorkos/shared/connector-provider';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import { ConnectionStore } from '../../connection-store.js';
@@ -1186,5 +1187,67 @@ describe('ConnectorExecutionBroker', () => {
     expect(provider.commands).toHaveLength(1);
     expect(db.select().from(connectorUsageAttempts).all()).toHaveLength(1);
     expect(db.select().from(connectorUsageTerminalReceipts).all()).toHaveLength(1);
+  });
+
+  describe('a sign-in the service says has ended', () => {
+    const signInOf = () =>
+      db
+        .select({ status: connections.status, lastVerifiedAt: connections.lastVerifiedAt })
+        .from(connections)
+        .where(eq(connections.id, CONNECTION_ID))
+        .get();
+
+    beforeEach(() => {
+      broker = new ConnectorExecutionBroker(
+        authorization,
+        new ConnectorUsageStore(db),
+        { revalidate: () => true },
+        () => new Date('2026-09-06T12:00:01.000Z'),
+        undefined,
+        registry
+      );
+    });
+
+    it.each([
+      ['ACCOUNT_SIGN_IN_EXPIRED', 'expired'],
+      ['ACCOUNT_SIGN_IN_REVOKED', 'revoked'],
+    ] as const)(
+      'records %s on the connection at once and tells the agent to ask for a new sign-in',
+      async (code, status) => {
+        provider.results.push({
+          status: 'error',
+          code,
+          message: CONNECTOR_SIGN_IN_ENDED_MESSAGE,
+          retryable: false,
+        });
+
+        await expect(execute()).resolves.toMatchObject({
+          result: { status: 'error', code, message: CONNECTOR_SIGN_IN_ENDED_MESSAGE },
+        });
+        expect(signInOf()).toEqual({ status, lastVerifiedAt: expect.any(String) });
+
+        // The next call is refused before it reaches the service, with the same one fix.
+        await expect(execute()).rejects.toMatchObject({
+          payload: { code: 'CONNECTOR_SIGN_IN_ENDED', error: CONNECTOR_SIGN_IN_ENDED_MESSAGE },
+        });
+        expect(provider.commands).toHaveLength(1);
+      }
+    );
+
+    it.each([
+      { status: 'error', code: 'PROVIDER_REJECTED', message: 'Rejected.', retryable: false },
+      { status: 'error', code: 'RATE_LIMITED', message: 'Slow down.', retryable: true },
+      { status: 'error', code: 'ACCOUNT_CHECK_FAILED', message: 'No answer.', retryable: false },
+      { status: 'outcome_unknown', code: 'PROVIDER_OUTCOME_UNKNOWN', message: 'Unknown.' },
+    ] as const)(
+      'leaves the sign-in alone for $code, which is not an ended sign-in',
+      async (result) => {
+        provider.results.push(result);
+
+        await execute();
+
+        expect(signInOf()).toEqual({ status: 'active', lastVerifiedAt: null });
+      }
+    );
   });
 });

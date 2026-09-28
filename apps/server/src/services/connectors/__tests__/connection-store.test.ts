@@ -91,7 +91,9 @@ describe('ConnectionStore lifecycle and cleanup', () => {
       .set({ removedAt: NOW, externalCleanupState: 'complete' })
       .where(eq(connections.id, connection.id))
       .run();
-    expect((await registry.listAccounts()).accounts).toEqual([]);
+    // A sign-in refresh never brings a removed account back or adds a new row.
+    await registry.refreshSignIns();
+    expect(db.select().from(connections).all()).toHaveLength(1);
     expect(registry.recordConnect(provider, account).id).toBe(connection.id);
     expect(db.select().from(connections).all()).toHaveLength(1);
     const replacement = registry.recordConnect(provider, account, {
@@ -110,7 +112,9 @@ describe('ConnectionStore lifecycle and cleanup', () => {
         .all()
     ).toEqual([]);
     expect(db.select().from(connectorUsageAttempts).get()?.connectionId).toBe(connection.id);
-    expect((await registry.listAccounts()).accounts.map((row) => row.id)).toEqual([replacement.id]);
+    await registry.refreshSignIns();
+    expect(db.select().from(connections).all()).toHaveLength(2);
+    expect(registry.accountBinding(replacement.id)?.status).toBe('active');
     expect(
       db.select().from(connections).where(eq(connections.id, connection.id)).get()?.removedAt
     ).toBe(NOW);
@@ -285,7 +289,7 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     expect(db.select().from(connectionOperationGrants).get()?.revokedAt).not.toBeNull();
   });
 
-  it('does not let a deferred provider inventory restore a disconnected connection', async () => {
+  it('does not let a deferred sign-in refresh restore a disconnected connection', async () => {
     const privateAccount = (await provider.listAccounts())[0]!;
     let releaseInventory!: () => void;
     const inventoryBlocked = new Promise<void>((resolve) => {
@@ -296,13 +300,11 @@ describe('ConnectionStore lifecycle and cleanup', () => {
       return [{ ...privateAccount, status: 'active' }];
     };
 
-    const staleInventory = registry.listAccounts();
+    const staleInventory = registry.refreshSignIns();
     registry.recordDisconnect(connection.id);
     releaseInventory();
 
-    expect((await staleInventory).accounts).toMatchObject([
-      { id: connection.id, status: 'revoked' },
-    ]);
+    expect((await staleInventory).changes).toEqual([]);
     expect(registry.accountBinding(connection.id)?.status).toBe('revoked');
     expect(db.select().from(connections).get()).toMatchObject({
       status: 'active',

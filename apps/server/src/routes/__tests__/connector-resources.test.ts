@@ -48,6 +48,7 @@ describe('connector resource routes', () => {
       actions: {
         list: vi.fn().mockResolvedValue({ status: 'unlisted', toolkit: 'gmail' }),
       },
+      signIns: { refreshOnDemand: vi.fn().mockResolvedValue(undefined) },
     } as unknown as ConnectorResourcesRouterDeps;
     app = express();
     app.use(express.json());
@@ -184,6 +185,27 @@ describe('connector resource routes', () => {
     });
   });
 
+  it('asks the services whether sign-ins still hold before the owner reads the list or a panel', async () => {
+    const order: string[] = [];
+    vi.mocked(deps.signIns.refreshOnDemand).mockImplementation(() => {
+      order.push('refresh');
+      return Promise.resolve();
+    });
+    vi.mocked(deps.query.listConnections).mockImplementation(() => {
+      order.push('list');
+      return Promise.resolve([]);
+    });
+    vi.mocked(deps.query.getConnection).mockImplementation(() => {
+      order.push('detail');
+      return Promise.resolve({ connection: { connectionId: 'connection-a' } } as never);
+    });
+
+    await api().get('/api/connectors/connections').expect(200);
+    await api().get('/api/connectors/connections/connection-a').expect(200);
+
+    expect(order).toEqual(['refresh', 'list', 'refresh', 'detail']);
+  });
+
   it('refuses inherited agent identity before every owner resource read', async () => {
     const response = await api()
       .get('/api/connectors/connections')
@@ -192,6 +214,7 @@ describe('connector resource routes', () => {
 
     expect(response.body).toMatchObject({ code: 'connector_owner_required' });
     expect(deps.query.listConnections).not.toHaveBeenCalled();
+    expect(deps.signIns.refreshOnDemand).not.toHaveBeenCalled();
   });
 
   it('requires a strict idempotency claim before starting provider authentication', async () => {

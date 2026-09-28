@@ -1,6 +1,11 @@
 /** DorkOS-owned connector dispatch, retry, and append-only usage evidence. */
 import { ulid } from 'ulidx';
+import {
+  CONNECTOR_SIGN_IN_ENDED_CODES,
+  type ConnectorSignInEndedCode,
+} from '@dorkos/shared/connector-provider';
 import type {
+  ConnectionId,
   ConnectorExecutionResponse,
   ConnectorExecutionTarget,
   ConnectorProviderExecuteResult,
@@ -40,6 +45,12 @@ export interface ConnectorBrokerExecutionInput {
   readonly signal: AbortSignal;
 }
 
+/** Records that the service refused an action because an account's sign-in ended. */
+export interface ConnectorSignInEndedPort {
+  /** Mark the account signed out with the status the service reported. */
+  markSignInEnded(connectionId: ConnectionId, status: 'expired' | 'revoked'): boolean;
+}
+
 /** Live server-principal check performed before every provider attempt. */
 export interface ConnectorExecutionPrincipalRevalidationPort {
   /** Return whether this exact authenticated principal still holds its server authority. */
@@ -63,6 +74,15 @@ function safePublicResult(
   }
 }
 
+function signInEndedStatus(
+  result: ConnectorProviderExecuteResult
+): 'expired' | 'revoked' | undefined {
+  if (result.status !== 'error' || !Object.hasOwn(CONNECTOR_SIGN_IN_ENDED_CODES, result.code)) {
+    return undefined;
+  }
+  return CONNECTOR_SIGN_IN_ENDED_CODES[result.code as ConnectorSignInEndedCode];
+}
+
 function receiptOutcome(result: ConnectorProviderExecuteResult): ConnectorUsageOutcome {
   return result.status;
 }
@@ -83,7 +103,8 @@ export class ConnectorExecutionBroker {
     private readonly usage: ConnectorUsageStore,
     private readonly principalRevalidation: ConnectorExecutionPrincipalRevalidationPort,
     private readonly now: () => Date = () => new Date(),
-    private readonly managedExecutionContext?: ManagedConnectorExecutionContextBindingPort
+    private readonly managedExecutionContext?: ManagedConnectorExecutionContextBindingPort,
+    private readonly signIns?: ConnectorSignInEndedPort
   ) {}
 
   /** Dispatch one logical operation with at most one explicitly safe retry. */
@@ -163,6 +184,7 @@ export class ConnectorExecutionBroker {
         input.signal
       );
       lastResult = result;
+      this.recordSignInEnded(input.target.connectionId, result);
       const recordedAt = this.now().toISOString();
       this.usage.appendTerminal({
         attemptId,
@@ -186,6 +208,21 @@ export class ConnectorExecutionBroker {
     }
 
     throw new Error('Connector execution broker exceeded its two-attempt invariant.');
+  }
+
+  /**
+   * When the service refused the action because the account's sign-in ended,
+   * record that on the connection now, so agents stop being offered it and the
+   * owner sees it needs signing in again. Recording never changes the answer.
+   */
+  private recordSignInEnded(connectionId: ConnectionId, result: ConnectorProviderExecuteResult) {
+    const status = signInEndedStatus(result);
+    if (!status || !this.signIns) return;
+    try {
+      this.signIns.markSignInEnded(connectionId, status);
+    } catch {
+      // The store may be unavailable; the next sign-in refresh records it.
+    }
   }
 
   private assertApprovalBinding(

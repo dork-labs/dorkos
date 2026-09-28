@@ -1,17 +1,19 @@
 /**
  * The `ConnectorRegistry` — the server-side seam that holds the registered
  * {@link ConnectorProvider} backends, routes an opaque `ConnectionId` to
- * its owning provider, and aggregates accounts across every backend with
- * per-provider degradation.
+ * its owning provider, and refreshes every kept account's sign-in status from
+ * its service with per-provider degradation.
  *
  * It is the connector analogue of `runtimeRegistry`: stable connection ids
- * resolve through private instance/account bindings, and cross-provider `listAccounts` aggregation
- * degrades one unreachable provider to a `warnings[]` entry rather than failing
- * the whole call (ADR-0310), exactly as session listing degrades per runtime.
+ * resolve through private instance/account bindings, and the cross-provider
+ * sign-in refresh degrades one unreachable provider to a `failures[]` entry
+ * rather than failing the whole call (ADR-0310), exactly as session listing
+ * degrades per runtime.
  *
  * The canonical `connections` table owns DorkOS identity and private provider
- * routing. The registry reconciles it after provider reads and tombstones it on
- * disconnect; provider vaults remain the source of truth for tokens.
+ * routing. The registry records a sign-in when it completes, refreshes its
+ * status from provider listings, and tombstones it on disconnect; provider
+ * vaults remain the source of truth for tokens.
  *
  * @module services/connectors/registry
  */
@@ -30,6 +32,7 @@ import {
   ConnectionStore,
   type ClosedConnection,
   type ConnectorProviderDeploymentMode,
+  type SignInStatusChange,
   type StableConnectionBinding,
 } from './connection-store.js';
 import type {
@@ -48,12 +51,22 @@ export interface ConnectorWarning {
   message: string;
 }
 
-/** The result of a cross-provider `listAccounts` aggregation. */
-export interface AggregatedAccounts {
-  /** Every account returned by a reachable provider, merged. */
-  accounts: ConnectedAccount[];
-  /** One entry per provider that failed or timed out (never a hard failure). */
-  warnings: ConnectorWarning[];
+/** One registered instance whose account listing failed or timed out during a refresh. */
+export interface SignInRefreshFailure {
+  /** The instance whose listing failed. */
+  providerInstanceId: ConnectorProviderInstanceId;
+  /** Its backend type, e.g. `'composio'`. */
+  provider: string;
+  /** What went wrong, from the service or the timeout; never a secret. */
+  message: string;
+}
+
+/** The result of refreshing every registered instance's sign-in status. */
+export interface SignInRefreshResult {
+  /** Every kept account whose recorded sign-in status changed. */
+  changes: SignInStatusChange[];
+  /** One entry per instance whose listing failed; its accounts were left as they were. */
+  failures: SignInRefreshFailure[];
 }
 
 /** The result of a cross-provider `listToolkits` aggregation. */
@@ -240,10 +253,17 @@ export class ConnectorRegistry {
    * If it was the type's compatibility default, choose the lexically first
    * remaining instance so legacy type selectors continue deterministically.
    *
+   * The instance's kept row is marked unavailable even when nothing is live
+   * here: at boot, a way that worked last run and fails its check this run
+   * was never registered, and its row must not keep saying it is available.
+   *
    * @param instanceId - Exact configured provider instance to disable.
    */
   unregisterProviderInstance(instanceId: ConnectorProviderInstanceId): void {
     const provider = this._providers.get(instanceId);
+    if (this._connections.health().status === 'ready') {
+      this._connections.unregisterProvider(instanceId);
+    }
     if (!provider) return;
     this._providers.delete(instanceId);
     // Every key change, setup change and removal passes through here, so the
@@ -256,9 +276,6 @@ export class ConnectorRegistry {
         .sort((left, right) => left.instanceId.localeCompare(right.instanceId))[0];
       if (fallback) this._defaultInstanceByType.set(provider.type, fallback.instanceId);
       else this._defaultInstanceByType.delete(provider.type);
-    }
-    if (this._connections.health().status === 'ready') {
-      this._connections.unregisterProvider(instanceId);
     }
   }
 
@@ -458,38 +475,76 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Aggregate accounts across every registered provider in parallel, degrading
-   * per provider: one backend that throws or times out becomes a `warnings[]`
-   * entry while the others still return (ADR-0310).
-   *
-   * @param opts - Optional filter; `toolkit` narrows to one service slug.
+   * Refresh the sign-in status of every kept account from its service: list
+   * the accounts of every registered instance that lists accounts, in
+   * parallel, and record what each successful listing reports (see
+   * {@link ConnectionStore.refreshSignInStatus}). Degrades per instance: a
+   * listing that throws or times out becomes a `failures[]` entry and its
+   * accounts keep the status they had, so an outage never reads as a sign-in
+   * that ended (ADR-0310). Only the sign-in status and when it was checked
+   * change; no account is added, closed or removed here.
    */
-  async listAccounts(opts?: { toolkit?: string }): Promise<AggregatedAccounts> {
+  async refreshSignIns(): Promise<SignInRefreshResult> {
     this._connections.assertAvailable();
-    const providers = this.listProviders();
+    const providers = this.listProviders().filter(
+      (provider) => provider.getCapabilities().capabilities.accounts.status === 'available'
+    );
+    const startedAt = new Date().toISOString();
     const settled = await Promise.allSettled(
       providers.map((provider) =>
-        withTimeout(provider.listAccounts(opts), this._providerTimeoutMs, provider.type)
+        withTimeout(provider.listAccounts(), this._providerTimeoutMs, provider.type)
       )
     );
-    const accounts: ConnectedAccount[] = [];
-    const warnings: ConnectorWarning[] = [];
+    const changes: SignInStatusChange[] = [];
+    const failures: SignInRefreshFailure[] = [];
     settled.forEach((result, index) => {
       const provider = providers[index]!;
       if (result.status === 'fulfilled') {
-        accounts.push(
-          ...result.value
-            .map((account) => this._connections.reconcile(provider, account))
-            .filter((account) => !this._connections.isRemoved(account.id))
-        );
+        changes.push(...this.recordSignInStatus(provider, result.value, startedAt));
       } else {
-        warnings.push({
+        failures.push({
+          providerInstanceId: provider.instanceId,
           provider: provider.type,
           message: result.reason instanceof Error ? result.reason.message : String(result.reason),
         });
       }
     });
-    return { accounts, warnings };
+    return { changes, failures };
+  }
+
+  /**
+   * Record the sign-in status one successful account listing from a
+   * registered instance reports (see {@link ConnectionStore.refreshSignInStatus}).
+   * A no-op while the connection store is unavailable, or once the instance
+   * has been replaced or removed since the listing began.
+   *
+   * @param provider - The registered instance the listing came from.
+   * @param listed - Every account that listing returned.
+   * @param listingStartedAt - When the listing was requested (ISO-8601).
+   * @returns The kept accounts whose recorded status changed.
+   */
+  recordSignInStatus(
+    provider: ConnectorProvider,
+    listed: readonly ProviderConnectedAccount[],
+    listingStartedAt: string
+  ): SignInStatusChange[] {
+    if (this._connections.health().status !== 'ready') return [];
+    if (this._providers.get(provider.instanceId) !== provider) return [];
+    return this._connections.refreshSignInStatus(provider.instanceId, listed, listingStartedAt);
+  }
+
+  /**
+   * Record that the service refused an action because an account's sign-in
+   * ended (see {@link ConnectionStore.markSignInEnded}). A no-op while the
+   * connection store is unavailable.
+   *
+   * @param connectionId - The account the action used.
+   * @param status - What the service reported.
+   * @returns Whether the recorded status changed.
+   */
+  markSignInEnded(connectionId: ConnectionId, status: 'expired' | 'revoked'): boolean {
+    if (this._connections.health().status !== 'ready') return false;
+    return this._connections.markSignInEnded(connectionId, status);
   }
 
   /**

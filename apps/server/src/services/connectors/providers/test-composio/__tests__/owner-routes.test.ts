@@ -132,6 +132,7 @@ async function fixture() {
       lifecycle,
       actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
       logos: { get: () => Promise.resolve(undefined) },
+      signIns: { refreshOnDemand: () => Promise.resolve() },
     })
   );
   app.use(
