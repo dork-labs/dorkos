@@ -289,7 +289,7 @@
       ],
       "issue": null,
       "parentIssue": null,
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": "3.6",
@@ -310,7 +310,7 @@
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": "4.1",
@@ -327,7 +327,7 @@
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": "4.2",
@@ -344,7 +344,7 @@
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": "4.3",
@@ -361,7 +361,7 @@
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
-      "status": "pending"
+      "status": "completed"
     }
   ]
 }

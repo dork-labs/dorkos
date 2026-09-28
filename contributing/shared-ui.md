@@ -194,7 +194,7 @@ No CI release pipeline, deployment or package publication is implied by the loca
 
 ## Upgrading an independent consumer from 0.1 to 0.2
 
-1. Confirm `0.2.0` is actually published before changing the dependency. Install the exact registry version and regenerate the consumer lockfile. Never commit the candidate archive path.
+1. Confirm the target release (`0.2.1` for the verified patch upgrade) is actually published before changing the dependency. Install the exact registry version and regenerate the consumer lockfile. Never commit the candidate archive path.
 2. Keep the existing CSS import order. Remove a separate `tw-animate-css` import when the package entry now provides it. Build with Tailwind 4 scanning the installed JavaScript.
 3. Existing 0.1 imports remain compatible. Adopt new primitives only where they fit the consumer; an intentional native select need not change.
 4. For nested theme hosts, configure `UiProvider` before opening an overlay. Default body portals are unchanged.

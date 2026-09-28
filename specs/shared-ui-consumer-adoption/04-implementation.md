@@ -1,6 +1,6 @@
 # Consumer adoption implementation record
 
-**Status:** In progress. DOR-2342 — Shared UI: finish consumer adoption and opposing-theme overlay correctness.
+**Status:** Implemented. DOR-2342 — Shared UI: finish consumer adoption and opposing-theme overlay correctness.
 
 ## Session
 
@@ -18,7 +18,7 @@ Workers: `/root`, `/root/adoption_inventory` (Community), `/root/adoption_decomp
 
 ## Pending gates
 
-Full affected verification; refreshed Community workflow regressions and independent consumer adoption; independent quality review; normal PR/CI/merge delivery; authorized exact package publication and registry consumer upgrade. Candidate version 0.2.1 is not published; do not claim registry adoption before it exists.
+Implementation, publication, and independent consumer delivery are complete. This final receipt follows the normal documentation review and merge path before tracker closure. The chronological records below preserve earlier gate states and failures.
 
 ## Boundaries
 
@@ -52,3 +52,17 @@ Pairing recovery merged separately in PR #2257 at `b7a7fb3feb0e907cfcf4fc0187d84
 The new main's architecture and Community documentation updates are preserved. The spec manifest retains both the newly merged entries and this adoption entry. A read-only inventory found no new generic Community controls outside Pairing, and refreshed compliance review passed. Community production build and typecheck pass; all 13 combined pairing and shared-control browser cases pass against the rebuilt application and an isolated PostgreSQL database. The test database and container were removed after verification. Final pushed-branch quality review remains before PR creation.
 
 Automated PR review found that paused membership choices lost their unavailable cursor/background when the shared Button's data slot excluded them from the old native-button rule. The unavailable style now belongs specifically to `.community-choice[aria-disabled='true']`, keeping the row focusable while restoring both visual cues. The strengthened browser assertion first failed with cursor `default` instead of `not-allowed`; after the scoped selector fix and a fresh Community build, all seven shared-control browser cases pass, including the unavailable background, focus, and blocked navigation.
+
+## Published release and registry proof
+
+Public implementation PR [#2270](https://github.com/dork-labs/dorkos/pull/2270) merged at `391660bccc84c953266a646f065363cf77b49593` after required CI, independent review, automated re-review, and the normal merge queue. The final review reported no blocking issues.
+
+The authorized `@dork-labs/ui@0.2.1` release is available from npm. Its downloaded registry archive is byte-identical to the tested candidate: 55,736 bytes, SHA256 `a88daa8ba7169d8e57d233761eda6c746c59d429bec57259a86f3e048dd8f1d4`, integrity `sha512-xOn4gt37T6uHw9e1qYcl0/pLqvVvdQlup2glY6zQUGVYFwfv48E4Z/OMQClr2bntLlbKoVrlKegMJ6V0dYaI0A==`.
+
+A clean install from the actual registry version passed independent typecheck, production build, and all 15 browser cases. All 27 JavaScript export modules loaded, declarations resolved, generated styles worked, and React/ReactDOM remained single instances. The lockfile resolves the npm registry archive with the same integrity; no source alias or workspace resolution is involved. Independent consumer registry delivery is complete.
+
+## Final consumer delivery
+
+The independent consumer now pins the published `0.2.1` version with a frozen registry lockfile whose integrity matches the verified release. Its affected component and browser checks, typecheck, lint, production build, and normal push checks passed. Independent compliance and quality reviews approved the final pushed branch with no blocking findings; all required CI checks passed and the consumer change merged through its normal protected PR path. Detailed implementation and delivery receipts remain with that consumer.
+
+All four phases and every implementation task are complete. Package, catalog, Community, site, registry fixture, and independent consumer evidence are recorded above or in their owning records. No live deployment or paid test gate was part of this delivery.

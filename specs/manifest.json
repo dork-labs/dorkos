@@ -6,7 +6,7 @@
       "slug": "shared-ui-consumer-adoption",
       "title": "Complete shared UI consumer adoption",
       "created": "2026-09-25",
-      "status": "specified",
+      "status": "implemented",
       "project": "Shared UI — Consumer Adoption",
       "linearIssue": "DOR-2342"
     },
