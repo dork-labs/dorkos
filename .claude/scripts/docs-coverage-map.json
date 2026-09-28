@@ -38,8 +38,11 @@
     },
     {
       "guide": "system-architecture.md",
-      "description": "Deployment boundaries, protocols, ports, Community, Cloud and marketplace; diagrams",
+      "description": "Deployment boundaries, protocols, ports, workspace lifecycle, Community recovery, Cloud and marketplace; diagrams",
       "patterns": [
+        "apps/server/src/services/workspace/",
+        "specs/central-workspace-disposal/",
+        "specs/managed-remote-app-consumer/",
         "apps/community/",
         "apps/site/src/lib/cloud-accounts/",
         "apps/site/src/proxy",

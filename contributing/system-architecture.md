@@ -6,6 +6,8 @@ This is the cross-system map of DorkOS: what runs where, how the pieces communic
 
 **Cloud-boundary review:** public source `5794f638160a68811382347356fd29b31ee2e911`, reviewed 2026-09-27 after the initial Cloud implementation. This refresh checks Cloud callers, account handover, hosted-community wiring and related plans; it is not a new audit of every subsystem. Other views retain the September 23 baseline and September 25 Obsidian retirement update. Public diagrams use only public source and contracts. Implementation, app adoption, configured rollout and end-to-end availability are separate claims.
 
+**Bounded follow-through review:** public source `710521034fbcfa9de43f0ae3a252b053a4b1db10`, reviewed 2026-09-28 for workspace lifecycle adoption, Community authority/restore evidence and the managed remote draft. These changes preserve the diagram topology; the Cloud identity snapshot above has not been reclassified as adopted.
+
 For proposed improvements and independently selectable workstreams, see the [architecture improvement roadmap](../plans/architecture-improvement-roadmap.md). Linear tracks their live execution state.
 
 ## Key Files
@@ -53,6 +55,8 @@ These are architecture patterns, so the examples are diagrams and wire contracts
 [Editable diagram](diagrams/architecture/system-context.mmd)
 
 The local server is the execution and coordination host. Rooms, Tasks, Relay, Mesh, memory, workspaces, and installed extensions are subsystems of that host, not separate servers. Agent runtimes can own additional processes. OpenCode, for example, has a managed local sidecar.
+
+The server retains a [workspace reconciliation lifetime owner](../apps/server/src/services/workspace/workspace-reconciler-lifecycle.ts) before starting it. Shared service cleanup and startup-failure cleanup await its terminal disposal before unrelated cleanup. The owner rejects later startup, fences late reconciliation cache writes and shares a bounded completion result. This does not establish whole-server request draining, database/lock handoff or startup rollback; see the [bounded verification record](../specs/central-workspace-disposal/04-verification.md) and [remaining lifecycle work](../plans/architecture-improvement-roadmap.md#merged-follow-through-2026-09-28).
 
 Separate browser surfaces serve the DorkOS client, Community, the public website, and Cloud accounts. Account pages can be served locally by the website or handed to a separate origin through the public forwarding policy below. The desktop app wraps the DorkOS client and manages a local server; it does not replace the server with Electron IPC. The phone app reaches the same server over the network, optionally through a tunnel.
 
@@ -130,6 +134,8 @@ The app's switcher selects this local installation or a connected community. Swi
 
 The guided `dorkos community deploy` launcher runs on the operator's machine, independently of the local server and Cloud. It provisions a separate deployment from a versioned, attested Community image. The [hosting guide](../apps/community/FLY.md) and [deployment acceptance record](../specs/community-live-deployment/04-acceptance.md) describe the operational proof and its limits.
 
+The [authority tests added in PR #2271](https://github.com/dork-labs/dorkos/pull/2271) exercise open-stream owner/origin isolation and grant-specific revocation. The [two-community backup/restore rehearsal](../apps/community/scripts/rehearse-backup-restore.mjs), added in [PR #2272](https://github.com/dork-labs/dorkos/pull/2272), verifies restored content, attachments and authorization on disposable local resources. It is operator-run source-build evidence, not proof of a particular production image, deployment or rollback path.
+
 Slack and Telegram bridges project messages into **local** rooms. They are Relay paths, not remote Community backends. See [Community development](community-server.md) and [implementing the Community port](adding-a-community-adapter.md).
 
 ### Marketplace discovery and delivery
@@ -156,7 +162,7 @@ Cloud is not required to build, test, or run the local app or Community host. Th
 
 Two API families still coexist. `cloud-link-client.ts` calls `/api/auth/device/*` and `/api/instances/*` for device linking, heartbeats and managed services. `cloud/v1-client.ts` uses `@dork-labs/cloud-api/client`. Both resolve the base through `DORKOS_CLOUD_URL`, falling back to the website origin. The presence of a `/v1` schema does not redirect an old caller or select a different origin. Review origin configuration and compatibility before retiring old routes.
 
-The public contract covers accounts, linked instances, managed services, entitlements, organizations/seats, remote access, inference and hosted communities. Remote access now describes command leasing and acknowledgements, address designation, credential replacement and idempotent event batches. The local managed command-stream consumer remains a separate app-side task ([DOR-2086](https://linear.app/dorkspace/issue/DOR-2086)); the existing tunnel manager uses the ngrok SDK. Browser traffic through a tunnel is a data path to the local server, distinct from Cloud control requests. The contract's SSE stream must not be drawn as already connected to the local tunnel manager.
+The public contract covers accounts, linked instances, managed services, entitlements, organizations/seats, remote access, inference and hosted communities. Remote access now describes command leasing and acknowledgements, address designation, credential replacement and idempotent event batches. The local managed command-stream consumer remains a separate app-side task ([DOR-2086](https://linear.app/dorkspace/issue/DOR-2086)); the [merged draft specification](../specs/managed-remote-app-consumer/02-specification.md) remains gated on identity adoption, person enrollment and trusted ingress-proof contracts, plus deployed acceptance evidence. The existing tunnel manager uses the ngrok SDK. Browser traffic through a tunnel is a data path to the local server, distinct from Cloud control requests. The contract's SSE stream must not be drawn as already connected to the local tunnel manager.
 
 Credits inference is another path. With the explicit credits flag and a linked instance, the app can request a scoped token and endpoint URLs, then configure runtime inference. Linking alone does not enable it. The current `cloudInstanceRef()` is still derived from the linked credential; its lifetime is the link's lifetime, not proof of a service-issued stable machine identity. This remains a reconciliation item, not a reason to reuse an opt-in telemetry identifier.
 
