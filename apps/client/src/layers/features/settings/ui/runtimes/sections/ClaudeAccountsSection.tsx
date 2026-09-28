@@ -19,11 +19,13 @@ import {
   accountWindow,
   claudeAccountName,
   claudeAccountOptions,
+  cn,
   isAbsoluteAccountPath,
   shortenHomePath,
 } from '@/layers/shared/lib';
 import {
   Button,
+  buttonVariants,
   DirectoryPicker,
   Input,
   Label,
@@ -395,7 +397,8 @@ export function ClaudeAccountsSection() {
             colorIsDefault: (claudeCode?.defaultAccountColor ?? null) === null,
             isAccountRoot: true,
           }}
-          isActive={false}
+          // No default account chosen means new sessions run on this sign-in.
+          isActive={inherited}
           onChooseColor={(color) => write({ defaultAccountColor: color })}
           disabled={updateConfig.isPending}
           identity={{ usage: mainUsage }}
@@ -600,7 +603,7 @@ function AccountRow({
           <UsageBar window={accountWindow(identity.usage, 'seven_day')} label="wk" compact />
         </div>
       )}
-      {onRemove && (
+      {onRemove ? (
         <Button
           variant="ghost"
           size="sm"
@@ -610,6 +613,17 @@ function AccountRow({
         >
           <Trash2 className="size-3.5" />
         </Button>
+      ) : (
+        // Holds the remove button's place so every row's bars line up. It wears
+        // the button's own classes, so its width follows the button's. Not a
+        // button and not focusable: nothing to click, nothing to announce.
+        <span
+          aria-hidden="true"
+          data-testid="claude-account-remove-spacer"
+          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'invisible')}
+        >
+          <Trash2 className="size-3.5" />
+        </span>
       )}
     </div>
   );

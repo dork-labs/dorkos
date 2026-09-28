@@ -202,6 +202,8 @@ Under S4's contract 6d, Claude Code's standalone default (this computer's own si
 - **Its name** is the host's label, "Main (this computer's sign-in)", on every surface, the Flow tab and panel included. Codex and OpenCode implicit accounts keep "<Runtime> (this computer's sign-in)".
 - **Its color** is the host's color for it everywhere, so one account has one dot color (Q21 amended). Codex and OpenCode implicit accounts stay stone.
 - **Its Settings row:** Settings → Runtimes shows it as a row in the existing account row pattern, with its usage bars and color control, its path as `~/.claude`, and no remove button. The color is stored in `runtimes.claudeCode.defaultAccountColor` (S4, DOR-2492). "Found on this computer" keeps skipping it.
+- **Its bars line up with the other rows.** Main has no remove button, so an invisible spacer the same width takes its place. The spacer is hidden from screen readers and can't be reached with Tab, so the row's only stop is its color dot.
+- **It says "in use" when no default account is chosen.** With no default account set, new sessions run on this computer's sign-in, so Main shows the same muted "in use" label the other rows use. When a registered account is the default, Main doesn't.
 
 Spec: §6.5, §8.3, §8.5, §14 (Q21).
 

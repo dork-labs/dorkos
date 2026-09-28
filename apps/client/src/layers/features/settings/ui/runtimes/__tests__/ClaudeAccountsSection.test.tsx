@@ -824,6 +824,43 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(screen.getAllByRole('button', { name: /^Remove/ })).toHaveLength(2);
     });
 
+    it("holds the remove button's place with a hidden spacer that adds no tab stop", async () => {
+      renderSection(standalone(), { usage: [mainUsage()] });
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      const main = screen.getAllByTestId('claude-account-row')[2]!;
+      const spacer = within(main).getByTestId('claude-account-remove-spacer');
+      expect(spacer).toHaveAttribute('aria-hidden', 'true');
+      expect(spacer.tagName).toBe('SPAN');
+      expect(spacer).not.toHaveAttribute('tabindex');
+      // The dot is the row's one tab stop: no remove button, nothing extra.
+      expect(within(main).getAllByRole('button')).toHaveLength(1);
+      const tabbable = main.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      expect(tabbable).toHaveLength(1);
+      // The registered rows keep their real button and have no spacer.
+      const acme = screen.getAllByTestId('claude-account-row')[0]!;
+      expect(within(acme).queryByTestId('claude-account-remove-spacer')).not.toBeInTheDocument();
+    });
+
+    it('says "in use" when no default account is chosen, since new sessions run on it', async () => {
+      renderSection(standalone(), { usage: [mainUsage()] });
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      const main = screen.getAllByTestId('claude-account-row')[2]!;
+      expect(within(main).getByText('in use')).toBeInTheDocument();
+      expect(screen.getAllByText('in use')).toHaveLength(1);
+    });
+
+    it('does not say "in use" when a registered account is the default', async () => {
+      renderSection(standalone({ resolvedAccount: WORK, inherited: false }), {
+        usage: [mainUsage()],
+      });
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      const rows = screen.getAllByTestId('claude-account-row');
+      expect(within(rows[2]!).queryByText('in use')).not.toBeInTheDocument();
+      expect(within(rows[0]!).getByText('in use')).toBeInTheDocument();
+    });
+
     it('draws its dot in the resolved color', async () => {
       renderSection(standalone(), { usage: [mainUsage()] });
       const control = await screen.findByRole('button', { name: `Color for ${MAIN}` });
