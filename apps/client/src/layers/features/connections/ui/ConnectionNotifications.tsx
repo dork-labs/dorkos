@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Bell, Loader2, MessageSquare, Trash2 } from 'lucide-react';
+import { Bell, MessageSquare, Trash2 } from 'lucide-react';
 import type {
   ConnectionEventDefinitionPage,
   ConnectionEventSubscription,
@@ -16,7 +16,7 @@ import { useBindings } from '@/layers/entities/binding';
 import { useMemberRooms, useTeamRoster } from '@/layers/entities/team';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { cn, toSession } from '@/layers/shared/lib';
-import { Button, Checkbox, QueryErrorState, Skeleton } from '@/layers/shared/ui';
+import { Button, Checkbox, QueryErrorState, Skeleton, Spinner } from '@/layers/shared/ui';
 import { readEventFilterFields } from '../lib/event-filter-fields';
 import { describeEventFilter, notificationStatus } from '../lib/notification-copy';
 import {
@@ -149,11 +149,7 @@ function ConnectionNotificationRow({
           disabled={removing}
           onClick={onRemove}
         >
-          {removing ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-          ) : (
-            <Trash2 className="size-4" />
-          )}
+          {removing ? <Spinner size="sm" /> : <Trash2 className="size-4" />}
         </Button>
       </div>
     </li>
