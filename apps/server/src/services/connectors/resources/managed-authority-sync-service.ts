@@ -655,7 +655,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     const now = this.now().toISOString();
     if (lifecycle === 'paused') {
       tx.update(connections)
-        .set({ enabled: false, updatedAt: now })
+        .set({ enabled: false, pausedBy: 'owner', updatedAt: now })
         .where(eq(connections.id, connectionId))
         .run();
       return;
@@ -839,6 +839,297 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .set({ requestJson: '{}', compactedAt, updatedAt: compactedAt })
       .where(inArray(connectorManagedAuthorityOutbox.commandId, commandIds))
       .run().changes;
+  }
+
+  /**
+   * Send again, in the caller's transaction, the changes the hosted side
+   * refused (or never applied) for one account, bound to its current link.
+   *
+   * - `relinked` — the DorkOS account was linked again: every change refused
+   *   because the link was gone (or needed linking again), and every change
+   *   the old link never applied, goes again as it was, so the same account
+   *   keeps the access it was given.
+   * - `confirmed` — the owner confirmed who can use the account: every
+   *   refused change goes again. One whose actions the service no longer
+   *   offers goes as the access the agent holds now, so confirming always
+   *   settles it. Agents the owner just decided for are left out
+   *   (`decided`), as is the every-agent scope when `everyAgentDecided`.
+   *
+   * A change for an account the service no longer has is never sent again:
+   * that account was closed. Nothing is sent for a scope whose current state
+   * can't be expressed (an action that is gone locally too).
+   *
+   * @returns The commands to deliver after the transaction commits.
+   */
+  restageRefused(
+    tx: ConnectorDbTransaction,
+    input: {
+      readonly connectionId: ConnectionId;
+      readonly why: 'relinked' | 'confirmed';
+      readonly decided?: ReadonlySet<string>;
+      readonly everyAgentDecided?: boolean;
+    }
+  ): string[] {
+    const binding = tx
+      .select({
+        managedConnectionId: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
+        lifecycleState: connections.lifecycleState,
+        enabled: connections.enabled,
+        cleanupState: connections.externalCleanupState,
+        generation: connectorProviderInstances.executionConfigGeneration,
+        mode: connectorProviderInstances.mode,
+        ownerKind: connectorProviderInstances.ownerKind,
+        ownerId: connectorProviderInstances.ownerId,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(and(eq(connections.id, input.connectionId), isNull(connections.removedAt)))
+      .get();
+    if (!binding || binding.mode !== 'managed' || !binding.ownerKind || !binding.ownerId) return [];
+    const owner: ConnectorOwnerAuthority =
+      binding.ownerKind === 'user'
+        ? { kind: 'user', userId: binding.ownerId }
+        : { kind: 'local_install', installationId: binding.ownerId };
+    const providerInstanceId = binding.providerInstanceId as ConnectorProviderInstanceId;
+    const base = {
+      connectionId: input.connectionId,
+      managedConnectionId: binding.managedConnectionId,
+      providerInstanceId,
+      executionConfigGeneration: binding.generation,
+      owner,
+    };
+    const scopes = tx
+      .select({
+        scopeKind: connectorManagedAuthorityOutbox.scopeKind,
+        subjectId: connectorManagedAuthorityOutbox.subjectId,
+        state: connectorManagedAuthorityOutbox.state,
+        rejectionCode: connectorManagedAuthorityOutbox.rejectionCode,
+        generation: connectorManagedAuthorityOutbox.executionConfigGeneration,
+        requestJson: connectorManagedAuthorityOutbox.requestJson,
+        compactedAt: connectorManagedAuthorityOutbox.compactedAt,
+      })
+      .from(connectorManagedAuthorityScopes)
+      .innerJoin(
+        connectorManagedAuthorityOutbox,
+        eq(connectorManagedAuthorityOutbox.commandId, connectorManagedAuthorityScopes.lastCommandId)
+      )
+      .where(
+        and(
+          eq(connectorManagedAuthorityScopes.managedConnectionId, binding.managedConnectionId),
+          inArray(connectorManagedAuthorityScopes.scopeKind, [
+            'agent_grants',
+            'every_agent_grants',
+            'connection_lifecycle',
+          ])
+        )
+      )
+      .all();
+    const commandIds: string[] = [];
+    for (const scope of scopes) {
+      if (!sendAgain(scope, input.why, binding.generation)) continue;
+      const command =
+        scope.compactedAt === null
+          ? ManagedConnectorAuthorityCommandSchema.parse(JSON.parse(scope.requestJson))
+          : undefined;
+      if (scope.scopeKind === 'connection_lifecycle') {
+        // Only a close is sent again: a disconnect still owed at the service,
+        // or a pause still in place here. A refused resume stays paused, and
+        // Resume is the one fix readiness offers for it.
+        if (command?.kind !== 'set_connection_lifecycle') continue;
+        const owed =
+          command.lifecycle === 'disconnected' &&
+          binding.lifecycleState === 'disconnected' &&
+          (binding.cleanupState === 'pending' || binding.cleanupState === 'failed');
+        const paused =
+          command.lifecycle === 'paused' &&
+          binding.lifecycleState === 'connected' &&
+          !binding.enabled;
+        if (!owed && !paused) continue;
+        commandIds.push(
+          this.appendCommandInTransaction(tx, {
+            ...base,
+            scopeKind: 'connection_lifecycle',
+            subjectId: 'connection',
+            command: (next) => ({
+              ...next,
+              kind: 'set_connection_lifecycle',
+              lifecycle: command.lifecycle,
+            }),
+          })
+        );
+        continue;
+      }
+      // A grant change is only current while the account is on (see isBindingCurrent).
+      if (binding.lifecycleState !== 'connected' || !binding.enabled) continue;
+      const everyAgent = scope.scopeKind === 'every_agent_grants';
+      if (everyAgent ? input.everyAgentDecided : input.decided?.has(scope.subjectId)) continue;
+      const refusedActions = scope.rejectionCode === 'revision_unavailable';
+      const selection =
+        command &&
+        !refusedActions &&
+        (command.kind === 'replace_agent_grants' || command.kind === 'replace_every_agent_grants')
+          ? this.localSelection(tx, providerInstanceId, command.revisions)
+          : this.liveSelection(tx, input.connectionId, everyAgent ? undefined : scope.subjectId);
+      if (!selection) continue;
+      commandIds.push(
+        everyAgent
+          ? this.stageEveryAgentGrantReplacement(tx, {
+              ...base,
+              ...selection,
+              createdBy: `owner:${owner.kind}:${binding.ownerId}`,
+            })
+          : this.stageAgentGrantReplacement(tx, { ...base, ...selection, agentId: scope.subjectId })
+      );
+    }
+    return commandIds;
+  }
+
+  /**
+   * After the DorkOS account was linked again: send again, for every account
+   * connected through it, what the old link refused or never applied (see
+   * {@link restageRefused}), then deliver it.
+   *
+   * @param providerInstanceId - The DorkOS account's instance.
+   * @param signal - Stops delivery between commands.
+   * @returns How many changes were sent again.
+   */
+  async restageAfterRelink(
+    providerInstanceId: ConnectorProviderInstanceId,
+    signal: AbortSignal
+  ): Promise<number> {
+    const accounts = this.options.db
+      .select({ id: connections.id })
+      .from(connections)
+      .where(
+        and(eq(connections.providerInstanceId, providerInstanceId), isNull(connections.removedAt))
+      )
+      .all();
+    const commandIds = this.options.db.transaction((tx) =>
+      accounts.flatMap((account) =>
+        this.restageRefused(tx, { connectionId: account.id as ConnectionId, why: 'relinked' })
+      )
+    );
+    for (const commandId of commandIds) {
+      if (signal.aborted) break;
+      await this.deliverClaimed(commandId, signal, false);
+    }
+    return commandIds.length;
+  }
+
+  /**
+   * The local revision ids of one refused selection, paired with it, when
+   * every one of its actions is still known here.
+   */
+  private localSelection(
+    tx: ConnectorDbTransaction,
+    providerInstanceId: ConnectorProviderInstanceId,
+    revisions: readonly ManagedConnectorOperationSelector[]
+  ):
+    { revisions: ManagedConnectorOperationSelector[]; operationRevisionIds: string[] } | undefined {
+    const byIdentity = new Map(
+      tx
+        .select({
+          id: connectorOperationRevisions.id,
+          operationSlug: connectorOperationRevisions.operationSlug,
+          toolkitVersion: connectorOperationRevisions.toolkitVersion,
+          schemaHash: connectorOperationRevisions.schemaHash,
+          hostedRevisionId: connectorOperationRevisions.providerRevisionRef,
+        })
+        .from(connectorOperationRevisions)
+        .where(eq(connectorOperationRevisions.providerInstanceId, providerInstanceId))
+        .all()
+        .map((revision) => [selectorKey(revision), revision.id])
+    );
+    const operationRevisionIds = revisions.map((revision) => byIdentity.get(selectorKey(revision)));
+    if (operationRevisionIds.some((id) => id === undefined)) return undefined;
+    return { revisions: [...revisions], operationRevisionIds: operationRevisionIds as string[] };
+  }
+
+  /** The actions one agent (or every agent) holds on an account right now, as a selection. */
+  private liveSelection(
+    tx: ConnectorDbTransaction,
+    connectionId: ConnectionId,
+    agentId: string | undefined
+  ): { revisions: ManagedConnectorOperationSelector[]; operationRevisionIds: string[] } {
+    const rows = tx
+      .select({
+        id: connectorOperationRevisions.id,
+        operationSlug: connectorOperationRevisions.operationSlug,
+        toolkitVersion: connectorOperationRevisions.toolkitVersion,
+        schemaHash: connectorOperationRevisions.schemaHash,
+        hostedRevisionId: connectorOperationRevisions.providerRevisionRef,
+      })
+      .from(connectionOperationGrants)
+      .innerJoin(
+        connectorOperationRevisions,
+        eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
+      )
+      .where(
+        and(
+          eq(connectionOperationGrants.connectionId, connectionId),
+          isNull(connectionOperationGrants.revokedAt),
+          agentId === undefined
+            ? everyAgentGrantSubject()
+            : and(
+                eq(connectionOperationGrants.subjectType, 'agent'),
+                eq(connectionOperationGrants.subjectId, agentId)
+              )
+        )
+      )
+      .all();
+    return {
+      revisions: rows.map((row) => ({
+        operationSlug: row.operationSlug,
+        toolkitVersion: row.toolkitVersion,
+        schemaHash: row.schemaHash,
+        hostedRevisionId: row.hostedRevisionId,
+      })),
+      operationRevisionIds: rows.map((row) => row.id),
+    };
+  }
+
+  /**
+   * The service said the account no longer exists: close it here at once, as
+   * a disconnect whose access at the service has nothing left to end, so it
+   * reads as gone with one fix instead of a change retried forever. A refused
+   * disconnect is the one exception: that account's access can't be
+   * confirmed ended, so it stays owed as unknown and the person is shown
+   * where to end it themselves.
+   */
+  private closeGoneAccount(
+    tx: ConnectorDbTransaction,
+    row: typeof connectorManagedAuthorityOutbox.$inferSelect,
+    command: ManagedConnectorAuthorityCommand,
+    now: string
+  ): void {
+    if (command.kind === 'set_connection_lifecycle' && command.lifecycle === 'disconnected') {
+      tx.update(connections)
+        .set({ externalCleanupState: 'unknown', updatedAt: now })
+        .where(
+          and(
+            eq(connections.id, row.connectionId),
+            eq(connections.cleanupGeneration, row.cleanupGeneration),
+            eq(connections.lifecycleState, 'disconnected')
+          )
+        )
+        .run();
+      return;
+    }
+    const open = tx
+      .select({ lifecycleState: connections.lifecycleState })
+      .from(connections)
+      .where(eq(connections.id, row.connectionId))
+      .get();
+    if (open?.lifecycleState !== 'connected') return;
+    this.stageLocalLifecycle(tx, row.connectionId as ConnectionId, 'disconnected');
+    tx.update(connections)
+      .set({ externalCleanupState: 'not_required', closedBecause: 'service_gone', updatedAt: now })
+      .where(eq(connections.id, row.connectionId))
+      .run();
   }
 
   private appendCommand(input: {
@@ -1159,11 +1450,14 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
                 : null
             : null;
       const nextAttemptAt = state === 'pending' ? this.nextAttempt(row, now) : null;
+      const rejectionCode =
+        state === 'rejected' && status.state === 'rejected' ? status.rejectionCode : null;
       const updated = tx
         .update(connectorManagedAuthorityOutbox)
         .set({
           state,
           safeReason,
+          rejectionCode,
           attemptCount: row.attemptCount + 1,
           nextAttemptAt,
           leaseOwner: null,
@@ -1180,6 +1474,9 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         )
         .run();
       const committed = updated.changes === 1;
+      if (committed && current && rejectionCode === 'connection_unavailable') {
+        this.closeGoneAccount(tx, row, command, now);
+      }
       if (
         committed &&
         current &&
@@ -1229,7 +1526,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
           }
         } else if (command.lifecycle === 'active') {
           tx.update(connections)
-            .set({ enabled: true, updatedAt: now })
+            .set({ enabled: true, pausedBy: null, updatedAt: now })
             .where(eq(connections.id, row.connectionId))
             .run();
         }
@@ -1287,6 +1584,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .set({
         state: terminal ? 'rejected' : 'pending',
         safeReason,
+        rejectionCode: terminal ? failure.code : null,
         attemptCount: row.attemptCount + 1,
         nextAttemptAt,
         leaseOwner: null,
@@ -1614,4 +1912,33 @@ function pendingSync(
   retryAt: string | null
 ): ConnectorManagedLifecycleSyncResult['authoritySync'] {
   return reason && retryAt ? { status: 'pending', reason, retryAt } : { status: 'pending' };
+}
+
+/**
+ * Whether one scope's latest command is sent again (see
+ * {@link ManagedAuthoritySyncService.restageRefused}).
+ */
+function sendAgain(
+  scope: {
+    readonly state: 'pending' | 'applied' | 'rejected' | 'superseded';
+    readonly rejectionCode: string | null;
+    readonly generation: number;
+  },
+  why: 'relinked' | 'confirmed',
+  currentGeneration: number
+): boolean {
+  if (scope.state === 'rejected' && scope.rejectionCode === 'connection_unavailable') return false;
+  if (why === 'confirmed') return scope.state === 'rejected';
+  if (scope.state === 'rejected') {
+    return (
+      scope.rejectionCode === 'unauthorized' ||
+      scope.rejectionCode === 'permission_upgrade_required'
+    );
+  }
+  // Staged under the old link and never applied: under the new one it would
+  // only be set aside as superseded, and the access it carried lost.
+  return (
+    scope.state === 'superseded' ||
+    (scope.state === 'pending' && scope.generation !== currentGeneration)
+  );
 }

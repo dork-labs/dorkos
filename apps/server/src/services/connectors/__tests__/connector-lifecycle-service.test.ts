@@ -15,6 +15,7 @@ import {
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import { ConnectorAuthenticationFlowService } from '../resources/authentication-flow-service.js';
 import {
+  CLEANUP_RETRY_DELAYS_MS,
   ConnectorLifecycleService,
   type ConnectorManagedLifecyclePort,
 } from '../resources/lifecycle-service.js';
@@ -76,11 +77,6 @@ describe('ConnectorLifecycleService', () => {
     expect(() =>
       service.remove({ kind: 'local_install', installationId: 'foreign' }, CONNECTION_ID)
     ).toThrow('Connection not found');
-    db.update(connections)
-      .set({ externalCleanupState: 'unknown' })
-      .where(eq(connections.id, CONNECTION_ID))
-      .run();
-    expect(() => service.remove(OWNER, CONNECTION_ID)).toThrow('Finish disconnecting');
     db.update(connections)
       .set({ externalCleanupState: 'complete' })
       .where(eq(connections.id, CONNECTION_ID))
@@ -265,7 +261,7 @@ describe('ConnectorLifecycleService', () => {
     });
   });
 
-  it('reports failed external cleanup when the BYO provider is unavailable', async () => {
+  it('disconnects at once while the own key is gone, and leaves the cleanup to DorkOS', async () => {
     registry.unregisterProviderInstance(PROVIDER_ID);
     const service = new ConnectorLifecycleService({
       db,
@@ -274,16 +270,141 @@ describe('ConnectorLifecycleService', () => {
       authorityCleanup,
     });
 
-    await expect(
-      service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal)
-    ).resolves.toMatchObject({
-      lifecycle: 'disconnected',
-      externalCleanup: 'failed',
-      warning: { code: 'external_cleanup_failed' },
-    });
+    const result = await service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+    expect(result).toMatchObject({ lifecycle: 'disconnected', externalCleanup: 'pending' });
+    expect(result).not.toHaveProperty('warning');
     expect(authorityCleanup.revokeConnection).toHaveBeenCalledWith({
       connectionId: CONNECTION_ID,
       reason: 'connection_removed',
+    });
+    // A way that isn't answering is not counted against the account.
+    expect(db.select().from(connections).get()).toMatchObject({
+      externalCleanupState: 'pending',
+      externalCleanupAttempts: 0,
+      externalCleanupRetryAt: null,
+    });
+  });
+
+  describe('removing an account DorkOS still owes cleanup for', () => {
+    it('always works, and keeps the cleanup current so DorkOS still finishes it', async () => {
+      const service = new ConnectorLifecycleService({
+        db,
+        registry,
+        authenticationFlows,
+        authorityCleanup,
+      });
+      registry.unregisterProviderInstance(PROVIDER_ID);
+      await service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+      const before = db.select().from(connections).get()!;
+
+      service.remove(OWNER, CONNECTION_ID);
+
+      expect(db.select().from(connections).get()).toMatchObject({
+        removedAt: expect.any(String),
+        externalCleanupState: 'pending',
+        cleanupGeneration: before.cleanupGeneration,
+      });
+      // The key comes back: the background pass ends the access at the service.
+      registry.register(provider, 'material-a');
+      const disconnect = vi.spyOn(provider, 'disconnect');
+      await expect(service.finishOwedCleanups(new AbortController().signal)).resolves.toBe(1);
+      expect(disconnect).toHaveBeenCalledWith('provider-account-a');
+      expect(db.select().from(connections).get()).toMatchObject({
+        externalCleanupState: 'complete',
+      });
+    });
+  });
+
+  describe('owed own-key cleanup in the background', () => {
+    let now: Date;
+    let service: ConnectorLifecycleService;
+
+    beforeEach(() => {
+      now = new Date('2026-09-28T12:00:00.000Z');
+      service = new ConnectorLifecycleService({
+        db,
+        registry,
+        authenticationFlows,
+        authorityCleanup,
+        now: () => now,
+      });
+    });
+
+    it('schedules a failed try again, waiting longer each time, then stops and says so', async () => {
+      vi.spyOn(provider, 'disconnect').mockRejectedValue(new Error('service down'));
+      await expect(
+        service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal)
+      ).resolves.toMatchObject({ externalCleanup: 'pending' });
+      expect(db.select().from(connections).get()).toMatchObject({
+        externalCleanupState: 'pending',
+        externalCleanupAttempts: 1,
+        externalCleanupRetryAt: new Date(now.getTime() + CLEANUP_RETRY_DELAYS_MS[0]).toISOString(),
+      });
+
+      // Not due yet: nothing is tried.
+      await expect(service.finishOwedCleanups(new AbortController().signal)).resolves.toBe(0);
+
+      for (let attempt = 2; attempt <= CLEANUP_RETRY_DELAYS_MS.length; attempt += 1) {
+        now = new Date(Date.parse(db.select().from(connections).get()!.externalCleanupRetryAt!));
+        await service.finishOwedCleanups(new AbortController().signal);
+        expect(db.select().from(connections).get()).toMatchObject({
+          externalCleanupAttempts: attempt,
+          externalCleanupRetryAt: new Date(
+            now.getTime() + CLEANUP_RETRY_DELAYS_MS[attempt - 1]!
+          ).toISOString(),
+        });
+      }
+      now = new Date(Date.parse(db.select().from(connections).get()!.externalCleanupRetryAt!));
+      await service.finishOwedCleanups(new AbortController().signal);
+      // Out of tries: DorkOS stops, and readiness shows the person what they can do.
+      expect(db.select().from(connections).get()).toMatchObject({
+        externalCleanupState: 'failed',
+        externalCleanupRetryAt: null,
+      });
+      await expect(service.finishOwedCleanups(new AbortController().signal)).resolves.toBe(0);
+    });
+
+    it('skips an account whose way isn’t answering, without counting it', async () => {
+      vi.spyOn(provider, 'disconnect').mockRejectedValue(new Error('service down'));
+      await service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+      registry.unregisterProviderInstance(PROVIDER_ID);
+      now = new Date(now.getTime() + 24 * 60 * 60_000);
+      await expect(service.finishOwedCleanups(new AbortController().signal)).resolves.toBe(0);
+      expect(db.select().from(connections).get()).toMatchObject({ externalCleanupAttempts: 1 });
+    });
+
+    it('“Try again now” tries at once, ahead of the schedule', async () => {
+      const disconnect = vi
+        .spyOn(provider, 'disconnect')
+        .mockRejectedValueOnce(new Error('service down'));
+      await service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+      await expect(
+        service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal)
+      ).resolves.toMatchObject({ externalCleanup: 'complete', lifecycle: 'disconnected' });
+      expect(disconnect).toHaveBeenCalledTimes(2);
+    });
+
+    it('never overwrites a newer sign-in of the same account', async () => {
+      let release!: () => void;
+      vi.spyOn(provider, 'disconnect').mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          })
+      );
+      const pending = service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+      await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+      // The account is signed in again (and its cleanup generation moves on)
+      // while the try is still out.
+      db.update(connections)
+        .set({ externalCleanupState: 'not_required', cleanupGeneration: 99 })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      release();
+      await pending;
+      expect(db.select().from(connections).get()).toMatchObject({
+        externalCleanupState: 'not_required',
+      });
     });
   });
 

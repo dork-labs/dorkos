@@ -1,0 +1,46 @@
+ALTER TABLE `connections` ADD `paused_by` text;--> statement-breakpoint
+ALTER TABLE `connections` ADD `closed_because` text;--> statement-breakpoint
+ALTER TABLE `connections` ADD `external_cleanup_attempts` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `connections` ADD `external_cleanup_retry_at` text;--> statement-breakpoint
+ALTER TABLE `connector_managed_authority_outbox` ADD `rejection_code` text;--> statement-breakpoint
+-- HAND-ADDED backfill, before `reconnect_was_paused` goes. A "Sign in again"
+-- pauses its account while it runs, and until now nothing lifted that pause
+-- when the sign-in failed, expired or was abandoned: those accounts sat paused
+-- for no reason anyone chose. The newest reconnect flow says which pause is
+-- whose. A flow that ended without the owner's own pause behind it gives the
+-- account back; one still running holds a sign-in pause; any other pause is
+-- the owner's.
+UPDATE connections SET enabled = 1, paused_by = NULL
+WHERE lifecycle_state = 'connected' AND enabled = 0 AND (
+  SELECT f.state || ':' || f.reconnect_was_paused FROM connector_authentication_flows f
+  WHERE f.reconnect_connection_id = connections.id
+  ORDER BY f.created_at DESC, f.id DESC LIMIT 1
+) IN ('failed:0', 'expired:0', 'start_unknown:0');--> statement-breakpoint
+UPDATE connections SET paused_by = 'sign_in'
+WHERE lifecycle_state = 'connected' AND enabled = 0 AND (
+  SELECT f.state || ':' || f.reconnect_was_paused FROM connector_authentication_flows f
+  WHERE f.reconnect_connection_id = connections.id
+  ORDER BY f.created_at DESC, f.id DESC LIMIT 1
+) IN ('starting:0', 'pending:0');--> statement-breakpoint
+UPDATE connections SET paused_by = 'owner'
+WHERE lifecycle_state = 'connected' AND enabled = 0 AND paused_by IS NULL;--> statement-breakpoint
+-- HAND-ADDED backfill: removing an own-key account's access at the service
+-- is now DorkOS's job, retried on its own, instead of a "try disconnecting
+-- again" button. Hand the disconnects whose one try failed, and those closed
+-- before DorkOS recorded cleanup at all, to that retry.
+UPDATE connections SET external_cleanup_state = 'pending'
+WHERE lifecycle_state = 'disconnected' AND external_cleanup_state IN ('failed', 'unknown')
+AND provider_instance_id IN (SELECT id FROM connector_provider_instances WHERE mode = 'byo');--> statement-breakpoint
+-- HAND-ADDED backfill: name why each already-refused hosted command was
+-- refused, from the words stored with it, so a refused link is sent again once
+-- the DorkOS account is linked again and a gone account closes cleanly.
+UPDATE connector_managed_authority_outbox SET rejection_code = CASE safe_reason
+  WHEN 'This instance is no longer linked.' THEN 'unauthorized'
+  WHEN 'Relink this instance to enable managed connections.' THEN 'permission_upgrade_required'
+  WHEN 'The managed connection is no longer available.' THEN 'connection_unavailable'
+  WHEN 'One or more selected actions are no longer available.' THEN 'revision_unavailable'
+  WHEN 'A newer connection change replaced this request.' THEN 'scope_conflict'
+  WHEN 'The hosted service refused a conflicting authority command.' THEN 'conflict'
+END
+WHERE state = 'rejected';--> statement-breakpoint
+ALTER TABLE `connector_authentication_flows` DROP COLUMN `reconnect_was_paused`;

@@ -5,9 +5,10 @@ import {
   connectorAuthenticationFlows,
   connectorProviderInstances,
   connections,
-  desc,
   eq,
   isNull,
+  lte,
+  ne,
   or,
   type Db,
 } from '@dorkos/db';
@@ -136,7 +137,7 @@ export class ConnectorAuthenticationFlowService {
     ) {
       throw new ConnectorAuthenticationFlowError(
         'connection_cleanup_pending',
-        'Finish disconnecting this account before signing in again.'
+        'DorkOS is still removing this account’s earlier access at the service. Try again in a few minutes.'
       );
     }
     return this.startInternal(
@@ -148,7 +149,9 @@ export class ConnectorAuthenticationFlowService {
         idempotencyKey,
       },
       connectionId,
-      () => this.registry.setPaused(connectionId, true)
+      // The account pauses only while this sign-in runs. A pause the owner
+      // chose stays theirs; one the sign-in made is lifted when it ends.
+      () => this.registry.holdForSignIn(connectionId)
     );
   }
 
@@ -280,9 +283,14 @@ export class ConnectorAuthenticationFlowService {
         allowRemovedReplacement: true,
       });
       // Signing in again pauses the account only while the sign-in runs. It
-      // never undoes a pause the owner chose before it started.
-      if (sameAccount && row.reconnectConnectionId === account.id && !row.reconnectWasPaused) {
-        this.registry.setPaused(account.id, false);
+      // never undoes a pause the owner chose, and a sign-in to a different
+      // account gives the one it started from back as it was.
+      if (row.reconnectConnectionId) {
+        if (sameAccount && row.reconnectConnectionId === account.id) {
+          this.registry.releaseSignInHold(account.id);
+        } else {
+          this.releaseUnlessSigningIn(row.reconnectConnectionId as ConnectionId, row.id);
+        }
       }
       const transition = this.db
         .update(connectorAuthenticationFlows)
@@ -312,7 +320,7 @@ export class ConnectorAuthenticationFlowService {
   /** Mark process-interrupted starts unknown without replaying their upstream create. */
   invalidateInterruptedStarts(): number {
     const now = this.now().toISOString();
-    return this.db
+    const interrupted = this.db
       .update(connectorAuthenticationFlows)
       .set({
         state: 'start_unknown',
@@ -322,7 +330,39 @@ export class ConnectorAuthenticationFlowService {
         updatedAt: now,
       })
       .where(eq(connectorAuthenticationFlows.state, 'starting'))
-      .run().changes;
+      .returning({
+        id: connectorAuthenticationFlows.id,
+        reconnectConnectionId: connectorAuthenticationFlows.reconnectConnectionId,
+      })
+      .all();
+    for (const flow of interrupted) this.releaseEndedReconnect(flow);
+    return interrupted.length;
+  }
+
+  /**
+   * End every sign-in nobody finished in time. Expiry used to happen only when
+   * someone read the flow again, so an abandoned "Sign in again" held its
+   * account paused forever; this sweep ends it, and the account comes back.
+   *
+   * @returns How many sign-ins ended.
+   */
+  expireAbandoned(): number {
+    const now = this.now();
+    const abandoned = this.db
+      .select({ id: connectorAuthenticationFlows.id })
+      .from(connectorAuthenticationFlows)
+      .where(
+        and(
+          or(
+            eq(connectorAuthenticationFlows.state, 'starting'),
+            eq(connectorAuthenticationFlows.state, 'pending')
+          ),
+          lte(connectorAuthenticationFlows.expiresAt, now.toISOString())
+        )
+      )
+      .all();
+    for (const flow of abandoned) this.finishPending(flow.id, 'expired', now);
+    return abandoned.length;
   }
 
   /** Invalidate reconnects, and all pending checks for a single-account raw toolkit, before close. */
@@ -432,7 +472,7 @@ export class ConnectorAuthenticationFlowService {
       ) {
         throw new ConnectorAuthenticationFlowError(
           'connection_cleanup_pending',
-          'Finish disconnecting this account before signing in again.'
+          'DorkOS is still removing this account’s earlier access at the service. Try again in a few minutes.'
         );
       }
       this.db
@@ -448,9 +488,6 @@ export class ConnectorAuthenticationFlowService {
           toolkit: input.toolkit,
           label: input.label,
           reconnectConnectionId,
-          ...(reconnectConnectionId && {
-            reconnectWasPaused: this.pausedByOwner(reconnectConnectionId),
-          }),
           cleanupSnapshotJson: JSON.stringify(cleanupSnapshot),
           state: 'starting',
           createdAt: now.toISOString(),
@@ -530,7 +567,12 @@ export class ConnectorAuthenticationFlowService {
           eq(connectorAuthenticationFlows.state, 'starting')
         )
       )
-      .run();
+      .returning({
+        id: connectorAuthenticationFlows.id,
+        reconnectConnectionId: connectorAuthenticationFlows.reconnectConnectionId,
+      })
+      .all()
+      .forEach((flow) => this.releaseEndedReconnect(flow));
   }
 
   private finishPending(
@@ -562,7 +604,41 @@ export class ConnectorAuthenticationFlowService {
             : [])
         )
       )
-      .run();
+      .returning({
+        id: connectorAuthenticationFlows.id,
+        reconnectConnectionId: connectorAuthenticationFlows.reconnectConnectionId,
+      })
+      .all()
+      .forEach((flow) => this.releaseEndedReconnect(flow));
+  }
+
+  /** A sign-in again that ended without finishing gives its account back. */
+  private releaseEndedReconnect(flow: { id: string; reconnectConnectionId: string | null }): void {
+    if (flow.reconnectConnectionId) {
+      this.releaseUnlessSigningIn(flow.reconnectConnectionId as ConnectionId, flow.id);
+    }
+  }
+
+  /**
+   * Lift a sign-in's pause on one account unless another sign-in again for it
+   * is still running, which keeps holding it.
+   */
+  private releaseUnlessSigningIn(connectionId: ConnectionId, endedFlowId: string): void {
+    const running = this.db
+      .select({ id: connectorAuthenticationFlows.id })
+      .from(connectorAuthenticationFlows)
+      .where(
+        and(
+          eq(connectorAuthenticationFlows.reconnectConnectionId, connectionId),
+          ne(connectorAuthenticationFlows.id, endedFlowId),
+          or(
+            eq(connectorAuthenticationFlows.state, 'starting'),
+            eq(connectorAuthenticationFlows.state, 'pending')
+          )
+        )
+      )
+      .get();
+    if (!running) this.registry.releaseSignInHold(connectionId);
   }
 
   private currentPublicState(
@@ -704,32 +780,6 @@ export class ConnectorAuthenticationFlowService {
       if (!target || target.removedAt !== null || !acknowledged(target)) return false;
     }
     return rows.filter((row) => row.ref === externalRef).every(acknowledged);
-  }
-
-  /**
-   * Whether the account is paused by its owner, as opposed to by an earlier
-   * sign-in again that never finished (which pauses it while it runs). An
-   * unfinished earlier sign-in passes on what it recorded; otherwise a pause
-   * is the owner's.
-   */
-  private pausedByOwner(connectionId: ConnectionId): boolean {
-    const account = this.db
-      .select({ enabled: connections.enabled, lifecycleState: connections.lifecycleState })
-      .from(connections)
-      .where(eq(connections.id, connectionId))
-      .get();
-    if (!account || account.lifecycleState !== 'connected' || account.enabled) return false;
-    const earlier = this.db
-      .select({
-        state: connectorAuthenticationFlows.state,
-        reconnectWasPaused: connectorAuthenticationFlows.reconnectWasPaused,
-      })
-      .from(connectorAuthenticationFlows)
-      .where(eq(connectorAuthenticationFlows.reconnectConnectionId, connectionId))
-      .orderBy(desc(connectorAuthenticationFlows.createdAt), desc(connectorAuthenticationFlows.id))
-      .limit(1)
-      .get();
-    return !earlier || earlier.state === 'connected' ? true : earlier.reconnectWasPaused;
   }
 
   private ownedConnection(

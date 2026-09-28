@@ -953,4 +953,199 @@ describe('ManagedAuthoritySyncService', () => {
       expect(db.select().from(connections).get()?.externalCleanupState).toBe('complete');
     });
   });
+  describe('refused changes are never a dead end', () => {
+    function rejected(
+      command: ManagedConnectorAuthorityCommand,
+      rejectionCode: 'connection_unavailable' | 'revision_unavailable' | 'scope_conflict'
+    ): ManagedConnectorAuthorityCommandStatus {
+      return {
+        version: 1,
+        commandId: command.commandId,
+        managedConnectionId: command.managedConnectionId,
+        scopeVersion: command.scopeVersion,
+        state: 'rejected',
+        rejectionCode,
+      };
+    }
+
+    const grants = () =>
+      db
+        .select({
+          operationRevisionId: connectionOperationGrants.operationRevisionId,
+          revokedAt: connectionOperationGrants.revokedAt,
+        })
+        .from(connectionOperationGrants)
+        .all();
+
+    it('remembers why the hosted side refused a change', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw cloudError('unauthorized');
+      });
+      await replace();
+      expect(db.select().from(connectorManagedAuthorityOutbox).get()).toMatchObject({
+        state: 'rejected',
+        rejectionCode: 'unauthorized',
+      });
+    });
+
+    it('sends a change the old link refused again once the account is linked again', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw cloudError('unauthorized');
+      });
+      const sync = service();
+      await replace(sync);
+      expect(grants()).toEqual([
+        { operationRevisionId: 'revision-send', revokedAt: expect.any(String) },
+      ]);
+
+      // Linked again: the instance's setup moves on, and the hosted side answers.
+      db.update(connectorProviderInstances)
+        .set({ executionConfigGeneration: 2 })
+        .where(eq(connectorProviderInstances.id, PROVIDER_ID))
+        .run();
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return statusFor(command);
+      });
+      await expect(
+        sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal)
+      ).resolves.toBe(1);
+
+      expect(submitted.at(-1)).toMatchObject({
+        kind: 'replace_agent_grants',
+        agentId: 'agent-a',
+        scopeVersion: 2,
+        revisions: [expect.objectContaining({ operationSlug: 'gmail.send' })],
+      });
+      // The access the owner gave now works.
+      expect(grants()).toEqual([{ operationRevisionId: 'revision-send', revokedAt: null }]);
+      // Nothing is left to send again.
+      await expect(
+        sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal)
+      ).resolves.toBe(0);
+    });
+
+    it('never sends a change refused for another reason just because of a relink', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
+        rejected(command, 'scope_conflict')
+      );
+      const sync = service();
+      await replace(sync);
+      await expect(
+        sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal)
+      ).resolves.toBe(0);
+    });
+
+    it('sends every refused change again when the owner confirms who can use the account', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
+        rejected(command, 'scope_conflict')
+      );
+      const sync = service();
+      await replace(sync);
+      const commandIds = db.transaction((tx) =>
+        sync.restageRefused(tx, { connectionId: CONNECTION_ID, why: 'confirmed' })
+      );
+      expect(commandIds).toHaveLength(1);
+      // An agent the owner just decided for is theirs to send, not a re-send.
+      expect(
+        db.transaction((tx) =>
+          sync.restageRefused(tx, {
+            connectionId: CONNECTION_ID,
+            why: 'confirmed',
+            decided: new Set(['agent-a']),
+          })
+        )
+      ).toEqual([]);
+    });
+
+    it('confirms an agent’s current access when the refused actions are gone at the service', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return rejected(command, 'revision_unavailable');
+      });
+      const sync = service();
+      await replace(sync);
+      const [commandId] = db.transaction((tx) =>
+        sync.restageRefused(tx, { connectionId: CONNECTION_ID, why: 'confirmed' })
+      );
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return statusFor(command);
+      });
+      await sync.deliverAgentGrantReplacement(commandId!, new AbortController().signal);
+      // What the agent holds now (nothing yet) goes, never the refused actions again.
+      expect(submitted.at(-1)).toMatchObject({ kind: 'replace_agent_grants', revisions: [] });
+    });
+
+    it('closes an account the service says no longer exists, instead of retrying it', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
+        rejected(command, 'connection_unavailable')
+      );
+      const sync = service();
+      await replace(sync);
+      expect(db.select().from(connections).get()).toMatchObject({
+        lifecycleState: 'disconnected',
+        enabled: false,
+        closedBecause: 'service_gone',
+        externalCleanupState: 'not_required',
+      });
+      expect(grants().every((grant) => grant.revokedAt !== null)).toBe(true);
+      // Never sent again, even when the owner confirms.
+      expect(
+        db.transaction((tx) =>
+          sync.restageRefused(tx, { connectionId: CONNECTION_ID, why: 'confirmed' })
+        )
+      ).toEqual([]);
+    });
+
+    it('can’t confirm the end of a disconnect the service no longer recognizes', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
+        rejected(command, 'connection_unavailable')
+      );
+      await service().transition({
+        connectionId: CONNECTION_ID,
+        managedConnectionId: MANAGED_CONNECTION_ID,
+        lifecycle: 'disconnected',
+        providerInstanceId: PROVIDER_ID,
+        executionConfigGeneration: 1,
+        owner: OWNER,
+        signal: new AbortController().signal,
+      });
+      expect(db.select().from(connections).get()).toMatchObject({
+        lifecycleState: 'disconnected',
+        externalCleanupState: 'unknown',
+        closedBecause: null,
+      });
+    });
+
+    it('sends a disconnect the old link refused again, so DorkOS still finishes it', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw cloudError('unauthorized');
+      });
+      const sync = service();
+      await sync.transition({
+        connectionId: CONNECTION_ID,
+        managedConnectionId: MANAGED_CONNECTION_ID,
+        lifecycle: 'disconnected',
+        providerInstanceId: PROVIDER_ID,
+        executionConfigGeneration: 1,
+        owner: OWNER,
+        signal: new AbortController().signal,
+      });
+      expect(db.select().from(connections).get()?.externalCleanupState).toBe('pending');
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return {
+          ...statusFor(command),
+          externalCleanup: 'complete',
+        } as ManagedConnectorAuthorityCommandStatus;
+      });
+      await sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal);
+      expect(submitted.at(-1)).toMatchObject({
+        kind: 'set_connection_lifecycle',
+        lifecycle: 'disconnected',
+      });
+      expect(db.select().from(connections).get()?.externalCleanupState).toBe('complete');
+    });
+  });
 });

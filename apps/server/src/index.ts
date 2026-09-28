@@ -3074,6 +3074,12 @@ async function start() {
     const { testControlRouter } = await import('./routes/test-control.js');
     testControlRouter.use('/composio', testComposioFixture.router);
   }
+  // Built before the ways register: linking the DorkOS account again (seen as
+  // early as boot) sends what the old link refused or never applied again.
+  const managedConnectorAuthority = new ManagedAuthoritySyncService({
+    db,
+    cloud: getCloudLinkManager(),
+  });
   const connectorBootstrapper = new ConnectorProviderBootstrapper({
     ...(testComposioFixture && { composioBaseUrl: testComposioFixture.baseUrl }),
     registry: connectorRegistry,
@@ -3095,6 +3101,16 @@ async function start() {
         displayName: server.displayName,
         connection: { transport: server.transport, url: server.url },
       })),
+    onRelinked: (providerInstanceId) => {
+      void managedConnectorAuthority
+        .restageAfterRelink(providerInstanceId, AbortSignal.timeout(60_000))
+        .catch((error: unknown) => {
+          logger.warn(
+            '[Connectors] Could not send changes again after linking again',
+            logError(error)
+          );
+        });
+    },
     onClosedByNewLink: (closed) => {
       void recordConnectionsClosedByNewLink(activityService, closed).catch((err: unknown) =>
         logger.warn('[Connectors] Could not record connections closed by a new link', { err })
@@ -3160,10 +3176,6 @@ async function start() {
       count: interruptedConnectorStarts,
     });
   }
-  const managedConnectorAuthority = new ManagedAuthoritySyncService({
-    db,
-    cloud: getCloudLinkManager(),
-  });
   const connectorLifecycle = new ConnectorLifecycleService({
     db,
     registry: connectorRegistry,
@@ -3333,7 +3345,8 @@ async function start() {
     keptLogos: () => catalogLogos.keptServiceIds(),
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
     appConnections: () => connectorBootstrapper.appConnections(),
-    wayHealth: (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId),
+    wayHealth: (providerInstanceId, toolkit) =>
+      connectorBootstrapper.wayHealth(providerInstanceId, toolkit),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),
@@ -3356,7 +3369,7 @@ async function start() {
     db,
     connectorRegistry,
     { ownsAgent: connectorOwnsAgent },
-    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
+    (providerInstanceId, toolkit) => connectorBootstrapper.wayHealth(providerInstanceId, toolkit)
   );
   const connectorProgramPrincipals = new ConnectorProgramPrincipalService(db);
   const connectorRuntimePrincipals = meshCore
@@ -3491,7 +3504,7 @@ async function start() {
       revalidatePrincipal: async (principal) =>
         connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
     },
-    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
+    (providerInstanceId, toolkit) => connectorBootstrapper.wayHealth(providerInstanceId, toolkit)
   );
   const connectorBroker = new ConnectorExecutionBroker(
     connectorAuthorization,
@@ -5554,6 +5567,14 @@ async function start() {
       .catch((error: unknown) => {
         logger.warn('[Connectors] Managed authority recovery failed', logError(error));
       });
+    // Removing an own-key account's access at the service is DorkOS's job
+    // after a disconnect; a sign-in again nobody finished gives its account back.
+    void connectorLifecycle
+      .finishOwedCleanups(AbortSignal.timeout(25_000))
+      .catch((error: unknown) => {
+        logger.warn('[Connectors] Account cleanup at the service deferred', logError(error));
+      });
+    connectorAuthenticationFlows.expireAbandoned();
   };
   recoverManagedAuthority();
   managedAuthorityRecoveryInterval = setInterval(recoverManagedAuthority, 30_000);

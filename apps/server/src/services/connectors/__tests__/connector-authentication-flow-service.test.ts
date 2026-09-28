@@ -340,9 +340,6 @@ describe('ConnectorAuthenticationFlowService', () => {
         revokedAt: expect.any(String),
       }),
     ]);
-    expect(db.select().from(connections).where(eq(connections.id, existing)).get()?.enabled).toBe(
-      false
-    );
   });
 
   it('refuses unknown cleanup before provider dispatch and fences a later cleanup generation', async () => {
@@ -580,6 +577,122 @@ describe('ConnectorAuthenticationFlowService', () => {
     });
     // That pause was the abandoned sign-in's, not the owner's.
     expect(enabled()).toBe(true);
+  });
+
+  describe('a sign-in again never leaves an account paused', () => {
+    const accountOf = (id: string) =>
+      db
+        .select({ enabled: connections.enabled, pausedBy: connections.pausedBy })
+        .from(connections)
+        .where(eq(connections.id, id))
+        .get();
+
+    it('pauses the account while it runs, and records that the pause is the sign-in’s', async () => {
+      const existing = insertActiveConnection(db);
+      await service.reconnect(OWNER, existing, 'running');
+      expect(accountOf(existing)).toEqual({ enabled: false, pausedBy: 'sign_in' });
+    });
+
+    it('gives the account back when a sign-in nobody finished runs out of time', async () => {
+      const existing = insertActiveConnection(db);
+      let clock = NOW;
+      const timed = new ConnectorAuthenticationFlowService({ db, registry, now: () => clock });
+      const started = await timed.reconnect(OWNER, existing, 'abandoned');
+      // Nobody reads the flow again: the sweep alone ends it.
+      clock = new Date(NOW.getTime() + 60 * 60_000);
+      expect(timed.expireAbandoned()).toBe(1);
+      expect(
+        db
+          .select({ state: connectorAuthenticationFlows.state })
+          .from(connectorAuthenticationFlows)
+          .where(eq(connectorAuthenticationFlows.id, started.flowId))
+          .get()
+      ).toEqual({ state: 'expired' });
+      expect(accountOf(existing)).toEqual({ enabled: true, pausedBy: null });
+      expect(timed.expireAbandoned()).toBe(0);
+    });
+
+    it('gives the account back when the service can’t complete the sign-in', async () => {
+      const existing = insertActiveConnection(db);
+      vi.spyOn(provider, 'pollConnect').mockResolvedValue({ status: 'failed' });
+      const started = await service.reconnect(OWNER, existing, 'failed');
+      await expect(service.poll(OWNER, started.flowId)).resolves.toMatchObject({
+        state: 'failed',
+      });
+      expect(accountOf(existing)).toEqual({ enabled: true, pausedBy: null });
+    });
+
+    it('gives the account back when the service never confirmed the sign-in started', async () => {
+      const existing = insertActiveConnection(db);
+      vi.spyOn(provider, 'startConnect').mockRejectedValue(new Error('no answer'));
+      await expect(service.reconnect(OWNER, existing, 'unknown')).resolves.toMatchObject({
+        state: 'start_unknown',
+      });
+      expect(accountOf(existing)).toEqual({ enabled: true, pausedBy: null });
+    });
+
+    it('gives the account back when a restart interrupted the sign-in’s start', async () => {
+      const existing = insertActiveConnection(db);
+      db.update(connections)
+        .set({ enabled: false, pausedBy: 'sign_in' })
+        .where(eq(connections.id, existing))
+        .run();
+      db.insert(connectorAuthenticationFlows)
+        .values({
+          id: 'interrupted',
+          ownerKind: OWNER.kind,
+          ownerId: OWNER.installationId,
+          idempotencyKey: 'interrupted',
+          requestHash: 'hash',
+          providerInstanceId: PROVIDER_ID,
+          executionConfigGeneration: 1,
+          toolkit: 'gmail',
+          reconnectConnectionId: existing,
+          state: 'starting',
+          createdAt: NOW.toISOString(),
+          expiresAt: new Date(NOW.getTime() + 60_000).toISOString(),
+          updatedAt: NOW.toISOString(),
+        })
+        .run();
+      expect(service.invalidateInterruptedStarts()).toBe(1);
+      expect(accountOf(existing)).toEqual({ enabled: true, pausedBy: null });
+    });
+
+    it('gives the account it started from back when a different account signs in', async () => {
+      const existing = insertActiveConnection(db);
+      vi.spyOn(provider, 'pollConnect').mockResolvedValue({
+        status: 'connected',
+        account: {
+          externalAccountRef: 'external:gmail:Different' as never,
+          toolkit: 'gmail',
+          label: 'Different',
+          status: 'active',
+          custody: 'managed',
+        },
+      });
+      const started = await service.reconnect(OWNER, existing, 'other-identity');
+      await service.poll(OWNER, started.flowId);
+      expect(accountOf(existing)).toEqual({ enabled: true, pausedBy: null });
+    });
+
+    it('keeps holding the account while another sign-in again for it still runs', async () => {
+      const existing = insertActiveConnection(db);
+      vi.spyOn(provider, 'pollConnect').mockResolvedValue({ status: 'failed' });
+      const first = await service.reconnect(OWNER, existing, 'first');
+      await service.reconnect(OWNER, existing, 'second');
+      await service.poll(OWNER, first.flowId);
+      expect(accountOf(existing)).toEqual({ enabled: false, pausedBy: 'sign_in' });
+    });
+
+    it('never lifts a pause the owner chose, even when the sign-in fails', async () => {
+      const existing = insertActiveConnection(db);
+      registry.setPaused(existing, true);
+      vi.spyOn(provider, 'pollConnect').mockResolvedValue({ status: 'failed' });
+      const started = await service.reconnect(OWNER, existing, 'owner-paused');
+      expect(accountOf(existing)).toEqual({ enabled: false, pausedBy: 'owner' });
+      await service.poll(OWNER, started.flowId);
+      expect(accountOf(existing)).toEqual({ enabled: false, pausedBy: 'owner' });
+    });
   });
 
   it('refuses a conflicting reconnect key before pausing the connection', async () => {
