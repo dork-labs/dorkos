@@ -3,6 +3,7 @@ covers:
   - 'fix(connections): keep app notifications in one chat, show when they fail, and turn chat apps on from the app (DOR-2507)'
   - 'fix(connections): let the chat apps switch work on CLI installs, and give every notification problem a next step (DOR-2507)'
   - 'fix(connections): start a new notification chat once its permission level is raised (DOR-2507)'
+  - 'fix(client): use the shared Spinner for a removing notification'
 ---
 
 ### Changed
