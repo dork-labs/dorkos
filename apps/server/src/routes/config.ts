@@ -54,6 +54,7 @@ import { hasAnyApiKey } from '../services/core/auth/index.js';
 import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp-local-token.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
+import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 
 const router = Router();
 
@@ -481,8 +482,68 @@ function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAu
   };
 }
 
-router.patch('/', (req, res) => {
+/**
+ * How long a save that changed Claude Code's accounts waits for the usage store
+ * to catch up before answering anyway. A reference move after a rename can be
+ * slow, and the save itself has already landed.
+ */
+const ACCOUNT_RECONCILE_WAIT_MS = 2_000;
+
+/**
+ * The Claude Code fields that decide which accounts the usage store lists, and
+ * whether `default` stands alone, as one comparable string.
+ */
+function claudeAccountFields(): string {
+  const claudeCode = configManager.get('runtimes')?.claudeCode;
+  return JSON.stringify([
+    claudeCode?.accounts ?? null,
+    claudeCode?.defaultAccount ?? null,
+    claudeCode?.defaultAccountColor ?? null,
+  ]);
+}
+
+/**
+ * Wait, bounded, for the usage store to re-read the accounts after a save that
+ * changed them (spec `claude-account-ui` §6.5, "Main's own row").
+ *
+ * The config listener in `index.ts` starts a reconcile without waiting, and it
+ * can join the 60 s scan's pass, which read the config BEFORE this save. The
+ * client refetches usage the moment this route answers, so answering first let
+ * it read that stale list: a standalone `default` beside the row that now owns
+ * its folder, for up to a minute. `fresh` waits out any pass in flight and runs
+ * one that reads the saved file. A reconcile that writes config itself (moving
+ * references off a renamed account) fires the listener again, which joins this
+ * pass rather than starting another, so the wait cannot loop.
+ *
+ * Never fails the request: the save has landed, so a reconcile that throws or
+ * runs past {@link ACCOUNT_RECONCILE_WAIT_MS} is logged and the route answers
+ * as it would have. Without a running store there is nothing to wait for.
+ */
+async function awaitAccountReconcile(): Promise<void> {
+  const store = getAccountUsageStore();
+  if (!store) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), ACCOUNT_RECONCILE_WAIT_MS);
+    timer.unref?.();
+  });
   try {
+    const outcome = await Promise.race([store.reconcileAccounts({ fresh: true }), timedOut]);
+    if (outcome === 'timeout') {
+      logger.warn(
+        '[Config] account usage did not catch up with the save in time; answering anyway'
+      );
+    }
+  } catch (err) {
+    logger.warn('[Config] account usage reconcile after the save failed', logError(err));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+router.patch('/', async (req, res) => {
+  try {
+    const accountsBefore = claudeAccountFields();
     // The bars, the autonomy consent door, the write, and the audit line — the
     // sequence `dorkos config set` and the `config_patch` tool also run, so the
     // three doors cannot drift into meaning different things. What this route
@@ -515,6 +576,8 @@ router.patch('/', (req, res) => {
     for (const warning of result.warnings) {
       logger.warn(`[Config] ${warning}`);
     }
+
+    if (claudeAccountFields() !== accountsBefore) await awaitAccountReconcile();
 
     return res.json({
       success: true,

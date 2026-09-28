@@ -881,14 +881,21 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(screen.queryByRole('button', { name: `Color for ${MAIN}` })).not.toBeInTheDocument();
     });
 
-    it('is absent when the default is a registered row (that row is Main)', async () => {
-      // Aliased: the server lists the default under the registered row, not as `default`.
+    it('is absent when the default is a registered row, even with a stale `default` cached', async () => {
+      // Aliased: the server lists the default under the registered row, not as
+      // `default`. The cache still holds a `default` record from before the
+      // alias (the cache only adds and replaces), so only asking the route,
+      // whose answer is the whole list, drops it.
+      const aliased = [usageFor('personal', HOME_DEFAULT), usageFor('acme-corp', WORK)];
       renderSection(standalone({ accounts: [PERSONAL, ACME] }), {
-        usage: [usageFor('personal', HOME_DEFAULT), usageFor('acme-corp', WORK)],
+        usage: [...aliased, mainUsage()],
+        routeUsage: () => aliased,
       });
       await screen.findByRole('button', { name: 'Color for Personal' });
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: `Color for ${MAIN}` })).not.toBeInTheDocument()
+      );
       expect(screen.getAllByTestId('claude-account-row')).toHaveLength(2);
-      expect(screen.queryByRole('button', { name: `Color for ${MAIN}` })).not.toBeInTheDocument();
     });
 
     it('writes only defaultAccountColor when a color is chosen, never accounts', async () => {
@@ -930,15 +937,32 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       // The default's folder gets registered by this save, so the server stops
       // listing `default` on its own. The cache alone would keep the record.
       let listed = [usageFor('acme-corp', WORK), usageFor('client', THIRD), mainUsage()];
+      // The route keeps answering the old list until the server has re-read the
+      // accounts, which PATCH /api/config waits for before it answers. So the
+      // new list exists only from the moment the save resolves, not before.
+      let finishSave!: () => void;
+      updateConfigResult = () =>
+        new Promise<void>((resolve) => {
+          finishSave = () => {
+            listed = [
+              usageFor('acme-corp', WORK),
+              usageFor('client', THIRD),
+              usageFor('home', HOME),
+            ];
+            resolve();
+          };
+        });
       const transport = renderSection(standalone(), { usage: listed, routeUsage: () => listed });
       await screen.findByRole('button', { name: `Color for ${MAIN}` });
 
-      listed = [usageFor('acme-corp', WORK), usageFor('client', THIRD), usageFor('home', HOME)];
       await openAddForm(user);
       await user.type(screen.getByLabelText('Account folder'), HOME_DEFAULT);
       await user.click(screen.getByRole('button', { name: 'Add' }));
       expect(transport.updateConfig).toHaveBeenCalledTimes(1);
+      // While the save is in flight the row stays: nothing has changed yet.
+      expect(screen.getByRole('button', { name: `Color for ${MAIN}` })).toBeInTheDocument();
 
+      finishSave();
       await waitFor(() =>
         expect(screen.queryByRole('button', { name: `Color for ${MAIN}` })).not.toBeInTheDocument()
       );
