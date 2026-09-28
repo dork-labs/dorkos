@@ -105,6 +105,8 @@ relay_reload_adapters       Hot-reload adapter configuration from disk
 
 `relay_send_async` returns immediately with a dispatch inbox instead of waiting. The agent keeps working in the background. Poll `relay_inbox` with `ack: true` to check progress: by default it only returns messages waiting for you, and `ack: true` clears each one so the next poll only returns new ones. When you get a payload with `done: true`, call `relay_unregister_endpoint` to clean up.
 
+`relay_send`, `relay_send_and_wait` and `relay_send_async` also take an optional `account`: the Claude account a new conversation should run on. DorkOS honors it only when Flow's account settings allow it. Otherwise the message is still delivered and runs on the usual account, and a conversation that has already started always stays on its own account.
+
 Acknowledging is permanent. `ack: true` deletes the message content from disk as soon as it is handed to you: later reads still show the record (who sent it and when) but the content comes back empty, and there is no undo. Take what you need from the response. Leave `ack` off to look without clearing anything.
 
 Inboxes are private. An agent can read or unregister an endpoint only when it is the agent's own address, an inbox subject `relay_send_async` handed it, or one it registered itself with `relay_register_endpoint`. Asking for another agent's endpoint fails with `ENDPOINT_ACCESS_DENIED`, so one agent cannot read or clear another's mail.
