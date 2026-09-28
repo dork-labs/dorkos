@@ -322,7 +322,17 @@ jobs:
       # (the opt-in auth spec, and the @integration spec — which needs real
       # model credentials this runner does not have and spends real money, so
       # it stays out of CI; E2E_INTEGRATION is never set here).
+      #
+      # Only ONE shard boots the site leg (DOR-2360): every shard collects the
+      # two site specs, the balanced-shard reporter pins them to shard 1, and
+      # only shard 1 starts `next dev`. It had been booted on all six, which put
+      # its readiness timeout in front of six runners per queue build for two
+      # spec files; apps/e2e/site-leg.ts has the measurement.
       E2E_SITE: '1'
+      # Which shard this is, for the config's site-leg decision. It comes from
+      # the same matrix value as the `--shard` flag below, and the reporter
+      # refuses to run the site specs on a shard that did not boot the leg.
+      E2E_SHARD_INDEX: ${{ matrix.shard }}
       # Boot the production leg and run the specs that target it (DOR-1723).
       # It is the ONLY place in this suite a browser sees the shipped
       # Content-Security-Policy: every other leg loads the app from Vite, whose

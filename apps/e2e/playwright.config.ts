@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { BOOT_CACHE_DISABLED_KEY } from './boot-cache-flag';
+import { unitKey } from './reporters/balanced-shard';
+import { planSiteLeg, SITE_PROJECT, SITE_SHARD, SITE_SPEC_FILES } from './site-leg';
 
 /**
  * The checkout root, which the cockpit leg runs boundary-scoped to.
@@ -158,7 +160,19 @@ const PROD_DORK_HOME = `/tmp/dorkos-production-${PROD_PORT}`;
 // defaults ON (unless `E2E_SITE=0` forces it off), and the CI gate
 // (.github/workflows/browser-test.yml) also sets E2E_SITE=1 explicitly so its
 // coverage does not ride this conditional.
-const INCLUDE_SITE = process.env.E2E_SITE === '1' || (CI && process.env.E2E_SITE !== '0');
+//
+// A SHARDED run boots the leg on one shard only (DOR-2360). Every shard used to
+// boot it for two spec files, which put its readiness timeout in front of six
+// runners per queue build instead of one; `site-leg.ts` has the measurement and
+// the rule, and the balanced-shard reporter below pins the two files to that
+// shard. `SITE.specs` says whether this run collects them, `SITE.leg` whether
+// this process boots the leg.
+const SITE = planSiteLeg({
+  ci: CI,
+  site: process.env.E2E_SITE,
+  shardTotal: SHARD_TOTAL,
+  shardIndex: process.env.E2E_SHARD_INDEX,
+});
 
 // The production leg has to BUILD the client before it can serve anything
 // (`turbo run build --filter=@dorkos/client`), which is a cost no developer
@@ -214,8 +228,9 @@ const REUSE_EXISTING_SERVER = false;
 
 // Specs that override baseURL to the marketing site (http://localhost:6244) —
 // they need the site leg, so they are excluded from the cockpit project unless
-// the leg is booted. Keep in sync by grepping tests/ for `6244`/`SITE_BASE_URL`.
-const SITE_SPECS = ['**/marketplace.spec.ts', '**/features.spec.ts'];
+// the run includes the site. `__tests__/site-leg.test.ts` fails if the list in
+// `site-leg.ts` and the specs that point at the site drift apart.
+const SITE_SPECS = SITE_SPEC_FILES.map((file) => `**/${file}`);
 
 /**
  * Recreate a leg's throwaway `DORK_HOME` empty and readable only by the person
@@ -279,7 +294,7 @@ function apiLegCommand(
     .map(([key, value]) => `${key}=${value}`)
     .join(' ');
   const filters = ['@dorkos/server', ...alsoBuild].map((pkg) => `--filter=${pkg}`).join(' ');
-  const boot = `turbo run build ${filters} && pnpm --filter @dorkos/server exec tsx src/index.ts`;
+  const boot = `turbo run build ${filters} --output-logs=new-only && pnpm --filter @dorkos/server exec tsx src/index.ts`;
   const script = preBoot ? `${preBoot} && ${boot}` : boot;
   return `${prefix ? `${prefix} ` : ''}dotenv -- sh -c '${script}'`;
 }
@@ -435,7 +450,25 @@ export default defineConfig({
     // Owns `--shard`: cuts the suite by measured duration instead of by test
     // count, whole spec files at a time. Inert on an unsharded run. Why, and
     // how it stays balanced as specs are added: reporters/balanced-shard.ts.
-    ['./reporters/balanced-shard-reporter.ts'],
+    // The site specs are pinned to the one shard that boots the site leg, and
+    // `booted` lets that shard refuse to run them if the leg is not up.
+    [
+      './reporters/balanced-shard-reporter.ts',
+      SITE.specs
+        ? {
+            pin: {
+              shard: SITE_SHARD,
+              keys: SITE_SPEC_FILES.map((file) => unitKey(SITE_PROJECT, file)),
+              booted: SITE.leg,
+            },
+          }
+        : {},
+    ],
+    // The webServer legs' own output, live during the boot and as a tail on a
+    // failed run. Without it CI printed nothing from any leg, even the one that
+    // timed out (DOR-2360); the reporter's header says why. CI only: locally the
+    // `list` reporter above already prints leg output, and twice is noise.
+    ...(CI ? [['./reporters/webserver-legs-reporter.ts'] as const] : []),
   ],
 
   use: {
@@ -561,7 +594,7 @@ export default defineConfig({
       // other agents. `apps/client/vite.config.ts` carries the measurement and
       // the mechanism; `__tests__/playwright-config.test.ts` fails if either
       // Vite leg loses this.
-      command: `DORKOS_PORT=${PORT} VITE_PORT=${VITE_PORT} DORKOS_E2E_NO_HMR=true dotenv -- turbo dev --filter=@dorkos/client`,
+      command: `DORKOS_PORT=${PORT} VITE_PORT=${VITE_PORT} DORKOS_E2E_NO_HMR=true dotenv -- turbo dev --filter=@dorkos/client --output-logs=new-only`,
       url: `http://localhost:${VITE_PORT}`,
       name: 'Vite Client',
       timeout: 120_000,
@@ -619,7 +652,7 @@ export default defineConfig({
     // Without this, the main Vite client (port 4241) would proxy to the real server,
     // and mock scenarios set on MOCK_PORT would never be used by the UI.
     {
-      command: `DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} DORKOS_E2E_NO_HMR=true dotenv -- turbo dev --filter=@dorkos/client`,
+      command: `DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} DORKOS_E2E_NO_HMR=true dotenv -- turbo dev --filter=@dorkos/client --output-logs=new-only`,
       url: `http://localhost:${MOCK_VITE_PORT}`,
       name: 'Vite Client (test-mode)',
       // Same reasoning as the test-mode Express leg above: same budget as the
@@ -635,7 +668,8 @@ export default defineConfig({
     // needs network access to raw.githubusercontent.com and the marketplace
     // specs depend on that registry being reachable and non-empty. The trade
     // is stated in .github/workflows/browser-test.yml's header.
-    // Opt-in via E2E_SITE (see INCLUDE_SITE) — omitted for cockpit-only runs.
+    // Opt-in via E2E_SITE, and on one shard of a sharded run (see SITE) —
+    // omitted for cockpit-only runs and on every other shard.
     //
     // Wrapped in `dotenv --` to mirror the other legs: when Playwright is run
     // directly (e.g. `pnpm --filter @dorkos/e2e e2e`, no root `dotenv` wrapper),
@@ -643,7 +677,7 @@ export default defineConfig({
     // SITE_PORT is passed through so the leg honors DORKOS_SITE_PORT overrides
     // (the site `dev` script binds `${SITE_PORT:-6244}`); dotenv does not clobber
     // an already-set env var, so the override wins.
-    ...(INCLUDE_SITE
+    ...(SITE.leg
       ? [
           {
             command: `SITE_PORT=${SITE_PORT} dotenv -- pnpm --filter @dorkos/site dev`,
@@ -675,6 +709,18 @@ export default defineConfig({
             // exercise pages behind the same root layout that `/` already
             // forces Turbopack to compile. A cheaper probe would only hide a
             // slow or broken homepage behind a green webServer gate.
+            //
+            // KEPT at 242s on 2026-09-28, deliberately (DOR-2360). This leg
+            // timed out on 8 of the first 120 six-shard queue builds. Over those
+            // 720 shards the whole boot phase (every leg, global setup and test
+            // load) ran p50 300s, p99 324s, max 368s, and in the eight failures
+            // the four legs before this one were up after 120-186s, so a healthy
+            // site boot is roughly a minute and a failed one sat past 242s. That
+            // is a stall on about 1 boot in 90, not a slow tail a bigger number
+            // would catch, and runner wait did not predict it (6s to 23 min).
+            // The remedy is booting it on one shard instead of six (SITE above)
+            // and printing its output (reporters/webserver-legs-reporter.ts), so
+            // the next stall says what it was doing.
             timeout: 242_000,
             reuseExistingServer: REUSE_EXISTING_SERVER,
             stdout: 'pipe' as const,
@@ -742,8 +788,10 @@ export default defineConfig({
     {
       // Standard integration project — runs all tests except mock-browser specs.
       // The site specs (SITE_SPECS) need the marketing-site leg, so they are
-      // ignored unless that leg is booted (E2E_SITE / INCLUDE_SITE) — otherwise
-      // they would hang on an unreachable http://localhost:6244.
+      // ignored unless the run includes the site (E2E_SITE / SITE.specs) —
+      // otherwise they would hang on an unreachable http://localhost:6244. A
+      // sharded run collects them on every shard and the reporter runs them only
+      // on the one shard that boots the leg (see SITE above).
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
       // tests/connections/ needs the test-mode server (the scripted
@@ -822,7 +870,7 @@ export default defineConfig({
         // Unconditional rather than tied to INCLUDE_PRODUCTION — the wrong leg
         // is the wrong leg whether or not the right one was booted.
         '**/production/**',
-        ...(INCLUDE_SITE ? [] : SITE_SPECS),
+        ...(SITE.specs ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.
       ...(INCLUDE_INTEGRATION ? {} : { grepInvert: /@integration/ }),

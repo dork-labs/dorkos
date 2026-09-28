@@ -85,8 +85,28 @@ In CI the leg is on: the config defaults it on whenever `CI` is set (unless
 `.github/workflows/browser-test.yml` — also sets `E2E_SITE=1` explicitly so its
 coverage does not ride the conditional.
 
-If you add another spec that targets the site, add it to `SITE_SPECS`. Grep
-`tests/` for `6244` and `SITE_BASE_URL` to keep the list complete.
+A sharded run boots the leg on **one shard only** (DOR-2360). Every shard still
+collects the two site specs, so the duration-balanced cut stays identical on every
+runner, and the balanced-shard reporter pins them to shard 1, the only shard that
+starts `next dev`. The workflow tells each shard its index in `E2E_SHARD_INDEX`;
+a sharded run without it fails at config load rather than guessing. The rule and
+the measurement behind it are in `site-leg.ts`.
+
+If you add another spec that targets the site, add it to `SITE_SPEC_FILES` in
+`site-leg.ts`. `__tests__/site-leg.test.ts` fails if a spec under `tests/`
+mentions `SITE_BASE_URL` or port 6244 and is not on that list.
+
+## The legs' output reaches the log
+
+Every leg pipes its output, but Playwright hands piped leg output to the
+reporters, and none of CI's reporters prints output that belongs to no test. So
+until DOR-2360 a leg that never came up left one line in the CI log, the timeout,
+and nothing it had said. `reporters/webserver-legs-reporter.ts` prints each
+leg's first 150 lines while the legs boot (prefixed with the leg's name,
+timestamped by GitHub), then one summary line with each leg's first output
+relative to the start of the run. Legs start one after another, so the gap
+between two legs' first lines approximates the earlier leg's boot time. After the boot it goes quiet and keeps each leg's
+last 40 lines, printed only if the run fails.
 
 Leaving it off for cockpit-only runs is not just a speed win. On a machine with
 many recursive file watchers already running (several worktrees, several dev
@@ -303,8 +323,10 @@ A whole run takes about 58 minutes (about 5 of boot, 53 of tests), so
 build shows seven checks, not one:
 
 - **`browser-shard (1/6)` to `(6/6)`** — a sixth of the tests each. Each
-  one boots all six webServer legs, because a shard does not know which projects
-  it drew until after the config is loaded. A failing shard uploads its Playwright
+  one boots every webServer leg its projects might need, because a shard does not
+  know which projects it drew until after the config is loaded. The marketing-site
+  leg is the exception: its two specs are pinned to shard 1, so shard 1 boots all
+  six legs and the other shards boot five. A failing shard uploads its Playwright
   report as `playwright-report-shard-<n>` — traces, screenshots and videos.
 - **`browser-test`** — the one that matters. It fails unless every shard passed,
   and it is where `scripts/assert-browser-tests-executed.sh` proves the suite

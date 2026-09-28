@@ -535,7 +535,8 @@ if [ -n "$missing" ]; then
 $(printf '%s\n' "$missing" | sed 's/^/  /')
 Playwright collected nothing from them and still exited 0. Check the projects'
 testMatch/testIgnore/grepInvert filters, whether the file was renamed, and —
-for the site specs — whether the marketing-site leg booted (E2E_SITE). For a
+for the site specs — whether the marketing-site leg booted on shard 1, the only
+shard it boots on (E2E_SITE, E2E_SHARD_INDEX; apps/e2e/site-leg.ts). For a
 REGISTERED_MODULES entry, check that the spec file which imports it still calls
 its register function: a dropped call takes the whole suite out of every run
 while leaving the module on disk looking healthy."
