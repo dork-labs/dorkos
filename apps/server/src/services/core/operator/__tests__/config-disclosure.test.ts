@@ -285,6 +285,7 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
     expect(pathsWithVerdict('withhold').sort()).toEqual([
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
+      'cloud.previousLinkProof',
       'connectors.rawMcpServers[].url',
       // Not a secret: absolute paths on this machine that no agent needs (DOR-2383).
       'extensions.approvedSources',

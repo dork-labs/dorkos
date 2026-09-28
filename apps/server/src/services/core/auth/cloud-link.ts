@@ -10,6 +10,12 @@
  * minutes while linked. A `401` from any cloud call marks the instance unlinked:
  * it clears the token and stops — it never retry-loops a dead key.
  *
+ * Every path that drops a key (unlink, a `401`) keeps that key's relink proof
+ * (an HMAC keyed by it, see `linkProofForKey`) at `cloud.previousLinkProof`;
+ * the next link request carries that proof (or the held key's, when re-linking
+ * while linked) so the cloud can continue the same
+ * link for the same DorkOS account, and a successful link clears it (DOR-2521).
+ *
  * This is deliberately INDEPENDENT of `config.auth.enabled` (local login and the
  * cloud link are orthogonal). The token value is never logged.
  *
@@ -52,6 +58,7 @@ import { env } from '../../../env.js';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import {
   buildInstanceDescriptor,
+  linkProofForKey,
   executeManagedConnectorOperation,
   ManagedConnectorCloudError,
   ManagedConnectorLinkRequiredError,
@@ -120,9 +127,16 @@ export interface StartLinkResult {
 export interface CloudConfigPort {
   getToken(): string | null;
   getAccountLabel(): string | null;
+  /** The kept relink proof of the last dropped instance key, or `null` (also when absent). */
+  getPreviousLinkProof(): string | null;
+  /** Store a newly issued key. A new link consumes any kept relink proof (sets it `null`). */
   save(link: { instanceToken: string; instanceName: string }): void;
   setAccountLabel(label: string | null): void;
-  clear(): void;
+  /**
+   * Drop the instance key, name and account label, keeping `previousLinkProof`
+   * so the next link can ask the cloud to continue this one.
+   */
+  clear(keep: { previousLinkProof: string | null }): void;
 }
 
 /** Default config port backed by the `configManager` singleton (resolved lazily). */
@@ -130,12 +144,20 @@ function defaultConfigPort(): CloudConfigPort {
   return {
     getToken: () => configManager.get('cloud')?.instanceToken ?? null,
     getAccountLabel: () => configManager.get('cloud')?.linkedAccountLabel ?? null,
+    // Configs written before the field existed carry no leaf at all; absence is `null`.
+    getPreviousLinkProof: () => configManager.get('cloud')?.previousLinkProof ?? null,
     save: ({ instanceToken, instanceName }) => {
       const current = configManager.get('cloud');
       // `cloud.instanceToken` is registered in SENSITIVE_CONFIG_KEYS; the write
       // path mirrors how `tunnel.authtoken` is stored (whole-section set). The
-      // token value is never logged — `logConfigWrite` names paths only.
-      configManager.set('cloud', { ...current, instanceToken, instanceName });
+      // token value is never logged — `logConfigWrite` names paths only. The
+      // new link has consumed any kept relink proof, so it goes too.
+      configManager.set('cloud', {
+        ...current,
+        instanceToken,
+        instanceName,
+        previousLinkProof: null,
+      });
       logConfigWrite('the account link', 'cloud', current, configManager.get('cloud'));
     },
     setAccountLabel: (label) => {
@@ -147,12 +169,13 @@ function defaultConfigPort(): CloudConfigPort {
       configManager.set('cloud', { ...current, linkedAccountLabel: label });
       logConfigWrite('the account link', 'cloud', current, configManager.get('cloud'));
     },
-    clear: () => {
+    clear: ({ previousLinkProof }) => {
       const current = configManager.get('cloud');
       configManager.set('cloud', {
         instanceToken: null,
         instanceName: null,
         linkedAccountLabel: null,
+        previousLinkProof,
       });
       logConfigWrite('unlinking this instance', 'cloud', current, configManager.get('cloud'));
     },
@@ -272,7 +295,11 @@ export class CloudLinkManager {
     // history onto the account. Heartbeats deliberately never carry the id.
     const telemetryInstanceId = await this.resolveTelemetryInstanceId();
     if (generation !== this.linkGeneration) throw new Error('Cloud link request was superseded');
-    const descriptor = buildInstanceDescriptor(telemetryInstanceId);
+    const previousLinkProof = this.previousLinkProof();
+    const descriptor = {
+      ...buildInstanceDescriptor(telemetryInstanceId),
+      ...(previousLinkProof ? { previousLinkProof } : {}),
+    };
     const codes = await requestDeviceCode({ baseUrl, descriptor, fetchImpl: this.fetchImpl });
 
     if (generation !== this.linkGeneration || baseUrl !== resolveCloudBaseUrl()) {
@@ -289,6 +316,20 @@ export class CloudLinkManager {
       verificationUri: codes.verification_uri,
       expiresAt: new Date(this.now() + codes.expires_in * 1000).toISOString(),
     };
+  }
+
+  /**
+   * The relink proof a link request carries: the key held right now
+   * (re-linking while linked), else the proof kept from the last dropped key.
+   */
+  private previousLinkProof(): string | null {
+    const token = this.config.getToken();
+    return token ? linkProofForKey(token) : this.config.getPreviousLinkProof();
+  }
+
+  /** Clear the link locally, keeping the relink proof of whatever key is being dropped. */
+  private clearKeepingProof(): void {
+    this.config.clear({ previousLinkProof: this.previousLinkProof() });
   }
 
   private async runPoll(
@@ -309,6 +350,7 @@ export class CloudLinkManager {
         now: this.now,
         signal,
       });
+      this.settlePoll(signal);
       if (signal.aborted || generation !== this.linkGeneration || baseUrl !== resolveCloudBaseUrl())
         return;
       if (result.status === 'approved') {
@@ -323,11 +365,17 @@ export class CloudLinkManager {
         this.setState(result.status === 'denied' ? 'denied' : 'expired');
       }
     } catch (err) {
+      this.settlePoll(signal);
       if (!signal.aborted && generation === this.linkGeneration) {
         logger.warn('[CloudLink] Device-link poll failed', logError(err));
         this.setState('idle');
       }
     }
+  }
+
+  /** A settled poll no longer counts as a pending re-link (see {@link markUnlinked}). */
+  private settlePoll(signal: AbortSignal): void {
+    if (this.pollController?.signal === signal) this.pollController = undefined;
   }
 
   /**
@@ -355,7 +403,7 @@ export class CloudLinkManager {
     this.advanceGeneration();
     this.cancelPoll();
     this.stopHeartbeatSchedule();
-    this.config.clear();
+    this.clearKeepingProof();
     this.lastHeartbeatAt = undefined;
     this.setState('idle');
     const reconciliation = this.notifyManagedProviderSync();
@@ -757,12 +805,21 @@ export class CloudLinkManager {
 
   private markUnlinked(context: LinkContext): void {
     if (!this.ownsContext(context)) return;
-    this.advanceGeneration();
-    this.cancelPoll();
+    // A re-link started while still linked has a device poll in flight, and
+    // the old key can be refused (401) while it waits. Drop the old key but
+    // leave that poll, and the generation it runs under, alone: an approval
+    // still saves the new key. Work still holding the old key cannot act on
+    // the result, because `ownsContext` also requires the stored token to
+    // match, and it is now cleared (and later replaced).
+    const relinkPending = this.pollController !== undefined && !this.pollController.signal.aborted;
+    if (!relinkPending) {
+      this.advanceGeneration();
+      this.cancelPoll();
+    }
     this.stopHeartbeatSchedule();
-    this.config.clear();
+    this.clearKeepingProof();
     this.lastHeartbeatAt = undefined;
-    this.setState('unlinked');
+    this.setState(relinkPending ? 'pending' : 'unlinked');
     void this.notifyManagedProviderSync();
     logger.warn(
       `[CloudLink] ${UNLINKED_REASON} — cloud refused the instance key (401); cleared local token`

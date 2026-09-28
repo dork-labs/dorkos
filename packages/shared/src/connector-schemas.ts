@@ -561,12 +561,17 @@ export const CONNECTION_READINESS_COPY: Readonly<
     agent:
       'The person turned this account off for this chat, so you can’t use it here. Don’t ask for it again in this chat.',
   },
+  // Linking this computer again with the same DorkOS account can continue its
+  // earlier link, and so bring the account back (DOR-2521); never promised.
   dorkos_account_unlinked: {
     owner:
-      'It was connected through your DorkOS account, which isn’t linked anymore. Connect it again to use it.',
+      'It was connected through your DorkOS account, which isn’t linked anymore. Linking this computer again with the same ' +
+      'DorkOS account can bring it back, unless its earlier link was removed from that account. Otherwise, connect it again.',
     agent:
-      'It was connected through the person’s DorkOS account, which isn’t linked anymore. Ask the person to connect this app again ' +
-      `${READINESS_ASK_ON_CONNECTIONS}. Linking the account again doesn’t bring it back on its own.`,
+      'It was connected through the person’s DorkOS account, which isn’t linked anymore. Linking this computer again with the ' +
+      'same DorkOS account (Settings › Access in the DorkOS app) can bring it back, unless its earlier link was removed from ' +
+      'that account. A different account, or a link made on another computer, does not bring it back: then ask the person to ' +
+      `connect this app again ${READINESS_ASK_ON_CONNECTIONS}.`,
   },
   dorkos_account_unavailable: {
     owner: 'Your DorkOS account can’t reach it right now, so agents can’t use it.',

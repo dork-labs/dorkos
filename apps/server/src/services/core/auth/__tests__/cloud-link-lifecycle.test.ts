@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CloudLinkManager, type CloudConfigPort } from '../cloud-link.js';
+import { linkProofForKey } from '../cloud-link-client.js';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -31,21 +32,25 @@ function heartbeat(label: string): Response {
   });
 }
 
-function memoryConfig(initialToken: string | null = null) {
+function memoryConfig(initialToken: string | null = null, initialProof: string | null = null) {
   let token = initialToken;
   let label: string | null = null;
+  let previousLinkProof = initialProof;
   const config: CloudConfigPort = {
     getToken: () => token,
     getAccountLabel: () => label,
+    getPreviousLinkProof: () => previousLinkProof,
     save: (link) => {
       token = link.instanceToken;
+      previousLinkProof = null;
     },
     setAccountLabel: (value) => {
       label = value;
     },
-    clear: () => {
+    clear: (keep) => {
       token = null;
       label = null;
+      previousLinkProof = keep.previousLinkProof;
     },
   };
   return config;
@@ -145,6 +150,97 @@ describe('CloudLinkManager lifecycle ownership', () => {
       expect(manager.getStatus().state).toBe('linked');
     }
   );
+
+  it('keeps a pending re-link alive when the old key is refused mid-poll (DOR-2521)', async () => {
+    const tokenReply = deferred<Response>();
+    const config = memoryConfig('old-key');
+    const fetchImpl = vi.fn(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path.endsWith('/device/code')) return codes('new-code');
+      if (path.endsWith('/device/token')) return tokenReply.promise;
+      if (path.endsWith('/instances/heartbeat')) return heartbeat('new-account');
+      if (path.includes('/instances/connectors/')) return response(401);
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const manager = new CloudLinkManager({
+      config,
+      fetchImpl,
+      sleep: noSleep,
+      resolveTelemetryInstanceId: async () => undefined,
+    });
+    managers.push(manager);
+
+    await manager.startLink();
+    await vi.waitFor(() => {
+      expect(
+        fetchImpl.mock.calls.filter(([url]) => String(url).endsWith('/device/token'))
+      ).toHaveLength(1);
+    });
+    // The old key is refused while the person is still approving the new link.
+    await expect(
+      manager.listManagedConnectorUsage({ version: 1, limit: 50 }, new AbortController().signal)
+    ).rejects.toMatchObject({ code: 'unauthorized' });
+    expect(config.getToken()).toBeNull();
+    expect(config.getPreviousLinkProof()).toBe(linkProofForKey('old-key'));
+    expect(manager.getStatus().state).toBe('pending');
+
+    tokenReply.resolve(response(200, { access_token: 'new-key' }));
+    await manager.pendingLink;
+
+    expect(config.getToken()).toBe('new-key');
+    expect(config.getPreviousLinkProof()).toBeNull();
+    expect(config.getAccountLabel()).toBe('new-account');
+    expect(manager.getStatus().state).toBe('linked');
+  });
+
+  it('keeps the proof of a key a managed-connector call finds refused (DOR-2521)', async () => {
+    const config = memoryConfig('old-key');
+    const manager = new CloudLinkManager({
+      config,
+      fetchImpl: vi.fn(async () => response(401)),
+      sleep: noSleep,
+    });
+    managers.push(manager);
+
+    await expect(manager.submitConnectorAuthorityCommand(command)).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+
+    expect(config.getToken()).toBeNull();
+    expect(config.getPreviousLinkProof()).toBe(linkProofForKey('old-key'));
+    expect(manager.getStatus().state).toBe('unlinked');
+  });
+
+  it('treats a 401 after a finished link as an unlink, not a pending re-link', async () => {
+    const config = memoryConfig('old-key');
+    let refuse = false;
+    const fetchImpl = vi.fn(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path.endsWith('/device/code')) return codes('new-code');
+      if (path.endsWith('/device/token')) return response(200, { access_token: 'new-key' });
+      if (path.endsWith('/instances/heartbeat')) return heartbeat('new-account');
+      if (path.includes('/instances/connectors/')) return refuse ? response(401) : response(500);
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    const manager = new CloudLinkManager({
+      config,
+      fetchImpl,
+      sleep: noSleep,
+      resolveTelemetryInstanceId: async () => undefined,
+    });
+    managers.push(manager);
+
+    await manager.startLink();
+    await manager.pendingLink;
+    refuse = true;
+    await expect(manager.submitConnectorAuthorityCommand(command)).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+
+    expect(config.getToken()).toBeNull();
+    expect(config.getPreviousLinkProof()).toBe(linkProofForKey('new-key'));
+    expect(manager.getStatus().state).toBe('unlinked');
+  });
 
   it('ignores a superseded device-code response before polling', async () => {
     const firstCode = deferred<Response>();

@@ -237,7 +237,12 @@ describe('UserConfigSchema', () => {
         defaults: { areas: {}, actions: {} },
         upgradeSweptVersion: null,
       },
-      cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      cloud: {
+        instanceToken: null,
+        instanceName: null,
+        linkedAccountLabel: null,
+        previousLinkProof: null,
+      },
       connectors: { rawMcpServers: [] },
       providers: {},
     });
@@ -415,10 +420,12 @@ describe('SENSITIVE_CONFIG_KEYS', () => {
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.auth');
     expect(SENSITIVE_CONFIG_KEYS).toContain('mcp.apiKey');
     expect(SENSITIVE_CONFIG_KEYS).toContain('cloud.instanceToken');
+    // The relink proof continues a link with the account's approval (DOR-2521).
+    expect(SENSITIVE_CONFIG_KEYS).toContain('cloud.previousLinkProof');
   });
 
-  it('has exactly 4 sensitive keys', () => {
-    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(4);
+  it('has exactly 5 sensitive keys', () => {
+    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(5);
   });
 
   it('is readonly array', () => {
@@ -609,7 +616,12 @@ describe('USER_CONFIG_DEFAULTS', () => {
         defaults: { areas: {}, actions: {} },
         upgradeSweptVersion: null,
       },
-      cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      cloud: {
+        instanceToken: null,
+        instanceName: null,
+        linkedAccountLabel: null,
+        previousLinkProof: null,
+      },
       connectors: { rawMcpServers: [] },
       providers: {},
     });

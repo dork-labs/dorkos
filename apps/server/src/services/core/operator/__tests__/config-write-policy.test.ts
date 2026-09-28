@@ -72,6 +72,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'cloud.instanceName',
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
+      'cloud.previousLinkProof',
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].transport',
@@ -227,6 +228,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'mcp.apiKey',
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
+      'cloud.previousLinkProof',
       'runtimes.codex.credentialRef',
       'providers',
     ];

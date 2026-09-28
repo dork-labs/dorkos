@@ -16,6 +16,7 @@
  *
  * @module services/core/auth/cloud-link-client
  */
+import { createHmac } from 'node:crypto';
 import { hostname } from 'node:os';
 import {
   CONNECTOR_AUTH_SETUP_HEADER,
@@ -113,6 +114,16 @@ export interface InstanceDescriptor {
    * `aliasInstanceToAccount`.
    */
   telemetryInstanceId?: string;
+  /**
+   * Proof that this install held the instance key it had before this link
+   * request (see {@link linkProofForKey}), sent so the cloud can continue that same
+   * link, and the apps connected through it, when the same DorkOS account approves while that link is still live.
+   * **Optional:** present only when a previous key is known (a key held right
+   * now, or `cloud.previousLinkProof` kept from the last unlink). Serialized
+   * into the `POST /device/code` `scope` only when present, so a first link's
+   * wire shape is unchanged. Never the raw key.
+   */
+  previousLinkProof?: string;
 }
 
 /** The `POST /api/auth/device/code` success body (RFC 8628). */
@@ -292,6 +303,23 @@ export function resolveCloudBaseUrl(): string {
   return (env.DORKOS_CLOUD_URL || DEFAULT_CLOUD_URL).replace(/\/+$/, '');
 }
 
+/** The fixed message the relink proof authenticates (versioned so it can change). */
+export const LINK_PROOF_MESSAGE = 'dorkos-relink-v1';
+
+/**
+ * The relink proof for an instance key: HMAC-SHA256 keyed by the raw key string
+ * (UTF-8) over {@link LINK_PROOF_MESSAGE}, encoded base64url without padding
+ * (Node's `base64url` never pads). Only someone holding the key can compute it,
+ * and it is not the plain SHA-256 of the key, so a stored hash of the key can
+ * never stand in for it. The hosted side keeps only a one-way hash of the proof.
+ *
+ * @param instanceKey - The raw instance key the cloud issued.
+ * @returns The 43-character base64url proof.
+ */
+export function linkProofForKey(instanceKey: string): string {
+  return createHmac('sha256', instanceKey).update(LINK_PROOF_MESSAGE).digest('base64url');
+}
+
 /**
  * Build this instance's descriptor: hostname, platform, and the running DorkOS
  * version. Resolves the same in the server and the bundled CLI (both share
@@ -342,6 +370,11 @@ export async function requestDeviceCode(opts: {
         // analytics onto the account person (site `aliasInstanceToAccount`).
         ...(opts.descriptor.telemetryInstanceId
           ? { telemetryInstanceId: opts.descriptor.telemetryInstanceId }
+          : {}),
+        // Only serialized when a previous key is known; its presence asks the
+        // cloud to continue that link rather than start a new one.
+        ...(opts.descriptor.previousLinkProof
+          ? { previousLinkProof: opts.descriptor.previousLinkProof }
           : {}),
       }),
     }),

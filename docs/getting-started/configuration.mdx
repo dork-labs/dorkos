@@ -969,10 +969,18 @@ Linking this instance to a DorkOS account lets the account see and manage it. Ru
       type: 'string | null',
       default: 'null',
     },
+    'cloud.previousLinkProof': {
+      description:
+        'Proof that this computer held its earlier key, never the key itself. The next link sends it so apps connected through the earlier link can come back when you link the same DorkOS account. Treat it like a password: the CLI and API warn when it is set by hand. DorkOS clears it once the new link is made. null when there is nothing to bring back.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
 
 Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://dorkos.ai`). While linked, the instance checks in with the cloud on startup and every 15 minutes. If the account revokes the instance, the next check-in clears the local token and the instance is unlinked.
+
+Linking this computer again with the same DorkOS account can bring back the apps it connected through its earlier link, as long as that link was not removed from the account. If it was removed, or you link a different account or a different computer, connect those apps again.
 
 ### Uploads
 

@@ -240,13 +240,16 @@ The `approvals` section (standing permissions, DOR-501/DOR-520) is **retired** (
 
 The `cloud` section holds the device-link binding between this instance and a DorkOS account (accounts-and-auth P2). It is managed by the `dorkos cloud` CLI commands and the `/api/cloud/*` routes — not edited by hand — and is independent of `auth.enabled`:
 
-| Key                        | Type           | Default | Description                                                                                 |
-| -------------------------- | -------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `cloud.instanceToken`      | string \| null | `null`  | Scoped instance API key issued by the cloud on link (**sensitive**); `null` when not linked |
-| `cloud.instanceName`       | string \| null | `null`  | This instance's display name registered with the cloud (typically the hostname)             |
-| `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable label of the linked DorkOS account, when the cloud reports one               |
+| Key                        | Type           | Default | Description                                                                                    |
+| -------------------------- | -------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| `cloud.instanceToken`      | string \| null | `null`  | Scoped instance API key issued by the cloud on link (**sensitive**); `null` when not linked    |
+| `cloud.instanceName`       | string \| null | `null`  | This instance's display name registered with the cloud (typically the hostname)                |
+| `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable label of the linked DorkOS account, when the cloud reports one                  |
+| `cloud.previousLinkProof`  | string \| null | `null`  | Relink proof of the last dropped instance key (HMAC keyed by it, **sensitive**); never the key |
 
 `cloud.instanceToken` is registered in `SENSITIVE_CONFIG_KEYS`, so the CLI and REST API warn when it is written directly. The cloud base URL is set by the `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`; override for local dev against the site). While linked, the server heartbeats the cloud on startup and every 15 minutes; a `401` from the cloud (the account revoked the instance) clears the token and marks the instance unlinked. (This device-link check-in is unrelated to the opt-in telemetry heartbeat below.)
+
+Every path that drops the key (unlink from Settings, a `401`, `dorkos cloud logout`) keeps `cloud.previousLinkProof`: the dropped key's relink proof, `base64url_nopad(HMAC-SHA256(key = <raw instance key, UTF-8>, message = "dorkos-relink-v1"))` (`linkProofForKey` in `cloud-link-client.ts`). The next device-code request carries it as `previousLinkProof` in the `scope` JSON so the cloud can continue the same link, and the apps connected through it, when the same DorkOS account approves and the earlier link is still live on that account (DOR-2521). The cloud keeps only a one-way hash of the proof, so its stored data cannot forge one, and it retires the old key at the token exchange, not at approval. A link made before the cloud started keeping that hash cannot be continued. Re-linking while still linked sends the proof of the key held right now instead. A successful link sets it back to `null`; a denied or expired request keeps it. With the same account's approval the proof continues a link, so it **is** in `SENSITIVE_CONFIG_KEYS`: withheld from agents with a `cloud.previousLinkProofConfigured` presence flag, `operator-only` for writes, warned on when written by hand, and masked in desktop support archives. No migration: configs written before the field carry no leaf, and every reader treats absence as `null`. Version skew: an older build's unlink or `401` handling writes the `cloud` section without this leaf, so a proof kept by a newer build is dropped if an older one clears the link. The next link is then simply a new link. A `401` that arrives while a re-link is pending (the old key refused mid-poll) drops the old key but leaves the poll running, so an approval still saves the new key.
 
 ### telemetry
 
@@ -1613,7 +1616,11 @@ Content-Type: application/json
       "rateLimit": { "enabled": true, "maxPerWindow": 60, "windowSecs": 60 },
       "apiKeyConfigured": false
     },
-    "cloud": { "instanceName": null, "instanceTokenConfigured": false },
+    "cloud": {
+      "instanceName": null,
+      "instanceTokenConfigured": false,
+      "previousLinkProofConfigured": false
+    },
     "runtimes": {
       "codex": { "enabled": true, "binaryPath": null, "credentialRefConfigured": false },
       "...": "claudeCode, opencode, and the top-level runtime defaults"
@@ -1633,6 +1640,7 @@ Content-Type: application/json
 | `runtimes.codex.credentialRef`               | gone; `runtimes.codex.credentialRefConfigured`                                 |
 | `providers` (the whole per-provider ref map) | the section disappears; top-level `providersConfigured` lists the provider ids |
 | `cloud.linkedAccountLabel`                   | gone, with no flag — often a person's email, and no caller needs it            |
+| `cloud.previousLinkProof`                    | gone; `cloud.previousLinkProofConfigured`                                      |
 | `ui.sidebar.sections`                        | gone, for a SHAPE reason, not a safety one (see `config-disclosure.ts`)        |
 
 **Validation error (400):**
@@ -1828,7 +1836,7 @@ The argument is the one DOR-1221 made, one level down. That value belongs to ano
 
 **Why the line is at a NAMED leaf, and what that leaves open.** Tolerance has to be paid for on the write path, and only a named leaf can pay: one key, one value, carried back exactly. Inside a list or a record an element has a position rather than a name, and matching a stored element to a written one by index is a guess whose wrong answers write one person's setting onto another's row — the same reason `preserveUnknownKeys` refuses arrays and records. **So the residual is real: a new `ui.statusBar.pins` id, a new `workbench.defaultViewers` viewer, a new `onboarding.completedSteps` step, or a new `providers` credential form written by a newer build still condemns the file.** So does a change to `version`. If that becomes the next thing to hurt, closing it means solving list identity first, not loosening the rule here.
 
-**Tolerated is not silent.** Falling back to a default is the right behaviour and the wrong secret — the relaxed set includes `auth.enabled`, `mcp.enabled` and `telemetry.usage`, and before this the same file was condemned LOUDLY, with a backup and a line the operator saw. Turning that into a login gate quietly off would break rule 2 of `.claude/rules/safe-defaults.md`. So `ConfigManager.unreadableSettings()` names them, and three surfaces use it: one `logger.warn` per boot (not per read — `get` runs the repair on every call), a `dorkos doctor` row that appears only when there is something to report, and `dorkos config validate`, which keeps `valid: true` but lists them under `warnings`. A stored value on one of the four `SENSITIVE_CONFIG_KEYS` prints as `<hidden>`: they are nullable strings with defaults, so they are all relaxed, and a re-encoded token must not reach a log file.
+**Tolerated is not silent.** Falling back to a default is the right behaviour and the wrong secret — the relaxed set includes `auth.enabled`, `mcp.enabled` and `telemetry.usage`, and before this the same file was condemned LOUDLY, with a backup and a line the operator saw. Turning that into a login gate quietly off would break rule 2 of `.claude/rules/safe-defaults.md`. So `ConfigManager.unreadableSettings()` names them, and three surfaces use it: one `logger.warn` per boot (not per read — `get` runs the repair on every call), a `dorkos doctor` row that appears only when there is something to report, and `dorkos config validate`, which keeps `valid: true` but lists them under `warnings`. A stored value on one of the `SENSITIVE_CONFIG_KEYS` prints as `<hidden>`: they are nullable strings with defaults, so they are all relaxed, and a re-encoded token must not reach a log file.
 
 **Two smaller things worth knowing.** A person on the older build can always overwrite the value — a write carrying anything other than the default this build handed out wins — and setting a leaf to exactly the value already on screen is the one case that reads as "not touched", so the stored value survives. And `getDot` reports the value DorkOS is running on rather than the bytes on disk, because the CLI decides real things through it (`server.port`, `logging.level`, `tunnel.enabled`) and the two must not disagree; `conf` still performs the lookup, so `dot-prop` escaping for a record key with a literal dot in it is unchanged.
 

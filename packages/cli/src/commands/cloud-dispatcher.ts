@@ -26,6 +26,7 @@ import {
 } from './cloud-commands.js';
 import {
   buildInstanceDescriptor,
+  linkProofForKey,
   pollForToken,
   requestDeviceCode,
   resolveCloudBaseUrl,
@@ -62,6 +63,7 @@ const consoleIo: CommandIO = {
 const client: CloudFlowClient = {
   resolveCloudBaseUrl,
   buildInstanceDescriptor,
+  linkProofForKey,
   requestDeviceCode,
   pollForToken,
   sendHeartbeat,

@@ -461,8 +461,8 @@ export function preserveWidenedLeaves(
  * One line naming a setting this build could not read, for a log, a checklist
  * row, or `dorkos config validate`.
  *
- * **A stored value is redacted when its path is sensitive.** Four leaves hold
- * credentials (`SENSITIVE_CONFIG_KEYS`), they are all nullable strings with
+ * **A stored value is redacted when its path is sensitive.** The leaves that hold
+ * credentials (`SENSITIVE_CONFIG_KEYS`) are all nullable strings with
  * defaults, and so they are all relaxed — which means a newer build changing how
  * a token is encoded would otherwise print that token into a log file the moment
  * an older build read it. The path and the fact of the skew are the whole point

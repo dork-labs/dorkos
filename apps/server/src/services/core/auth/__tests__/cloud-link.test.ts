@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { initConfigManager, configManager } from '../../config-manager.js';
 import { CloudLinkManager, initCloudLinkManager, getCloudLinkManager } from '../cloud-link.js';
+import { linkProofForKey } from '../cloud-link-client.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** Immediate, deterministic sleep so the background poll settles synchronously. */
@@ -135,6 +136,7 @@ describe('CloudLinkManager', () => {
         return this.token;
       },
       getAccountLabel: () => null,
+      getPreviousLinkProof: () => null,
       save: vi.fn(),
       setAccountLabel: vi.fn(),
       clear() {
@@ -193,6 +195,7 @@ describe('CloudLinkManager', () => {
       config: {
         getToken: () => 'linked-key',
         getAccountLabel: () => null,
+        getPreviousLinkProof: () => null,
         save: vi.fn(),
         setAccountLabel: vi.fn(),
         clear: vi.fn(),
@@ -235,6 +238,7 @@ describe('CloudLinkManager', () => {
       config: {
         getToken: () => 'linked-key',
         getAccountLabel: () => null,
+        getPreviousLinkProof: () => null,
         save: vi.fn(),
         setAccountLabel: vi.fn(),
         clear: vi.fn(),
@@ -373,6 +377,166 @@ describe('CloudLinkManager', () => {
     expect(manager.getStatus().state).toBe('idle');
     const paths = fetchImpl.mock.calls.map((c) => new URL(c[0] as string).pathname);
     expect(paths).toContain('/api/instances/revoke');
+  });
+
+  describe('keeping the dropped key so a new link can continue the old one (DOR-2521)', () => {
+    const LINKED = {
+      instanceToken: 'dork_inst_old',
+      instanceName: 'kai-mbp',
+      linkedAccountLabel: 'Kai',
+      previousLinkProof: null,
+    };
+    const OLD_PROOF = linkProofForKey('dork_inst_old');
+
+    /** The parsed device-code `scope` of the first link request `fetchImpl` saw. */
+    const scopeOf = (fetchImpl: ReturnType<typeof routerFetch>) => {
+      const call = fetchImpl.mock.calls.find((c) => (c[0] as string).endsWith('/device/code'));
+      const body = JSON.parse((call?.[1] as RequestInit).body as string);
+      return JSON.parse(body.scope) as Record<string, unknown>;
+    };
+
+    it('keeps a proof of the key, never the key, when the person unlinks', async () => {
+      configManager.set('cloud', LINKED);
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({ revoke: () => ({ status: 200, body: {} }) }),
+        sleep: noSleep,
+      });
+
+      await manager.unlink();
+
+      expect(configManager.get('cloud')).toEqual({
+        instanceToken: null,
+        instanceName: null,
+        linkedAccountLabel: null,
+        previousLinkProof: OLD_PROOF,
+      });
+      expect(JSON.stringify(configManager.getAll())).not.toContain('dork_inst_old');
+    });
+
+    it('keeps a proof of the key when the cloud refuses it (401)', async () => {
+      configManager.set('cloud', LINKED);
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({ heartbeat: () => ({ status: 401, body: {} }) }),
+        sleep: noSleep,
+      });
+
+      await manager.initOnStartup();
+
+      expect(manager.getStatus().state).toBe('unlinked');
+      expect(configManager.getDot('cloud.instanceToken')).toBeNull();
+      expect(configManager.getDot('cloud.previousLinkProof')).toBe(OLD_PROOF);
+    });
+
+    it('does not wipe a kept proof when unlinking with no key held', async () => {
+      configManager.set('cloud', {
+        instanceToken: null,
+        instanceName: null,
+        linkedAccountLabel: null,
+        previousLinkProof: 'kept-proof',
+      });
+      const fetchImpl = routerFetch({});
+      manager = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+
+      await manager.unlink();
+
+      expect(configManager.getDot('cloud.previousLinkProof')).toBe('kept-proof');
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('sends the kept proof with the next link and drops it once the new key is saved', async () => {
+      configManager.set('cloud', {
+        instanceToken: null,
+        instanceName: null,
+        linkedAccountLabel: null,
+        previousLinkProof: OLD_PROOF,
+      });
+      const fetchImpl = routerFetch({
+        code: () => CODES,
+        token: () => ({ status: 200, body: { access_token: 'dork_inst_new' } }),
+        heartbeat: () => ({
+          status: 200,
+          body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-07-03T00:00:00Z' },
+        }),
+      });
+      manager = new CloudLinkManager({
+        fetchImpl,
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+
+      await manager.startLink();
+      await manager.pendingLink;
+
+      expect(scopeOf(fetchImpl).previousLinkProof).toBe(OLD_PROOF);
+      expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_new');
+      expect(configManager.getDot('cloud.previousLinkProof')).toBeNull();
+    });
+
+    it('keeps the proof when the new link is denied, so the next try still sends it', async () => {
+      configManager.set('cloud', {
+        instanceToken: null,
+        instanceName: null,
+        linkedAccountLabel: null,
+        previousLinkProof: OLD_PROOF,
+      });
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({
+          code: () => CODES,
+          token: () => ({ status: 400, body: { error: 'access_denied' } }),
+        }),
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+
+      await manager.startLink();
+      await manager.pendingLink;
+
+      expect(configManager.getDot('cloud.previousLinkProof')).toBe(OLD_PROOF);
+    });
+
+    it('sends the proof of the key held right now when re-linking while linked', async () => {
+      configManager.set('cloud', { ...LINKED, previousLinkProof: 'stale-proof' });
+      const fetchImpl = routerFetch({
+        code: () => CODES,
+        token: () => ({ status: 400, body: { error: 'expired_token' } }),
+      });
+      manager = new CloudLinkManager({
+        fetchImpl,
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+
+      await manager.startLink();
+      await manager.pendingLink;
+
+      expect(scopeOf(fetchImpl).previousLinkProof).toBe(OLD_PROOF);
+    });
+
+    it('sends no proof on a first link, including from a config written before the field', async () => {
+      // A pre-DOR-2521 config: the `cloud` section carries no previousLinkProof leaf.
+      fs.writeFileSync(
+        path.join(tmpDir, 'config.json'),
+        JSON.stringify({
+          ...JSON.parse(fs.readFileSync(path.join(tmpDir, 'config.json'), 'utf-8')),
+          cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+        })
+      );
+      initConfigManager(tmpDir);
+      const fetchImpl = routerFetch({
+        code: () => CODES,
+        token: () => ({ status: 400, body: { error: 'expired_token' } }),
+      });
+      manager = new CloudLinkManager({
+        fetchImpl,
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+
+      await manager.startLink();
+      await manager.pendingLink;
+
+      expect('previousLinkProof' in scopeOf(fetchImpl)).toBe(false);
+    });
   });
 
   it('logs only closed managed authentication failure details and rethrows unchanged', async () => {
