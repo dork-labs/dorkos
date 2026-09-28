@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): paint bare red warning text with the text-tuned red (DOR-2493)'
+  - 'fix(client): red sheet rows read in the foreground colour while pressed (DOR-2493)'
 ---
 
 ### Fixed
