@@ -292,10 +292,8 @@ describe('pickUsage — which usage wins', () => {
 });
 
 describe('staleNumberClass', () => {
-  it('mutes a stale number and leaves a fresh one alone', () => {
-    expect(staleNumberClass(true)).toBe('text-muted-foreground/70');
-    expect(staleNumberClass(true, true)).toBe('text-muted-foreground');
+  it('mutes a stale number in the full muted color and leaves a fresh one alone', () => {
+    expect(staleNumberClass(true)).toBe('text-muted-foreground');
     expect(staleNumberClass(false)).toBe('');
-    expect(staleNumberClass(false, true)).toBe('');
   });
 });

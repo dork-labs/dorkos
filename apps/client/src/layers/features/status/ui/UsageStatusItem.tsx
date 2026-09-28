@@ -16,7 +16,8 @@ interface UsageStatusItemProps extends UsageDetailProps {
   /**
    * When the usage was observed, ISO-8601, or nothing when that is not known
    * (a snapshot's usage). With it, the tooltip ends with the freshness line and
-   * a reading older than an hour dims the number (spec `claude-account-ui` §6.8).
+   * a reading older than an hour mutes the number and says "· old" after it (spec
+   * `claude-account-ui` §6.8).
    */
   observedAt?: string | null;
   /** A fixed moment to read freshness from (tests and the Dev Playground); else the clock. */
@@ -159,9 +160,14 @@ export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: Usa
     const pct = Math.round(usage.utilization! * 100);
     const isExhausted = usage.state === 'exhausted';
     const isWarning = usage.state === 'warning' || pct >= 80;
-    const colorClass = isExhausted ? 'text-red-500' : isWarning ? 'text-amber-500' : '';
-    // An old reading keeps its number, dimmed; the tooltip says how old (Q17).
+    // The text-tuned amber and red: each clears 4.5:1 on the status bar in both
+    // themes, where text-amber-500 read 2.06:1 and text-red-500 3.60:1 in light.
+    const colorClass = isExhausted ? 'text-destructive' : isWarning ? 'text-status-warning-fg' : '';
+    // An old reading keeps its number, muted, and says "· old" after it, so the
+    // word, not a shade of gray, is what tells it from a fresh one; the tooltip
+    // says how old (Q17, 04 §13).
     const stale = observedAt !== null && isStale(observedAt, now);
+    const numberClass = staleNumberClass(stale);
 
     return (
       <Tooltip>
@@ -172,7 +178,8 @@ export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: Usa
             data-stale={stale || undefined}
           >
             <Gauge className="size-(--size-icon-xs)" />
-            <span className={staleNumberClass(stale, colorClass !== '')}>{pct}%</span>
+            <span className={numberClass}>{pct}%</span>
+            {stale && <span className={numberClass}>· old</span>}
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-56">

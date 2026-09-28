@@ -322,7 +322,9 @@ export function StatusShowcases() {
             </span>
           </ShowcaseDemo>
 
-          <ShowcaseLabel>Stale — older than an hour: the number dims, “as of 2h ago”</ShowcaseLabel>
+          <ShowcaseLabel>
+            {'Stale, older than an hour: “· old” after the number, “as of 2h ago” on hover'}
+          </ShowcaseLabel>
           <ShowcaseDemo>
             <span className="text-muted-foreground text-xs">
               <UsageStatusItem usage={ACCOUNT_READING} observedAt={minutesAgo(125)} />
@@ -330,7 +332,7 @@ export function StatusShowcases() {
           </ShowcaseDemo>
 
           <ShowcaseLabel>
-            Stale near a limit — the amber number dims, the gauge stays amber
+            Stale near a limit: the number turns muted with “· old”, the gauge stays amber
           </ShowcaseLabel>
           <ShowcaseDemo>
             <span className="text-muted-foreground text-xs">

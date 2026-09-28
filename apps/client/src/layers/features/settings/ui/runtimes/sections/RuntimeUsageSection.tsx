@@ -6,6 +6,7 @@
  */
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { useAccountUsage } from '@/layers/shared/model';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { AccountUsageBars, hasUsageToShow } from './AccountUsageBars';
 
 /** Props for {@link RuntimeUsageSection}. */
@@ -24,16 +25,14 @@ export function RuntimeUsageSection({ type }: RuntimeUsageSectionProps) {
   const usage = byId.get(IMPLICIT_ACCOUNT_ID) ?? byPath.values().next().value;
   if (!hasUsageToShow(usage)) return null;
   return (
+    // Named for its runtime: Codex's and OpenCode's cards open side by side, and
+    // two regions both called "Usage" are landmarks nobody can tell apart. The
+    // heading is h3 for the same reason as the card's other sections.
     <section
       className="bg-muted/30 space-y-3 rounded-lg border p-3"
-      aria-labelledby={`runtime-usage-${type}`}
+      aria-label={`${getRuntimeDescriptor(type).label} usage`}
     >
-      <h4
-        id={`runtime-usage-${type}`}
-        className="text-muted-foreground text-xs font-semibold tracking-wide uppercase"
-      >
-        Usage
-      </h4>
+      <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Usage</h3>
       <AccountUsageBars usage={usage} />
     </section>
   );
