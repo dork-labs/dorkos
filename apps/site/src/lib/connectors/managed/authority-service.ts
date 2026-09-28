@@ -17,7 +17,7 @@ import {
   type ManagedConnectorAuthorityCommandStatus,
 } from '@dorkos/shared/connector-managed-schemas';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import { and, asc, desc, eq, exists, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
 import { schema } from '@/db/client';
 import type { getTransactionDb } from '@/db/transaction-client';
@@ -276,13 +276,16 @@ export async function registerManagedProvider(
           eq(schema.managedConnectorProvider.id, input.providerInstanceId)
         )
       );
+    // A disconnected connection stays disconnected: pausing it would reopen it
+    // and orphan the account deletion its disconnect still owes.
     await tx
       .update(schema.managedConnectorConnection)
       .set({ lifecycle: 'paused', updatedAt: now })
       .where(
         and(
           eq(schema.managedConnectorConnection.tenantId, input.tenantId),
-          eq(schema.managedConnectorConnection.providerInstanceId, input.providerInstanceId)
+          eq(schema.managedConnectorConnection.providerInstanceId, input.providerInstanceId),
+          ne(schema.managedConnectorConnection.lifecycle, 'disconnected')
         )
       );
     await tx
@@ -413,6 +416,38 @@ export async function finishDisconnectCleanup(
       conflict: false,
     };
   if (!provider || !binding) throw new ManagedAuthorityProviderUnavailableError();
+  // A live instance's disconnect can race its own reconnect under new provider
+  // material, so its cleanup deletes only while the binding's generation and
+  // this deployment's configuration are still current. A revoked instance can
+  // never reconnect: its cleanup only removes access, so it rebinds to whatever
+  // material the deployment has now and still finishes. Holding it to the old
+  // generation would strand it for good after a key rotation or a catalog change.
+  const currentMaterial =
+    'revokedInstance' in principal
+      ? sql`true`
+      : and(
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(schema.managedConnectorProvider)
+              .where(
+                and(
+                  eq(schema.managedConnectorProvider.tenantId, principal.tenantId),
+                  eq(schema.managedConnectorProvider.id, binding.providerInstanceId),
+                  eq(schema.managedConnectorProvider.enabled, true),
+                  eq(
+                    schema.managedConnectorProvider.materialGeneration,
+                    provider.materialGeneration
+                  ),
+                  eq(
+                    schema.managedConnectorProvider.configurationDigest,
+                    provider.executionConfigDigest
+                  )
+                )
+              )
+          ),
+          sql`${binding.materialGeneration} = ${provider.materialGeneration}`
+        );
   const now = new Date();
   // A lease prevents simultaneous HTTP retries from deleting the same binding.
   // This last database claim rechecks the closed scope after every preflight await.
@@ -436,24 +471,7 @@ export async function finishDisconnectCleanup(
             new Date(now.getTime() - 5 * 60_000)
           )
         ),
-        exists(
-          db
-            .select({ one: sql`1` })
-            .from(schema.managedConnectorProvider)
-            .where(
-              and(
-                eq(schema.managedConnectorProvider.tenantId, principal.tenantId),
-                eq(schema.managedConnectorProvider.id, binding.providerInstanceId),
-                eq(schema.managedConnectorProvider.enabled, true),
-                eq(schema.managedConnectorProvider.materialGeneration, provider.materialGeneration),
-                eq(
-                  schema.managedConnectorProvider.configurationDigest,
-                  provider.executionConfigDigest
-                )
-              )
-            )
-        ),
-        sql`${binding.materialGeneration} = ${provider.materialGeneration}`,
+        currentMaterial,
         sql`${binding.providerUserId} = ${provider.providerUserId}`
       )
     )
@@ -905,7 +923,10 @@ export async function applyManagedAuthorityCommand(
   };
 }
 
-/** Read one command status only beneath its verified tenant and instance. */
+/**
+ * Read one command status beneath its tenant and instance, for a live
+ * instance's verified key or for a revoked instance's own cleanup.
+ */
 export async function getManagedAuthorityCommandStatus(
   db: ManagedConnectorDatabase,
   principal: ManagedCleanupPrincipal,

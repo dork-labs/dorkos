@@ -23,7 +23,10 @@
  *
  * A revoke runs both at once ({@link endRevokedInstanceConnections}); the
  * scheduled {@link sweepRevokedInstances} finishes any revoke that did not, and
- * closes instances revoked by any other path. Erasing an account runs both for
+ * closes instances revoked by any other path. A cleanup that runs under a
+ * revoked instance rebinds to the provider material the deployment has now,
+ * so a key rotation or a catalog change after the connection was made never
+ * strands it. Erasing an account runs both for
  * every instance first and refuses the erasure while a provider account is
  * still live (`./erasure`), because the erasure
  * would delete the only record of it.
@@ -42,7 +45,7 @@ import {
   type RevokedInstanceCleanupPrincipal,
 } from '../authority-service';
 import { recoverManagedEventCleanup } from '../event-cleanup-service';
-import { closeRevokedInstance } from './close';
+import { closeRevokedInstance, connectionNeedsClose, markCloseAttempted } from './close';
 import {
   revokedInstanceConnectionsDue,
   withDefaults,
@@ -91,6 +94,19 @@ async function finishRevokedDisconnects(
   for (const { receipt, ownerId, providerUserId } of rows) {
     if (options.signal.aborted) break;
     examined++;
+    // Move the receipt to the back of the queue before anything can skip it,
+    // so one that can never finish (unreadable, or never claimable) does not
+    // hold the front of every later pass.
+    await db
+      .update(commands)
+      .set({ updatedAt: options.clock() })
+      .where(
+        and(
+          eq(commands.tenantId, receipt.tenantId),
+          eq(commands.instanceId, receipt.instanceId),
+          eq(commands.commandId, receipt.commandId)
+        )
+      );
     const parsed = ManagedConnectorAuthorityCommandSchema.safeParse(receipt.requestPayload);
     const binding = receipt.cleanupBinding;
     if (
@@ -107,18 +123,6 @@ async function finishRevokedDisconnects(
       tenantId: receipt.tenantId,
       instanceId: receipt.instanceId,
     };
-    // Move the receipt to the back of the queue before any await, so one that
-    // can never finish does not hold the front of every later pass.
-    await db
-      .update(commands)
-      .set({ updatedAt: options.clock() })
-      .where(
-        and(
-          eq(commands.tenantId, receipt.tenantId),
-          eq(commands.instanceId, receipt.instanceId),
-          eq(commands.commandId, receipt.commandId)
-        )
-      );
     try {
       const [providerRow] = await db
         .select({ materialGeneration: schema.managedConnectorProvider.materialGeneration })
@@ -211,28 +215,33 @@ export async function sweepRevokedInstances(
   const resolved = withDefaults(options);
   const limit = Math.max(1, Math.min(100, options.limit ?? 25));
   const now = resolved.clock();
+  // Least recently tried first: every close stamps what it could not finish,
+  // so instances whose close keeps failing fall behind the rest.
   const candidates = await db
-    .selectDistinct({ id: schema.instance.id, revokedAt: schema.instance.revokedAt })
-    .from(schema.instance)
-    .where(
-      and(
-        isNotNull(schema.instance.revokedAt),
-        sql`(
-          EXISTS (SELECT 1 FROM managed_connector_connection c
-            WHERE c.originating_instance_id = ${schema.instance.id} AND c.lifecycle <> 'disconnected')
-          OR EXISTS (SELECT 1 FROM managed_connector_event_subscription s
-            WHERE s.target_instance_id = ${schema.instance.id} AND s.revoked_at IS NULL)
-        )`
-      )
+    .execute<{ id: string; revoked_at: Date | string }>(
+      sql`
+        SELECT id, revoked_at FROM (
+          SELECT i.id, i.revoked_at, least(
+            (SELECT min(c.updated_at) FROM managed_connector_connection c
+              WHERE c.originating_instance_id = i.id AND ${connectionNeedsClose('c')}),
+            (SELECT min(s.updated_at) FROM managed_connector_event_subscription s
+              WHERE s.target_instance_id = i.id AND s.revoked_at IS NULL)
+          ) AS last_tried
+          FROM instance i WHERE i.revoked_at IS NOT NULL
+        ) owed
+        WHERE last_tried IS NOT NULL
+        ORDER BY last_tried, id
+        LIMIT ${limit}
+      `
     )
-    .orderBy(asc(schema.instance.revokedAt), asc(schema.instance.id))
-    .limit(limit);
+    .then((result) => result.rows);
   let instancesClosed = 0;
   for (const candidate of candidates) {
     if (resolved.signal.aborted) break;
-    if (!candidate.revokedAt || !revokedInstanceConnectionsDue(candidate.revokedAt, now)) continue;
+    if (!revokedInstanceConnectionsDue(new Date(candidate.revoked_at), now)) continue;
     try {
-      if ((await closeRevokedInstance(db, candidate.id, now)) > 0) {
+      const closed = await closeRevokedInstance(db, candidate.id, now);
+      if (closed.connections + closed.subscriptions > 0) {
         instancesClosed++;
         // The close just wrote this instance's trigger receipts; delete those
         // triggers before the accounts they watch go below.
@@ -246,7 +255,9 @@ export async function sweepRevokedInstances(
         );
       }
     } catch {
-      /* Whatever is left is retried on the next pass. */
+      // The close changed nothing. Stamp it as tried so the next pass reaches
+      // other instances first, and retry it after them.
+      await markCloseAttempted(db, candidate.id, now).catch(() => undefined);
     }
   }
   const accounts = resolved.signal.aborted

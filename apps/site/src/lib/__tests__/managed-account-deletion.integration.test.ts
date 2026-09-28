@@ -24,7 +24,8 @@ import * as mailer from '../mailer';
 import { revokeInstance } from '../instance-service';
 import {
   endOwnerConnectionsBeforeErasure,
-  refuseErasureWhileAppsSignedIn,
+  ERASURE_STUCK_CLEANUP_MS,
+  prepareAccountErasure,
 } from '../connectors/managed/instance-revocation/erasure';
 import type { ManagedConnectorDatabase } from '../connectors/managed/authority-service';
 import { migrateCurrentSchema } from '@/db/__tests__/migrate-current-schema';
@@ -349,25 +350,39 @@ describe('managed event account deletion', () => {
     30_000
   );
 
-  it('ends every sign-in at the service before erasing an owner, and refuses while one is live', async () => {
-    const client = new PGlite();
-    try {
-      const db = drizzle(client, { schema });
-      await migrateCurrentSchema(db);
-      const deleteAccount = vi.fn<(ref: string, signal: AbortSignal) => Promise<void>>();
-      deleteAccount.mockRejectedValueOnce(new Error('service unavailable'));
-      const auth = createAuth(drizzleAdapter(db, { provider: 'pg', schema }), {
-        beforeAccountErasure: (userId) =>
-          refuseErasureWhileAppsSignedIn(userId, (owner) =>
+  /** A Better Auth instance whose erasure step ends sign-ins against this test database. */
+  function guardedAuth(
+    db: ReturnType<typeof drizzle<typeof schema>>,
+    deleteAccount: (ref: string, signal: AbortSignal) => Promise<void>,
+    clock: () => Date = () => new Date()
+  ) {
+    const logError = vi.fn();
+    const auth = createAuth(drizzleAdapter(db, { provider: 'pg', schema }), {
+      beforeAccountErasure: (userId, actor) =>
+        prepareAccountErasure(userId, actor, {
+          end: (owner) =>
             endOwnerConnectionsBeforeErasure(db as unknown as ManagedConnectorDatabase, owner, {
               signal: new AbortController().signal,
               resolveProvider: () => ({
                 executionConfigDigest: 'digest-a',
                 accounts: { getAccount: vi.fn(), deleteAccount },
               }),
-            })
-          ),
-      });
+            }),
+          clock,
+          logError,
+        }),
+    });
+    return { auth, logError };
+  }
+
+  it('ends every sign-in at the service before erasing an owner, and postpones while one is being ended', async () => {
+    const client = new PGlite();
+    try {
+      const db = drizzle(client, { schema });
+      await migrateCurrentSchema(db);
+      const deleteAccount = vi.fn<(ref: string, signal: AbortSignal) => Promise<void>>();
+      deleteAccount.mockRejectedValueOnce(new Error('service unavailable'));
+      const { auth, logError } = guardedAuth(db, deleteAccount);
       const handlers = toNextJsHandler(auth);
       const owner = await createSignedInOwner(client, handlers, 'guarded');
       const target = await seedManagedGraph(client, {
@@ -376,8 +391,11 @@ describe('managed event account deletion', () => {
         kind: 'full_graph',
       });
 
-      // The service is down: the account, and the record of its sign-in, stay.
-      expect((await completeAccountDeletion(handlers, owner.cookie)).status).toBe(503);
+      // The service is down: the person lands back on the account page (the
+      // emailed link is spent), and the account and the record of its sign-in stay.
+      const postponed = await completeAccountDeletion(handlers, owner.cookie);
+      expect(postponed.status).toBe(302);
+      expect(postponed.headers.get('location')).toBe('/account?deletion=postponed');
       expect(
         (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.ownerId])).rows
       ).toHaveLength(1);
@@ -388,11 +406,43 @@ describe('managed event account deletion', () => {
       expect(kept.rows).toEqual([{ external_account_ref: 'ca-a', lifecycle: 'disconnected' }]);
 
       // Once the service answers, the sign-in ends first and the erasure follows.
-      expect((await completeAccountDeletion(handlers, owner.cookie)).status).toBe(302);
+      const erased = await completeAccountDeletion(handlers, owner.cookie);
+      expect(erased.status).toBe(302);
+      expect(erased.headers.get('location')).toBe('/signin');
       expect(deleteAccount.mock.calls.map(([ref]) => ref)).toEqual(['ca-a', 'ca-a']);
       expect(
         (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.ownerId])).rows
       ).toHaveLength(0);
+      expect(logError).not.toHaveBeenCalled();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('never holds an erasure forever: past the bound it goes ahead and logs what is still live', async () => {
+    const client = new PGlite();
+    try {
+      const db = drizzle(client, { schema });
+      await migrateCurrentSchema(db);
+      const deleteAccount = vi.fn<(ref: string, signal: AbortSignal) => Promise<void>>(async () => {
+        throw new Error('service unavailable');
+      });
+      const later = new Date(Date.now() + ERASURE_STUCK_CLEANUP_MS + 60_000);
+      const { auth, logError } = guardedAuth(db, deleteAccount, () => later);
+      const handlers = toNextJsHandler(auth);
+      const owner = await createSignedInOwner(client, handlers, 'stuck');
+      await seedManagedGraph(client, { ownerId: owner.ownerId, prefix: 'a', kind: 'full_graph' });
+
+      const erased = await completeAccountDeletion(handlers, owner.cookie);
+      expect(erased.headers.get('location')).toBe('/signin');
+      expect(
+        (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.ownerId])).rows
+      ).toHaveLength(0);
+      expect(logError).toHaveBeenCalledTimes(1);
+      expect(logError.mock.calls[0][1]).toMatchObject({
+        actor: 'owner',
+        accounts: [{ providerInstanceId: 'managed:composio', externalAccountRef: 'ca-a' }],
+      });
     } finally {
       await client.close();
     }

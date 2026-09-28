@@ -43,7 +43,10 @@ import { getDb } from '@/db/client';
 import { instance } from '@/db/instance-schema';
 import { env } from '@/env';
 import { handleAdminAfter } from '@/lib/admin-audit-hook';
-import { refuseErasureWhileAppsSignedIn } from '@/lib/connectors/managed/instance-revocation/erasure';
+import {
+  prepareAccountErasure,
+  type AccountErasureActor,
+} from '@/lib/connectors/managed/instance-revocation/erasure';
 import { auditRegistry } from '@/lib/audit-registry-plugin';
 import { recordAudit } from '@/lib/audit-service';
 import { INSTANCE_PERMISSION_RESOURCE, parseInstanceDescriptor } from '@/lib/instance-descriptor';
@@ -120,10 +123,10 @@ export interface CreateAuthOptions {
    * Runs before an account is erased, by the person (self-serve deletion) or
    * by an admin (remove user). Throw to refuse: the account and everything it
    * owns stay. Production ends the account's managed app sign-ins at the
-   * service here ({@link refuseErasureWhileAppsSignedIn}), because the erasure
-   * deletes the only record of them. Tests over a memory adapter omit it.
+   * service here ({@link prepareAccountErasure}), because the erasure deletes
+   * the only record of them. Tests over a memory adapter omit it.
    */
-  beforeAccountErasure?: (userId: string) => Promise<void>;
+  beforeAccountErasure?: (userId: string, actor: AccountErasureActor) => Promise<void>;
 }
 
 /**
@@ -208,9 +211,10 @@ export function createAuth(database: AuthDatabase, options: CreateAuthOptions = 
           } catch {
             /* never block erasure on an audit write */
           }
-          // Unlike the audit, this may refuse: erasing while an app sign-in is
-          // still live at the service would delete the only record of it.
-          await options.beforeAccountErasure?.(recipient.id);
+          // Unlike the audit, this may postpone the erasure (a redirect back to
+          // the account page): erasing while an app sign-in is still being
+          // ended at the service would delete the only record of it.
+          await options.beforeAccountErasure?.(recipient.id, 'owner');
         },
         afterDelete: async (recipient) => {
           try {
@@ -295,7 +299,8 @@ export function createAuth(database: AuthDatabase, options: CreateAuthOptions = 
       // does, and needs the same step first. The admin endpoint deletes the
       // account's sign-in methods before its user row, so this cannot wait for
       // a database hook; it runs before the endpoint instead, and only for a
-      // caller the endpoint itself would allow, removing someone else.
+      // caller the endpoint itself would allow, removing someone else. For an
+      // admin the step is best effort: the removal always goes ahead.
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== '/admin/remove-user' || !options.beforeAccountErasure) return;
         const target = (ctx.body as { userId?: unknown } | undefined)?.userId;
@@ -306,7 +311,7 @@ export function createAuth(database: AuthDatabase, options: CreateAuthOptions = 
           body: { userId: session.user.id, permissions: { user: ['delete'] } },
         });
         if (!allowed.success) return;
-        await options.beforeAccountErasure(target);
+        await options.beforeAccountErasure(target, 'admin');
       }),
       // Swap the device-flow session for a scoped API key. By default
       // `/device/token` mints a browser session on approval; an instance must
@@ -441,7 +446,7 @@ export function getAuth(): Auth {
       // `auditLog` backs the audit log.
       schema: { user, session, account, verification, apikey, deviceCode, instance, auditLog },
     }),
-    { beforeAccountErasure: (userId) => refuseErasureWhileAppsSignedIn(userId) }
+    { beforeAccountErasure: (userId, actor) => prepareAccountErasure(userId, actor) }
   );
   return cached;
 }

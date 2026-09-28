@@ -436,9 +436,11 @@ describe('cloud-account-management — erasure waits for app sign-ins to end', (
 
   it('keeps a self-deleting account, sign-in methods and all, while the step refuses', async () => {
     const memory = freshMemory();
-    const beforeAccountErasure = vi.fn<(userId: string) => Promise<void>>(async () => {
-      throw refused();
-    });
+    const beforeAccountErasure = vi.fn<(userId: string, actor: 'owner' | 'admin') => Promise<void>>(
+      async () => {
+        throw refused();
+      }
+    );
     const auth = createAuth(memoryAdapter(memory), { beforeAccountErasure });
     const cookie = await signUpVerifyAndSignIn(
       toNextJsHandler(auth).POST,
@@ -449,14 +451,16 @@ describe('cloud-account-management — erasure waits for app sign-ins to end', (
 
     const response = await selfDelete(auth, cookie);
     expect(response.status).toBe(503);
-    expect(beforeAccountErasure).toHaveBeenCalledWith(user.id);
+    expect(beforeAccountErasure).toHaveBeenCalledWith(user.id, 'owner');
     expect(memory.user.find((u) => u.id === user.id)).toBeTruthy();
     expect(memory.account.filter((a) => a.userId === user.id)).toHaveLength(1);
   });
 
   it('erases a self-deleting account once the step passes', async () => {
     const memory = freshMemory();
-    const beforeAccountErasure = vi.fn<(userId: string) => Promise<void>>(async () => {});
+    const beforeAccountErasure = vi.fn<(userId: string, actor: 'owner' | 'admin') => Promise<void>>(
+      async () => {}
+    );
     const auth = createAuth(memoryAdapter(memory), { beforeAccountErasure });
     const cookie = await signUpVerifyAndSignIn(
       toNextJsHandler(auth).POST,
@@ -466,15 +470,17 @@ describe('cloud-account-management — erasure waits for app sign-ins to end', (
     const user = memory.user.find((u) => u.email === 'going@dork.test') as { id: string };
 
     expect([200, 302]).toContain((await selfDelete(auth, cookie)).status);
-    expect(beforeAccountErasure).toHaveBeenCalledWith(user.id);
+    expect(beforeAccountErasure).toHaveBeenCalledWith(user.id, 'owner');
     expect(memory.user.find((u) => u.id === user.id)).toBeUndefined();
   });
 
   it('runs the step before an admin removes someone, and keeps them while it refuses', async () => {
     const memory = freshMemory();
-    const beforeAccountErasure = vi.fn<(userId: string) => Promise<void>>(async () => {
-      throw refused();
-    });
+    const beforeAccountErasure = vi.fn<(userId: string, actor: 'owner' | 'admin') => Promise<void>>(
+      async () => {
+        throw refused();
+      }
+    );
     const auth = createAuth(memoryAdapter(memory), { beforeAccountErasure });
     const POST = toNextJsHandler(auth).POST;
     const adminCookie = await signUpVerifyAndSignIn(POST, memory, 'admin@dork.test');
@@ -486,7 +492,7 @@ describe('cloud-account-management — erasure waits for app sign-ins to end', (
       authRequest('/api/auth/admin/remove-user', { userId: target.id }, adminCookie)
     );
     expect(refusedRemoval.status).toBe(503);
-    expect(beforeAccountErasure).toHaveBeenCalledWith(target.id);
+    expect(beforeAccountErasure).toHaveBeenCalledWith(target.id, 'admin');
     expect(memory.user.find((u) => u.id === target.id)).toBeTruthy();
     expect(memory.account.filter((a) => a.userId === target.id)).toHaveLength(1);
 
@@ -500,7 +506,9 @@ describe('cloud-account-management — erasure waits for app sign-ins to end', (
 
   it('never runs the step for a caller the admin endpoint would refuse', async () => {
     const memory = freshMemory();
-    const beforeAccountErasure = vi.fn<(userId: string) => Promise<void>>(async () => {});
+    const beforeAccountErasure = vi.fn<(userId: string, actor: 'owner' | 'admin') => Promise<void>>(
+      async () => {}
+    );
     const auth = createAuth(memoryAdapter(memory), { beforeAccountErasure });
     const POST = toNextJsHandler(auth).POST;
     const userCookie = await signUpVerifyAndSignIn(POST, memory, 'user@dork.test');

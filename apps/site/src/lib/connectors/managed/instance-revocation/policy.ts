@@ -17,18 +17,25 @@ import {
  * the instance that created it, so a kept connection could never be used
  * again. It would only keep a person's sign-in alive at the service. If a
  * same-person relink ever adopts its predecessor's connections, this is the
- * one value to raise: the revoke, the sweep and the relink all read it through
- * {@link revokedInstanceConnectionsDue}. Erasing an account never waits.
+ * one value to raise; the revoke route and the sweep both decide through
+ * {@link revokedInstanceConnectionsDue}, and such a relink would read it
+ * there too. Erasing an account never waits.
  */
-export const REVOKED_INSTANCE_CONNECTION_GRACE_MS = 0;
+export const REVOKED_INSTANCE_CONNECTION_GRACE_MS: number = 0;
 
 /**
  * Whether a revoked instance's connections are due to be ended.
+ *
+ * With no grace period, every revoked instance is due, without comparing
+ * clocks: `revoked_at` is a timestamp without a time zone, so a database or
+ * server running in another zone could otherwise make a just-revoked instance
+ * look revoked in the future and silently skip it.
  *
  * @param revokedAt - When the instance's link was revoked.
  * @param now - The current time.
  */
 export function revokedInstanceConnectionsDue(revokedAt: Date, now: Date): boolean {
+  if (REVOKED_INSTANCE_CONNECTION_GRACE_MS === 0) return true;
   return now.getTime() - revokedAt.getTime() >= REVOKED_INSTANCE_CONNECTION_GRACE_MS;
 }
 
