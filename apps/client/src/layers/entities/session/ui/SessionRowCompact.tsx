@@ -6,7 +6,6 @@ import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
   PRESS_ROW,
   STATUS_TONE_SURFACE,
-  STATUS_TONE_TEXT,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -15,6 +14,7 @@ import { RuntimeMark } from '@/layers/entities/runtime';
 import { useSessionBorderState } from '../model/status/use-session-border-state';
 import { useInlineRename } from '../model/rename/use-inline-rename';
 import { useSessionRowAccount } from '../model/status/use-session-row-account';
+import { LIMIT_ACTION_TEXT_CLASS } from '../lib/session-limit-text';
 import { usePulseMotion } from '../model/status/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
@@ -159,7 +159,7 @@ export function SessionRowCompact({
                 <span
                   className={cn(
                     'text-3xs whitespace-nowrap',
-                    limitDisplay.needsAction ? STATUS_TONE_TEXT.error : 'text-muted-foreground'
+                    limitDisplay.needsAction ? LIMIT_ACTION_TEXT_CLASS : 'text-muted-foreground'
                   )}
                 >
                   {limitDisplay.text}

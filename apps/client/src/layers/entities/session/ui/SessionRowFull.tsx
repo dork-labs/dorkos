@@ -5,7 +5,6 @@ import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
   STATUS_TONE_SURFACE,
-  STATUS_TONE_TEXT,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -19,6 +18,7 @@ import {
 import { useInlineRename } from '../model/rename/use-inline-rename';
 import { useSessionPermissionSummary } from '../model/settings/use-session-permission-summary';
 import { useSessionRowAccount } from '../model/status/use-session-row-account';
+import { LIMIT_ACTION_TEXT_CLASS } from '../lib/session-limit-text';
 import { usePulseMotion } from '../model/status/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { FULL_POWER_MARK_LABEL } from '../lib/permission-mode';
@@ -180,7 +180,7 @@ export function SessionRowFull({
                   <span
                     className={cn(
                       'min-w-0 flex-1 truncate',
-                      limitDisplay.needsAction && STATUS_TONE_TEXT.error
+                      limitDisplay.needsAction && LIMIT_ACTION_TEXT_CLASS
                     )}
                   >
                     {limitDisplay.text}

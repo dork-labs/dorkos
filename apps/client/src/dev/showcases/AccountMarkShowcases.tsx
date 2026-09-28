@@ -207,6 +207,20 @@ export function AccountMarkShowcase() {
             ))}
           </SidebarColumn>
         </ShowcaseDemo>
+        <ShowcaseLabel>
+          Selected, out and needs you: the tint gives way to the selection, and the red words still
+          read at 4.5:1
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <SidebarColumn>
+            <SessionRow
+              variant="compact"
+              session={ROWS[2]!.session}
+              isActive={true}
+              onClick={() => {}}
+            />
+          </SidebarColumn>
+        </ShowcaseDemo>
       </AccountsDemo>
     </PlaygroundSection>
   );
