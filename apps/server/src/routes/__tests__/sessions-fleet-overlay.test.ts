@@ -89,6 +89,8 @@ const LIMIT: SessionLimit = {
   resetsAt: '2026-09-27T18:00:00.000Z',
   since: '2026-09-27T13:00:00.000Z',
   plan: { mode: 'ask' },
+  scope: 'account',
+  state: 'limited',
 };
 
 const WORK_USAGE = {
