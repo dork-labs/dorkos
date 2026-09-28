@@ -520,6 +520,12 @@ test.describe('Sidebar model showcase @smoke', () => {
       // cannot be satisfied by a page that outgrew the viewport, which an
       // absolute floor could be. See PAGE_MUST_FIT_VIEWPORT.
       await expectPageFitsViewport(page);
+      // The full session rows are on this page on purpose: they used to be a
+      // control holding controls (`nested-interactive`) and had to live
+      // elsewhere. Pinned, so the gate below keeps judging them.
+      await expect(
+        page.locator(`${AXE_CONTEXT} [data-slot="session-row-open"]`).first()
+      ).toBeVisible();
       const results = await runAxe(page, AXE_CONTEXT);
       await expectEveryReasonChipEvaluated(page, results);
 

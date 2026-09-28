@@ -14,7 +14,6 @@ import { DrawerShowcases } from '../showcases/DrawerShowcases';
 import { ChatPrimitivesShowcases } from '../showcases/ChatPrimitivesShowcases';
 import { IdentityShowcases } from '../showcases/IdentityShowcases';
 import { PromptSuggestionChipsShowcases } from '../showcases/PromptSuggestionChipsShowcases';
-import { AccountFullRowsShowcase } from '../showcases/AccountMarkShowcases';
 
 /** UI component gallery page for the dev playground. */
 export function ComponentsPage() {
@@ -38,7 +37,6 @@ export function ComponentsPage() {
       <ChatPrimitivesShowcases />
       <IdentityShowcases />
       <PromptSuggestionChipsShowcases />
-      <AccountFullRowsShowcase />
     </PlaygroundPageLayout>
   );
 }

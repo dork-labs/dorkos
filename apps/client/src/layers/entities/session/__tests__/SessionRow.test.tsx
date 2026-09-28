@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionRow } from '../ui/SessionRow';
 import type { Session } from '@dorkos/shared/types';
@@ -473,14 +474,12 @@ describe('SessionRow variant="full"', () => {
 
   // FB-16: "When renaming a session in the right pane I'm unable to use spaces."
   //
-  // The full row is a synthetic `role="button"`, so Enter and Space are wired
-  // by hand — and the rename input is a DESCENDANT of it, so its keystrokes
-  // bubble into that handler. It called `preventDefault()` on Space, which ate
-  // the keystroke and "activated" the row instead. The sibling rows never had
-  // it: `sidebar-row` swaps its `<button>` out for the editor, and the compact
-  // row's editor sits in a real `<button>`, which browsers already keep clear
-  // of a focused input. This row hand-rolls the handling, so it is the only one
-  // that had to remember.
+  // The full row used to be a synthetic `role="button"` with Enter and Space
+  // wired by hand, and the rename input was a DESCENDANT of it, so a space
+  // typed into the name bubbled into that handler, which prevented it and
+  // "activated" the row instead. The row's primary control is now a real
+  // `<button>` and the field is not inside it, so nothing is there to eat the
+  // keystroke; this pins that it stays that way.
   it('lets a space through to the rename field instead of activating the row', () => {
     const onClick = vi.fn();
     renderRow(
@@ -506,21 +505,92 @@ describe('SessionRow variant="full"', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
-  it('still activates the row on Space when no rename is in progress', () => {
-    // The guard is scoped to the rename state, so the row keeps the keyboard
-    // affordance its `role="button"` promises.
-    const onClick = vi.fn();
-    renderRow(
-      <SessionRow
-        variant="full"
-        session={makeSession()}
-        isActive={false}
-        onClick={onClick}
-        onRename={vi.fn()}
-      />
-    );
-    fireEvent.keyDown(screen.getByLabelText(/^Session: /), { key: ' ', code: 'Space' });
-    expect(onClick).toHaveBeenCalledTimes(1);
+  describe('keyboard and screen readers', () => {
+    function renderKeyboardRow(onClick = vi.fn()) {
+      renderRow(
+        <SessionRow
+          variant="full"
+          session={makeSession()}
+          isActive={false}
+          onClick={onClick}
+          onRename={vi.fn()}
+        />
+      );
+      return onClick;
+    }
+
+    // user-event awaits real timers between keystrokes, which the suite's
+    // fake clock would never advance. Nothing here reads the time.
+    function keyboard() {
+      vi.useRealTimers();
+      return userEvent.setup();
+    }
+
+    it('opens the session on Enter from the row control', async () => {
+      const onClick = renderKeyboardRow();
+      const user = keyboard();
+      await user.tab();
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: /^Session: Test conversation\./ })
+      );
+      await user.keyboard('{Enter}');
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the session on Space from the row control', async () => {
+      const onClick = renderKeyboardRow();
+      const user = keyboard();
+      await user.tab();
+      await user.keyboard(' ');
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('reaches rename and details as their own stops, in the order they are drawn', async () => {
+      renderKeyboardRow();
+      const user = keyboard();
+      const stops: (string | null)[] = [];
+      for (let i = 0; i < 4; i++) {
+        await user.tab();
+        stops.push(document.activeElement?.getAttribute('aria-label') ?? null);
+      }
+      // Row, rename, details, then out of the row: nothing lost, nothing added.
+      expect(stops).toEqual([
+        'Session: Test conversation. Idle.',
+        'Rename session',
+        'Session details',
+        null,
+      ]);
+    });
+
+    it('nests no control inside another', () => {
+      const { container } = renderRow(
+        <SessionRow
+          variant="full"
+          session={makeSession({ permissionMode: 'bypassPermissions' })}
+          isActive={false}
+          onClick={() => {}}
+          onRename={vi.fn()}
+        />
+      );
+      const controls = container.querySelectorAll(
+        'button, input, [role="button"], [tabindex]:not([tabindex="-1"])'
+      );
+      // Rename, details, the full-power mark and the row's own control.
+      expect(controls.length).toBeGreaterThanOrEqual(4);
+      for (const control of controls) {
+        const ancestor = control.parentElement?.closest(
+          'button, [role="button"], [tabindex]:not([tabindex="-1"])'
+        );
+        expect(ancestor, control.outerHTML.slice(0, 80)).toBeNull();
+      }
+    });
+
+    it('names the row control by the session, and not by its buttons', () => {
+      renderKeyboardRow();
+      const row = screen.getByRole('button', { name: /^Session: Test conversation\./ });
+      expect(row.textContent).toBe('');
+      expect(row.getAttribute('aria-label')).toBe('Session: Test conversation. Idle.');
+    });
   });
 
   it('Escape cancels a rename without calling onRename', () => {
