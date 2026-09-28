@@ -35,10 +35,16 @@ vi.mock('../../services/core/cloud/plan.js', () => mockPlan);
 
 const mockV1 = vi.hoisted(() => ({
   isCloudLinked: vi.fn(() => true),
-  cloudInstanceRef: vi.fn(() => 'ref_test'),
   problemOf: vi.fn(() => null as unknown),
 }));
 vi.mock('../../services/core/cloud/v1-client.js', () => mockV1);
+
+const mockCredits = vi.hoisted(() => ({
+  creditsFlagEnabled: vi.fn(() => false),
+  creditsWiringReport: vi.fn(() => ({ enabled: false, ready: false, runtimes: {} })),
+  primeCreditsInference: vi.fn(async () => false),
+}));
+vi.mock('../../services/core/cloud/credits-inference.js', () => mockCredits);
 
 import cloudRouter from '../cloud.js';
 
@@ -56,6 +62,8 @@ const server = listeningServer(app);
 describe('cloud routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCredits.creditsFlagEnabled.mockReturnValue(false);
+    mockCredits.creditsWiringReport.mockReturnValue({ enabled: false, ready: false, runtimes: {} });
   });
 
   describe('POST /api/cloud/link/start', () => {
@@ -241,6 +249,15 @@ describe('cloud routes', () => {
       const selected = await request(server).post('/api/cloud/credits/select').expect(200);
       expect(selected.body.enabled).toBe(false);
       expect(selected.body.ready).toBe(false);
+      expect(mockCredits.primeCreditsInference).not.toHaveBeenCalled();
+    });
+
+    it('delegates credits selection without supplying a local instance reference', async () => {
+      mockCredits.creditsFlagEnabled.mockReturnValue(true);
+      mockCredits.creditsWiringReport.mockReturnValue({ enabled: true, ready: true, runtimes: {} });
+      const selected = await request(server).post('/api/cloud/credits/select').expect(200);
+      expect(mockCredits.primeCreditsInference).toHaveBeenCalledExactlyOnceWith();
+      expect(selected.body.ready).toBe(true);
     });
   });
 });

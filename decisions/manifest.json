@@ -2,6 +2,21 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260928-001608",
+      "slug": "resolve-cloud-identity-under-its-current-credential",
+      "title": "Resolve Cloud identity under the credential that will use it",
+      "status": "accepted",
+      "created": "2026-09-27",
+      "extractedFrom": "cloud-instance-identity-adoption",
+      "specSlug": "cloud-instance-identity-adoption",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/cloud/",
+        "apps/server/src/services/core/auth/cloud-link.ts",
+        "apps/server/src/routes/cloud.ts"
+      ]
+    },
+    {
       "id": "260926-124159",
       "slug": "an-unregistered-agent-leaves-every-channel-and-a-dm-keeps-it-retired",
       "title": "An unregistered agent leaves every channel; a direct message keeps it, retired",

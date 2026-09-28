@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260928-001608",
+      "slug": "cloud-instance-identity-adoption",
+      "title": "Adopt authoritative Cloud instance identity",
+      "created": "2026-09-27",
+      "status": "specified",
+      "project": "DorkOS Cloud",
+      "linearIssue": "DOR-2348"
+    },
+    {
       "id": "260927-155808",
       "slug": "connection-app-details",
       "title": "Connections: app logos, descriptions, actions and a kept app list",
