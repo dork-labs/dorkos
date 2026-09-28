@@ -299,7 +299,10 @@ export function resolveRuntimeAccounts(
   // A standalone default resolves like a row: its stored color
   // (`defaultColorChoice`), else the default for its position, which is after
   // the registered rows. An alias is a row, so it never reaches this.
-  const standalone = { stored: defaultColorChoice(runtime, inputs.config), index: registered.length };
+  const standalone = {
+    stored: defaultColorChoice(runtime, inputs.config),
+    index: registered.length,
+  };
   if (runtime === 'opencode') {
     if (registered.length > 0) return { accounts: registered, warnings };
     return { accounts: [implicitAccount(runtime, null, null, standalone)], warnings };
