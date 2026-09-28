@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- You can now pick a color for this computer's own Claude sign-in, the account DorkOS calls "Main" when you haven't added its folder as an account. Until now it always showed the default color for its place in the list. The setting is `runtimes.claudeCode.defaultAccountColor`, and only you can change it, not your agents. If you have added that folder as an account, the account's own color is still the one used (DOR-2492).
+- You can now set the color of this computer's own Claude sign-in with `runtimes.claudeCode.defaultAccountColor` in your config file. That is the account DorkOS calls "Main" when you haven't added its folder as an account, and until now it always showed the default color for its place in the list. Only you can change it, not your agents. If you have added that folder as an account, the account's own color is still the one used (DOR-2492).

@@ -3988,6 +3988,10 @@ export const ServerConfigSchema = z
           description:
             "The color the operator chose for the standalone default account (this computer's own Claude sign-in when no registered account has its folder), as lowercase #rrggbb, or null when it shows the default for its position. Ignored while a registered account has the default folder: that account's own color wins. Absent on a server too old to report it",
         }),
+        defaultAccountResolvedColor: z.string().optional().openapi({
+          description:
+            "The color the default account is drawn in, as lowercase #rrggbb, decided by the server: the registered account that has the default folder's own color, else defaultAccountColor, else the default for its position. Draw this rather than re-deriving it. Absent when the config could not be read, or on a server too old to report it",
+        }),
         accountsUnavailable: z.boolean().optional().openapi({
           description:
             'True when the account registry could NOT be read (the config store threw, or was consulted before it was initialized), so `accounts` is empty because nothing could be learned rather than because nothing is registered. Absent means the list is an answer. A client must not judge an agent or session account reference against an unavailable registry — an override that cannot be verified is unknown, never wrong',

@@ -5,7 +5,6 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
@@ -66,34 +65,25 @@ describe('useClaudeAccounts', () => {
     expect(result.current.colorFor('/Users/dev/.claude9')).toBeNull();
   });
 
-  it('colors the default account as the server does (DOR-2492)', async () => {
-    // Standalone (nobody registered the default folder): the chosen color…
-    const chosen = renderAccounts({
-      resolvedAccount: '/Users/dev/.claude-main',
+  it('draws the default account in the color the server resolved (DOR-2492)', async () => {
+    // The server says the default stands alone in teal, even though the
+    // inherited folder string-matches a registered row. The client must not
+    // second-guess it with its own alias or positional rule.
+    const { result } = renderAccounts({
+      resolvedAccount: WORK.path,
       inherited: true,
       defaultAccountColor: '#0d9488',
+      defaultAccountResolvedColor: '#0d9488',
     });
-    await waitFor(() => expect(chosen.result.current.accounts).toHaveLength(2));
-    expect(chosen.result.current.defaultAccountColor).toBe('#0d9488');
-    expect(chosen.result.current.colorFor('default')).toBe('#0d9488');
-    cleanup();
+    await waitFor(() => expect(result.current.accounts).toHaveLength(2));
+    expect(result.current.colorFor('default')).toBe('#0d9488');
+    expect(result.current.defaultAccountColor).toBe('#0d9488');
+    expect(result.current.defaultAccountResolvedColor).toBe('#0d9488');
+  });
 
-    // …else the default for the position after the two registered rows.
-    const positional = renderAccounts({
-      resolvedAccount: '/Users/dev/.claude-main',
-      inherited: false,
-      defaultAccountColor: null,
-    });
-    await waitFor(() => expect(positional.result.current.accounts).toHaveLength(2));
-    expect(positional.result.current.colorFor('default')).toBe(DEFAULT_ACCOUNT_COLORS[2]);
-    expect(positional.result.current.colorFor('/Users/dev/.claude-main')).toBe(
-      DEFAULT_ACCOUNT_COLORS[2]
-    );
-    cleanup();
-
-    // An alias: a registered row has the default folder, so ITS color wins.
-    const alias = renderAccounts({ defaultAccountColor: '#0d9488' });
-    await waitFor(() => expect(alias.result.current.accounts).toHaveLength(2));
-    expect(alias.result.current.colorFor('default')).toBe(PERSONAL.color);
+  it('answers null for default when the server did not resolve a color', async () => {
+    const { result } = renderAccounts({ defaultAccountColor: '#0d9488' });
+    await waitFor(() => expect(result.current.accounts).toHaveLength(2));
+    expect(result.current.colorFor('default')).toBeNull();
   });
 });

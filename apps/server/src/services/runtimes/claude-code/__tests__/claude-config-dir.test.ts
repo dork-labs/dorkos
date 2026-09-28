@@ -281,6 +281,58 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       inherited: true,
       accounts: [],
       defaultAccountColor: null,
+      defaultAccountResolvedColor: DEFAULT_ACCOUNT_COLORS[0],
+    });
+  });
+
+  describe('the default account color, decided here and nowhere else (DOR-2492)', () => {
+    const row = (id: string, dir: string, color: string | null) => ({
+      id,
+      path: dir,
+      label: null,
+      color,
+    });
+
+    it('ignores CLAUDE_CONFIG_DIR: a row at the inherited folder is NOT the default', () => {
+      // The client sees `resolvedAccount` = /x and a row at /x, and could read
+      // that as an alias. The server's rule resolves `default` from config and
+      // home only, so the default stands alone, after the row.
+      const x = path.join(tmp, 'x');
+      fs.mkdirSync(x);
+      process.env.CLAUDE_CONFIG_DIR = x;
+      const described = describeClaudeCodeAccounts(
+        fakeConfig({ accounts: [row('x', x, '#9b51e0')], defaultAccountColor: '#0d9488' })
+      );
+      expect(described.resolvedAccount).toBe(x);
+      expect(described.defaultAccountResolvedColor).toBe('#0d9488');
+      const none = describeClaudeCodeAccounts(fakeConfig({ accounts: [row('x', x, '#9b51e0')] }));
+      expect(none.defaultAccountResolvedColor).toBe(DEFAULT_ACCOUNT_COLORS[1]);
+    });
+
+    it('finds the alias through a symlink, and draws the row color', () => {
+      const real = path.join(tmp, 'real');
+      const link = path.join(tmp, 'link');
+      fs.mkdirSync(real);
+      fs.symlinkSync(real, link);
+      const described = describeClaudeCodeAccounts(
+        fakeConfig({
+          defaultAccount: link,
+          accounts: [row('main', real, '#9b51e0')],
+          defaultAccountColor: '#0d9488',
+        })
+      );
+      expect(described.defaultAccountResolvedColor).toBe('#9b51e0');
+    });
+
+    it('counts only the rows the read rules list for the positional fallback', () => {
+      // A row with no absolute path is skipped, so the default is at position 1.
+      const described = describeClaudeCodeAccounts(
+        fakeConfig({
+          defaultAccount: path.join(tmp, 'main'),
+          accounts: [row('a', path.join(tmp, 'a'), null), row('bad', 'relative/path', null)],
+        })
+      );
+      expect(described.defaultAccountResolvedColor).toBe(DEFAULT_ACCOUNT_COLORS[1]);
     });
   });
 

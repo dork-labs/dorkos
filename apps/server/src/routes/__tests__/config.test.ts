@@ -1674,6 +1674,7 @@ describe('GET /api/config', () => {
         inherited: true,
         accounts: [],
         defaultAccountColor: null,
+        defaultAccountResolvedColor: DEFAULT_ACCOUNT_COLORS[0],
         // Warm agents default on, exposed here for the Control Center switch.
         persistentSession: true,
       });
@@ -1709,6 +1710,8 @@ describe('GET /api/config', () => {
         resolvedAccount: real,
         inherited: false,
         defaultAccountColor: null,
+        // `default` names the acme-corp folder, so it is that row's color.
+        defaultAccountResolvedColor: '#12ab9f',
         accounts: [
           {
             id: 'acme-corp',

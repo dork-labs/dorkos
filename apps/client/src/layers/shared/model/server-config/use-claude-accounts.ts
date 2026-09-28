@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { IMPLICIT_ACCOUNT_ID, resolveAccountColor } from '@dorkos/shared/account-usage';
+import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { claudeAccountName, type ClaudeAccountRef } from '../../lib/claude-accounts';
 import { useTransport } from '../TransportContext';
 import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
@@ -46,9 +46,15 @@ export interface ClaudeAccountsView {
    */
   defaultAccountColor: string | null;
   /**
+   * The color the default account is drawn in, as the server resolved it, or
+   * `null` when the server did not say. Display this; bind a color picker to
+   * {@link defaultAccountColor}.
+   */
+  defaultAccountResolvedColor: string | null;
+  /**
    * The color of an account: a registered one found by registry id and then by
-   * path, or the default account (`default`, or the path a person chose as the
-   * default) drawn as the server draws it. `null` when nothing matches.
+   * path, or `default`, drawn in the color the server resolved for it. `null`
+   * when nothing matches.
    */
   colorFor: (pathOrId: string) => string | null;
 }
@@ -73,30 +79,25 @@ export function useClaudeAccounts(): ClaudeAccountsView {
 
   const claudeCode = data?.claudeCode;
   const accounts: ClaudeAccountEntry[] = claudeCode?.accounts ?? [];
-  const defaultAccountColor = claudeCode?.defaultAccountColor ?? null;
-  const inherited = claudeCode?.inherited ?? true;
 
   return {
     accounts,
     resolvedAccount: claudeCode?.resolvedAccount,
-    inherited,
+    inherited: claudeCode?.inherited ?? true,
     isMultiAccount: accounts.length > 1,
-    defaultAccountColor,
+    defaultAccountColor: claudeCode?.defaultAccountColor ?? null,
+    defaultAccountResolvedColor: claudeCode?.defaultAccountResolvedColor ?? null,
     nameFor: (path: string) => claudeAccountName(path, accounts),
     colorFor: (pathOrId: string) => {
       const registered =
         accounts.find((account) => account.id === pathOrId) ??
         accounts.find((account) => account.path === pathOrId);
       if (registered) return registered.color;
-      // The default account, colored by the server's rule
-      // (`resolveRuntimeAccounts`): an alias row's own color, else the chosen
-      // color, else the default for the position after the registered rows.
-      // Only a CHOSEN default folder is matched by path: an inherited one may
-      // come from the server's environment, which the server's rule ignores.
-      const resolved = claudeCode?.resolvedAccount;
-      if (pathOrId !== IMPLICIT_ACCOUNT_ID && (inherited || pathOrId !== resolved)) return null;
-      const alias = resolved ? accounts.find((account) => account.path === resolved) : undefined;
-      return alias?.color ?? resolveAccountColor(defaultAccountColor, accounts.length);
+      // The default account's color is the server's decision
+      // (`defaultAccountResolvedColor`), never re-derived here: which row it
+      // aliases turns on real paths and a default folder the client cannot see.
+      if (pathOrId !== IMPLICIT_ACCOUNT_ID) return null;
+      return claudeCode?.defaultAccountResolvedColor ?? null;
     },
   };
 }

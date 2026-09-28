@@ -50,6 +50,7 @@ import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import {
   canonicalAccountPath,
   defaultAccountFolder,
+  resolveRuntimeAccounts,
   type AccountWarning,
 } from '../../core/usage/runtime-accounts.js';
 
@@ -513,6 +514,30 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
 }
 
 /**
+ * The color `claude-code:default` is drawn in, by `resolveRuntimeAccounts`:
+ * an alias row's own color (matched by real path, routable rows only), else
+ * `runtimes.claudeCode.defaultAccountColor`, else the default for its
+ * position among the listed rows. The default folder comes from config and the
+ * OS home only, exactly as the usage store resolves it, never from this
+ * process's `CLAUDE_CONFIG_DIR` (DOR-2492).
+ *
+ * Omitted, rather than guessed, when the config cannot be read.
+ */
+function resolvedDefaultColor(config: ConfigReader): { defaultAccountResolvedColor?: string } {
+  try {
+    const { accounts } = resolveRuntimeAccounts('claude-code', {
+      config: { runtimes: { claudeCode: config.get('runtimes')?.claudeCode } },
+      defaultFolder: (_runtime, raw) => claudeDefaultAccountFolder(raw),
+    });
+    const color = accounts.find((account) => account.isDefault)?.color;
+    return color ? { defaultAccountResolvedColor: color } : {};
+  } catch (err) {
+    logger.debug('[claude-config-dir] default account color unavailable', { err: String(err) });
+    return {};
+  }
+}
+
+/**
  * Describe the Claude account state for `GET /api/config` — where a new session
  * will run, whether that was chosen or inherited, and which registered accounts
  * DorkOS can currently find.
@@ -536,10 +561,12 @@ export function describeClaudeCodeAccounts(
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
     // The STORED choice for the standalone default account, `null` when it
-    // follows its position (DOR-2492). Stored rather than resolved, so the
-    // Settings color control can tell "chosen" from "default", as a row's
-    // `colorIsDefault` does; the resolved color rides the account usage.
+    // follows its position (DOR-2492): the Settings color control's value, so
+    // it can tell "chosen" from "default", as a row's `colorIsDefault` does.
     defaultAccountColor,
+    // The color the default account is DRAWN in, decided here and nowhere
+    // else: the same rule the usage store applies, so no client re-derives it.
+    ...resolvedDefaultColor(config),
     // Sent only when it is true, so an ordinary response carries no extra key
     // and a client that never learned about this field reads the same wire it
     // always did. What it buys the client is the difference between "your
