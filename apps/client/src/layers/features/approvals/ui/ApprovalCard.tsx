@@ -246,16 +246,21 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             >
               {heading}
             </span>
-            <Badge
-              size="xs"
-              variant="outline"
-              className={cn(
-                'shrink-0',
-                approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
-              )}
-            >
-              {TIER_LABEL[approval.tier]}
-            </Badge>
+            {/* A connected-app action that can't be undone says so once, in a
+                sentence naming the app (`ApprovalServiceAction`), so the badge
+                would only repeat it. */}
+            {!(approval.serviceAction && approval.tier === 'destructive') && (
+              <Badge
+                size="xs"
+                variant="outline"
+                className={cn(
+                  'shrink-0',
+                  approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
+                )}
+              >
+                {TIER_LABEL[approval.tier]}
+              </Badge>
+            )}
           </div>
           {/* WHAT this would act on, named, directly under the title — the first
               thing the eye lands on after "cannot be undone". Above the summary

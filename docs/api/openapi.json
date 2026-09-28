@@ -2788,6 +2788,17 @@
           "moreDetails": {
             "type": "integer",
             "minimum": 1
+          },
+          "everything": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalServiceActionLine"
+            },
+            "maxItems": 2000
+          },
+          "everythingCut": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
@@ -2815,6 +2826,31 @@
         "required": [
           "label",
           "value"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalServiceActionLine": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 16000
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "depth"
         ],
         "additionalProperties": false
       },

@@ -507,6 +507,15 @@ function storableServiceAction(action: ApprovalServiceAction): string | null {
       label: redactSecretsInText(detail.label),
       value: redactSecretsInText(detail.value),
     })),
+    ...(action.everything
+      ? {
+          everything: action.everything.map((line) => ({
+            ...line,
+            label: redactSecretsInText(line.label),
+            value: redactSecretsInText(line.value),
+          })),
+        }
+      : {}),
   };
   const parsed = ApprovalServiceActionSchema.safeParse(swept);
   return parsed.success ? JSON.stringify(parsed.data) : null;

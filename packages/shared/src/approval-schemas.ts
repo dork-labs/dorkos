@@ -114,6 +114,39 @@ export const APPROVAL_SERVICE_DETAIL_LABEL_MAX_LENGTH = 60;
 /** Longest the app, account or action name may be on the card. */
 export const APPROVAL_SERVICE_NAME_MAX_LENGTH = 120;
 
+/** Longest one value may be in the card's "Show everything" list. */
+export const APPROVAL_SERVICE_FULL_VALUE_MAX_LENGTH = 16_000;
+
+/** Most lines the card's "Show everything" list may hold. */
+export const APPROVAL_SERVICE_FULL_MAX_LINES = 2_000;
+
+/** Most characters, labels and values together, the "Show everything" list may hold. */
+export const APPROVAL_SERVICE_FULL_MAX_CHARACTERS = 20_000;
+
+/** Deepest a nested argument is indented in the "Show everything" list. */
+export const APPROVAL_SERVICE_FULL_MAX_DEPTH = 8;
+
+/**
+ * One line of the complete argument list: a label, a value, and how far it is
+ * indented under the line above. A list's items and an object's fields each
+ * get a line of their own one level deeper, so nothing is summarized away and
+ * nothing is JSON.
+ */
+export const ApprovalServiceActionLineSchema = z
+  .object({
+    /** The argument's name in words, or an item's number in its list. */
+    label: z.string().min(1).max(APPROVAL_SERVICE_DETAIL_LABEL_MAX_LENGTH),
+    /** The value in full, swept for secrets; for a list or object, how many it holds. */
+    value: z.string().max(APPROVAL_SERVICE_FULL_VALUE_MAX_LENGTH),
+    /** Indent level: 0 for an argument, 1 for its items or fields, and so on. */
+    depth: z.number().int().min(0).max(APPROVAL_SERVICE_FULL_MAX_DEPTH),
+  })
+  .strict()
+  .openapi('ApprovalServiceActionLine');
+
+/** One line of the complete argument list. */
+export type ApprovalServiceActionLine = z.infer<typeof ApprovalServiceActionLineSchema>;
+
 /**
  * One argument of a connected-app action, as a person reads it: a plain label
  * and a plain value, never JSON. A value whose name reads as a secret arrives
@@ -145,6 +178,12 @@ export type ApprovalServiceActionDetail = z.infer<typeof ApprovalServiceActionDe
  * use, and then the card names that one. Only the argument VALUES are the
  * agent's, because they are what would be sent; they are shown as values,
  * shortened and swept for secrets, in their own list below the header.
+ *
+ * ## Nothing that would run is unreadable
+ *
+ * {@link details} is the glance: a few lines, each value shortened. Whenever
+ * that leaves anything out, {@link everything} carries every argument whole,
+ * so a person approving an irreversible action can read all of what it sends.
  */
 export const ApprovalServiceActionSchema = z
   .object({
@@ -160,6 +199,21 @@ export const ApprovalServiceActionSchema = z
     details: z.array(ApprovalServiceActionDetailSchema).max(APPROVAL_SERVICE_ACTION_MAX_DETAILS),
     /** How many more arguments there are than the card lists. */
     moreDetails: z.number().int().min(1).optional(),
+    /**
+     * Every argument that would be sent, in full: each list item and each
+     * nested field on its own indented line, secrets still hidden. The card
+     * shows it behind "Show everything". Absent when {@link details} already
+     * shows every argument whole, so there is nothing more to see.
+     */
+    everything: z
+      .array(ApprovalServiceActionLineSchema)
+      .max(APPROVAL_SERVICE_FULL_MAX_LINES)
+      .optional(),
+    /**
+     * How many values were too long to fit in {@link everything}, when any
+     * were. The card says so plainly rather than implying the list is whole.
+     */
+    everythingCut: z.number().int().min(1).optional(),
   })
   .strict()
   .openapi('ApprovalServiceAction');

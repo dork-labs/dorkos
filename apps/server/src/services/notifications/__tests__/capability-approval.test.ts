@@ -131,6 +131,33 @@ describe('a capability approval nobody answers', () => {
     expect(JSON.stringify(payload)).not.toContain('nightly');
   });
 
+  it('names a connected-app action by what it does, still without its arguments', async () => {
+    approvals.request({
+      capabilityId: 'connectors.execute_destructive',
+      inputHash: 'hash-gmail',
+      summary: '"Ana" wants to run "Delete message" in Gmail',
+      requestedBy: 'Ana',
+      requestedByPath: ACME_PATH,
+      serviceAction: {
+        serviceId: 'gmail',
+        serviceName: 'Gmail',
+        accountLabel: 'work@acme.com',
+        actionName: 'Delete message',
+        details: [{ label: 'Message ID', value: 'msg-secret-subject' }],
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
+    await flush();
+
+    const payload = sendToAll.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.body).toBe(
+      'Delete message in Gmail cannot be undone, so it will not run until you decide.'
+    );
+    expect(JSON.stringify(payload)).not.toContain('msg-secret-subject');
+    expect(JSON.stringify(payload)).not.toContain('work@acme.com');
+  });
+
   it('does not escalate when the operator turned the knob to never', async () => {
     delay = 'never';
     ask();

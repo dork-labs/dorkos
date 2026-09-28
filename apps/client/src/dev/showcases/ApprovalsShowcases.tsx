@@ -348,12 +348,34 @@ export function ApprovalCardShowcase() {
                   },
                   {
                     label: 'Attendees',
-                    value: 'ana@acme.com, bo@acme.com, cy@acme.com and 9 more',
+                    value: '12 items',
                   },
                   { label: 'Access token', value: '(hidden)' },
                   { label: 'Send updates', value: 'No' },
                 ],
                 moreDetails: 2,
+                // Everything the glance shortened or left out, whole, behind
+                // "Show everything".
+                everything: [
+                  { label: 'Event ID', value: 'k3j2h1g0f9e8d7c6b5a4', depth: 0 },
+                  { label: 'Calendar ID', value: 'primary', depth: 0 },
+                  {
+                    label: 'Summary',
+                    value:
+                      'Quarterly planning with the whole team, the board observers, and the two new hires who start on Monday morning.\nBring the Q3 numbers.',
+                    depth: 0,
+                  },
+                  { label: 'Attendees', value: '12 items', depth: 0 },
+                  ...Array.from({ length: 12 }, (_, i) => [
+                    { label: String(i + 1), value: '2 fields', depth: 1 },
+                    { label: 'Email', value: `person${i + 1}@acme.com`, depth: 2 },
+                    { label: 'Optional', value: i % 3 === 0 ? 'Yes' : 'No', depth: 2 },
+                  ]).flat(),
+                  { label: 'Access token', value: '(hidden)', depth: 0 },
+                  { label: 'Send updates', value: 'No', depth: 0 },
+                  { label: 'Color ID', value: '5', depth: 0 },
+                  { label: 'Reminders', value: 'None', depth: 0 },
+                ],
               },
             }),
           ]}

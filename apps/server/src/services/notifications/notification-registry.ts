@@ -104,7 +104,10 @@ export interface NotificationPayloads {
     capabilityId: string;
     /**
      * Its human-facing title, from the capability registry — never from the
-     * requester (`approval-service.ts`'s `CapabilityDescriptorLookup`).
+     * requester (`approval-service.ts`'s `CapabilityDescriptorLookup`). For a
+     * connected-app action it is the action and app instead ("Delete message
+     * in Gmail", `approvalHeading`), which the server read from its own
+     * records; still no argument values.
      */
     capabilityTitle: string;
     /**
