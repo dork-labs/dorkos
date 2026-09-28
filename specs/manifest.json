@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260928-005336",
+      "slug": "managed-remote-app-consumer",
+      "title": "Use managed remote access in the local app",
+      "created": "2026-09-28",
+      "status": "draft",
+      "project": "DorkOS Cloud",
+      "linearIssue": "DOR-2086"
+    },
+    {
       "id": "260927-155808",
       "slug": "connection-app-details",
       "title": "Connections: app logos, descriptions, actions and a kept app list",
