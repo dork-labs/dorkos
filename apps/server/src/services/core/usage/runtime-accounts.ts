@@ -11,7 +11,12 @@
  *   has no registered row. It is resolved from CONFIG and the OS home only, never
  *   from a process's environment: a server started with `CLAUDE_CONFIG_DIR=/x`
  *   must not make `default` mean `/x`, or it would read, write and prune another
- *   account's ledger.
+ *   account's ledger. Flow's CLI runs in other processes with other
+ *   environments, so following one process's env would also make flow and
+ *   DorkOS disagree about which folder `default` is (rev 6d). The server's
+ *   `$CLAUDE_CONFIG_DIR` is a LAUNCH-ONLY override: new sessions may run there
+ *   (`resolveActiveClaudeRoot`), but Main never follows it, and Settings then
+ *   marks no row "in use" (`describeClaudeCodeAccounts` in `claude-config-dir.ts`).
  * - **Alias or standalone.** When a routable registered row has the default
  *   folder, `default` is another name for that row (one ledger, one row, the
  *   row's color). Otherwise `default` is an account of its own, listed after

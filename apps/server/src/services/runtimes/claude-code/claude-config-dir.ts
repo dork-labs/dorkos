@@ -576,7 +576,9 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
  *   default is chosen, because new sessions do. It is matched to a row by
  *   {@link accountForPath}, the usage store's own canonical comparison (`~`
  *   expanded, real path), so a trailing slash, a symlink or a `~` spelling
- *   still names its row. `default` when no routable row has that folder.
+ *   still names its row. `default` when no routable row has that folder and
+ *   it is the standalone default's own folder; omitted when it is neither (an
+ *   inherited `$CLAUDE_CONFIG_DIR` nobody registered).
  *
  * Both are omitted, rather than guessed, when the config cannot be read.
  */
@@ -593,15 +595,45 @@ function resolvedDefaultAccount(
       defaultFolder: (_runtime, raw) => claudeDefaultAccountFolder(raw),
     });
     const color = accounts.find((account) => account.isDefault)?.color;
-    const row = accountForPath(accounts, 'claude-code', resolveActiveClaudeRoot(config), home);
+    const root = resolveActiveClaudeRoot(config);
+    const row = accountForPath(accounts, 'claude-code', root, home);
+    // `default` only when the folder IS the standalone default the usage store
+    // lists as Main. Main is env-free by the shared contract (flow-cli-core
+    // §1.1a rev 6d: `defaultAccount`, else `activeAccount`, else `~/.claude`),
+    // because flow's CLI runs in other processes with other environments. The
+    // server's `$CLAUDE_CONFIG_DIR` is a LAUNCH-ONLY override, so a folder it
+    // names that nobody registered is not Main: no row can honestly claim it,
+    // and the field is left out rather than marking the wrong one
+    // (`launchOverride` says where new sessions go instead).
+    const standalone = accounts.find((account) => account.implicit);
+    const isMain =
+      !row &&
+      standalone?.canonicalPath != null &&
+      canonicalAccountPath(root, home) === standalone.canonicalPath;
+    const id = row?.id ?? (isMain ? IMPLICIT_ACCOUNT_ID : undefined);
     return {
       ...(color ? { defaultAccountResolvedColor: color } : {}),
-      resolvedAccountId: row?.id ?? IMPLICIT_ACCOUNT_ID,
+      ...(id ? { resolvedAccountId: id } : {}),
     };
   } catch (err) {
     logger.debug('[claude-config-dir] default account unavailable', { err: String(err) });
     return {};
   }
+}
+
+/**
+ * The launch-only override in force, if any: the server's inherited
+ * `$CLAUDE_CONFIG_DIR` while no default account is chosen, which is exactly
+ * when {@link resolveActiveClaudeRoot} hands new sessions that folder.
+ *
+ * The path is no new disclosure: `resolvedAccount` already carries it then.
+ */
+function launchOverride(defaultAccount: string | null): {
+  launchOverride?: { env: 'CLAUDE_CONFIG_DIR'; path: string };
+} {
+  const ambient = ambientClaudeConfigDir();
+  if (defaultAccount !== null || !ambient) return {};
+  return { launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: ambient } };
 }
 
 /**
@@ -635,6 +667,10 @@ export function describeClaudeCodeAccounts(
     // on, decided here and nowhere else: the same rules the usage store and the
     // launch ladder apply, so no client re-derives them from path strings.
     ...resolvedDefaultAccount(config, unavailable),
+    // Set only when the server's own `$CLAUDE_CONFIG_DIR` decides where new
+    // sessions go (no default chosen), so Settings can say so: Main never
+    // follows that variable (contract rev 6d), and the row it names may be none.
+    ...launchOverride(defaultAccount),
     // Sent only when it is true, so an ordinary response carries no extra key
     // and a client that never learned about this field reads the same wire it
     // always did. What it buys the client is the difference between "your

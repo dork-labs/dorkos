@@ -383,6 +383,16 @@ export function ClaudeAccountsSection() {
         </Select>
       </SettingRow>
 
+      {/* Said in words because no row can say it: Main never follows the
+          server's own `$CLAUDE_CONFIG_DIR` (shared account contract rev 6d), so
+          while that variable picks the folder, the row it names may be none. */}
+      {claudeCode?.launchOverride && (
+        <p className="text-muted-foreground text-xs" data-testid="claude-account-launch-override">
+          New sessions use $CLAUDE_CONFIG_DIR ({shortenHomePath(claudeCode.launchOverride.path)})
+          set on the server.
+        </p>
+      )}
+
       {accounts.map((account) => (
         <AccountRow
           key={account.path}

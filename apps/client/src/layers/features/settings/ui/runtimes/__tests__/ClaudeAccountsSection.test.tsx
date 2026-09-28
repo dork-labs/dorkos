@@ -971,6 +971,30 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(screen.queryByText('in use')).not.toBeInTheDocument();
     });
 
+    it('says new sessions use $CLAUDE_CONFIG_DIR when the server reports it, and marks no row', async () => {
+      // An unregistered inherited folder: Main stands for ~/.claude, not it, so
+      // the server names no row and the line is the only honest answer.
+      renderSection(
+        standalone({
+          resolvedAccount: '/Users/dev/.claude-env',
+          resolvedAccountId: undefined,
+          launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/Users/dev/.claude-env' },
+        }),
+        { usage: [mainUsage()] }
+      );
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      expect(screen.getByTestId('claude-account-launch-override')).toHaveTextContent(
+        'New sessions use $CLAUDE_CONFIG_DIR (~/.claude-env) set on the server.'
+      );
+      expect(screen.queryByText('in use')).not.toBeInTheDocument();
+    });
+
+    it('shows no $CLAUDE_CONFIG_DIR line when the server reports no override', async () => {
+      renderSection(standalone(), { usage: [mainUsage()] });
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      expect(screen.queryByTestId('claude-account-launch-override')).not.toBeInTheDocument();
+    });
+
     it('draws its dot in the resolved color', async () => {
       renderSection(standalone(), { usage: [mainUsage()] });
       const control = await screen.findByRole('button', { name: `Color for ${MAIN}` });

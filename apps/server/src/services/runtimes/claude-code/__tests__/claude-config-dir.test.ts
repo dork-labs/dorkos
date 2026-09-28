@@ -283,7 +283,9 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       accounts: [],
       defaultAccountColor: null,
       defaultAccountResolvedColor: DEFAULT_ACCOUNT_COLORS[0],
-      resolvedAccountId: 'default',
+      // No row: Main is ~/.claude (never the env, contract rev 6d), and nobody
+      // registered the inherited folder. The override says where sessions go.
+      launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/tmp/inherited-claude' },
     });
   });
 
@@ -415,6 +417,7 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       accounts: [],
       defaultAccountColor: null,
       accountsUnavailable: true,
+      launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/tmp/inherited-claude' },
     });
   });
 
@@ -524,6 +527,39 @@ describe('describeClaudeCodeAccounts: the row new sessions run on (resolvedAccou
       fakeConfig({ defaultAccount: loose, accounts: [row('acme', path.join(tmp, '.claude2'))] })
     );
     expect(described.resolvedAccountId).toBe('default');
+  });
+
+  it('names no row when $CLAUDE_CONFIG_DIR is an unregistered folder and ~/.claude is registered', () => {
+    const loose = path.join(tmp, '.claude-loose');
+    fs.mkdirSync(loose);
+    process.env.CLAUDE_CONFIG_DIR = loose;
+    const described = describeClaudeCodeAccounts(
+      fakeConfig({ accounts: [row('main', path.join(tmp, '.claude'))] })
+    );
+    expect(described).not.toHaveProperty('resolvedAccountId');
+    // Where new sessions go instead, for Settings to say in words.
+    expect(described.launchOverride).toEqual({ env: 'CLAUDE_CONFIG_DIR', path: loose });
+  });
+
+  it('reports no launch override once a default is chosen, even with the variable set', () => {
+    process.env.CLAUDE_CONFIG_DIR = path.join(tmp, '.claude2');
+    const described = describeClaudeCodeAccounts(
+      fakeConfig({ defaultAccount: path.join(tmp, '.claude'), accounts: [] })
+    );
+    expect(described).not.toHaveProperty('launchOverride');
+    expect(described.resolvedAccountId).toBe('default');
+  });
+
+  it('does not call it Main when $CLAUDE_CONFIG_DIR is an unregistered folder and ~/.claude is not registered', () => {
+    // Main stands for ~/.claude (the usage store never reads the environment),
+    // while new sessions run in the inherited folder: neither row is honest.
+    const loose = path.join(tmp, '.claude-loose');
+    fs.mkdirSync(loose);
+    process.env.CLAUDE_CONFIG_DIR = loose;
+    const described = describeClaudeCodeAccounts(
+      fakeConfig({ accounts: [row('acme', path.join(tmp, '.claude2'))] })
+    );
+    expect(described).not.toHaveProperty('resolvedAccountId');
   });
 
   it('omits it when the registry cannot be read, rather than guessing', () => {
