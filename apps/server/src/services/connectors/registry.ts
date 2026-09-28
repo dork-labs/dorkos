@@ -303,19 +303,15 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Move a provider's already-saved accounts to the service ids it now reports
-   * for them. Called with the accounts a provider listed when it was set up;
-   * a no-op while the connection store is unavailable.
+   * Move a provider's saved accounts from service ids it renamed to the ids it
+   * now lists them under. A no-op while the connection store is unavailable.
    *
-   * @param provider - The provider the accounts came from.
-   * @param accounts - Its current accounts.
+   * @param provider - The provider that renamed them.
+   * @param renames - Old service id → new service id.
    */
-  syncAccountServices(
-    provider: ConnectorProvider,
-    accounts: readonly ProviderConnectedAccount[]
-  ): void {
+  renameServices(provider: ConnectorProvider, renames: ReadonlyMap<string, string>): void {
     if (this._connections.health().status !== 'ready') return;
-    this._connections.syncAccountServices(provider.instanceId, accounts);
+    this._connections.renameServices(provider.instanceId, renames);
   }
 
   /**

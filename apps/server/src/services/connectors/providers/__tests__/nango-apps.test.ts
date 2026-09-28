@@ -65,6 +65,33 @@ describe('nangoServiceIds', () => {
     expect(ids.integrationFor('gmail')?.uniqueKey).toBe('gmail');
   });
 
+  it('gives the app’s id to the integration set up first, so a later one never takes it', () => {
+    const ids = nangoServiceIds(
+      [
+        { uniqueKey: 'a-gmail', provider: 'google-mail', createdAt: '2026-09-01T00:00:00Z' },
+        { uniqueKey: 'mail-home', provider: 'google-mail', createdAt: '2026-01-01T00:00:00Z' },
+        // No set-up date sorts after every dated one, even with accounts.
+        { uniqueKey: 'a-undated', provider: 'google-mail' },
+      ],
+      new Set(['a-undated'])
+    );
+
+    expect(ids.integrationFor('gmail')?.uniqueKey).toBe('mail-home');
+    expect(ids.renames).toEqual(new Map([['mail-home', 'gmail']]));
+  });
+
+  it('without set-up dates, gives the app’s id to the integration holding accounts', () => {
+    const integrations = [
+      integration('a-empty', 'google-mail'),
+      integration('b-used', 'google-mail'),
+    ];
+
+    expect(nangoServiceIds(integrations).integrationFor('gmail')?.uniqueKey).toBe('a-empty');
+    expect(
+      nangoServiceIds(integrations, new Set(['b-used'])).integrationFor('gmail')?.uniqueKey
+    ).toBe('b-used');
+  });
+
   it('keeps an account of an integration Nango no longer lists under its key', () => {
     expect(nangoServiceIds([]).serviceSlugOf('google-mail')).toBe('google-mail');
   });

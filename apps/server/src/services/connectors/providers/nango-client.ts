@@ -47,6 +47,8 @@ export interface NangoIntegration {
   authMode?: string;
   /** The integration's logo on this Nango server or Nango's hosted app; absent otherwise. */
   logoUrl?: string;
+  /** When the integration was set up (Nango's `created_at`, ISO 8601), when Nango sends it. */
+  createdAt?: string;
 }
 
 /** The reference-not-secret result of initiating a Nango connect flow. */
@@ -210,6 +212,7 @@ export class FetchNangoHttpClient implements NangoHttpClient {
         ...(it.display_name && { displayName: it.display_name }),
         ...(it.auth_mode && { authMode: it.auth_mode }),
         ...(logoUrl && { logoUrl }),
+        ...(it.created_at && { createdAt: it.created_at }),
       };
     });
   }
@@ -318,6 +321,7 @@ interface RawIntegration {
   display_name?: string;
   auth_mode?: string;
   logo?: string;
+  created_at?: string;
 }
 
 /** Raw Nango connect-session JSON. */

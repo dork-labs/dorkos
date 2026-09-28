@@ -78,6 +78,34 @@ export interface NangoServiceIds {
    * @param serviceSlug - A service id from the port.
    */
   integrationFor(serviceSlug: string): NangoIntegration | undefined;
+  /**
+   * Every integration whose accounts go by an id other than its own key: its
+   * key → that id. Accounts DorkOS saved under the key move to the id.
+   */
+  readonly renames: ReadonlyMap<string, string>;
+}
+
+/**
+ * Which of several integrations of one app keeps the app's id: the one set up
+ * first, so setting up another integration of the app later never moves the
+ * row, or the accounts on it, to the new one. When Nango sends no set-up date,
+ * one that already holds accounts goes first, then the first by key.
+ *
+ * Set-up date comes before accounts on purpose: an account landing on the
+ * younger integration would otherwise move the app's id to it in the middle
+ * of that very sign-in, and move the older integration's accounts off it.
+ */
+function winnerOrder(withAccounts: ReadonlySet<string>) {
+  return (a: NangoIntegration, b: NangoIntegration): number =>
+    setUpAt(a) - setUpAt(b) ||
+    Number(withAccounts.has(b.uniqueKey)) - Number(withAccounts.has(a.uniqueKey)) ||
+    a.uniqueKey.localeCompare(b.uniqueKey);
+}
+
+/** When an integration was set up, in ms; one Nango sent no date for sorts last. */
+function setUpAt(integration: NangoIntegration): number {
+  const at = integration.createdAt ? Date.parse(integration.createdAt) : Number.NaN;
+  return Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
 }
 
 /**
@@ -86,19 +114,23 @@ export interface NangoServiceIds {
  * An integration whose template serves a popular app takes that app's id, so
  * it merges into the popular row. Two rules keep ids unique. An integration's
  * own key always stays its own: if the person named one integration `gmail`,
- * no other can take `gmail`. And an app's id goes to one integration only, the
- * first by key, so the choice never depends on Nango's list order. An
+ * no other can take `gmail`. And an app's id goes to one integration only,
+ * chosen by {@link winnerOrder}, never by Nango's list order. An
  * integration that loses the id keeps its key and its own row, named with its
  * key so it never reads as a second copy of the popular one: two Gmail
  * integrations are two setups the person made on purpose (other sign-in apps,
  * other scopes), and each stays reachable.
  *
  * @param integrations - Nango's integration list.
+ * @param withAccounts - Keys of the integrations that already hold accounts.
  */
-export function nangoServiceIds(integrations: readonly NangoIntegration[]): NangoServiceIds {
+export function nangoServiceIds(
+  integrations: readonly NangoIntegration[],
+  withAccounts: ReadonlySet<string> = new Set()
+): NangoServiceIds {
   const ownKeys = new Set(integrations.map((it) => it.uniqueKey));
   const claimed = new Map<string, string>();
-  for (const it of [...integrations].sort((a, b) => a.uniqueKey.localeCompare(b.uniqueKey))) {
+  for (const it of [...integrations].sort(winnerOrder(withAccounts))) {
     const app = NANGO_TEMPLATE_SERVICES[it.provider];
     if (app && app !== it.uniqueKey && !ownKeys.has(app) && !claimed.has(app)) {
       claimed.set(app, it.uniqueKey);
@@ -121,5 +153,6 @@ export function nangoServiceIds(integrations: readonly NangoIntegration[]): Nang
     entries,
     serviceSlugOf: (uniqueKey) => appOf.get(uniqueKey) ?? uniqueKey,
     integrationFor: (serviceSlug) => bySlug.get(serviceSlug),
+    renames: appOf,
   };
 }

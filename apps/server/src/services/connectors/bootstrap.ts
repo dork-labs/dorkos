@@ -492,13 +492,11 @@ export class ConnectorProviderBootstrapper {
         // credential gate and 401ing on every call — without this check the
         // card said Ready over a dead service grid. The failure message
         // (Composio's own, secret-free) lands on the status DTO instead.
-        const accounts = await provider.listAccounts();
+        await provider.listAccounts();
         this._registry.register(provider, providerExecutionConfigDigest(provider), 'byo');
-        // A provider may now list an app under a new id (DOR-2436); saved
-        // accounts follow it so they keep matching their app.
-        this._registry.syncAccountServices(provider, accounts);
         this._instanceBySpecType.set(spec.type, provider.instanceId);
         logger.info(`[Connectors] ${spec.logLabel} registered`);
+        await this._renameServices(provider, spec.logLabel);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -523,6 +521,25 @@ export class ConnectorProviderBootstrapper {
       ) {
         this._onUnregistered?.(previousInstanceId, spec.type);
       }
+    }
+  }
+
+  /**
+   * Move saved accounts to the ids a provider now lists their apps under
+   * (DOR-2436). Best effort: the provider is already registered and working,
+   * so a failure here is logged and retried at the next registration, never
+   * allowed to take the provider away.
+   */
+  private async _renameServices(provider: ConnectorProvider, logLabel: string): Promise<void> {
+    if (!reportsServiceRenames(provider)) return;
+    try {
+      this._registry.renameServices(provider, await provider.serviceRenames());
+    } catch (err) {
+      logger.error(
+        `[Connectors] ${logLabel} could not move saved accounts to their apps: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
     }
   }
 
@@ -555,4 +572,15 @@ export class ConnectorProviderBootstrapper {
       ...(error !== undefined && { error }),
     };
   }
+}
+
+/** A provider that lists some apps under a new id and says which (Nango, DOR-2436). */
+interface ServiceRenamingProvider extends ConnectorProvider {
+  /** Old service id → the id the provider now lists its accounts under. */
+  serviceRenames(): Promise<ReadonlyMap<string, string>>;
+}
+
+/** Whether a provider reports the service ids it renamed. */
+function reportsServiceRenames(provider: ConnectorProvider): provider is ServiceRenamingProvider {
+  return typeof (provider as Partial<ServiceRenamingProvider>).serviceRenames === 'function';
 }

@@ -66,6 +66,9 @@ describe('FetchNangoHttpClient — integration logos', () => {
       ['notion', undefined],
       ['hubspot', undefined],
     ]);
+    // When it was set up rides along: it keeps which setup a popular app goes to stable.
+    expect(integrations[0]?.createdAt).toBe('2023-10-16T08:45:26.241Z');
+    expect(integrations[1]).not.toHaveProperty('createdAt');
   });
 });
 

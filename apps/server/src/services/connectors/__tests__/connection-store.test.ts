@@ -323,27 +323,24 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     expect(registry.disconnectedConnectionFor(provider, 'gmail', 'personal')).toBe(personal.id);
   });
 
-  it('moves saved accounts to the service id their provider now reports, keeping chosen names', () => {
-    const account = (ref: string, label: string) => ({
-      externalAccountRef: ref as ProviderConnectedAccount['externalAccountRef'],
-      toolkit: 'google-mail',
-      label,
-      status: 'active' as const,
-      custody: 'self-host' as const,
-    });
+  it('moves every saved account off a renamed service id, disconnected ones included', () => {
+    const save = (ref: string, label: string) =>
+      registry.recordConnect(provider, {
+        externalAccountRef: ref as ProviderConnectedAccount['externalAccountRef'],
+        toolkit: 'google-mail',
+        label,
+        status: 'active',
+        custody: 'self-host',
+      });
     // Saved before the provider listed Nango's Gmail integration as Gmail.
-    const unnamed = registry.recordConnect(provider, account('nango:unnamed', 'google-mail'));
-    const named = registry.recordConnect(provider, account('nango:named', 'home'));
-    const removed = registry.recordConnect(provider, account('nango:removed', 'google-mail'));
+    const unnamed = save('nango:unnamed', 'google-mail');
+    const named = save('nango:named', 'home');
+    const disconnected = save('nango:disconnected', 'google-mail');
+    registry.recordDisconnect(disconnected.id);
+    const removed = save('nango:removed', 'google-mail');
     db.update(connections).set({ removedAt: NOW }).where(eq(connections.id, removed.id)).run();
 
-    registry.syncAccountServices(
-      provider,
-      ['nango:unnamed', 'nango:named', 'nango:removed', 'nango:never-saved'].map((ref) => ({
-        ...account(ref, 'gmail'),
-        toolkit: 'gmail',
-      }))
-    );
+    registry.renameServices(provider, new Map([['google-mail', 'gmail']]));
 
     const row = (id: string) =>
       db
@@ -353,15 +350,14 @@ describe('ConnectionStore lifecycle and cleanup', () => {
         .get();
     expect(row(unnamed.id)).toEqual({ toolkit: 'gmail', label: 'gmail' });
     expect(row(named.id)).toEqual({ toolkit: 'gmail', label: 'home' });
+    expect(row(disconnected.id)).toEqual({ toolkit: 'gmail', label: 'gmail' });
+    // A removed account stays as history, under the id it had.
     expect(row(removed.id)?.toolkit).toBe('google-mail');
-    // An account never connected here is not imported.
-    expect(
-      db
-        .select()
-        .from(connections)
-        .where(eq(connections.externalAccountRef, 'nango:never-saved'))
-        .get()
-    ).toBeUndefined();
+    // Another app's account is untouched.
+    expect(row(connection.id)?.toolkit).toBe('gmail');
+
+    // Reconnecting Gmail finds and restores the disconnected account.
+    expect(registry.disconnectedConnectionFor(provider, 'gmail')).toBe(disconnected.id);
   });
 
   it('removes all owned authority for one agent without touching another agent', () => {
