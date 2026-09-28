@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260928-130908",
+      "slug": "terminal-request-admission",
+      "title": "Terminal request admission and exclusive reset/restart ownership",
+      "created": "2026-09-28",
+      "status": "specified",
+      "project": "Maintenance",
+      "linearIssue": "DOR-2481"
+    },
+    {
       "id": "260925-100000",
       "slug": "shared-ui-consumer-adoption",
       "title": "Complete shared UI consumer adoption",
