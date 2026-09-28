@@ -159,6 +159,12 @@ export function SessionRowFull({
             */}
             <motion.div
               onClick={onClick}
+              // Load-bearing: motion's press gesture (`whileTap`) gives any
+              // non-native element WITHOUT a tabindex `tabindex="0"`, which
+              // made this box an unnamed tab stop before the row's button.
+              // -1 keeps it out of the tab order; jsdom never shows the trap,
+              // the real-browser check in sidebar-model-showcase.spec.ts does.
+              tabIndex={-1}
               whileTap={{ scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               className="relative z-10 cursor-pointer px-3 py-2"

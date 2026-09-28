@@ -477,31 +477,30 @@ describe('SessionRow variant="full"', () => {
   // The full row used to be a synthetic `role="button"` with Enter and Space
   // wired by hand, and the rename input was a DESCENDANT of it, so a space
   // typed into the name bubbled into that handler, which prevented it and
-  // "activated" the row instead. The row's primary control is now a real
-  // `<button>` and the field is not inside it, so nothing is there to eat the
-  // keystroke; this pins that it stays that way.
-  it('lets a space through to the rename field instead of activating the row', () => {
+  // "activated" the row instead. Typed for real (user-event), so a handler
+  // anywhere above the field that eats the space, takes the Enter, or lets the
+  // field's click open the session fails this.
+  it('keeps a typed space in the new name, commits it on Enter, and never opens the session', async () => {
+    vi.useRealTimers();
+    const user = userEvent.setup();
     const onClick = vi.fn();
+    const onRename = vi.fn();
     renderRow(
       <SessionRow
         variant="full"
         session={makeSession()}
         isActive={false}
         onClick={onClick}
-        onRename={vi.fn()}
+        onRename={onRename}
       />
     );
-    fireEvent.click(screen.getByLabelText('Rename session'));
-    onClick.mockClear();
-
+    await user.click(screen.getByLabelText('Rename session'));
     const input = screen.getByLabelText('Session title') as HTMLInputElement;
-    // `fireEvent` reports whether any handler called `preventDefault()`: false
-    // means the default was prevented, which for a space in a text field is
-    // exactly the bug — the character never gets typed.
-    const notPrevented = fireEvent.keyDown(input, { key: ' ', code: 'Space', bubbles: true });
+    await user.clear(input);
+    await user.type(input, 'a b{Enter}');
 
-    expect(notPrevented).toBe(true);
-    // And the row must not have taken the keystroke as an activation.
+    expect(onRename).toHaveBeenCalledTimes(1);
+    expect(onRename).toHaveBeenCalledWith('abc12345-def6-7890-abcd-ef1234567890', 'a b');
     expect(onClick).not.toHaveBeenCalled();
   });
 
