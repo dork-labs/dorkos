@@ -7,10 +7,12 @@ import { AccountUsageStore } from '../../../../core/usage/account-usage-store.js
 import { readConfigFile } from '../../../../core/usage/account-usage-reconcile.js';
 import { defaultAccountFolder } from '../../../../core/usage/runtime-accounts.js';
 import { claudeConfigDirEnv } from '../../claude-config-dir.js';
+import { confirmsReset } from '../../../../session/fleet/resume-service.js';
 import {
   AccountUsageUnavailableError,
   PROBE_FLOOR_MS,
   probeAccount,
+  probeForReset,
   resetAccountProbeState,
   UnknownAccountError,
   type AccountProbeDeps,
@@ -310,5 +312,43 @@ describe('probeAccount: throttle and single flight', () => {
     await probeAccount('work', deps(factory));
     expect((await probeAccount('work', deps(factory))).probe).toBe('throttled');
     expect(factory).toHaveBeenCalledOnce();
+  });
+});
+
+describe('probeForReset: the probe that confirms a reset', () => {
+  it('is not held to the floor by an attempt made before the wait was due', async () => {
+    const { factory } = fakeQuery(async () => usageResponse());
+    await probeAccount('work', deps(factory));
+    const lastAttempt = clock;
+    clock += 1_000;
+    // An attempt after the wait was due still counts toward the floor.
+    await probeForReset(
+      'work',
+      { resumeAt: new Date(lastAttempt - 1).toISOString() },
+      deps(factory)
+    );
+    expect(factory).toHaveBeenCalledOnce();
+    // One before it does not: that reading cannot have seen the reset.
+    await probeForReset(
+      'work',
+      { resumeAt: new Date(lastAttempt + 1).toISOString() },
+      deps(factory)
+    );
+    expect(factory).toHaveBeenCalledTimes(2);
+  });
+
+  it('records a reading that confirms the reset the session waited for', async () => {
+    // The limit the session hit: the weekly window, resetting an hour ago.
+    const episode = {
+      resetsAt: new Date(clock - 3_600_000).toISOString(),
+      since: new Date(clock - 86_400_000).toISOString(),
+    };
+    const { factory } = fakeQuery(async () => usageResponse());
+    await probeForReset('work', { resumeAt: episode.resetsAt }, deps(factory));
+    const weekly = workUsage().windows.find((window) => window.key === 'seven_day')!;
+    expect(weekly).toMatchObject({ usedPct: 17, resetsAt: SEVEN_DAY_RESETS_AT });
+    expect(confirmsReset(weekly, episode)).toBe(true);
+    // The same reading does not confirm an episode it has not moved past.
+    expect(confirmsReset(weekly, { ...episode, resetsAt: SEVEN_DAY_RESETS_AT })).toBe(false);
   });
 });

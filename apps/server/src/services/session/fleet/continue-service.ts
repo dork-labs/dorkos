@@ -447,7 +447,10 @@ export async function waitForReset(
   const asked = opts.autoResume ?? (current.mode === 'waiting' ? current.autoResume : false);
   // An unclaimed session's automatic resume is core's resume engine's to run,
   // behind its switch; a claimed one's is the advisor's.
-  const autoResume = stored.claimedBy ? asked : asked && CORE_AUTO_RESUME_AVAILABLE;
+  // Core resumes only a Claude Code limit, so no other runtime's wait promises it.
+  const autoResume = stored.claimedBy
+    ? asked
+    : asked && CORE_AUTO_RESUME_AVAILABLE && (await isClaudeCodeLimit(stored));
   const resumeAt = stored.limit.resetsAt;
   if (stored.claimedBy) {
     requireClaimOwner(stored);

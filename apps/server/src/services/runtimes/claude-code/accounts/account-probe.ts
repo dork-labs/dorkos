@@ -98,6 +98,12 @@ export interface AccountProbeDeps {
   binaryPath?: string | undefined;
   /** Whether a folder is a Claude account (default: `isClaudeAccountRoot`). */
   isAccountRoot?: (dir: string) => boolean;
+  /**
+   * A time in ms: a last attempt before it does not hold this probe to the
+   * 60 s floor. A reading taken before an account's reset cannot confirm it,
+   * so the check at the reset probes again (see {@link probeForReset}).
+   */
+  floorResetAt?: number;
 }
 
 /** The shortest gap between two probes of one account. */
@@ -169,7 +175,9 @@ export async function probeAccount(
 
   const now = deps.now ?? Date.now;
   const last = lastAttemptAt.get(key);
-  if (last !== undefined && now() - last < PROBE_FLOOR_MS) {
+  const beforeReset =
+    last !== undefined && deps.floorResetAt !== undefined && last < deps.floorResetAt;
+  if (last !== undefined && now() - last < PROBE_FLOOR_MS && !beforeReset) {
     return { account: store.usageOfAccount(account), probe: 'throttled', reason: 'too-soon' };
   }
 
@@ -266,4 +274,28 @@ function shortReason(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   const line = message.split('\n')[0]?.trim() ?? '';
   return line.length === 0 ? 'error' : line.slice(0, 160);
+}
+
+/**
+ * The probe the reset-and-resume service confirms a reset with (spec
+ * `claude-account-fleet` D9 "Wait, then resume by itself"): {@link probeAccount},
+ * except that an attempt made before the wait was due does not throttle it.
+ * The service reads the store afterwards, so the answer is not returned.
+ *
+ * @param accountId - A registry id, or `default`.
+ * @param opts.resumeAt - When the wait was due, ISO 8601.
+ * @param deps - Injectable collaborators.
+ * @throws {UnknownAccountError} When no Claude Code account has that id.
+ * @throws {AccountUsageUnavailableError} When the usage store is not running.
+ */
+export async function probeForReset(
+  accountId: string,
+  opts: { resumeAt: string },
+  deps: AccountProbeDeps = {}
+): Promise<void> {
+  const resumeAt = Date.parse(opts.resumeAt);
+  await probeAccount(accountId, {
+    ...deps,
+    ...(Number.isNaN(resumeAt) ? {} : { floorResetAt: resumeAt }),
+  });
 }

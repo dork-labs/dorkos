@@ -519,6 +519,7 @@ import { setAccountUsageStore } from './services/core/usage/current-usage-store.
 import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
 import { SessionContextStore } from './services/session/fleet/session-context-store.js';
 import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
+import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
@@ -1291,10 +1292,9 @@ async function start() {
         meshCore: app.locals.meshCore as MeshCore | undefined,
         roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
       }),
-      // CONNECT (DOR-2381, task 2.2): once `probeAccount` lands, pass
-      // `probe: (accountId, { resumeAt }) => probeAccount(accountId, ...)` here,
-      // letting a throttled probe through when its last attempt was before
-      // `resumeAt`. Until then every reset is confirmed from store readings.
+      // Task 2.2's idle probe, for an account the store cannot confirm on its
+      // own. An account it cannot probe is still confirmed from store readings.
+      probe: probeForReset,
     });
     stopSessionContinuation = () => {
       uninstallResume();

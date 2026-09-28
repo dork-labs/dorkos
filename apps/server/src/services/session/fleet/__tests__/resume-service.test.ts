@@ -50,7 +50,7 @@ import type { AccountUsageStore } from '../../../core/usage/account-usage-store.
 import type { RuntimeAccount } from '../../../core/usage/runtime-accounts.js';
 import { disposeProjector, getOrCreateProjector } from '../../session-state-projector.js';
 import { SessionLimitStore, setSessionLimitStore } from '../session-limit-store.js';
-import { planNewLimit, startLimitPlanning } from '../limit-plans.js';
+import { planNewLimit, startLimitPlanning, writePlan } from '../limit-plans.js';
 import { continueSession, installContinueService, waitForReset } from '../continue-service.js';
 import {
   ACCOUNT_RESUME_PROMPT,
@@ -137,6 +137,7 @@ function runtimeAccount(id: string): RuntimeAccount {
     canonicalPath: `/accounts/${id}`,
     label: id.toUpperCase(),
     color: '#123456',
+    storedColor: null,
     routable: true,
     implicit: false,
     isDefault: false,
@@ -171,9 +172,14 @@ function recordReading(key: string, window: Window): void {
 /** A session bound under `origin`, holding a planned limit. */
 async function limitedSession(
   id: string,
-  opts: { origin?: string; accountId?: string | null; resetsAt?: string | null } = {}
+  opts: {
+    origin?: string;
+    accountId?: string | null;
+    resetsAt?: string | null;
+    runtime?: string;
+  } = {}
 ): Promise<void> {
-  await runtimeRegistry.persistSessionRuntime(id, 'claude-code', {
+  await runtimeRegistry.persistSessionRuntime(id, opts.runtime ?? 'claude-code', {
     kind: opts.origin ?? 'interactive',
   } as never);
   const accountId = opts.accountId === undefined ? 'main' : opts.accountId;
@@ -249,6 +255,7 @@ beforeEach(() => {
   setAgentPathLookup({ getByPath: () => undefined });
   runtimeRegistry.setDb(db);
   runtimeRegistry.register(new FakeAgentRuntime('claude-code') as never);
+  runtimeRegistry.register(new FakeAgentRuntime('codex') as never);
   __resetAccountAdvisorForTests();
   readings.clear();
   readings.set('main', reading());
@@ -502,6 +509,29 @@ describe('resuming', () => {
     readings.set('main', MOVED_ON);
     await vi.advanceTimersByTimeAsync(TO_RESET);
     expect(store.get('s-1')?.limit.state).toBe('reset-ready');
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('never arms or resumes a limit that is not Claude Code’s', async () => {
+    await limitedSession('s-codex', { runtime: 'codex' });
+    // A person's wait promises no resume core would not run.
+    expect(await waitForReset('s-codex', { autoResume: true })).toMatchObject({
+      autoResume: false,
+    });
+    // Even a plan that asks for one arms nothing.
+    await writePlan(store.get('s-codex')!, {
+      mode: 'waiting',
+      resumeAt: RESETS,
+      autoResume: true,
+    });
+    readings.set('main', MOVED_ON);
+    await vi.advanceTimersByTimeAsync(TO_RESET + UNPROBED_RESET_GRACE_MS);
+    expect(probe).not.toHaveBeenCalled();
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(store.get('s-codex')?.limit.state).toBe('waiting-reset');
+    // Nor after a restart.
+    restart();
+    await vi.advanceTimersByTimeAsync(RESET_RECHECK_MS);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
   });
 

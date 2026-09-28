@@ -30,7 +30,9 @@
  *   past is checked at once.
  *
  * A CLAIMED session (a flow run) gets no timer and no resume here, whether or
- * not its advisor is registered: flow resumes it (spec §X "One writer").
+ * not its advisor is registered: flow resumes it (spec §X "One writer"). Nor
+ * does a session bound to another runtime than Claude Code: core confirms and
+ * resumes only Claude Code limits today.
  *
  * @module services/session/fleet/resume-service
  */
@@ -50,6 +52,7 @@ import type { CarryOverLaunchDeps } from './continue-service.js';
 import {
   PlanChangedError,
   cwdOf,
+  isClaudeCodeLimitNow,
   isRegisteredAccount,
   limitClock,
   limitedAccountUsage,
@@ -233,7 +236,14 @@ function logCheckFailure(sessionId: string, err: unknown): void {
 function syncWatch(stored: StoredSessionLimit): void {
   const plan = stored.limit.plan;
   // `claimedBy` here is a backup: the fire-time recheck (`currentWait`) also refuses a claimed row.
-  if (plan.mode !== 'waiting' || stored.claimedBy || plan.resumeAt === null) {
+  // Only a Claude Code limit is core's to confirm and resume: its readings are
+  // the ones the usage store keys by this account id.
+  if (
+    plan.mode !== 'waiting' ||
+    stored.claimedBy ||
+    plan.resumeAt === null ||
+    !isClaudeCodeLimitNow(stored)
+  ) {
     clearWatch(stored.sessionId);
     return;
   }
@@ -403,7 +413,13 @@ function lastAutoResumeFor(sessionId: string): string | null | undefined {
 async function resume(stored: StoredSessionLimit, watch: Watch): Promise<void> {
   const plan = stored.limit.plan;
   const sessionId = stored.sessionId;
-  if (plan.mode !== 'waiting' || !plan.autoResume || stored.claimedBy || !mayCarryOver(stored)) {
+  if (
+    plan.mode !== 'waiting' ||
+    !plan.autoResume ||
+    stored.claimedBy ||
+    !mayCarryOver(stored) ||
+    !isClaudeCodeLimitNow(stored)
+  ) {
     clearWatch(sessionId);
     return;
   }
@@ -498,7 +514,7 @@ function rearmAtBoot(): void {
   for (const stored of store.listWaiting()) {
     const plan = stored.limit.plan;
     if (plan.mode !== 'waiting' || stored.claimedBy || plan.resumeAt === null) continue;
-    if (plan.unconfirmed) continue;
+    if (plan.unconfirmed || !isClaudeCodeLimitNow(stored)) continue;
     if (plan.resetConfirmedAt === undefined) {
       arm(stored, plan.resumeAt, now);
       continue;

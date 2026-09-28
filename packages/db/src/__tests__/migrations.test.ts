@@ -358,6 +358,17 @@ describe('Database Migrations', () => {
     expect(insert.run('b').changes).toBe(0);
   });
 
+  it('adds the automatic-resume record (spec claude-account-fleet D9, migration 0121)', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const columns = (
+      db.$client.pragma('table_info(session_metadata)') as Array<{ name: string }>
+    ).map((c) => c.name);
+
+    // One automatic resume per window reset; outlives the session_limits row.
+    expect(columns).toContain('last_auto_resume_for');
+  });
+
   it('foreign key constraint is enforced on pulse_runs.schedule_id', () => {
     const db = createDb(':memory:');
     runMigrations(db);
