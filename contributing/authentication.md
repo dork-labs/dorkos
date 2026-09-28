@@ -172,6 +172,7 @@ The client auth slice (`features/auth`) exposes Better Auth only through hooks (
 | `cloud.instanceToken`      | string \| null | `null`  | Scoped instance API key from the cloud (**sensitive**), P2    |
 | `cloud.instanceName`       | string \| null | `null`  | This instance's name registered with the cloud, P2            |
 | `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable linked-account label, P2                       |
+| `cloud.previousLinkProof`  | string \| null | `null`  | Relink proof of the last dropped key (**sensitive**)          |
 
 Three idempotent migrations, all composed into the `'0.45.0'` key in `config-manager.ts` (append-only; see `contributing/configuration.md` → Schema Migrations):
 
@@ -316,7 +317,7 @@ rows, while the hosted database does.
 
 A local instance links via `cloud-link.ts` + `CloudLinkManager` (or `dorkos cloud login` / the Settings panel). The cloud base URL is `resolveCloudBaseUrl()` (`env.DORKOS_CLOUD_URL`, default `https://dorkos.ai`; override for local dev against the site):
 
-1. **Request a code** — the instance calls `POST /api/auth/device/code`; the cloud returns `{ device_code, user_code, verification_uri, interval, expires_in }`. The instance shows the 8-character `user_code` and opens `verification_uri` (`dorkos.ai/activate`).
+1. **Request a code** — the instance calls `POST /api/auth/device/code` with its descriptor JSON in `scope` (plus `previousLinkProof` when it held a key before: `base64url_nopad(HMAC-SHA256(key = that key, message = "dorkos-relink-v1"))`, so the cloud can continue that link when the same DorkOS account approves and the earlier link is still live; the cloud keeps only a one-way hash of the proof and retires the old key at the token exchange); the cloud returns `{ device_code, user_code, verification_uri, interval, expires_in }`. The instance shows the 8-character `user_code` and opens `verification_uri` (`dorkos.ai/activate`).
 2. **Approve** — the user signs in (or up) at `/activate` and approves. `/activate` requires a session (redirects to `/signin?returnTo=…`) and shows the requesting instance before Approve/Deny.
 3. **Poll → key swap** — the instance polls `POST /api/auth/device/token`, honoring `interval` / `slow_down` (RFC 8628). By default that route mints a **browser session** on approval; an instance must instead hold a revocable, account-scoped API key. The `after` hook on `/device/token` (`apps/site/src/lib/auth.ts`) does the swap: it mints an instance API key (`createInstanceApiKey`, metadata = the instance descriptor), **deletes the just-created session**, strips `set-cookie`, and rewrites the body to `{ access_token: <key>, token_type: 'Bearer', scope: 'instance' }`. Denial → `access_denied`; expiry → `expired_token`.
 4. **Store + heartbeat** — the instance stores the key at `config.cloud.instanceToken` (sensitive-field pattern, same handling as `tunnel.authtoken`) and calls `POST /api/instances/heartbeat` on startup and every 15 minutes with `{ name, platform, dorkosVersion }`. The heartbeat creates/refreshes the instance's `instance` row (`lastSeenAt`) and returns the owning account label, persisted to `config.cloud.linkedAccountLabel`.

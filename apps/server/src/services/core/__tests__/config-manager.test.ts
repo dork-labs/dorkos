@@ -512,6 +512,7 @@ describe('ConfigManager', () => {
       instanceToken: null,
       instanceName: null,
       linkedAccountLabel: null,
+      previousLinkProof: null,
     });
   });
 

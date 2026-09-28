@@ -59,6 +59,7 @@ function fakeClient(
   return {
     resolveCloudBaseUrl: () => 'https://dorkos.ai',
     buildInstanceDescriptor: () => DESCRIPTOR,
+    linkProofForKey: (instanceKey) => `proof-of-${instanceKey}`,
     // Each mock is typed with the interface member it stands in for. Left to
     // inference, a zero-argument stub declares a zero-argument signature — still
     // assignable to the real one, so nothing complains, but `mock.calls` then
@@ -151,6 +152,45 @@ describe('runCloudLogin', () => {
     expect(openUrl).toHaveBeenCalledWith(CODES.verification_uri_complete);
   });
 
+  describe('asking the cloud to continue the previous link (DOR-2521)', () => {
+    /** Run a login and return the parsed descriptor the device-code request carried. */
+    async function loginDescriptor(configStore: ConfigStore, poll?: PollResult) {
+      const requestDeviceCode = vi.fn<CloudFlowClient['requestDeviceCode']>(async () => CODES);
+      const client = fakeClient({ requestDeviceCode, ...(poll ? { poll } : {}) });
+      await runCloudLogin({ client, configStore, io: captureIo(), isTty: false });
+      return requestDeviceCode.mock.calls[0][0].descriptor;
+    }
+
+    it('sends no proof on a first link', async () => {
+      const descriptor = await loginDescriptor(memoryConfigStore());
+      expect('previousLinkProof' in descriptor).toBe(false);
+      expect(descriptor).toEqual(DESCRIPTOR);
+    });
+
+    it('sends the proof kept from the last logout, then drops it once linked', async () => {
+      const configStore = memoryConfigStore({ 'cloud.previousLinkProof': 'kept-proof' });
+      const descriptor = await loginDescriptor(configStore);
+      expect(descriptor.previousLinkProof).toBe('kept-proof');
+      expect(configStore.getDot('cloud.instanceToken')).toBe('dork_inst_live');
+      expect(configStore.getDot('cloud.previousLinkProof')).toBeNull();
+    });
+
+    it('sends the proof of the key held right now when re-linking while linked', async () => {
+      const configStore = memoryConfigStore({
+        'cloud.instanceToken': 'dork_inst_old',
+        'cloud.previousLinkProof': 'stale-proof',
+      });
+      const descriptor = await loginDescriptor(configStore);
+      expect(descriptor.previousLinkProof).toBe('proof-of-dork_inst_old');
+    });
+
+    it('keeps the proof when the link is denied, so a later try can still send it', async () => {
+      const configStore = memoryConfigStore({ 'cloud.previousLinkProof': 'kept-proof' });
+      await loginDescriptor(configStore, { status: 'denied' });
+      expect(configStore.getDot('cloud.previousLinkProof')).toBe('kept-proof');
+    });
+  });
+
   it('returns 1 and stores no token on denial', async () => {
     const client = fakeClient({ poll: { status: 'denied' } });
     const configStore = memoryConfigStore();
@@ -192,6 +232,19 @@ describe('runCloudLogout', () => {
     });
     expect(configStore.getDot('cloud.instanceToken')).toBeNull();
     expect(configStore.getDot('cloud.instanceName')).toBeNull();
+  });
+
+  it('keeps a proof of the dropped key, never the key itself (DOR-2521)', async () => {
+    const configStore = memoryConfigStore({ 'cloud.instanceToken': 'dork_inst_live' });
+    await runCloudLogout({ client: fakeClient(), configStore, io: captureIo() });
+    expect(configStore.getDot('cloud.previousLinkProof')).toBe('proof-of-dork_inst_live');
+    expect(configStore.getDot('cloud.instanceToken')).toBeNull();
+  });
+
+  it('leaves a kept proof alone when there is no key to drop', async () => {
+    const configStore = memoryConfigStore({ 'cloud.previousLinkProof': 'kept-proof' });
+    await runCloudLogout({ client: fakeClient(), configStore, io: captureIo() });
+    expect(configStore.getDot('cloud.previousLinkProof')).toBe('kept-proof');
   });
 
   it('is a no-op when not linked', async () => {

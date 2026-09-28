@@ -162,8 +162,9 @@ export function agentAppSetupNote(problem: AppReachProblem, app: string): string
  * way it was connected through is not working.
  *
  * - `dorkos_account_unlinked` — a DorkOS account that isn't linked anymore.
- *   Linking again does not currently restore connections made through the old
- *   link, so the person connects the app again.
+ *   Linking the same computer again with the same DorkOS account can restore
+ *   connections made through its earlier link, unless that link was removed
+ *   from the account; otherwise the person connects the app again.
  * - `dorkos_account_unavailable` — a DorkOS account that can't reach apps now.
  * - `own_key_unavailable` — the person's own key, not answering or removed.
  */

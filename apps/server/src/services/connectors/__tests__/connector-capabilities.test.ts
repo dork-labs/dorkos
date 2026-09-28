@@ -204,7 +204,8 @@ describe('connector discovery capabilities', () => {
     const note = result.services.find((service) => service.serviceSlug === 'notion')?.setupNote;
     expect(note).toContain(sentence);
     expect(note).toContain('still request');
-    // Never a promise that linking again restores anything.
+    // A popular app no way reaches has no account yet, so there is nothing for
+    // linking again to restore: the note never promises that it comes back.
     expect(note).not.toMatch(/come back|work again|brings? (it|them) back/);
   });
 

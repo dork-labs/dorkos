@@ -15,7 +15,7 @@ export {
 // too (spec `canvas-agent-seat`).
 export { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
 export { resolveApiBaseUrl } from './api-base-url';
-export { getDesktopAdmin, unwrapDesktopAdminResult } from './desktop-admin';
+export { getDesktopAdmin, restartDorkOS, unwrapDesktopAdminResult } from './desktop-admin';
 export { getDesktopShellLogExcerpt } from './desktop-shell-log';
 export {
   captureAppShot,

@@ -254,9 +254,9 @@ export function DataDisplayShowcases() {
         <ShowcaseDemo>
           <FeatureDisabledState
             icon={Radio}
-            name="Messaging"
-            description="Turn on Messaging so people can reach your agents from Telegram, Slack and elsewhere."
-            command="DORKOS_RELAY_ENABLED=true dorkos"
+            name="Scheduling"
+            description="Scheduled tasks let your agents work on a timer, even when you’re not here."
+            command="DORKOS_TASKS_ENABLED=true dorkos"
           />
         </ShowcaseDemo>
 

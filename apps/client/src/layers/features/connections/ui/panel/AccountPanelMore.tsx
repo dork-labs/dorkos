@@ -7,6 +7,7 @@ import {
   usePauseConnectorConnection,
   useRenameConnectorConnection,
   useResumeConnectorConnection,
+  useConnectionEventSubscriptions,
   useStopSharingWithEveryAgent,
 } from '@/layers/entities/connectors';
 import {
@@ -26,6 +27,7 @@ import {
   Label,
 } from '@/layers/shared/ui';
 import { eventNoticeLabel } from '../../lib/app-panel-copy';
+import { notificationProblemHint } from '../../lib/notification-copy';
 import { joinNames } from '../access/access-labels';
 import { ConnectionNotifications } from '../ConnectionNotifications';
 import { PanelMoreRow } from './panel-parts';
@@ -59,6 +61,12 @@ export function AccountPanelMore({
   const pause = usePauseConnectorConnection();
   const resume = useResumeConnectorConnection();
   const stopSharing = useStopSharingWithEveryAgent();
+  // Read here too (the section below shares the cache) so a notification with
+  // a problem shows on the row before anyone opens it.
+  const notifications = useConnectionEventSubscriptions(
+    connectionId,
+    connection.lifecycle !== 'disconnected'
+  );
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const disconnected = connection.lifecycle === 'disconnected';
 
@@ -77,7 +85,12 @@ export function AccountPanelMore({
         {!disconnected && (
           <Collapsible>
             <CollapsibleTrigger asChild>
-              <PanelMoreRow label={eventNoticeLabel(connection.toolkit, appName)} />
+              <PanelMoreRow
+                label={eventNoticeLabel(connection.toolkit, appName)}
+                hint={notificationProblemHint(
+                  notifications.data?.pages.flatMap((page) => page.subscriptions) ?? []
+                )}
+              />
             </CollapsibleTrigger>
             <CollapsibleContent className="px-2 pt-2 pb-3">
               <ConnectionNotifications connectionId={connectionId} />

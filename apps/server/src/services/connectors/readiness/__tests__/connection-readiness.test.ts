@@ -411,6 +411,21 @@ describe('deriveConnectionReadiness truth table', () => {
     expect(stuck.fix).toBeUndefined();
   });
 
+  it('says linking again with the same account can bring an unlinked account back, never that it will (DOR-2521)', () => {
+    const { copy } = deriveConnectionReadiness(facts({ way: down('dorkos_account_unlinked') }));
+    for (const line of [copy.owner, copy.agent]) {
+      expect(line).toContain('isn’t linked anymore');
+      expect(line).toContain('Linking this computer again with the same');
+      expect(line).toContain('can bring it back');
+      expect(line).not.toMatch(/(?<!can |not )brings? it back/);
+      expect(line).toContain('unless its earlier link was removed from that account');
+    }
+    expect(copy.owner).toContain('Otherwise, connect it again.');
+    // The agent is told every case where it cannot, and what the person does then.
+    expect(copy.agent).toContain('A different account, or a link made on another computer');
+    expect(copy.agent).toContain('connect this app again');
+  });
+
   it('never promises an automatic re-check it doesn’t make', () => {
     const unavailable = deriveConnectionReadiness(
       facts({ way: down('dorkos_account_unavailable') })

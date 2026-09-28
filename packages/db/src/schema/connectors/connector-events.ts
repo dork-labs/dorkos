@@ -110,6 +110,16 @@ export const connectorEventSubscriptions = sqliteTable(
     filterHash: text('filter_hash').notNull(),
     deliveryMode: text('delivery_mode').notNull(),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    // The one chat an agent-bound notification posts into, so every event lands
+    // in the same conversation instead of opening a new one each time. NULL until
+    // the first delivery; replaced only when the agent's runtime or folder moves
+    // and the old chat can no longer carry it.
+    sessionId: text('session_id'),
+    // Set when the owner removes the notification. Revoking closes authority;
+    // this only takes the row off the owner's list, while any cleanup still owed
+    // at the service keeps reading the revoked row. Cleared by a fresh setup of
+    // the same scope.
+    removedAt: text('removed_at'),
     createdBy: text('created_by').notNull(),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
@@ -162,6 +172,11 @@ export const connectorEventInbox = sqliteTable(
       table.providerInstanceId,
       table.subscriptionId,
       table.providerEventId
+    ),
+    // The owner's list reads each notification's newest event by this pair.
+    index('connector_event_inbox_subscription_received_idx').on(
+      table.subscriptionId,
+      table.receivedAt
     ),
     index('connector_event_inbox_claim_idx').on(
       table.providerInstanceId,

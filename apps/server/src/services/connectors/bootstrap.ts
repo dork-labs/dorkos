@@ -686,7 +686,8 @@ export class ConnectorProviderBootstrapper {
     } else if (managed && this._registry.hasLiveConnections(managed.instanceId)) {
       // No longer linked (by the person, or ended from the account's side)
       // while apps connected through it are still kept: say that, rather than
-      // "nothing set up". Linking again does not bring those apps back.
+      // "nothing set up". Linking this computer again with the same account can
+      // bring them back: a continued link lists them again (DOR-2521).
       ways.push({
         ...this._way('dorkos_account', MANAGED_CLOUD_PROVIDER_TYPE, undefined),
         status: 'unlinked',
@@ -804,8 +805,9 @@ export class ConnectorProviderBootstrapper {
     const previousDigest = this._registry.storedExecutionConfigDigest(provider.instanceId);
     this._registry.register(provider, digest, 'managed');
     this._clearRecheck(MANAGED_CLOUD_PROVIDER_TYPE);
-    // Assumes a changed key fingerprint means a new link, not the same link
-    // with a replaced key.
+    // A changed key fingerprint may be a new link or a continued one (the same
+    // link with a replaced key, DOR-2521). Either way only the accounts this
+    // full listing lacks are closed, so a continued link keeps its accounts.
     if (previousDigest !== undefined && digest !== undefined && previousDigest !== digest) {
       this._closeUnlistedManagedConnections(provider, accounts);
     }
@@ -815,14 +817,16 @@ export class ConnectorProviderBootstrapper {
   }
 
   /**
-   * After the DorkOS account was linked again with a different link, and its
-   * route answered with its whole account list, close the kept accounts that
-   * list does not have. Linking again does not currently restore connections
-   * made through the earlier link, so such an account would otherwise look
-   * healthy while nothing could use it; closed, it reads as disconnected and
-   * the owner is offered to connect the app again. Only a listing that
-   * succeeded in full reaches here: a failed read throws before it, and a
-   * partial one throws inside the route's own `listAccounts`.
+   * After the DorkOS account was linked again with a different key, and its
+   * route answered with its whole account list, close only the kept accounts
+   * that list does not have. A continued link (DOR-2521) is the same link with
+   * a replaced key, so it lists the accounts made through it and they stay. A
+   * genuinely new link (a different account, or the earlier link was removed
+   * from it) does not list them, so they would otherwise look healthy while
+   * nothing could use them; closed, each reads as disconnected and the owner
+   * is offered to connect the app again. Only a listing that succeeded in
+   * full reaches here: a failed read throws before it, and a partial one
+   * throws inside the route's own `listAccounts`.
    */
   private _closeUnlistedManagedConnections(
     provider: ConnectorProvider,

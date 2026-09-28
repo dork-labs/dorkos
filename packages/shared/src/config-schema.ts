@@ -285,6 +285,7 @@ export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.auth',
   'mcp.apiKey',
   'cloud.instanceToken',
+  'cloud.previousLinkProof',
 ] as const;
 
 /**
@@ -3168,8 +3169,27 @@ export const UserConfigSchema = z.object({
       instanceName: z.string().nullable().default(null),
       /** Human-readable label of the linked DorkOS account, when the cloud reports one. */
       linkedAccountLabel: z.string().nullable().default(null),
+      /**
+       * Relink proof of the last instance key this install dropped (user
+       * unlink, a `401` from the cloud, or `dorkos cloud logout`):
+       * base64url-unpadded HMAC-SHA256 keyed by that key over
+       * `dorkos-relink-v1`. Sent once with the next device-link request so the
+       * cloud can continue the same link, and the apps connected through it,
+       * for the same DorkOS account. Cleared after the next successful link.
+       * Never the raw key, but it IS the credential that continues a link (with
+       * the same account's approval), so it is in {@link SENSITIVE_CONFIG_KEYS},
+       * withheld from agents, and only a person may write it. `null` when no
+       * key has been dropped since the last link. Absent from configs written
+       * before it existed; every reader treats absence as `null`.
+       */
+      previousLinkProof: z.string().nullable().default(null),
     })
-    .default(() => ({ instanceToken: null, instanceName: null, linkedAccountLabel: null })),
+    .default(() => ({
+      instanceToken: null,
+      instanceName: null,
+      linkedAccountLabel: null,
+      previousLinkProof: null,
+    })),
   /**
    * Connector gateway settings (connector-completion spec). `rawMcpServers`
    * lists the remote MCP servers the raw-MCP connector offers as connectable

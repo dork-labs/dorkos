@@ -244,7 +244,8 @@ export function AgentRequestCardShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Connected through a DorkOS account that isn’t linked anymore: connect it again
+        Connected through a DorkOS account that isn’t linked anymore: linking again with the same
+        account can bring it back, or connect it again
       </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <CardDemo

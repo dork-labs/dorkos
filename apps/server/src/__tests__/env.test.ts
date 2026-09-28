@@ -29,6 +29,13 @@ describe('serverEnv', () => {
     vi.stubEnv('DORKOS_RELAY_ENABLED', undefined as unknown as string);
     const { env } = await import('../env.js');
     expect(env.DORKOS_TASKS_ENABLED).toBe(false);
+    // An override, not a switch: unset has to let the saved setting decide.
+    expect(env.DORKOS_RELAY_ENABLED).toBeUndefined();
+  });
+
+  it('keeps an explicit DORKOS_RELAY_ENABLED=false as an override', async () => {
+    vi.stubEnv('DORKOS_RELAY_ENABLED', 'false');
+    const { env } = await import('../env.js');
     expect(env.DORKOS_RELAY_ENABLED).toBe(false);
   });
 

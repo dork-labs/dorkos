@@ -470,6 +470,29 @@ describe('ConnectionWays', () => {
     expect(within(row).getByRole('button', { name: 'Add key again' })).toBeInTheDocument();
   });
 
+  it('says linking again with the same account can bring back apps an unlinked account kept (DOR-2521)', async () => {
+    renderWays(
+      createMockTransport({
+        getCloudStatus: vi
+          .fn()
+          .mockResolvedValue({ linked: false, accountLabel: null, lastHeartbeatAt: null }),
+        getConnectorProviders: providersFrom([provider(), nango]),
+        getConnectorConnections: vi.fn().mockResolvedValue({
+          connections: [
+            connection({ connectionId: 'm1' as never, mode: 'managed', payer: 'dorkos_managed' }),
+          ],
+        }),
+      })
+    );
+    const account = await screen.findByTestId('connection-way-dorkos-account');
+    expect(account).toHaveTextContent('Not linked');
+    // Conditional, never a promise: a different account, or an earlier link
+    // removed from the account, brings nothing back.
+    expect(account).toHaveTextContent(
+      'Linking this computer again with the same DorkOS account can bring them back, unless its earlier link was removed from that account. Otherwise, connect them again through a way that works.'
+    );
+  });
+
   it('sends an unlinked account to Access from the add list', async () => {
     const user = userEvent.setup();
     const handlers = renderWays(

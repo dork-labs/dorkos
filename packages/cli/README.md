@@ -246,20 +246,20 @@ None are required if you already have the [Claude Code CLI](https://docs.anthrop
 
 `DORKOS_BOUNDARY` limits which folders DorkOS may touch. `DORKOS_CORS_ORIGIN` adds websites that are allowed to call your server, on top of the ones DorkOS already trusts (an advanced setting; the default is safe for local use).
 
-| Variable               | Default           | What it does                                   |
-| ---------------------- | ----------------- | ---------------------------------------------- |
-| `DORKOS_PORT`          | `4242`            | Server port                                    |
-| `DORKOS_HOST`          | `localhost`       | Server host (use `0.0.0.0` for Docker)         |
-| `DORKOS_DEFAULT_CWD`   | Current directory | Default folder for new sessions                |
-| `DORKOS_BOUNDARY`      | Home directory    | Folders DorkOS may touch                       |
-| `DORK_HOME`            | `~/.dork`         | Where DorkOS keeps its data                    |
-| `LOG_LEVEL`            | `info`            | How much to log                                |
-| `DORKOS_TASKS_ENABLED` | `true`            | Turn the Tasks scheduler on or off             |
-| `DORKOS_OPEN`          | `true`            | Open the browser on startup                    |
-| `DORKOS_RELAY_ENABLED` | `true`            | Turn agent messaging (Relay) on or off         |
-| `DORKOS_CORS_ORIGIN`   | (none)            | Extra websites allowed to call your server     |
-| `DORKOS_TRUST_PROXY`   | `false`           | Count rate limits per client behind your proxy |
-| `MCP_API_KEY`          | (none)            | A fixed MCP key for servers nobody signs into  |
+| Variable               | Default           | What it does                                                                    |
+| ---------------------- | ----------------- | ------------------------------------------------------------------------------- |
+| `DORKOS_PORT`          | `4242`            | Server port                                                                     |
+| `DORKOS_HOST`          | `localhost`       | Server host (use `0.0.0.0` for Docker)                                          |
+| `DORKOS_DEFAULT_CWD`   | Current directory | Default folder for new sessions                                                 |
+| `DORKOS_BOUNDARY`      | Home directory    | Folders DorkOS may touch                                                        |
+| `DORK_HOME`            | `~/.dork`         | Where DorkOS keeps its data                                                     |
+| `LOG_LEVEL`            | `info`            | How much to log                                                                 |
+| `DORKOS_TASKS_ENABLED` | `true`            | Turn the Tasks scheduler on or off                                              |
+| `DORKOS_OPEN`          | `true`            | Open the browser on startup                                                     |
+| `DORKOS_RELAY_ENABLED` | `true`            | Turn agent messaging (Relay) on or off. Overrules the Settings switch while set |
+| `DORKOS_CORS_ORIGIN`   | (none)            | Extra websites allowed to call your server                                      |
+| `DORKOS_TRUST_PROXY`   | `false`           | Count rate limits per client behind your proxy                                  |
+| `MCP_API_KEY`          | (none)            | A fixed MCP key for servers nobody signs into                                   |
 
 **Remote access**
 

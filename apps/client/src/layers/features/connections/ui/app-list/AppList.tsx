@@ -6,7 +6,7 @@ import type {
 } from '@dorkos/shared/connector-resource-schemas';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { cn } from '@/layers/shared/lib';
-import { Button, InlineCode, Input, QueryErrorState, Skeleton } from '@/layers/shared/ui';
+import { Button, Input, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import {
   appsOnShelf,
   appUses,
@@ -16,6 +16,7 @@ import {
   type YourAppRow,
 } from '../../lib/app-list';
 import type { AppListData } from '../../model/use-app-list';
+import { ChatAppsOff } from '../ChatAppsOff';
 import { CatalogAppRowView, YourAppRowView } from './AppRow';
 
 /** Props for {@link AppList}. */
@@ -229,7 +230,8 @@ export function AppList({
 
 /**
  * One quiet line when chat apps can't be used here, instead of a wall: they
- * are turned off on this computer, failed to start, or couldn't be checked.
+ * couldn't be checked, or they aren't running — and then the line carries the
+ * one step that turns them on ({@link ChatAppsOff}).
  */
 function ChatAppsLine({ data }: { data: AppListData }) {
   const { relay } = data;
@@ -243,13 +245,10 @@ function ChatAppsLine({ data }: { data: AppListData }) {
       </p>
     );
   }
-  if (relay.isLoading || relay.enabled) return null;
-  if (relay.isError || relay.initError) {
+  if (relay.isError) {
     return (
       <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-xs">
-        {relay.isError
-          ? 'Couldn’t check chat apps.'
-          : 'Chat apps didn’t start. Restart DorkOS to try again.'}
+        Couldn’t check chat apps.
         <Button
           variant="link"
           size="xs"
@@ -262,12 +261,7 @@ function ChatAppsLine({ data }: { data: AppListData }) {
       </p>
     );
   }
-  return (
-    <p className="text-muted-foreground text-xs" data-testid="chat-apps-off">
-      Chat apps are turned off on this computer. To use Telegram, Slack bots or webhooks, start
-      DorkOS with <InlineCode>DORKOS_RELAY_ENABLED=true</InlineCode>.
-    </p>
-  );
+  return <ChatAppsOff relay={relay} variant="line" />;
 }
 
 /**

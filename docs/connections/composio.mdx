@@ -94,7 +94,7 @@ Accounts are enabled after the real-account check passed. Managed notifications 
 
 ### If your DorkOS account link ends
 
-Managed access runs through your linked DorkOS account. If that link ends — you unlink it, or DorkOS can no longer confirm it — the accounts you reached that way stop working locally, even though the sign-in at the service (Gmail's own consent, for example) is untouched and still live there. Linking again today does not automatically bring those accounts back; reconnect them from **Connections** once you've relinked. To end the sign-in at the service itself while the link is down, remove the access directly in that service's own account settings — look for an entry named **Composio**, not DorkOS, since Composio is who actually holds the connection.
+Managed access runs through your linked DorkOS account. If that link ends — you unlink it, or DorkOS can no longer confirm it — the accounts you reached that way stop working locally, even though the sign-in at the service (Gmail's own consent, for example) is untouched and still live there. Linking this computer again with the same DorkOS account can bring those accounts back, unless its earlier link was removed from that account. If it was, or you link a different account or a different computer, reconnect them from **Connections** once you've linked. To end the sign-in at the service itself while the link is down, remove the access directly in that service's own account settings — look for an entry named **Composio**, not DorkOS, since Composio is who actually holds the connection.
 
 ## Add notifications
 
@@ -105,9 +105,11 @@ Managed access runs through your linked DorkOS account. If that link ends — yo
 
 Open a connected account's side panel, then **More** and choose the activity — Gmail names it "When a new email arrives…"; another app names its own. Select any supported filter, the receiving agent, and the destination. Action access does not grant notification access.
 
+Every notification sent to an agent lands in one chat with that agent, so a busy inbox stays one conversation. Each row says how its newest event went: delivered, on its way, being tried again, or what stopped it. **Open chat** takes you to that chat. A notification that can no longer work, because the app changed that kind of activity or you changed the key, says it stopped for good.
+
 For a managed notification, DorkOS hosting keeps an encrypted delivery copy until your linked installation stores it or the original seven-day window ends. Your installation then keeps its protected copy until the destination outcome is known or that same deadline ends. Cleanup runs in bounded sweeps, so physical deletion can happen after the logical deadline.
 
-Removing a notification closes its local permission immediately. DorkOS then removes the upstream subscription when it still owns that subscription and the service is available. To change a filter, agent, or destination, remove the notification and create a reviewed replacement.
+Removing a notification takes it off the list and closes its local permission immediately, whatever state it is in. DorkOS then removes the upstream subscription when it still owns that subscription, and keeps trying in the background if the service doesn't answer. To change a filter, agent, or destination, remove the notification and create a reviewed replacement.
 
 ## Inspect approved access from the CLI
 
