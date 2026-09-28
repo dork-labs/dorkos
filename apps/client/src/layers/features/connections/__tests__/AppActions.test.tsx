@@ -33,7 +33,11 @@ const LISTED: ConnectorAppActions = {
     },
     { operationSlug: 'GMAIL_LIST_LABELS', capabilityClassification: 'read', important: false },
     { operationSlug: 'GMAIL_ADD_LABEL', capabilityClassification: 'write', important: false },
-    { operationSlug: 'GMAIL_SEND_EMAIL', capabilityClassification: 'destructive', important: true },
+    {
+      operationSlug: 'GMAIL_DELETE_MESSAGE',
+      capabilityClassification: 'destructive',
+      important: true,
+    },
   ],
 };
 
@@ -60,7 +64,7 @@ const CANDIDATES = [
   candidate('GMAIL_FETCH_EMAILS', 'read'),
   candidate('GMAIL_LIST_LABELS', 'read'),
   candidate('GMAIL_ADD_LABEL', 'write'),
-  candidate('GMAIL_SEND_EMAIL', 'destructive'),
+  candidate('GMAIL_DELETE_MESSAGE', 'destructive'),
 ];
 
 function wrap(transport: Transport, children: React.ReactNode) {
@@ -102,10 +106,10 @@ describe('AppActions on a connected account', () => {
     expect(within(screen.getByTestId('app-actions-look')).getAllByRole('listitem')).toHaveLength(2);
     expect(screen.getByTestId('app-actions-change')).toHaveTextContent('Add label');
     // A delete-class action is in neither level, so it is not promised here…
-    expect(screen.getByTestId('app-actions-change')).not.toHaveTextContent('Send email');
+    expect(screen.getByTestId('app-actions-change')).not.toHaveTextContent('Delete message');
     // …and the panel says how to allow it instead.
     expect(section).toHaveTextContent(
-      'Send email isn’t part of either level. To allow it, choose exact actions.'
+      'Delete message isn’t part of either level. To allow it, choose exact actions.'
     );
     expect(section).toHaveTextContent('Pick “Read” and only Look stays.');
     expect(transport.getConnectorAppActions).toHaveBeenCalledWith('gmail', 'composio:1');
@@ -174,13 +178,13 @@ describe('AppActions before an app is connected', () => {
 
     await user.click(await screen.findByRole('button', { name: /See all 4 actions/ }));
     expect(screen.getByTestId('app-actions')).toHaveTextContent('What Gmail offers agents');
-    expect(screen.getByTestId('app-actions-change')).toHaveTextContent('Send email');
+    expect(screen.getByTestId('app-actions-change')).toHaveTextContent('Delete message');
     const rows = within(screen.getByTestId('app-actions-all')).getAllByRole('listitem');
     expect(rows.map((row) => row.textContent)).toEqual([
       'Fetch emailsLook',
       'List labelsLook',
       'Add labelChange',
-      'Send emailChange',
+      'Delete messageChange',
     ]);
   });
 

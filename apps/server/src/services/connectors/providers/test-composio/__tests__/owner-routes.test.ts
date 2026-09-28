@@ -325,6 +325,18 @@ describe('offline Composio through real owner and signed ingress routes', () => 
           capabilityClassification: 'read',
           important: false,
         },
+        {
+          operationSlug: 'GMAIL_SEND_EMAIL',
+          displayName: 'Send email',
+          capabilityClassification: 'write',
+          important: true,
+        },
+        {
+          operationSlug: 'GMAIL_DELETE_MESSAGE',
+          displayName: 'Delete message',
+          capabilityClassification: 'destructive',
+          important: false,
+        },
       ],
     });
     expect((await f.call(path, 'GET', undefined, { authorization: 'Bearer program' })).status).toBe(

@@ -5,6 +5,7 @@ import type {
   ConnectorOperationRevision,
   ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-schemas';
+import { createComposioHostedClients } from '../hosted-client-factory.js';
 import { ComposioSdkClient, normalizeComposioCatalogAuthentication } from '../sdk-client.js';
 
 const API_KEY = 'sk_fixture_private';
@@ -374,21 +375,40 @@ describe('ComposioSdkClient', () => {
     expect(local.requests.every((entry) => entry.apiKey === API_KEY)).toBe(true);
   });
 
+  // Tag shapes follow Composio's documented verdicts: every action carries at
+  // least one of readOnlyHint / createHint / updateHint / destructiveHint, and
+  // an irreversible update carries updateHint AND destructiveHint.
   it.each([
-    ['GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint'], 'destructive'],
-    ['GMAIL_CREATE_EMAIL_DRAFT', ['important', 'openWorldHint', 'createHint'], 'destructive'],
+    // Makes or changes something, nothing removed: the "Read and write" tier.
+    ['GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint'], 'write'],
+    ['GMAIL_CREATE_EMAIL_DRAFT', ['important', 'openWorldHint', 'createHint'], 'write'],
+    ['GOOGLECALENDAR_CREATE_EVENT', ['createHint'], 'write'],
+    ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'write'],
+    // Removes, cancels, revokes, or changes irreversibly: never in a level.
+    ['GMAIL_DELETE_MESSAGE', ['destructiveHint'], 'destructive'],
+    [
+      'GMAIL_BATCH_DELETE_MESSAGES',
+      ['important', 'destructiveHint', 'idempotentHint'],
+      'destructive',
+    ],
     [
       'GMAIL_SEND_DRAFT',
       ['important', 'openWorldHint', 'destructiveHint', 'updateHint'],
       'destructive',
     ],
+    ['GMAIL_CONFLICT', ['createHint', 'destructiveHint'], 'destructive'],
+    // No verdict, or a tag DorkOS does not know: the strictest tier.
     ['GMAIL_UNKNOWN', [], 'destructive'],
     ['GMAIL_UNKNOWN', ['futureEffectHint'], 'destructive'],
     ['GMAIL_UNKNOWN', ['openWorldHint', 'idempotentHint'], 'destructive'],
+    ['GMAIL_UNKNOWN', ['createHint', 'futureEffectHint'], 'destructive'],
+    ['GMAIL_UNKNOWN', ['updateHint', 'email'], 'destructive'],
+    // Contradictory verdicts.
     ['GMAIL_CONFLICT', ['readOnlyHint', 'createHint'], 'destructive'],
     ['GMAIL_CONFLICT', ['updateHint', 'readOnlyHint'], 'destructive'],
     ['GMAIL_CONFLICT', ['readOnlyHint', 'futureEffectHint'], 'destructive'],
     ['GMAIL_CONFLICT', ['destructiveHint', 'readOnlyHint'], 'destructive'],
+    // Explicit, uncontradicted read.
     ['GMAIL_GET_PROFILE', ['readOnlyHint'], 'read'],
     ['GMAIL_GET_PROFILE', ['important', 'openWorldHint', 'idempotentHint', 'readOnlyHint'], 'read'],
   ])('retains %s with conservative effects for %j', async (slug, tags, classification) => {
@@ -422,6 +442,50 @@ describe('ComposioSdkClient', () => {
       schemaHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     });
     expect(local.requests.map(({ method }) => method)).toEqual(['GET']);
+  });
+
+  it('classifies identically on this computer and in the hosted DorkOS account path', async () => {
+    const items = [
+      tool('GITHUB_GET_AN_ISSUE', ['readOnlyHint']),
+      tool('GITHUB_CREATE_AN_ISSUE', ['important', 'openWorldHint', 'createHint']),
+      tool('GITHUB_DELETE_A_REPOSITORY', ['destructiveHint']),
+      tool('GITHUB_FUTURE', ['createHint', 'futureEffectHint']),
+    ];
+    const local = await fixture((_request, response) =>
+      json(response, 200, {
+        current_page: 1,
+        total_pages: 1,
+        total_items: items.length,
+        next_cursor: null,
+        items,
+      })
+    );
+    const hosted = createComposioHostedClients({
+      apiKey: API_KEY,
+      serverUserId: SERVER_USER_ID,
+      authConfigByToolkit: {},
+      baseUrl: local.baseUrl,
+    }).operations;
+    const classes = async (operations: ComposioSdkClient) => {
+      const result = await operations.listOperationSchemas(INSTANCE_ID, {
+        toolkit: 'github',
+        toolkitVersion: TOOLKIT_VERSION,
+        limit: 10,
+        signal: new AbortController().signal,
+      });
+      return result.page.operations.map((operation) => [
+        operation.operationSlug,
+        operation.capabilityClassification,
+      ]);
+    };
+    const expected = [
+      ['GITHUB_GET_AN_ISSUE', 'read'],
+      ['GITHUB_CREATE_AN_ISSUE', 'write'],
+      ['GITHUB_DELETE_A_REPOSITORY', 'destructive'],
+      ['GITHUB_FUTURE', 'destructive'],
+    ];
+    expect(await classes(client(local.baseUrl))).toEqual(expected);
+    expect(await classes(hosted)).toEqual(expected);
   });
 
   it('carries the display name and the important tag as hints, without changing the classification', async () => {

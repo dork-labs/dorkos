@@ -74,17 +74,17 @@ export function fixtureDefinitions() {
   }));
 }
 
-/** Exact read-operation metadata used by owner review and the real SDK execution preflight. */
-export function fixtureOperation() {
+/** One Composio tool DTO in the installed SDK's shape. */
+function fixtureTool(slug: string, name: string, description: string, tags: string[]) {
   return {
-    slug: 'GMAIL_FETCH_EMAILS',
-    name: 'Fetch emails',
-    description: 'Read offline test messages',
-    human_description: 'Read offline test messages',
+    slug,
+    name,
+    description,
+    human_description: description,
     version: COMPOSIO_FIXTURE_VERSION,
     available_versions: [COMPOSIO_FIXTURE_VERSION],
     toolkit: { slug: 'gmail', name: 'Gmail', logo: '' },
-    tags: ['readOnlyHint'],
+    tags,
     input_parameters: { type: 'object', properties: {}, additionalProperties: false },
     output_parameters: { type: 'object' },
     no_auth: false,
@@ -93,10 +93,36 @@ export function fixtureOperation() {
     scope_requirements: { all_of: [] },
     deprecated: {
       available_versions: [COMPOSIO_FIXTURE_VERSION],
-      display_name: 'Fetch emails',
+      display_name: name,
       is_deprecated: false,
       toolkit: { logo: '' },
       version: COMPOSIO_FIXTURE_VERSION,
     },
   };
+}
+
+/** Exact read-operation metadata used by owner review and the real SDK execution preflight. */
+export function fixtureOperation() {
+  return fixtureTool('GMAIL_FETCH_EMAILS', 'Fetch emails', 'Read offline test messages', [
+    'readOnlyHint',
+  ]);
+}
+
+/**
+ * The whole offline Gmail action list, one per Composio verdict, with the tag
+ * shapes Composio uses: reading, sending (`createHint`, so "Read and write"),
+ * and deleting (`destructiveHint`, so no level). Only reading can run offline.
+ */
+export function fixtureOperations() {
+  return [
+    fixtureOperation(),
+    fixtureTool('GMAIL_SEND_EMAIL', 'Send email', 'Send an offline test message', [
+      'important',
+      'openWorldHint',
+      'createHint',
+    ]),
+    fixtureTool('GMAIL_DELETE_MESSAGE', 'Delete message', 'Delete an offline test message', [
+      'destructiveHint',
+    ]),
+  ];
 }

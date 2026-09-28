@@ -15,6 +15,7 @@ import {
   COMPOSIO_FIXTURE_EVENTS,
   fixtureDefinitions,
   fixtureOperation,
+  fixtureOperations,
 } from './data.js';
 
 const accountInput = z
@@ -191,7 +192,7 @@ export async function startTestComposioFixture(options: {
   app.get('/api/v3.1/tools', (req, res) => {
     if (req.query.toolkit_slug !== 'gmail' || !versionMatches(req.query))
       return void res.sendStatus(400);
-    res.json(page([fixtureOperation()]));
+    res.json(page(fixtureOperations()));
   });
   app.get('/api/v3.1/tools/GMAIL_FETCH_EMAILS', (req, res) => {
     if (req.query.version !== COMPOSIO_FIXTURE_VERSION) return void res.sendStatus(400);

@@ -132,14 +132,53 @@ const READ_COMPATIBLE_TAGS = new Set([
 ]);
 
 /**
- * Keep uncertain operations available behind destructive approval. Only an
- * explicit, uncontradicted read-only assertion permits the read tier; unknown
- * future hints cannot silently weaken it. Idempotence does not prove read-only.
+ * Composio's two verdict tags for an action that makes or changes something
+ * without removing it: `createHint` (sending an email, opening an issue) and
+ * `updateHint` (editing something in place).
  */
-function classify(tags: readonly string[]): ConnectorOperationClassification {
-  return tags.includes('readOnlyHint') && tags.every((tag) => READ_COMPATIBLE_TAGS.has(tag))
-    ? 'read'
-    : 'destructive';
+const WRITE_VERDICT_TAGS = new Set(['createHint', 'updateHint']);
+
+/**
+ * Tags that do not contradict a create or update verdict. `destructiveHint`
+ * and `readOnlyHint` are deliberately absent: Composio puts `destructiveHint`
+ * on every irreversible action, including an irreversible update that also
+ * carries `updateHint`, and a read verdict beside a write verdict is a
+ * contradiction.
+ */
+const WRITE_COMPATIBLE_TAGS = new Set([
+  'createHint',
+  'updateHint',
+  'idempotentHint',
+  'openWorldHint',
+  'important',
+]);
+
+/**
+ * Classify one action from the tags Composio sends, failing toward the
+ * strictest tier.
+ *
+ * - `read`: an explicit `readOnlyHint` that no other tag contradicts.
+ * - `write`: an explicit `createHint` or `updateHint` with no `destructiveHint`,
+ *   no `readOnlyHint` and no tag DorkOS does not know. Composio documents
+ *   `destructiveHint` as "irreversibly removes, cancels or revokes data", so a
+ *   delete never lands here.
+ * - `destructive`: everything else — a destructive verdict, contradictory
+ *   verdicts, no verdict at all, or any unknown future tag. Idempotence does
+ *   not prove read-only, and a missing tag never proves safety.
+ *
+ * @param tags - The action's `tags` exactly as Composio listed them.
+ */
+function classifyComposioTags(tags: readonly string[]): ConnectorOperationClassification {
+  if (tags.includes('readOnlyHint') && tags.every((tag) => READ_COMPATIBLE_TAGS.has(tag))) {
+    return 'read';
+  }
+  if (
+    tags.some((tag) => WRITE_VERDICT_TAGS.has(tag)) &&
+    tags.every((tag) => WRITE_COMPATIBLE_TAGS.has(tag))
+  ) {
+    return 'write';
+  }
+  return 'destructive';
 }
 
 /** Hash the exact input schema body reviewed by the operator. */
@@ -359,7 +398,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
       }
 
       const operations = result.items.map((item) => {
-        const classification = classify(item.tags);
+        const classification = classifyComposioTags(item.tags);
         if (item.toolkit.slug !== request.toolkit || item.version !== request.toolkitVersion) {
           throw new ComposioCatalogError(
             'Composio returned operation metadata for another version.'
