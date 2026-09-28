@@ -398,7 +398,7 @@ registerChatConnectCardTests(chatConnectHarness);
 registerChatConnectFirstStepTests(chatConnectHarness);
 
 test.describe('Connections — session access status', () => {
-  test('shows canonical agent access read-only and links to the exact access editor', async ({
+  test('shows a chat’s access, turns an app off and on for that chat, and links to the access editor', async ({
     page,
     request,
   }) => {
@@ -454,11 +454,10 @@ test.describe('Connections — session access status', () => {
     });
     await expect(row).toBeVisible();
     await expect(row.getByText('Inherited from agent')).toBeVisible();
-    await expect(group.getByRole('button', { name: /attach|detach/i })).toHaveCount(0);
 
-    // Arrange historical session-scoped authority in the isolated database.
-    // The public UI intentionally has no attach/detach control; real queries and
-    // rendering must still explain each retained session override accurately.
+    // Arrange historical session-scoped authority in the isolated database. The
+    // app never writes chat-only grants; real queries and rendering must still
+    // explain each retained session override accurately.
     const sessionUrl = page.url();
     const sessionId = new URL(sessionUrl).searchParams.get('session');
     expect(sessionId).toBeTruthy();
@@ -555,17 +554,28 @@ test.describe('Connections — session access status', () => {
         `UPDATE connector_provider_instances SET mode = 'byo'
         WHERE id = (SELECT provider_instance_id FROM connections WHERE id = ?)`
       ).run(connectionId);
-      // Restore inherited state before proving the owner editor link below.
-      db.prepare(
-        'DELETE FROM session_connection_overrides WHERE session_id = ? AND connection_id = ?'
-      ).run(sessionId, connectionId);
     } finally {
       db.close();
     }
 
-    // The retained session panel is status only. Its one action opens the
-    // canonical owner workspace, where the exact connection and named agent
-    // are reviewable rather than reconstructing consent from the session.
+    // The owner's per-chat switch (DOR-2448): off hides the app from this
+    // chat's agent; on puts the chat back on the agent's own access, which
+    // also clears the chat-only fixture above.
+    await page.reload();
+    await rightPanel.open();
+    await page.getByRole('tab', { name: 'Session', exact: true }).click();
+    const toggle = row.getByRole('switch', { name: 'Gmail (work) in this chat' });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(row.getByText('Turned off for this chat.')).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(row.getByText('Inherited from agent')).toBeVisible();
+    await expect(toggle).toBeChecked();
+
+    // What the agent may do account-wide is reviewed on Connections, where
+    // the exact connection and named agent are reviewable rather than
+    // reconstructing consent from the session.
     await group.getByRole('button', { name: 'Manage agent access' }).click();
     await expect(page).toHaveURL(/\/connections/);
     const connections = new ConnectionsPage(page);

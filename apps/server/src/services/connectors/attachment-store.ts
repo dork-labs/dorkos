@@ -108,6 +108,22 @@ export class SessionConnectorAttachmentStore {
       .run();
   }
 
+  /**
+   * Drop one session's override for one connection, so the chat goes back to
+   * exactly what its agent holds account-wide. A no-op when there is none.
+   */
+  clearState(sessionId: string, connectionId: ConnectionId): void {
+    this._db
+      .delete(sessionConnectionOverrides)
+      .where(
+        and(
+          eq(sessionConnectionOverrides.sessionId, sessionId),
+          eq(sessionConnectionOverrides.connectionId, connectionId)
+        )
+      )
+      .run();
+  }
+
   /** Every override recorded for one session. */
   listForSession(sessionId: string): SessionConnectorOverride[] {
     return this._db

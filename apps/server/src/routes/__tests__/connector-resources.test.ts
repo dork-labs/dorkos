@@ -8,6 +8,7 @@ import {
 } from '../connector-resources.js';
 import { ConnectorAuthenticationFlowError } from '../../services/connectors/resources/authentication-flow-service.js';
 import { ConnectorAppActionsError } from '../../services/connectors/resources/app-actions-service.js';
+import { ConnectorOperatorQueryError } from '../../services/connectors/resources/operator-query-service.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -49,6 +50,11 @@ describe('connector resource routes', () => {
         list: vi.fn().mockResolvedValue({ status: 'unlisted', toolkit: 'gmail' }),
       },
       signIns: { refreshOnDemand: vi.fn().mockResolvedValue(undefined) },
+      sessionAccess: {
+        setAccess: vi
+          .fn()
+          .mockResolvedValue({ sessionId: 'session-a', agentId: 'agent-a', connections: [] }),
+      },
     } as unknown as ConnectorResourcesRouterDeps;
     app = express();
     app.use(express.json());
@@ -255,6 +261,48 @@ describe('connector resource routes', () => {
     );
     expect(deps.query.agentConnections).toHaveBeenCalledWith(OWNER, 'agent-a');
     expect(deps.query.sessionConnections).toHaveBeenCalledWith(OWNER, 'session-a');
+  });
+
+  it('lets only the owner turn an app on or off for one chat', async () => {
+    await api()
+      .put('/api/connectors/sessions/session-a/connections/connection-a')
+      .send({ on: false })
+      .expect(200, { sessionId: 'session-a', agentId: 'agent-a', connections: [] });
+    expect(deps.sessionAccess.setAccess).toHaveBeenCalledWith(OWNER, 'session-a', 'connection-a', {
+      on: false,
+    });
+
+    vi.mocked(deps.sessionAccess.setAccess).mockClear();
+    const refused = await api()
+      .put('/api/connectors/sessions/session-a/connections/connection-a')
+      .set('X-DorkOS-Agent', 'agent-a')
+      .send({ on: true })
+      .expect(403);
+    expect(refused.body).toMatchObject({ code: 'connector_owner_required' });
+    await api()
+      .put('/api/connectors/sessions/session-a/connections/connection-a')
+      .set('Authorization', 'Bearer program-key')
+      .send({ on: true })
+      .expect(403);
+    await api()
+      .put('/api/connectors/sessions/session-a/connections/connection-a')
+      .send({ on: 'yes' })
+      .expect(400);
+    await api()
+      .put('/api/connectors/sessions/session-a/connections/connection-a')
+      .send({ on: true, grant: 'everything' })
+      .expect(400);
+    expect(deps.sessionAccess.setAccess).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 when the chat’s agent was not given the app it tries to switch', async () => {
+    vi.mocked(deps.sessionAccess.setAccess).mockRejectedValueOnce(
+      new ConnectorOperatorQueryError('connection_not_found', 'Nothing to switch.')
+    );
+    await api()
+      .put('/api/connectors/sessions/session-a/connections/connection-b')
+      .send({ on: true })
+      .expect(404, { error: 'Nothing to switch.', code: 'connection_not_found' });
   });
 
   it('passes an owned reconnect identity unchanged and keeps foreign accounts hidden', async () => {

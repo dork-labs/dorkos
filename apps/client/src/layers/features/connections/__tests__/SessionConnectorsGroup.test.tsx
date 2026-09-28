@@ -103,7 +103,7 @@ describe('SessionConnectorsGroup', () => {
     expect(screen.getByText(CONNECTION_READINESS_COPY.off_for_this_chat.owner)).toBeInTheDocument();
   });
 
-  it('opens the canonical owner workspace without attach or detach controls', async () => {
+  it('opens Connections for what the agent may do account-wide', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
@@ -114,6 +114,85 @@ describe('SessionConnectorsGroup', () => {
     renderGroup(transport);
     await user.click(await screen.findByRole('button', { name: /Manage agent access/i }));
     expect(navigate).toHaveBeenCalledWith({ to: '/connections' });
-    expect(screen.queryByRole('button', { name: /attach|detach/i })).not.toBeInTheDocument();
+  });
+
+  it('turns an app off for this chat and shows what the server says back', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [sessionConnection({ thisChat: 'on' })],
+    });
+    const turnedOff = {
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [
+        sessionConnection({
+          source: 'this_chat',
+          thisChat: 'off',
+          readiness: createMockConnectionReadiness({
+            state: 'unavailable',
+            reason: 'off_for_this_chat',
+          }),
+        }),
+      ],
+    };
+    vi.mocked(transport.setSessionConnectorAccess).mockResolvedValue(turnedOff as never);
+    renderGroup(transport);
+
+    const toggle = await screen.findByRole('switch', { name: 'Gmail (work) in this chat' });
+    expect(toggle).toBeChecked();
+    expect(screen.getByText(/only affects this chat/)).toBeInTheDocument();
+    // The refetch after the change reads the same server state.
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(turnedOff as never);
+    await user.click(toggle);
+
+    expect(transport.setSessionConnectorAccess).toHaveBeenCalledWith('session-1', 'connection-1', {
+      on: false,
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'Gmail (work) in this chat' })).not.toBeChecked()
+    );
+    expect(screen.getByText(CONNECTION_READINESS_COPY.off_for_this_chat.owner)).toBeInTheDocument();
+  });
+
+  it('keeps the server’s state and says so when a switch does not land', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [sessionConnection({ thisChat: 'on' })],
+    });
+    vi.mocked(transport.setSessionConnectorAccess).mockRejectedValue(new Error('offline'));
+    renderGroup(transport);
+
+    await user.click(await screen.findByRole('switch', { name: 'Gmail (work) in this chat' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing changed');
+    expect(screen.getByRole('switch', { name: 'Gmail (work) in this chat' })).toBeChecked();
+  });
+
+  it('offers no switch on an app the agent was not given account-wide', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [
+        sessionConnection({
+          source: 'this_chat',
+          readiness: createMockConnectionReadiness({
+            state: 'unavailable',
+            reason: 'off_for_this_chat',
+          }),
+        }),
+      ],
+    });
+    renderGroup(transport);
+
+    expect(await screen.findByText('Gmail (work)')).toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.queryByText(/only affects this chat/)).not.toBeInTheDocument();
   });
 });

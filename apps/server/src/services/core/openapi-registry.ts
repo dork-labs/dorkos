@@ -248,6 +248,7 @@ import {
   ConnectorDisconnectImpactSchema,
   ConnectorLifecycleResultSchema,
   ConnectorReconnectRequestSchema,
+  ConnectorSessionAccessUpdateSchema,
   ConnectorSessionConnectionsSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
@@ -4053,6 +4054,37 @@ registry.registerPath({
     },
     404: {
       description: 'Session absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/connectors/sessions/{sessionId}/connections/{connectionId}',
+  tags: ['Connectors'],
+  summary: 'Turn one app on or off for one chat',
+  description:
+    'Owner-only. Off hides the app from the chat’s agent in this chat alone. On brings back the access the agent was given account-wide, and never more. Only apps the agent was given account-wide can be switched.',
+  request: {
+    params: z.object({ sessionId: z.string().min(1), connectionId: z.string().min(1) }),
+    body: { content: { 'application/json': { schema: ConnectorSessionAccessUpdateSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The chat’s connector access after the change',
+      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
+    },
+    400: {
+      description: 'Invalid request body or connection id',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused: agents and programs cannot make account decisions',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Session absent, or the agent was not given that app account-wide',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

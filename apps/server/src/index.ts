@@ -148,6 +148,7 @@ import { ConnectorReconciliationService } from './services/connectors/reconcilia
 import { ConnectorAuthenticationFlowService } from './services/connectors/resources/authentication-flow-service.js';
 import { ConnectorLifecycleService } from './services/connectors/resources/lifecycle-service.js';
 import { ConnectorOperatorQueryService } from './services/connectors/resources/operator-query-service.js';
+import { ConnectorSessionAccessService } from './services/connectors/resources/session-access-service.js';
 import { ConnectorAppActionsService } from './services/connectors/resources/app-actions-service.js';
 import { CatalogLogoService } from './services/connectors/resources/catalog-logos.js';
 import { ManagedAuthoritySyncService } from './services/connectors/resources/managed-authority-sync-service.js';
@@ -4051,6 +4052,10 @@ async function start() {
       lifecycle: connectorLifecycle,
       actions: connectorAppActions,
       signIns: connectorSignIns,
+      sessionAccess: new ConnectorSessionAccessService({
+        query: connectorOperatorQueries,
+        overrides: sessionConnectorAttachmentStore,
+      }),
       resolveOwner: () => connectorOwner,
       loginEnabled: () => configManager.get('auth').enabled,
     })

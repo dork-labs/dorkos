@@ -6,6 +6,7 @@ import {
   useConnectorCatalog,
   useConnectorConnections,
   useResolveConnectorAgentRequest,
+  useSetSessionConnectorAccess,
   serviceName as appServiceName,
   serviceLogo,
   type ServiceLogo,
@@ -30,38 +31,43 @@ export interface AgentRequestCardProps {
 /** Why "Not now" did not save. Declining writes nothing, so nothing changed. */
 const DECLINE_FAILED = 'Couldn’t save your answer. Nothing changed. Try again.';
 
+/** Why turning the app back on for this chat did not land. */
+const TURN_ON_FAILED = 'Couldn’t turn it on for this chat. Nothing changed. Try again.';
+
 /**
  * Why an Allow's answer did not reach the request after the access itself had
- * already been saved, and whether sending it again can help.
+ * already been saved, and the one fix: send it again, turn the app back on for
+ * this chat, or nothing.
  */
 function unansweredReason(
   error: Error | null,
   agentName: string,
   serviceName: string
-): { reason: string; retry: boolean } {
+): { reason: string; fix: 'retry' | 'turn_on' | null } {
   switch ((error as { code?: string } | null)?.code) {
     case 'session_access_off':
-      // No screen in the app changes a single chat's access yet, so the card
-      // says so rather than sending the person to a place without the control.
+      // The chat's own switch is off. Turning it on here is the same switch the
+      // chat's details show, and it brings back only what the agent was just
+      // given, so the card offers it and then answers the request.
       return {
-        reason: `this chat has ${serviceName} turned off for ${agentName}, and that can’t be changed from the app yet.`,
-        retry: false,
+        reason: `this chat has ${serviceName} turned off for ${agentName}. Turning it on here only affects this chat.`,
+        fix: 'turn_on',
       };
     case 'request_already_resolved':
       return {
         reason: `it was already answered somewhere else, and ${agentName} got that answer. Ask ${agentName} again if it still needs this.`,
-        retry: false,
+        fix: null,
       };
     case 'request_expired':
-      return { reason: `the request ran out of time. Ask ${agentName} again.`, retry: false };
+      return { reason: `the request ran out of time. Ask ${agentName} again.`, fix: null };
     case 'request_not_found':
-      return { reason: 'the request is no longer open.', retry: false };
+      return { reason: 'the request is no longer open.', fix: null };
     case 'authority_sync_failed':
-      return { reason: 'the access is still being set up.', retry: true };
+      return { reason: 'the access is still being set up.', fix: 'retry' };
     case 'selection_invalid':
-      return { reason: 'that account isn’t ready for it yet.', retry: true };
+      return { reason: 'that account isn’t ready for it yet.', fix: 'retry' };
     default:
-      return { reason: 'the answer didn’t reach the server.', retry: true };
+      return { reason: 'the answer didn’t reach the server.', fix: 'retry' };
   }
 }
 
@@ -84,6 +90,7 @@ function unansweredReason(
  */
 export function AgentRequestCard({ request, className }: AgentRequestCardProps) {
   const resolve = useResolveConnectorAgentRequest();
+  const turnOn = useSetSessionConnectorAccess(request.sessionId);
   const connections = useConnectorConnections();
   const catalog = useConnectorCatalog(request.serviceSlug, request.status === 'awaiting_owner');
   const service =
@@ -125,7 +132,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   const frameClass = cn('max-w-xl', className);
 
   if (allowedId && resolve.isError) {
-    const { reason, retry } = unansweredReason(resolve.error, agentName, serviceName);
+    const { reason, fix } = unansweredReason(resolve.error, agentName, serviceName);
     return (
       <AccessCardFrame
         titleId={`agent-request-unanswered-${request.requestId}`}
@@ -142,12 +149,34 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           />
           The access is saved, but {agentName}’s request wasn’t answered: {reason}
         </p>
-        {retry && (
+        {fix === 'retry' && (
           <div className="flex justify-end">
             <Button onClick={() => answer(allowedId)} disabled={resolve.isPending}>
               {resolve.isPending ? 'Sending…' : 'Try again'}
             </Button>
           </div>
+        )}
+        {fix === 'turn_on' && (
+          <>
+            {turnOn.isError && (
+              <p role="alert" className="text-destructive text-sm">
+                {TURN_ON_FAILED}
+              </p>
+            )}
+            <div className="flex justify-end">
+              <Button
+                onClick={() =>
+                  turnOn.mutate(
+                    { connectionId: allowedId, on: true },
+                    { onSuccess: () => answer(allowedId) }
+                  )
+                }
+                disabled={turnOn.isPending || resolve.isPending}
+              >
+                {turnOn.isPending || resolve.isPending ? 'Turning on…' : 'Turn on for this chat'}
+              </Button>
+            </div>
+          </>
         )}
       </AccessCardFrame>
     );

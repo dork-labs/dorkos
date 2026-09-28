@@ -1,10 +1,12 @@
 import { ArrowUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { ConnectorSessionEffectiveAccess } from '@dorkos/shared/connector-resource-schemas';
 import {
   useAgentConnectorConnections,
   useSessionConnectorConnections,
+  useSetSessionConnectorAccess,
 } from '../model/use-connector-resources';
-import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
+import { Badge, Button, QueryErrorState, Skeleton, Switch } from '@/layers/shared/ui';
 import { serviceName } from '../lib/access-copy';
 import { ServiceMark } from './ServiceMark';
 
@@ -105,7 +107,19 @@ export function AgentConnectionAccessList({
   );
 }
 
-/** Canonical effective account access shown in Session Inspector. */
+/** What the per-chat switch does, said once above the list. */
+const THIS_CHAT_SWITCH_NOTE =
+  'Turning an app off here only affects this chat. Turning it back on gives this agent the access it already has, nothing more.';
+
+/** Why a switch did not change. The server refused or was unreachable. */
+const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change it. Nothing changed. Try again.';
+
+/**
+ * Canonical effective account access shown in Session Inspector, with the
+ * owner's per-chat switch on every app the agent was given account-wide.
+ * Everything a row says is the server's: the switch writes, and the list
+ * shows the readiness the server answers with.
+ */
 export function SessionConnectionAccessList({
   sessionId,
   onManage,
@@ -170,39 +184,77 @@ export function SessionConnectionAccessList({
           {emptyAction}
         </div>
       ) : (
-        connections.map((connection) => {
-          const ready = connection.readiness.state === 'ready';
-          return (
-            <div
+        <>
+          {connections.some((connection) => connection.thisChat) && (
+            <p className="text-muted-foreground px-1 pb-1 text-xs">{THIS_CHAT_SWITCH_NOTE}</p>
+          )}
+          {connections.map((connection) => (
+            <SessionConnectionRow
               key={connection.connectionId}
-              data-testid={`session-connection-${connection.connectionId}`}
-              data-reason={connection.readiness.reason}
-              className="bg-muted/40 rounded-md px-2.5 py-2"
-            >
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-sm font-medium">
-                  {serviceName(connection.toolkit)} ({connection.label})
-                </span>
-                <Badge size="xs" variant={ready ? 'secondary' : 'outline'}>
-                  {ready ? SESSION_SOURCE_COPY[connection.source] : 'Not available'}
-                </Badge>
-              </div>
-              <p
-                className={
-                  ready
-                    ? 'text-muted-foreground mt-1 text-xs'
-                    : 'text-status-warning-fg mt-1 text-xs'
-                }
-              >
-                {ready
-                  ? `${connection.operationRevisionIds.length} actions available in this session.`
-                  : connection.readiness.copy.owner}
-              </p>
-            </div>
-          );
-        })
+              sessionId={sessionId}
+              connection={connection}
+            />
+          ))}
+        </>
       )}
       {connections.length > 0 && footer}
     </section>
+  );
+}
+
+/** One app in a chat's list: its name, the server's readiness, and the switch when it has one. */
+function SessionConnectionRow({
+  sessionId,
+  connection,
+}: {
+  sessionId: string;
+  connection: ConnectorSessionEffectiveAccess;
+}) {
+  const setAccess = useSetSessionConnectorAccess(sessionId);
+  const ready = connection.readiness.state === 'ready';
+  const name = `${serviceName(connection.toolkit)} (${connection.label})`;
+  return (
+    <div
+      data-testid={`session-connection-${connection.connectionId}`}
+      data-reason={connection.readiness.reason}
+      className="bg-muted/40 rounded-md px-2.5 py-2"
+    >
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-medium">{name}</span>
+            <Badge size="xs" variant={ready ? 'secondary' : 'outline'}>
+              {ready ? SESSION_SOURCE_COPY[connection.source] : 'Not available'}
+            </Badge>
+          </div>
+          <p
+            className={
+              ready ? 'text-muted-foreground mt-1 text-xs' : 'text-status-warning-fg mt-1 text-xs'
+            }
+          >
+            {ready
+              ? `${connection.operationRevisionIds.length} actions available in this session.`
+              : connection.readiness.copy.owner}
+          </p>
+        </div>
+        {connection.thisChat && (
+          <Switch
+            aria-label={`${name} in this chat`}
+            data-testid={`session-connection-switch-${connection.connectionId}`}
+            checked={connection.thisChat === 'on'}
+            disabled={setAccess.isPending}
+            onCheckedChange={(on) =>
+              setAccess.mutate({ connectionId: connection.connectionId, on })
+            }
+            className="mt-0.5 shrink-0"
+          />
+        )}
+      </div>
+      {setAccess.isError && (
+        <p role="alert" className="text-destructive mt-1 text-xs">
+          {THIS_CHAT_SWITCH_FAILED}
+        </p>
+      )}
+    </div>
   );
 }

@@ -133,6 +133,7 @@ async function fixture() {
       actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
       logos: { get: () => Promise.resolve(undefined) },
       signIns: { refreshOnDemand: () => Promise.resolve() },
+      sessionAccess: { setAccess: () => Promise.reject(new Error('Not used by these routes.')) },
     })
   );
   app.use(

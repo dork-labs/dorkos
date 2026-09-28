@@ -343,7 +343,45 @@ describe('AgentRequestCard — an account exists', () => {
     });
   });
 
-  it('says plainly when this chat has the app turned off, without pointing at a control that does not exist', async () => {
+  it('offers to turn the app on for this chat when the chat has it off, then answers the request', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([account('connection-1')]);
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+    );
+    vi.mocked(transport.resolveConnectorAgentRequest)
+      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'session_access_off' }))
+      .mockResolvedValueOnce({ ...REQUEST, status: 'approved' } as never);
+    vi.mocked(transport.setSessionConnectorAccess).mockResolvedValue({
+      sessionId: REQUEST.sessionId,
+      agentId: 'agent-bo',
+      connections: [],
+    });
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    const unanswered = await screen.findByTestId('agent-request-unanswered');
+    expect(unanswered).toHaveTextContent('this chat has Gmail turned off for Bo');
+    expect(unanswered).toHaveTextContent('only affects this chat');
+    expect(unanswered).not.toHaveTextContent(/can’t be changed/);
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Turn on for this chat' }));
+    await waitFor(() =>
+      expect(transport.setSessionConnectorAccess).toHaveBeenCalledWith(
+        REQUEST.sessionId,
+        'connection-1',
+        { on: true }
+      )
+    );
+    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
+      decision: 'current_access',
+      connectionId: 'connection-1',
+    });
+  });
+
+  it('says so, and does not answer, when turning the app on for this chat fails', async () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
@@ -352,14 +390,14 @@ describe('AgentRequestCard — an account exists', () => {
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
       Object.assign(new Error('off'), { code: 'session_access_off' })
     );
+    vi.mocked(transport.setSessionConnectorAccess).mockRejectedValue(new Error('offline'));
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    const unanswered = await screen.findByTestId('agent-request-unanswered');
-    expect(unanswered).toHaveTextContent('this chat has Gmail turned off for Bo');
-    expect(unanswered).toHaveTextContent('can’t be changed from the app yet');
-    expect(screen.queryByRole('link', { name: /Open Connections/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Turn on for this chat' }));
+
+    expect(await screen.findByText(/Couldn’t turn it on for this chat/)).toBeInTheDocument();
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(1);
   });
 
   it.each([
