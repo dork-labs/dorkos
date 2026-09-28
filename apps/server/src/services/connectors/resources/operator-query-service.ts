@@ -990,10 +990,11 @@ export class ConnectorOperatorQueryService {
               .map((row) => row.revisionId)
               .sort()
           : [];
-      // Turned on with nothing of its own, or waiting on a review: this chat's
-      // access has to be checked before its agent can use the account here.
-      const needsReview =
-        !turnedOff && (override.needsReconciliation || sessionRevisions.length === 0);
+      // Turned on with nothing of its own, or waiting on reconciliation: its
+      // agent can't use the account here, and no screen changes one chat's
+      // access yet (DOR-2448), so it reads as turned off here, with no button.
+      const nothingHere =
+        turnedOff || override.needsReconciliation || sessionRevisions.length === 0;
       byConnection.set(override.connectionId, {
         connectionId: override.connectionId,
         toolkit: override.toolkit,
@@ -1004,10 +1005,7 @@ export class ConnectorOperatorQueryService {
           override,
           agentId,
           { named: true, everyAgent: false },
-          {
-            offForThisChat: turnedOff,
-            ...(needsReview && { reconciliationStatus: 'migration_needs_reconcile' as const }),
-          }
+          { offForThisChat: nothingHere }
         ),
       });
     }

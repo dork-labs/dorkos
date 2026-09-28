@@ -5,6 +5,7 @@ import {
   connectorAuthenticationFlows,
   connectorProviderInstances,
   connections,
+  desc,
   eq,
   isNull,
   or,
@@ -278,7 +279,9 @@ export class ConnectorAuthenticationFlowService {
       const account = this.registry.recordConnect(provider, accountData, {
         allowRemovedReplacement: true,
       });
-      if (sameAccount && row.reconnectConnectionId === account.id) {
+      // Signing in again pauses the account only while the sign-in runs. It
+      // never undoes a pause the owner chose before it started.
+      if (sameAccount && row.reconnectConnectionId === account.id && !row.reconnectWasPaused) {
         this.registry.setPaused(account.id, false);
       }
       const transition = this.db
@@ -445,6 +448,9 @@ export class ConnectorAuthenticationFlowService {
           toolkit: input.toolkit,
           label: input.label,
           reconnectConnectionId,
+          ...(reconnectConnectionId && {
+            reconnectWasPaused: this.pausedByOwner(reconnectConnectionId),
+          }),
           cleanupSnapshotJson: JSON.stringify(cleanupSnapshot),
           state: 'starting',
           createdAt: now.toISOString(),
@@ -698,6 +704,32 @@ export class ConnectorAuthenticationFlowService {
       if (!target || target.removedAt !== null || !acknowledged(target)) return false;
     }
     return rows.filter((row) => row.ref === externalRef).every(acknowledged);
+  }
+
+  /**
+   * Whether the account is paused by its owner, as opposed to by an earlier
+   * sign-in again that never finished (which pauses it while it runs). An
+   * unfinished earlier sign-in passes on what it recorded; otherwise a pause
+   * is the owner's.
+   */
+  private pausedByOwner(connectionId: ConnectionId): boolean {
+    const account = this.db
+      .select({ enabled: connections.enabled, lifecycleState: connections.lifecycleState })
+      .from(connections)
+      .where(eq(connections.id, connectionId))
+      .get();
+    if (!account || account.lifecycleState !== 'connected' || account.enabled) return false;
+    const earlier = this.db
+      .select({
+        state: connectorAuthenticationFlows.state,
+        reconnectWasPaused: connectorAuthenticationFlows.reconnectWasPaused,
+      })
+      .from(connectorAuthenticationFlows)
+      .where(eq(connectorAuthenticationFlows.reconnectConnectionId, connectionId))
+      .orderBy(desc(connectorAuthenticationFlows.createdAt), desc(connectorAuthenticationFlows.id))
+      .limit(1)
+      .get();
+    return !earlier || earlier.state === 'connected' ? true : earlier.reconnectWasPaused;
   }
 
   private ownedConnection(

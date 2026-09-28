@@ -582,7 +582,7 @@ export const CONNECTION_READINESS_COPY: Readonly<
   way_unreachable: {
     owner: 'DorkOS can’t reach the service it was connected through, so agents can’t use it.',
     agent:
-      'DorkOS can’t reach the service this account was connected through. Tell the person. Asking for access won’t help.',
+      'DorkOS can’t reach the service this account was connected through. Asking for access won’t help.',
   },
   own_key_cannot_run_actions: {
     owner:
@@ -592,8 +592,7 @@ export const CONNECTION_READINESS_COPY: Readonly<
   },
   cannot_run_actions: {
     owner: 'Agents can’t use apps connected this way yet.',
-    agent:
-      'Agents can’t use apps connected the way this one was. Tell the person. Asking for access won’t help.',
+    agent: 'Agents can’t use apps connected the way this one was. Asking for access won’t help.',
   },
   paused: {
     owner: 'Paused. Agents can’t use it until you resume it.',
@@ -665,6 +664,12 @@ export function disconnectStuckOwnerLine(cause: ConnectionDisconnectStuckCause):
       return `${lead} DorkOS can’t reach the service to finish removing its access. ${ownSettings}`;
   }
 }
+
+/**
+ * What an agent is told to do about an account nothing fixes from here: tell
+ * the person. Added only when no concrete fix sentence follows.
+ */
+export const TELL_THE_PERSON_AGENT_COPY = 'Tell the person.';
 
 /**
  * The words added when an account connected a way that can't be used offers

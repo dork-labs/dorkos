@@ -57,6 +57,7 @@ import {
   CONNECTION_READINESS_COPY,
   ConnectionReadinessSchema,
   disconnectStuckOwnerLine,
+  TELL_THE_PERSON_AGENT_COPY,
   type ConnectionDisconnectStuckCause,
   type ConnectionFix,
   type ConnectionReadiness,
@@ -186,16 +187,15 @@ function readiness(
   state: ConnectionReadinessState,
   reason: Exclude<ConnectionReadinessReason, 'disconnect_stuck'>,
   fix?: ConnectionFix,
-  extra?: ConnectionReadinessCopy
+  extra?: Partial<ConnectionReadinessCopy>
 ): ConnectionReadiness {
   const words = CONNECTION_READINESS_COPY[reason];
+  const join = (base: string, more: string | undefined) => (more ? `${base} ${more}` : base);
   return ConnectionReadinessSchema.parse({
     state,
     reason,
     ...(fix && { fix }),
-    copy: extra
-      ? { owner: `${words.owner} ${extra.owner}`, agent: `${words.agent} ${extra.agent}` }
-      : words,
+    copy: { owner: join(words.owner, extra?.owner), agent: join(words.agent, extra?.agent) },
   });
 }
 
@@ -211,7 +211,8 @@ function stuck(cause: ConnectionDisconnectStuckCause, fix?: ConnectionFix): Conn
 
 /**
  * An account nothing here can fix, as `unavailable`: when another way works,
- * connecting it again that way is the fix; otherwise there is no button.
+ * connecting it again that way is the fix; otherwise there is no button, and
+ * the agent is told to tell the person.
  */
 function unfixable(
   reason: 'way_unreachable' | 'cannot_run_actions',
@@ -224,7 +225,7 @@ function unfixable(
         { action: 'connect_new', fixableBy: 'person' },
         CONNECT_ANOTHER_WAY_COPY
       )
-    : readiness('unavailable', reason);
+    : readiness('unavailable', reason, undefined, { agent: TELL_THE_PERSON_AGENT_COPY });
 }
 
 /** When DorkOS tries an access change again, if the stored sync says. */

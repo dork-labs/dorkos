@@ -369,8 +369,14 @@ describe('deriveConnectionReadiness truth table', () => {
     expect(withWay.copy.owner).toBe(
       `${CONNECTION_READINESS_COPY.way_unreachable.owner} ${CONNECT_ANOTHER_WAY_COPY.owner}`
     );
+    // With a concrete fix, the agent is told that fix, not "tell the person".
+    expect(withWay.copy.agent).not.toContain('Tell the person.');
+    expect(withWay.copy.agent).toContain(CONNECT_ANOTHER_WAY_COPY.agent);
     const without = deriveConnectionReadiness(facts({ way: down('unreachable') }));
-    expect(without.copy).toEqual(CONNECTION_READINESS_COPY.way_unreachable);
+    expect(without.copy.owner).toBe(CONNECTION_READINESS_COPY.way_unreachable.owner);
+    expect(without.copy.agent).toBe(
+      `${CONNECTION_READINESS_COPY.way_unreachable.agent} Tell the person.`
+    );
   });
 
   it('never promises an automatic re-check it doesn’t make', () => {

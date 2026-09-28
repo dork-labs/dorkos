@@ -995,15 +995,29 @@ describe('ConnectorOperatorQueryService', () => {
       ],
     });
 
-    // Turned on with nothing of its own: this chat's access needs a look.
+    // Turned on with nothing of its own: nothing to use here, and no button
+    // the owner could act on (one chat's access can't be changed yet).
     db.update(sessionConnectionOverrides)
       .set({ state: 'attached' })
       .where(eq(sessionConnectionOverrides.sessionId, 'session-a'))
       .run();
-    await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
-      connections: [{ readiness: { reason: 'needs_review', fix: { action: 'review_access' } } }],
-    });
+    const empty = (await service.sessionConnections(OWNER, 'session-a')).connections[0];
+    expect(empty?.readiness).toMatchObject({ reason: 'off_for_this_chat' });
+    expect(empty?.readiness.fix).toBeUndefined();
 
+    // With its own grant, the account's own state shows through.
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'session-grant-a',
+        subjectType: 'session',
+        subjectId: 'session-a',
+        agentId: 'agent-a',
+        connectionId: 'connection-a',
+        operationRevisionId: 'revision-a',
+        createdBy: 'operator',
+        createdAt: NOW,
+      })
+      .run();
     db.update(connections).set({ enabled: false }).where(eq(connections.id, 'connection-a')).run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
       connections: [{ readiness: { state: 'paused', reason: 'paused' } }],
