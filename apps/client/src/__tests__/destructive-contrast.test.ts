@@ -297,6 +297,8 @@ describe('bare red status text (DOR-2493)', () => {
       card: hsl(theme, '--card'),
       popover: hsl(theme, '--popover'),
       'relay row hover (bg-muted/50)': over(muted, 0.5, bg),
+      // An out-of-usage session row wears the red tint; the gauge's red sits on it.
+      'out-of-usage session row (bg-status-error-bg)': hsl(theme, '--status-error-bg'),
     };
   }
 

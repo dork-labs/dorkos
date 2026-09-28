@@ -277,8 +277,9 @@ function SheetItem({
         // tuned for its own tint and misses AA on grey in dark mode (DOR-2493).
         // No red clears AA on the pressed `bg-sidebar-accent` in both themes
         // (4.11:1 light, 4.25:1 dark), so for the moment the finger is down the
-        // label goes to the foreground and the icon keeps the danger meaning:
-        // it stays red, which as a non-text mark needs only 3:1.
+        // label goes to the foreground (12.99:1 light, 10.83:1 dark there) and
+        // the icon keeps the danger meaning: it stays red, at 4.11:1 / 4.25:1,
+        // above the 3:1 a non-text mark needs.
         variant === 'destructive' &&
           'text-destructive active:text-foreground [&>svg]:text-destructive'
       )}
