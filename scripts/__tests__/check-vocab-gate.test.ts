@@ -355,6 +355,69 @@ describe('isAllowlisted', () => {
 });
 
 // ---------------------------------------------------------------------------
+// isAllowlisted's `contains` field (DOR-2508, second review round): a
+// path-only entry exempts every matching line in that file, which is exactly
+// what a genuinely whole-page developer guide needs (docs/integrations/) but
+// too wide for a narrow, single-purpose entry (one real config-field-name key
+// or one Card title). `contains` narrows such an entry to the line that
+// actually needs it, so a NEW, unrelated use of the same term anywhere else
+// in the file is still caught.
+// ---------------------------------------------------------------------------
+
+describe("isAllowlisted's `contains` field", () => {
+  const scopedEntries: AllowlistEntry[] = [
+    {
+      path: 'docs/getting-started/configuration.mdx',
+      terms: ['connector', 'connectors'],
+      contains: "'connectors.rawMcpServers'",
+      reason: 'The real config field name key.',
+    },
+  ];
+
+  it('suppresses a hit whose snippet contains the pinned substring', () => {
+    expect(
+      isAllowlisted(
+        'docs/getting-started/configuration.mdx',
+        'connectors',
+        scopedEntries,
+        "'connectors.rawMcpServers': {"
+      )
+    ).toBe(true);
+  });
+
+  it('does NOT suppress a hit at the same path and term whose snippet lacks the pinned substring — the mutation this field exists to catch', () => {
+    expect(
+      isAllowlisted(
+        'docs/getting-started/configuration.mdx',
+        'connectors',
+        scopedEntries,
+        '### Connectors'
+      )
+    ).toBe(false);
+  });
+
+  it('treats a missing snippet as never satisfying a `contains` entry, rather than throwing', () => {
+    expect(
+      isAllowlisted('docs/getting-started/configuration.mdx', 'connectors', scopedEntries)
+    ).toBe(false);
+  });
+
+  it('an entry with no `contains` still covers every matching line at its path (unchanged whole-file behavior)', () => {
+    const pathOnly: AllowlistEntry[] = [
+      { path: 'docs/integrations/', terms: ['adapter'], reason: 'Whole-page developer guide.' },
+    ];
+    expect(
+      isAllowlisted(
+        'docs/integrations/building-relay-adapters.mdx',
+        'adapter',
+        pathOnly,
+        'anything at all'
+      )
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // File discovery
 // ---------------------------------------------------------------------------
 
@@ -450,6 +513,26 @@ describe("stripNonProse — fence detection the docs scan's line/column pins dep
     expect(stripped.trim()).toBe('');
   });
 
+  it('the banned noun INSIDE a same-line fence is never flagged, but a banned noun on the very next line still is (DOR-2508, second review round: the meaningful version of the test above)', () => {
+    // A `stripNonProse`-only assertion on one isolated line cannot tell a
+    // correct same-line-fence-is-inline-code implementation from a broken one
+    // that falls through to "this line OPENS a multi-line fence" instead —
+    // both blank the fence line itself. The difference only shows up on the
+    // line AFTER it: a real multi-line-fence-open would swallow line 2 as
+    // still-fenced content and hide its violation; the correct same-line
+    // handling leaves line 2 as ordinary prose. Driven through scanMdx, not
+    // stripNonProse, so this is the same seam a docs reader's compiled page
+    // — and check-vocab-gate's own scan — actually goes through.
+    const text = [
+      '    ```bash pnpm vitest run apps/server -- a connector test ```',
+      'A connector mention on the very next line should still be flagged.',
+    ].join('\n');
+    const violations = scanMdx('docs/fixture.mdx', text, WAVE_4_TERMS);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.line).toBe(2);
+    expect(violations[0]?.term).toBe('connector');
+  });
+
   it('a same-line fence pair with prose on both sides leaves the prose scannable (docs/contributing/testing.mdx:15 shape)', () => {
     // Mirrors `<Tab value="All tests">\`\`\`bash pnpm test \`\`\` Runs all tests
     // via a connector.</Tab>` — text before AND after the inline fence.
@@ -461,16 +544,59 @@ describe("stripNonProse — fence detection the docs scan's line/column pins dep
     expect(stripped).not.toContain('pnpm test');
   });
 
-  it('a multi-line fence closes even when the closer trails real content on the same physical line (docs/self-hosting/deployment.mdx shape)', () => {
+  it("a closer trailing real content on the same physical line does NOT close the fence, per CommonMark — verified against the real MDX compiler, not assumed (docs/self-hosting/deployment.mdx's actual, still-broken shape)", () => {
+    // An earlier version of this suite assumed the opposite — that a closer
+    // trailing content still closes the fence — and shipped that as the
+    // "deployment.mdx shape." It was never checked against a real parser.
+    // docs-mdx-markers-compile.test.ts's sibling, run by hand against
+    // @mdx-js/mdx on the real file, showed the fence genuinely never closes
+    // there: the ``` at the end of "...DORKOS_BOUNDARY=/path/to/boundary ```"
+    // is swallowed as code text, and the block absorbs everything after it —
+    // a real, pre-existing content bug in that page, out of scope for
+    // DOR-2508 to fix, but the reason this test now asserts what the fence
+    // tracker SHOULD do to match reality: stay open past a closer that isn't
+    // alone on its own line.
     const text = [
       '  ```bash export ANTHROPIC_API_KEY=your-key-here export',
       '  DORKOS_DEFAULT_CWD=/path/to/projects export DORKOS_BOUNDARY=/path/to/boundary ```',
-      'A connector mention after the fence closes.',
+      'Still inside the fence: a connector mention here must NOT be flagged.',
+      '```',
+      'A connector mention after the REAL closer is flagged.',
     ].join('\n');
     const stripped = stripNonProse(text).split('\n');
     expect(stripped[0]).toBe('');
     expect(stripped[1]).toBe('');
-    expect(stripped[2]).toBe('A connector mention after the fence closes.');
+    expect(stripped[2]).toBe('');
+    expect(stripped[3]).toBe('');
+    expect(stripped[4]).toBe('A connector mention after the REAL closer is flagged.');
+  });
+
+  it('a fence-character run in the MIDDLE of a content line is never a closer — only a line that is the run alone, per CommonMark (DOR-2508, second review round)', () => {
+    const text = [
+      '```bash',
+      'echo "look, a ``` sequence mid-line"',
+      '```',
+      'A connector mention after the real closer.',
+    ].join('\n');
+    const stripped = stripNonProse(text).split('\n');
+    expect(stripped[0]).toBe('');
+    // The mid-line ``` inside the echo string does not close the fence, so
+    // this whole content line stays blanked as fenced content.
+    expect(stripped[1]).toBe('');
+    expect(stripped[2]).toBe('');
+    expect(stripped[3]).toBe('A connector mention after the real closer.');
+  });
+
+  it('a closer may be indented, but nothing may follow it on the line — verified with scanMdx end to end', () => {
+    const text = [
+      '```',
+      '  a connector mention as fenced content',
+      '   ```   ',
+      'A connector mention after the indented closer is flagged.',
+    ].join('\n');
+    const violations = scanMdx('docs/fixture.mdx', text, WAVE_4_TERMS);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.line).toBe(4);
   });
 
   it('a fence only closes on a run of its own character at least as long as the opener — a shorter same-character run inside is content, never a closer (4-backtick block with an inner 3-backtick fence)', () => {
@@ -696,6 +822,28 @@ describe('runVocabGate — docs scan wired end to end', () => {
     const root = makeTempDir();
     mkdirSync(join(root, 'docs'), { recursive: true });
     expect(runVocabGate(root, ['apps/client/src'], ['docs'])).toEqual([]);
+  });
+
+  it('a NEW "### Connectors" heading in configuration.mdx is still caught, even though the real allowlist covers three other lines in that exact file (DOR-2508, second review round — `contains` scoping)', () => {
+    const root = makeTempDir();
+    // The real shipped file, byte for byte, plus one mutation: an unrelated
+    // "### Connectors" heading nobody reworded or allowlisted. Reusing the
+    // real repo-relative path means the real, shipped allowlist.json entries
+    // for `'memory.provider'`, `'connectors.rawMcpServers'` and
+    // `'runtimes.opencode.provider'` are in play — this is the regression a
+    // path-only (no `contains`) version of those entries would have hidden.
+    const real = readFileSync(
+      join(import.meta.dirname, '../../docs/getting-started/configuration.mdx'),
+      'utf8'
+    );
+    const docPath = join(root, 'docs/getting-started/configuration.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(docPath, `${real}\n### Connectors\n`);
+
+    const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('connectors');
+    expect(violations[0]?.snippet).toBe('### Connectors');
   });
 });
 

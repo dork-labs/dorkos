@@ -228,37 +228,62 @@
     {
       "path": "docs/contributing/development-setup.mdx",
       "terms": ["integration", "integrations"],
-      "reason": "DOR-2508. `'pnpm smoke:integration'` is the real, unrenameable pnpm script name, used as a TypeTable object key. A `vocab-allow` marker cannot stay on that line: Prettier always moves a trailing `//` comment on a multi-property object's opening line onto its own following line, which was tried, committed, and confirmed broken (the marker no longer shares a line with the violation) before this entry replaced it."
+      "contains": "'pnpm smoke:integration'",
+      "reason": "DOR-2508. `'pnpm smoke:integration'` is the real, unrenameable pnpm script name, used as a TypeTable object key. A `vocab-allow` marker cannot stay on that line: Prettier always moves a trailing `//` comment on a multi-property object's opening line onto its own following line, which was tried, committed, and confirmed broken (the marker no longer shares a line with the violation) before this entry replaced it. `contains` (DOR-2508, second review round) pins this entry to that exact key, so a new, unrelated 'integration' anywhere else in the file is still caught."
     },
     {
       "path": "docs/getting-started/configuration.mdx",
-      "terms": ["provider", "providers", "connector", "connectors"],
-      "reason": "DOR-2508. Three TypeTable object keys are real, unrenameable config field names — `memory.provider`, `connectors.rawMcpServers`, `runtimes.opencode.provider` — each on a multi-property object's opening line, the same Prettier comment-placement limitation as docs/contributing/development-setup.mdx above. The user-facing '### Connectors' heading and every 'integrations'/'AI provider' mention in this file's prose were reworded instead of allowlisted; only these three literal field-name keys remain."
+      "terms": ["provider", "providers"],
+      "contains": "'memory.provider'",
+      "reason": "DOR-2508. `memory.provider` is the real, unrenameable TypeTable object key for the MemoryProvider port, same Prettier comment-placement limitation as development-setup.mdx above. `contains` pins this entry to that exact key."
+    },
+    {
+      "path": "docs/getting-started/configuration.mdx",
+      "terms": ["connector", "connectors"],
+      "contains": "'connectors.rawMcpServers'",
+      "reason": "DOR-2508. `connectors.rawMcpServers` is the real, unrenameable TypeTable object key for the raw-MCP config field, same Prettier comment-placement limitation as development-setup.mdx above. `contains` pins this entry to that exact key — the user-facing '### Connectors' heading in this same file was reworded to '### Connections' instead, not allowlisted, and stays caught if it ever comes back."
+    },
+    {
+      "path": "docs/getting-started/configuration.mdx",
+      "terms": ["provider", "providers"],
+      "contains": "'runtimes.opencode.provider'",
+      "reason": "DOR-2508. `runtimes.opencode.provider` is the real, unrenameable TypeTable object key for OpenCode's model-provider picker, same Prettier comment-placement limitation as development-setup.mdx above. `contains` pins this entry to that exact key — a new, unrelated 'provider' anywhere else in this file (the AI-service prose above was reworded instead of allowlisted) is still caught."
     },
     {
       "path": "docs/guides/workspaces.mdx",
       "terms": ["provider", "providers"],
-      "reason": "DOR-2508. `provider:` is the real TypeTable object key for `workspace.defaultProvider` / `WorkspaceProvider` (the workspace-provisioning backend, unrelated to Connections or AI-model providers), same Prettier comment-placement limitation as development-setup.mdx above. Every other 'provider' mention in this file was reworded to 'checkout kind' instead."
+      "contains": "provider: {",
+      "reason": "DOR-2508. `provider:` is the real TypeTable object key for `workspace.defaultProvider` / `WorkspaceProvider` (the workspace-provisioning backend, unrelated to Connections or AI-model providers), same Prettier comment-placement limitation as development-setup.mdx above. `contains` pins this entry to that exact key — every other 'provider' mention in this file was reworded to 'checkout kind' instead, and a new one is still caught."
     },
     {
       "path": "docs/guides/agent-coordination.mdx",
       "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. The 'Building Relay Adapters' Card links to the docs/integrations/ builder page by its own real title. A `vocab-allow` marker cannot stay on the Card's line: Prettier always moves a trailing JSX comment on a multi-child Card onto its own line (inserting a `{' '}` token), which was tried, committed, and confirmed broken before this entry replaced it. This page's own instructional line was reworded to point at Connections instead (no adapter/adapters left outside this one Card)."
+      "contains": "title=\"Building Relay Adapters\"",
+      "reason": "DOR-2508. The 'Building Relay Adapters' Card links to the docs/integrations/ builder page by its own real title. A `vocab-allow` marker cannot stay on the Card's line: Prettier always moves a trailing JSX comment on a multi-child Card onto its own line (inserting a `{' '}` token), which was tried, committed, and confirmed broken before this entry replaced it. `contains` pins this entry to that exact title — this page's own instructional line was reworded to point at Connections instead, and a new, unrelated 'adapter' anywhere else in the file is still caught."
     },
     {
       "path": "docs/index.mdx",
       "terms": ["integration", "integrations"],
-      "reason": "DOR-2508. The 'Building Integrations' Card links to docs/integrations/ by that section's own established title — same Prettier JSX-comment limitation as agent-coordination.mdx above."
+      "contains": "title=\"Building Integrations\"",
+      "reason": "DOR-2508. The 'Building Integrations' Card links to docs/integrations/ by that section's own established title — same Prettier JSX-comment limitation as agent-coordination.mdx above. `contains` pins this entry to that exact title."
     },
     {
       "path": "docs/concepts/sessions.mdx",
       "terms": ["integration", "integrations"],
-      "reason": "DOR-2508. The 'Building Integrations' Card (title and 'extension authors' body copy) has the same Prettier JSX-comment limitation as docs/index.mdx above."
+      "contains": "title=\"Building Integrations\"",
+      "reason": "DOR-2508. The 'Building Integrations' Card title has the same Prettier JSX-comment limitation as docs/index.mdx above. `contains` pins this entry to that exact title; the 'extension authors' body copy on the line below was reworded to drop the word instead of relying on this entry."
     },
     {
       "path": "docs/marketplace/index.mdx",
       "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. The 'Building Relay Adapters' Card (title and body) has the same Prettier JSX-comment limitation as agent-coordination.mdx above. Two other lines in this file (the catalog summary and the Discord bullet) carry working `vocab-allow` markers instead, since plain prose and list items — unlike a multi-child Card — are not reformatted onto separate lines by Prettier; kept for the audit trail even though this entry would cover them too."
+      "contains": "title=\"Building Relay Adapters\"",
+      "reason": "DOR-2508. The 'Building Relay Adapters' Card title has the same Prettier JSX-comment limitation as agent-coordination.mdx above. `contains` pins this entry to that exact title."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "Build a custom adapter and ship it to the marketplace.",
+      "reason": "DOR-2508. The Card body copy below the 'Building Relay Adapters' title, same Prettier limitation. `contains` pins this second entry to that exact sentence — two other lines in this file (the catalog summary and the Discord bullet) carry working `vocab-allow` markers instead, since plain prose and list items, unlike a multi-child Card, are not reformatted onto separate lines by Prettier."
     }
   ]
 }

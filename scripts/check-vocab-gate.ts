@@ -178,6 +178,21 @@ export interface AllowlistEntry {
   path: string;
   /** Terms this entry covers. Absent means "every banned term". */
   terms?: string[];
+  /**
+   * Plain substring the violation's own snippet must ALSO contain, checked
+   * case-sensitively against {@link Violation.snippet}. Absent means every
+   * matching line at `path` is covered — the whole-file behavior every entry
+   * had before this field existed. Present, it narrows a `path` match down to
+   * the exact line(s) that legitimately need it: a real code identifier
+   * (`'connectors.rawMcpServers'`) or a real page title (`title="Building
+   * Relay Adapters"`), so a NEW, unrelated use of the same banned term
+   * anywhere else in that file is still caught (DOR-2508, second review
+   * round). Reserved for narrow, single-purpose entries — a directory or a
+   * whole-page developer guide with dozens of legitimate uses throughout
+   * (`docs/integrations/`, `docs/guides/flow/`) has no one line to name, and
+   * stays path-only on purpose; see each such entry's own reason.
+   */
+  contains?: string;
   /** Why the usage is legitimate — required so the file stays an audit trail. */
   reason: string;
 }
@@ -330,15 +345,22 @@ export function loadAllowlist(
  * @param filePath - Repo-relative path the violation was found at.
  * @param term - The banned term that matched.
  * @param allowlist - Entries to check against.
+ * @param snippet - The violation's own snippet ({@link Violation.snippet}).
+ *   Required to satisfy an entry that carries {@link AllowlistEntry.contains}
+ *   — omit it only when every entry that could match `filePath` is path-only,
+ *   e.g. a hermetic test fixture with no `contains` entries in play.
  */
 export function isAllowlisted(
   filePath: string,
   term: string,
-  allowlist: AllowlistEntry[]
+  allowlist: AllowlistEntry[],
+  snippet?: string
 ): boolean {
   return allowlist.some(
     (entry) =>
-      filePath.includes(entry.path) && (entry.terms === undefined || entry.terms.includes(term))
+      filePath.includes(entry.path) &&
+      (entry.terms === undefined || entry.terms.includes(term)) &&
+      (entry.contains === undefined || (snippet !== undefined && snippet.includes(entry.contains)))
   );
 }
 
@@ -546,10 +568,8 @@ function stripInlineCodeAndTargets(segment: string): string {
  * machine, because Prettier's MDX formatter routinely collapses a short
  * fenced block onto one line inside a JSX child (`<Tab value="…">```bash
  * pnpm test ``` Runs all tests in watch mode.</Tab>`, `docs/contributing/
- * testing.mdx`), and sometimes lets a multi-line fence's closer trail real
- * content instead of opening its own line (`docs/self-hosting/
- * deployment.mdx`'s `... DORKOS_BOUNDARY=/path/to/boundary ``` `). Two rules,
- * checked in this order on every line not already inside a fence:
+ * testing.mdx`). Two rules, checked in this order on every line not already
+ * inside a fence:
  *
  *   1. **A fence that opens AND closes on the same line is inline code**, not
  *      a state change — found by scanning the line for every run of 3+
@@ -566,9 +586,20 @@ function stripInlineCodeAndTargets(segment: string): string {
  *      character and length, and blank the rest of the line.
  *
  * Once inside a fence, every line is blanked outright, and the fence closes
- * only when a line contains a run of the SAME character at least as long as
- * the opener — never a shorter run of the same character (the nested-fence
- * case above), and never the other character.
+ * only on a line that, after leading whitespace, is NOTHING BUT a run of the
+ * SAME character at least as long as the opener — anchored to the start of
+ * the line and required to run to the end of it, per CommonMark. Never a
+ * shorter run of the same character (the nested-fence case above), never the
+ * other character, and never a run that merely ends a line of real content or
+ * sits in the middle of one (a shell script echoing `` ``` `` is content, not
+ * a closer). Verified against the real compiler, not assumed:
+ * `docs-mdx-markers-compile.test.ts`'s sibling test in the fence-detection
+ * suite compiled `docs/self-hosting/deployment.mdx`'s own closer-trails-
+ * content line through `@mdx-js/mdx` and confirmed it does NOT close there
+ * either — a real, pre-existing content bug in that page (out of scope for
+ * DOR-2508), and the reason this rule anchors the way it does rather than the
+ * looser "anywhere on the line" check an earlier, unverified version of this
+ * file shipped.
  *
  * EVERYTHING ELSE. Inline code spans (`` `...` ``), markdown link targets
  * (the `(...)` half of `[text](...)`), and `href=`/`src=` JSX attribute
@@ -594,10 +625,20 @@ export function stripNonProse(text: string): string {
       if (/^\s*(import|export)\s/.test(line)) return '';
 
       if (inFence) {
-        // A shorter run of the fence character is content (the nested-fence
-        // case), never a closer — only a run at least as long as the opener
-        // closes it, per CommonMark.
-        if (new RegExp(`${fenceChar}{${fenceLen},}`).test(line)) inFence = false;
+        // A closer must be ALONE on its line, per CommonMark: leading
+        // whitespace, then a run of the fence character at least as long as
+        // the opener, then nothing but trailing whitespace. Anchored to
+        // `^\s*`, not searched anywhere in the line — a mid-line ``` inside
+        // real code content (a shell script echoing markdown, say) is
+        // content, never a closer, and neither is a shorter same-character
+        // run (the nested-fence case) even when it does start the line. Both
+        // limbs verified against the real MDX compiler DOR-2508's second
+        // review round added (`docs-mdx-markers-compile.test.ts`): a
+        // same-line-pair fence like `docs/self-hosting/deployment.mdx`'s
+        // second, closer-earlier-assumed-but-never-actually-closing shape
+        // compiles its "closer" as literal code text, exactly what this
+        // anchored check now also does.
+        if (new RegExp(`^\\s*${fenceChar}{${fenceLen},}\\s*$`).test(line)) inFence = false;
         return '';
       }
 
@@ -739,7 +780,7 @@ export function runVocabGate(
     const relPath = toPosixRelative(repoRoot, file);
     const text = readFileSync(file, 'utf8');
     for (const v of scanSource(relPath, text, terms)) {
-      if (isAllowlisted(v.file, v.term, allowlist)) continue;
+      if (isAllowlisted(v.file, v.term, allowlist, v.snippet)) continue;
       violations.push(v);
     }
   }
@@ -748,7 +789,7 @@ export function runVocabGate(
     const relPath = toPosixRelative(repoRoot, file);
     const text = readFileSync(file, 'utf8');
     for (const v of scanMdx(relPath, text, docsTerms)) {
-      if (isAllowlisted(v.file, v.term, allowlist)) continue;
+      if (isAllowlisted(v.file, v.term, allowlist, v.snippet)) continue;
       violations.push(v);
     }
   }
