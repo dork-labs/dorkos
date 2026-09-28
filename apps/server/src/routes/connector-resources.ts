@@ -34,6 +34,7 @@ import {
   type ConnectorOperatorQueryService,
 } from '../services/connectors/resources/operator-query-service.js';
 import type { CatalogLogoService } from '../services/connectors/resources/catalog-logos.js';
+import type { SignInRefresher } from '../services/connectors/resources/sign-in-refresh.js';
 
 const CatalogQuerySchema = z
   .object({
@@ -69,6 +70,8 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
   >;
   /** What an app lets agents do, read on demand and kept. */
   readonly actions: Pick<ConnectorAppActionsService, 'list'>;
+  /** Asks each service whether its sign-ins still hold when the owner looks (debounced). */
+  readonly signIns: Pick<SignInRefresher, 'refreshOnDemand'>;
 }
 
 function owner(req: Request, res: Response, deps: ConnectorResourcesRouterDeps) {
@@ -206,6 +209,7 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     const operator = owner(req, res, deps);
     if (!operator) return;
     try {
+      await deps.signIns.refreshOnDemand();
       res.json({
         connections: await withSignal(req, (signal) =>
           deps.query.listConnections(operator, signal)
@@ -321,6 +325,7 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     const operator = owner(req, res, deps);
     if (!operator) return;
     try {
+      await deps.signIns.refreshOnDemand();
       res.json(
         await withSignal(req, (signal) =>
           deps.query.getConnection(operator, req.params.connectionId, signal)

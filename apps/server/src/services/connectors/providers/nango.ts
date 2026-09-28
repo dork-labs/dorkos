@@ -174,6 +174,8 @@ function toPortStatus(status: NangoConnectionStatus): ProviderConnectedAccount['
       return 'pending';
     case 'ERROR':
       return 'revoked';
+    case 'UNKNOWN':
+      return 'unknown';
   }
 }
 

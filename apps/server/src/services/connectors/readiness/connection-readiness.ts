@@ -21,14 +21,15 @@
  * | 2  | disconnected, nothing owed, way down                                   | `gone`        | `disconnected`               | `connect_new` (person)             |
  * | 3  | disconnected, cleanup owed, access sync pending, way up                | `gone`        | `disconnect_finishing`       | `retry` (dorkos, retryAt)          |
  * | 4  | disconnected, cleanup owed, access sync pending, DorkOS account can't reach apps | `gone` | `disconnect_finishing` | `wait` (dorkos, retryAt)           |
- * | 5  | disconnected, cleanup owed, way down: own key                          | `gone`        | `disconnect_stuck`           | `fix_key` (person)                 |
+ * | 5  | disconnected, cleanup owed, way down: own key refused (no re-check due) | `gone`       | `disconnect_stuck`           | `fix_key` (person)                 |
  * | 6  | disconnected, cleanup owed, way down: anything else                    | `gone`        | `disconnect_stuck`           | none                               |
  * | 7  | disconnected, cleanup unknown, DorkOS account                          | `gone`        | `disconnect_stuck`           | none                               |
  * | 8  | disconnected, cleanup owed, way up                                     | `gone`        | `disconnect_failed`          | `retry` (person)                   |
  * | 9  | turned off for this chat (agent and chat views only)                   | `unavailable` | `off_for_this_chat`          | none                               |
  * | 10 | way down: DorkOS account not linked                                    | `needs_you`   | `dorkos_account_unlinked`    | `connect_new` (person)             |
- * | 11 | way down: DorkOS account can't reach apps                              | `unavailable` | `dorkos_account_unavailable` | `retry` (dorkos)                   |
- * | 12 | way down: own key not set up or not answering                          | `needs_you`   | `own_key_unavailable`        | `fix_key` (person)                 |
+ * | 11 | way down: DorkOS account can't reach apps                              | `unavailable` | `dorkos_account_unavailable` | `retry` (dorkos, retryAt if a re-check is due) |
+ * | 12 | way down: own key, DorkOS checks it again on its own (a timeout, an outage) | `unavailable` | `own_key_unavailable` | `wait` (dorkos, retryAt)           |
+ * | 12b | way down: own key refused, removed or not set up                      | `needs_you`   | `own_key_unavailable`        | `fix_key` (person)                 |
  * | 13 | way down: nothing DorkOS can name                                      | `unavailable` | `way_unreachable`            | `connect_new` if another way works |
  * | 14 | way up but can't run actions, a key would fix it                       | `needs_you`   | `own_key_cannot_run_actions` | `fix_key` (person)                 |
  * | 15 | way up but can't run actions, nothing would fix it                     | `unavailable` | `cannot_run_actions`         | `connect_new` if another way works |
@@ -58,6 +59,7 @@ import {
   ConnectionReadinessSchema,
   disconnectStuckOwnerLine,
   TELL_THE_PERSON_AGENT_COPY,
+  WAY_RECHECK_COPY,
   type ConnectionDisconnectStuckCause,
   type ConnectionFix,
   type ConnectionReadiness,
@@ -96,6 +98,12 @@ export type ConnectionWayHealth =
       readonly problem: ConnectorWayProblem | 'unreachable';
       /** Another way DorkOS reaches apps answers and can run actions. */
       readonly anotherWayWorks: boolean;
+      /**
+       * When DorkOS checks this way again on its own, after it failed for a
+       * reason that may pass (a timeout, an outage). Absent when it waits for
+       * the person (a refused key, a refused link) or nothing is scheduled.
+       */
+      readonly nextCheckAt?: string;
     };
 
 /** Reads the live health of the way behind one provider instance. */
@@ -110,17 +118,21 @@ export type ConnectionWayHealthPort = (providerInstanceId: string) => Connection
  * @param live - The registered route, if any.
  * @param problem - Why the way is down, when a known way is.
  * @param anotherWayWorks - Whether a different way answers and can run actions.
+ * @param nextCheckAt - When DorkOS checks a way that is down again on its own, if it will.
  */
 export function wayHealthOf(
   live: ConnectorProvider | undefined,
   problem: () => ConnectorWayProblem | undefined,
-  anotherWayWorks: () => boolean = () => false
+  anotherWayWorks: () => boolean = () => false,
+  nextCheckAt: () => string | undefined = () => undefined
 ): ConnectionWayHealth {
   if (!live) {
+    const checkAt = nextCheckAt();
     return {
       status: 'down',
       problem: problem() ?? 'unreachable',
       anotherWayWorks: anotherWayWorks(),
+      ...(checkAt !== undefined && { nextCheckAt: checkAt }),
     };
   }
   if (live.getCapabilities().capabilities.execution.status === 'available') {
@@ -261,9 +273,11 @@ function disconnectedReadiness(facts: ConnectionReadinessFacts): ConnectionReadi
     }
   }
   if (way.status === 'down') {
-    return way.problem === 'own_key_unavailable'
+    // Fixing the key helps only when the key was refused, not when DorkOS is
+    // still waiting to check it again.
+    return way.problem === 'own_key_unavailable' && !way.nextCheckAt
       ? stuck(way.problem, { action: 'fix_key', fixableBy: 'person' })
-      : stuck(way.problem);
+      : stuck(way.problem === 'own_key_unavailable' ? 'unreachable' : way.problem);
   }
   // An account closed because a new DorkOS account link couldn't reach it:
   // disconnecting again goes to a link that doesn't know it, so it can't work.
@@ -292,12 +306,22 @@ export function deriveConnectionReadiness(facts: ConnectionReadinessFacts): Conn
         return readiness('unavailable', 'dorkos_account_unavailable', {
           action: 'retry',
           fixableBy: 'dorkos',
+          ...(way.nextCheckAt && { retryAt: way.nextCheckAt }),
         });
       case 'own_key_unavailable':
-        return readiness('needs_you', 'own_key_unavailable', {
-          action: 'fix_key',
-          fixableBy: 'person',
-        });
+        // A key that failed for a reason that may pass is DorkOS's to check
+        // again; one the service refused waits for the person to fix it.
+        return way.nextCheckAt
+          ? ConnectionReadinessSchema.parse({
+              state: 'unavailable',
+              reason: 'own_key_unavailable',
+              fix: { action: 'wait', fixableBy: 'dorkos', retryAt: way.nextCheckAt },
+              copy: WAY_RECHECK_COPY,
+            })
+          : readiness('needs_you', 'own_key_unavailable', {
+              action: 'fix_key',
+              fixableBy: 'person',
+            });
       case 'unreachable':
         return unfixable('way_unreachable', way.anotherWayWorks);
     }

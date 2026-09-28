@@ -16,8 +16,9 @@ export {
   ConnectorRegistry,
   type ConnectorRegistryOpts,
   type ConnectorWarning,
-  type AggregatedAccounts,
   type AggregatedToolkits,
+  type SignInRefreshFailure,
+  type SignInRefreshResult,
 } from './registry.js';
 export type { StableConnectionBinding } from './connection-store.js';
 export {

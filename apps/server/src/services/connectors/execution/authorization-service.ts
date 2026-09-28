@@ -19,9 +19,9 @@ import {
   type ConnectorOperationClassification,
   type ConnectorOperationRevision,
 } from '@dorkos/shared/connector-schemas';
-import type {
-  ConnectorExternalAccountRef,
-  ConnectorProvider,
+import {
+  type ConnectorExternalAccountRef,
+  type ConnectorProvider,
 } from '@dorkos/shared/connector-provider';
 import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import type { CapabilityPreflightResult } from '../../core/capabilities/index.js';
@@ -351,6 +351,14 @@ export class ConnectorExecutionAuthorizationService {
         'CONNECTOR_OWNER_MISMATCH',
         'The selected connection does not belong to this caller.'
       );
+    }
+    if (
+      row.lifecycleState === 'connected' &&
+      row.enabled &&
+      (row.connectionStatus === 'expired' || row.connectionStatus === 'revoked')
+    ) {
+      // The service said this sign-in ended; readiness names the one fix.
+      return this.refuseNotReady('CONNECTOR_SIGN_IN_ENDED', row);
     }
     if (
       row.lifecycleState !== 'connected' ||

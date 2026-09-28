@@ -80,6 +80,16 @@ const TOOLKIT_PAGE_LIMIT = 100;
  */
 const MAX_TOOLKIT_PAGES = 20;
 
+/** Page size requested when listing connected accounts. */
+const ACCOUNT_PAGE_LIMIT = 100;
+
+/**
+ * Upper bound on connected-account pages followed per listing, for the same
+ * reason as {@link MAX_TOOLKIT_PAGES}: a cursor that never ends must not turn
+ * one sign-in check into an unbounded request chain.
+ */
+const MAX_ACCOUNT_PAGES = 20;
+
 /**
  * A connectable Composio toolkit (service), reduced to what the connect picker
  * needs. `authScheme` echoes Composio's primary per-toolkit auth scheme.
@@ -376,13 +386,35 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
     // VERIFIED-DOCS (2026-07-29): GET /api/v3.1/connected_accounts filters by
     // PLURAL params — `user_ids` and `toolkit_slugs` (the original `user_id` /
     // `toolkit` names are not in the reference) → { items: [...] }.
-    const query = new URLSearchParams({ user_ids: this._userId });
-    if (opts?.toolkit) query.set('toolkit_slugs', opts.toolkit);
-    const body = await this._request<{ items?: RawConnectedAccount[] }>(
-      'GET',
-      `/api/v3.1/connected_accounts?${query.toString()}`
+    // The listing paginates by cursor exactly as the toolkit catalog does, so
+    // every page is followed (bounded) and a sign-in refresh sees every account.
+    const accounts: ComposioConnectedAccount[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_ACCOUNT_PAGES; page += 1) {
+      const query = new URLSearchParams({
+        user_ids: this._userId,
+        limit: String(ACCOUNT_PAGE_LIMIT),
+      });
+      if (opts?.toolkit) query.set('toolkit_slugs', opts.toolkit);
+      if (cursor) query.set('cursor', cursor);
+      const body = await this._request<{
+        items?: RawConnectedAccount[];
+        next_cursor?: string | null;
+      }>('GET', `/api/v3.1/connected_accounts?${query.toString()}`);
+      accounts.push(...(body.items ?? []).map(toDomainAccount));
+      const nextCursor = body.next_cursor ?? undefined;
+      if (!nextCursor) return accounts;
+      if (nextCursor === cursor || seenCursors.has(nextCursor)) {
+        throw new ComposioApiError(502, 'Composio repeated a connected-account cursor.');
+      }
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+    throw new ComposioApiError(
+      502,
+      `Composio connected accounts exceed the ${MAX_ACCOUNT_PAGES}-page safety limit.`
     );
-    return (body.items ?? []).map(toDomainAccount);
   }
 
   async deleteConnectedAccount(connectedAccountId: string): Promise<void> {

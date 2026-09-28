@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONNECT_ANOTHER_WAY_COPY,
   CONNECTION_READINESS_COPY,
+  WAY_RECHECK_COPY,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
 import {
@@ -377,6 +378,37 @@ describe('deriveConnectionReadiness truth table', () => {
     expect(without.copy.agent).toBe(
       `${CONNECTION_READINESS_COPY.way_unreachable.agent} Tell the person.`
     );
+  });
+
+  it('leaves a way that failed for a reason that may pass to DorkOS, with when it checks again', () => {
+    const transientKey = deriveConnectionReadiness(
+      facts({ way: { ...down('own_key_unavailable'), nextCheckAt: RETRY_AT } })
+    );
+    expect(transientKey).toMatchObject({
+      state: 'unavailable',
+      reason: 'own_key_unavailable',
+      fix: { action: 'wait', fixableBy: 'dorkos', retryAt: RETRY_AT },
+      copy: WAY_RECHECK_COPY,
+    });
+    // A refused key waits for the person.
+    expect(deriveConnectionReadiness(facts({ way: down('own_key_unavailable') })).fix).toEqual({
+      action: 'fix_key',
+      fixableBy: 'person',
+    });
+    const account = deriveConnectionReadiness(
+      facts({ way: { ...down('dorkos_account_unavailable'), nextCheckAt: RETRY_AT } })
+    );
+    expect(account.fix).toEqual({ action: 'retry', fixableBy: 'dorkos', retryAt: RETRY_AT });
+    // A disconnect can't be finished by fixing a key DorkOS is only waiting to re-check.
+    const stuck = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'failed',
+        way: { ...down('own_key_unavailable'), nextCheckAt: RETRY_AT },
+      })
+    );
+    expect(stuck).toMatchObject({ reason: 'disconnect_stuck' });
+    expect(stuck.fix).toBeUndefined();
   });
 
   it('never promises an automatic re-check it doesn’t make', () => {

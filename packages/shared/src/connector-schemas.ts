@@ -666,6 +666,16 @@ export function disconnectStuckOwnerLine(cause: ConnectionDisconnectStuckCause):
 }
 
 /**
+ * The words for an account whose own key didn't answer for a reason that may
+ * pass (a timeout, an outage): DorkOS checks it again on its own.
+ */
+export const WAY_RECHECK_COPY: ConnectionReadinessCopy = {
+  owner: 'The key it was connected through didn’t answer. DorkOS checks it again on its own.',
+  agent:
+    'The way this account was connected through didn’t answer. DorkOS checks it again on its own, so try again in a few minutes. The person doesn’t need to do anything.',
+};
+
+/**
  * What an agent is told to do about an account nothing fixes from here: tell
  * the person. Added only when no concrete fix sentence follows.
  */

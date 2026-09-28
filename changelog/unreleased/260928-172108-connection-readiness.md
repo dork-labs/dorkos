@@ -11,6 +11,7 @@ covers:
 - Every app that needs something shows one line saying what's wrong and one button that fixes it: Sign in again, Resume, Fix the key, Connect again, or Check who can use it. When there's nothing you can press, it says what DorkOS is doing, or what you can do in the app's own settings, with no button that can't work (DOR-2500)
 - Your agent now learns why it can't use an app you gave it (paused, signed out, turned off for this chat, a change to its access still applying or refused, and more) and tells you the one thing to do, instead of asking you for access again (DOR-2500)
 - A chat's side panel now says, for each connected app, whether its agent can use it here and why not, in the same words as the Connections page (DOR-2500)
+- When your own key didn't answer for a reason that may pass, the app now says DorkOS checks it again on its own, instead of asking you to fix a key that works (DOR-2500)
 - Signing in to an app again no longer quietly resumes an app you had paused. It stays paused until you resume it (DOR-2500)
 - "Check again" on an app your DorkOS account can't reach now asks DorkOS to try the account again, rather than only re-reading the list (DOR-2500)
 - Settings › Connections no longer says "Working" for a DorkOS account that can't reach apps, or for a Composio key that can't run actions. The key hint now asks for a project key (DOR-2500)

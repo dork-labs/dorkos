@@ -2,16 +2,24 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { connectorProviderInstances, createDb, eq, runMigrations, type Db } from '@dorkos/db';
+import {
+  connections,
+  connectorProviderInstances,
+  createDb,
+  eq,
+  runMigrations,
+  type Db,
+} from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
   ConnectedAccount,
+  ConnectorExternalAccountRef,
   ConnectorProviderInstanceId,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { ConnectorCatalogCache } from '../resources/catalog-cache.js';
-import { ConnectorRegistry } from '../registry.js';
+import { ConnectorRegistry, DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS } from '../registry.js';
 
 /** A provider whose `listAccounts` always rejects — the degradation case. */
 class BrokenProvider extends FakeConnectorProvider {
@@ -43,7 +51,7 @@ describe('ConnectorRegistry', () => {
   beforeEach(() => {
     db = createDb(':memory:');
     runMigrations(db);
-    registry = new ConnectorRegistry({ db, providerTimeoutMs: 100 });
+    registry = new ConnectorRegistry({ db, providerTimeoutMs: 100, signInRefreshTimeoutMs: 100 });
   });
 
   it('registers, lists, and resolves providers by type', () => {
@@ -204,49 +212,319 @@ describe('ConnectorRegistry', () => {
     // resolves to nothing rather than throwing.
     expect(registry.accountBinding(account.id)).toMatchObject({ provider: 'composio' });
     expect(registry.providerForAccount(account.id)).toBeUndefined();
-    // Aggregation simply no longer includes the unregistered backend.
-    const { accounts, warnings } = await registry.listAccounts();
-    expect(accounts).toEqual([]);
-    expect(warnings).toEqual([]);
+    // The refresh simply no longer asks the unregistered backend.
+    expect(await registry.refreshSignIns()).toEqual({ changes: [], failures: [] });
+    expect(registry.accountBinding(account.id)?.status).toBe('active');
   });
 
-  it('aggregates accounts across providers', async () => {
+  it('marks a kept row unavailable even when nothing is live, so a failed boot check never reads as available', () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
-    const nango = new FakeConnectorProvider({ type: 'nango' });
     registry.register(composio);
-    registry.register(nango);
-    const a = await connectOne(registry, composio, 'gmail', 'personal');
-    const b = await connectOne(registry, nango, 'slack', 'team');
+    const statusOf = () =>
+      db
+        .select({ status: connectorProviderInstances.status })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.id, composio.instanceId))
+        .get();
+    expect(statusOf()).toEqual({ status: 'available' });
 
-    const { accounts, warnings } = await registry.listAccounts();
-    expect(accounts.map((acc) => acc.id).sort()).toEqual([a.id, b.id].sort());
-    expect(warnings).toEqual([]);
+    // A restart: the new registry holds nothing live, and the way's check
+    // fails before it registers. The row the last run left must not say
+    // the way is available.
+    const restarted = new ConnectorRegistry({ db });
+    restarted.unregisterProviderInstance(composio.instanceId);
+
+    expect(statusOf()).toEqual({ status: 'unavailable' });
   });
 
-  it('degrades a throwing provider to a warning while the others still return', async () => {
-    const composio = new FakeConnectorProvider({ type: 'composio' });
-    registry.register(composio);
-    registry.register(new BrokenProvider());
-    const a = await connectOne(registry, composio, 'gmail', 'personal');
+  describe('refreshSignIns', () => {
+    const lastVerifiedAt = (id: string) =>
+      db
+        .select({ at: connections.lastVerifiedAt })
+        .from(connections)
+        .where(eq(connections.id, id))
+        .get()?.at;
 
-    const { accounts, warnings } = await registry.listAccounts();
-    expect(accounts.map((acc) => acc.id)).toEqual([a.id]);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]!.provider).toBe('broken');
-    expect(warnings[0]!.message).toContain('unreachable');
+    it('records a sign-in the service now reports expired or revoked, across providers', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      const nango = new FakeConnectorProvider({ type: 'nango' });
+      registry.register(composio);
+      registry.register(nango);
+      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
+      const slack = await connectOne(registry, nango, 'slack', 'team');
+      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'expired');
+      nango.setStatus(registry.accountBinding(slack.id)!.externalAccountRef, 'revoked');
+
+      const { changes, failures } = await registry.refreshSignIns();
+
+      expect(failures).toEqual([]);
+      expect(changes).toEqual(
+        expect.arrayContaining([
+          { connectionId: gmail.id, from: 'active', to: 'expired' },
+          { connectionId: slack.id, from: 'active', to: 'revoked' },
+        ])
+      );
+      expect(registry.accountBinding(gmail.id)?.status).toBe('expired');
+      expect(registry.accountBinding(slack.id)?.status).toBe('revoked');
+      // An ended sign-in is never routed to its provider.
+      expect(registry.providerForAccount(gmail.id)).toBeUndefined();
+    });
+
+    it('brings a sign-in back once the service reports it active again', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
+      const ref = registry.accountBinding(gmail.id)!.externalAccountRef;
+      composio.setStatus(ref, 'expired');
+      await registry.refreshSignIns();
+      composio.setStatus(ref, 'active');
+
+      await registry.refreshSignIns();
+
+      expect(registry.accountBinding(gmail.id)?.status).toBe('active');
+    });
+
+    it('leaves every account as it was when a listing fails, and reports the failure', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      const broken = new BrokenProvider();
+      registry.register(composio);
+      registry.register(broken);
+      const healthy = await connectOne(registry, composio, 'gmail', 'personal');
+      const unreachable = await connectOne(registry, broken, 'slack', 'team');
+      const verifiedBefore = lastVerifiedAt(unreachable.id);
+      composio.setStatus(registry.accountBinding(healthy.id)!.externalAccountRef, 'expired');
+
+      const { changes, failures } = await registry.refreshSignIns();
+
+      expect(failures).toEqual([
+        {
+          providerInstanceId: broken.instanceId,
+          provider: 'broken',
+          message: 'provider unreachable',
+        },
+      ]);
+      // An outage is not a sign-in that ended: the unreachable account keeps
+      // its status and its last check time.
+      expect(registry.accountBinding(unreachable.id)?.status).toBe('active');
+      expect(lastVerifiedAt(unreachable.id)).toBe(verifiedBefore);
+      // The reachable provider still refreshed.
+      expect(changes).toEqual([{ connectionId: healthy.id, from: 'active', to: 'expired' }]);
+    });
+
+    it('reports a listing that times out as a failure', async () => {
+      const stuck = new BrokenProvider();
+      stuck.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
+      registry.register(stuck);
+
+      const { failures } = await registry.refreshSignIns();
+
+      expect(failures).toHaveLength(1);
+      expect(failures[0]!.message).toMatch(/timed out/);
+    });
+
+    it('gives a slow, many-page listing its own longer deadline than a page read gets', async () => {
+      vi.useFakeTimers();
+      try {
+        const defaults = new ConnectorRegistry({ db });
+        const composio = new FakeConnectorProvider({ type: 'composio' });
+        defaults.register(composio);
+        const gmail = await connectOne(defaults, composio, 'gmail', 'personal');
+        const account = (await composio.listAccounts())[0]!;
+        // Well past the 5-second read deadline, inside the refresh's own.
+        composio.listAccounts = () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve([{ ...account, status: 'expired' }]), 12_000)
+          );
+
+        const slow = defaults.refreshSignIns();
+        await vi.advanceTimersByTimeAsync(12_000);
+        expect(await slow).toMatchObject({ failures: [] });
+        expect(defaults.accountBinding(gmail.id)?.status).toBe('expired');
+
+        // A listing that never ends still fails, at the refresh deadline.
+        composio.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
+        const stuck = defaults.refreshSignIns();
+        await vi.advanceTimersByTimeAsync(DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS);
+        expect((await stuck).failures[0]!.message).toMatch(/timed out after 20000ms/);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('records nothing from a status the service did not state', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
+      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'expired');
+      await registry.refreshSignIns();
+      const before = db
+        .select({ status: connections.status, at: connections.lastVerifiedAt })
+        .from(connections)
+        .where(eq(connections.id, gmail.id))
+        .get();
+      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'unknown');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const { changes, failures } = await registry.refreshSignIns();
+
+      expect({ changes, failures }).toEqual({ changes: [], failures: [] });
+      expect(
+        db
+          .select({ status: connections.status, at: connections.lastVerifiedAt })
+          .from(connections)
+          .where(eq(connections.id, gmail.id))
+          .get()
+      ).toEqual(before);
+      expect(before?.status).toBe('expired');
+    });
+
+    it('records a finished sign-in the service reports without a status as signed in', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const { flowId } = await composio.startConnect('gmail', { label: 'work' });
+      const { account } = await composio.pollConnect(flowId);
+
+      const connected = registry.recordConnect(composio, { ...account!, status: 'unknown' });
+
+      expect(connected.status).toBe('active');
+      expect(registry.accountBinding(connected.id)?.status).toBe('active');
+    });
+
+    it('never adds, closes, relabels or moves an account; it only records the sign-in', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const listed = await connectOne(registry, composio, 'gmail', 'personal');
+      const unlisted = await connectOne(registry, composio, 'slack', 'team');
+      registry.setLabel(listed.id, 'Work mail');
+      const listedRef = registry.accountBinding(listed.id)!.externalAccountRef;
+      composio.listAccounts = () =>
+        Promise.resolve([
+          // The kept account, under the service's own label and a new app id.
+          {
+            externalAccountRef: listedRef,
+            toolkit: 'google-mail',
+            label: 'service label',
+            status: 'expired',
+            custody: 'managed',
+          },
+          // An account DorkOS never connected (a leftover sign-in at the service).
+          {
+            externalAccountRef: 'never-connected' as ConnectorExternalAccountRef,
+            toolkit: 'gmail',
+            label: 'stranger',
+            status: 'active',
+            custody: 'managed',
+          },
+        ]);
+
+      await registry.refreshSignIns();
+
+      expect(db.select().from(connections).all()).toHaveLength(2);
+      expect(registry.accountBinding(listed.id)).toMatchObject({
+        label: 'Work mail',
+        toolkit: 'gmail',
+        status: 'expired',
+      });
+      expect(registry.accountBinding(unlisted.id)?.status).toBe('active');
+      expect(
+        db
+          .select({ lifecycle: connections.lifecycleState })
+          .from(connections)
+          .where(eq(connections.id, unlisted.id))
+          .get()
+      ).toEqual({ lifecycle: 'connected' });
+    });
+
+    it('leaves an account the service reports mid-sign-in, a paused one keeps its pause, and a closed one stays closed', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const pending = await connectOne(registry, composio, 'gmail', 'pending');
+      const paused = await connectOne(registry, composio, 'gmail', 'paused');
+      const closed = await connectOne(registry, composio, 'slack', 'closed');
+      composio.setStatus(registry.accountBinding(pending.id)!.externalAccountRef, 'pending');
+      composio.setStatus(registry.accountBinding(paused.id)!.externalAccountRef, 'expired');
+      composio.setStatus(registry.accountBinding(closed.id)!.externalAccountRef, 'expired');
+      registry.setPaused(paused.id, true);
+      registry.recordDisconnect(closed.id);
+
+      await registry.refreshSignIns();
+
+      expect(registry.accountBinding(pending.id)?.status).toBe('active');
+      expect(registry.accountBinding(paused.id)?.status).toBe('paused');
+      registry.setPaused(paused.id, false);
+      expect(registry.accountBinding(paused.id)?.status).toBe('expired');
+      expect(
+        db
+          .select({ status: connections.status })
+          .from(connections)
+          .where(eq(connections.id, closed.id))
+          .get()
+      ).toEqual({ status: 'active' });
+    });
+
+    it('lets a sign-in that finished after the listing began win over that listing', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
+      const account = (await composio.listAccounts())[0]!;
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      composio.listAccounts = async () => {
+        await blocked;
+        return [{ ...account, status: 'expired' }];
+      };
+
+      const refresh = registry.refreshSignIns();
+      // The owner signs in again while the slow listing is out.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      registry.recordConnect(composio, { ...account, status: 'active' });
+      release();
+      const { changes } = await refresh;
+
+      expect(changes).toEqual([]);
+      expect(registry.accountBinding(gmail.id)?.status).toBe('active');
+    });
+
+    it('skips a provider that does not list accounts', async () => {
+      const silent = new FakeConnectorProvider({ type: 'silent' });
+      const capabilities = silent.getCapabilities();
+      silent.getCapabilities = () => ({
+        ...capabilities,
+        capabilities: {
+          ...capabilities.capabilities,
+          accounts: { status: 'unsupported', reason: 'No account listing.' },
+        },
+      });
+      silent.listAccounts = () => Promise.reject(new Error('should not be asked'));
+      registry.register(silent);
+
+      expect(await registry.refreshSignIns()).toEqual({ changes: [], failures: [] });
+    });
   });
 
-  it('degrades a timing-out provider to a warning', async () => {
-    const composio = new FakeConnectorProvider({ type: 'composio' });
-    registry.register(composio);
-    // A provider that never resolves listAccounts — the timeout path.
-    const stuck = new BrokenProvider();
-    stuck.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
-    registry.register(stuck);
+  describe('markSignInEnded', () => {
+    it('marks a signed-in account expired once, and never touches a closed one', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
+      const closed = await connectOne(registry, composio, 'slack', 'team');
+      registry.recordDisconnect(closed.id);
 
-    const { warnings } = await registry.listAccounts();
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]!.message).toMatch(/timed out/);
+      expect(registry.markSignInEnded(gmail.id, 'expired')).toBe(true);
+      expect(registry.markSignInEnded(gmail.id, 'revoked')).toBe(false);
+      expect(registry.markSignInEnded(closed.id, 'expired')).toBe(false);
+
+      expect(registry.accountBinding(gmail.id)?.status).toBe('expired');
+      expect(
+        db
+          .select({ status: connections.status })
+          .from(connections)
+          .where(eq(connections.id, closed.id))
+          .get()
+      ).toEqual({ status: 'active' });
+    });
   });
 
   describe('kept app lists', () => {
