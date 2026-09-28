@@ -165,9 +165,9 @@ Mockup: [`design/flow-panel.html`](design/flow-panel.html). **Option A:** a "Flo
 
 Spec: §8.5.
 
-## 11. The Flow panel's open questions and details (orchestrator, 2026-09-28; the operator delegated the panel)
+## 11. The Flow panel's open questions and details (orchestrator, 2026-09-28)
 
-Each follows the host design system (its tokens, popover, focus ring and bar rule), so none needed a new operator review. Final-state screenshots go to the operator after merge.
+The operator left the panel to the orchestrator's judgement. Each call follows the host design system (its tokens, popover, focus ring and bar rule), so none needed a new operator review; the orchestrator shows the operator the final-state screenshots after the panel ships.
 
 Copy and behaviour:
 
@@ -177,14 +177,14 @@ Copy and behaviour:
 4. **Q28, resuming after `/flow:pause` switched schedules off:** a muted footer line, "Turn flow's schedules back on in Tasks."
 5. **Load failure:** "Couldn't load Flow's status. Try again in a moment." with a Retry chip styled like the Flow tab's.
 6. **Pause or Resume fails:** the fixed text "Flow didn't respond, so nothing was changed. Try again." (the Flow tab's save-failure line), never flow's raw error; the raw error goes to the browser console for debugging.
-7. **The account chip can't be pinned** in the status bar (2.1): a pin value older builds' config would reject.
+7. **The account chip can't be pinned** in the status bar (2.1): since a new pin value would be rejected by older builds' config (the lead's reason, accepted).
 8. **The pre-launch account picker always shows** once the gate is open (Claude Code with 2+ accounts), even when the agent's default account can't be looked up (2.1).
 9. **A "live" turn** (which blocks switching accounts) is one that is streaming or waiting on an approval (2.1).
-10. **A DorkOS-hosted drain run (pid -1) can't be detected as stale**, so a dead one shows as running until flow releases its claim. Accepted; a follow-up is filed.
+10. **A DorkOS-hosted drain run (pid -1) can't be detected as stale**, so a dead one shows as running until flow releases its claim. Accepted; the follow-up is DOR-2490.
 
 Visuals, each matching an existing host pattern:
 
-11. **Q26, the account popover:** drawn by the extension with the decided content (name and plan, one bar per window with its reset time), styled like the host popover (its surface, border, radius and shadow), spanning the panel with a 12px inset.
+11. **Q26, the account popover:** drawn by the extension with the decided content (name and plan, one bar per window with its reset time), styled like the host popover (its surface, border, radius and shadow), spanning the panel with a 12px inset (the size proposed with it and accepted).
 12. **Row hover:** the host muted colour at 50%.
 13. **Focus ring:** the host ring, 2px with a 1px offset.
 14. **Disabled Pause** (nothing to pause): 50% opacity.
