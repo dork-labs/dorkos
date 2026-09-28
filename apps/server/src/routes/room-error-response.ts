@@ -21,7 +21,7 @@ import {
 } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
-import { ROOM_CALLER_LOCAL } from './room-caller.js';
+import { ROOM_CALLER_LOCAL } from './room-caller-local.js';
 
 /** HTTP status for each way the room service can refuse. */
 export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
@@ -216,7 +216,9 @@ export function sendRoomError(
   context: string
 ): void {
   if (err instanceof RoomError) {
-    res.status(STATUS_BY_CODE[err.code]).json(roomRefusalFor(err, ownerAsking(res)));
+    // Worded before a status is set, so nothing can leave a half-written reply.
+    const body = roomRefusalFor(err, ownerAsking(res));
+    res.status(STATUS_BY_CODE[err.code]).json(body);
     return;
   }
   logger.error(`[rooms] ${context} failed`, { err });

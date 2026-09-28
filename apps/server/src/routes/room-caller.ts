@@ -17,6 +17,7 @@ import {
 } from '../services/rooms/index.js';
 import { readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
 import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { ROOM_CALLER_LOCAL } from './room-caller-local.js';
 
 /**
  * Who this request is.
@@ -116,12 +117,6 @@ export function resolveCaller(
   res.locals[ROOM_CALLER_LOCAL] = caller;
   return caller;
 }
-
-/**
- * The `res.locals` key {@link resolveCaller} leaves the resolved caller under.
- * Unset when the caller was never resolved, or was refused.
- */
-export const ROOM_CALLER_LOCAL = 'roomCaller';
 
 /** {@link resolveCaller}'s three branches and its refusal, without the bookkeeping. */
 function resolveCallerRecord(

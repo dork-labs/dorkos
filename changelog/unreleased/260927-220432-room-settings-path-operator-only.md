@@ -2,6 +2,7 @@
 covers:
   - "fix(rooms): show a room's settings path and fix command only to the person who runs DorkOS (DOR-2457)"
   - "fix(rooms): keep a room's settings path and command from agents too, and show the command on its own (DOR-2457)"
+  - "fix(rooms): keep every room refusal's code when a test replaces the caller resolver (DOR-2457)"
 ---
 
 ### Security

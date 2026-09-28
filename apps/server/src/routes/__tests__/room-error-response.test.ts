@@ -17,7 +17,7 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
 }));
 
 import { sendRoomError } from '../room-error-response.js';
-import { ROOM_CALLER_LOCAL } from '../room-caller.js';
+import { ROOM_CALLER_LOCAL } from '../room-caller-local.js';
 import {
   ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
   RoomError,
