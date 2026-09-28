@@ -148,6 +148,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',
       'runtimes.claudeCode.defaultAccount',
+      'runtimes.claudeCode.defaultAccountColor',
       'runtimes.claudeCode.defaultTrustStop',
       // Not for the reason its neighbours are here: warm sessions are
       // safety-neutral and cost memory. It is the wipe floor — a person who

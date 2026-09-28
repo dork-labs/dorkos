@@ -211,6 +211,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
           { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp', color: '#12ab9f' },
           { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
         ],
+        defaultAccountColor: '#0d9488',
         defaultModel: 'opus',
         defaultEffort: 'high',
         defaultTrustStop: null,

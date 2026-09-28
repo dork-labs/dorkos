@@ -26,6 +26,7 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
     claudeCode: {
       defaultAccount: null,
       accounts: [],
+      defaultAccountColor: null,
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
@@ -279,6 +280,7 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       resolvedAccount: '/tmp/inherited-claude',
       inherited: true,
       accounts: [],
+      defaultAccountColor: null,
     });
   });
 
@@ -357,6 +359,7 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       resolvedAccount: '/tmp/inherited-claude',
       inherited: true,
       accounts: [],
+      defaultAccountColor: null,
       accountsUnavailable: true,
     });
   });

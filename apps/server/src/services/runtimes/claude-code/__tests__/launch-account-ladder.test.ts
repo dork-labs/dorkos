@@ -40,6 +40,7 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
     claudeCode: {
       defaultAccount: null,
       accounts: [],
+      defaultAccountColor: null,
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,

@@ -23,7 +23,11 @@ import { configManager } from '../config-manager.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
-import { planClaudeAccountWrite, takeAccountsSeen } from './claude-account-patch.js';
+import {
+  defaultAccountColorRefusal,
+  planClaudeAccountWrite,
+  takeAccountsSeen,
+} from './claude-account-patch.js';
 
 /** Keys that must be filtered during deep merge to prevent prototype pollution. */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -407,6 +411,8 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   const taken = takeAccountsSeen(patch as Record<string, unknown>);
   if (!taken.ok) return { ok: false, error: 'Validation failed', details: taken.details };
   const patchObj = taken.patch;
+  const colorRefusal = defaultAccountColorRefusal(patchObj);
+  if (colorRefusal) return { ok: false, error: 'Validation failed', details: colorRefusal };
 
   const current = configManager.getAll();
   const merged = deepMerge(current as unknown as Record<string, unknown>, patchObj);

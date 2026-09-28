@@ -628,6 +628,84 @@ describe('PATCH /api/config', () => {
     });
   });
 
+  describe('the default account color (runtimes.claudeCode.defaultAccountColor, DOR-2492)', () => {
+    async function stored(): Promise<unknown> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      return configManager.getDot('runtimes.claudeCode.defaultAccountColor');
+    }
+
+    it('stores a color the person chooses, and clears it again with null', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } })
+        .expect(200);
+      expect(await stored()).toBe('#0d9488');
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccountColor: null } } })
+        .expect(200);
+      expect(await stored()).toBeNull();
+    });
+
+    it('refuses a color that is not lowercase #rrggbb with a 400, and stores nothing', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      for (const bad of ['#ABCDEF', 'teal', '#abc', 42]) {
+        const refused = await request(server)
+          .patch('/api/config')
+          .send({ runtimes: { claudeCode: { defaultAccountColor: bad } } })
+          .expect(400);
+        expect(JSON.stringify(refused.body)).toContain('defaultAccountColor');
+      }
+      expect(await stored()).toBeNull();
+    });
+
+    it('refuses an agent changing it', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } })
+        .expect(403);
+      expect(refused.body.paths).toContain('runtimes.claudeCode.defaultAccountColor');
+      expect(await stored()).toBeNull();
+    });
+
+    it('survives a Settings save of the accounts, which never names it', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } })
+        .expect(200);
+      // Exactly what `ClaudeAccountsSection.tsx` `write()` sends.
+      await request(server)
+        .patch('/api/config')
+        .send({
+          runtimes: {
+            claudeCode: {
+              accounts: [{ id: 'me', path: '/Users/me/.claude2', label: 'Me', color: null }],
+              accountsSeen: [],
+            },
+          },
+        })
+        .expect(200);
+      expect(await stored()).toBe('#0d9488');
+    });
+
+    it('is served on GET /api/config for the Settings row', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('runtimes', {
+        ...configManager.get('runtimes'),
+        claudeCode: { ...configManager.get('runtimes').claudeCode, defaultAccountColor: '#d6336c' },
+      });
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.claudeCode.defaultAccountColor).toBe('#d6336c');
+    });
+  });
+
   it('refuses an agent turning login OFF, the setting approvals depend on', async () => {
     agentHeader = 'agent-token';
     signedInUser = undefined;
@@ -1595,6 +1673,7 @@ describe('GET /api/config', () => {
         resolvedAccount: '/tmp/inherited-claude',
         inherited: true,
         accounts: [],
+        defaultAccountColor: null,
         // Warm agents default on, exposed here for the Control Center switch.
         persistentSession: true,
       });
@@ -1614,6 +1693,7 @@ describe('GET /api/config', () => {
             { id: 'acme-corp', path: real, label: 'Acme Corp', color: '#12ab9f' },
             { id: 'gone', path: missing, label: null, color: null },
           ],
+          defaultAccountColor: null,
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
@@ -1628,6 +1708,7 @@ describe('GET /api/config', () => {
       expect(res.body.claudeCode).toEqual({
         resolvedAccount: real,
         inherited: false,
+        defaultAccountColor: null,
         accounts: [
           {
             id: 'acme-corp',

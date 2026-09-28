@@ -620,6 +620,12 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
       type: 'string | null',
       default: 'null',
     },
+    'runtimes.claudeCode.defaultAccountColor': {
+      description:
+        "The color DorkOS uses for this computer's own Claude sign-in when you haven't added its folder as an account, written like `#0d9488`. Leave it empty to use the default for its position. If you have added that folder as an account, the account's own color is used instead.",
+      type: 'string | null',
+      default: 'null',
+    },
     'runtimes.claudeCode.defaultModel': {
       description:
         'The model a new Claude Code chat starts on. When `null`, Claude Code picks. Chats you already have are not changed.',

@@ -1739,6 +1739,29 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
 const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
 /**
+ * The color a STANDALONE default Claude account is drawn in
+ * (`runtimes.claudeCode.defaultAccountColor`, DOR-2492): lowercase `#rrggbb`,
+ * the rule a registry row's `color` follows. `null` or `''` means the default
+ * for its position, which is after the registered rows.
+ *
+ * A standalone default is `~/.claude` (or the folder `defaultAccount` names)
+ * when no registered row has that folder. It has no row, so it has no row
+ * `color` to store a choice in, and registering the folder to get one would
+ * re-key the account's identity and every policy that names
+ * `claude-code:default`. When a registered row DOES have the default folder,
+ * `default` is an alias of that row and the row's own color wins: this field
+ * is ignored.
+ *
+ * The strict shape is what `PATCH /api/config` checks a new value against
+ * (`applyConfigPatch`), so a bad value is refused rather than stored. The
+ * setting itself reads a bad hand-edited value as `null` instead of failing the
+ * whole config, as a row's `color` does.
+ */
+export const DefaultAccountColorSchema = z
+  .union([z.string().regex(ACCOUNT_COLOR_PATTERN), z.literal('')])
+  .nullable();
+
+/**
  * What a NEW Claude Code session starts with, and which account it bills.
  *
  * Named rather than left inline in {@link UserConfigSchema} so the JSON-schema
@@ -1783,6 +1806,12 @@ export const ClaudeCodeSettingsSchema = z.object({
    * that are not accounts at all (D4).
    */
   accounts: ClaudeCodeAccountsSchema.default(() => []),
+  /**
+   * The color the standalone default account is drawn in, or `null` for the
+   * default for its position. Ignored while a registered row has the default
+   * folder: that row's own color wins. See {@link DefaultAccountColorSchema}.
+   */
+  defaultAccountColor: DefaultAccountColorSchema.default(null).catch(null),
   /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
   defaultModel: DefaultModelSchema,
   /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
@@ -2953,6 +2982,7 @@ export const UserConfigSchema = z.object({
       claudeCode: z.preprocess(healClaudeAccountRename, ClaudeCodeSettingsSchema).default(() => ({
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -3039,6 +3069,7 @@ export const UserConfigSchema = z.object({
       claudeCode: {
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,

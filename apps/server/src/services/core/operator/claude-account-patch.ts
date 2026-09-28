@@ -16,6 +16,7 @@ import {
   CLAUDE_ACCOUNTS_SEEN_KEY,
   ClaudeAccountsSeenSchema,
   classifyClaudeAccountRows,
+  DefaultAccountColorSchema,
 } from '@dorkos/shared/config-schema';
 
 /** Outcome of {@link planClaudeAccountWrite}. */
@@ -97,6 +98,31 @@ export function takeAccountsSeen(patch: Record<string, unknown>): AccountsSeenTa
     patch: { ...patch, runtimes: { ...runtimes, claudeCode: rest } },
     seen: new Set(parsed.data),
   };
+}
+
+/**
+ * Why a patch's `runtimes.claudeCode.defaultAccountColor` is refused, or `null`
+ * when the patch does not name it or names a color the setting accepts
+ * (lowercase `#rrggbb`, `''` or `null`; `DefaultAccountColorSchema`).
+ *
+ * Checked on the PATCH rather than by the setting's own schema, because the
+ * setting reads a bad stored value as `null` instead of failing: a hand edit
+ * must never make every later settings write fail. A new value, though, is a
+ * choice being made now, so a bad one is refused with a reason rather than
+ * silently stored as "the default".
+ *
+ * @param patch - The patch as the caller sent it.
+ * @returns The refusal details, or `null` when the value is fine or absent.
+ */
+export function defaultAccountColorRefusal(patch: Record<string, unknown>): string[] | null {
+  const runtimes = patch.runtimes;
+  if (!isRecord(runtimes)) return null;
+  const claudeCode = runtimes.claudeCode;
+  if (!isRecord(claudeCode) || !('defaultAccountColor' in claudeCode)) return null;
+  if (DefaultAccountColorSchema.safeParse(claudeCode.defaultAccountColor).success) return null;
+  return [
+    'runtimes.claudeCode.defaultAccountColor: must be a lowercase #rrggbb color, or null for the default.',
+  ];
 }
 
 /**

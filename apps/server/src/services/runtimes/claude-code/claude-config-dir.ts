@@ -45,7 +45,7 @@ import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
-import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { IMPLICIT_ACCOUNT_ID, isAccountColor } from '@dorkos/shared/account-usage';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import {
   canonicalAccountPath,
@@ -122,6 +122,8 @@ function warnOnce(warnings: readonly ClaudeAccountReadWarning[]): void {
 function readClaudeCodeConfig(config: ConfigReader): {
   defaultAccount: string | null;
   accounts: readonly ReadClaudeAccount[];
+  /** The stored `defaultAccountColor` when it is lowercase `#rrggbb`, else `null`. */
+  defaultAccountColor: string | null;
   /** True when `accounts` is empty because the read failed, not because it is. */
   unavailable: boolean;
 } {
@@ -137,12 +139,18 @@ function readClaudeCodeConfig(config: ConfigReader): {
     // top two rungs are inert — a hint matched by an id no stored row carries.
     // Neither is a schema concern: `UserConfigSchema` is right either way, and
     // nothing on this path consults it.
-    const { warnings, ...settings } = readClaudeAccountSettings(config.get('runtimes')?.claudeCode);
+    const block = config.get('runtimes')?.claudeCode;
+    const { warnings, ...settings } = readClaudeAccountSettings(block);
     warnOnce(warnings);
-    return { ...settings, unavailable: false };
+    const color = (block as { defaultAccountColor?: unknown } | undefined)?.defaultAccountColor;
+    return {
+      ...settings,
+      defaultAccountColor: isAccountColor(color) ? color : null,
+      unavailable: false,
+    };
   } catch (err) {
     logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
-    return { defaultAccount: null, accounts: [], unavailable: true };
+    return { defaultAccount: null, accounts: [], defaultAccountColor: null, unavailable: true };
   }
 }
 
@@ -522,10 +530,16 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
 export function describeClaudeCodeAccounts(
   config: ConfigReader = configManager
 ): NonNullable<ServerConfig['claudeCode']> {
-  const { defaultAccount, accounts, unavailable } = readClaudeCodeConfig(config);
+  const { defaultAccount, accounts, defaultAccountColor, unavailable } =
+    readClaudeCodeConfig(config);
   return {
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
+    // The STORED choice for the standalone default account, `null` when it
+    // follows its position (DOR-2492). Stored rather than resolved, so the
+    // Settings color control can tell "chosen" from "default", as a row's
+    // `colorIsDefault` does; the resolved color rides the account usage.
+    defaultAccountColor,
     // Sent only when it is true, so an ordinary response carries no extra key
     // and a client that never learned about this field reads the same wire it
     // always did. What it buys the client is the difference between "your

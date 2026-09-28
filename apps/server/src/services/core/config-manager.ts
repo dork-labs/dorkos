@@ -2778,6 +2778,39 @@ export function renameReservedClaudeAccountIds(store: {
 }
 
 /**
+ * Migration body: seed `runtimes.claudeCode.defaultAccountColor: null` for
+ * configs persisted before the standalone default Claude account could be
+ * given a color (DOR-2492).
+ *
+ * `null` is "the default for its position", which is exactly the color that
+ * account was drawn in before the field existed, so nothing anyone sees
+ * changes. A nested leaf under a block every stored config already has, so
+ * conf's defaults merge never writes it and this body is the only thing that
+ * does.
+ *
+ * Additive and idempotent: writes only when the key is absent, and keeps every
+ * other `runtimes.claudeCode` member. A config with no `runtimes.claudeCode`
+ * object is skipped (the schema default supplies the block on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedDefaultAccountColor(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  if ('defaultAccountColor' in block) return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { ...(block as Record<string, unknown>), defaultAccountColor: null },
+  });
+}
+
+/**
  * Migration body: reserve both halves of the power-door answer on an existing
  * `ui` block (spec `full-power-defaults`, D2).
  *
@@ -4449,6 +4482,21 @@ export const CONFIG_MIGRATIONS = {
     // `renameReservedClaudeAccountIds`.
     renameReservedClaudeAccountIds(store);
   },
+  // 0.88.0 is the newest tag and `'0.89.0'` is claimed by an open branch, so
+  // 0.90.0 is the next key. Frozen from merge, not from the release bump, for
+  // the reason `'0.60.0'` above states; anything further opens `'0.91.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `runtimes.claudeCode` that nothing above names, and keeps every member
+  // `'0.65.0'` and `'0.87.0'` write there.
+  '0.90.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.claudeCode.defaultAccountColor` — the color the standalone
+    // default account is drawn in (DOR-2492). See `seedDefaultAccountColor`.
+    seedDefaultAccountColor(store);
+  },
 } as const;
 
 /**
@@ -4607,6 +4655,14 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
     // Deliberately no `default`: conf builds Ajv with `useDefaults`, so a
     // declared default would WRITE this retired key into every config on earth.
     properties.activeAccount = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+    // The standalone default's color (DOR-2492) follows a row's `color`: a bad
+    // hand edit reads as "no choice" (`.catch(null)` in the Zod schema, and
+    // `isAccountColor` in every reader) rather than condemning the file, so Ajv
+    // takes any string here. Its `default` stays, as the generated node had it.
+    properties.defaultAccountColor = {
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+      default: null,
+    };
     return;
   }
   if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;

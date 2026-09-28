@@ -44,6 +44,7 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
       claudeCode: {
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,

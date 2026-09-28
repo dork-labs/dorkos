@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { DEFAULT_ACCOUNT_COLORS, type AccountUsage } from '@dorkos/shared/account-usage';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
 import {
   __resetAccountAdvisorForTests,
@@ -10,7 +10,9 @@ import {
   hasAccountAdvisor,
 } from '../../core/usage/account-advisor.js';
 import { setAccountUsageStore } from '../../core/usage/current-usage-store.js';
-import type { AccountUsageStore } from '../../core/usage/account-usage-store.js';
+import { AccountUsageStore } from '../../core/usage/account-usage-store.js';
+import { readConfigFile } from '../../core/usage/account-usage-reconcile.js';
+import { DEFAULT_ACCOUNT_LABEL, defaultAccountFolder } from '../../core/usage/runtime-accounts.js';
 import {
   CONTINUATION_UNAVAILABLE_MESSAGE,
   setContinuationRecorder,
@@ -449,6 +451,57 @@ describe('createDataProviderContext', () => {
       await expect(
         ctx.accounts.markContinued('old', { sessionId: 'n', runtime: 'x', accountId: 'y' })
       ).rejects.toThrow(CONTINUATION_UNAVAILABLE_MESSAGE);
+    });
+  });
+
+  describe("the default account's chosen color reaches ctx.accounts.list (DOR-2492)", () => {
+    const stores: AccountUsageStore[] = [];
+
+    afterEach(async () => {
+      setAccountUsageStore(undefined);
+      for (const store of stores.splice(0)) {
+        store.stop();
+        await store.flush();
+      }
+    });
+
+    /** A real usage store over a real config file, as the server builds it. */
+    async function loadStore(claudeCode: Record<string, unknown>): Promise<AccountUsageStore> {
+      const home = path.join(tmpDir, 'home');
+      await fs.mkdir(path.join(home, '.claude'), { recursive: true });
+      const configPath = path.join(tmpDir, 'config.json');
+      await fs.writeFile(configPath, JSON.stringify({ runtimes: { claudeCode } }));
+      const store = new AccountUsageStore({
+        dorkHome: tmpDir,
+        readConfig: () => readConfigFile(configPath),
+        resolveDefaultRoot: (runtime, config) => defaultAccountFolder(runtime, config, home),
+        timings: { scanIntervalMs: 3_600_000 },
+      });
+      stores.push(store);
+      await store.load();
+      setAccountUsageStore(store);
+      return store;
+    }
+
+    const claudeDefault = async () =>
+      (await buildCtx().ctx.accounts.list()).find(
+        (a) => a.runtime === 'claude-code' && a.id === 'default'
+      );
+
+    it('lists the standalone default in the color the operator chose', async () => {
+      await loadStore({ defaultAccount: null, accounts: [], defaultAccountColor: '#0d9488' });
+      expect(await claudeDefault()).toEqual({
+        runtime: 'claude-code',
+        id: 'default',
+        label: DEFAULT_ACCOUNT_LABEL,
+        color: '#0d9488',
+        implicit: true,
+      });
+    });
+
+    it('lists it in its positional color when none is chosen', async () => {
+      await loadStore({ defaultAccount: null, accounts: [], defaultAccountColor: null });
+      expect((await claudeDefault())?.color).toBe(DEFAULT_ACCOUNT_COLORS[0]);
     });
   });
 });

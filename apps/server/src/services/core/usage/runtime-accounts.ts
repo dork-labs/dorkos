@@ -13,9 +13,11 @@
  *   must not make `default` mean `/x`, or it would read, write and prune another
  *   account's ledger.
  * - **Alias or standalone.** When a routable registered row has the default
- *   folder, `default` is another name for that row (one ledger, one row).
- *   Otherwise `default` is an account of its own, listed after the registered
- *   rows, with the ledger `default.json`.
+ *   folder, `default` is another name for that row (one ledger, one row, the
+ *   row's color). Otherwise `default` is an account of its own, listed after
+ *   the registered rows, with the ledger `default.json`, drawn in
+ *   `runtimes.claudeCode.defaultAccountColor` when the operator chose one, else
+ *   the default for its position.
  *
  * Pure: no filesystem except the injectable real-path lookup, no clock, no
  * logging. The OS home is an input, because only the Hard Rule 3 carve-outs
@@ -28,6 +30,7 @@ import path from 'node:path';
 import {
   ACCOUNT_ID_PATTERN,
   IMPLICIT_ACCOUNT_ID,
+  isAccountColor,
   LEDGER_RUNTIMES,
   resolveAccountColor,
   type LedgerRuntime,
@@ -79,7 +82,11 @@ export interface RuntimeAccount {
   label: string | null;
   /** The resolved display color (stored, else the default for its position). */
   color: string;
-  /** The color the row stores, when it is a valid `#rrggbb`; else `null` (the contract's `color`). */
+  /**
+   * The color the row stores, when it is a valid `#rrggbb`; else `null` (the
+   * contract's `color`). For a standalone Claude Code default, which has no
+   * row, the operator's `runtimes.claudeCode.defaultAccountColor` (DOR-2492).
+   */
   storedColor: string | null;
   /** False for a row whose id fails the pattern or is the reserved `default`. */
   routable: boolean;
@@ -289,10 +296,13 @@ export function resolveRuntimeAccounts(
   const read = readRegistered(runtime, inputs.config, inputs.home, realpath);
   const warnings = [...read.warnings];
   const registered = read.accounts;
-  const defaultColor = resolveAccountColor(null, registered.length);
+  // A standalone default resolves like a row: its stored color
+  // (`defaultColorChoice`), else the default for its position, which is after
+  // the registered rows. An alias is a row, so it never reaches this.
+  const standalone = { stored: defaultColorChoice(runtime, inputs.config), index: registered.length };
   if (runtime === 'opencode') {
     if (registered.length > 0) return { accounts: registered, warnings };
-    return { accounts: [implicitAccount(runtime, null, null, defaultColor)], warnings };
+    return { accounts: [implicitAccount(runtime, null, null, standalone)], warnings };
   }
   const chosen = resolveDefaultFolder(runtime, inputs);
   warnings.push(...chosen.warnings);
@@ -305,9 +315,24 @@ export function resolveRuntimeAccounts(
     return { accounts: registered, warnings };
   }
   return {
-    accounts: [...registered, implicitAccount(runtime, folder, canonical, defaultColor)],
+    accounts: [...registered, implicitAccount(runtime, folder, canonical, standalone)],
     warnings,
   };
+}
+
+/**
+ * The color the operator chose for a runtime's STANDALONE default, or `null`.
+ * Only Claude Code has one (`runtimes.claudeCode.defaultAccountColor`,
+ * DOR-2492); anything that is not lowercase `#rrggbb`, `''` included, reads as
+ * no choice. It never colors an alias: {@link resolveRuntimeAccounts} returns
+ * the alias row, drawn in the row's own color, before this value is used.
+ */
+function defaultColorChoice(runtime: LedgerRuntime, config: unknown): string | null {
+  if (runtime !== 'claude-code') return null;
+  const runtimes = isObject(config) ? config.runtimes : undefined;
+  const section = isObject(runtimes) ? runtimes.claudeCode : undefined;
+  const stored = isObject(section) ? section.defaultAccountColor : undefined;
+  return isAccountColor(stored) ? stored : null;
 }
 
 function resolveDefaultFolder(
@@ -325,7 +350,7 @@ function implicitAccount(
   runtime: LedgerRuntime,
   folder: string | null,
   canonical: string | null,
-  color: string
+  position: { stored: string | null; index: number }
 ): RuntimeAccount {
   return {
     runtime,
@@ -333,8 +358,10 @@ function implicitAccount(
     path: folder,
     canonicalPath: canonical,
     label: folder === null ? null : DEFAULT_ACCOUNT_LABEL,
-    color,
-    storedColor: null,
+    // The one rule every row's color follows (`readClaudeAccountSettings`):
+    // the stored color, else the default for the position.
+    color: resolveAccountColor(position.stored, position.index),
+    storedColor: position.stored,
     routable: true,
     implicit: true,
     isDefault: true,

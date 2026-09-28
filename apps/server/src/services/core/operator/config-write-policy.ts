@@ -702,6 +702,11 @@ export const CONFIG_WRITE_POLICY = {
   // whole array, so a write that could set a color could also add or repoint an
   // account. The row stays operator-only as a unit.
   'runtimes.claudeCode.accounts[].color': 'operator-only',
+  // The standalone default account's color (DOR-2492). Cosmetic too, and held
+  // with the rows' colors on purpose: it is the same choice for the one account
+  // that has no row, made in the same Settings list, so an agent that may not
+  // recolor a registered account may not recolor this one either.
+  'runtimes.claudeCode.defaultAccountColor': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the
   // operator was asked directly: a model and an effort level are a preference
   // about how work runs, on the same footing as `runtimes.default` right above,
@@ -939,6 +944,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.accounts[].path',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].color',
+      'runtimes.claudeCode.defaultAccountColor',
     ],
   },
   {

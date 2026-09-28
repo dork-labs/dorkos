@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import {
   DEFAULT_ACCOUNT_LABEL,
   accountForPath,
@@ -117,6 +118,62 @@ describe('registry warnings name the runtime', () => {
     expect(messages('opencode', 'opencode')).toEqual([
       expect.stringMatching(/^OpenCode account "Bad_Id"/),
     ]);
+  });
+});
+
+describe('the default account color (runtimes.claudeCode.defaultAccountColor, DOR-2492)', () => {
+  const claude3 = { id: 'claude3', path: '/home/op/.claude3', label: 'Claude3', color: null };
+
+  function defaultOf(extra: Record<string, unknown>, rows: unknown[] = [claude3]) {
+    const { accounts } = resolveRuntimeAccounts('claude-code', {
+      config: config(rows, extra),
+      home: HOME,
+      realpath,
+    });
+    return accounts.find((a) => a.isDefault);
+  }
+
+  it('colors a standalone default with the chosen color', () => {
+    expect(defaultOf({ defaultAccountColor: '#0d9488' })).toMatchObject({
+      id: 'default',
+      implicit: true,
+      color: '#0d9488',
+      storedColor: '#0d9488',
+    });
+    // No choice: nothing stored, drawn at its position, as a row would be.
+    expect(defaultOf({ defaultAccountColor: null })).toMatchObject({ storedColor: null });
+  });
+
+  it('falls back to the positional default when unset, null, empty or not #rrggbb', () => {
+    // One registered row, so the standalone default sits at position 1: green.
+    const positional = DEFAULT_ACCOUNT_COLORS[1];
+    expect(defaultOf({})?.color).toBe(positional);
+    expect(defaultOf({ defaultAccountColor: null })?.color).toBe(positional);
+    expect(defaultOf({ defaultAccountColor: '' })?.color).toBe(positional);
+    expect(defaultOf({ defaultAccountColor: '#ABCDEF' })?.color).toBe(positional);
+    expect(defaultOf({ defaultAccountColor: 'teal' })?.color).toBe(positional);
+  });
+
+  it("ignores the choice when default aliases a registered row: the row's color wins", () => {
+    const main = { id: 'main', path: '/links/main', label: null, color: '#9b51e0' };
+    expect(defaultOf({ defaultAccountColor: '#0d9488' }, [claude3, main])).toMatchObject({
+      id: 'main',
+      implicit: false,
+      color: '#9b51e0',
+    });
+    // An alias with no stored color keeps ITS positional color, not the choice.
+    const plain = { ...main, color: null };
+    expect(defaultOf({ defaultAccountColor: '#0d9488' }, [claude3, plain])?.color).toBe(
+      DEFAULT_ACCOUNT_COLORS[1]
+    );
+  });
+
+  it("colors no other runtime's default", () => {
+    const { accounts } = resolveRuntimeAccounts('codex', {
+      config: { runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } },
+      home: HOME,
+    });
+    expect(accounts[0]?.color).toBe(DEFAULT_ACCOUNT_COLORS[0]);
   });
 });
 

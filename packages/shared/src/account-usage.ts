@@ -31,6 +31,7 @@ export {
   ACCOUNT_ID_PATTERN,
   DEFAULT_ACCOUNT_COLORS,
   IMPLICIT_ACCOUNT_ID,
+  isAccountColor,
   nextAccountColor,
   resolveAccountColor,
 } from './account-identity.js';

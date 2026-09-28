@@ -206,6 +206,7 @@ describe('UserConfigSchema', () => {
         claudeCode: {
           defaultAccount: null,
           accounts: [],
+          defaultAccountColor: null,
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
@@ -576,6 +577,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         claudeCode: {
           defaultAccount: null,
           accounts: [],
+          defaultAccountColor: null,
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
@@ -1000,6 +1002,7 @@ describe('UserConfigSchema runtimes', () => {
       claudeCode: {
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -1035,6 +1038,7 @@ describe('UserConfigSchema runtimes', () => {
       claudeCode: {
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -1227,6 +1231,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     expect(UserConfigSchema.parse({ version: 1 }).runtimes.claudeCode).toEqual({
       defaultAccount: null,
       accounts: [],
+      defaultAccountColor: null,
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
@@ -1244,6 +1249,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     expect(result.runtimes.claudeCode).toEqual({
       defaultAccount: null,
       accounts: [],
+      defaultAccountColor: null,
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
@@ -1270,6 +1276,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
         { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp', color: null },
         { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
       ],
+      defaultAccountColor: null,
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
