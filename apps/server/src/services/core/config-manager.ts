@@ -4482,9 +4482,11 @@ export const CONFIG_MIGRATIONS = {
     // `renameReservedClaudeAccountIds`.
     renameReservedClaudeAccountIds(store);
   },
-  // 0.88.0 is the newest tag and `'0.89.0'` is claimed by an open branch, so
-  // 0.90.0 is the next key. Frozen from merge, not from the release bump, for
-  // the reason `'0.60.0'` above states; anything further opens `'0.91.0'`.
+  // 0.90.0 was the next free key when this merged (0.88.0 was the newest tag).
+  // `'0.89.0'` is intentionally unused: the branch that had reserved it moved to
+  // `'0.91.0'` once this merged first, because a key below one an install has
+  // already run would never run there. Frozen from merge, not from the release
+  // bump, for the reason `'0.60.0'` above states.
   //
   // Disjoint from every other key here: it adds one nested leaf under
   // `runtimes.claudeCode` that nothing above names, and keeps every member
