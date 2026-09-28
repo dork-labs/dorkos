@@ -546,7 +546,7 @@ function answering<T>(body: () => T, ownerAsking: () => boolean = () => false): 
     return body();
   } catch (err) {
     if (err instanceof RoomError) {
-      throw new CapabilityToolError(roomRefusalFor(err, ownerAsking()));
+      throw new CapabilityToolError(roomRefusalFor(err, ownerAsking));
     }
     throw err;
   }
@@ -584,7 +584,7 @@ async function answeringAsync<T>(
     return await body();
   } catch (err) {
     if (err instanceof RoomError) {
-      throw new CapabilityToolError(roomRefusalFor(err, ownerAsking()));
+      throw new CapabilityToolError(roomRefusalFor(err, ownerAsking));
     }
     throw err;
   }

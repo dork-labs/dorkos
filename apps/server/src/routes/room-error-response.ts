@@ -217,7 +217,7 @@ export function sendRoomError(
 ): void {
   if (err instanceof RoomError) {
     // Worded before a status is set, so nothing can leave a half-written reply.
-    const body = roomRefusalFor(err, ownerAsking(res));
+    const body = roomRefusalFor(err, () => ownerAsking(res));
     res.status(STATUS_BY_CODE[err.code]).json(body);
     return;
   }

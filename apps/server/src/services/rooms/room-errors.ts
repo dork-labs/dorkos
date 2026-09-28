@@ -785,6 +785,19 @@ export interface RoomRefusalBody {
 }
 
 /**
+ * Ask whether the owner is asking, answering "no" if the question itself fails.
+ *
+ * @param ownerAsking - The question.
+ */
+function askSafely(ownerAsking: () => boolean): boolean {
+  try {
+    return ownerAsking();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The refusal as THIS caller may see it (DOR-2457).
  *
  * Every refusal reads the same to everyone except {@link RoomRepoConfigUnsafeError},
@@ -793,12 +806,16 @@ export interface RoomRefusalBody {
  * asking fails closed. Shared by `sendRoomError` (HTTP) and the room
  * capabilities (MCP), the two places a refusal leaves the server.
  *
+ * `ownerAsking` is a question, not an answer, because answering it reads the
+ * owner account: it is asked only for the one refusal it changes, and a throw
+ * while asking is "no" rather than a refusal that never reaches its caller.
+ *
  * @param err - The refusal.
- * @param ownerAsking - Whether the caller was resolved as the install's owner.
+ * @param ownerAsking - Asks whether the caller was resolved as the install's owner.
  */
-export function roomRefusalFor(err: RoomError, ownerAsking: boolean): RoomRefusalBody {
+export function roomRefusalFor(err: RoomError, ownerAsking: () => boolean): RoomRefusalBody {
   if (!(err instanceof RoomRepoConfigUnsafeError)) return { error: err.message, code: err.code };
-  if (!ownerAsking) return { error: err.forMember, code: err.code };
+  if (!askSafely(ownerAsking)) return { error: err.forMember, code: err.code };
   return err.command === null
     ? { error: err.forOwner, code: err.code }
     : { error: err.forOwner, code: err.code, command: err.command };

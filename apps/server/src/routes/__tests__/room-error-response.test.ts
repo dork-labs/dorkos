@@ -9,11 +9,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AuthorRecord } from '../../services/rooms/index.js';
 
-const owner = { ownerId: null as string | null };
+const owner = { ownerId: null as string | null, reads: 0, fails: false };
 
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
-  readOwnerAccount: () => (owner.ownerId ? { id: owner.ownerId } : null),
+  readOwnerAccount: () => {
+    owner.reads += 1;
+    if (owner.fails) throw new Error('database is locked');
+    return owner.ownerId ? { id: owner.ownerId } : null;
+  },
 }));
 
 import { sendRoomError } from '../room-error-response.js';
@@ -46,6 +50,8 @@ function author(kind: AuthorRecord['kind'], naturalKey: string): AuthorRecord {
 
 beforeEach(() => {
   owner.ownerId = null;
+  owner.reads = 0;
+  owner.fails = false;
 });
 
 describe('sendRoomError', () => {
@@ -83,9 +89,21 @@ describe('sendRoomError', () => {
     });
   });
 
-  it('says every other refusal the same to everyone', () => {
-    const { res, sent } = recorder({});
+  it('says every other refusal the same to everyone, without reading the owner account', () => {
+    const { res, sent } = recorder({ [ROOM_CALLER_LOCAL]: author('human', 'user:owner-account') });
+    owner.fails = true;
     sendRoomError(res, new RoomError('ROOM_NOT_FOUND', 'No such room'), 'test');
     expect(sent).toEqual({ status: 404, body: { code: 'ROOM_NOT_FOUND', error: 'No such room' } });
+    expect(owner.reads).toBe(0);
+  });
+
+  it('still answers, with the plain line, when the owner account cannot be read', () => {
+    owner.fails = true;
+    const { res, sent } = recorder({ [ROOM_CALLER_LOCAL]: author('human', 'user:owner-account') });
+    expect(() => sendRoomError(res, unsafe(), 'test')).not.toThrow();
+    expect(sent).toEqual({
+      status: 409,
+      body: { code: 'ROOM_REPO_CONFIG_UNSAFE', error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE },
+    });
   });
 });
