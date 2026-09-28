@@ -35,7 +35,10 @@ import {
   type ConnectorOperatorQueryService,
 } from '../services/connectors/resources/operator-query-service.js';
 import type { CatalogLogoService } from '../services/connectors/resources/catalog-logos.js';
-import type { ConnectorSessionAccessService } from '../services/connectors/resources/session-access-service.js';
+import {
+  ConnectorSessionAccessError,
+  type ConnectorSessionAccessService,
+} from '../services/connectors/resources/session-access-service.js';
 import type { SignInRefresher } from '../services/connectors/resources/sign-in-refresh.js';
 
 const CatalogQuerySchema = z
@@ -116,6 +119,10 @@ function sendResourceError(res: Response, error: unknown): void {
     res
       .status(error.code === 'provider_not_found' ? 404 : 502)
       .json({ error: error.message, code: error.code });
+    return;
+  }
+  if (error instanceof ConnectorSessionAccessError) {
+    res.status(409).json({ error: error.message, code: error.code });
     return;
   }
   if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {

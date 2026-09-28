@@ -1003,6 +1003,27 @@ export class ConnectorOperatorQueryService {
       // there is nothing to put back, and no fix.
       const nothingHere =
         turnedOff || override.needsReconciliation || sessionRevisions.length === 0;
+      // The owner limited this chat by hand for the agent it belonged to
+      // before: turning it on here would drop that limit, so there is no
+      // switch (the write refuses it too, session-access-service.ts).
+      const limitedForAnotherAgent =
+        !ownOverride &&
+        override.agentId !== null &&
+        override.state === 'attached' &&
+        this.db
+          .select({ id: connectionOperationGrants.id })
+          .from(connectionOperationGrants)
+          .where(
+            and(
+              eq(connectionOperationGrants.subjectType, 'session'),
+              eq(connectionOperationGrants.subjectId, sessionId),
+              eq(connectionOperationGrants.connectionId, override.connectionId),
+              eq(connectionOperationGrants.agentId, override.agentId),
+              isNull(connectionOperationGrants.revokedAt)
+            )
+          )
+          .get() !== undefined;
+      const canSwitch = switchable.has(override.connectionId) && !limitedForAnotherAgent;
       byConnection.set(override.connectionId, {
         connectionId: override.connectionId,
         toolkit: override.toolkit,
@@ -1015,10 +1036,10 @@ export class ConnectorOperatorQueryService {
           { named: true, everyAgent: false },
           {
             offForThisChat: nothingHere,
-            canTurnOnForThisChat: switchable.has(override.connectionId),
+            canTurnOnForThisChat: canSwitch,
           }
         ),
-        ...(switchable.has(override.connectionId) && {
+        ...(canSwitch && {
           thisChat: nothingHere ? ('off' as const) : ('on' as const),
         }),
       });

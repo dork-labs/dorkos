@@ -2,6 +2,7 @@
 covers:
   - 'feat(connections): turn an app on or off for one chat (DOR-2448)'
   - 'fix(connections): make the per-chat switch exactly reversible (DOR-2448)'
+  - 'fix(connections): keep a chat limited for another agent limited (DOR-2448)'
 ---
 
 ### Added

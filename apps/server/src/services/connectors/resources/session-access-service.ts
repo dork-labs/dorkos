@@ -24,7 +24,14 @@
  *
  * @module services/connectors/resources/session-access-service
  */
-import { and, connectionOperationGrants, eq, isNull, type Db } from '@dorkos/db';
+import {
+  and,
+  connectionOperationGrants,
+  eq,
+  isNull,
+  sessionConnectionOverrides,
+  type Db,
+} from '@dorkos/db';
 import {
   ConnectorSessionAccessUpdateSchema,
   type ConnectorSessionAccessUpdate,
@@ -37,6 +44,19 @@ import {
   ConnectorOperatorQueryError,
   type ConnectorOperatorQueryService,
 } from './operator-query-service.js';
+
+/** Safe refusal from the per-chat switch. */
+export class ConnectorSessionAccessError extends Error {
+  /** Stable machine-readable refusal. */
+  readonly code: 'session_access_other_agent';
+
+  /** Construct one safe per-chat switch refusal. */
+  constructor(code: ConnectorSessionAccessError['code'], message: string) {
+    super(message);
+    this.name = 'ConnectorSessionAccessError';
+    this.code = code;
+  }
+}
 
 /** Construction dependencies for {@link ConnectorSessionAccessService}. */
 export interface ConnectorSessionAccessServiceOptions {
@@ -63,12 +83,20 @@ export class ConnectorSessionAccessService {
    * agent, else its account-wide access). The earlier agent's chat grants are
    * never carried over, because they are read for the current agent only.
    *
+   * One handover is refused instead: when that override is the other agent's
+   * `'attached'` one and the chat still has live grants of its own for that
+   * agent, the owner limited this chat for it by hand. Replacing the override
+   * would drop that limit, so if the chat were handed back, the other agent
+   * would get its whole account-wide access here.
+   *
    * @param owner - The verified owner making the change.
    * @param sessionId - The chat whose access changes.
    * @param connectionId - The connected account to switch.
    * @param update - `{ on: false }` hides the app here; `{ on: true }` undoes that.
    * @throws {@link ConnectorOperatorQueryError} `session_not_found` for an unknown or foreign chat, and
    *   `connection_not_found` when the agent was not given this account account-wide, so there is nothing to switch.
+   * @throws {@link ConnectorSessionAccessError} `session_access_other_agent` when turning it on would drop a limit
+   *   the owner set on this chat for another agent.
    */
   async setAccess(
     owner: ConnectorOwnerAuthority,
@@ -79,6 +107,10 @@ export class ConnectorSessionAccessService {
     const parsedId = ConnectionIdSchema.parse(connectionId);
     const { on } = ConnectorSessionAccessUpdateSchema.parse(update);
     const current = await this.options.query.sessionConnections(owner, sessionId);
+    // Checked before the switch lookup: the chat's view offers no switch
+    // here, and this says why in the owner's words rather than "nothing to
+    // switch".
+    if (on) this.refuseDroppingAnotherAgentsLimit(sessionId, current.agentId, parsedId);
     const row = current.connections.find((connection) => connection.connectionId === parsedId);
     if (!row?.thisChat) {
       throw new ConnectorOperatorQueryError(
@@ -97,7 +129,39 @@ export class ConnectorSessionAccessService {
     return this.options.query.sessionConnections(owner, sessionId);
   }
 
-  /** Whether this chat still has live grants of its own for its current agent. */
+  /** Refuse On when it would drop a limit the owner set on this chat for another agent. */
+  private refuseDroppingAnotherAgentsLimit(
+    sessionId: string,
+    agentId: string,
+    connectionId: ConnectionId
+  ): void {
+    const existing = this.options.db
+      .select({
+        agentId: sessionConnectionOverrides.agentId,
+        state: sessionConnectionOverrides.state,
+      })
+      .from(sessionConnectionOverrides)
+      .where(
+        and(
+          eq(sessionConnectionOverrides.sessionId, sessionId),
+          eq(sessionConnectionOverrides.connectionId, connectionId)
+        )
+      )
+      .get();
+    if (
+      existing?.agentId &&
+      existing.agentId !== agentId &&
+      existing.state === 'attached' &&
+      this.chatHasOwnGrants(sessionId, existing.agentId, connectionId)
+    ) {
+      throw new ConnectorSessionAccessError(
+        'session_access_other_agent',
+        'You limited this app in this chat for another agent, so it can’t be turned on for this one.'
+      );
+    }
+  }
+
+  /** Whether this chat still has live grants of its own for one agent. */
   private chatHasOwnGrants(sessionId: string, agentId: string, connectionId: ConnectionId) {
     return (
       this.options.db

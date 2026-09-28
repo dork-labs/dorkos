@@ -111,8 +111,19 @@ export function AgentConnectionAccessList({
 const THIS_CHAT_SWITCH_NOTE =
   'Turning an app off here only affects this chat. Turning it back on puts back the access this chat had, and never adds any.';
 
-/** Why a switch did not change. The server refused or was unreachable. */
+/** Why a switch did not change, when the server gave no reason of its own. */
 const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change it. Nothing changed. Try again.';
+
+/**
+ * What to say when a switch did not change. A refusal the owner can't retry
+ * past (the chat is limited for another agent) is said in the server's own
+ * words; anything else may pass, so it asks to try again.
+ */
+function switchFailure(error: Error | null): string {
+  return (error as { code?: string } | null)?.code === 'session_access_other_agent'
+    ? error!.message
+    : THIS_CHAT_SWITCH_FAILED;
+}
 
 /**
  * Canonical effective account access shown in Session Inspector, with the
@@ -256,7 +267,7 @@ function SessionConnectionRow({
           server's view, and a row that lost its switch has nothing to try again. */}
       {setAccess.isError && connection.thisChat && (
         <p role="alert" className="text-destructive mt-1 text-xs">
-          {THIS_CHAT_SWITCH_FAILED}
+          {switchFailure(setAccess.error)}
         </p>
       )}
     </div>

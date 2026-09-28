@@ -197,6 +197,40 @@ describe('SessionConnectorsGroup', () => {
     expect(screen.getByText(CONNECTION_READINESS_COPY.signed_out.owner)).toBeInTheDocument();
   });
 
+  it('says the server’s own words when a chat is limited for another agent', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [
+        sessionConnection({
+          source: 'this_chat',
+          thisChat: 'off',
+          readiness: createMockConnectionReadiness({
+            state: 'unavailable',
+            reason: 'off_for_this_chat',
+            fix: { action: 'turn_on_for_this_chat', fixableBy: 'person' },
+          }),
+        }),
+      ],
+    });
+    vi.mocked(transport.setSessionConnectorAccess).mockRejectedValue(
+      Object.assign(new Error('You limited this app in this chat for another agent.'), {
+        code: 'session_access_other_agent',
+        status: 409,
+      })
+    );
+    renderGroup(transport);
+
+    await user.click(await screen.findByRole('switch', { name: 'Gmail (work) in this chat' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('You limited this app in this chat for another agent.');
+    expect(alert).not.toHaveTextContent('Try again');
+    expect(screen.getByRole('switch', { name: 'Gmail (work) in this chat' })).not.toBeChecked();
+  });
+
   it('drops a refused change’s error once the server’s view has no switch left', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

@@ -44,6 +44,7 @@ function connection(id: string) {
 describe('ConnectorSessionAccessService', () => {
   let db: Db;
   let service: ConnectorSessionAccessService;
+  let query: ConnectorOperatorQueryService;
 
   /** What the execution check reads for agent-a on one account in session-a. */
   const scope = (connectionId: string) =>
@@ -182,7 +183,7 @@ describe('ConnectorSessionAccessService', () => {
         }))
       )
       .run();
-    const query = new ConnectorOperatorQueryService({
+    query = new ConnectorOperatorQueryService({
       db,
       registry,
       sessions: {
@@ -302,22 +303,60 @@ describe('ConnectorSessionAccessService', () => {
   });
 
   it('turns a chat handed over from another agent on to only its current agent’s access', async () => {
-    // agent-b narrowed this chat to sending before the chat moved to agent-a.
-    chatGrant('agent-b', 'revision-send');
-    override('agent-b', 'attached');
+    // agent-b had this app turned off here before the chat moved to agent-a.
+    override('agent-b', 'detached');
     expect(usable('agent-a')).toBe('other_agent');
     await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
-    // agent-b's override is gone, and none of agent-b's chat grants carried over.
     expect(overrides()).toEqual([]);
     expect(usable('agent-a')).toEqual(['revision-a', 'revision-send']);
 
     // With agent-a's own chat grant, the handover lands on that, not wider.
-    db.delete(sessionConnectionOverrides).run();
     chatGrant('agent-a', 'revision-a');
-    override('agent-b', 'attached');
+    override('agent-b', 'detached');
     await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
     expect(overrides()).toMatchObject([{ agentId: 'agent-a', state: 'attached' }]);
     expect(usable('agent-a')).toEqual(['revision-a']);
+  });
+
+  it('refuses to drop a limit the owner set on this chat for another agent', async () => {
+    // The owner limited this chat to sending for agent-b, then it moved to agent-a.
+    chatGrant('agent-b', 'revision-send');
+    override('agent-b', 'attached');
+    const before = overrides();
+    await expect(
+      service.setAccess(OWNER, 'session-a', 'connection-a', { on: true })
+    ).rejects.toMatchObject({
+      code: 'session_access_other_agent',
+      message: expect.stringContaining('another agent'),
+    });
+    // The chat's view offers no switch there, and no fix that would be refused.
+    const view = await query.sessionConnections(OWNER, 'session-a');
+    expect(view.connections[0]?.thisChat).toBeUndefined();
+    expect(view.connections[0]?.readiness.fix).toBeUndefined();
+    // Untouched: handed back, agent-b still has only what the owner picked.
+    expect(overrides()).toEqual(before);
+    expect(usable('agent-b')).toEqual(['revision-send']);
+    expect(usable('agent-a')).toBe('other_agent');
+
+    // Once agent-b's own grant is revoked there is no limit left to drop.
+    db.update(connectionOperationGrants)
+      .set({ revokedAt: NOW })
+      .where(eq(connectionOperationGrants.id, 'session-grant-agent-b-revision-send'))
+      .run();
+    await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
+    expect(overrides()).toEqual([]);
+  });
+
+  it('does not count a chat’s revoked grants as its own: on goes back to the agent’s access', async () => {
+    chatGrant('agent-a', 'revision-a');
+    db.update(connectionOperationGrants)
+      .set({ revokedAt: NOW })
+      .where(eq(connectionOperationGrants.id, 'session-grant-agent-a-revision-a'))
+      .run();
+    override('agent-a', 'detached');
+    await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
+    expect(overrides()).toEqual([]);
+    expect(usable('agent-a')).toEqual(['revision-a', 'revision-send']);
   });
 
   it('refuses an unknown chat, a foreign owner’s chat, and a malformed account id', async () => {

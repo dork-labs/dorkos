@@ -9,6 +9,7 @@ import {
 import { ConnectorAuthenticationFlowError } from '../../services/connectors/resources/authentication-flow-service.js';
 import { ConnectorAppActionsError } from '../../services/connectors/resources/app-actions-service.js';
 import { ConnectorOperatorQueryError } from '../../services/connectors/resources/operator-query-service.js';
+import { ConnectorSessionAccessError } from '../../services/connectors/resources/session-access-service.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -303,6 +304,16 @@ describe('connector resource routes', () => {
       .put('/api/connectors/sessions/session-a/connections/connection-b')
       .send({ on: true })
       .expect(404, { error: 'Nothing to switch.', code: 'connection_not_found' });
+  });
+
+  it('answers 409 with the owner’s words when turning on would drop another agent’s limit', async () => {
+    vi.mocked(deps.sessionAccess.setAccess).mockRejectedValueOnce(
+      new ConnectorSessionAccessError('session_access_other_agent', 'Limited for another agent.')
+    );
+    await api()
+      .put('/api/connectors/sessions/session-a/connections/connection-a')
+      .send({ on: true })
+      .expect(409, { error: 'Limited for another agent.', code: 'session_access_other_agent' });
   });
 
   it('passes an owned reconnect identity unchanged and keeps foreign accounts hidden', async () => {

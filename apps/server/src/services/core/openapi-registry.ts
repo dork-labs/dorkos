@@ -4087,6 +4087,11 @@ registry.registerPath({
       description: 'Session absent, or the agent was not given that app account-wide',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    409: {
+      description:
+        'Refused: turning it on would drop a limit the owner set on this chat for another agent (`session_access_other_agent`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
