@@ -155,8 +155,14 @@ function readClaudeCodeConfig(config: ConfigReader): {
  * but that is observed behavior of one release and macOS-only, so nothing here
  * depends on it. An authentication failure surfaces as a runtime error, which is
  * honest, rather than as a pre-flight guess.
+ *
+ * Exported for the account probe (`accounts/account-probe.ts`), which refuses to
+ * boot the CLI against a folder that is not an account.
+ *
+ * @param dir - The folder to check.
+ * @returns True when the folder holds a `projects/` directory.
  */
-function isClaudeAccountRoot(dir: string): boolean {
+export function isClaudeAccountRoot(dir: string): boolean {
   try {
     return fs.statSync(path.join(dir, 'projects')).isDirectory();
   } catch {

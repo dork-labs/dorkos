@@ -2068,9 +2068,18 @@ describe('what the turn-start refresh did, and what moved on main (spec `agent-h
     });
     expect(block).toContain(
       'You have also changed 2 of those files (listed there). Sync before you merge: ' +
-        `\`git -C ${FILES.worktreePath} merge main\`.`
+        `\`git -C "${FILES.worktreePath}" merge main\`.`
     );
     expect(fence(block)).toContain('Files you have also changed: ROOM.md, notes/a.md');
+  });
+
+  it('quotes the copy`s path in the sync command, so a path with a space still works', () => {
+    const spaced = '/Users/dorian/My Rooms/.dork/rooms/01M0ROOM/worktrees/ana-1a2b3c4d';
+    const block = withRefresh(
+      { kind: 'held', reason: 'changes', moved: { ...MOVED, overlap: ['ROOM.md'] } },
+      { worktreePath: spaced }
+    );
+    expect(block).toContain(`Sync before you merge: \`git -C "${spaced}" merge main\`.`);
   });
 
   it('keeps a file name or subject with a newline on its one line, so it cannot forge an attributed line', () => {

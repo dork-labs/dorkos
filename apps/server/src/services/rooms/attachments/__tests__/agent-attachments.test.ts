@@ -11,6 +11,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { RoomWorktreeManager } from '../../repo/room-worktree-manager.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,7 +59,11 @@ const PNG = Buffer.from(
 );
 
 let root: string;
-/** Ana's working copy, and Kai's — two worktrees under one boundary. */
+/**
+ * Ana's working directory, and Kai's — two agents' own folders under one
+ * boundary. A room turn stands in the agent's home, so these are homes; the
+ * room copies a turn is granted are set up in their own block below.
+ */
 let anaCwd: string;
 let kaiCwd: string;
 let bytesHome: string;
@@ -420,5 +425,147 @@ describe('an agent attaches a file it made', () => {
     expect(harness.service.readHistory(roomId, harness.human, { limit: 10 })).toHaveLength(1);
     expect(unboundRows()).toHaveLength(0);
     expect(await storedFiles()).toEqual([]);
+  });
+});
+
+describe('an agent attaches from its own copy of a room`s files (spec `agent-home-desk`)', () => {
+  // A room turn stands in the agent's HOME and is granted its copy of the
+  // room's files. A file it made in that copy is its own; the room's shared
+  // `repo/`, another member's copy, its copy of ANOTHER room, a folder merely
+  // named with its digest, and anything a symlink reaches are not.
+  // Seeded: dropping `ownCopies` refuses the first case; dropping the rooms-dir
+  // fence lets the "home contains the rooms directory" case through; matching
+  // copies by digest suffix lets the other-room and look-alike cases through;
+  // dropping the rooms directory's realpath refuses the symlinked-parent case.
+  let rooms: string;
+  let worktrees: string;
+  let anaCopy: string;
+  let kaiCopy: string;
+  let repo: string;
+
+  beforeEach(async () => {
+    const dorkHome = path.join(root, 'data');
+    vi.stubEnv('DORK_HOME', dorkHome);
+    rooms = path.join(dorkHome, 'rooms');
+    worktrees = path.join(rooms, roomId, 'worktrees');
+    // Named exactly as the worktree manager names them, from the author label.
+    anaCopy = path.join(worktrees, RoomWorktreeManager.slugFor('Ana', ANA_PATH));
+    kaiCopy = path.join(worktrees, RoomWorktreeManager.slugFor('Kai', KAI_PATH));
+    repo = path.join(rooms, roomId, 'repo');
+    for (const dir of [anaCopy, kaiCopy, repo]) await fs.mkdir(dir, { recursive: true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('attaches a file from its own copy by its full path, from its home', async () => {
+    await fs.writeFile(path.join(anaCopy, 'shot.png'), PNG);
+
+    const result = (await post({
+      roomId,
+      text: 'the chart',
+      attachments: [path.join(anaCopy, 'shot.png')],
+    })) as { attached: number };
+
+    expect(result.attached).toBe(1);
+  });
+
+  it('refuses the room`s shared files and another member`s copy, and writes nothing', async () => {
+    await fs.writeFile(path.join(repo, 'plan.png'), PNG);
+    await fs.writeFile(path.join(kaiCopy, 'secret.png'), PNG);
+
+    for (const named of [path.join(repo, 'plan.png'), path.join(kaiCopy, 'secret.png')]) {
+      await expect(post({ roomId, text: 'look', attachments: [named] })).rejects.toMatchObject({
+        payload: { code: 'ATTACHMENT_PATH_REFUSED' },
+      });
+    }
+    await nothingWasWritten();
+  });
+
+  it('refuses a symlink in its own copy that points at the shared files', async () => {
+    await fs.writeFile(path.join(repo, 'plan.png'), PNG);
+    await fs.symlink(path.join(repo, 'plan.png'), path.join(anaCopy, 'link.png'));
+
+    await expect(
+      post({ roomId, text: 'look', attachments: [path.join(anaCopy, 'link.png')] })
+    ).rejects.toMatchObject({ payload: { code: 'ATTACHMENT_PATH_REFUSED' } });
+    await nothingWasWritten();
+  });
+
+  it('does not count a copy folder that is a symlink to someone else`s', async () => {
+    await fs.writeFile(path.join(kaiCopy, 'secret.png'), PNG);
+    await fs.rm(anaCopy, { recursive: true });
+    await fs.symlink(kaiCopy, anaCopy);
+
+    await expect(
+      post({ roomId, text: 'look', attachments: [path.join(anaCopy, 'secret.png')] })
+    ).rejects.toMatchObject({ payload: { code: 'ATTACHMENT_PATH_REFUSED' } });
+    await nothingWasWritten();
+  });
+
+  it('refuses room folders even when its working directory contains the rooms directory', async () => {
+    // A DorkOS dev checkout keeps its data under the repo, which is the
+    // `dorkos` agent's home — so the home CONTAINS every room's files.
+    await fs.writeFile(path.join(repo, 'plan.png'), PNG);
+    await fs.writeFile(path.join(kaiCopy, 'secret.png'), PNG);
+    anaCwd = root;
+
+    for (const named of [
+      path.join('data', 'rooms', roomId, 'repo', 'plan.png'),
+      path.join(kaiCopy, 'secret.png'),
+    ]) {
+      await expect(post({ roomId, text: 'look', attachments: [named] })).rejects.toMatchObject({
+        payload: { code: 'ATTACHMENT_PATH_REFUSED' },
+      });
+    }
+    await nothingWasWritten();
+  });
+
+  it('refuses its copy of ANOTHER room, and a folder merely named with its digest', async () => {
+    // Only the copy a turn in THIS room is granted counts. A copy in a room the
+    // agent left, or a look-alike `mallory-<ana's digest>` someone made, is not.
+    const otherRoomCopy = path.join(
+      rooms,
+      'room-2',
+      'worktrees',
+      RoomWorktreeManager.slugFor('Ana', ANA_PATH)
+    );
+    const lookAlike = path.join(worktrees, `mallory-${RoomWorktreeManager.digestFor(ANA_PATH)}`);
+    for (const dir of [otherRoomCopy, lookAlike]) {
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'shot.png'), PNG);
+    }
+
+    for (const named of [path.join(otherRoomCopy, 'shot.png'), path.join(lookAlike, 'shot.png')]) {
+      await expect(post({ roomId, text: 'look', attachments: [named] })).rejects.toMatchObject({
+        payload: { code: 'ATTACHMENT_PATH_REFUSED' },
+      });
+    }
+    await nothingWasWritten();
+  });
+
+  it('attaches from its copy when the rooms directory is reached through a symlinked parent', async () => {
+    // Real installs: `~/.dork` behind a symlinked home, macOS `/tmp`. The file's
+    // real path must be compared with the copy's REAL spelling.
+    const linkedHome = path.join(root, 'linked-data');
+    await fs.symlink(path.join(root, 'data'), linkedHome);
+    vi.stubEnv('DORK_HOME', linkedHome);
+    await fs.writeFile(path.join(anaCopy, 'shot.png'), PNG);
+    const viaLink = path.join(
+      linkedHome,
+      'rooms',
+      roomId,
+      'worktrees',
+      path.basename(anaCopy),
+      'shot.png'
+    );
+
+    for (const named of [viaLink, path.join(anaCopy, 'shot.png')]) {
+      const result = (await post({ roomId, text: 'the chart', attachments: [named] })) as {
+        attached: number;
+      };
+      expect(result.attached, named).toBe(1);
+    }
   });
 });

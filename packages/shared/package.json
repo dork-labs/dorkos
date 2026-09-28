@@ -137,6 +137,10 @@
       "types": "./src/connector-schemas.ts",
       "default": "./dist/connector-schemas.js"
     },
+    "./connector-arguments": {
+      "types": "./src/connector-arguments.ts",
+      "default": "./dist/connector-arguments.js"
+    },
     "./connector-event-schemas": {
       "types": "./src/connector-event-schemas.ts",
       "default": "./dist/connector-event-schemas.js"

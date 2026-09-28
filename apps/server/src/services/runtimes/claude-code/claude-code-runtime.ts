@@ -8,6 +8,7 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  * @module services/runtimes/claude-code/claude-code-runtime
  */
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { setAccountProbeBinaryResolver } from './accounts/account-probe.js';
 import path from 'path';
 import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig, Query } from '@anthropic-ai/claude-agent-sdk';
@@ -258,6 +259,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Warm-up spawns the SDK too; give it the same resolved binary path so it
     // works in the packaged desktop app (see setClaudeCliPath's doc).
     this.cache.setClaudeCliPath(this.claudeCliPath);
+    // The account probe spawns too; it runs the binary a session would.
+    setAccountProbeBinaryResolver(() => this.spawnBinaryPath);
     this.transcriptReader = new TranscriptReader();
   }
 

@@ -57,7 +57,7 @@ export const ROOM_REPO_SIDECAR_FILENAME = 'room-repo.json';
  * from a URL path segment, and the only safe way to know a string is not a path
  * is that it cannot contain one.
  */
-const SAFE_ROOM_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export const SAFE_ROOM_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** Thrown when a room id could be read as a path. */
 export class InvalidRoomIdError extends Error {

@@ -336,6 +336,26 @@ describe('ConnectorRegistry', () => {
       expect(replacementPages).toHaveBeenCalledTimes(1);
     });
 
+    it('drops every kept copy through one notice, even when the same object registers again', async () => {
+      const provider = new FakeConnectorProvider({ type: 'composio' });
+      const pages = vi.spyOn(provider, 'listToolkitPage');
+      const removed = vi.fn();
+      registry.onProviderInstanceRemoved(removed);
+      registry.register(provider, 'material-a');
+      expect(removed).not.toHaveBeenCalled();
+      await registry.readCatalog(provider, signal());
+
+      // A key saved again re-registers the live instance: the app list and
+      // everything else kept for the way are dropped together.
+      registry.register(provider, 'material-a');
+      expect(removed).toHaveBeenCalledWith(provider.instanceId);
+      await registry.readCatalog(provider, signal());
+      expect(pages).toHaveBeenCalledTimes(2);
+
+      registry.unregisterProviderInstance(provider.instanceId);
+      expect(removed).toHaveBeenCalledTimes(2);
+    });
+
     it('finds the providers for a service from the kept list', async () => {
       const provider = new FakeConnectorProvider({ type: 'composio' });
       const pages = vi.spyOn(provider, 'listToolkitPage');

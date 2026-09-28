@@ -2,7 +2,9 @@ import { cn } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { ShowcaseLabel } from '../ShowcaseLabel';
+import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import {
+  AccountDot,
   STATUS_TONE_BORDER_LEFT,
   STATUS_TONE_DOT,
   STATUS_TONE_SURFACE,
@@ -74,6 +76,33 @@ const STATUS_ROWS = [
  */
 const STATUS_TONES: StatusTone[] = ['success', 'warning', 'error', 'info', 'neutral'];
 
+/**
+ * The account palette's names and each color's minimum contrast over the six
+ * surfaces below, by position. The hex values come from
+ * `DEFAULT_ACCOUNT_COLORS` itself, and `account-palette.test.ts` in
+ * `@dorkos/shared` pins these ratios, so neither can drift from the palette.
+ */
+const ACCOUNT_PALETTE_META = [
+  { name: 'blue', minContrast: '3.41' },
+  { name: 'green', minContrast: '3.45' },
+  { name: 'amber', minContrast: '3.25' },
+  { name: 'purple', minContrast: '3.35' },
+  { name: 'pink', minContrast: '3.28' },
+  { name: 'teal', minContrast: '3.06' },
+  { name: 'indigo', minContrast: '3.39' },
+  { name: 'stone', minContrast: '3.15' },
+] as const;
+
+/** Every surface an account dot sits on: light, then dark. */
+const ACCOUNT_SURFACES = [
+  { hex: '#ffffff', label: 'light background' },
+  { hex: '#fafafa', label: 'light background, muted' },
+  { hex: '#e8e8e8', label: 'light sidebar' },
+  { hex: '#0a0a0a', label: 'dark background' },
+  { hex: '#1a1a1a', label: 'dark sidebar' },
+  { hex: '#262626', label: 'dark hover and muted' },
+] as const;
+
 const TYPE_SCALE = [
   { cls: 'text-3xs', label: 'text-3xs', px: '10px' },
   { cls: 'text-2xs', label: 'text-2xs', px: '11px' },
@@ -120,6 +149,7 @@ export function TokensPage() {
       <ClientColorsSection />
       <StatusColorsSection />
       <SidebarColorsSection />
+      <AccountPaletteSection />
       <TypographySection />
       <SpacingSection />
       <RadiiSection />
@@ -228,6 +258,46 @@ function SidebarColorsSection() {
         {SIDEBAR_COLORS.map((c) => (
           <ColorSwatch key={c.name} name={c.name} bg={c.bg} border={c.border} />
         ))}
+      </div>
+    </PlaygroundSection>
+  );
+}
+
+function AccountPaletteSection() {
+  return (
+    <PlaygroundSection
+      title="Account palette"
+      description="The default account colors, by position. Each is at least 3:1 against every light and dark surface an account dot sits on, so one color works in both themes."
+    >
+      <div className="space-y-3">
+        {DEFAULT_ACCOUNT_COLORS.map((hex, i) => {
+          const meta = ACCOUNT_PALETTE_META[i];
+          const name = meta?.name ?? hex;
+          return (
+            <div key={hex} className="flex flex-wrap items-center gap-3">
+              <AccountDot color={hex} name={name} size="md" />
+              <span className="text-foreground w-14 text-xs font-medium">{name}</span>
+              <span className="text-muted-foreground w-16 font-mono text-xs">{hex}</span>
+              <span className="text-muted-foreground w-20 text-xs tabular-nums">
+                min {meta?.minContrast ?? '?'}:1
+              </span>
+              <div className="flex gap-1">
+                {ACCOUNT_SURFACES.map((surface) => (
+                  <span
+                    key={surface.hex}
+                    title={`${name} on ${surface.label} (${surface.hex})`}
+                    className="border-border flex size-8 items-center justify-center rounded-md border"
+                    // Literal surfaces on purpose: the swatch must show the same
+                    // background in either theme to prove the ratio above.
+                    style={{ backgroundColor: surface.hex }}
+                  >
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: hex }} />
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </PlaygroundSection>
   );

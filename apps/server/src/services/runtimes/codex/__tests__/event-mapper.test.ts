@@ -745,8 +745,8 @@ describe('mapCodexThread', () => {
 
   it('reads native current context after turn completion', async () => {
     const readTurnContextUsage = vi.fn(async () => ({
-      contextTokens: 54_999,
-      contextMaxTokens: 258_400,
+      context: { contextTokens: 54_999, contextMaxTokens: 258_400 },
+      rateLimits: [],
     }));
     const ctx = createCodexEventContext(SESSION_ID, {
       readTurnContextUsage,
@@ -766,6 +766,59 @@ describe('mapCodexThread', () => {
       contextTokens: 54_999,
       contextMaxTokens: 258_400,
     });
+  });
+
+  it("announces a usage limit the rollout shows before the turn's done", async () => {
+    const readTurnContextUsage = vi.fn(async () => ({
+      context: null,
+      rateLimits: [
+        {
+          limit_id: 'codex',
+          primary: { used_percent: 100, window_minutes: 10080, resets_at: 1789243480 },
+          rate_limit_reached_type: null,
+        },
+      ],
+    }));
+    const ctx = createCodexEventContext(SESSION_ID, { readTurnContextUsage, now: () => 0 });
+    const turn = codexSimpleTurn('done');
+    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
+
+    const events = await drain(turn, ctx);
+    const limitIndex = events.findIndex(
+      (event) => event.type === 'session_status' && 'limit' in event.data
+    );
+
+    expect(limitIndex).toBeGreaterThan(-1);
+    expect(events[limitIndex]!.data).toMatchObject({
+      sessionId: SESSION_ID,
+      limit: { window: 'seven_day', resetsAt: new Date(1789243480 * 1000).toISOString() },
+    });
+    expect(events.at(-1)?.type).toBe('done');
+    expect(limitIndex).toBe(events.length - 2);
+  });
+
+  it('reads the rollout after a failed turn too, and a usage-limit failure sets the limit', async () => {
+    const readTurnContextUsage = vi.fn(async () => ({ context: null, rateLimits: [] }));
+    const ctx = createCodexEventContext(SESSION_ID, { readTurnContextUsage, now: () => 0 });
+    const turn = codexFailedTurn("You've hit your usage limit. Try again at 9:26 PM.");
+    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
+
+    const events = await drain(turn, ctx);
+
+    expect(readTurnContextUsage).toHaveBeenCalledTimes(1);
+    expect(
+      events.find((e) => e.type === 'session_status' && 'limit' in e.data)?.data
+    ).toMatchObject({ limit: { window: 'unknown', resetsAt: null } });
+  });
+
+  it('an ordinary failed turn sets no limit', async () => {
+    const readTurnContextUsage = vi.fn(async () => ({ context: null, rateLimits: [] }));
+    const ctx = createCodexEventContext(SESSION_ID, { readTurnContextUsage, now: () => 0 });
+    const turn = codexFailedTurn('command failed with exit code 1');
+    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
+
+    const events = await drain(turn, ctx);
+    expect(events.some((e) => e.type === 'session_status' && 'limit' in e.data)).toBe(false);
   });
 
   it('finishes with honest unknown context when the native reader never settles', async () => {

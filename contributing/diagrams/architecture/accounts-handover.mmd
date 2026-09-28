@@ -1,0 +1,17 @@
+flowchart TB
+  accTitle: Website account handover to DorkOS Cloud
+  accDescr: Without a valid configured accounts origin the website serves local accounts. When configured, selected browser routes redirect and machine calls proxy to the accounts origin. Managed connections are a separate migration. This diagram describes code behavior, not the production switch state.
+  browser["Browser · account pages / navigation"]
+  machine["App / machine · account and instance calls"]
+  site["Website route-specific forwarding<br/>DORKOS_CLOUD_ACCOUNTS_ORIGIN"]
+  local["Website account implementation<br/>Fallback while origin unset or invalid"]
+  accounts["Configured Cloud account origin<br/>Separate hosted browser surface"]
+  managed["Managed connections<br/>Excluded from account forwarding<br/>Disabled on website when forwarding is on"]
+  public["Public website remains<br/>Docs · marketing · marketplace<br/>Separate public migration history"]
+  browser --> site
+  machine --> site
+  site -->|"Unset / invalid origin"| local
+  site -->|"Configured: 307 redirect<br/>Account pages + eligible navigation"| accounts
+  site -->|"Configured: proxy bearer / body / background calls<br/>Selected account + instance routes; preserve query"| accounts
+  site -->|"Separate migration"| managed
+  site -->|"Public routes stay local"| public

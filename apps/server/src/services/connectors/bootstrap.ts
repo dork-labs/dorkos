@@ -69,9 +69,16 @@ import {
   type RawMcpServerDescriptor,
   type RawMcpPendingConnectResolver,
 } from './providers/raw-mcp.js';
+import { TEST_CONNECTOR_PROVIDER_TYPE } from './connection-store.js';
 
-/** The test-mode provider type the credential route accepts under `DORKOS_TEST_RUNTIME`. */
-export const TEST_CONNECTOR_PROVIDER_TYPE = 'test-connector';
+/**
+ * The test-mode provider type the credential route accepts under
+ * `DORKOS_TEST_RUNTIME` — re-exported for every consumer that already imports
+ * it from here (`test-mode.ts`, `index.ts`). Defined in `connection-store.js`,
+ * the lower layer that enforces it as a purge guard
+ * ({@link ConnectionStore.purgeTestConnectorConnections}).
+ */
+export { TEST_CONNECTOR_PROVIDER_TYPE };
 
 /** The credential-store name the test-mode connector key is stored under. */
 export const TEST_CONNECTOR_CREDENTIAL_NAME = 'test-connector-api-key';
@@ -529,6 +536,12 @@ export class ConnectorProviderBootstrapper {
    * (DOR-2436). Best effort: the provider is already registered and working,
    * so a failure here is logged and retried at the next registration, never
    * allowed to take the provider away.
+   *
+   * Nothing kept needs dropping here. A rename only changes saved account
+   * rows; the ids a kept app list or action list is keyed by come from the
+   * provider itself, and this runs inside {@link _swap}, whose unregister
+   * already told `onProviderInstanceRemoved` listeners to drop everything
+   * kept for the instance. What gets kept afterwards is keyed by the new ids.
    */
   private async _renameServices(provider: ConnectorProvider, logLabel: string): Promise<void> {
     if (!reportsServiceRenames(provider)) return;

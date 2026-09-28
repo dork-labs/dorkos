@@ -33,6 +33,7 @@ import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-sch
 import { permissionSeedForOrigin, type TurnOrigin } from '../../session/index.js';
 
 const persistSessionRuntime = vi.fn().mockResolvedValue(true);
+const forgetUnstartedSession = vi.fn().mockResolvedValue(undefined);
 /** What `session_metadata` holds for the session under test — `null` = no row. */
 let storedSettings: Record<string, unknown> | null = null;
 /**
@@ -156,6 +157,7 @@ const interruptsDeliveredTo: string[] = [];
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
+    forgetUnstartedSession: (...args: unknown[]) => forgetUnstartedSession(...args),
     getSessionSettings: () => Promise.resolve(storedSettings),
     // The real read, shape for shape: a row's runtime is `bound`, and an id with
     // no row falls through to the legacy claude-code inference, which is
@@ -318,14 +320,25 @@ let turnBehaviour: (opts: TriggerCall) => {
   canonicalId?: string;
 };
 
+/**
+ * A dispatch refused before its turn launched — the session's lock is held by
+ * somebody else — which is the only way the real dispatcher answers
+ * `accepted: false`. Its launch step never runs.
+ */
+const REFUSED = (): { accepted: boolean } => ({ accepted: false });
+
 /** Every dispatch this file's runner made, in order. */
 const triggered: TriggerCall[] = [];
 
 vi.mock('../../session/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session/index.js')>()),
-  dispatchMessage: (opts: never) => {
+  // Faithful to `trigger-turn.ts` in the one respect DOR-2447 turns on: a
+  // turn's launch step runs, under its lock, BEFORE the runtime is called — and
+  // never for a dispatch refused before it launched (see {@link REFUSED}).
+  dispatchMessage: async (opts: TriggerCall) => {
     triggered.push(opts);
-    return Promise.resolve(turnBehaviour(opts));
+    if (turnBehaviour !== REFUSED) await opts.prepareLaunch?.();
+    return turnBehaviour(opts);
   },
 }));
 
@@ -495,6 +508,7 @@ function saysAndCloses(...parts: string[]): typeof turnBehaviour {
 describe('createSessionRoomTurnRunner', () => {
   beforeEach(() => {
     persistSessionRuntime.mockClear();
+    forgetUnstartedSession.mockClear();
     interruptQuery.mockClear();
     interruptQuery.mockImplementation(() => Promise.resolve(mockInterruptReceipt('not-running')));
     internalSessionId = () => undefined;
@@ -547,6 +561,36 @@ describe('createSessionRoomTurnRunner', () => {
       expect(runtimesAskedFor).toEqual(['codex']);
       expect(persistSessionRuntime).toHaveBeenLastCalledWith(
         expect.any(String),
+        'codex',
+        roomOrigin(),
+        '/repo/ana'
+      );
+    });
+
+    it('records the session`s runtime before the runtime starts a first turn (DOR-2447)', async () => {
+      // Codex opens the agent's connections as its turn STARTS, and the server
+      // grants that only for a session whose runtime and agent are on record
+      // (`CanonicalConnectorRuntimeAuthorityResolver`). A room recorded them
+      // only after the turn was accepted, so every codex agent's first turn in
+      // a room failed with "Canonical runtime authority could not be verified".
+      // Seeded: dropping the launch-time write reddens this.
+      agentManifest = { runtime: 'codex' };
+      let boundWhenStarted: boolean | null = null;
+      const answer = saysAndCloses('On it.');
+      turnBehaviour = (opts) => {
+        boundWhenStarted = persistSessionRuntime.mock.calls.some(
+          ([id, runtime, , agentPath]) =>
+            id === opts.sessionId && runtime === 'codex' && agentPath === '/repo/ana'
+        );
+        return answer(opts);
+      };
+
+      const result = await createSessionRoomTurnRunner().run(request({ sessionId: null }));
+
+      expect(boundWhenStarted).toBe(true);
+      expect(result.text).toBe('On it.');
+      expect(persistSessionRuntime).toHaveBeenCalledWith(
+        result.sessionId,
         'codex',
         roomOrigin(),
         '/repo/ana'
@@ -1123,7 +1167,6 @@ describe('createSessionRoomTurnRunner', () => {
     const call = triggered[triggered.length - 1]!;
     expect(call).not.toHaveProperty('additionalDirectories');
     expect(call.roomTurn).not.toHaveProperty('worktree');
-    expect(call).not.toHaveProperty('prepareLaunch');
   });
 
   it('hands the dispatcher a launch step bound to the session the turn launches on', async () => {
@@ -1146,10 +1189,38 @@ describe('createSessionRoomTurnRunner', () => {
     );
 
     const call = triggered[triggered.length - 1]!;
-    // Not run by the runner: the DISPATCHER runs it, at launch.
-    expect(launchedOn).toEqual([]);
-    await call.prepareLaunch!();
+    // Not run by the runner: the DISPATCHER runs it, at launch — once, which the
+    // dispatch stub above does as `trigger-turn.ts` does.
+    expect(call.prepareLaunch).toBeTypeOf('function');
     expect(launchedOn).toEqual(['sess-bound']);
+  });
+
+  it('records the session`s owner before the turn-start refresh runs (DOR-2447)', async () => {
+    // Ordered so a refresh that fails — which the dispatcher logs and launches
+    // past — can never leave a turn starting with no owner on record. Seeded:
+    // running the room's step first reddens this.
+    agentManifest = { runtime: 'codex' };
+    let ownerOnRecordAtRefresh: boolean | null = null;
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    await createSessionRoomTurnRunner().run(
+      request({
+        agentPath: '/repo/ana',
+        sessionId: null,
+        prepareLaunch: (sessionId) => {
+          ownerOnRecordAtRefresh = persistSessionRuntime.mock.calls.some(
+            ([id, runtime]) => id === sessionId && runtime === 'codex'
+          );
+          return Promise.resolve({});
+        },
+      })
+    );
+
+    expect(ownerOnRecordAtRefresh).toBe(true);
   });
 
   it('puts the files section the launch step measured into the room context it launches with', async () => {
@@ -1435,16 +1506,12 @@ describe('createSessionRoomTurnRunner', () => {
       roomOrigin(),
       '/repo/ana'
     );
-    expect(persistSessionRuntime).not.toHaveBeenCalledWith(
-      'room-placeholder',
-      expect.anything(),
-      expect.anything(),
-      expect.anything()
-    );
     // The agreement itself, asserted rather than assumed: one id answers both
     // questions, so a room session never falls through to the registry's legacy
-    // "it must be claude-code" inference for want of a row.
-    expect(persistSessionRuntime.mock.calls[0][0]).toBe(result.sessionId);
+    // "it must be claude-code" inference for want of a row. (The launch-time
+    // write lands under the id the turn was LAUNCHED with, as a person's first
+    // message does, and the runtime's own rebind moves it — DOR-2447.)
+    expect(persistSessionRuntime.mock.lastCall?.[0]).toBe(result.sessionId);
   });
 
   it('still delivers the answer when recording who owns the session fails', async () => {
@@ -1468,8 +1535,9 @@ describe('createSessionRoomTurnRunner', () => {
     const result = await createSessionRoomTurnRunner().run(request());
 
     // It was really attempted, so the assertions below are about a write that
-    // failed rather than one that never ran.
-    expect(persistSessionRuntime).toHaveBeenCalledTimes(1);
+    // failed rather than one that never ran — at launch (the one that failed)
+    // and again once the turn was accepted.
+    expect(persistSessionRuntime).toHaveBeenCalledTimes(2);
     // (a) `run` resolves — the dispatcher's "a throw means nothing ran" holds.
     // (b) and the answer is intact, which is what the room posts.
     expect(result.text).toBe('Green — nothing failed.');
@@ -1481,7 +1549,7 @@ describe('createSessionRoomTurnRunner', () => {
   });
 
   it('says nothing rather than queueing behind an operator who is mid-turn', async () => {
-    turnBehaviour = () => ({ accepted: false });
+    turnBehaviour = REFUSED;
     const result = await createSessionRoomTurnRunner().run(request());
     expect(result.text).toBeNull();
     // Named, not merely empty: a `null` on its own is what an agent with
@@ -2023,15 +2091,27 @@ describe('createSessionRoomTurnRunner', () => {
     // A ghost `session_metadata` row per failed message: `bindRoomSession` is
     // never reached, so the next trigger mints a fresh id and the dead row and
     // its projector stay forever.
-    turnBehaviour = () => ({ accepted: false });
+    turnBehaviour = REFUSED;
     await createSessionRoomTurnRunner().run(request());
     expect(persistSessionRuntime).not.toHaveBeenCalled();
 
+    // A dispatch that fails AFTER its launch step recorded the owner: the row
+    // for that minted id is taken back, because nothing will ever bind it.
+    // Seeded: dropping the take-back reddens this.
     turnBehaviour = () => {
       throw new Error('runtime is down');
     };
     await expect(createSessionRoomTurnRunner().run(request())).rejects.toThrow('runtime is down');
-    expect(persistSessionRuntime).not.toHaveBeenCalled();
+    const [minted] = persistSessionRuntime.mock.calls[0] as [string];
+    expect(forgetUnstartedSession).toHaveBeenCalledWith(minted);
+
+    // A session the room already holds is never taken back: its row is the
+    // conversation's, whatever happened to this one dispatch.
+    forgetUnstartedSession.mockClear();
+    await expect(
+      createSessionRoomTurnRunner().run(request({ sessionId: 'room-held' }))
+    ).rejects.toThrow('runtime is down');
+    expect(forgetUnstartedSession).not.toHaveBeenCalled();
   });
 
   describe('a stop pressed while the turn is still starting', () => {

@@ -182,6 +182,10 @@ function AccountPanelBody({
           connectionId={connectionId}
           serviceName={appName}
           onEditExactActions={onEditExactActions}
+          appActions={{
+            toolkit: connection.toolkit,
+            providerInstanceId: connection.providerInstanceId,
+          }}
         />
       )}
 

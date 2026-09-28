@@ -32,7 +32,10 @@ import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { ExecutionException } from '@/layers/entities/agent';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { buildRuntimeCardSummary, type RuntimeCardViewProps } from '@/layers/features/settings';
+import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import { PLAYGROUND_CAPABILITIES } from '../playground-transport';
+
+export { MOCK_ACCOUNT_USAGE } from './account-mock-data';
 
 /**
  * Realistic mock `ServerConfig` consumed by the `ServerTab`, `ToolsTab`,
@@ -194,7 +197,7 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         id: 'personal',
         path: '/Users/dev/.claude',
         label: 'Personal',
-        color: '#3b82f6',
+        color: DEFAULT_ACCOUNT_COLORS[0]!,
         colorIsDefault: true,
         isAccountRoot: true,
       },
@@ -202,7 +205,7 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         id: 'acme-corp',
         path: '/Users/dev/.claude2',
         label: 'Acme Corp',
-        color: '#3b82f6',
+        color: DEFAULT_ACCOUNT_COLORS[1]!,
         colorIsDefault: true,
         isAccountRoot: true,
       },
@@ -210,7 +213,7 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         id: 'claude3',
         path: '/Users/dev/.claude3',
         label: null,
-        color: '#3b82f6',
+        color: DEFAULT_ACCOUNT_COLORS[2]!,
         colorIsDefault: true,
         isAccountRoot: true,
       },
@@ -218,7 +221,7 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         id: 'just-signed-up',
         path: '/Users/dev/.claude-new',
         label: 'Just signed up',
-        color: '#3b82f6',
+        color: DEFAULT_ACCOUNT_COLORS[3]!,
         colorIsDefault: true,
         isAccountRoot: false,
       },

@@ -424,6 +424,37 @@ describe('ComposioSdkClient', () => {
     expect(local.requests.map(({ method }) => method)).toEqual(['GET']);
   });
 
+  it('carries the display name and the important tag as hints, without changing the classification', async () => {
+    const local = await fixture((_request, response) =>
+      json(response, 200, {
+        current_page: 1,
+        total_pages: 1,
+        total_items: 2,
+        next_cursor: null,
+        items: [
+          { ...tool('GITHUB_SEND', ['important', 'openWorldHint']), name: '  Send Thing ' },
+          { ...tool('GITHUB_GET', ['readOnlyHint']), name: '' },
+        ],
+      })
+    );
+    const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
+      toolkit: 'github',
+      toolkitVersion: TOOLKIT_VERSION,
+      limit: 10,
+      signal: new AbortController().signal,
+    });
+    expect(result.page.operations[0]).toMatchObject({
+      displayName: 'Send Thing',
+      important: true,
+      capabilityClassification: 'destructive',
+    });
+    expect(result.page.operations[1]).toMatchObject({
+      important: false,
+      capabilityClassification: 'read',
+    });
+    expect(result.page.operations[1]).not.toHaveProperty('displayName');
+  });
+
   it.each(['toolkit', 'version'])(
     'rejects uncertain metadata with mismatched %s',
     async (field) => {

@@ -179,6 +179,12 @@ export const ConnectorOperationPageSchema = z.object({
     ConnectorOperationRevisionSchema.omit({ id: true, discoveredAt: true }).extend({
       // Private upstream revision identity, never included in public revision DTOs.
       providerRevisionRef: z.string().min(1).max(500).optional(),
+      // Presentation hints only. Neither is part of a revision's identity, its
+      // stored row, or its safety classification.
+      /** The service's own display name for the operation, when it gives one. */
+      displayName: z.string().min(1).max(200).optional(),
+      /** True when the service marks the operation as one of its main ones. */
+      important: z.boolean().optional(),
     })
   ),
   nextCursor: z.string().min(1).optional(),

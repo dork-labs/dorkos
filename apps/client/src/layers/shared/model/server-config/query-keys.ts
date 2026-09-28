@@ -61,3 +61,23 @@ export const CONFIG_STALE_TIME_MS = 30_000;
  * deduplication off it, and `useMutation` treats it as a label.
  */
 export const CONFIG_WRITE_MUTATION_KEY = ['config', 'write'] as const;
+
+/**
+ * Query keys for account usage and the carry-over routes (spec
+ * `claude-account-ui` §6.0).
+ *
+ * In `shared/` beside {@link configKeys} for the same reason: session rows in
+ * `entities/session` read account usage and may not import a feature, and the
+ * session-list query seeds {@link accountKeys.usage} from its own answer.
+ */
+export const accountKeys = {
+  /** Root key for everything about accounts. */
+  all: ['accounts'] as const,
+  /** One runtime's account usage; the entry holds an `AccountUsage[]`. */
+  usage: (runtime: string) => [...accountKeys.all, 'usage', runtime] as const,
+  /** Where one limited session can carry over to. */
+  continueOptions: (sessionId: string) =>
+    [...accountKeys.all, 'continue-options', sessionId] as const,
+  /** One session's resolved usage-limit episodes. */
+  limitHistory: (sessionId: string) => [...accountKeys.all, 'limit-history', sessionId] as const,
+};

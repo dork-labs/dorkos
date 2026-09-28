@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import type { ConnectorExternalAccountRef } from '@dorkos/shared/connector-provider';
@@ -192,6 +192,29 @@ describe('TestModeConnectorProvider — scripted semantics', () => {
     const second = await provider.pollConnect(flowId);
     expect(second.account?.externalAccountRef).toBe(first.account?.externalAccountRef);
   });
+
+  it('never re-mints an account id a prior instance already used, across a fresh key save (DOR-2451)', async () => {
+    // Each Connections e2e case's `beforeEach` saves the test-connector key
+    // again, which the bootstrapper answers with a brand new provider
+    // instance — simulated here by simply constructing a second one.
+    const first = makeProvider();
+    const { flowId: firstFlowId } = await first.startConnect('gmail', { label: 'work' });
+    const firstConnected = await first.pollConnect(firstFlowId);
+    if (firstConnected.status !== 'connected' || !firstConnected.account) {
+      throw new Error('expected connected test account');
+    }
+
+    const second = makeProvider();
+    const { flowId: secondFlowId } = await second.startConnect('gmail', { label: 'work' });
+    const secondConnected = await second.pollConnect(secondFlowId);
+    if (secondConnected.status !== 'connected' || !secondConnected.account) {
+      throw new Error('expected connected test account');
+    }
+
+    expect(secondConnected.account.externalAccountRef).not.toBe(
+      firstConnected.account.externalAccountRef
+    );
+  });
 });
 
 describe('maybeCreateTestModeConnectorProvider — the credential gate', () => {
@@ -228,6 +251,24 @@ describe('maybeCreateTestModeConnectorProvider — the credential gate', () => {
         localOrigin: LOCAL_ORIGIN,
       })
     ).resolves.toBeNull();
+  });
+
+  it('purges connections exactly when the credential resolves absent, never when it saves a fresh instance (DOR-2451)', async () => {
+    const purgeConnections = vi.fn();
+    await maybeCreateTestModeConnectorProvider({
+      credentials: fakeCredentials(new Map()),
+      localOrigin: LOCAL_ORIGIN,
+      purgeConnections,
+    });
+    expect(purgeConnections).toHaveBeenCalledTimes(1);
+
+    purgeConnections.mockClear();
+    await maybeCreateTestModeConnectorProvider({
+      credentials: fakeCredentials(new Map([[TEST_CONNECTOR_API_KEY_REF, 'test-key']])),
+      localOrigin: LOCAL_ORIGIN,
+      purgeConnections,
+    });
+    expect(purgeConnections).not.toHaveBeenCalled();
   });
 
   it('is absent after boot without a key — configured:false, registered:false', async () => {

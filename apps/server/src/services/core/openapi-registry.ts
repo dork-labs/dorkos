@@ -242,6 +242,8 @@ import {
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
   ConnectorConnectionPatchSchema,
+  ConnectorAppActionsQuerySchema,
+  ConnectorAppActionsSchema,
   ConnectorDisconnectImpactSchema,
   ConnectorLifecycleResultSchema,
   ConnectorReconnectRequestSchema,
@@ -1339,6 +1341,42 @@ registry.registerPath({
       },
     },
     400: { description: 'Unknown runtime slug' },
+    503: { description: 'The usage store is not running yet' },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/runtimes/claude-code/accounts/{id}/probe',
+  tags: ['Runtimes'],
+  summary: "Check a Claude account's usage without running a turn",
+  description:
+    "Starts Claude Code in the account's own folder on a prompt that never sends a message, " +
+    'asks it for the account usage, and closes it: no turn runs, nothing is billed, and no ' +
+    'transcript is kept. On demand only, one probe per account at a time and at most one a ' +
+    'minute. `probe` says how it went: `ok` recorded new readings; `unavailable` (the account ' +
+    'has no plan limits), `failed` (with a `reason`) and `throttled` recorded nothing.',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .openapi({ description: "A registry id, or `default` for this computer's own sign-in." }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The account's usage after the probe, and how the probe went",
+      content: {
+        'application/json': {
+          schema: z.object({
+            account: AccountUsageSchema,
+            probe: z.enum(['ok', 'unavailable', 'failed', 'throttled']),
+            reason: z.string().optional(),
+          }),
+        },
+      },
+    },
+    404: { description: 'No Claude Code account has that id (`code: "UNKNOWN_ACCOUNT"`)' },
     503: { description: 'The usage store is not running yet' },
   },
 });
@@ -3798,6 +3836,44 @@ registry.registerPath({
     },
     404: {
       description: 'Connection absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/apps/{toolkit}/actions',
+  tags: ['Connectors'],
+  summary: 'List what an app lets agents do through one configured way',
+  description:
+    'Owner only. Returns every action the app offers at one exact service version, each with ' +
+    'the safety classification the grant review stores and execution enforces. The list is ' +
+    'kept for 24 hours and served at once while it refreshes. A way that cannot list trusted ' +
+    'actions answers `unlisted`; a list that stopped part way says `complete: false`.',
+  request: {
+    params: z.object({ toolkit: z.string().min(1).max(200) }),
+    query: ConnectorAppActionsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'The app’s actions, or an honest unlisted answer',
+      content: { 'application/json': { schema: ConnectorAppActionsSchema } },
+    },
+    400: {
+      description: 'Invalid app id or query',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Only the owner can read this, from the DorkOS app',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'The named way of reaching apps is not set up',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: 'The service could not list the app’s actions just now',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

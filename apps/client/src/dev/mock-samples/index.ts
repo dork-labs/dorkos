@@ -40,6 +40,7 @@ export {
   MOCK_CHAT_APPS,
   MOCK_CHAT_BINDINGS,
   MOCK_CONNECTIONS,
+  MOCK_GMAIL_ACTIONS,
   MOCK_GMAIL_USAGE,
   mockAccessPreview,
   mockConnection,

@@ -11,7 +11,7 @@ This is the engineering reference. For a plain-language introduction, start with
 
 DorkOS has several deployment boundaries. The local React client reaches an Express server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
-The diagrams reflect public source `ea6e06765385258d2cf07a5f078de1fec0041df5`, reviewed September 23, 2026. In flowcharts, solid arrows show implemented paths; dashed arrows label unfinished wiring or contract relationships. In the sequence diagram, dashed arrows represent responses and events. Optional app-side calls do not certify hosted-service readiness. Obsidian retirement updates on 2026-09-25 remove the in-process plugin path from this map.
+The Cloud views were refreshed against public source `5794f638160a68811382347356fd29b31ee2e911` on September 27, 2026. Other views retain the September 23 review and September 25 Obsidian retirement update. Solid flowchart edges show implemented public paths; dashed edges label contract relationships or unfinished wiring. Neither style certifies production availability. Sequence-diagram dashed arrows are responses and events.
 
 ## System map
 
@@ -73,19 +73,25 @@ Source registries supply package metadata and content. The website browses them.
 
 [![Public Cloud requests, optional inference configuration, and the separate tunnel path](/diagrams/architecture/cloud-boundary.svg)](/diagrams/architecture/cloud-boundary.svg)
 
-The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. A defined route is not proof that a feature is deployed.
+The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. Both resolve `DORKOS_CLOUD_URL`, falling back to the website origin. Service implementation does not itself migrate those callers or origins.
 
-The contract's remote command stream uses SSE. The existing local tunnel manager separately uses the ngrok SDK; remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, requiring an explicit flag and a linked instance. Local DorkOS and Community both run without Cloud.
+The contract's remote command stream uses SSE and has lease/acknowledgement semantics. The existing local tunnel manager separately uses the ngrok SDK; the managed command consumer remains separate app-side work. Remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, requiring an explicit flag and a linked instance. Local DorkOS and Community both run without Cloud.
+
+### Account handover
+
+[![Website account redirect and compatibility proxy](/diagrams/architecture/accounts-handover.svg)](/diagrams/architecture/accounts-handover.svg)
+
+With a valid `DORKOS_CLOUD_ACCOUNTS_ORIGIN`, the public site redirects account pages and eligible navigations with 307, and proxies machine requests and background fetches while preserving method, body and authorization. With it unset or invalid, the site serves its account implementation. The forwarding policy lists exact route families; it is not a general `/v1` proxy. Managed connections are excluded and disabled on the site while forwarding is enabled; their migration is separate. Account implementation deletion follows verified cutover rather than the completion of Cloud development.
 
 The [repository system architecture guide](https://github.com/dork-labs/dorkos/blob/main/contributing/system-architecture.md) has code evidence, data ownership, status notes and diagram maintenance instructions.
 
 ## Cloud-hosted communities
 
-[![Optional hosting control through the Community host API](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
+[![Hosting control and Community archive upload remain separate paths](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
 
-The public hosted-community contract now connects Cloud management to the independently runnable Community host. Host API keys, limits and usage reads are implemented. The local start/move flow and complete hosted provisioning remain in progress at this snapshot. Cloud manages hosting through the host API, not through the Community database or content routes. Optional shared sign-in is a separate planned boundary.
+The public hosted-community contract connects optional Cloud management to the independently runnable Community host. Scoped host APIs manage lifecycle, claims, limits and usage. The local start/move dialogs and `/api/cloud/communities/*` relay are implemented. Complete hosted availability and Community import acceptance remain separate from that app-side implementation.
 
-The move contract uploads to Community rather than through the control plane. Import, erasure, and hosting launch require their own completion evidence; a published route schema is not that evidence.
+The local server stages and uploads a move archive to the Community server. Cloud receives management requests, not the archive. Installation and upload credentials stay on the local server; a one-time claim URL reaches the browser only through the explicit claim-link action. Hosting does not grant ordinary Community membership. Optional shared sign-in is separate work.
 
 ## Monorepo Structure
 

@@ -117,6 +117,7 @@ export class ConnectorRegistry {
   private readonly _catalog: ConnectorCatalogCache;
   /** Setup fingerprint each live instance registered with; binds its kept app list. */
   private readonly _configDigests = new Map<ConnectorProviderInstanceId, string>();
+  private readonly _removalListeners = new Set<(instanceId: ConnectorProviderInstanceId) => void>();
 
   /**
    * Construct the registry over the canonical connector database.
@@ -126,6 +127,9 @@ export class ConnectorRegistry {
   constructor(opts: ConnectorRegistryOpts) {
     this._providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
     this._catalog = opts.catalogCache ?? new ConnectorCatalogCache();
+    // The kept app list is dropped through the same notice as every other
+    // copy kept for a way, so there is one invalidation path.
+    this.onProviderInstanceRemoved((instanceId) => this._catalog.drop(instanceId));
     this._connections =
       opts.connectionStore ??
       new ConnectionStore({
@@ -185,11 +189,38 @@ export class ConnectorRegistry {
     if (this._connections.health().status === 'ready') {
       this._connections.registerProvider(provider, digest, mode);
     }
-    // Replacing a live registration in place is a setup change too.
-    if (this._providers.has(provider.instanceId)) this._catalog.drop(provider.instanceId);
+    // Registering over a live registration, even with the same object, is a
+    // setup change too: everything kept for the way is dropped.
+    const wasLive = this._providers.has(provider.instanceId);
     this._providers.set(provider.instanceId, provider);
     this._configDigests.set(provider.instanceId, digest);
     this._defaultInstanceByType.set(provider.type, provider.instanceId);
+    if (wasLive) this.notifyRemoved(provider.instanceId);
+  }
+
+  /**
+   * Be told whenever a configured instance is removed or registered again
+   * over a live registration, so anything kept for it (its app list, an app's
+   * action list) is dropped.
+   *
+   * @param listener - Called with the instance id after it leaves the registry.
+   * @returns A function that stops the notifications.
+   */
+  onProviderInstanceRemoved(
+    listener: (instanceId: ConnectorProviderInstanceId) => void
+  ): () => void {
+    this._removalListeners.add(listener);
+    return () => this._removalListeners.delete(listener);
+  }
+
+  private notifyRemoved(instanceId: ConnectorProviderInstanceId): void {
+    for (const listener of this._removalListeners) {
+      try {
+        listener(instanceId);
+      } catch {
+        // A listener's failure never blocks a registry change.
+      }
+    }
   }
 
   /**
@@ -217,7 +248,7 @@ export class ConnectorRegistry {
     // Every key change, setup change and removal passes through here, so the
     // kept app list goes with the registration it was listed under.
     this._configDigests.delete(instanceId);
-    this._catalog.drop(instanceId);
+    this.notifyRemoved(instanceId);
     if (this._defaultInstanceByType.get(provider.type) === instanceId) {
       const fallback = [...this._providers.values()]
         .filter((candidate) => candidate.type === provider.type)
@@ -227,6 +258,25 @@ export class ConnectorRegistry {
     }
     if (this._connections.health().status === 'ready') {
       this._connections.unregisterProvider(instanceId);
+    }
+  }
+
+  /**
+   * Tombstone one `test-connector` provider instance's own connections — see
+   * {@link ConnectionStore.purgeTestConnectorConnections}, which does the
+   * actual tombstoning (never a hard delete — a DB trigger refuses that) and
+   * refuses (throws) an instance whose persisted type isn't `test-connector`.
+   * For an ephemeral, scripted provider only; never reachable for a real
+   * (`composio`/`nango`) instance, whose history is meant to survive a
+   * credential rotation, and never called for one — the guard is what makes
+   * that a refusal rather than a policy this method merely doesn't exercise.
+   *
+   * @param instanceId - The ephemeral `test-connector` instance to purge.
+   * @throws {Error} If a persisted provider instance exists at `instanceId` and its type isn't `test-connector`.
+   */
+  purgeTestConnectorConnections(instanceId: ConnectorProviderInstanceId): void {
+    if (this._connections.health().status === 'ready') {
+      this._connections.purgeTestConnectorConnections(instanceId);
     }
   }
 

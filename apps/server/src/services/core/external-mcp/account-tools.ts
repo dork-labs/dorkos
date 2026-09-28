@@ -1,5 +1,5 @@
 /**
- * Puts the account tools (`accounts_usage`) on the external `/mcp` server.
+ * Puts the account tools (`accounts_usage`, `accounts_probe`) on the external `/mcp` server.
  *
  * The names, descriptions, and input schemas come from `getAccountTools`, the
  * same definitions the in-session server uses, via
@@ -21,10 +21,16 @@ const ACCOUNT_EXTERNAL_CONFIGS: ExternalToolConfigs = {
     annotations: ToolAnnotationPresets.readOnlyLocal,
     outputSchema: { accounts: z.array(AccountUsageSchema) },
   },
+  // Spawns the CLI and records readings, so not read-only; a repeat within a
+  // minute is throttled and changes nothing, so idempotent. No outputSchema: a
+  // structured-output tool stays at `observe` (mcp-tool-gate.test.ts).
+  accounts_probe: {
+    annotations: ToolAnnotationPresets.mutateUpdateLocal,
+  },
 };
 
 /**
- * Register `accounts_usage` against `registrar`.
+ * Register the account tools against `registrar`.
  *
  * @param registrar - The gated tool registrar from `mcp-server.ts`.
  * @param deps - Shared MCP tool dependencies.

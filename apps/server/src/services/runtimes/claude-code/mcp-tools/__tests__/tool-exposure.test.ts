@@ -448,8 +448,10 @@ describe('in-session tool exposure', () => {
     // 110 -> 111 for `accounts_usage` (spec `claude-account-fleet` D2),
     // DEFERRED: a turn that asks how much of an account is used can afford a
     // search. Both counts move by the same one.
-    expect(tools).toHaveLength(111);
-    expect(deferred).toHaveLength(101);
+    // 111 -> 112 for `accounts_probe` (spec `claude-account-fleet` D3),
+    // DEFERRED for the same reason. Both counts move by the same one.
+    expect(tools).toHaveLength(112);
+    expect(deferred).toHaveLength(102);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

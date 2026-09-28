@@ -7,6 +7,7 @@ import {
   type ConnectorResourcesRouterDeps,
 } from '../connector-resources.js';
 import { ConnectorAuthenticationFlowError } from '../../services/connectors/resources/authentication-flow-service.js';
+import { ConnectorAppActionsError } from '../../services/connectors/resources/app-actions-service.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -43,6 +44,9 @@ describe('connector resource routes', () => {
         disconnect: vi
           .fn()
           .mockResolvedValue({ connectionId: 'connection-a', lifecycle: 'disconnected' }),
+      },
+      actions: {
+        list: vi.fn().mockResolvedValue({ status: 'unlisted', toolkit: 'gmail' }),
       },
     } as unknown as ConnectorResourcesRouterDeps;
     app = express();
@@ -134,6 +138,40 @@ describe('connector resource routes', () => {
       .send({})
       .expect(403);
     expect(deps.lifecycle.remove).not.toHaveBeenCalled();
+  });
+
+  it('lists an app’s actions for the owner only, through one named way', async () => {
+    await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
+      .expect(200, { status: 'unlisted', toolkit: 'gmail' });
+    expect(deps.actions.list).toHaveBeenCalledWith(OWNER, {
+      providerInstanceId: 'provider-a',
+      toolkit: 'gmail',
+    });
+
+    vi.mocked(deps.actions.list).mockClear();
+    await api().get('/api/connectors/apps/gmail/actions').expect(400);
+    await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a&extra=1')
+      .expect(400);
+    const refused = await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
+      .set('X-DorkOS-Agent', 'agent-a')
+      .expect(403);
+    expect(refused.body).toMatchObject({ code: 'connector_owner_required' });
+    expect(deps.actions.list).not.toHaveBeenCalled();
+  });
+
+  it('maps an unknown way to 404 and a failed listing to 502', async () => {
+    vi.mocked(deps.actions.list)
+      .mockRejectedValueOnce(new ConnectorAppActionsError('provider_not_found', 'Not set up.'))
+      .mockRejectedValueOnce(new ConnectorAppActionsError('actions_unavailable', 'Try again.'));
+    await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
+      .expect(404, { error: 'Not set up.', code: 'provider_not_found' });
+    await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
+      .expect(502, { error: 'Try again.', code: 'actions_unavailable' });
   });
 
   it('returns a useful generic error without exposing an internal failure', async () => {

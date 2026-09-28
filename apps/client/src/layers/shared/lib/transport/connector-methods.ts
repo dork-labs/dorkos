@@ -55,6 +55,7 @@ import type {
   ConnectorConnectionDetail,
   ConnectorConnectionListResource,
   ConnectorConnectionPatch,
+  ConnectorAppActions,
   ConnectorDisconnectImpact,
   ConnectorLifecycleResult,
   ConnectorProvidersResource,
@@ -230,6 +231,17 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchJSON<ConnectorDisconnectImpact>(
         baseUrl,
         `/connectors/connections/${encodeURIComponent(connectionId)}/disconnect-impact`
+      );
+    },
+
+    getConnectorAppActions(
+      toolkit: string,
+      providerInstanceId: string
+    ): Promise<ConnectorAppActions> {
+      const params = new URLSearchParams({ providerInstanceId });
+      return fetchJSON<ConnectorAppActions>(
+        baseUrl,
+        `/connectors/apps/${encodeURIComponent(toolkit)}/actions?${params}`
       );
     },
 

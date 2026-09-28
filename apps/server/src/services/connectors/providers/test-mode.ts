@@ -115,6 +115,17 @@ interface TestFlow {
   accountId?: ConnectorExternalAccountRef;
 }
 
+/**
+ * Monotonic account-id sequence held OUTSIDE any single provider instance,
+ * for the life of the server process. The bootstrapper builds a brand new
+ * {@link TestModeConnectorProvider} on every credential save — including the
+ * key save each Connections e2e case's `beforeEach` repeats — and a counter
+ * scoped to that instance would restart at 1 each time, re-minting an id an
+ * earlier instance already used and later dropped. That collision is what
+ * made a fresh sign-in come back `failed` (DOR-2451).
+ */
+let nextTestAccountSequence = 0;
+
 /** Construction options for {@link TestModeConnectorProvider}. */
 export interface TestModeConnectorProviderOpts {
   /**
@@ -305,8 +316,9 @@ export class TestModeConnectorProvider implements ConnectorProvider {
     // Instant success, stable across re-polls: the first poll mints the
     // account; every later poll of the same flow answers the same account.
     if (!flow.accountId) {
-      this._counter += 1;
-      const id = `${this.type}:${flow.toolkit}:${this._counter}` as ConnectorExternalAccountRef;
+      nextTestAccountSequence += 1;
+      const id =
+        `${this.type}:${flow.toolkit}:${nextTestAccountSequence}` as ConnectorExternalAccountRef;
       this._accounts.set(id, {
         externalAccountRef: id,
         toolkit: flow.toolkit,
@@ -351,17 +363,34 @@ export class TestModeConnectorProvider implements ConnectorProvider {
  * provider once one is — the same silent-null-when-unconfigured semantics as
  * `maybeCreateComposioProvider`, so the e2e's save-key step registers the
  * provider live and the delete unregisters it (accounts are in-memory, so each
- * reload starts clean — deliberate test isolation).
+ * reload starts clean — deliberate test isolation). The provider's own map is
+ * the only thing that reload actually resets: the persisted `connections`
+ * table it fed by reconciling those accounts survives, keyed by
+ * `(providerInstanceId, externalAccountRef)` — stable across reloads for the
+ * former, unique per reload for the latter now that account ids never repeat
+ * (DOR-2451). Left alone, a delete-triggered reload would purge memory but
+ * not history, so `opts.purgeConnections` is called in the one place a real
+ * provider's factory never would: this backend has no state worth carrying
+ * across a key save.
  *
- * @param opts - The credential read port and the local origin.
+ * @param opts - The credential read port, the local origin, and the purge callback.
  * @param opts.credentials - Resolves the `file:test-connector-api-key` reference.
  * @param opts.localOrigin - Local server origin for the provider's URLs.
+ * @param opts.purgeConnections - Tombstone this provider's persisted
+ *   connections (never a hard delete, and it writes no audit trail or
+ *   Activity record — see {@link ConnectionStore.purgeTestConnectorConnections});
+ *   called when the credential resolves absent, immediately before this
+ *   factory hands back `null`.
  */
 export async function maybeCreateTestModeConnectorProvider(opts: {
   credentials: CredentialProvider;
   localOrigin: string;
+  purgeConnections?: () => void;
 }): Promise<TestModeConnectorProvider | null> {
   const resolution = await opts.credentials.resolve(TEST_CONNECTOR_API_KEY_REF);
-  if (!resolution.ok) return null;
+  if (!resolution.ok) {
+    opts.purgeConnections?.();
+    return null;
+  }
   return new TestModeConnectorProvider({ localOrigin: opts.localOrigin });
 }

@@ -16,9 +16,24 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider, seedAccountUsage, useExtensionRegistry } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
 import { ClaudeAccountsSection } from '../sections/ClaudeAccountsSection';
+
+const mockSetTab = vi.fn();
+vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
+  useSettingsDeepLink: () => ({
+    isOpen: true,
+    activeTab: 'runtimes',
+    section: null,
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: mockSetTab,
+    setSection: vi.fn(),
+  }),
+}));
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -57,16 +72,23 @@ function serverConfig(claudeCode: ClaudeCodeBlock): Partial<ServerConfig> {
 
 let updateConfigResult: () => Promise<void> = () => Promise.resolve();
 
-function renderSection(claudeCode: ClaudeCodeBlock) {
+function renderSection(
+  claudeCode: ClaudeCodeBlock,
+  { usage = [] }: { usage?: AccountUsage[] } = {}
+) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue(serverConfig(claudeCode)),
     updateConfig: vi.fn(() => updateConfigResult()),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // The card fetches usage; the section only reads what is cached.
+  seedAccountUsage(queryClient, usage);
   render(<ClaudeAccountsSection />, {
     wrapper: ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>{children}</TransportProvider>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>{children}</TooltipProvider>
+        </TransportProvider>
       </QueryClientProvider>
     ),
   });
@@ -536,5 +558,257 @@ describe('ClaudeAccountsSection', () => {
         'Only a person can change those settings'
       )
     );
+  });
+});
+
+const THIRD = '/Users/dev/.claude3';
+
+/** A registered account row, `n` from 1, on its default color. */
+function row(id: string, path: string, label: string | null, over: Partial<Account> = {}): Account {
+  return {
+    id,
+    path,
+    label,
+    color: '#2f7be0',
+    colorIsDefault: true,
+    isAccountRoot: true,
+    ...over,
+  };
+}
+
+type Account = ClaudeCodeBlock['accounts'][number];
+
+const PERSONAL = row('personal', HOME, 'Personal');
+const ACME = row('acme-corp', WORK, 'Acme Corp', { color: '#1d8a4a' });
+const CLIENT = row('client', THIRD, 'Client', { color: '#0d9488', colorIsDefault: false });
+
+function usageFor(accountId: string, path: string, over: Partial<AccountUsage> = {}) {
+  return createMockAccountUsage({ accountId, path, label: null, ...over });
+}
+
+describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
+  beforeEach(() => {
+    updateConfigResult = () => Promise.resolve();
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    cleanup();
+    useExtensionRegistry.setState({
+      slots: { ...useExtensionRegistry.getState().slots, 'settings.tabs': [] },
+    });
+  });
+
+  it('shows the one account\'s bars under "Billing account", labelled with the account', async () => {
+    renderSection(
+      { resolvedAccount: WORK, inherited: false, accounts: [ACME] },
+      { usage: [usageFor('acme-corp', WORK)] }
+    );
+    const bars = await screen.findAllByRole('img', { name: /used/ });
+    expect(bars.map((bar) => bar.getAttribute('aria-label'))).toEqual([
+      expect.stringMatching(/^5-hour window 40% used/),
+      expect.stringMatching(/^Weekly 72% used/),
+    ]);
+    expect(screen.getAllByText('Acme Corp').length).toBeGreaterThan(0);
+  });
+
+  it("labels the implicit account's bars with its folder when nothing is registered", async () => {
+    renderSection(
+      { resolvedAccount: HOME, inherited: true, accounts: [] },
+      { usage: [usageFor('default', HOME)] }
+    );
+    expect(await screen.findByText('.claude')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /^Weekly 72% used/ })).toBeInTheDocument();
+  });
+
+  it('draws a window with no reading as unknown, never as an empty bar', async () => {
+    renderSection(
+      { resolvedAccount: WORK, inherited: false, accounts: [ACME] },
+      {
+        usage: [
+          usageFor('acme-corp', WORK, {
+            windows: [createMockAccountUsage().windows[1]!],
+          }),
+        ],
+      }
+    );
+    const unknown = await screen.findByRole('img', { name: '5-hour window usage unknown' });
+    expect(unknown.querySelector('[data-tone="unknown"]')).not.toBeNull();
+    expect(unknown.querySelector('[data-slot="usage-fill"]')).toBeNull();
+    expect(screen.getByText('unknown')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['no', [] as Account[]],
+    ['one', [ACME]],
+  ])('shows no dots or color control with %s registered account', async (_, accounts) => {
+    renderSection({ resolvedAccount: HOME, inherited: true, accounts });
+    await screen.findByText('Default account');
+    expect(screen.queryByRole('button', { name: /^Color for/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /^5h/ })).not.toBeInTheDocument();
+  });
+
+  it('gives each of two accounts a color control and compact 5h and wk bars', async () => {
+    renderSection(
+      { resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] },
+      { usage: [usageFor('personal', HOME), usageFor('acme-corp', WORK)] }
+    );
+    expect(await screen.findByRole('button', { name: 'Color for Personal' })).toHaveAttribute(
+      'aria-haspopup',
+      'dialog'
+    );
+    expect(screen.getByRole('button', { name: 'Color for Acme Corp' })).toBeInTheDocument();
+    // The reset time lives in the bar's tooltip, and in its accessible name.
+    expect(screen.getAllByRole('img', { name: /^5h 40% used, resets / })).toHaveLength(2);
+    expect(screen.getAllByRole('img', { name: /^wk 72% used, resets / })).toHaveLength(2);
+    // The block under the heading is for one account only.
+    expect(screen.queryByRole('img', { name: /^5-hour window/ })).not.toBeInTheDocument();
+  });
+
+  it('opens a radio group of the 8 palette colors plus Default, with the current one checked', async () => {
+    const user = userEvent.setup();
+    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, CLIENT] });
+    await user.click(await screen.findByRole('button', { name: 'Color for Personal' }));
+    const group = await screen.findByRole('radiogroup', { name: 'Color for Personal' });
+    const radios = within(group).getAllByRole('radio');
+    expect(radios.map((radio) => radio.getAttribute('aria-label'))).toEqual([
+      'blue',
+      'green',
+      'amber',
+      'purple',
+      'pink',
+      'teal',
+      'indigo',
+      'stone',
+      'Default',
+    ]);
+    expect(within(group).getByRole('radio', { name: 'Default' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Color for Client' }));
+    const clientGroup = await screen.findByRole('radiogroup', { name: 'Color for Client' });
+    expect(within(clientGroup).getByRole('radio', { name: 'teal' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+  });
+
+  it('writes the chosen color with every other row unchanged and the ids the screen showed', async () => {
+    const user = userEvent.setup();
+    const transport = renderSection({
+      resolvedAccount: HOME,
+      inherited: true,
+      accounts: [PERSONAL, ACME, CLIENT],
+    });
+    await user.click(await screen.findByRole('button', { name: 'Color for Acme Corp' }));
+    await user.click(await screen.findByRole('radio', { name: 'teal' }));
+
+    expect(transport.updateConfig).toHaveBeenCalledWith({
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { id: 'personal', path: HOME, label: 'Personal', color: null },
+            { id: 'acme-corp', path: WORK, label: 'Acme Corp', color: '#0d9488' },
+            { id: 'client', path: THIRD, label: 'Client', color: '#0d9488' },
+          ],
+          accountsSeen: ['personal', 'acme-corp', 'client'],
+        },
+      },
+    });
+    // Choosing closes the popover and hands focus back to the dot.
+    await waitFor(() => expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Color for Acme Corp' })).toHaveFocus()
+    );
+  });
+
+  it('writes null when Default is chosen', async () => {
+    const user = userEvent.setup();
+    const transport = renderSection({
+      resolvedAccount: HOME,
+      inherited: true,
+      accounts: [PERSONAL, CLIENT],
+    });
+    await user.click(await screen.findByRole('button', { name: 'Color for Client' }));
+    await user.click(await screen.findByRole('radio', { name: 'Default' }));
+    expect(vi.mocked(transport.updateConfig).mock.calls[0]![0]).toMatchObject({
+      runtimes: {
+        claudeCode: {
+          accounts: [
+            { id: 'personal', color: null },
+            { id: 'client', color: null },
+          ],
+        },
+      },
+    });
+  });
+
+  it('moves between swatches with the arrow keys and chooses with Enter', async () => {
+    const user = userEvent.setup();
+    const transport = renderSection({
+      resolvedAccount: HOME,
+      inherited: true,
+      accounts: [PERSONAL, CLIENT],
+    });
+    await user.click(await screen.findByRole('button', { name: 'Color for Client' }));
+    const teal = await screen.findByRole('radio', { name: 'teal' });
+    teal.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('radio', { name: 'indigo' })).toHaveFocus();
+    await user.keyboard('{ArrowLeft}{ArrowLeft}');
+    expect(screen.getByRole('radio', { name: 'pink' })).toHaveFocus();
+    expect(transport.updateConfig).not.toHaveBeenCalled();
+    await user.keyboard('{Enter}');
+    expect(vi.mocked(transport.updateConfig).mock.calls[0]![0]).toMatchObject({
+      runtimes: { claudeCode: { accounts: [{ color: null }, { color: '#d6336c' }] } },
+    });
+  });
+
+  it('shows a refused color write as an alert', async () => {
+    const user = userEvent.setup();
+    updateConfigResult = () => Promise.reject(new Error('Only a person can change those settings'));
+    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] });
+    await user.click(await screen.findByRole('button', { name: 'Color for Personal' }));
+    await user.click(await screen.findByRole('radio', { name: 'pink' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Only a person can change those settings'
+    );
+  });
+
+  describe('the Flow note', () => {
+    function registerFlowTab() {
+      useExtensionRegistry.getState().register('settings.tabs', {
+        id: 'flow:fleet',
+        label: 'Flow',
+        icon: (() => null) as never,
+        component: () => null,
+      });
+    }
+
+    it('is absent with two accounts and no Flow tab', async () => {
+      renderSection({ resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] });
+      await screen.findByRole('button', { name: 'Color for Personal' });
+      expect(screen.queryByText(/Flow uses these accounts/)).not.toBeInTheDocument();
+    });
+
+    it('is absent with one account even when the Flow tab is there', async () => {
+      registerFlowTab();
+      renderSection({ resolvedAccount: HOME, inherited: true, accounts: [ACME] });
+      await screen.findByText('Default account');
+      expect(screen.queryByText(/Flow uses these accounts/)).not.toBeInTheDocument();
+    });
+
+    it('links to the Flow tab with two accounts and the tab registered', async () => {
+      const user = userEvent.setup();
+      registerFlowTab();
+      renderSection({ resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] });
+      expect(await screen.findByText(/Flow uses these accounts for your work/)).toHaveTextContent(
+        'Flow uses these accounts for your work. Choose how in Settings → Flow.'
+      );
+      await user.click(screen.getByRole('button', { name: 'Settings → Flow' }));
+      expect(mockSetTab).toHaveBeenCalledWith('flow:fleet');
+    });
   });
 });

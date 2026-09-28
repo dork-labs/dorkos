@@ -13,6 +13,7 @@
  * @module server/services/rooms/manage/room-updates
  */
 import type { Room, RoomWithRoster, UpdateRoomRequest } from '@dorkos/shared/room-schemas';
+import { nameForAgents, type AgentFacingNameDeps } from '../room-context.js';
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import type { RoomAuthority } from '../service/room-authority.js';
 import type { RoomCore } from '../service/room-core.js';
@@ -48,6 +49,8 @@ export class RoomUpdates {
   private readonly bridges: BridgeStore;
   private readonly triggers: RoomTriggerDispatcher;
   private readonly authors: RoomCore['authors'];
+  /** Who the owner is and what they are called, for names a notice stores. */
+  private readonly names: AgentFacingNameDeps;
 
   constructor(
     core: RoomCore,
@@ -60,6 +63,7 @@ export class RoomUpdates {
     this.bridges = core.bridges;
     this.triggers = core.triggers;
     this.authors = core.authors;
+    this.names = core;
   }
 
   /**
@@ -215,9 +219,12 @@ export class RoomUpdates {
     return archived;
   }
 
-  /** A member's display name, as the room's notices name them. */
+  /**
+   * A member's name, as the room's notices name them — as an agent reads it,
+   * because the notice is stored and the next turn reads it back (DOR-2458).
+   */
   private displayNameOf(authorId: string): string {
-    return this.authors.getById(authorId)?.displayName ?? 'An agent';
+    return nameForAgents(this.names, authorId, { sentenceStart: true }) ?? 'An agent';
   }
 
   /**

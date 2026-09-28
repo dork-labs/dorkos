@@ -37,8 +37,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "pnpm run clean && tsc -p tsconfig.build.json",
-    "prepublishOnly": "pnpm run build",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run clean && pnpm run build",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

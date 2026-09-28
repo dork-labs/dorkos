@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ledgerSlug } from './ledger-slug.js';
 import { ACCOUNT_ID_PATTERN } from './account-identity.js';
+import type { LimitPlan } from './schemas.js';
 
 export { ledgerSlug } from './ledger-slug.js';
 export { codexObservations } from './account-usage-codex.js';
@@ -726,3 +727,93 @@ export function toAccountUsage(
     updatedAt: ledger?.updatedAt ?? null,
   };
 }
+
+// === Carrying a limited session over (spec `claude-account-fleet` D9) ===
+
+/**
+ * One account a limited session can carry over to, as
+ * `GET /api/sessions/:id/continue-options` ranks it. The server decides
+ * eligibility and order; a client only displays them.
+ */
+export interface ContinueOptionAccount {
+  /** The account's registry id, which `POST …/continue` names. */
+  id: string;
+  /** What the operator calls the account, or `null` when unnamed. */
+  label: string | null;
+  /** The resolved display color. */
+  color: string;
+  /** The account's usage now. */
+  usage: AccountUsage;
+  /** Whether the session may move to this account. */
+  eligible: boolean;
+  /** Why the account is or is not offered, in the server's words. */
+  reason: string;
+  /** A marker the ranking attaches to the account. */
+  badge?: 'recommended' | 'reserved';
+  /** The account's runtime, when the server ranks other runtimes too (feature-detected). */
+  runtime?: string;
+}
+
+/** What `GET /api/sessions/:id/continue-options` answers. */
+export interface ContinueOptionsResponse {
+  /** The session limit's plan right now. */
+  plan: LimitPlan;
+  /** The accounts the session can carry over to, best first, the session's own account excluded. */
+  ranking: {
+    /** Every candidate account, eligible or not. */
+    accounts: ContinueOptionAccount[];
+    /** The account the server recommends, or `null` when none is. */
+    recommendedId: string | null;
+  };
+  /** Whether an advisor (such as flow) answered the ranking; absent on an older server. */
+  advised?: boolean;
+}
+
+/** How a session limit episode ended (spec `claude-account-ui` §7.1). */
+export const LimitResolutionSchema = z
+  .enum(['moved', 'resumed-reset', 'resumed-model', 'resumed-early'])
+  .openapi('LimitResolution');
+
+/** Inferred type for {@link LimitResolutionSchema}. */
+export type LimitResolution = z.infer<typeof LimitResolutionSchema>;
+
+/**
+ * One resolved usage-limit episode of a session, as
+ * `GET /api/sessions/:id/limit-history` serves it (spec `claude-account-ui`
+ * §7.1): what ran out, when, and how the session got going again.
+ */
+export const LimitHistoryEntrySchema = z
+  .object({
+    /** Row id (a uuid). */
+    id: z.string(),
+    /** The session the limit hit. */
+    sessionId: z.string(),
+    /** When the limit was hit, ISO-8601. */
+    since: z.string(),
+    /** The runtime the session ran on. */
+    runtime: z.string(),
+    /** The registry id of the account that ran out, or `null` when unregistered. */
+    accountId: z.string().nullable(),
+    /** The ledger window key that rejected work, such as `five_hour`. */
+    window: z.string(),
+    /** Whether the whole account ran out or only one model on it. */
+    scope: z.string(),
+    /** When that window resets, ISO-8601, or `null` when unknown. */
+    resetsAt: z.string().nullable(),
+    /** How the episode ended. */
+    resolution: LimitResolutionSchema,
+    /** When it ended, ISO-8601. */
+    resolvedAt: z.string(),
+    /** The session the work carried over to (`moved` only), else `null`. */
+    toSessionId: z.string().nullable(),
+    /** The account the work carried over to (`moved` only), else `null`. */
+    toAccountId: z.string().nullable(),
+    /** The model before a `resumed-model` switch, else `null`. */
+    modelFrom: z.string().nullable(),
+    /** The model after a `resumed-model` switch, else `null`. */
+    modelTo: z.string().nullable(),
+  })
+  .openapi('LimitHistoryEntry');
+
+/** Inferred type for {@link LimitHistoryEntrySchema}. */
+export type LimitHistoryEntry = z.infer<typeof LimitHistoryEntrySchema>;

@@ -29,6 +29,7 @@ import {
   selectionsFromPreview,
 } from '../../lib/reconciliation-selection';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
+import { AppActions } from '../AppActions';
 import { AccessCardFrame, type AccessCardVariant } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
@@ -71,6 +72,11 @@ export interface PageAccessCardProps extends SharedCardProps {
   connectionId: string;
   /** Agents the caller knows are relevant right now; listed first after agents with access. */
   preferredAgentIds?: string[];
+  /**
+   * Show what the picked level lets agents do in this app, right under the
+   * level switch (the app's side panel). Hidden when omitted.
+   */
+  appActions?: { toolkit: string; providerInstanceId: string };
 }
 
 /** The chat's question: may this one agent use the app? It never offers "every agent". */
@@ -554,6 +560,17 @@ function AccessEditor({
             )}
           </div>
         )
+      )}
+      {props.mode === 'page' && props.appActions && (
+        <AppActions
+          toolkit={props.appActions.toolkit}
+          appName={props.serviceName}
+          providerInstanceId={props.appActions.providerInstanceId}
+          // The buckets come from this account's own snapshot, so they are
+          // exactly what the picked level grants. With no level on offer
+          // there is nothing to tie them to.
+          grant={{ candidates: preview.candidates, level: nothingToGrant ? null : level }}
+        />
       )}
       {(props.mode === 'page' || exactActionsLink) && (
         <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">

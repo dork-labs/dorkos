@@ -57,7 +57,17 @@ const definition = {
   toolkit: 'gmail',
   toolkitVersion: '20260901_00',
   definitionHash: `sha256:${'a'.repeat(64)}`,
-  filterSchema: { type: 'object', additionalProperties: false },
+  // Shaped like Composio's trigger config: optional fields carry a `default`
+  // and nothing says `additionalProperties`. A filter check that fills
+  // defaults in refuses every filter that leaves one out, `{}` included.
+  filterSchema: {
+    type: 'object',
+    title: 'NewGmailMessageConfig',
+    properties: {
+      labelIds: { type: 'string', title: 'Label Ids', default: 'INBOX' },
+      userId: { type: 'string', title: 'User Id', default: 'me' },
+    },
+  },
   payloadSchema: {},
   deliveryMode: 'webhook' as const,
   expectedCadenceSeconds: null,
@@ -1064,6 +1074,22 @@ describe('managed signed event persistence and handoff', () => {
       .where(eq(schema.managedConnectorEventSubscription.id, p.command.subscriptionId));
     expect(subscription).toMatchObject({ enabled: false, scopeVersion: 2 });
     expect(p.events.reconcileTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a filter naming a field the event does not have before provider dispatch', async () => {
+    const f = await seed();
+    const p = eventProvider(f);
+    const refused = await applyManagedAuthorityCommand(
+      db,
+      f.principal,
+      { ...p.command, filter: { labelId: 'INBOX' } },
+      p.provider
+    );
+    expect(refused.status).toMatchObject({
+      state: 'rejected',
+      rejectionCode: 'invalid_event_filter',
+    });
+    expect(p.events.reconcileTrigger).not.toHaveBeenCalled();
   });
 
   it('refuses changed command contents and unavailable exact definitions before provider dispatch', async () => {

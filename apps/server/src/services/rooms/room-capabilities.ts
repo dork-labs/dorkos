@@ -173,6 +173,7 @@
  */
 import { z } from 'zod';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { canvasSourcePath } from '../canvas/index.js';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
@@ -188,8 +189,10 @@ import {
 } from '@dorkos/shared/room-schemas';
 import {
   discardStagedAttachments,
+  ownRoomCopy,
   stageAgentAttachments,
 } from './attachments/agent-attachments.js';
+import { resolveDorkHome } from '../../lib/dork-home.js';
 import { sweepUnboundAttachments } from './attachments/unbound-sweep.js';
 import { getAttachmentRowStore, getRoomAttachmentStore } from './attachments/attachment-stores.js';
 
@@ -430,7 +433,8 @@ function projectEntry(rooms: RoomService, entry: RoomEntry): Record<string, unkn
     at: entry.createdAt,
     kind: entry.kind,
     authorId: entry.authorId,
-    author: sanitizeIdentity(author?.displayName ?? 'someone who has left'),
+    // The owner by name, never the registry's 'You' (DOR-2458).
+    author: sanitizeIdentity(rooms.nameForAgents(entry.authorId) ?? 'someone who has left'),
     ...(author?.handle ? { handle: sanitizeIdentity(author.handle) } : {}),
     text: entry.body.text,
     ...(entry.threadRootEntryId ? { threadRootEntryId: entry.threadRootEntryId } : {}),
@@ -457,10 +461,11 @@ function projectEntry(rooms: RoomService, entry: RoomEntry): Record<string, unkn
  * and a second cap copied to this side of the seam is a number that drifts from
  * the schema and truncates in a place nobody would think to look.
  *
+ * @param rooms - The rooms service, for naming each member as an agent reads them.
  * @param detail - The service's projection.
  * @returns The compact, label-sanitized shape a tool returns.
  */
-function projectDetail(detail: RoomDetail): Record<string, unknown> {
+function projectDetail(rooms: RoomService, detail: RoomDetail): Record<string, unknown> {
   return {
     roomId: detail.roomId,
     kind: detail.kind,
@@ -482,7 +487,8 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
     lastActivity: detail.lastActivityAt,
     members: detail.members.map((member) => ({
       authorId: member.authorId,
-      name: sanitizeIdentity(member.name) ?? null,
+      // The owner by name, never the registry's 'You' (DOR-2458).
+      name: sanitizeIdentity(rooms.nameForAgents(member.authorId) ?? member.name) ?? null,
       ...(member.handle ? { handle: sanitizeIdentity(member.handle) } : {}),
       kind: member.kind,
     })),
@@ -720,7 +726,8 @@ export const roomsDomain: CapabilityDomain = {
         'Posting into the room that triggered your turn is how you answer it; posting into a ' +
         'different room leaves your answer here untouched. ' +
         'You can show a file with it — a screenshot or a recording you made — by naming its ' +
-        'path in attachments; it has to be a file in your own working directory. ' +
+        'path in attachments; it has to be a file in your own folder or your own copy of a ' +
+        "room's files. " +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
       tier: 'act',
       area: null,
@@ -743,7 +750,8 @@ export const roomsDomain: CapabilityDomain = {
           .optional()
           .describe(
             'Files to show with this message, by path. Relative paths are from your own ' +
-              'working directory, and only files inside it can be attached. Screenshots and ' +
+              "working directory; a file in your own copy of a room's files is named by its " +
+              'full path. Nothing else can be attached. Screenshots and ' +
               'recordings you made are the usual case. Everyone in the room sees them, and the ' +
               'other agents get their own copy.'
           ),
@@ -761,7 +769,8 @@ export const roomsDomain: CapabilityDomain = {
         // Inside `answering`, because resolving WHO is calling can itself refuse
         // — a login-on install that could name nobody — and a refusal a model
         // gets as a stack trace is a refusal it cannot act on.
-        const authorId = answering(() => callerAuthor(rooms, context).id);
+        const author = answering(() => callerAuthor(rooms, context));
+        const authorId = author.id;
         // Staged BEFORE the entry, and bound inside its transaction below, so
         // the message and its files land together or neither does. A refusal
         // here leaves no bytes, no rows and no entry (spec §4).
@@ -773,18 +782,33 @@ export const roomsDomain: CapabilityDomain = {
         const attachmentIds =
           named.length === 0
             ? []
-            : await answeringAsync(() =>
-                stageAgentAttachments({
+            : await answeringAsync(async () => {
+                // A room turn stands in the agent's home and is granted its
+                // copy of the room's files (spec `agent-home-desk`), so a file
+                // it made there is its own too. Only THIS room's copy, named
+                // exactly as a turn here is placed: from the VERIFIED author
+                // (its home and label), never from the path the agent named.
+                const roomsDir = path.join(resolveDorkHome(), 'rooms');
+                const copy =
+                  author.kind === 'agent'
+                    ? await ownRoomCopy(roomsDir, input.roomId, {
+                        agentPath: author.naturalKey,
+                        agentName: author.displayName,
+                      })
+                    : null;
+                return stageAgentAttachments({
                   roomId: input.roomId,
                   authorId,
                   cwd: requireAgentCwd(context),
+                  ownCopies: copy ? [copy] : [],
+                  roomsDir,
                   paths: named,
                   store: getRoomAttachmentStore(),
                   rows: getAttachmentRowStore(),
                   limits: configManager.get('uploads'),
                   nameMax: ROOM_ATTACHMENT_NAME_MAX,
-                })
-              );
+                });
+              });
         // **The write can still refuse after the bytes are on disk**, and a
         // refusal is the ordinary case rather than the exotic one: a mistyped
         // `roomId`, the per-turn post ceiling, a stopped turn, an archived room.
@@ -1223,7 +1247,7 @@ export const roomsDomain: CapabilityDomain = {
         const detail = answering(() =>
           rooms.describeRoom(input.roomId, callerAuthor(rooms, context).id)
         );
-        return Promise.resolve(projectDetail(detail));
+        return Promise.resolve(projectDetail(rooms, detail));
       },
     }),
     defineCapability({
@@ -1300,7 +1324,7 @@ export const roomsDomain: CapabilityDomain = {
             ...(members.length > 0 ? { memberHandles: members } : {}),
           })
         );
-        return Promise.resolve({ rooms: found.map(projectDetail) });
+        return Promise.resolve({ rooms: found.map((room) => projectDetail(rooms, room)) });
       },
     }),
     defineCapability({
@@ -1416,7 +1440,7 @@ export const roomsDomain: CapabilityDomain = {
         // agent gets back from opening a room is byte-identical to the shape it
         // gets from looking one up. One projection, one set of sanitized labels.
         const detail = answering(() => rooms.describeRoom(opened.id, caller.id));
-        return Promise.resolve({ ...projectDetail(detail), created: opened.created });
+        return Promise.resolve({ ...projectDetail(rooms, detail), created: opened.created });
       },
     }),
     defineCapability({
@@ -1584,7 +1608,7 @@ export const roomsDomain: CapabilityDomain = {
           })
         );
         const detail = answering(() => rooms.describeRoom(input.roomId, caller.id));
-        return Promise.resolve(projectDetail(detail));
+        return Promise.resolve(projectDetail(rooms, detail));
       },
     }),
     defineCapability({
@@ -1870,6 +1894,6 @@ async function readFileBacked(
  */
 function authorLabel(rooms: RoomService, authorId: string): string {
   const author = rooms.authorRegistry.getById(authorId);
-  const name = author?.handle ?? author?.displayName;
-  return (name === undefined ? undefined : sanitizeIdentity(name)) ?? 'Somebody';
+  const name = author?.handle ?? rooms.nameForAgents(authorId);
+  return (name ? sanitizeIdentity(name) : undefined) ?? 'Somebody';
 }

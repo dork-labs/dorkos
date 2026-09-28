@@ -12,7 +12,11 @@ import type {
   ConnectorReconciliationGrantSelection,
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
-import { revisionIdsForAccessLevel, selectionsFromPreview } from './reconciliation-selection';
+import {
+  levelIncludes,
+  revisionIdsForAccessLevel,
+  selectionsFromPreview,
+} from './reconciliation-selection';
 
 /** The two levels the card offers. Exact per-action picks stay in the exact access editor. */
 export type CardAccessLevel = 'read' | 'read-write';
@@ -206,9 +210,9 @@ export function levelForRequest(
   const needsWrite: string[] = [];
   for (const operation of requestedOperations) {
     const candidate = candidates.find((item) => item.operationSlug === operation && item.supported);
-    if (!candidate || candidate.capabilityClassification === 'destructive') {
+    if (!candidate || !levelIncludes(candidate.capabilityClassification, 'read-write')) {
       uncovered.push(operation);
-    } else if (candidate.capabilityClassification === 'write') {
+    } else if (!levelIncludes(candidate.capabilityClassification, 'read')) {
       needsWrite.push(operation);
     }
   }
