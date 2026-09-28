@@ -195,7 +195,11 @@ import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
-import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
+import {
+  relayStartsEnabled,
+  setRelayEnabled,
+  setRelayInitError,
+} from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import { RELAY_NOT_BUILT } from './services/relay/task-dispatch/readiness.js';
 import {
@@ -2166,12 +2170,8 @@ async function start() {
 
   // Initialize Relay if enabled
   const relayConfig = configManager.get('relay');
-  // Env var wins when explicitly set; fall back to config when not set.
-  // boolFlag defaults to false even when unset, so check process.env directly.
-
-  const relayEnabled =
-    // eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
-    'DORKOS_RELAY_ENABLED' in process.env ? env.DORKOS_RELAY_ENABLED : relayConfig.enabled;
+  // DORKOS_RELAY_ENABLED wins only when set; unset, the saved setting decides.
+  const relayEnabled = relayStartsEnabled(env.DORKOS_RELAY_ENABLED, relayConfig.enabled);
 
   // Phase A: core relay infrastructure (RelayCore + TraceStore)
   // AdapterManager construction is deferred to Phase C (after meshCore init)

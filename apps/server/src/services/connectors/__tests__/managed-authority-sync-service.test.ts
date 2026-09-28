@@ -30,6 +30,8 @@ import {
   type ManagedAuthorityCloudPort,
 } from '../resources/managed-authority-sync-service.js';
 import { ConnectorRegistry } from '../registry.js';
+import { ConnectorLifecycleService } from '../resources/lifecycle-service.js';
+import { ConnectorAuthenticationFlowService } from '../resources/authentication-flow-service.js';
 import { logger } from '../../../lib/logger.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -71,6 +73,7 @@ function cloudError(code: string, privateMessage = 'private hosted detail') {
 
 describe('ManagedAuthoritySyncService', () => {
   let db: Db;
+  let registry: ConnectorRegistry;
   let clock: number;
   let ids: number;
   let submitted: ManagedConnectorAuthorityCommand[];
@@ -79,7 +82,7 @@ describe('ManagedAuthoritySyncService', () => {
   beforeEach(() => {
     db = createDb(':memory:');
     runMigrations(db);
-    const registry = new ConnectorRegistry({
+    registry = new ConnectorRegistry({
       db,
       configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
     });
@@ -1036,26 +1039,26 @@ describe('ManagedAuthoritySyncService', () => {
       ).resolves.toBe(0);
     });
 
-    it('sends every refused change again when the owner confirms who can use the account', async () => {
-      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
-        rejected(command, 'scope_conflict')
-      );
+    it('settles a refused change with exactly the access the owner was shown, never the refused one', async () => {
+      // The owner gave agent-a Send; the hosted side refused. The review shows
+      // agent-a with nothing (the refused grant never opened).
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return rejected(command, 'scope_conflict');
+      });
       const sync = service();
       await replace(sync);
-      const commandIds = db.transaction((tx) =>
+      const [commandId] = db.transaction((tx) =>
         sync.restageRefused(tx, { connectionId: CONNECTION_ID, why: 'confirmed' })
       );
-      expect(commandIds).toHaveLength(1);
-      // An agent the owner just decided for is theirs to send, not a re-send.
-      expect(
-        db.transaction((tx) =>
-          sync.restageRefused(tx, {
-            connectionId: CONNECTION_ID,
-            why: 'confirmed',
-            decided: new Set(['agent-a']),
-          })
-        )
-      ).toEqual([]);
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return statusFor(command);
+      });
+      await sync.deliverAgentGrantReplacement(commandId!, new AbortController().signal);
+      // Confirming "nothing" sends nothing: the refused Send is not granted.
+      expect(submitted.at(-1)).toMatchObject({ kind: 'replace_agent_grants', revisions: [] });
+      expect(grants().every((grant) => grant.revokedAt !== null)).toBe(true);
     });
 
     it('confirms an agent’s current access when the refused actions are gone at the service', async () => {
@@ -1073,11 +1076,36 @@ describe('ManagedAuthoritySyncService', () => {
         return statusFor(command);
       });
       await sync.deliverAgentGrantReplacement(commandId!, new AbortController().signal);
-      // What the agent holds now (nothing yet) goes, never the refused actions again.
       expect(submitted.at(-1)).toMatchObject({ kind: 'replace_agent_grants', revisions: [] });
     });
 
-    it('closes an account the service says no longer exists, instead of retrying it', async () => {
+    it('after a relink, sends what the agent holds now when its access changed since the refusal', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw cloudError('unauthorized');
+      });
+      const sync = service();
+      await replace(sync);
+      // Later, the agent is deleted: its access here ends without a hosted change.
+      clock += 60_000;
+      db.update(connectionOperationGrants)
+        .set({ revokedAt: new Date(clock).toISOString() })
+        .where(eq(connectionOperationGrants.agentId, 'agent-a'))
+        .run();
+      db.update(connectorProviderInstances)
+        .set({ executionConfigGeneration: 2 })
+        .where(eq(connectorProviderInstances.id, PROVIDER_ID))
+        .run();
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return statusFor(command);
+      });
+      await sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal);
+      // Never the old Send again: the deleted agent gets nothing back.
+      expect(submitted.at(-1)).toMatchObject({ kind: 'replace_agent_grants', revisions: [] });
+      expect(grants().every((grant) => grant.revokedAt !== null)).toBe(true);
+    });
+
+    it('closes an account whose connection the hosted side no longer has, with its end unconfirmed', async () => {
       cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
         rejected(command, 'connection_unavailable')
       );
@@ -1087,7 +1115,8 @@ describe('ManagedAuthoritySyncService', () => {
         lifecycleState: 'disconnected',
         enabled: false,
         closedBecause: 'service_gone',
-        externalCleanupState: 'not_required',
+        // Never "nothing owed": whether the sign-in lives on isn't known.
+        externalCleanupState: 'unknown',
       });
       expect(grants().every((grant) => grant.revokedAt !== null)).toBe(true);
       // Never sent again, even when the owner confirms.
@@ -1096,6 +1125,31 @@ describe('ManagedAuthoritySyncService', () => {
           sync.restageRefused(tx, { connectionId: CONNECTION_ID, why: 'confirmed' })
         )
       ).toEqual([]);
+    });
+
+    it('never closes an account because a resume was refused: it asks for a sign-in instead', async () => {
+      db.update(connections)
+        .set({ enabled: false, pausedBy: 'owner' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
+        rejected(command, 'connection_unavailable')
+      );
+      await service().transition({
+        connectionId: CONNECTION_ID,
+        managedConnectionId: MANAGED_CONNECTION_ID,
+        lifecycle: 'active',
+        providerInstanceId: PROVIDER_ID,
+        executionConfigGeneration: 1,
+        owner: OWNER,
+        signal: new AbortController().signal,
+      });
+      expect(db.select().from(connections).get()).toMatchObject({
+        lifecycleState: 'connected',
+        enabled: false,
+        closedBecause: null,
+        status: 'expired',
+      });
     });
 
     it('can’t confirm the end of a disconnect the service no longer recognizes', async () => {
@@ -1141,6 +1195,52 @@ describe('ManagedAuthoritySyncService', () => {
         } as ManagedConnectorAuthorityCommandStatus;
       });
       await sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal);
+      expect(submitted.at(-1)).toMatchObject({
+        kind: 'set_connection_lifecycle',
+        lifecycle: 'disconnected',
+      });
+      expect(db.select().from(connections).get()?.externalCleanupState).toBe('complete');
+    });
+
+    it('finishes a disconnect the ended link refused even after the account was removed', async () => {
+      // The live incident: the link ended, Disconnect was refused, the person
+      // removed the app, then linked the same DorkOS account again.
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw cloudError('unauthorized');
+      });
+      const sync = service();
+      const lifecycle = new ConnectorLifecycleService({
+        db,
+        registry,
+        authenticationFlows: new ConnectorAuthenticationFlowService({ db, registry }),
+        authorityCleanup: {
+          revokeConnection: vi.fn(),
+          revokeAgent: vi.fn(),
+          revokeAgentConnection: vi.fn(),
+        },
+        managed: sync,
+      });
+      await lifecycle.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+      lifecycle.remove(OWNER, CONNECTION_ID);
+      expect(db.select().from(connections).get()).toMatchObject({
+        removedAt: expect.any(String),
+        externalCleanupState: 'pending',
+      });
+
+      db.update(connectorProviderInstances)
+        .set({ executionConfigGeneration: 2 })
+        .where(eq(connectorProviderInstances.id, PROVIDER_ID))
+        .run();
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return {
+          ...statusFor(command),
+          externalCleanup: 'complete',
+        } as ManagedConnectorAuthorityCommandStatus;
+      });
+      await expect(
+        sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal)
+      ).resolves.toBe(1);
       expect(submitted.at(-1)).toMatchObject({
         kind: 'set_connection_lifecycle',
         lifecycle: 'disconnected',

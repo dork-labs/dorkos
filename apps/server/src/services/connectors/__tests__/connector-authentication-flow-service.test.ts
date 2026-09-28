@@ -364,6 +364,55 @@ describe('ConnectorAuthenticationFlowService', () => {
     expect(registry.accountBinding(existing)?.status).toBe('revoked');
   });
 
+  it.each([
+    ['pending', /still ending this account’s earlier access/],
+    ['failed', /couldn’t confirm .* Remove it from your apps, then connect the app again/],
+    ['unknown', /couldn’t confirm .* Remove it from your apps, then connect the app again/],
+  ] as const)(
+    'refuses signing in again to an account whose cleanup is %s with words true to it',
+    async (state, words) => {
+      const existing = insertActiveConnection(db);
+      registry.recordDisconnect(existing);
+      db.update(connections)
+        .set({ externalCleanupState: state })
+        .where(eq(connections.id, existing))
+        .run();
+      const refusal = await service
+        .reconnect(OWNER, existing, `refused-${state}`)
+        .catch((error: unknown) => error as Error);
+      expect(refusal).toMatchObject({ code: 'connection_cleanup_pending' });
+      expect((refusal as Error).message).toMatch(words);
+    }
+  );
+
+  it('lets a new sign-in to the same account win over an own-key cleanup DorkOS gave up on', async () => {
+    // The person removed the app after DorkOS couldn't end its access, then
+    // connected the same account again: it must not be blocked forever.
+    const existing = insertActiveConnection(db);
+    registry.recordDisconnect(existing);
+    db.update(connections)
+      .set({ externalCleanupState: 'failed', removedAt: NOW.toISOString() })
+      .where(eq(connections.id, existing))
+      .run();
+    const started = await service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Original',
+      idempotencyKey: 'same-account-again',
+    });
+    await expect(service.poll(OWNER, started.flowId)).resolves.toMatchObject({
+      state: 'connected',
+    });
+    // The old cleanup would have ended the sign-in just made: it no longer runs.
+    expect(
+      db
+        .select({ state: connections.externalCleanupState })
+        .from(connections)
+        .where(eq(connections.id, existing))
+        .get()
+    ).toEqual({ state: 'not_required' });
+  });
+
   it('does not let an earlier initial flow reuse an identity acknowledged after it began', async () => {
     const existing = insertActiveConnection(db);
     registry.recordDisconnect(existing);

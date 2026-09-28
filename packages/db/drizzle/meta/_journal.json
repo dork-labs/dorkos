@@ -873,8 +873,15 @@
     {
       "idx": 124,
       "version": "6",
-      "when": 1790629257960,
-      "tag": "0124_connection_paused_by",
+      "when": 1790628087139,
+      "tag": "0124_event_subscription_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "6",
+      "when": 1790634961617,
+      "tag": "0125_connection_paused_by",
       "breakpoints": true
     }
   ]

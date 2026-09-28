@@ -84,6 +84,16 @@ export class CanonicalConnectorEventSessionTarget implements ConnectorEventSessi
     );
   }
 
+  /** The kept chat has no stored mode: the seed `permissionSeedForOrigin` gives a connector event. */
+  holdsSeedMode(sessionId: string): boolean {
+    const row = this.options.db
+      .select({ permissionMode: sessionMetadata.permissionMode })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    return row !== undefined && row.permissionMode === null;
+  }
+
   /** Synchronous same-transaction origin check used immediately before protected runtime dispatch. */
   current(
     owner: ConnectorOwnerAuthority,

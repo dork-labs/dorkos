@@ -1,5 +1,5 @@
 /**
- * Upgrade to 0124: every paused account learns who paused it, an account a
+ * Upgrade to 0125: every paused account learns who paused it, an account a
  * finished "Sign in again" left paused is given back, and refused hosted
  * commands learn why they were refused.
  */
@@ -13,7 +13,7 @@ import { createDb, runMigrations } from '../index.js';
 
 const NOW = '2026-09-28T12:00:00.000Z';
 
-describe('0124 connection paused_by migration', () => {
+describe('0125 connection paused_by migration', () => {
   let directory: string;
   let db: ReturnType<typeof createDb>;
 
@@ -22,7 +22,7 @@ describe('0124 connection paused_by migration', () => {
     const migrations = fileURLToPath(new URL('../../drizzle/', import.meta.url));
     mkdirSync(join(directory, 'meta'));
     const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
-    journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= 123);
+    journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= 124);
     for (const entry of journal.entries)
       copyFileSync(join(migrations, `${entry.tag}.sql`), join(directory, `${entry.tag}.sql`));
     writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify(journal));
@@ -31,8 +31,10 @@ describe('0124 connection paused_by migration', () => {
     db.$client
       .prepare(
         `INSERT INTO connector_provider_instances
-         (id, type, mode, display_name, custody, capability_json, status, created_at, updated_at)
-         VALUES ('instance', 'composio', 'byo', 'composio', 'external', '{}', 'available', ?, ?)`
+         (id, type, mode, display_name, custody, capability_json, status, execution_config_digest,
+          created_at, updated_at)
+         VALUES ('instance', 'composio', 'byo', 'composio', 'external', '{}', 'available',
+          'key-digest-a', ?, ?)`
       )
       .run(NOW, NOW);
   });
@@ -42,7 +44,7 @@ describe('0124 connection paused_by migration', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  function account(id: string, enabled: 0 | 1, lifecycle = 'connected') {
+  function account(id: string, enabled: 0 | 1, lifecycle = 'connected', updatedAt = NOW) {
     db.$client
       .prepare(
         `INSERT INTO connections
@@ -50,7 +52,7 @@ describe('0124 connection paused_by migration', () => {
           lifecycle_state, enabled, created_at, updated_at)
          VALUES (?, 'instance', ?, 'gmail', ?, 'active', ?, ?, ?, ?)`
       )
-      .run(id, `ref-${id}`, id, lifecycle, enabled, NOW, NOW);
+      .run(id, `ref-${id}`, id, lifecycle, enabled, NOW, updatedAt);
   }
 
   function reconnect(connectionId: string, state: string, wasPaused: 0 | 1, createdAt = NOW) {
@@ -93,6 +95,13 @@ describe('0124 connection paused_by migration', () => {
     account('superseded', 0);
     reconnect('superseded', 'expired', 0, '2026-09-28T10:00:00.000Z');
     reconnect('superseded', 'connected', 1, '2026-09-28T11:00:00.000Z');
+    // The sign-in failed, then the owner resumed and later paused it again:
+    // the pause is theirs, whatever the old flow says.
+    account('owner-paused-after', 0, 'connected', '2026-09-28T13:00:00.000Z');
+    reconnect('owner-paused-after', 'failed', 0);
+    // Paused by the owner while a sign-in was still running.
+    account('owner-paused-during', 0, 'connected', '2026-09-28T13:00:00.000Z');
+    reconnect('owner-paused-during', 'pending', 0);
     account('working', 1);
     account('closed', 0, 'disconnected');
 
@@ -104,6 +113,8 @@ describe('0124 connection paused_by migration', () => {
     expect(row('running')).toEqual({ enabled: 0, pausedBy: 'sign_in' });
     expect(row('owner')).toEqual({ enabled: 0, pausedBy: 'owner' });
     expect(row('superseded')).toEqual({ enabled: 0, pausedBy: 'owner' });
+    expect(row('owner-paused-after')).toEqual({ enabled: 0, pausedBy: 'owner' });
+    expect(row('owner-paused-during')).toEqual({ enabled: 0, pausedBy: 'owner' });
     expect(row('working')).toEqual({ enabled: 1, pausedBy: null });
     expect(row('closed')).toEqual({ enabled: 0, pausedBy: null });
     const columns = db.$client
@@ -143,12 +154,15 @@ describe('0124 connection paused_by migration', () => {
 
     const state = (id: string) =>
       db.$client
-        .prepare('SELECT external_cleanup_state AS state FROM connections WHERE id = ?')
+        .prepare(
+          'SELECT external_cleanup_state AS state, external_cleanup_key AS key FROM connections WHERE id = ?'
+        )
         .get(id);
-    expect(state('own-key')).toEqual({ state: 'pending' });
-    expect(state('own-key-unknown')).toEqual({ state: 'pending' });
+    // Tried again through the key the instance last worked with.
+    expect(state('own-key')).toEqual({ state: 'pending', key: 'key-digest-a' });
+    expect(state('own-key-unknown')).toEqual({ state: 'pending', key: 'key-digest-a' });
     // The hosted side said its own cleanup failed; that stays its word.
-    expect(state('dorkos-account')).toEqual({ state: 'failed' });
+    expect(state('dorkos-account')).toEqual({ state: 'failed', key: null });
   });
 
   it('names why each refused hosted command was refused', () => {

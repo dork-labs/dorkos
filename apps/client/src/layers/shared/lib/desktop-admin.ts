@@ -13,6 +13,7 @@
  *
  * @module shared/lib/desktop-admin
  */
+import type { Transport } from '@dorkos/shared/transport';
 
 /** The desktop shell's admin calls, once both are known to be there. */
 export interface DesktopAdmin {
@@ -56,4 +57,21 @@ export function getDesktopAdmin(): DesktopAdmin | null {
  */
 export function unwrapDesktopAdminResult(result: DesktopAdminResult): void {
   if (!result.ok) throw new Error(result.message);
+}
+
+/**
+ * Restart the DorkOS server the one way that works where this window runs: the
+ * desktop shell's supervisor in the desktop app, the server's own route
+ * everywhere else. Resolves once the restart is under way; a refusal throws
+ * with a message written for a person.
+ *
+ * @param transport - The app's transport, for the HTTP route.
+ */
+export async function restartDorkOS(transport: Pick<Transport, 'restartServer'>): Promise<void> {
+  const desktop = getDesktopAdmin();
+  if (desktop) {
+    unwrapDesktopAdminResult(await desktop.restartServer());
+  } else {
+    await transport.restartServer();
+  }
 }

@@ -68,7 +68,11 @@ function ago(minutes: number): string {
  * The list's reads, spelled out: the list is presentational over
  * `useAppList`, so a showcase hands it the data a server would have.
  */
-function listData(yours: YourAppRow[], owned: string[]): AppListData {
+function listData(
+  yours: YourAppRow[],
+  owned: string[],
+  relay: Partial<AppListData['relay']> = {}
+): AppListData {
   const catalog = {
     data: {
       pages: [{ services: MOCK_CATALOG_SERVICES, warnings: [], appConnections: NOTHING_SET_UP }],
@@ -101,7 +105,9 @@ function listData(yours: YourAppRow[], owned: string[]): AppListData {
       isLoading: false,
       isError: false,
       isRetrying: false,
+      lockedByEnv: false,
       retry: () => undefined,
+      ...relay,
     },
     chatAppsError: false,
     retryChatApps: () => undefined,
@@ -110,6 +116,74 @@ function listData(yours: YourAppRow[], owned: string[]): AppListData {
 
 /** When the stalled-disconnect demo says it tries again: a few minutes after the page loads. */
 const STALLED_RETRY_AT = new Date(Date.now() + 4 * 60_000).toISOString();
+
+/** The one agent the notification demo sends to. */
+const MAILROOM_MEMBER = {
+  id: 'mailroom',
+  kind: 'agent',
+  displayName: 'mailroom',
+  handle: 'mailroom',
+  isSelf: false,
+  ownerId: null,
+  origin: 'local',
+  agent: {
+    manifestId: 'mailroom',
+    runtime: 'claude-code',
+    healthStatus: 'active',
+    recentlyActive: true,
+    projectPath: '/home/you/agents/mailroom',
+    activity: { working: null, lastActiveAt: null },
+    isDefault: false,
+    isSystem: false,
+    registeredAt: '2026-09-01T00:00:00.000Z',
+  },
+};
+
+/** One notification row in each state an owner can meet: delivered, unsure, stopped. */
+function mockNotifications() {
+  const base = {
+    connectionId: MOCK_CONNECTIONS[0].connectionId,
+    definitionId: 'definition-new-email',
+    eventType: 'GMAIL_NEW_GMAIL_MESSAGE',
+    displayName: 'New email',
+    deliveryMode: 'webhook' as const,
+    expectedCadenceSeconds: null,
+    agentId: 'mailroom',
+    destination: { kind: 'agent' as const, id: 'mailroom' },
+    scopeVersion: 1,
+  };
+  return [
+    {
+      ...base,
+      id: 'notification-delivered',
+      filter: { labelIds: ['INBOX'] },
+      state: 'active' as const,
+      lastDelivery: { outcome: 'delivered' as const, receivedAt: ago(12), problem: null },
+      chatSessionId: 'chat-new-email',
+    },
+    {
+      ...base,
+      id: 'notification-unsure',
+      filter: { query: 'from:billing@acme.test' },
+      state: 'active' as const,
+      lastDelivery: {
+        outcome: 'failed' as const,
+        receivedAt: ago(95),
+        problem: 'unknown_outcome' as const,
+      },
+      chatSessionId: 'chat-billing',
+    },
+    {
+      ...base,
+      id: 'notification-stopped',
+      displayName: 'New label added',
+      filter: {},
+      state: 'revoked' as const,
+      lastDelivery: null,
+      chatSessionId: null,
+    },
+  ];
+}
 
 /** A playground server for the panels: the fixtures, answered as the real one would. */
 function panelTransport(connection: ConnectorConnectionSummary): Transport {
@@ -143,6 +217,33 @@ function panelTransport(connection: ConnectorConnectionSummary): Transport {
       agents: [{ id: 'dorkbot', name: 'DorkBot', projectPath: '/home/you/.dork/agents/dorkbot' }],
     }),
     getBindings: async () => MOCK_CHAT_BINDINGS,
+    getTeamRoster: async () => ({ members: [MAILROOM_MEMBER] }),
+    getConnectionEventSource: async () => ({
+      setupMode: 'managed',
+      configured: false,
+      endpoint: null,
+      reason: null,
+    }),
+    listConnectionEventDefinitions: async () => ({
+      definitions: [
+        {
+          id: 'definition-new-email',
+          eventType: 'GMAIL_NEW_GMAIL_MESSAGE',
+          displayName: 'New email',
+          toolkit: 'gmail',
+          toolkitVersion: '20260901',
+          definitionHash: `sha256:${'a'.repeat(64)}`,
+          filterSchema: {
+            type: 'object',
+            properties: { query: { type: 'string', title: 'Search' } },
+          },
+          payloadSchema: {},
+          deliveryMode: 'webhook',
+          expectedCadenceSeconds: null,
+        },
+      ],
+    }),
+    listConnectionEventSubscriptions: async () => ({ subscriptions: mockNotifications() }),
     listUnclaimedChats: async () => [
       {
         id: 'claim-1',
@@ -225,6 +326,11 @@ export function ConnectionsShowcases() {
     () => listData(ROWS, ['gmail', 'notion', 'googlecalendar', 'linear', 'telegram']),
     []
   );
+  const chatAppsOff = useMemo(() => listData([], [], { enabled: false }), []);
+  const chatAppsRestart = useMemo(
+    () => listData([], [], { enabled: false, enabledInConfig: true }),
+    []
+  );
   const noop = () => undefined;
 
   return (
@@ -292,11 +398,25 @@ export function ConnectionsShowcases() {
             <AppListDemo data={withApps} />
           </div>
         </ShowcaseDemo>
+
+        <ShowcaseLabel>Chat apps off: turned on from here</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <div className="max-w-2xl" data-testid="demo-chat-apps-off">
+            <AppListDemo data={chatAppsOff} />
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Chat apps saved on: waiting for a restart</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <div className="max-w-2xl" data-testid="demo-chat-apps-restart">
+            <AppListDemo data={chatAppsRestart} />
+          </div>
+        </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection
         title="AccountPanel"
-        description="An app account's side panel: who can use it, what that level lets agents do (Look and Change), what agents did lately, and a few things to try. Everything else is under More. A broken account puts its one fix on top."
+        description="An app account's side panel: who can use it, what that level lets agents do (Look and Change), what agents did lately, and a few things to try. Everything else is under More, including notifications to an agent (one chat each, with how the newest one went). A broken account puts its one fix on top."
       >
         <ShowcaseLabel>Connected</ShowcaseLabel>
         <ShowcaseDemo>

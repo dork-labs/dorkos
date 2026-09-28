@@ -498,6 +498,45 @@ describe('deriveConnectionReadiness truth table', () => {
     expect(ownKey.serviceAccessPage).toBeUndefined();
   });
 
+  it('shows an account the DorkOS account no longer has as gone, with where to be sure it ended', () => {
+    const gone = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'unknown',
+        closedBecause: 'service_gone',
+        mode: 'managed',
+        toolkit: 'gmail',
+      })
+    );
+    expect(gone).toMatchObject({
+      state: 'gone',
+      reason: 'gone_at_service',
+      fix: { action: 'connect_new', fixableBy: 'person' },
+      serviceAccessPage: { service: 'Google' },
+    });
+    expect(gone.copy.owner).toContain('remove it in that app’s own account settings');
+  });
+
+  it('says linking the same DorkOS account again, or adding the same key again, lets DorkOS finish', () => {
+    const unlinked = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        mode: 'managed',
+        way: down('dorkos_account_unlinked'),
+      })
+    );
+    expect(unlinked.copy.owner).toContain('Link this computer to the same DorkOS account again');
+    const ownKey = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        way: down('own_key_unavailable'),
+      })
+    );
+    expect(ownKey.copy.owner).toContain('Add that same key again');
+  });
+
   it('carries when DorkOS next tries an own-key cleanup on its own', () => {
     const finishing = deriveConnectionReadiness(
       facts({ lifecycle: 'disconnected', externalCleanup: 'pending', cleanupRetryAt: RETRY_AT })
@@ -586,6 +625,21 @@ describe('deriveConnectionReadiness truth table', () => {
     );
     expect(review.copy.owner).toContain('How DorkOS reaches it changed');
     expect(review.copy.owner).not.toMatch(/actions changed/i);
+  });
+
+  it('says linking again with the same account can bring an unlinked account back, never that it will (DOR-2521)', () => {
+    const { copy } = deriveConnectionReadiness(facts({ way: down('dorkos_account_unlinked') }));
+    for (const line of [copy.owner, copy.agent]) {
+      expect(line).toContain('isn’t linked anymore');
+      expect(line).toContain('Linking this computer again with the same');
+      expect(line).toContain('can bring it back');
+      expect(line).not.toMatch(/(?<!can |not )brings? it back/);
+      expect(line).toContain('unless its earlier link was removed from that account');
+    }
+    expect(copy.owner).toContain('Otherwise, connect it again.');
+    // The agent is told every case where it cannot, and what the person does then.
+    expect(copy.agent).toContain('A different account, or a link made on another computer');
+    expect(copy.agent).toContain('connect this app again');
   });
 
   it('never promises an automatic re-check it doesn’t make', () => {

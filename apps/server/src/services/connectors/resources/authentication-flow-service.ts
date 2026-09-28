@@ -6,6 +6,7 @@ import {
   connectorProviderInstances,
   connections,
   eq,
+  inArray,
   isNull,
   lte,
   ne,
@@ -27,6 +28,7 @@ import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-s
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import { connectorAuthenticationRequestHash } from './authentication-flow-request.js';
+import { cleanupInFlight } from './lifecycle-service.js';
 
 /** Safe durable-flow refusal exposed by the owner resource boundary. */
 export class ConnectorAuthenticationFlowError extends Error {
@@ -68,6 +70,21 @@ function ownerColumns(owner: ConnectorOwnerAuthority): {
   return owner.kind === 'user'
     ? { ownerKind: owner.kind, ownerId: owner.userId }
     : { ownerKind: owner.kind, ownerId: owner.installationId };
+}
+
+/**
+ * The refusal for signing in again to a disconnected account whose earlier
+ * access at the service DorkOS still owes, in words true to its state.
+ */
+function cleanupOwedRefusal(
+  state: 'not_required' | 'pending' | 'complete' | 'failed' | 'unknown'
+): ConnectorAuthenticationFlowError {
+  return new ConnectorAuthenticationFlowError(
+    'connection_cleanup_pending',
+    state === 'pending'
+      ? 'DorkOS is still ending this account’s earlier access at the service. Sign in again once the app shows it’s done.'
+      : 'DorkOS couldn’t confirm this account’s earlier access at the service ended. Remove it from your apps, then connect the app again.'
+  );
 }
 
 /** SQLite-backed provider authentication flow coordinator. */
@@ -135,10 +152,7 @@ export class ConnectorAuthenticationFlowService {
       owned.externalCleanupState !== 'complete' &&
       owned.externalCleanupState !== 'not_required'
     ) {
-      throw new ConnectorAuthenticationFlowError(
-        'connection_cleanup_pending',
-        'DorkOS is still removing this account’s earlier access at the service. Try again in a few minutes.'
-      );
+      throw cleanupOwedRefusal(owned.externalCleanupState);
     }
     return this.startInternal(
       owner,
@@ -269,15 +283,29 @@ export class ConnectorAuthenticationFlowService {
       previous.externalAccountRef === accountData.externalAccountRef;
     const completedAt = this.now().toISOString();
     this.db.transaction(() => {
-      if (!this.cleanupSnapshotCurrent(owner, row, accountData.externalAccountRef)) {
+      const snapshot = this.cleanupSnapshotCurrent(owner, row, accountData.externalAccountRef);
+      if (!snapshot.current) {
         this.finishPending(
           row.id,
           'failed',
           afterPoll,
-          'This account changed while you were signing in. Finish disconnecting if needed, then start a new sign-in.',
+          'This account changed while you were signing in. Start a new sign-in.',
           polledProviderFlowId
         );
         return;
+      }
+      // The person just signed in to this same account at the service, so
+      // ending its earlier sign-in there would undo their newer choice.
+      if (snapshot.cancel.length > 0) {
+        this.db
+          .update(connections)
+          .set({
+            externalCleanupState: 'not_required',
+            externalCleanupRetryAt: null,
+            updatedAt: completedAt,
+          })
+          .where(inArray(connections.id, snapshot.cancel))
+          .run();
       }
       const account = this.registry.recordConnect(provider, accountData, {
         allowRemovedReplacement: true,
@@ -465,15 +493,19 @@ export class ConnectorAuthenticationFlowService {
         input.providerInstanceId,
         input.toolkit
       );
-      if (
-        reconnectConnectionId &&
-        (!this.ownedConnection(owner, reconnectConnectionId, { includeDisconnected: true }) ||
-          cleanupSnapshot[reconnectConnectionId] === undefined)
-      ) {
-        throw new ConnectorAuthenticationFlowError(
-          'connection_cleanup_pending',
-          'DorkOS is still removing this account’s earlier access at the service. Try again in a few minutes.'
-        );
+      if (reconnectConnectionId) {
+        const target = this.ownedConnection(owner, reconnectConnectionId, {
+          includeDisconnected: true,
+        });
+        if (!target) {
+          throw new ConnectorAuthenticationFlowError(
+            'connection_not_found',
+            'Connection not found.'
+          );
+        }
+        if (cleanupSnapshot[reconnectConnectionId] === undefined) {
+          throw cleanupOwedRefusal(target.externalCleanupState);
+        }
       }
       this.db
         .insert(connectorAuthenticationFlows)
@@ -739,15 +771,16 @@ export class ConnectorAuthenticationFlowService {
     owner: ConnectorOwnerAuthority,
     flow: typeof connectorAuthenticationFlows.$inferSelect,
     externalRef: string
-  ): boolean {
-    if (flow.cleanupSnapshotJson === null) return false;
+  ): { current: boolean; cancel: string[] } {
+    const stale = { current: false, cancel: [] };
+    if (flow.cleanupSnapshotJson === null) return stale;
     let snapshot: Record<string, unknown>;
     try {
       snapshot = JSON.parse(flow.cleanupSnapshotJson);
     } catch {
-      return false;
+      return stale;
     }
-    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return false;
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return stale;
     const owned = ownerColumns(owner);
     const rows = this.db
       .select({
@@ -757,6 +790,7 @@ export class ConnectorAuthenticationFlowService {
         lifecycle: connections.lifecycleState,
         removedAt: connections.removedAt,
         ref: connections.externalAccountRef,
+        mode: connectorProviderInstances.mode,
       })
       .from(connections)
       .innerJoin(
@@ -777,9 +811,20 @@ export class ConnectorAuthenticationFlowService {
       (row.state === 'complete' || row.state === 'not_required');
     if (flow.reconnectConnectionId) {
       const target = rows.find((row) => row.id === flow.reconnectConnectionId);
-      if (!target || target.removedAt !== null || !acknowledged(target)) return false;
+      if (!target || target.removedAt !== null || !acknowledged(target)) return stale;
     }
-    return rows.filter((row) => row.ref === externalRef).every(acknowledged);
+    // An own-key cleanup DorkOS still owes for this same account, and isn't
+    // trying at this moment, gives way to the new sign-in instead of blocking
+    // it forever (the one it would end is the one just made).
+    const yields = (row: (typeof rows)[number]) =>
+      row.id !== flow.reconnectConnectionId &&
+      row.mode === 'byo' &&
+      row.lifecycle === 'disconnected' &&
+      (row.state === 'pending' || row.state === 'failed' || row.state === 'unknown') &&
+      !cleanupInFlight(this.db, row.id);
+    const sameAccount = rows.filter((row) => row.ref === externalRef);
+    if (!sameAccount.every((row) => acknowledged(row) || yields(row))) return stale;
+    return { current: true, cancel: sameAccount.filter(yields).map((row) => row.id) };
   }
 
   private ownedConnection(

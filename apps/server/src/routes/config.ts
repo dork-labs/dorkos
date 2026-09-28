@@ -76,8 +76,7 @@ export { deepMerge };
 const TASKS_LOCKED_BY_ENV = 'DORKOS_TASKS_ENABLED' in process.env;
 
 /** The same question for the Relay message bus and `DORKOS_RELAY_ENABLED`. */
-// eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
-const RELAY_LOCKED_BY_ENV = 'DORKOS_RELAY_ENABLED' in process.env;
+const RELAY_LOCKED_BY_ENV = env.DORKOS_RELAY_ENABLED !== undefined;
 
 router.get('/', async (req, res) => {
   let claudeCliPath: string | null = null;

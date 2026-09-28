@@ -42,7 +42,7 @@
  *
  * Two classes, and nothing else:
  *
- * 1. **Secrets and the things that locate them.** The four
+ * 1. **Secrets and the things that locate them.** The
  *    `SENSITIVE_CONFIG_KEYS` values, plus every credential *reference*:
  *    `providers` and `runtimes.codex.credentialRef` hold `keychain:` / `env:` /
  *    `file:` references (ADR-0315). A reference is not a secret, but a
@@ -444,6 +444,10 @@ export const CONFIG_DISCLOSURE = {
   'cloud.instanceName': 'expose',
   // Names the DorkOS account this install is linked to, often an email address.
   'cloud.linkedAccountLabel': 'withhold',
+  // The relink proof of the last dropped instance key: with the same account's
+  // approval it continues the old link and its apps. A credential, so withheld
+  // like the key itself (and, as a SENSITIVE_CONFIG_KEYS entry, flagged).
+  'cloud.previousLinkProof': 'withhold',
 
   // Raw-MCP URLs may contain userinfo, query tokens, or secret path segments.
   // Withhold the complete URL rather than guessing which parts are credentials;
@@ -469,6 +473,7 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
   'tunnel.auth',
   'mcp.apiKey',
   'cloud.instanceToken',
+  'cloud.previousLinkProof',
   'runtimes.codex.credentialRef',
 ];
 

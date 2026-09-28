@@ -14376,6 +14376,56 @@
                               "revoked",
                               "unavailable"
                             ]
+                          },
+                          "lastDelivery": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "outcome": {
+                                "type": "string",
+                                "enum": [
+                                  "delivered",
+                                  "sending",
+                                  "retrying",
+                                  "failed"
+                                ]
+                              },
+                              "receivedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "problem": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "enum": [
+                                  "unreachable",
+                                  "refused",
+                                  "changed",
+                                  "cancelled",
+                                  "expired",
+                                  "unknown_outcome",
+                                  null
+                                ]
+                              }
+                            },
+                            "required": [
+                              "outcome",
+                              "receivedAt",
+                              "problem"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "chatSessionId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "minLength": 1,
+                            "maxLength": 256
                           }
                         },
                         "required": [
@@ -14390,7 +14440,9 @@
                           "destination",
                           "filter",
                           "scopeVersion",
-                          "state"
+                          "state",
+                          "lastDelivery",
+                          "chatSessionId"
                         ],
                         "additionalProperties": false
                       },
@@ -14594,6 +14646,56 @@
                         "revoked",
                         "unavailable"
                       ]
+                    },
+                    "lastDelivery": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "delivered",
+                            "sending",
+                            "retrying",
+                            "failed"
+                          ]
+                        },
+                        "receivedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "problem": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "unreachable",
+                            "refused",
+                            "changed",
+                            "cancelled",
+                            "expired",
+                            "unknown_outcome",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "outcome",
+                        "receivedAt",
+                        "problem"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "chatSessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 256
                     }
                   },
                   "required": [
@@ -14608,7 +14710,9 @@
                     "destination",
                     "filter",
                     "scopeVersion",
-                    "state"
+                    "state",
+                    "lastDelivery",
+                    "chatSessionId"
                   ],
                   "additionalProperties": false
                 }
@@ -14705,6 +14809,56 @@
                         "revoked",
                         "unavailable"
                       ]
+                    },
+                    "lastDelivery": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "delivered",
+                            "sending",
+                            "retrying",
+                            "failed"
+                          ]
+                        },
+                        "receivedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "problem": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "unreachable",
+                            "refused",
+                            "changed",
+                            "cancelled",
+                            "expired",
+                            "unknown_outcome",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "outcome",
+                        "receivedAt",
+                        "problem"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "chatSessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 256
                     }
                   },
                   "required": [
@@ -14719,7 +14873,9 @@
                     "destination",
                     "filter",
                     "scopeVersion",
-                    "state"
+                    "state",
+                    "lastDelivery",
+                    "chatSessionId"
                   ],
                   "additionalProperties": false
                 }

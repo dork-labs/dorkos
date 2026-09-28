@@ -235,7 +235,7 @@ describe('saying which settings it could not read', () => {
   });
 
   it('never prints a credential, only the path that holds one', () => {
-    // The four SENSITIVE_CONFIG_KEYS are nullable strings with defaults, so they
+    // The SENSITIVE_CONFIG_KEYS are nullable strings with defaults, so they
     // are all relaxed — a newer build changing how a token is encoded would
     // otherwise put that token in a log file the moment an older build read it.
     const { dir } = seed({ version: 1, mcp: { apiKey: { v2: 'sk-live-do-not-log' } } });

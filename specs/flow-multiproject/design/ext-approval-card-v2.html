@@ -1,0 +1,203 @@
+<h2>1 of 6, round 2 · Short row with thumbs up, thumbs down, and more info</h2>
+<p class="subtitle">
+  Both rows are the same. They differ only in where "more info" opens. Hover the icons for their
+  names; a screen reader hears "Allow it to run", "Not now", "More about this".
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 13px/1.5 system-ui;
+  }
+  .ax-pop {
+    width: 360px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    overflow: visible;
+    color: #18181b;
+    position: relative;
+  }
+  .ax-pophead {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid #f4f4f5;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 12px;
+  }
+  .ax-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 9px 12px 9px 14px;
+  }
+  .ax-ico {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #f4f4f5;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #3f3f46;
+  }
+  .ax-t {
+    font-weight: 600;
+    font-size: 13px;
+    color: #18181b;
+  }
+  .ax-src {
+    font-size: 11px;
+    color: #52525b;
+    font-family: ui-monospace, monospace;
+  }
+  .ax-ib {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid #e4e4e7;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #18181b;
+  }
+  .ax-ib.on {
+    background: #f4f4f5;
+  }
+  .ax-ib.up:hover {
+    border-color: #16a34a;
+  }
+  .ax-more {
+    margin: 0 12px 10px 44px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #fafafa;
+    border: 1px solid #f4f4f5;
+  }
+  .ax-tip {
+    position: absolute;
+    right: -250px;
+    top: 44px;
+    width: 240px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 10px 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    color: #18181b;
+  }
+  .ax-link {
+    font-size: 12px;
+    color: #18181b;
+    text-decoration: underline;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>"More info" opens the row in place (my pick)</h3>
+      <p>The row grows downward. You never leave the list. Works the same on a phone.</p>
+      <div class="ax">
+        <div class="ax-pop">
+          <div class="ax-pophead">
+            <span>Activity</span><span class="ax-muted">1 needs you</span>
+          </div>
+          <div class="ax-row">
+            <div class="ax-ico">⧉</div>
+            <div style="flex: 1; min-width: 0">
+              <div class="ax-t">Flow wants to run</div>
+              <div class="ax-src">flow plugin · dork-labs/marketplace</div>
+            </div>
+            <span class="ax-ib on" title="More about this">ⓘ</span>
+            <span class="ax-ib" title="Not now">👎</span>
+            <span class="ax-ib up" title="Allow it to run">👍</span>
+          </div>
+          <div class="ax-more">
+            <p class="ax-muted" style="margin: 0">
+              None of it has run yet. Allowing it lets its code run inside DorkOS, signed in as you.
+              It adds a Flow tab and a Flow settings page. Allow it only if you trust where it came
+              from.
+            </p>
+            <div style="margin-top: 6px">
+              <span class="ax-link">See it in Settings → Extensions</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>"More info" opens a small popover beside the row</h3>
+      <p>
+        The list stays the same height. But a popover on a popover is fiddly, and on a phone it has
+        to become a sheet.
+      </p>
+      <div class="ax" style="padding-right: 260px">
+        <div class="ax-pop">
+          <div class="ax-pophead">
+            <span>Activity</span><span class="ax-muted">1 needs you</span>
+          </div>
+          <div class="ax-row">
+            <div class="ax-ico">⧉</div>
+            <div style="flex: 1; min-width: 0">
+              <div class="ax-t">Flow wants to run</div>
+              <div class="ax-src">flow plugin · dork-labs/marketplace</div>
+            </div>
+            <span class="ax-ib on" title="More about this">ⓘ</span>
+            <span class="ax-ib" title="Not now">👎</span>
+            <span class="ax-ib up" title="Allow it to run">👍</span>
+          </div>
+          <div class="ax-tip">
+            <p class="ax-muted" style="margin: 0">
+              None of it has run yet. Allowing it lets its code run inside DorkOS, signed in as you.
+              Allow it only if you trust where it came from.
+            </p>
+            <div style="margin-top: 6px">
+              <span class="ax-link">See it in Settings → Extensions</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>After you answer (same for both)</h3>
+  <div class="ax">
+    <div class="ax-pop">
+      <div class="ax-row" style="opacity: 0.85">
+        <div class="ax-ico">⧉</div>
+        <div style="flex: 1">
+          <div style="font-size: 12px">You allowed Flow to run</div>
+          <div class="ax-muted">2:14pm · Flow tab added</div>
+        </div>
+      </div>
+      <div class="ax-row" style="opacity: 0.85; border-top: 1px solid #f4f4f5">
+        <div class="ax-ico">⧉</div>
+        <div style="flex: 1">
+          <div style="font-size: 12px">Flow isn't allowed yet</div>
+          <div class="ax-muted">2:14pm · <span class="ax-link">Allow it</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="ax-muted" style="color: #52525b">
+    Thumbs down removes nothing. You can still allow it later from that row or from Settings.
+  </p>
+</div>

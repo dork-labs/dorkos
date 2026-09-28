@@ -39,6 +39,7 @@ import { ConnectorSubscriptionService } from '../subscription-service.js';
 import { ConnectorEventGrantService } from '../grant-service.js';
 import { ConnectorEventInboxStore } from '../../event-inbox-store.js';
 import { ConnectorEventSessionSourceAdapter } from '../session-source-adapter.js';
+import { readChatSession } from '../subscription-delivery.js';
 import { CanonicalConnectorEventSessionTarget } from '../session-target.js';
 
 const BASE = '2026-09-07T12:00:00.000Z';
@@ -232,6 +233,35 @@ async function fixture() {
     sourceGeneration: String(lease.subscriptionVersion),
     leaseOwner: lease.leaseOwner,
   };
+  /** Receive, lease and reference one more event on the same notification. */
+  const nextEvent = (providerEventId: string, at: string) => {
+    const eventScope = { ...scope, providerEventId };
+    const next = inbox.enqueue({
+      ...eventScope,
+      providerInstanceId: eventScope.providerInstanceId as never,
+      subscriptionVersion: 1,
+      receivedAt: at,
+      normalizedPayload: protector.protect(
+        { version: 1, title: 'Second mail', text: 'second private body' },
+        eventScope
+      ),
+      payloadProtection: 'encrypted',
+      payloadSchemaVersion: 1,
+    });
+    now = at;
+    const claimed = inbox.claimNext(
+      `lease-${providerEventId}`,
+      at,
+      new Date(Date.parse(at) + 60_000).toISOString()
+    )!;
+    expect(claimed.id).toBe(next.id);
+    return {
+      kind: 'connector_event' as const,
+      inboxId: next.id,
+      sourceGeneration: String(claimed.subscriptionVersion),
+      leaseOwner: claimed.leaseOwner,
+    };
+  };
   return {
     db,
     path,
@@ -239,6 +269,7 @@ async function fixture() {
     managed,
     inbox,
     ref,
+    nextEvent,
     subscriptionId,
     runtime,
     compose,
@@ -275,6 +306,141 @@ describe('event source through real durable private acceptance', () => {
       normalizedPayload: '',
     });
     expect(f.db.select().from(sessionMessageQueue).all()).toHaveLength(0);
+  });
+
+  it('posts every event from one notification into the same chat, each naming the notification', async () => {
+    const f = await fixture();
+    const bind = vi.spyOn(f.target, 'bind');
+    await f.adapter.prepareTarget(f.ref);
+    const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    const firstPrepared = await f.acceptance.prepare(first.receipt.id);
+    expect(f.acceptance.claim(first.receipt.id, firstPrepared).content).toMatch(
+      /^New message: Mail arrived\n\nprivate message body$/
+    );
+    f.acceptance.markTurnStarted(first.receipt.id, 1);
+
+    const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
+    await f.adapter.prepareTarget(second);
+    const accepted = f.adapter.acceptPrepared(f.acceptance, second);
+
+    expect(accepted.created).toBe(true);
+    expect(accepted.receipt.sessionId).toBe(first.receipt.sessionId);
+    expect(bind).toHaveBeenCalledTimes(1);
+    expect(readChatSession(f.db, f.subscriptionId)).toBe(first.receipt.sessionId);
+  });
+
+  it('opens a new chat only when the agent’s folder has moved since the kept one', async () => {
+    const f = await fixture();
+    await f.adapter.prepareTarget(f.ref);
+    const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    f.acceptance.claim(first.receipt.id, await f.acceptance.prepare(first.receipt.id));
+    f.acceptance.markTurnStarted(first.receipt.id, 1);
+    // The agent moved: same id and runtime, a new folder. The kept chat is bound
+    // to the old folder for good, so it cannot carry this agent's next event.
+    const moved = mkdtempSync(join(tmpdir(), 'dork-event-moved-'));
+    disposers.push(() => rmSync(moved, { recursive: true, force: true }));
+    mkdirSync(join(moved, '.dork'));
+    writeFileSync(
+      join(moved, '.dork/agent.json'),
+      JSON.stringify({
+        id: 'agent-one',
+        name: 'event-agent',
+        runtime: 'claude-code',
+        registeredAt: BASE,
+        registeredBy: 'owner',
+      })
+    );
+    f.db.$client
+      .prepare('UPDATE agents SET project_path = ?, updated_at = ? WHERE id = ?')
+      .run(moved, '2026-09-07T12:04:00.000Z', 'agent-one');
+
+    const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
+    await f.adapter.prepareTarget(second);
+    const accepted = f.adapter.acceptPrepared(f.acceptance, second);
+
+    expect(accepted.receipt.sessionId).not.toBe(first.receipt.sessionId);
+    expect(accepted.receipt.originAgentPath).toBe(moved);
+    expect(readChatSession(f.db, f.subscriptionId)).toBe(accepted.receipt.sessionId);
+  });
+
+  it('opens a new chat, at the seed mode, once the owner has raised the kept chat’s mode', async () => {
+    const f = await fixture();
+    await f.adapter.prepareTarget(f.ref);
+    const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    f.acceptance.claim(first.receipt.id, await f.acceptance.prepare(first.receipt.id));
+    f.acceptance.markTurnStarted(first.receipt.id, 1);
+    const modeOf = (sessionId: string) =>
+      (
+        f.db.$client
+          .prepare('SELECT permission_mode FROM session_metadata WHERE session_id = ?')
+          .get(sessionId) as { permission_mode: string | null }
+      ).permission_mode;
+    expect(modeOf(first.receipt.sessionId)).toBeNull();
+    // The owner opened the chat and gave their own turns full autonomy.
+    f.db.$client
+      .prepare(
+        "UPDATE session_metadata SET permission_mode = 'bypassPermissions' WHERE session_id = ?"
+      )
+      .run(first.receipt.sessionId);
+
+    const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
+    await f.adapter.prepareTarget(second);
+    const accepted = f.adapter.acceptPrepared(f.acceptance, second);
+
+    expect(accepted.receipt.sessionId).not.toBe(first.receipt.sessionId);
+    expect(modeOf(accepted.receipt.sessionId)).toBeNull();
+    expect(readChatSession(f.db, f.subscriptionId)).toBe(accepted.receipt.sessionId);
+    expect(modeOf(first.receipt.sessionId)).toBe('bypassPermissions');
+  });
+
+  it('re-checks the kept chat’s mode at the claim and sends the event back to be retried', async () => {
+    const f = await fixture();
+    await f.adapter.prepareTarget(f.ref);
+    const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    f.acceptance.claim(first.receipt.id, await f.acceptance.prepare(first.receipt.id));
+    f.acceptance.markTurnStarted(first.receipt.id, 1);
+
+    const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
+    await f.adapter.prepareTarget(second);
+    // Raised between preparation and the claim.
+    f.db.$client
+      .prepare(
+        "UPDATE session_metadata SET permission_mode = 'bypassPermissions' WHERE session_id = ?"
+      )
+      .run(first.receipt.sessionId);
+    expect(() => f.adapter.acceptPrepared(f.acceptance, second)).toThrow();
+    expect(
+      f.db
+        .select()
+        .from(sessionMessageQueue)
+        .all()
+        .map((row) => row.sessionId)
+    ).not.toContain(first.receipt.sessionId);
+    expect(
+      f.db
+        .select()
+        .from(connectorEventInbox)
+        .where(eq(connectorEventInbox.id, second.inboxId))
+        .get()?.state
+    ).toBe('leased');
+  });
+
+  it('cancels an accepted event whose chat mode was raised before it ran', async () => {
+    const f = await fixture();
+    await f.adapter.prepareTarget(f.ref);
+    const accepted = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    const prepared = await f.acceptance.prepare(accepted.receipt.id);
+    f.db.$client
+      .prepare(
+        "UPDATE session_metadata SET permission_mode = 'bypassPermissions' WHERE session_id = ?"
+      )
+      .run(accepted.receipt.sessionId);
+    const dispatch = vi.fn();
+    expect(() => {
+      f.acceptance.claim(accepted.receipt.id, prepared);
+      dispatch();
+    }).toThrow();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('refuses revoked authority between prepare and the final dispatch transaction', async () => {

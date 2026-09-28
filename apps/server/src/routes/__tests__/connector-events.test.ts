@@ -123,6 +123,7 @@ function fixture(options: { login?: boolean; denyDestination?: boolean } = {}) {
     db,
     store,
     settings,
+    managed,
     discover,
     reconcile,
     reconstruct: () => {
@@ -198,9 +199,27 @@ describe('owner notification HTTP boundary', () => {
       409
     );
     expect(
-      (await request(target.server).get(`${prefix}/subscriptions`)).body.subscriptions[0].state
-    ).toBe('revoked');
+      (await request(target.server).get(`${prefix}/subscriptions`)).body.subscriptions
+    ).toEqual([]);
     expect(f.reconcile).toHaveBeenCalledTimes(1);
+  });
+  it('removes a notification for good even when telling the hosted side fails', async () => {
+    const f = fixture();
+    f.db.$client.prepare("UPDATE connector_provider_instances SET mode = 'managed'").run();
+    const body = await creation();
+    const created = await request(target.server).post(`${prefix}/subscriptions`).send(body);
+    f.managed.reconcile.mockRejectedValue(new Error('hosted side offline'));
+    expect(
+      (await request(target.server).delete(`${prefix}/subscriptions/${created.body.id}`)).status
+    ).toBe(204);
+    expect(f.managed.reconcile).toHaveBeenLastCalledWith(
+      created.body.id,
+      expect.any(Number),
+      expect.anything()
+    );
+    expect(
+      (await request(target.server).get(`${prefix}/subscriptions`)).body.subscriptions
+    ).toEqual([]);
   });
   it.each([
     { authorization: 'Bearer synthetic' },

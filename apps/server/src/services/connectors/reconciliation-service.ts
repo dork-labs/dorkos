@@ -836,14 +836,14 @@ export class ConnectorReconciliationService {
       }
       if (provider.mode === 'managed' && this.managedAuthority) {
         // Confirming who can use the account settles every change to it the
-        // service refused, not only the ones decided here: each goes again,
-        // so "Check who can use it" is always a way out of a refused change.
+        // service refused, with exactly the access this review showed, so
+        // "Check who can use it" is always a way out of a refused change. The
+        // agents decided above already have a newer change pending, so they
+        // are no longer refused and are left alone.
         managedCommandIds.push(
           ...this.managedAuthority.restageRefused(tx, {
             connectionId: ConnectionIdSchema.parse(preview.connectionId),
             why: 'confirmed',
-            decided: new Set(request.grants.map((selection) => selection.agentId)),
-            everyAgentDecided: request.everyAgent !== undefined,
           })
         );
       }

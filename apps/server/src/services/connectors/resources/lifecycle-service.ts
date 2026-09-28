@@ -123,6 +123,17 @@ function inFlight(db: Db): Set<string> {
   return running;
 }
 
+/**
+ * Whether DorkOS is trying to end one own-key account's access at the service
+ * right now, so a new sign-in to that same account must not cancel it yet.
+ *
+ * @param db - The connector database the try runs against.
+ * @param connectionId - The disconnected account.
+ */
+export function cleanupInFlight(db: Db, connectionId: string): boolean {
+  return inFlight(db).has(connectionId);
+}
+
 function ownerColumns(owner: ConnectorOwnerAuthority): {
   ownerKind: 'user' | 'local_install';
   ownerId: string;
@@ -155,7 +166,10 @@ export class ConnectorLifecycleService {
   /**
    * Remove one disconnected account from inventory without deleting history.
    * It always works: anything still owed at the service stays DorkOS's job,
-   * and its background tries go on for the removed account exactly as before.
+   * for both kinds of account. An own-key cleanup keeps its background tries
+   * ({@link finishOwedCleanups}); a DorkOS-account one keeps its hosted
+   * command, which is sent again when the account is linked again if the old
+   * link refused it (`restageAfterRelink` includes removed accounts).
    */
   remove(owner: ConnectorOwnerAuthority, connectionId: string): void {
     const parsed = ConnectionIdSchema.parse(connectionId);
@@ -296,6 +310,9 @@ export class ConnectorLifecycleService {
             externalCleanupState: 'pending',
             externalCleanupAttempts: 0,
             externalCleanupRetryAt: null,
+            // The key it was reached through: only that key can end its access.
+            externalCleanupKey:
+              this.options.registry.storedExecutionConfigDigest(row.providerInstanceId) ?? null,
           })
           .where(eq(connections.id, row.connectionId))
           .run();
@@ -311,22 +328,10 @@ export class ConnectorLifecycleService {
         reason: 'Link this installation before finishing account disconnection.',
       });
     // Asked again ("Try again now") for an account already closed: try the
-    // cleanup DorkOS still owes, and nothing else. One closed before DorkOS
-    // recorded its cleanup (`unknown`) is owed too, and joins the retries.
-    if (alreadyClosed && row.externalCleanupState === 'unknown') {
-      this.options.db
-        .update(connections)
-        .set({
-          enabled: false,
-          externalCleanupState: 'pending',
-          externalCleanupAttempts: 0,
-          externalCleanupRetryAt: null,
-        })
-        .where(
-          and(eq(connections.id, row.connectionId), eq(connections.externalCleanupState, 'unknown'))
-        )
-        .run();
-    } else if (alreadyClosed && row.externalCleanupState !== 'pending') {
+    // cleanup DorkOS still owes, and nothing else. One DorkOS couldn't confirm
+    // (`unknown`, e.g. its key changed) or gave up on is not tried again: the
+    // person is shown where to end the access themselves.
+    if (alreadyClosed && row.externalCleanupState !== 'pending') {
       return this.result(row.connectionId, publicCleanup(row.externalCleanupState));
     }
     return this.result(row.connectionId, await this.tryCleanup(row.connectionId));
@@ -403,6 +408,7 @@ export class ConnectorLifecycleService {
         attempts: connections.externalCleanupAttempts,
         state: connections.externalCleanupState,
         lifecycleState: connections.lifecycleState,
+        key: connections.externalCleanupKey,
       })
       .from(connections)
       .where(eq(connections.id, connectionId))
@@ -423,6 +429,22 @@ export class ConnectorLifecycleService {
         ConnectorProviderInstanceIdSchema.parse(row.providerInstanceId)
       );
       if (!provider) return 'pending';
+      // Another key can't see this account: its "not found" would read as
+      // done while the sign-in lives on. DorkOS can't confirm the end, and
+      // says so.
+      const key = this.options.registry.storedExecutionConfigDigest(provider.instanceId);
+      if (row.key !== null && key !== row.key) {
+        this.options.db
+          .update(connections)
+          .set({
+            externalCleanupState: 'unknown',
+            externalCleanupRetryAt: null,
+            updatedAt: this.now().toISOString(),
+          })
+          .where(current)
+          .run();
+        return 'failed';
+      }
       await provider.disconnect(ConnectorExternalAccountRefSchema.parse(row.externalAccountRef));
       const settled = this.options.db
         .update(connections)

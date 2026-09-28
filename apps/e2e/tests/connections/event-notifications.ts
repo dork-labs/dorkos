@@ -106,13 +106,13 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         .getByTestId('connection-notification-list')
         .getByRole('listitem')
         .filter({ hasText: 'New message' });
-      await expect(pendingRow.getByText('pending', { exact: true })).toBeVisible();
-      await expect(pendingRow.getByText('active', { exact: true })).toHaveCount(0);
+      await expect(pendingRow).toHaveAttribute('data-state', 'pending');
+      await expect(
+        pendingRow.getByText('Setting up. DorkOS keeps trying on its own.', { exact: true })
+      ).toBeVisible();
 
       await setFixtureMode(request, harness.apiUrl, 'ready');
-      await expect(pendingRow.getByText('active', { exact: true })).toBeVisible({
-        timeout: 45_000,
-      });
+      await expect(pendingRow).toHaveAttribute('data-state', 'active', { timeout: 45_000 });
       const ownerProjection = await request.get(
         `${harness.apiUrl}/api/connectors/connections/${connectionId}/events/subscriptions`
       );
@@ -139,7 +139,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         .getByTestId('connection-notification-list')
         .getByRole('listitem')
         .filter({ hasText: 'Message with unknown timing' });
-      await expect(unknownRow.getByText('active', { exact: true })).toBeVisible();
+      await expect(unknownRow).toHaveAttribute('data-state', 'active');
 
       let unsupportedPosts = 0;
       page.on('request', (candidate) => {
@@ -174,11 +174,11 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await expect(
         detail
           .getByRole('alert')
-          .filter({ hasText: 'couldn’t confirm whether that notification was removed' })
+          .filter({ hasText: 'Couldn’t confirm that notification was removed. Check the list.' })
       ).toBeVisible();
       expect(revokeReachedServer).toBe(true);
-      await expect(pendingRow.getByText('revoked', { exact: true })).toBeVisible();
-      await expect(pendingRow.getByRole('button', { name: 'Remove New message' })).toHaveCount(0);
+      // The removal landed even though its answer was lost, so the row is gone.
+      await expect(pendingRow).toHaveCount(0);
 
       await attachNotificationProof(page, detail, testInfo, 'account-notifications');
       await page.keyboard.press('Escape');
@@ -232,7 +232,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         'Choose activity'
       );
       releaseResponse();
-      await expect(detail.getByText(/New message is active/i)).toHaveCount(0);
+      await expect(detail.getByText(/New message is on/i)).toHaveCount(0);
       await expect(
         detail.getByTestId('connection-notification-list').getByText('New message', { exact: true })
       ).toHaveCount(0);
@@ -254,8 +254,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
           .getByTestId('connection-notification-list')
           .getByRole('listitem')
           .filter({ hasText: 'New message' })
-          .getByText('active', { exact: true })
-      ).toBeVisible();
+      ).toHaveAttribute('data-state', 'active');
     });
 
     test('CN-04/CN-06: holds a real agent MCP request for one exact owner grant or denial', async ({
@@ -397,7 +396,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         .getByTestId('connection-notification-list')
         .getByRole('listitem')
         .filter({ hasText: 'New Gmail message' });
-      await expect(row.getByText('active', { exact: true })).toBeVisible();
+      await expect(row).toHaveAttribute('data-state', 'active');
       const ownerReadback = await request.get(
         `${harness.apiUrl}/api/connectors/connections/${connectionId}/events/subscriptions`
       );
@@ -490,7 +489,7 @@ async function openAccount(page: Page, account: string) {
   await expect(panel.getByText(account, { exact: true })).toBeVisible();
   const more = await connections.openMore();
   await more.getByRole('button', { name: 'When a new email arrives…' }).click();
-  await expect(panel.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: 'Tell an agent' })).toBeVisible();
   return panel;
 }
 

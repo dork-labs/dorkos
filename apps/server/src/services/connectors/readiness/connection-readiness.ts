@@ -19,7 +19,7 @@
  *
  * | #  | Facts                                                                    | state         | reason                       | fix (by)                                      |
  * | -- | ------------------------------------------------------------------------ | ------------- | ---------------------------- | --------------------------------------------- |
- * | 1  | disconnected, the service said the account no longer exists             | `gone`        | `gone_at_service`            | `connect_new` (person)                        |
+ * | 1  | disconnected, the DorkOS account's service has no such account anymore  | `gone`        | `gone_at_service`            | `connect_new` (person), with the service's page |
  * | 2  | disconnected, nothing owed, way up                                       | `gone`        | `disconnected`               | `connect_again` (person)                      |
  * | 3  | disconnected, nothing owed, way down                                     | `gone`        | `disconnected`               | `connect_new` (person)                        |
  * | 4  | disconnected, cleanup owed, way up, DorkOS still trying                  | `gone`        | `disconnect_finishing`       | `retry` (dorkos, retryAt)                     |
@@ -48,9 +48,10 @@
  *
  * Why the way comes before paused and signed out: while it is down, resuming
  * or signing in again cannot make the account usable, so those would be
- * buttons that can't work. Why signed out comes before paused: a sign-in
- * again that completes also resumes the account, while resuming a signed-out
- * account still leaves it unusable. Why a disconnected account never offers
+ * buttons that can't work. Why signed out comes before paused: resuming a
+ * signed-out account still leaves it unusable, so signing in again is the fix
+ * that has to come first. When it completes it lifts only its own pause; a
+ * pause the owner chose stays, and readiness then offers Resume. Why a disconnected account never offers
  * "try disconnecting again": the person's disconnect already took effect here,
  * and what is owed at the service is DorkOS's to retry on its own; the person
  * is shown it only when they can do something DorkOS can't (fix the key, or
@@ -315,7 +316,13 @@ function rechecking(way: Extract<ConnectionWayHealth, { status: 'down' }>): bool
 function disconnectedReadiness(facts: ConnectionReadinessFacts): ConnectionReadiness {
   const { way, externalCleanup: cleanup } = facts;
   if (facts.closedBecause === 'service_gone') {
-    return readiness('gone', 'gone_at_service', { action: 'connect_new', fixableBy: 'person' });
+    // Whether the sign-in still lives at the service isn't known: the
+    // service's own page is where the person can be sure it ended.
+    const page = facts.toolkit ? serviceAccessPageFor(facts.toolkit) : undefined;
+    return ConnectionReadinessSchema.parse({
+      ...readiness('gone', 'gone_at_service', { action: 'connect_new', fixableBy: 'person' }),
+      ...(page && { serviceAccessPage: page }),
+    });
   }
   if (cleanup === undefined || cleanup === 'complete' || cleanup === 'not_required') {
     return readiness('gone', 'disconnected', {
@@ -433,8 +440,9 @@ export function deriveConnectionReadiness(facts: ConnectionReadinessFacts): Conn
         })
       : unfixable('cannot_run_actions', way.anotherWayWorks);
   }
-  // Signing in again resumes the account when it completes; resuming a
-  // signed-out account would still leave it unusable.
+  // Resuming a signed-out account would still leave it unusable, so signing
+  // in again comes first. It lifts only its own pause; the owner's stays, and
+  // Resume is offered next.
   if (facts.authenticationStatus === 'expired' || facts.authenticationStatus === 'revoked') {
     return readiness('needs_you', 'signed_out', { action: 'sign_in_again', fixableBy: 'person' });
   }

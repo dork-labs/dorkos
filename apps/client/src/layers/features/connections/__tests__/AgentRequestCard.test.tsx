@@ -529,7 +529,7 @@ describe('AgentRequestCard — an account that needs attention first', () => {
         readiness: needs(
           'dorkos_account_unlinked',
           'connect_new',
-          'It was connected through your DorkOS account, which isn’t linked anymore. Connect it again to use it.'
+          CONNECTION_READINESS_COPY.dorkos_account_unlinked.owner
         ),
       },
     ]);
@@ -548,7 +548,11 @@ describe('AgentRequestCard — an account that needs attention first', () => {
     expect(line).toHaveTextContent(
       'It was connected through your DorkOS account, which isn’t linked anymore'
     );
-    expect(line).not.toHaveTextContent(/come back|bring/);
+    // Linking this computer again with the same account can continue its earlier
+    // link (DOR-2521): the line says so conditionally, with Connect again beside it.
+    expect(line).toHaveTextContent(
+      'Linking this computer again with the same DorkOS account can bring it back, unless its earlier link was removed from that account. Otherwise, connect it again.'
+    );
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
 
     // Connect again goes to the connect step, whose one-time step offers every way.

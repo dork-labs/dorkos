@@ -154,7 +154,7 @@ describe('explicit event receive authority', () => {
     expect(a.state).toBe('active');
     expect(b.state).toBe('active');
     expect(row(f.db, a.id).binding_id).toBe(row(f.db, b.id).binding_id);
-    await f.service.revoke(owner, a.id, new AbortController().signal);
+    await f.service.remove(owner, a.id, new AbortController().signal);
     expect(f.store.active(a.id)).toBeUndefined();
     expect(f.store.active(b.id)?.subscriptionId).toBe(b.id);
     expect(f.events.deleteTrigger).not.toHaveBeenCalled();
@@ -180,9 +180,9 @@ describe('explicit event receive authority', () => {
       { ...f.request, destination: { kind: 'room', id: 'room-two' } },
       new AbortController().signal
     );
-    await f.service.revoke(owner, a.id, new AbortController().signal);
+    await f.service.remove(owner, a.id, new AbortController().signal);
     expect(f.events.deleteTrigger).not.toHaveBeenCalled();
-    await f.service.revoke(owner, b.id, new AbortController().signal);
+    await f.service.remove(owner, b.id, new AbortController().signal);
     expect(f.events.deleteTrigger).toHaveBeenCalledTimes(1);
   });
   it('reconciles an unknown cleanup to an absent receipt without repeating deletion', async () => {
@@ -192,7 +192,7 @@ describe('explicit event receive authority', () => {
       status: 'outcome_unknown',
       code: 'PROVIDER_OUTCOME_UNKNOWN',
     });
-    await f.service.revoke(owner, a.id, new AbortController().signal);
+    await f.service.remove(owner, a.id, new AbortController().signal);
     expect(f.events.deleteTrigger).toHaveBeenCalledTimes(1);
     vi.mocked(f.events.reconcileTrigger).mockResolvedValue({ status: 'absent' });
     await f.service.recoverCleanup(new AbortController().signal);
@@ -210,7 +210,7 @@ describe('explicit event receive authority', () => {
       status: 'found',
       trigger: { ...f.trigger, providerTriggerRef: 'another-trigger' },
     });
-    await f.service.revoke(owner, a.id, new AbortController().signal);
+    await f.service.remove(owner, a.id, new AbortController().signal);
     expect(f.events.deleteTrigger).not.toHaveBeenCalled();
     vi.mocked(f.events.reconcileTrigger).mockResolvedValue({ status: 'ambiguous' });
     await f.service.recoverCleanup(new AbortController().signal);
@@ -226,7 +226,7 @@ describe('explicit event receive authority', () => {
         .prepare('UPDATE connections SET enabled = 0, lifecycle_state = ?')
         .run(lifecycle === 'paused' ? 'connected' : 'disconnected');
       f.db.$client.prepare("UPDATE connector_provider_instances SET status = 'unavailable'").run();
-      await f.service.revoke(owner, a.id, new AbortController().signal);
+      await f.service.remove(owner, a.id, new AbortController().signal);
       expect(row(f.db, a.id)).toMatchObject({ enabled: 0, revoked_at: now, scope_version: 2 });
     }
   );
@@ -248,7 +248,7 @@ describe('explicit event receive authority', () => {
     const f = fixture();
     const a = await f.service.create(owner, f.request, new AbortController().signal);
     await expect(
-      f.service.revoke(
+      f.service.remove(
         { kind: 'local_install', installationId: 'another-owner' },
         a.id,
         new AbortController().signal
@@ -637,7 +637,7 @@ describe('durable owner event approval receipts', () => {
   it('replaying a reviewed but revoked subscription returns unavailable without reviving receive authority', async () => {
     const f = reviewedFixture();
     const first = await f.grants.approve(owner, f.review, f.signal);
-    await f.service.revoke(owner, first.selections[0].subscriptionId, f.signal);
+    await f.service.remove(owner, first.selections[0].subscriptionId, f.signal);
     const retry = await f.grants.approve(owner, f.review, f.signal);
     expect(retry).toEqual({ state: 'unavailable', selections: first.selections });
     expect(row(f.db, first.selections[0].subscriptionId)).toMatchObject({
@@ -702,7 +702,7 @@ describe('durable owner event approval receipts', () => {
 });
 
 describe('owner notification projections', () => {
-  it('returns only safe metadata and keeps revoked history visible beneath its owner', async () => {
+  it('returns only safe metadata, and a removed notification leaves the owner’s list', async () => {
     const f = fixture();
     const created = await f.service.create(owner, f.request, new AbortController().signal);
     const projected = f.store.get(owner, f.request.connectionId, created.id);
@@ -722,11 +722,12 @@ describe('owner notification projections', () => {
         'content',
       ])
     );
-    await f.service.revoke(owner, created.id, new AbortController().signal);
+    await f.service.remove(owner, created.id, new AbortController().signal);
     const revoked = f.store.get(owner, f.request.connectionId, created.id);
-    await f.service.revoke(owner, created.id, new AbortController().signal);
+    await f.service.remove(owner, created.id, new AbortController().signal);
     expect(f.store.get(owner, f.request.connectionId, created.id)).toEqual(revoked);
-    expect(f.store.list(owner, f.request.connectionId).subscriptions[0]?.state).toBe('revoked');
+    expect(revoked.state).toBe('revoked');
+    expect(f.store.list(owner, f.request.connectionId).subscriptions).toEqual([]);
     expect(() =>
       f.store.list({ kind: 'local_install', installationId: 'other' }, f.request.connectionId)
     ).toThrow();
@@ -746,10 +747,112 @@ describe('owner notification projections', () => {
       101
     );
   });
-  it('reports paused and superseded receive authority as unavailable', async () => {
+  it('reports a paused account as unavailable, since it can come back', async () => {
     const f = fixture();
     const created = await f.service.create(owner, f.request, new AbortController().signal);
     f.db.$client.prepare('UPDATE connections SET enabled = 0').run();
     expect(f.store.get(owner, f.request.connectionId, created.id).state).toBe('unavailable');
+  });
+  it('reports a notification a new key or a replaced activity ended as revoked, and lets the owner remove it', async () => {
+    const f = fixture();
+    const created = await f.service.create(owner, f.request, new AbortController().signal);
+    f.db.$client
+      .prepare(
+        'UPDATE connector_provider_instances SET execution_config_generation = execution_config_generation + 1'
+      )
+      .run();
+    expect(f.store.get(owner, f.request.connectionId, created.id).state).toBe('revoked');
+    expect(f.store.list(owner, f.request.connectionId).subscriptions).toHaveLength(1);
+
+    await f.service.remove(owner, created.id, new AbortController().signal);
+    expect(f.store.list(owner, f.request.connectionId).subscriptions).toEqual([]);
+  });
+  it('keeps a notification the app replaced on the list until the owner removes it', async () => {
+    const f = fixture();
+    const created = await f.service.create(owner, f.request, new AbortController().signal);
+    f.store.discover(
+      f.store.connection(owner, 'account-one'),
+      [{ ...definition, definitionHash: `sha256:${'b'.repeat(64)}` }],
+      now
+    );
+    expect(f.store.list(owner, f.request.connectionId).subscriptions).toMatchObject([
+      { id: created.id, state: 'revoked' },
+    ]);
+    await f.service.remove(owner, created.id, new AbortController().signal);
+    expect(f.store.list(owner, f.request.connectionId).subscriptions).toEqual([]);
+  });
+  it('finishes a removal locally when removing the service’s trigger fails', async () => {
+    const f = fixture();
+    const created = await f.service.create(owner, f.request, new AbortController().signal);
+    f.db.$client
+      .prepare("UPDATE connector_event_bindings SET ownership = 'operator_managed'")
+      .run();
+    vi.mocked(f.events.reconcileTrigger).mockRejectedValue(new Error('service offline'));
+
+    await expect(
+      f.service.remove(owner, created.id, new AbortController().signal)
+    ).resolves.toBeUndefined();
+    expect(f.store.active(created.id)).toBeUndefined();
+    expect(f.store.list(owner, f.request.connectionId).subscriptions).toEqual([]);
+    // The trigger is still owed, so background cleanup can find it again.
+    expect(
+      f.db.$client.prepare('SELECT state FROM connector_event_bindings').get()
+    ).not.toMatchObject({ state: 'retired' });
+  });
+  it('lets the same notification be set up again after it was removed', async () => {
+    const f = fixture();
+    const created = await f.service.create(owner, f.request, new AbortController().signal);
+    await f.service.remove(owner, created.id, new AbortController().signal);
+    const again = await f.service.create(owner, f.request, new AbortController().signal);
+    expect(again.id).toBe(created.id);
+    expect(f.store.list(owner, f.request.connectionId).subscriptions).toMatchObject([
+      { id: created.id },
+    ]);
+  });
+  it('reports the newest event’s outcome in the few kinds an owner can act on', async () => {
+    const f = fixture();
+    const created = await f.service.create(owner, f.request, new AbortController().signal);
+    const outcome = () => f.store.get(owner, f.request.connectionId, created.id).lastDelivery;
+    expect(outcome()).toBeNull();
+    const insert = f.db.$client.prepare(
+      `INSERT INTO connector_event_inbox (id, provider_instance_id, subscription_id, provider_event_id,
+        payload_schema_version, normalized_payload, payload_protection, state, expires_at, received_at, failure_code)
+       VALUES (?, 'provider-one', ?, ?, 1, '', 'encrypted', ?, '2026-09-30T00:00:00.000Z', ?, ?)`
+    );
+    insert.run('e1', created.id, 'p1', 'completed', '2026-09-07T12:01:00.000Z', null);
+    expect(outcome()).toEqual({
+      outcome: 'delivered',
+      receivedAt: '2026-09-07T12:01:00.000Z',
+      problem: null,
+    });
+    insert.run(
+      'e2',
+      created.id,
+      'p2',
+      'received',
+      '2026-09-07T12:02:00.000Z',
+      'event_destination_unavailable'
+    );
+    expect(outcome()).toMatchObject({ outcome: 'retrying', problem: 'unreachable' });
+    insert.run(
+      'e3',
+      created.id,
+      'p3',
+      'failed',
+      '2026-09-07T12:03:00.000Z',
+      'dispatch_outcome_unknown'
+    );
+    expect(outcome()).toMatchObject({ outcome: 'failed', problem: 'unknown_outcome' });
+    insert.run(
+      'e4',
+      created.id,
+      'p4',
+      'failed',
+      '2026-09-07T12:04:00.000Z',
+      'event_destination_refused'
+    );
+    expect(outcome()).toMatchObject({ outcome: 'failed', problem: 'refused' });
+    insert.run('e5', created.id, 'p5', 'expired', '2026-09-07T12:05:00.000Z', null);
+    expect(outcome()).toMatchObject({ outcome: 'failed', problem: 'expired' });
   });
 });

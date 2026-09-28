@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Transport } from '@dorkos/shared/transport';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import { AppList } from '../ui/app-list/AppList';
 import type { YourAppRow } from '../lib/app-list';
@@ -101,6 +105,7 @@ function data(over: Partial<AppListData> = {}, relayEnabled = true): AppListData
       isLoading: false,
       isError: false,
       isRetrying: false,
+      lockedByEnv: false,
       retry: vi.fn(),
     },
     chatAppsError: false,
@@ -109,14 +114,24 @@ function data(over: Partial<AppListData> = {}, relayEnabled = true): AppListData
   };
 }
 
-function renderList(listData: AppListData, query = '') {
+function renderList(
+  listData: AppListData,
+  query = '',
+  transport: Transport = createMockTransport()
+) {
   const handlers = {
     onQueryChange: vi.fn(),
     onOpenRow: vi.fn(),
     onRowAction: vi.fn(),
     onConnect: vi.fn(),
   };
-  render(<AppList query={query} data={listData} {...handlers} />);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TransportProvider transport={transport}>
+        <AppList query={query} data={listData} {...handlers} />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
   return handlers;
 }
 
@@ -169,6 +184,14 @@ describe('AppList', () => {
     expect(screen.getByRole('button', { name: 'Connect Linear' })).toBeInTheDocument();
   });
 
+  it('turns chat apps on from the list, without asking for a terminal', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    renderList(data({}, false), '', transport);
+    await user.click(screen.getByRole('button', { name: 'Turn on chat apps' }));
+    expect(transport.updateConfig).toHaveBeenCalledWith({ relay: { enabled: true } });
+  });
+
   it('says why a search finds nothing while no way to reach apps is set up', () => {
     renderList(data({ available: [] }), 'zzz');
     expect(screen.getByText('No app matches “zzz”')).toBeInTheDocument();
@@ -177,7 +200,8 @@ describe('AppList', () => {
 
   it('with chat apps off, says so in one quiet line and offers no dead Connect', () => {
     const handlers = renderList(data({}, false));
-    expect(screen.getByTestId('chat-apps-off')).toHaveTextContent('DORKOS_RELAY_ENABLED=true');
+    expect(screen.getByTestId('chat-apps-off')).toHaveTextContent('Chat apps are off.');
+    expect(screen.getByTestId('chat-apps-off')).not.toHaveTextContent('DORKOS_RELAY_ENABLED');
     expect(screen.queryByRole('button', { name: 'Connect Telegram' })).not.toBeInTheDocument();
     expect(screen.getByTestId('catalog-app-telegram')).toHaveTextContent('Turned off');
     expect(handlers.onConnect).not.toHaveBeenCalled();

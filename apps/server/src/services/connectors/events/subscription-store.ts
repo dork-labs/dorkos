@@ -21,6 +21,7 @@ import {
   type ConnectorReceiveScope,
 } from '@dorkos/shared/connector-event-schemas';
 import { prepareEventReview, approvedEventSelections } from './subscription-review.js';
+import { readLastDelivery } from './subscription-delivery.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 
 /** Payload-free refusal at the explicit receive-consent boundary. */
@@ -257,7 +258,7 @@ export class ConnectorSubscriptionStore {
       if (existing)
         this.db.$client
           .prepare(
-            `UPDATE connector_event_subscriptions SET definition_id = ?, binding_id = ?, scope_version = ?, enabled = 0, revoked_at = NULL, updated_at = ? WHERE id = ?`
+            `UPDATE connector_event_subscriptions SET definition_id = ?, binding_id = ?, scope_version = ?, enabled = 0, revoked_at = NULL, removed_at = NULL, updated_at = ? WHERE id = ?`
           )
           .run(definition.id, bindingId, scopeVersion, now, subscriptionId);
       else
@@ -416,12 +417,28 @@ export class ConnectorSubscriptionStore {
       .run(now, now, subscriptionId);
   }
 
-  /** Page payload-free subscription history beneath an exact owned connection. */
+  /**
+   * The owner's Remove: close authority (if still open) and take the row off the
+   * owner's list in one step. The revoked row itself stays, because cleanup still
+   * owed at the service reads it; only its place on the list goes.
+   */
+  remove(owner: ConnectorOwnerAuthority, subscriptionId: string, now: string): void {
+    this.db.transaction(() => {
+      this.revoke(owner, subscriptionId, now);
+      this.db.$client
+        .prepare(
+          'UPDATE connector_event_subscriptions SET removed_at = ?, updated_at = ? WHERE id = ? AND removed_at IS NULL'
+        )
+        .run(now, now, subscriptionId);
+    });
+  }
+
+  /** Page payload-free subscriptions beneath an exact owned connection, minus the ones the owner removed. */
   list(owner: ConnectorOwnerAuthority, connectionId: string, cursor?: string) {
     this.connection(owner, connectionId, false);
     const ids = this.db.$client
       .prepare(
-        'SELECT id FROM connector_event_subscriptions WHERE connection_id = ? AND id > ? ORDER BY id LIMIT 101'
+        'SELECT id FROM connector_event_subscriptions WHERE connection_id = ? AND removed_at IS NULL AND id > ? ORDER BY id LIMIT 101'
       )
       .all(connectionId, cursor ?? '') as Array<{ id: string }>;
     const page = ids.slice(0, 100);
@@ -460,14 +477,23 @@ export class ConnectorSubscriptionStore {
           filter_json: string;
           scope_version: number;
           revoked_at: string | null;
+          session_id: string | null;
         }
       | undefined;
     if (!row) throw new ConnectorSubscriptionError('not_found');
     const definition = ConnectorEventDefinitionSchema.parse(JSON.parse(row.definition_json));
+    // `revoked` is every state this notification can never come back from: the
+    // owner or a cleanup closed it, the app replaced this kind of activity, or a
+    // new key moved the account onto a generation its trigger does not belong
+    // to. `unavailable` is only the account being unusable right now, which it
+    // can recover from without a new setup.
     let state: ConnectionEventSubscription['state'] = 'pending';
-    if (row.revoked_at) state = 'revoked';
-    else if (!row.current || row.provider_generation !== row.execution_config_generation)
-      state = 'unavailable';
+    if (
+      row.revoked_at ||
+      !row.current ||
+      row.provider_generation !== row.execution_config_generation
+    )
+      state = 'revoked';
     else {
       try {
         this.connection(owner, connectionId);
@@ -490,6 +516,8 @@ export class ConnectorSubscriptionStore {
       filter: JSON.parse(row.filter_json),
       scopeVersion: row.scope_version,
       state,
+      lastDelivery: readLastDelivery(this.db, row.id),
+      chatSessionId: row.destination_kind === 'agent' ? row.session_id : null,
     });
   }
 

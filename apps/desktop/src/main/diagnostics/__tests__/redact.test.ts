@@ -60,6 +60,14 @@ describe('redactSecrets — the paths the schema declares sensitive', () => {
       mcp: { apiKey: REDACTED },
     });
   });
+
+  it('masks the relink proof of a dropped cloud key, a credential in its own right', () => {
+    // A SENSITIVE_CONFIG_KEYS entry (DOR-2521), so the path pass masks it even
+    // though its name matches no secret-looking word.
+    expect(
+      redactSecrets({ cloud: { instanceName: 'kai-mbp', previousLinkProof: 'proof-a' } })
+    ).toEqual({ cloud: { instanceName: 'kai-mbp', previousLinkProof: REDACTED } });
+  });
 });
 
 describe('redactSecrets — the key-name pass, for what the schema cannot know', () => {

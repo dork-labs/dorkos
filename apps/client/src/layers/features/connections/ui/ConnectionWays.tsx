@@ -239,8 +239,9 @@ function AccountWayRow({
       )}
       {!linked && !checkFailed && apps.length > 0 && (
         <p className="text-muted-foreground text-xs">
-          These apps stopped working when the account was no longer linked. To use them again,
-          connect them again through a way that works.
+          These apps stopped working when the account was no longer linked. Linking this computer
+          again with the same DorkOS account can bring them back, unless its earlier link was
+          removed from that account. Otherwise, connect them again through a way that works.
         </p>
       )}
     </WayRow>

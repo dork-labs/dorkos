@@ -1,0 +1,217 @@
+<h2>5 of 6, round 2 · The run chip, when one chat works on several items</h2>
+<p class="subtitle">
+  One item: the chip names it. Two or more (a chat handing items to helpers): the chip counts them
+  and shows the most urgent state. Click to see each one. The question is still: header or status
+  bar?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-win {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    overflow: visible;
+    color: #18181b;
+  }
+  .ax-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f4f4f5;
+    position: relative;
+  }
+  .ax-title {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .ax-badge {
+    font-size: 11px;
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 1px solid #e4e4e7;
+    color: #3f3f46;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .ax-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+  .ax-chip {
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 6px;
+    border: 1px solid #d4d4d8;
+    color: #18181b;
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    background: #fafafa;
+  }
+  .ax-body {
+    padding: 16px 12px;
+    color: #71717a;
+    min-height: 40px;
+  }
+  .ax-bar {
+    display: flex;
+    gap: 10px;
+    padding: 5px 12px;
+    border-top: 1px solid #f4f4f5;
+    font-size: 11px;
+    color: #52525b;
+    position: relative;
+  }
+  .ax-muted {
+    color: #71717a;
+  }
+  .ax-pop {
+    width: 270px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 8px 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    color: #18181b;
+    margin: 8px 0 0 auto;
+  }
+  .ax-r {
+    display: flex;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid #f4f4f5;
+    align-items: center;
+  }
+  .ax-g {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ax-state {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid #e4e4e7;
+    color: #3f3f46;
+  }
+  .ax-st {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>In the chat header (my pick)</h3>
+      <p>Opened here to show the list for several items.</p>
+      <div class="ax">
+        <div class="ax-win">
+          <div class="ax-head">
+            <span class="ax-title">Drain the ready queue</span>
+            <span class="ax-badge"
+              ><span class="ax-dot" style="background: #2563eb"></span>Acct 2</span
+            >
+            <span class="ax-chip">3 items · 1 needs you ▾</span>
+          </div>
+          <div style="padding: 0 12px">
+            <div class="ax-pop">
+              <div class="ax-r">
+                <span class="ax-g">DOR-2401 Keep the old API?</span
+                ><span class="ax-state">Needs you</span>
+              </div>
+              <div class="ax-r">
+                <span class="ax-g">DOR-2387 Out-of-usage banner</span
+                ><span class="ax-state">Building</span>
+              </div>
+              <div class="ax-r" style="border: 0">
+                <span class="ax-g">DOR-2412 Faster sidebar</span
+                ><span class="ax-state">In review</span>
+              </div>
+              <div class="ax-muted" style="padding-top: 4px"><u>Open dorkos in Flow →</u></div>
+            </div>
+          </div>
+          <div class="ax-body">(chat)</div>
+          <div class="ax-bar">
+            <span>Claude Code</span><span>Opus</span><span>● Acct 2 ▮▮</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>In the status bar at the bottom</h3>
+      <p>Same chip and list, opening upward from the bottom bar.</p>
+      <div class="ax">
+        <div class="ax-win">
+          <div class="ax-head">
+            <span class="ax-title">Drain the ready queue</span>
+            <span class="ax-badge"
+              ><span class="ax-dot" style="background: #2563eb"></span>Acct 2</span
+            >
+          </div>
+          <div class="ax-body">(chat)</div>
+          <div style="padding: 0 12px 6px">
+            <div class="ax-pop">
+              <div class="ax-r">
+                <span class="ax-g">DOR-2401 Keep the old API?</span
+                ><span class="ax-state">Needs you</span>
+              </div>
+              <div class="ax-r">
+                <span class="ax-g">DOR-2387 Out-of-usage banner</span
+                ><span class="ax-state">Building</span>
+              </div>
+              <div class="ax-r" style="border: 0">
+                <span class="ax-g">DOR-2412 Faster sidebar</span
+                ><span class="ax-state">In review</span>
+              </div>
+            </div>
+          </div>
+          <div class="ax-bar">
+            <span>Claude Code</span><span>Opus</span><span>● Acct 2 ▮▮</span
+            ><span class="ax-chip">3 items · 1 needs you ▴</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Its states (same for both)</h3>
+  <div class="ax ax-st">
+    <div>
+      <span class="ax-chip">DOR-2387 · Building</span> <span class="ax-muted">one item</span>
+    </div>
+    <div>
+      <span class="ax-chip">3 items · 1 needs you ▾</span>
+      <span class="ax-muted">several; shows the most urgent state</span>
+    </div>
+    <div>
+      <span class="ax-chip">3 items · Building ▾</span>
+      <span class="ax-muted">several, all fine</span>
+    </div>
+    <div>
+      <span class="ax-chip">DOR-2387 · <span class="ax-muted">Last update 2h ago</span></span>
+      <span class="ax-muted">quiet, or data is old</span>
+    </div>
+    <div>
+      <span class="ax-chip">3 items · Done ▾</span>
+      <span class="ax-muted">all merged or closed</span>
+    </div>
+  </div>
+</div>

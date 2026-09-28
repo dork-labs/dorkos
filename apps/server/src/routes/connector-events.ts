@@ -29,7 +29,7 @@ import {
 /** Existing owner boundary plus exact event domain services; no provider identity comes from a caller. */
 export interface ConnectorEventsRouterDeps extends ConnectorOwnerBoundaryDeps {
   store: ConnectorSubscriptionStore;
-  subscriptions: Pick<ConnectorSubscriptionService, 'discover' | 'revoke'>;
+  subscriptions: Pick<ConnectorSubscriptionService, 'discover' | 'remove'>;
   grants: ConnectorEventGrantPort;
   settings: Pick<ConnectorEventSettingsService, 'describe' | 'configure'>;
   managed: ManagedEventConsentAuthority;
@@ -93,11 +93,13 @@ export function createConnectorEventsRouter(deps: ConnectorEventsRouterDeps): Ro
     deps.store.get(owner, connectionId, subscriptionId);
     const connection = deps.store.connection(owner, connectionId, false);
     const signal = AbortSignal.timeout(30_000);
-    await deps.subscriptions.revoke(owner, subscriptionId, signal);
+    await deps.subscriptions.remove(owner, subscriptionId, signal);
     if (connection.mode === 'managed') {
       const revoked = deps.store.get(owner, connectionId, subscriptionId);
-      // Local authority is already closed; the existing outbox owns remote retry.
-      await deps.managed.reconcile(subscriptionId, revoked.scopeVersion, signal);
+      // Local authority is already closed and the row is off the list, so the
+      // owner's Remove has already happened. Telling the hosted side is the
+      // existing outbox's job, which keeps retrying if this first try fails.
+      await deps.managed.reconcile(subscriptionId, revoked.scopeVersion, signal).catch(() => false);
     }
     res.status(204).end();
   });

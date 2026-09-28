@@ -11,6 +11,7 @@ import {
 import { stableStringify } from '@dorkos/shared/capabilities';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import { readConnectorEventSessionOrigin } from './session-target.js';
+import { keepChatSession, readChatSession } from './subscription-delivery.js';
 import type { ConnectorEventProtectionPort } from './ingress-service.js';
 import type { ManagedEventConsentAuthority } from './grant-port.js';
 import type { ActiveEventSubscription, ConnectorSubscriptionStore } from './subscription-store.js';
@@ -47,6 +48,11 @@ export interface ConnectorEventSessionTargetPort {
     sessionId: string,
     origin: ConnectorEventSessionOrigin
   ): boolean;
+  /**
+   * Whether a notification's kept chat still holds the mode a connector event
+   * is seeded with (none stored). False once the owner set a mode on it.
+   */
+  holdsSeedMode(sessionId: string): boolean;
 }
 
 type PreparedTarget = {
@@ -111,7 +117,10 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
       target.bootEpoch !== this.bootEpoch ||
       target.expiresAt <= now ||
       target.scopeDigest !== this.scopeDigest(scope, target.origin) ||
-      !this.target.current(this.subscriptions.owner(scope), target.sessionId, target.origin)
+      !this.target.current(this.subscriptions.owner(scope), target.sessionId, target.origin) ||
+      // Re-checked at the claim: a mode the owner set since preparation sends
+      // this event back to be retried, and the retry opens a fresh chat.
+      !this.target.holdsSeedMode(target.sessionId)
     )
       this.refuse('event_target_changed');
     const changed = tx
@@ -149,7 +158,7 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
   /** Reveal protected content in memory from the exact receipt source, never from a queue row. */
   async prepare(receipt: SessionMessageAcceptanceReceipt): Promise<PreparedPrivateSessionMessage> {
     const row = this.row(receipt.sourceId);
-    this.receiptScope(row, receipt, this.now());
+    const scope = this.receiptScope(row, receipt, this.now());
     const protector = await this.protection.resolve(row.providerInstanceId);
     if (!protector || row.payloadProtection !== 'encrypted')
       this.refuse('event_content_unavailable');
@@ -158,7 +167,9 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
       sourceKind: this.kind,
       sourceId: row.id,
       sourceGeneration: receipt.sourceGeneration,
-      content: `Service notification: ${content.title}\n\n${content.text}`,
+      // Every event lands in the same chat, so each one says which notification
+      // it came from rather than a generic label.
+      content: `${scope.definition.displayName}: ${content.title}\n\n${content.text}`,
     };
     this.prepared.set(prepared, {
       receiptId: receipt.id,
@@ -254,19 +265,35 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
       prior &&
       prior.expiresAt > this.now() &&
       prior.scopeDigest === this.scopeDigest(scope, prior.origin) &&
-      this.target.current(this.subscriptions.owner(scope), prior.sessionId, prior.origin)
+      this.target.current(this.subscriptions.owner(scope), prior.sessionId, prior.origin) &&
+      this.target.holdsSeedMode(prior.sessionId)
     )
       return ref;
-    const origin = await this.target.resolve(this.subscriptions.owner(scope), scope.agentId);
+    const owner = this.subscriptions.owner(scope);
+    const origin = await this.target.resolve(owner, scope.agentId);
     if (!origin || origin.agentId !== scope.agentId) this.refuse('event_target_unavailable');
-    const sessionId = randomUUID();
-    await this.target.bind(sessionId, origin);
+    // One chat per notification: every event joins the chat the last one went
+    // to. A new chat is opened for the first event, when the agent's runtime or
+    // folder has moved since (a chat's runtime binding never changes), and when
+    // the owner has set a mode on the kept chat. That last one is authority, not
+    // tidiness: an event runs under the notification the owner approved, which
+    // seeds no mode, and a turn in a chat runs at that chat's stored mode. So
+    // an event may only join a chat that still holds the seed, never one whose
+    // mode the owner raised for their own turns.
+    const kept = readChatSession(this.subscriptions.db, scope.subscriptionId);
+    const reuse =
+      kept !== undefined &&
+      this.target.current(owner, kept, origin) &&
+      this.target.holdsSeedMode(kept);
+    const sessionId = reuse ? kept : randomUUID();
+    if (!reuse) await this.target.bind(sessionId, origin);
     const current = this.claimScope(this.row(ref.inboxId), ref, this.now());
     if (
       stableStringify(current) !== stableStringify(scope) ||
-      !this.target.current(this.subscriptions.owner(scope), sessionId, origin)
+      !this.target.current(owner, sessionId, origin)
     )
       this.refuse('event_target_changed');
+    if (!reuse) keepChatSession(this.subscriptions.db, scope.subscriptionId, sessionId);
     this.targets.set(this.key(ref), {
       ref,
       sessionId,
@@ -311,7 +338,10 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
     const origin = this.targetOrigin(scope, receipt);
     if (
       this.scopeDigest(scope, origin) !== receipt.originAuthorityDigest ||
-      !this.target.current(this.subscriptions.owner(scope), receipt.sessionId, origin)
+      !this.target.current(this.subscriptions.owner(scope), receipt.sessionId, origin) ||
+      // Last check before the runtime runs: a mode set after acceptance
+      // cancels this event rather than run it at the owner's raised mode.
+      !this.target.holdsSeedMode(receipt.sessionId)
     )
       this.refuse('event_target_changed');
     return scope;

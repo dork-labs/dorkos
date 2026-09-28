@@ -190,8 +190,14 @@ export class ConnectorSubscriptionService {
     }
   }
 
-  /** Revoke locally first; another logical subscriber's shared resource stays intact. */
-  async revoke(
+  /**
+   * The owner's Remove. It is final the moment the local write commits: the row
+   * leaves the list whatever state it was in (active, pending, stopped or
+   * unavailable), and another logical subscriber's shared resource stays intact.
+   * Removing the service's own trigger is best effort here; a failure leaves it
+   * to {@link ConnectorSubscriptionService.recoverCleanup}, never to the owner.
+   */
+  async remove(
     owner: ConnectorOwnerAuthority,
     subscriptionId: string,
     signal: AbortSignal
@@ -199,13 +205,21 @@ export class ConnectorSubscriptionService {
     const row = this.store.db.$client
       .prepare('SELECT binding_id FROM connector_event_subscriptions WHERE id = ?')
       .get(subscriptionId) as { binding_id: string | null } | undefined;
-    this.store.revoke(owner, subscriptionId, this.now());
-    if (!row?.binding_id) return;
+    this.store.remove(owner, subscriptionId, this.now());
+    try {
+      await this.cleanupRemoved(row?.binding_id ?? null, signal);
+    } catch {
+      /* The binding stays unretired, so background cleanup finds it again. */
+    }
+  }
+
+  private async cleanupRemoved(bindingId: string | null, signal: AbortSignal): Promise<void> {
+    if (!bindingId) return;
     const binding = this.store.db.$client
       .prepare(
         'SELECT provider_instance_id, provider_trigger_ref, ownership FROM connector_event_bindings WHERE id = ?'
       )
-      .get(row.binding_id) as
+      .get(bindingId) as
       | { provider_instance_id: string; provider_trigger_ref: string | null; ownership: string }
       | undefined;
     // Borrowed BYO triggers remain under the operator's existing management.
@@ -214,12 +228,7 @@ export class ConnectorSubscriptionService {
       binding.provider_instance_id as ConnectorProviderInstanceId
     )?.events;
     if (!capability) return;
-    await this.cleanupOwnedBinding(
-      row.binding_id,
-      binding.provider_trigger_ref,
-      capability,
-      signal
-    );
+    await this.cleanupOwnedBinding(bindingId, binding.provider_trigger_ref, capability, signal);
   }
 
   /** Reconcile abandoned owned cleanup through existing maintenance, never reactivating subscriptions. */

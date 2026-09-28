@@ -293,6 +293,7 @@ describe('ManagedCloudConnectorProvider', () => {
       config: {
         getToken: () => token,
         getAccountLabel: () => null,
+        getPreviousLinkProof: () => null,
         save: vi.fn(),
         setAccountLabel: vi.fn(),
         clear: vi.fn(),
@@ -318,6 +319,7 @@ describe('ManagedCloudConnectorProvider', () => {
       config: {
         getToken: () => 'linked-token',
         getAccountLabel: () => null,
+        getPreviousLinkProof: () => null,
         save: vi.fn(),
         setAccountLabel: vi.fn(),
         clear: vi.fn(),

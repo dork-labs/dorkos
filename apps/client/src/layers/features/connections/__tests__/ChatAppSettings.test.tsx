@@ -26,7 +26,7 @@ function renderSettings(transport: Transport) {
 
 /** A config read whose only interesting part is the chat apps switch. */
 async function configWith(
-  relay: { enabled: boolean; initError?: string },
+  relay: { enabled: boolean; initError?: string; enabledInConfig?: boolean; lockedByEnv?: boolean },
   base: Transport = createMockTransport()
 ) {
   const config = await base.getConfig();
@@ -164,17 +164,61 @@ describe('ChatAppSettings', () => {
     expect(transport.updateRelayAdapterConfig).not.toHaveBeenCalled();
   });
 
-  it('says when chat apps are switched off on this server', async () => {
-    renderSettings(createMockTransport({ getConfig: await configWith({ enabled: false }) }));
-    expect(await screen.findByText('DORKOS_RELAY_ENABLED=true dorkos')).toBeInTheDocument();
+  it('turns chat apps on from the app, then asks for the restart that finishes it', async () => {
+    const user = userEvent.setup();
+    const base = createMockTransport();
+    const config = await base.getConfig();
+    let saved = false;
+    const transport = createMockTransport({
+      getConfig: vi.fn(async () => ({
+        ...config,
+        relay: { enabled: false, enabledInConfig: saved, lockedByEnv: false },
+      })),
+      updateConfig: vi.fn(async () => {
+        saved = true;
+      }),
+    });
+    renderSettings(transport);
+    await user.click(await screen.findByRole('button', { name: 'Turn on chat apps' }));
+    expect(transport.updateConfig).toHaveBeenCalledWith({ relay: { enabled: true } });
+    expect(await screen.findByText(/Chat apps turn on when DorkOS restarts/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Restart DorkOS' }));
+    expect(transport.restartServer).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/DORKOS_RELAY_ENABLED/)).toBeNull();
     expect(screen.queryByLabelText('Most chats at once')).toBeNull();
   });
 
-  it('tells a startup failure apart from switched off', async () => {
+  it('names the environment variable only when it is what keeps chat apps off', async () => {
     renderSettings(
-      createMockTransport({ getConfig: await configWith({ enabled: false, initError: 'boom' }) })
+      createMockTransport({
+        getConfig: await configWith({ enabled: false, enabledInConfig: true, lockedByEnv: true }),
+      })
     );
-    expect(await screen.findByText('Chat apps didn’t start')).toBeInTheDocument();
+    expect(await screen.findByTestId('chat-apps-off')).toHaveTextContent(
+      'Chat apps are off because DORKOS_RELAY_ENABLED is set on this computer'
+    );
+    expect(screen.queryByRole('button', { name: 'Turn on chat apps' })).toBeNull();
+  });
+
+  it('offers the restart when the environment variable asked for chat apps and they failed to start', async () => {
+    renderSettings(
+      createMockTransport({
+        getConfig: await configWith({ enabled: false, lockedByEnv: true, initError: 'boom' }),
+      })
+    );
+    expect(await screen.findByText(/Chat apps didn’t start/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restart DorkOS' })).toBeInTheDocument();
+    expect(screen.queryByText(/DORKOS_RELAY_ENABLED/)).toBeNull();
+  });
+
+  it('offers a restart, not a refresh, when chat apps failed to start', async () => {
+    renderSettings(
+      createMockTransport({
+        getConfig: await configWith({ enabled: false, enabledInConfig: true, initError: 'boom' }),
+      })
+    );
+    expect(await screen.findByText(/Chat apps didn’t start/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restart DorkOS' })).toBeInTheDocument();
   });
 
   it('says so plainly when there is nothing to set', async () => {

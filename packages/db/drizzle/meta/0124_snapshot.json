@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "bb64784d-ea27-4f0d-9714-5ff43e0b259e",
+  "id": "33555465-cc33-48b6-a752-25ac24d32f07",
   "prevId": "fe254bae-8708-48bb-801e-8113f22a54a9",
   "tables": {
     "a2a_tasks": {
@@ -3587,35 +3587,6 @@
           "autoincrement": false,
           "default": true
         },
-        "paused_by": {
-          "name": "paused_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "closed_because": {
-          "name": "closed_because",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "external_cleanup_attempts": {
-          "name": "external_cleanup_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "external_cleanup_retry_at": {
-          "name": "external_cleanup_retry_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "auth_config_ref": {
           "name": "auth_config_ref",
           "type": "text",
@@ -4587,6 +4558,14 @@
           ],
           "isUnique": true
         },
+        "connector_event_inbox_subscription_received_idx": {
+          "name": "connector_event_inbox_subscription_received_idx",
+          "columns": [
+            "subscription_id",
+            "received_at"
+          ],
+          "isUnique": false
+        },
         "connector_event_inbox_claim_idx": {
           "name": "connector_event_inbox_claim_idx",
           "columns": [
@@ -4889,6 +4868,20 @@
           "notNull": true,
           "autoincrement": false,
           "default": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_by": {
           "name": "created_by",
@@ -6270,6 +6263,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "reconnect_was_paused": {
+          "name": "reconnect_was_paused",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
         "cleanup_snapshot_json": {
           "name": "cleanup_snapshot_json",
           "type": "text",
@@ -6520,13 +6521,6 @@
         },
         "safe_reason": {
           "name": "safe_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "rejection_code": {
-          "name": "rejection_code",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

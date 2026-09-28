@@ -429,6 +429,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'cloud.instanceToken': null,
   'cloud.instanceName': null,
   'cloud.linkedAccountLabel': null,
+  // No earlier link to continue, so a first link asks for nothing it did not have.
+  'cloud.previousLinkProof': null,
 };
 
 /**

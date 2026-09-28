@@ -847,17 +847,21 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
    *
    * - `relinked` — the DorkOS account was linked again: every change refused
    *   because the link was gone (or needed linking again), and every change
-   *   the old link never applied, goes again as it was, so the same account
-   *   keeps the access it was given.
+   *   the old link never applied, goes again as the owner last saved it, so
+   *   the same account keeps the access it was given. When anything changed
+   *   that agent's access here since (it was removed, say), what it holds now
+   *   goes instead: nothing sent is ever wider than the owner's latest choice.
+   *   A disconnect still owed goes again even for an account removed from
+   *   the owner's list, so DorkOS still ends its access at the service.
    * - `confirmed` — the owner confirmed who can use the account: every
-   *   refused change goes again. One whose actions the service no longer
-   *   offers goes as the access the agent holds now, so confirming always
-   *   settles it. Agents the owner just decided for are left out
-   *   (`decided`), as is the every-agent scope when `everyAgentDecided`.
+   *   refused change is settled with exactly the access the owner was shown
+   *   (what each agent holds now), never the refused selection. An agent the
+   *   owner just decided for already has a newer change pending, so it is
+   *   not refused any more and is left alone.
    *
-   * A change for an account the service no longer has is never sent again:
-   * that account was closed. Nothing is sent for a scope whose current state
-   * can't be expressed (an action that is gone locally too).
+   * A change for an account the service no longer has is never sent again.
+   * Nothing is sent for a scope whose current state can't be expressed (an
+   * action that is gone locally too).
    *
    * @returns The commands to deliver after the transaction commits.
    */
@@ -866,8 +870,6 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     input: {
       readonly connectionId: ConnectionId;
       readonly why: 'relinked' | 'confirmed';
-      readonly decided?: ReadonlySet<string>;
-      readonly everyAgentDecided?: boolean;
     }
   ): string[] {
     const binding = tx
@@ -887,7 +889,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         connectorProviderInstances,
         eq(connectorProviderInstances.id, connections.providerInstanceId)
       )
-      .where(and(eq(connections.id, input.connectionId), isNull(connections.removedAt)))
+      .where(eq(connections.id, input.connectionId))
       .get();
     if (!binding || binding.mode !== 'managed' || !binding.ownerKind || !binding.ownerId) return [];
     const owner: ConnectorOwnerAuthority =
@@ -911,6 +913,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         generation: connectorManagedAuthorityOutbox.executionConfigGeneration,
         requestJson: connectorManagedAuthorityOutbox.requestJson,
         compactedAt: connectorManagedAuthorityOutbox.compactedAt,
+        createdAt: connectorManagedAuthorityOutbox.createdAt,
       })
       .from(connectorManagedAuthorityScopes)
       .innerJoin(
@@ -966,14 +969,21 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       // A grant change is only current while the account is on (see isBindingCurrent).
       if (binding.lifecycleState !== 'connected' || !binding.enabled) continue;
       const everyAgent = scope.scopeKind === 'every_agent_grants';
-      if (everyAgent ? input.everyAgentDecided : input.decided?.has(scope.subjectId)) continue;
-      const refusedActions = scope.rejectionCode === 'revision_unavailable';
-      const selection =
+      const subject = everyAgent ? undefined : scope.subjectId;
+      // The owner's last saved choice goes again only after a relink, only
+      // while nothing has changed this agent's access since, and only when
+      // the service still offers its actions. Otherwise what the agent holds
+      // now goes: never more than the owner last saw.
+      const saved =
+        input.why === 'relinked' &&
         command &&
-        !refusedActions &&
-        (command.kind === 'replace_agent_grants' || command.kind === 'replace_every_agent_grants')
+        scope.rejectionCode !== 'revision_unavailable' &&
+        (command.kind === 'replace_agent_grants' ||
+          command.kind === 'replace_every_agent_grants') &&
+        !this.accessChangedSince(tx, input.connectionId, subject, scope.createdAt)
           ? this.localSelection(tx, providerInstanceId, command.revisions)
-          : this.liveSelection(tx, input.connectionId, everyAgent ? undefined : scope.subjectId);
+          : undefined;
+      const selection = saved ?? this.liveSelection(tx, input.connectionId, subject);
       if (!selection) continue;
       commandIds.push(
         everyAgent
@@ -1004,9 +1014,9 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     const accounts = this.options.db
       .select({ id: connections.id })
       .from(connections)
-      .where(
-        and(eq(connections.providerInstanceId, providerInstanceId), isNull(connections.removedAt))
-      )
+      // Removed accounts too: a disconnect still owed at the service is sent
+      // again for them (their grant changes are skipped: they are closed).
+      .where(eq(connections.providerInstanceId, providerInstanceId))
       .all();
     const commandIds = this.options.db.transaction((tx) =>
       accounts.flatMap((account) =>
@@ -1047,6 +1057,39 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     const operationRevisionIds = revisions.map((revision) => byIdentity.get(selectorKey(revision)));
     if (operationRevisionIds.some((id) => id === undefined)) return undefined;
     return { revisions: [...revisions], operationRevisionIds: operationRevisionIds as string[] };
+  }
+
+  /**
+   * Whether anything changed one agent's (or every agent's) access to an
+   * account after a command was staged: a grant given or taken away later.
+   */
+  private accessChangedSince(
+    tx: ConnectorDbTransaction,
+    connectionId: ConnectionId,
+    agentId: string | undefined,
+    since: string
+  ): boolean {
+    return (
+      tx
+        .select({ id: connectionOperationGrants.id })
+        .from(connectionOperationGrants)
+        .where(
+          and(
+            eq(connectionOperationGrants.connectionId, connectionId),
+            agentId === undefined
+              ? everyAgentGrantSubject()
+              : and(
+                  eq(connectionOperationGrants.subjectType, 'agent'),
+                  eq(connectionOperationGrants.subjectId, agentId)
+                ),
+            or(
+              sql`${connectionOperationGrants.createdAt} > ${since}`,
+              sql`${connectionOperationGrants.revokedAt} > ${since}`
+            )
+          )
+        )
+        .get() !== undefined
+    );
   }
 
   /** The actions one agent (or every agent) holds on an account right now, as a selection. */
@@ -1093,12 +1136,21 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   }
 
   /**
-   * The service said the account no longer exists: close it here at once, as
-   * a disconnect whose access at the service has nothing left to end, so it
-   * reads as gone with one fix instead of a change retried forever. A refused
-   * disconnect is the one exception: that account's access can't be
-   * confirmed ended, so it stays owed as unknown and the person is shown
-   * where to end it themselves.
+   * The hosted side refused a change with `connection_unavailable`. What that
+   * means depends on the change, and only one case is read as "gone":
+   *
+   * - A resume: the hosted side also refuses one this way when the account's
+   *   sign-in there isn't active or doesn't match, so it is never read as
+   *   gone. The account stays paused here and its sign-in is recorded as
+   *   ended, so "Sign in again" is its one fix.
+   * - A disconnect: its access can't be confirmed ended, so the cleanup stays
+   *   owed as unknown and the person is shown where to end it themselves.
+   * - Any other change (who can use it, a pause, a notification): the hosted
+   *   side found no connection for this link at all, which is what "gone"
+   *   means here. The account closes locally with one fix, connecting it
+   *   again, and its cleanup is `unknown`, never "nothing owed": whether the
+   *   sign-in still lives at the service is not known, so it is never
+   *   silently orphaned.
    */
   private closeGoneAccount(
     tx: ConnectorDbTransaction,
@@ -1119,6 +1171,19 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         .run();
       return;
     }
+    if (command.kind === 'set_connection_lifecycle' && command.lifecycle === 'active') {
+      tx.update(connections)
+        .set({ status: 'expired', updatedAt: now })
+        .where(
+          and(
+            eq(connections.id, row.connectionId),
+            eq(connections.lifecycleState, 'connected'),
+            eq(connections.status, 'active')
+          )
+        )
+        .run();
+      return;
+    }
     const open = tx
       .select({ lifecycleState: connections.lifecycleState })
       .from(connections)
@@ -1127,7 +1192,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     if (open?.lifecycleState !== 'connected') return;
     this.stageLocalLifecycle(tx, row.connectionId as ConnectionId, 'disconnected');
     tx.update(connections)
-      .set({ externalCleanupState: 'not_required', closedBecause: 'service_gone', updatedAt: now })
+      .set({ externalCleanupState: 'unknown', closedBecause: 'service_gone', updatedAt: now })
       .where(eq(connections.id, row.connectionId))
       .run();
   }

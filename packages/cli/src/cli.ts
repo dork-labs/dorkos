@@ -804,10 +804,10 @@ if (values.open !== undefined) {
   }
 }
 
-// Relay: env var > config (no CLI flag for relay)
-if (!process.env.DORKOS_RELAY_ENABLED && cfgMgr.getDot('relay.enabled')) {
-  process.env.DORKOS_RELAY_ENABLED = 'true';
-}
+// Relay: nothing to do here. The server reads `relay.enabled` itself and lets
+// DORKOS_RELAY_ENABLED overrule it only when the person set that variable.
+// Copying the setting into the variable made every CLI install look
+// env-locked, so the Settings switch and "Turn on chat apps" could never act.
 
 // Working directory: CLI flag > env var > config > cwd
 const cliDir = values.dir;

@@ -81,6 +81,12 @@ export const connections = sqliteTable(
     externalCleanupAttempts: integer('external_cleanup_attempts').notNull().default(0),
     /** When DorkOS next tries removing its access at the service on its own. */
     externalCleanupRetryAt: text('external_cleanup_retry_at'),
+    /**
+     * The setup fingerprint (own key) the account was reached through when it
+     * was disconnected. Its access at the service is ended only through that
+     * same key: a different key can't see it, so its "not found" proves nothing.
+     */
+    externalCleanupKey: text('external_cleanup_key'),
     authConfigRef: text('auth_config_ref'),
     grantReconciliationStatus: text('grant_reconciliation_status', {
       enum: ['ready', 'migration_needs_reconcile'],

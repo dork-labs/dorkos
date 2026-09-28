@@ -238,10 +238,10 @@ describe('ConnectorLifecycleService', () => {
     ).resolves.toMatchObject({ state: 'pending' });
   });
 
-  it('lets an owner finish a historical unconfirmed disconnect without reopening access', async () => {
+  it('never retries a disconnect DorkOS couldn’t confirm, and never reopens access', async () => {
     registry.recordDisconnect(CONNECTION_ID);
     db.update(connections)
-      .set({ externalCleanupState: 'unknown' })
+      .set({ externalCleanupState: 'unknown', enabled: false })
       .where(eq(connections.id, CONNECTION_ID))
       .run();
     const disconnect = vi.spyOn(provider, 'disconnect').mockResolvedValue();
@@ -253,12 +253,49 @@ describe('ConnectorLifecycleService', () => {
     });
     await expect(
       service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal)
-    ).resolves.toMatchObject({ externalCleanup: 'complete', lifecycle: 'disconnected' });
-    expect(disconnect).toHaveBeenCalledWith('provider-account-a');
+    ).resolves.toMatchObject({ externalCleanup: 'failed', lifecycle: 'disconnected' });
+    // Readiness shows where to end the access instead; nothing is sent.
+    expect(disconnect).not.toHaveBeenCalled();
     expect(db.select().from(connections).get()).toMatchObject({
       enabled: false,
-      externalCleanupState: 'complete',
+      externalCleanupState: 'unknown',
     });
+  });
+
+  it('ends the access only through the key it was reached through, never a different one', async () => {
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    const disconnect = vi
+      .spyOn(provider, 'disconnect')
+      .mockRejectedValueOnce(new Error('service down'));
+    await service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+    expect(db.select().from(connections).get()).toMatchObject({
+      externalCleanupState: 'pending',
+      externalCleanupKey: 'material-a',
+    });
+
+    // The person saves a different key before DorkOS tries again. That key
+    // can't see the account, so its "not found" would prove nothing.
+    registry.register(provider, 'material-b');
+    db.update(connections)
+      .set({ externalCleanupRetryAt: null })
+      .where(eq(connections.id, CONNECTION_ID))
+      .run();
+    await service.finishOwedCleanups(new AbortController().signal);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(db.select().from(connections).get()).toMatchObject({
+      externalCleanupState: 'unknown',
+      externalCleanupRetryAt: null,
+    });
+
+    // The same key back: nothing more happens on its own; the person was
+    // already shown where to end the access themselves.
+    registry.register(provider, 'material-a');
+    await expect(service.finishOwedCleanups(new AbortController().signal)).resolves.toBe(0);
   });
 
   it('disconnects at once while the own key is gone, and leaves the cleanup to DorkOS', async () => {

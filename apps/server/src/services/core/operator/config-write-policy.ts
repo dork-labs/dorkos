@@ -779,6 +779,10 @@ export const CONFIG_WRITE_POLICY = {
   'cloud.instanceToken': 'operator-only',
   'cloud.instanceName': 'operator-only',
   'cloud.linkedAccountLabel': 'operator-only',
+  // Decides which earlier link (and its connected apps) the next link asks to
+  // continue. Machine-managed by the link flow; an agent writing it could aim
+  // a person's next link at another install's apps.
+  'cloud.previousLinkProof': 'operator-only',
 
   // A configured raw-MCP server becomes a tool endpoint sessions can attach —
   // an agent writing one grants itself a capability, which is exactly the line
@@ -938,6 +942,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.instanceToken',
       'cloud.instanceName',
       'cloud.linkedAccountLabel',
+      'cloud.previousLinkProof',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',
