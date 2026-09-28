@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(usage): keep showing an account's usage when one reading is not understood (DOR-2471)"
+  - 'fix(usage): warn once per set-aside ledger entry, and keep it out of memory after a write'
 ---
 
 ### Fixed

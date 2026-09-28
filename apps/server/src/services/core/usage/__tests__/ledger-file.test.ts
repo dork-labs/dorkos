@@ -11,6 +11,7 @@ import {
   withLedgerLock,
   writeLedger,
 } from '../ledger-file.js';
+import { logger } from '../../../../lib/logger.js';
 
 const NOW = new Date('2026-09-26T16:00:00.000Z');
 
@@ -319,11 +320,45 @@ describe('readLedger, deleteLedger, listLedgerFiles', () => {
     });
 
     it('ignores unknown top-level keys on read and keeps them on write', async () => {
-      await put({ windows: { seven_day: good }, writer: 'flow 9.9', aNewBlock: { x: 1 } });
+      await put({
+        windows: { seven_day: good, five_hour: { ...good, source: 'a-future-source' } },
+        writer: 'flow 9.9',
+        aNewBlock: { x: 1 },
+      });
       expect(Object.keys((await readLedger(dir, 'work'))?.windows ?? {})).toEqual(['seven_day']);
-      await writeLedger(dir, 'work', [obs('five_hour', 7)], NOW);
+      await writeLedger(dir, 'work', [obs('seven_day_opus', 7)], NOW);
       const onDisk = JSON.parse(await fs.readFile(path.join(dir, 'work.json'), 'utf8'));
       expect(onDisk).toMatchObject({ writer: 'flow 9.9', aNewBlock: { x: 1 } });
+      // The entry this version cannot read stays on disk for the writer that can.
+      expect(onDisk.windows.five_hour.source).toBe('a-future-source');
+    });
+
+    it('gives memory only what it can read after a write, and keeps the rest on disk', async () => {
+      await put({
+        windows: { seven_day: good },
+        spend: {
+          periodStart: '2026-09-01T00:00:00.000Z',
+          costUsd: -1,
+          observedAt: plan.observedAt,
+          source: 'sidecar',
+        },
+      });
+      const result = await writeLedger(dir, 'work', [obs('five_hour', 7)], NOW);
+      expect(result.written).toBe(true);
+      expect(result.ledger).not.toHaveProperty('spend');
+      expect(Object.keys(result.ledger?.windows ?? {}).sort()).toEqual(['five_hour', 'seven_day']);
+      const onDisk = JSON.parse(await fs.readFile(path.join(dir, 'work.json'), 'utf8'));
+      expect(onDisk.spend.costUsd).toBe(-1);
+    });
+
+    it('warns once about the same set-aside entry, however often the file is read', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      await put({ windows: { seven_day: good, five_hour: { ...good, source: 'once-only' } } });
+      await readLedger(dir, 'work');
+      await readLedger(dir, 'work');
+      await readLedger(dir, 'work');
+      const setAside = warn.mock.calls.filter(([message]) => String(message).includes('set aside'));
+      expect(setAside).toHaveLength(1);
     });
 
     it('returns the tolerant read from a write that changes nothing', async () => {
