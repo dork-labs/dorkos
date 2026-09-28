@@ -173,7 +173,10 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // door it is and what refuses an agent at it.
     what: 'writes ANY config path the caller names, with no bar, no consent door and no audit line — a general-purpose door with none of what a door owes',
     call: 'configManager.setDot(',
-    allowed: {},
+    allowed: {
+      'routes/runtimes.ts':
+        'POST /claude-code/accounts/found/dismiss, which names ONE fixed path, `runtimes.claudeCode.dismissedFolders`, never a caller-supplied one, so it is not the general-purpose door this entry watches. That leaf is operator-only, so the route runs both bars from `PATCH /api/config` for such a leaf, in the same order (the cookie bar under login, then the agent bar), before reaching here. It appends to a stored list in one synchronous read-modify-write, which a patch cannot do because a patch replaces arrays, and it only ever hides a folder from a prompt (logConfigWrite: "the found-folders route")',
+    },
   },
   {
     // Same reasoning, opposite verb. `reset` puts a section — or the whole file
@@ -453,7 +456,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/extensions-person-bar.ts':
         'the one person bar every WRITE on the extensions router runs — approving an extension to run its code inside DorkOS (DOR-516) and, since DOR-1507, turning one on or off. Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because every leaf those four routes write (`extensions.approvedToRun`, `extensions.enabled`, `extensions.disabled`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these routes are reachable by a plain cross-site POST. It is ONE module rather than a copy per route file precisely so a fifth write route cannot arrive with two of the three bars',
       'routes/runtimes.ts':
-        "a person checking an idle Claude account's usage from their own app (DOR-2381). Gated: the cookie bar under login, then this one, because the route starts the Claude binary in a registered account's folder. Agents check usage with the `accounts_probe` MCP tool, which runs through the tool gate at the act tier",
+        "two person bars on this router, each for a person in their own app. (1) `POST /claude-code/accounts/:id/probe`: checking an idle Claude account's usage (DOR-2381). Gated: the cookie bar under login, then this one, because the route starts the Claude binary in a registered account's folder; agents check usage with the `accounts_probe` MCP tool, which runs through the tool gate at the act tier. (2) `POST /claude-code/accounts/found/dismiss`: hiding a found Claude account folder, which writes the operator-only `runtimes.claudeCode.dismissedFolders`, so it runs both bars from `PATCH /api/config` for such a leaf, in the same order: the cookie bar under login, then this one. It writes only that fixed leaf (see its `configManager.setDot(` entry) and takes a JSON body, so a plain cross-site form POST cannot reach the write (it is refused at parsing)",
       'routes/tunnel.ts':
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',

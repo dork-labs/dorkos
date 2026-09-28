@@ -69,6 +69,7 @@ import {
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
+import { logConfigWrite } from '../services/core/operator/config-write.js';
 import { logger } from '../lib/logger.js';
 import {
   isLocalCaller,
@@ -611,7 +612,9 @@ router.post('/claude-code/accounts/found/dismiss', (req, res) => {
         .json({ error: 'That folder is not one of the account folders found on this computer.' });
     }
     if (plan.outcome === 'save') {
+      const before = configManager.get('runtimes');
       configManager.setDot('runtimes.claudeCode.dismissedFolders', plan.dismissed);
+      logConfigWrite('the found-folders route', 'runtimes', before, configManager.get('runtimes'));
     }
     return res.status(204).end();
   } catch (err) {
