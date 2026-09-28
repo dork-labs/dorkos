@@ -53,7 +53,9 @@ import {
   refreshLimitState,
   settleAutoPlansAtBoot,
   startLimitPlanning,
+  writePlan,
 } from '../limit-plans.js';
+import { fireAutoHandoff } from '../auto-handoff.js';
 import {
   ContinueError,
   FLOW_UNREACHABLE_MESSAGE,
@@ -1292,6 +1294,22 @@ describe('core’s automatic handoff', () => {
     expect((await cancel).code).toBe('MOVING');
     held.release();
     await vi.waitFor(() => expect(plan('src-1')?.mode).toBe('continued'));
+  });
+
+  it('never arms or fires for a limit on another runtime', async () => {
+    const onLimited = vi.fn(async () => ({ mode: 'auto', target: 'spare', delaySeconds: 60 }));
+    advise({ onLimited } as never);
+    await limitedSession('src-codex', { runtime: 'codex' });
+    // Planning never asks the advisor for a Codex limit.
+    expect(onLimited).not.toHaveBeenCalled();
+    expect(plan('src-codex')).toEqual({ mode: 'ask', carryOver: false });
+    // Even an `auto` plan written some other way gets no timer and no fire.
+    await writePlan(store.get('src-codex')!, { mode: 'auto', target: 'spare', fireAt: FIRE_AT });
+    expect(plan('src-codex')?.mode).toBe('auto');
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(await fireAutoHandoff('src-codex', SINCE, FIRE_AT)).toBeUndefined();
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(plan('src-codex')?.mode).toBe('auto');
   });
 
   it('stops the timer on cancel', async () => {

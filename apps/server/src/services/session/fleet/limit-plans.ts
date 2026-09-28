@@ -124,6 +124,25 @@ export async function isClaudeCodeLimit(stored: StoredSessionLimit): Promise<boo
   }
 }
 
+/**
+ * {@link isClaudeCodeLimit}, read synchronously from the binding row, for a
+ * caller that must decide in the same step it acts (the automatic handoff's
+ * timer and fire, which mark their move in flight before any await). The same
+ * answer: bound to Claude Code, deny by default.
+ *
+ * @param stored - The session's stored limit.
+ */
+export function isClaudeCodeLimitNow(stored: StoredSessionLimit): boolean {
+  try {
+    return (
+      runtimeRegistry.getSessionBindings([stored.sessionId]).get(stored.sessionId)?.runtime ===
+      LIMIT_RUNTIME
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** The working directory a stored limit's session ran in. */
 export function cwdOf(stored: StoredSessionLimit): string | undefined {
   return stored.cwd ?? peekProjector(stored.sessionId)?.cwd;

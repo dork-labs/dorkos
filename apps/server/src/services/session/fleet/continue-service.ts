@@ -288,18 +288,24 @@ export async function continueSession(
       'Choose an account or a model to continue on.'
     );
   }
-  const stored = await requireLimit(sessionId);
-  const plan = stored.limit.plan;
+  const first = await requireLimit(sessionId);
   // A session bound to another runtime cannot continue here yet (400). One
   // bound to nothing may still ask for an account, and gets the wait-only
-  // refusal below, like every session that did not start here.
-  if (!(await isClaudeCodeLimit(stored)) && (body.model || !(await isUnbound(stored)))) {
+  // refusal below, like every session that did not start here. (`runtime` in
+  // the body names where the work goes, never where it comes from.)
+  if (!(await isClaudeCodeLimit(first)) && (body.model || !(await isUnbound(first)))) {
     throw new ContinueError(
       400,
       'RUNTIME_NOT_OFFERED',
       'Only a Claude Code session can continue on another account or model for now. This one can wait for the reset.'
     );
   }
+  // Read again after those awaits: the automatic handoff (or another click)
+  // may have moved the work meanwhile, and everything below, up to marking
+  // this continue in flight, decides from this read without awaiting.
+  const stored = readStoredLimit(first.sessionId);
+  if (!stored || stored.limit.since !== first.limit.since) throw noLimit();
+  const plan = stored.limit.plan;
   // Idempotent per episode: a moved session answers with where it went.
   if (body.account && plan.mode === 'continued') return { sessionId: plan.sessionId };
   // Moved, though the plan does not say so yet (its pointer is being retried).

@@ -41,6 +41,7 @@ import {
   LIMIT_RUNTIME,
   PlanChangedError,
   cwdOf,
+  isClaudeCodeLimitNow,
   limitClock,
   mayCarryOver,
   onLimitPlanWritten,
@@ -78,7 +79,9 @@ function clearAutoTimer(sessionId: string): void {
  */
 function syncAutoTimer(stored: StoredSessionLimit): void {
   const plan = stored.limit.plan;
-  if (plan.mode !== 'auto' || stored.claimedBy) {
+  // Only a Claude Code session carries over today: another runtime's limit
+  // never gets a timer, whatever its plan says.
+  if (plan.mode !== 'auto' || stored.claimedBy || !isClaudeCodeLimitNow(stored)) {
     clearAutoTimer(stored.sessionId);
     return;
   }
@@ -182,6 +185,7 @@ export function fireAutoHandoff(
     plan?.mode !== 'auto' ||
     plan.fireAt !== fireAt ||
     stored.claimedBy ||
+    !isClaudeCodeLimitNow(stored) ||
     // Already moved; only the pointer is still being retried.
     unpointedCarryOver(stored)
   ) {
