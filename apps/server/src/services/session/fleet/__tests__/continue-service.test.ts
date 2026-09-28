@@ -1296,6 +1296,37 @@ describe('core’s automatic handoff', () => {
     await vi.waitFor(() => expect(plan('src-1')?.mode).toBe('continued'));
   });
 
+  it('answers a click with the automatic move that finished while it checked the runtime', async () => {
+    // The click reads the limit, then waits on the runtime check; the timer's
+    // move completes in between. The click must decide from what is true
+    // after the wait, not from the `auto` it read before it.
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    const real = runtimeRegistry.resolveSessionRuntime.bind(runtimeRegistry);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let holdNext = true;
+    vi.spyOn(runtimeRegistry, 'resolveSessionRuntime').mockImplementation(async (id: string) => {
+      if (holdNext) {
+        holdNext = false;
+        await gate;
+      }
+      return real(id);
+    });
+
+    const person = continueSession('src-1', { account: 'busy' }, deps);
+    await vi.waitFor(() => expect(holdNext).toBe(false));
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() =>
+      expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' })
+    );
+    release();
+
+    expect(await person).toEqual({ sessionId: 'new-1' });
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('never arms or fires for a limit on another runtime', async () => {
     const onLimited = vi.fn(async () => ({ mode: 'auto', target: 'spare', delaySeconds: 60 }));
     advise({ onLimited } as never);
