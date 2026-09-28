@@ -594,12 +594,14 @@ function stripInlineCodeAndTargets(segment: string): string {
  * sits in the middle of one (a shell script echoing `` ``` `` is content, not
  * a closer). Verified against the real compiler, not assumed:
  * `docs-mdx-markers-compile.test.ts`'s sibling test in the fence-detection
- * suite compiled `docs/self-hosting/deployment.mdx`'s own closer-trails-
- * content line through `@mdx-js/mdx` and confirmed it does NOT close there
- * either — a real, pre-existing content bug in that page (out of scope for
- * DOR-2508), and the reason this rule anchors the way it does rather than the
- * looser "anywhere on the line" check an earlier, unverified version of this
- * file shipped.
+ * suite compiled `docs/self-hosting/deployment.mdx`'s original closer-trails-
+ * content line through `@mdx-js/mdx` and confirmed it did NOT close there
+ * either — a real, pre-existing site bug (the "Interactive Setup" tab never
+ * rendered; it was absorbed into the wrong code block), fixed directly in
+ * that file alongside this rule, which anchors the way it does — rather than
+ * the looser "anywhere on the line" check an earlier, unverified version of
+ * this file shipped — precisely so a shape like it is recognized as still
+ * open rather than silently accepted as closed anywhere else in `docs/`.
  *
  * EVERYTHING ELSE. Inline code spans (`` `...` ``), markdown link targets
  * (the `(...)` half of `[text](...)`), and `href=`/`src=` JSX attribute
@@ -631,13 +633,15 @@ export function stripNonProse(text: string): string {
         // `^\s*`, not searched anywhere in the line — a mid-line ``` inside
         // real code content (a shell script echoing markdown, say) is
         // content, never a closer, and neither is a shorter same-character
-        // run (the nested-fence case) even when it does start the line. Both
-        // limbs verified against the real MDX compiler DOR-2508's second
-        // review round added (`docs-mdx-markers-compile.test.ts`): a
-        // same-line-pair fence like `docs/self-hosting/deployment.mdx`'s
-        // second, closer-earlier-assumed-but-never-actually-closing shape
-        // compiles its "closer" as literal code text, exactly what this
-        // anchored check now also does.
+        // run (the nested-fence case) even when it does start the line.
+        // Verified against the real MDX compiler, not assumed:
+        // `docs-mdx-markers-compile.test.ts`'s sibling test compiled
+        // `docs/self-hosting/deployment.mdx`'s ORIGINAL "```content" ending
+        // — a run of the fence character trailing real content, not alone on
+        // its line — and confirmed the real compiler treats it as literal
+        // code text too, exactly what this anchored check now also does.
+        // That file had this exact shape and shipped broken because of it
+        // (fixed directly, same change that added this check).
         if (new RegExp(`^\\s*${fenceChar}{${fenceLen},}\\s*$`).test(line)) inFence = false;
         return '';
       }

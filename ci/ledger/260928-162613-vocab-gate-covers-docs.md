@@ -28,7 +28,7 @@ wave is a separate, unscoped effort this change does not take on. `docs/api/**`
 excluded, the same carve-outs `check-banned-words.sh` already documented for
 wave 2.
 
-Three rounds of code review on this change caught real defects before any of
+Four rounds of code review on this change caught real defects before any of
 them landed, each verified against ground truth rather than taken on faith:
 
 1. **Fence detection.** The tracker mis-parsed a fenced block that Prettier
@@ -41,11 +41,18 @@ them landed, each verified against ground truth rather than taken on faith:
    line, not just a line that IS the closer alone) — confirmed wrong against
    the real `@mdx-js/mdx` compiler, not just reasoned about: compiling
    `docs/self-hosting/deployment.mdx`'s actual closer-trails-content line
-   showed the real parser does NOT close the fence there either, a genuine
-   pre-existing content bug in that page (out of scope for DOR-2508). Anchored
-   to `^\s*${fenceChar}{${fenceLen},}\s*$` — CommonMark's real rule — so a
+   showed the real parser does NOT close the fence there either. That turned
+   out to be a real, live site bug, not just a hypothetical: the "Interactive
+   Setup" tab on that page never rendered, silently absorbed into the
+   "Environment Variables" code block. Anchored to
+   `^\s*${fenceChar}{${fenceLen},}\s*$` — CommonMark's real rule — so a
    fence-character run in the middle of a content line, or one that merely
-   ends a line of real content, is never mistaken for a closer.
+   ends a line of real content, is never mistaken for a closer. Fixed the
+   page directly (a real multi-line fence, closer alone on its own line) in
+   the same change, and swept every other file under `docs/**/*.mdx` for the
+   same shape — a content line ending in a fence-character run, with no
+   opener earlier on that same line — plus an EOF-unclosed-fence check across
+   all 313 docs files; deployment.mdx was the only instance of either.
 2. **`vocab-allow` marker syntax.** Written as an HTML comment
    (`<!-- vocab-allow: reason -->`) in four files, which reads as an ordinary
    comment in plain Markdown but breaks MDX compilation outright: MDX parses

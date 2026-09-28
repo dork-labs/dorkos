@@ -483,13 +483,16 @@ describe('runVocabGate', () => {
 // ---------------------------------------------------------------------------
 // The docs scan (DOR-2508): stripNonProse's fence handling
 //
-// A fenced code block is tracked with a small state machine, and two real
-// files in this repo broke a naive version of it before these tests existed:
+// A fenced code block is tracked with a small state machine, and real files
+// in this repo broke a naive version of it before these tests existed:
 // `docs/contributing/testing.mdx` (Prettier collapses a short fenced block
 // onto one line inside a JSX child) and `docs/self-hosting/deployment.mdx`
-// (a multi-line fence whose closer trails real code content instead of
-// opening its own line). Both shapes are pinned here as synthetic fixtures,
-// plus the nested-fence-length case a 4-backtick block needs.
+// (a multi-line fence whose closer trailed real code content instead of
+// opening its own line — a genuine site bug, not just a gate false negative;
+// the fence never closed, silently swallowing the "Interactive Setup" tab
+// into the wrong code block, fixed alongside these tests). Both shapes are
+// pinned here as synthetic fixtures, plus the nested-fence-length case a
+// 4-backtick block needs.
 // ---------------------------------------------------------------------------
 
 describe("stripNonProse — fence detection the docs scan's line/column pins depend on", () => {
@@ -544,18 +547,21 @@ describe("stripNonProse — fence detection the docs scan's line/column pins dep
     expect(stripped).not.toContain('pnpm test');
   });
 
-  it("a closer trailing real content on the same physical line does NOT close the fence, per CommonMark — verified against the real MDX compiler, not assumed (docs/self-hosting/deployment.mdx's actual, still-broken shape)", () => {
+  it("a closer trailing real content on the same physical line does NOT close the fence, per CommonMark — verified against the real MDX compiler, not assumed (docs/self-hosting/deployment.mdx's ORIGINAL, now-fixed shape)", () => {
     // An earlier version of this suite assumed the opposite — that a closer
     // trailing content still closes the fence — and shipped that as the
     // "deployment.mdx shape." It was never checked against a real parser.
     // docs-mdx-markers-compile.test.ts's sibling, run by hand against
-    // @mdx-js/mdx on the real file, showed the fence genuinely never closes
-    // there: the ``` at the end of "...DORKOS_BOUNDARY=/path/to/boundary ```"
-    // is swallowed as code text, and the block absorbs everything after it —
-    // a real, pre-existing content bug in that page, out of scope for
-    // DOR-2508 to fix, but the reason this test now asserts what the fence
-    // tracker SHOULD do to match reality: stay open past a closer that isn't
-    // alone on its own line.
+    // @mdx-js/mdx on the real file as it shipped at the time, showed the
+    // fence genuinely never closed there: the ``` at the end of
+    // "...DORKOS_BOUNDARY=/path/to/boundary ```" was swallowed as code text,
+    // and the block absorbed everything after it — including the entire
+    // "Interactive Setup" tab, which never rendered. A real, pre-existing
+    // site bug, fixed directly in that file in the same change that added
+    // this test (real fenced block, closer alone on its own line). This
+    // fixture keeps the ORIGINAL broken shape as a synthetic regression pin
+    // for what the fence tracker SHOULD do when it sees it again anywhere
+    // else: stay open past a closer that isn't alone on its own line.
     const text = [
       '  ```bash export ANTHROPIC_API_KEY=your-key-here export',
       '  DORKOS_DEFAULT_CWD=/path/to/projects export DORKOS_BOUNDARY=/path/to/boundary ```',
