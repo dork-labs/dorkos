@@ -5,6 +5,18 @@ import {
   Popover,
   PopoverTrigger,
   PopoverContent,
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetTitle,
+  SheetDescription,
+  SheetClose,
   Dialog,
   DialogTrigger,
   DialogContent,
@@ -90,6 +102,34 @@ function ThemeIsland({ theme }: { theme: 'light' | 'dark' }) {
               </Dialog>
             </PopoverContent>
           </Popover>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" className="h-auto min-h-11 max-w-full whitespace-normal">
+                Open {theme} alert dialog
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogTitle>{theme} confirmation</AlertDialogTitle>
+              <AlertDialogDescription>No changes are made by this example.</AlertDialogDescription>
+              <p>Confirmation content keeps the {theme} foreground.</p>
+              <AlertDialogCancel>Cancel {theme} confirmation</AlertDialogCancel>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" className="h-auto min-h-11 max-w-full whitespace-normal">
+                Open {theme} sheet
+              </Button>
+            </SheetTrigger>
+            <SheetContent>
+              <SheetTitle>{theme} sheet</SheetTitle>
+              <SheetDescription>This panel uses the same theme host.</SheetDescription>
+              <p>Sheet content keeps the {theme} foreground.</p>
+              <SheetClose asChild>
+                <Button>Close {theme} sheet</Button>
+              </SheetClose>
+            </SheetContent>
+          </Sheet>
         </div>
         <p className="text-dui-muted-foreground text-sm">{selection}</p>
         <div ref={setHost} data-portal-host={theme} />

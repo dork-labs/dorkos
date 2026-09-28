@@ -1,0 +1,367 @@
+{
+  "spec": "specs/shared-ui-consumer-adoption/02-specification.md",
+  "slug": "shared-ui-consumer-adoption",
+  "generatedAt": "2026-09-25T18:55:52Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Inventory and foundations",
+      "subject": "[shared-ui-consumer-adoption] [P1] Inventory public controls and record failure baseline",
+      "description": "Inspect every browser component under apps/community/src/browser, the live interactive forms under apps/site/src, package primitives under packages/ui/src, and the catalog under apps/design-system. Record each generic Button, Input, Textarea, Label/Field, Notice, and Separator candidate; for each retained local control record its native, domain, framework, or presentation reason. Distinguish live site call sites from dormant wrappers and inspect client Card, Badge, and Skeleton for compatible second-consumer contracts without extracting them by name alone. Preserve the current Chromium failure evidence for a class-only opposing-theme portal host, including computed dark background and inherited dark foreground. Note import/takedown work touching Community files before editing so incoming controls survive integration.\n\nAcceptance: a public, reviewable inventory or receipt exists without private consumer details; candidate/exception lists cover Community and site; baseline includes the failing foreground/background values and reproduction; Card/Badge/Skeleton ownership is explicit.",
+      "activeForm": "inventory public controls and record failure baseline…",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Inventory and foundations",
+      "subject": "[shared-ui-consumer-adoption] [P1] Pair foreground with owning backgrounds in shared primitives",
+      "description": "In packages/ui/src/dialog.tsx, alert-dialog.tsx, sheet.tsx, and button.tsx, add text-dui-foreground to modal surfaces that own bg-dui-background and to the outline Button variant. Use the package border token for the outline border. Audit other package background utilities; leave already paired popover, menu, tooltip, tabs, decorative tracks, and transparent native fields alone unless a real mismatch is found. Preserve caller className overrides and the existing Radix/portal behavior. Add focused component assertions where the owning class contract can regress.\n\nAcceptance: Dialog, AlertDialog, Sheet, and outline Button own both background and foreground; caller classes can still override; package component tests, typecheck, lint, and build pass; no public API or dependency change.",
+      "activeForm": "pair foreground with owning backgrounds in shared primitives…",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Inventory and foundations",
+      "subject": "[shared-ui-consumer-adoption] [P1] Extend catalog and prove opposing-theme portal behavior",
+      "description": "Add AlertDialog and Sheet examples to apps/design-system beside the existing Dialog examples. Extend its real-browser regression to remove only the island text utility, then exercise dark-class host in light document and light-class host in dark document. Assert computed foreground and background for Dialog, AlertDialog, Sheet and outline Button, actual portal location, Escape/cancel behavior, focus return, and no overflow at 390px and desktop. Keep the nested menu/dialog cases, existing registry ownership, reduced-motion coverage, and keyboard interactions working.\n\nAcceptance: new examples are visible; class-only hosts reproduce the former failure before the primitive fix and pass after it; catalog component and browser suites pass in light, dark and system preference; no unrelated page styling masks the assertion.",
+      "activeForm": "extend catalog and prove opposing-theme portal behavior…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Consumer adoption",
+      "subject": "[shared-ui-consumer-adoption] [P2] Adopt shared account and recovery controls in Community",
+      "description": "Migrate equivalent generic controls in apps/community/src/browser/components/OwnerClaim.tsx, SignInMethods.tsx, SignOut.tsx, Pairing.tsx, AdmissionPanels.tsx and recovery/account components found in the inventory to @dork-labs/ui Button, Input, FieldLabel/Label, Notice, Textarea or Separator as appropriate. Preserve IDs, htmlFor, aria-describedby, error roles, required fields, disabled and pending states, validation, requests, navigation and focus. Give form submit buttons explicit type=\"submit\" and all other buttons explicit type=\"button\". Compose real navigation anchors through asChild only when they are styled actions. Reconcile current import/takedown changes before integration; do not remove new controls.\n\nAcceptance: covered account/recovery/admission generic controls use package primitives; owner claim, sign-in, pairing and recovery tests preserve the same outcomes; no authorization, request or route behavior changes.",
+      "activeForm": "adopt shared account and recovery controls in Community…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.3",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Consumer adoption",
+      "subject": "[shared-ui-consumer-adoption] [P2] Adopt shared host and administration controls in Community",
+      "description": "Migrate equivalent generic buttons, text/email/password/number inputs, labels, notices and decorative separators in apps/community/src/browser/components/Manage.tsx, HostAdministration.tsx, HostHoldControls.tsx, HostApiKeys.tsx, HostCommunityLimits.tsx, HostShortNames.tsx, ExportPanel.tsx, Erasure.tsx and related administration components found in the inventory. Keep FocusDialog, dangerous-action confirmation, authorization, form/name/value/ref/event semantics, focusable unavailable choices and native select/date/file/radio/checkbox behavior. Preserve app-owned layout and states; use shared controls inside compositions without replacing their domain behavior. Reconcile active import/takedown changes before integration.\n\nAcceptance: migrated controls preserve host settings, membership, erasure/removal and confirmation behavior; unavailable options remain keyboard reachable as designed; existing administration tests pass; no incoming feature control is lost.",
+      "activeForm": "adopt shared host and administration controls in Community…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.3",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Consumer adoption",
+      "subject": "[shared-ui-consumer-adoption] [P2] Adopt shared channel and shell actions in Community",
+      "description": "Migrate generic action buttons, notices, inputs and decorative separators in apps/community/src/browser/CommunityApp.tsx and channel/shell components including Channel.tsx, EntryCard.tsx, CommunityChooser.tsx, CommunityAddress.tsx and HostLinks.tsx. Keep navigation items, message content, sidebar/thread geometry, upload label/file input and bespoke composer textareas with their keyboard/resize behavior local. Use asChild for styled anchors when appropriate, and preserve onClick, disabled, aria-disabled, focus and explicit button types. Reconcile active import/takedown changes before integration.\n\nAcceptance: generic controls use package exports without changing channel navigation, posting, upload or thread behavior; app-owned controls remain documented; no nested interactive element is introduced.",
+      "activeForm": "adopt shared channel and shell actions in Community…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "Consumer adoption",
+      "subject": "[shared-ui-consumer-adoption] [P2] Remove obsolete Community generic CSS after adoption",
+      "description": "After Community component migrations, audit apps/community/src/browser/styles.css and each remaining .button, .field, .notice and separator selector/use. Delete rules with no users; narrow retained rules to documented app-owned native or domain controls so unlayered legacy styles cannot override package primitives. Confirm the Community Tailwind entry and @dork-labs/ui token/utilities import generate the needed classes and do not create duplicate React or visual regressions. Retain responsive shell and composer geometry.\n\nAcceptance: every remaining legacy selector has a concrete owner/use; no stale generic class overrides shared controls; generated Community CSS includes adopted utilities; 390px and desktop layout remains usable.",
+      "activeForm": "remove obsolete Community generic CSS after adoption…",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": [
+        "2.6"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "phaseName": "Consumer adoption",
+      "subject": "[shared-ui-consumer-adoption] [P2] Inventory live site forms and CSS ownership",
+      "description": "Inspect actual live site form routes and components, including account sign-in/sign-up/reset/profile, newsletter, feedback and managed account fields. Map shared Button/Input/Textarea/Label opportunities against existing site facades and local shadcn wrappers; identify dormant wrappers separately. Check CSS token import, Tailwind source scanning, Next server/client boundaries and the site's FSD barrel rule before deciding which imports to change. Keep Fumadocs controls, marketplace whole-card/filter links, branded CTA composition and intentional marketing density/layout local.\n\nAcceptance: inventory names live candidates, dormant wrappers and explicit exceptions; target import/CSS strategy is written down; no speculative whole-site migration is proposed.",
+      "activeForm": "inventory live site forms and CSS ownership…",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2",
+        "2.3"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "2.6",
+      "phase": 2,
+      "phaseName": "Consumer adoption",
+      "subject": "[shared-ui-consumer-adoption] [P2] Adopt shared foundations in compatible live site forms",
+      "description": "Migrate equivalent generic Button, Input, Textarea and Label usage in live site forms identified by task 2.5, using @dork-labs/ui subpath exports through valid site-layer boundaries. Add the workspace dependency and CSS/source imports needed for generated styles. Preserve client/server component boundaries, label and error associations, pending/disabled state, submit types, validation, routes and request behavior. Avoid replacing Fumadocs widgets, marketplace link cards, branded CTAs or layout-specific controls. Remove a local wrapper only after proving it has no remaining live use.\n\nAcceptance: selected live forms render package primitives with generated styles; existing functional tests pass; purposeful site presentation is unchanged; no dead wrapper or unused dependency remains.",
+      "activeForm": "adopt shared foundations in compatible live site forms…",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "2.5"
+      ],
+      "parallelWith": [
+        "2.4"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Verification and documentation",
+      "subject": "[shared-ui-consumer-adoption] [P3] Prove Community workflows and accessibility after adoption",
+      "description": "Add focused browser assertions for migrated Community controls: labels/errors and pending/submit behavior, owner claim, pairing, account controls, switching, host administration, erasure/removal and membership accessibility. Exercise keyboard/focus, focusable unavailable choices, dangerous-action cancel/confirm, light/dark/system, reduced motion and 390px/desktop overflow. Use existing browser fixtures and keep request/permission assertions. Run the Community component, browser, typecheck, lint and build gates; investigate failures before changing expectations.\n\nAcceptance: tests identify shared controls in real workflows and verify preserved behavior; relevant suites and gates pass with recorded commands/results; imported/takedown controls remain covered.",
+      "activeForm": "prove Community workflows and accessibility after adoption…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.4"
+      ],
+      "parallelWith": [
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Verification and documentation",
+      "subject": "[shared-ui-consumer-adoption] [P3] Prove adopted site forms and generated CSS",
+      "description": "Add or update focused tests around each adopted live site form for labels, errors, pending/disabled state, actual submission and navigational outcomes. Inspect generated CSS to confirm package styles survive Next/Tailwind production build. Check keyboard/focus, reduced motion, light/dark/system, 390px and desktop presentation on representative live routes. Run affected site tests, typecheck, lint and build; preserve existing test intent and investigate failures before changing assertions.\n\nAcceptance: adopted routes visibly use shared styles; form and navigation behavior is unchanged; no site layout or framework-owned control is inadvertently restyled; all affected site gates pass.",
+      "activeForm": "prove adopted site forms and generated CSS…",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "2.6"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.3",
+        "3.4"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "Verification and documentation",
+      "subject": "[shared-ui-consumer-adoption] [P3] Document primitive ownership and consumer exceptions",
+      "description": "Update contributing/shared-ui.md, relevant architecture/design-system guidance, packages/ui/README.md and the public surface inventory. State which generic primitives the package owns, how the client facade, Community and site consume them, and why remaining local Card/Badge/Skeleton, native controls, Fumadocs controls, marketing compositions and domain layouts stay local. Document foreground ownership, portal scoping, caller override behavior and package CSS/subpath requirements. Keep historical extraction specs as shipped records; describe this continuation separately. Include only package identity and verification categories for independent adoption.\n\nAcceptance: ownership table matches code and live inventory; every remaining local generic-looking control has a concrete rationale; documentation has no private paths, IDs or business details.",
+      "activeForm": "document primitive ownership and consumer exceptions…",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "1.3",
+        "2.4",
+        "2.6"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.2",
+        "3.4"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "3.4",
+      "phase": 3,
+      "phaseName": "Verification and documentation",
+      "subject": "[shared-ui-consumer-adoption] [P3] Verify and pack the public package candidate",
+      "description": "After foreground and catalog changes, run package component tests, typecheck, lint and build plus catalog component/browser suites. Pack the candidate archive, record integrity and size, inspect allowed contents, install it into an independent scratch consumer with no source alias, and prove every used export and declaration resolves. Confirm tokens.css/tailwind.css create browser-computed styles and only one React/ReactDOM runtime is present. Preserve the baseline failure and passing opposing-theme proof. Keep the current public API and dependency versions; if no API changes occur, prepare patch version 0.2.1 for the reviewed release.\n\nAcceptance: a recorded archive can be installed independently and reproduces the tested contract; package/catalog gates pass; no private consumer details appear in public proof.",
+      "activeForm": "verify and pack the public package candidate…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.2",
+        "3.3"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed"
+    },
+    {
+      "id": "3.5",
+      "phase": 3,
+      "phaseName": "Verification and documentation",
+      "subject": "[shared-ui-consumer-adoption] [P3] Complete independent consumer archive adoption and private proof",
+      "description": "In a separate private implementation record, replace equivalent generic primitives using the exact packed candidate from task 3.4 while preserving that consumer's local behavior and presentation. Verify real forms, links, dialogs, authorization and keyboard/focus flows; run its affected component and browser suites, check generated CSS/declarations/exports and one React runtime. Record implementation paths, detailed test results and task identifiers only in private records. Public receipts may state package identity and verification categories without consumer implementation details.\n\nAcceptance: private adoption passes its affected suites against exact archive bytes; no public repository file, tracker item or PR exposes private paths, IDs or business behavior.",
+      "activeForm": "complete independent consumer archive adoption and private proof…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.4"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.2",
+        "3.3"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "in_progress"
+    },
+    {
+      "id": "3.6",
+      "phase": 3,
+      "phaseName": "Verification and documentation",
+      "subject": "[shared-ui-consumer-adoption] [P3] Run cross-consumer verification and independent reviews",
+      "description": "Reconcile final Community/site/package branches and repeat affected gates after integration, including package/catalog browser, Community browser, site forms and packed archive contract checks. Perform an independent compliance review of public/private boundary, ownership exceptions, accessibility, preserved authorization and exact artifact; then a separate quality review of implementation, tests and docs. Resolve every blocking finding and rerun the checks it affects. Produce public evidence limited to package identity, test categories and outcome; retain private details in private records.\n\nAcceptance: both reviews have recorded findings/resolution; all affected gates pass on integrated source; no private detail leaks into public artifacts; the tested packed artifact matches the candidate for delivery.",
+      "activeForm": "run cross-consumer verification and independent reviews…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4",
+        "3.5"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "in_progress"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Delivery and closure",
+      "subject": "[shared-ui-consumer-adoption] [P4] Deliver reviewed public changes through normal PR gates",
+      "description": "From the isolated public worktree branch based on pinned origin/main, review the integrated diff against the frozen spec, resolve conflicts without losing incoming Community controls, commit with normal hooks and push. Open or update the PR with concrete before/after behavior and verification evidence, then follow automated review, required CI and merge queue to completion. Do not bypass hooks or review. Keep private implementation details out of the branch, PR description, comments and evidence.\n\nAcceptance: public PR contains package/catalog, Community, site, docs and tests only; required checks and reviews pass; merged commit is identified; review findings are resolved.",
+      "activeForm": "deliver reviewed public changes through normal PR gates…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.6"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "pending"
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "Delivery and closure",
+      "subject": "[shared-ui-consumer-adoption] [P4] Publish and verify exact shared package release when authorized",
+      "description": "After the public merge and reviewed source/archive proof, follow the authorized owner publication procedure for a compatible patch release if the API remains unchanged. Compare published registry archive integrity and contents with the reviewed candidate, install the exact registry version independently, and repeat exports/declarations/CSS/browser-computed styles and single-React checks. Record the version, integrity, size and verification outcome publicly; do not publish before authorization or claim success from a local workspace build alone.\n\nAcceptance: the authorized release is available from the registry; exact published bytes and browser contract pass independent verification; any byte mismatch is investigated and resolved before consumers upgrade.",
+      "activeForm": "publish and verify exact shared package release when authorized…",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "pending"
+    },
+    {
+      "id": "4.3",
+      "phase": 4,
+      "phaseName": "Delivery and closure",
+      "subject": "[shared-ui-consumer-adoption] [P4] Upgrade independent consumer and close implementation records",
+      "description": "After registry verification, update the independent consumer to the exact published version in its private branch, rerun its affected component/browser flows and generated CSS/single-React checks, and deliver through its normal review path. Keep private paths, IDs and business details in private records. Collect final public proof for package, Community, site and catalog; reconcile spec task status and implementation receipts; close the linked public work item only when both public and independent adoption meet acceptance.\n\nAcceptance: independent consumer passes against published bytes and is delivered through review; public and private evidence are correctly separated; public task/issue state reflects completed work and any follow-ups are captured.",
+      "activeForm": "upgrade independent consumer and close implementation records…",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "4.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "pending"
+    }
+  ]
+}

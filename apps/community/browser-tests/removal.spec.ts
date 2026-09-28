@@ -563,7 +563,9 @@ test('a refused file removal brings back only that file', async ({ browser }) =>
     await expect(card.getByRole('button', { name: 'one.txt', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'three.txt', exact: true })).toBeVisible();
     await expect(card.getByText('two.txt', { exact: true })).toHaveCount(0);
-    const names = await card.locator('.file-chip > .button:first-child').allTextContents();
+    const names = await card
+      .locator('.file-chip > [data-slot="button"]:first-child')
+      .allTextContents();
     expect(names.map((name) => name.trim())).toEqual(['one.txt', 'three.txt']);
   } finally {
     await context.close();

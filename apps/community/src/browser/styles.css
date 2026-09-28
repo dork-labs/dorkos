@@ -11,10 +11,7 @@
   --muted: #5f6963;
   --line: #d9ded6;
   --accent: #276c51;
-  --accent-hover: #1e5842;
   --accent-soft: #e4f2e9;
-  --danger: #9b3439;
-  --danger-soft: #fff0ee;
   --shadow: 0 12px 40px rgba(20, 35, 25, 0.06);
   font-family:
     Inter,
@@ -35,10 +32,7 @@
     --muted: #aab9ad;
     --line: #3a493f;
     --accent: #8bd7ab;
-    --accent-hover: #a9e8c2;
     --accent-soft: #223b2b;
-    --danger: #ffaaa7;
-    --danger-soft: #442624;
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
   }
 }
@@ -51,10 +45,7 @@
   --muted: #aab9ad;
   --line: #3a493f;
   --accent: #8bd7ab;
-  --accent-hover: #a9e8c2;
   --accent-soft: #223b2b;
-  --danger: #ffaaa7;
-  --danger-soft: #442624;
   --shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
 }
 
@@ -68,11 +59,11 @@ body {
 }
 button:not([data-slot]),
 input:not([data-slot]),
-textarea,
+textarea:not([data-slot]),
 select {
   font: inherit;
 }
-button {
+button:not([data-slot]) {
   cursor: pointer;
 }
 button:disabled:not([data-slot]) {
@@ -80,19 +71,23 @@ button:disabled:not([data-slot]) {
   opacity: 0.55;
 }
 /* One membership row: name and detail on the left, its state on the right. */
-.button.community-choice {
+.community-choice {
   width: 100%;
   justify-content: space-between;
   text-align: left;
+  white-space: normal;
+}
+.community-choice > span:first-child {
+  min-width: 0;
 }
 /* Still focusable and announced, so a keyboard or screen-reader user can learn why it is
    closed; the status text, not the fill, carries the meaning. */
-button[aria-disabled='true']:not([data-slot]) {
+.community-choice[aria-disabled='true'] {
   cursor: not-allowed;
   background: var(--panel-alt);
 }
 /* Underlined, so a link inside muted text is not told apart by colour alone. */
-a {
+a:not([data-slot]) {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 0.18em;
@@ -130,52 +125,14 @@ p {
   border-radius: 18px;
   box-shadow: var(--shadow);
 }
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0.55rem 0.9rem;
-  background: var(--panel);
-  color: var(--ink);
-  font-weight: 650;
-  text-decoration: none;
-}
-.button:hover:not(:disabled) {
-  background: var(--panel-alt);
-}
-.button.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--canvas);
-}
-.button.primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-.button.danger {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-.button.ghost {
-  border-color: transparent;
-  background: transparent;
-}
 .field {
   display: grid;
   gap: 0.35rem;
   margin-bottom: 1rem;
 }
-.field label {
-  font-size: 0.83rem;
-  font-weight: 700;
-}
 /* Not a visually hidden input (a file picker inside a button): this rule's width and padding
    would outrank .sr-only and stretch it across the page, off screen but still scrollable. */
-.field input:not(.sr-only),
-.field textarea,
+.field input[type='date'],
 .field select {
   width: 100%;
   border: 1px solid var(--line);
@@ -185,28 +142,9 @@ p {
   padding: 0.65rem 0.75rem;
   min-height: 42px;
 }
-.field textarea {
-  resize: vertical;
-}
 .hint {
   font-size: 0.78rem;
   color: var(--muted);
-}
-.notice {
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  padding: 0.85rem 1rem;
-  background: var(--panel-alt);
-  color: var(--ink);
-}
-.notice.error {
-  border-color: var(--danger);
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.notice.success {
-  border-color: var(--accent);
-  background: var(--accent-soft);
 }
 .stack {
   display: grid;
@@ -399,7 +337,7 @@ p {
   gap: 0.15rem;
   max-width: 100%;
 }
-.file-chip > .button:first-child {
+.file-chip > [data-slot='button']:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -486,20 +424,11 @@ p {
   object-fit: cover;
   background: var(--panel-alt);
 }
-.button.disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
 .settings .panel {
   padding: 1.2rem;
 }
 .settings h3 {
   font-size: 1rem;
-}
-.divider {
-  border: 0;
-  border-top: 1px solid var(--line);
-  margin: 1rem 0;
 }
 .mobile-only {
   display: none;
@@ -562,12 +491,7 @@ p {
     width: 100%;
   }
   /* Every control is at least a 44px touch target on a phone. */
-  .button {
-    min-height: 44px;
-    min-width: 44px;
-  }
-  .field input:not(.sr-only),
-  .field textarea,
+  .field input[type='date'],
   .field select {
     min-height: 44px;
   }
@@ -630,13 +554,13 @@ p {
   height: 0.6rem;
   accent-color: var(--accent);
 }
-.export-ready .button {
+.export-ready [data-slot='button'] {
   /* A narrow settings column wraps the size under the label rather than pushing the button
      past its panel; each word group stays whole. */
   flex-wrap: wrap;
   max-width: 100%;
   row-gap: 0.1rem;
 }
-.export-ready .button > span {
+.export-ready [data-slot='button'] > span {
   white-space: nowrap;
 }

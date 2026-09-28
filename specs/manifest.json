@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260925-100000",
+      "slug": "shared-ui-consumer-adoption",
+      "title": "Complete shared UI consumer adoption",
+      "created": "2026-09-25",
+      "status": "specified",
+      "project": "Shared UI — Consumer Adoption",
+      "linearIssue": "DOR-2342"
+    },
+    {
       "id": "260928-005336",
       "slug": "managed-remote-app-consumer",
       "title": "Use managed remote access in the local app",

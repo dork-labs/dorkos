@@ -1,3 +1,4 @@
+import { Button, Notice } from '@dork-labs/ui';
 import { useId, useRef, useState } from 'react';
 import { Download, MessageCircle } from 'lucide-react';
 import { download } from '../api.js';
@@ -76,14 +77,15 @@ export function EntryCard({
         <p className={`entry-text ${tombstone ? 'tombstone' : ''}`}>{entry.text}</p>
         {entry.attachments.map((attachment) => (
           <span className="file-chip mt-1 mr-2" key={attachment.id}>
-            <button
-              className="button small"
+            <Button
+              variant="outline"
+              size="sm"
               type="button"
               onClick={() => void download(`/api/v1/attachments/${attachment.id}`, attachment.name)}
             >
               <Download size={14} aria-hidden="true" />
               {attachment.name}
-            </button>
+            </Button>
             {action && (
               <RemovalMenu
                 label={`Actions for ${attachment.name}`}
@@ -94,14 +96,20 @@ export function EntryCard({
           </span>
         ))}
         {controls.error && (
-          <div className="notice error mt-2" role="alert">
+          <Notice tone="error" className="mt-2" role="alert">
             {controls.error}
-          </div>
+          </Notice>
         )}
         {onThread && (
-          <button className="button ghost small mt-1" type="button" onClick={() => onThread(entry)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-1"
+            type="button"
+            onClick={() => onThread(entry)}
+          >
             <MessageCircle size={14} /> {threadReadOnly ? 'View thread' : 'Reply in thread'}
-          </button>
+          </Button>
         )}
         {!tombstone && <ReportEntryLink communityId={communityId} entryId={entry.id} />}
       </div>

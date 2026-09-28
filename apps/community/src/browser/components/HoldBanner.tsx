@@ -1,3 +1,4 @@
+import { Notice } from '@dork-labs/ui';
 /**
  * Tell every member of a held community what they can still do, and, when the host has
  * published one, the date after which it plans to delete the community.
@@ -8,13 +9,13 @@ export function HoldBanner({ deletionNoticeAt }: { deletionNoticeAt: string | nu
     ? `${new Date(deletionNoticeAt).toLocaleDateString(undefined, { dateStyle: 'long', timeZone: 'UTC' })} (UTC)`
     : null;
   return (
-    <div className="notice m-3" role="status">
+    <Notice tone="info" className="m-3" role="status">
       <strong>This community is on hold by its host. You can read it but not post.</strong>
       {date && (
         <p className="mt-1 mb-0">
           The host plans to delete it after {date}. The owner can export it until then.
         </p>
       )}
-    </div>
+    </Notice>
   );
 }

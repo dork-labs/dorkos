@@ -1,15 +1,11 @@
-// Shared UI components
-// Re-export Shadcn components from here
-// TODO: Migrate components from src/components/ui/ to this location
-
-// For now, re-export from the legacy location
-export * from '@/components/ui/alert-dialog';
+// Shared primitive implementations; site-owned compositions stay below.
+export * from '@dork-labs/ui/alert-dialog';
 export * from '@/components/ui/badge';
-export * from '@/components/ui/button';
+export * from '@dork-labs/ui/button';
 export * from '@/components/ui/card';
-export * from '@/components/ui/input';
+export * from '@dork-labs/ui/input';
 export * from '@/components/ui/input-otp';
-export * from '@/components/ui/label';
+export * from '@dork-labs/ui/label';
 export * from '@/components/ui/select';
 export * from '@/components/ui/checkbox';
 export * from '@/components/ui/spinner';

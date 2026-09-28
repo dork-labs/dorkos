@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { Check, KeyRound, Laptop2, ShieldCheck } from 'lucide-react';
@@ -175,19 +176,19 @@ export function Pairing({ search = location.search }: { search?: string }) {
         <h1>Connect a local install</h1>
         <p className="muted mb-7">Review what this install can do before approving.</p>
         {error && (
-          <div className="notice error" role="alert">
+          <Notice tone="error" role="alert">
             {error}
-          </div>
+          </Notice>
         )}
         {needsSignIn && (
           <>
             <form className="panel" onSubmit={(event) => void signIn(event)}>
-              <div className="notice mb-5">
+              <Notice tone="info" className="mb-5">
                 Sign in to review this connection. You’ll return to this request.
-              </div>
+              </Notice>
               <div className="field">
-                <label htmlFor="pairing-email">Email</label>
-                <input
+                <Label htmlFor="pairing-email">Email</Label>
+                <Input
                   id="pairing-email"
                   type="email"
                   autoComplete="email"
@@ -198,8 +199,8 @@ export function Pairing({ search = location.search }: { search?: string }) {
                 />
               </div>
               <div className="field">
-                <label htmlFor="pairing-password">Password</label>
-                <input
+                <Label htmlFor="pairing-password">Password</Label>
+                <Input
                   id="pairing-password"
                   type="password"
                   autoComplete="current-password"
@@ -211,42 +212,42 @@ export function Pairing({ search = location.search }: { search?: string }) {
                   Forgot your password? Ask the person running this community for help.
                 </span>
               </div>
-              <button className="button primary w-full" disabled={busy}>
+              <Button type="submit" variant="default" className="w-full" disabled={busy}>
                 {busy ? 'Signing in…' : 'Sign in and review'}
                 <KeyRound size={16} />
-              </button>
+              </Button>
             </form>
             {(providers.google || providers.github || providers.oidc) && (
               <div className="row mt-4">
                 {providers.google && (
-                  <button
-                    className="button"
+                  <Button
+                    variant="outline"
                     type="button"
                     disabled={busy}
                     onClick={() => void social('google')}
                   >
                     Continue with Google
-                  </button>
+                  </Button>
                 )}
                 {providers.github && (
-                  <button
-                    className="button"
+                  <Button
+                    variant="outline"
                     type="button"
                     disabled={busy}
                     onClick={() => void social('github')}
                   >
                     Continue with GitHub
-                  </button>
+                  </Button>
                 )}
                 {providers.oidc && (
-                  <button
-                    className="button"
+                  <Button
+                    variant="outline"
                     type="button"
                     disabled={busy}
                     onClick={() => void social('oidc')}
                   >
                     Continue with {providers.oidc.label}
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
@@ -274,35 +275,31 @@ export function Pairing({ search = location.search }: { search?: string }) {
               ))}
             </ul>
             {held && status.status === 'pending' && (
-              <p className="notice mb-5">
+              <Notice tone="info" className="mb-5">
                 The community is on hold, so this connection can only read. Connect again after the
                 hold ends to post.
-              </p>
+              </Notice>
             )}
             {status.status === 'pending' ? (
               <div className="row">
-                <button
-                  className="button primary"
-                  disabled={busy}
-                  onClick={() => void decide('approve')}
-                >
+                <Button variant="default" disabled={busy} onClick={() => void decide('approve')}>
                   {busy ? 'Working…' : 'Approve connection'}
                   <Check size={17} />
-                </button>
-                <button className="button" disabled={busy} onClick={() => void decide('decline')}>
+                </Button>
+                <Button variant="outline" disabled={busy} onClick={() => void decide('decline')}>
                   Decline
-                </button>
+                </Button>
               </div>
             ) : status.status === 'approved' ? (
-              <div role="status" className="notice success">
+              <Notice role="status" tone="success">
                 Approved. Return to your local app to finish connecting.
-              </div>
+              </Notice>
             ) : (
-              <div role="status" className="notice">
+              <Notice role="status" tone="info">
                 {status.status === 'cancelled'
                   ? 'Connection declined. You can close this page.'
                   : 'This request is no longer available. Start again from your local app.'}
-              </div>
+              </Notice>
             )}
           </div>
         )}

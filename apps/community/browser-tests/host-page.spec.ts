@@ -139,6 +139,11 @@ test('a host operator creates a key, sees it once, replaces it, and revokes it',
     await page.goto(`${baseUrl}/host`);
     const section = page.getByRole('region', { name: 'API keys' });
     await expect(section.getByText('No keys yet.')).toBeVisible();
+    await expect(section.getByLabel('Key name')).toHaveAttribute('data-slot', 'input');
+    await expect(section.getByRole('button', { name: 'Create key' })).toHaveAttribute(
+      'type',
+      'submit'
+    );
 
     // A wrong password creates nothing and says why.
     await section.getByLabel('Key name').fill('Provisioning script');
@@ -148,6 +153,7 @@ test('a host operator creates a key, sees it once, replaces it, and revokes it',
     await expect(section.getByRole('alert')).toContainText(
       'That password is not right. No key was created.'
     );
+    await expect(section.getByRole('alert')).toHaveAttribute('data-slot', 'notice');
     expect((await pool.query('SELECT 1 FROM host_api_keys')).rowCount).toBe(0);
 
     await section.getByLabel('Your password').fill(operator.password);

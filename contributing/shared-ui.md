@@ -6,15 +6,15 @@
 
 ## Key Files
 
-| Concept                                       | Location                                                                                                |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Public exports and release metadata           | `packages/ui/package.json`, `packages/ui/src/index.ts`                                                  |
-| Theme values and Tailwind source registration | `packages/ui/tokens.css`, `packages/ui/tailwind.css`                                                    |
-| Behavior tests                                | `packages/ui/src/__tests__/`                                                                            |
-| Client FSD facade                             | `apps/client/src/layers/shared/ui/index.ts`                                                             |
-| Standalone examples                           | `apps/design-system/`                                                                                   |
-| Client feature simulations                    | `apps/client/src/dev/`                                                                                  |
-| Community adoption and browser proof          | `apps/community/src/browser/components/Admission.tsx`, `apps/community/browser-tests/shared-ui.spec.ts` |
+| Concept                                       | Location                                                                                   |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Public exports and release metadata           | `packages/ui/package.json`, `packages/ui/src/index.ts`                                     |
+| Theme values and Tailwind source registration | `packages/ui/tokens.css`, `packages/ui/tailwind.css`                                       |
+| Behavior tests                                | `packages/ui/src/__tests__/`                                                               |
+| Client FSD facade                             | `apps/client/src/layers/shared/ui/index.ts`                                                |
+| Standalone examples                           | `apps/design-system/`                                                                      |
+| Client feature simulations                    | `apps/client/src/dev/`                                                                     |
+| Community adoption and browser proof          | `apps/community/src/browser/components/`, `apps/community/browser-tests/shared-ui.spec.ts` |
 
 ## When to Use What
 
@@ -44,7 +44,7 @@ The package targets React 19 and Tailwind 4. It distributes ESM JavaScript, decl
 
 Use `.light` or `.dark` on the document root to choose a theme; without an explicit choice, the system preference applies. The package uses HSL-channel `--dui-*` values and `dui-*` utilities, keeping application tokens with other formats separate. A single opposing theme region is covered by browser proof in both directions. Arbitrarily alternating nested themes are outside the tested contract.
 
-The client retains its existing semantic color names through a palette bridge. Its font-scale and editor/layer rules remain local. Embedded builds must explicitly bridge shared colors to host colors and preserve their stylesheet boundary; a successful CSS build is not a claim of runtime platform verification.
+The client retains its existing semantic color names through a palette bridge. Its font-scale and editor/layer rules remain local.
 
 ### Ownership and contribution
 
@@ -64,7 +64,24 @@ Client code keeps importing its FSD facade. The selected leaf files explicitly r
 
 For a component change, edit its package source and add a behavior regression test. Preserve public props, refs, events, data slots and accessible semantics. Show the change in the catalog and run consumer tests for the affected composition. Add a subpath when adding a module; keep React and ReactDOM as peers, never runtime bundles. Only public dependencies belong in the package.
 
-Package semantic colors use `dui-*`; built-in icon sizes use `--dui-size-icon-xs/sm/md`. Animated primitives own their reduced-motion classes. Give borders an explicit semantic color rather than relying on an application reset. Client font-scale bridges and fixed embedded dimensions stay in the owning application stylesheet.
+Package semantic colors use `dui-*`; built-in icon sizes use `--dui-size-icon-xs/sm/md`. Animated primitives own their reduced-motion classes. Give borders an explicit semantic color rather than relying on an application reset. Client font-scale bridges stay in the owning application stylesheet.
+
+### Consumer adoption and intentional differences
+
+Library extraction and consumer adoption are separate deliverables. A package version in a manifest is not evidence that local controls have moved. The full surface inventory is `specs/shared-ui-consumer-adoption/surface-inventory.md`. The current continuation is tracked in `specs/shared-ui-consumer-adoption/`; its implementation record distinguishes implemented changes from release gates still in progress.
+
+| Surface            | Shared contract                                                                                                    | Intentionally local                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Client             | FSD facades for the package-owned modules above                                                                    | State-aware wrappers, routing, responsive app composition, editor and domain UI                                       |
+| Community          | Generic form/action controls, notices and separators; migration covers account, administration and channel actions | Native select/date/file/radio behavior, unavailable-choice semantics, channel/thread layout, permissions and requests |
+| Site forms         | Button/Input/Label/AlertDialog through the operational facade; newsletter/feedback use shared subpaths             | Marketing typography, specialized site composites, cream palette, layout, honeypots and requests                      |
+| Documentation      | Framework-provided controls                                                                                        | Fumadocs owns navigation, MDX and page actions                                                                        |
+| Marketplace browse | Shared product palette where already applicable                                                                    | Whole-card and category/filter links keep Next navigation semantics; no replacement with action buttons               |
+| Standalone catalog | Every package family imports production exports                                                                    | Examples and local interaction state only; feature simulations stay in the client                                     |
+
+Card, Badge and Skeleton remain local after a cross-surface audit. Client Card couples elevation and interactive variants to application utilities; Badge adds domain status vocabulary; Skeleton uses the application's breathing animation. Other surfaces have different spacing, element or animation contracts. Matching component names alone do not justify a shared export. A future extraction needs concrete compatible callers and behavior proof, not a copy of one surface's appearance.
+
+Native controls are not unfinished migrations. Preserve platform selection, file picking, date input and form submission semantics; use shared labels, buttons and notices around them. Never change a native control to a custom one just to remove an HTML tag from the inventory. Custom navigation choices, scrims and message composition remain application interactions.
 
 ### Scope portal themes explicitly
 
@@ -93,6 +110,8 @@ export function DarkPanel() {
 ```
 
 `UiProvider` renders no DOM and never changes document classes. Nested providers override their parent; sibling providers are independent. Omitted/null provider containers keep Radix's body default. An explicit exported Portal `container` prop wins, including explicit `null` (body) and a `DocumentFragment`. Keep the host mounted for the entire open lifetime. Choose a host without clipping or unintended stacking contexts; the package does not silently move portals under their triggers.
+
+A surface that chooses its own background also chooses the matching foreground. Dialog, AlertDialog and Sheet must remain readable in a class-only theme host; a parent `text-dui-foreground` utility must not be required to repair them. The browser regression removes that parent utility and checks computed colors in both theme directions.
 
 Self-portalling content and nested dropdown portals use the nearest provider. Existing non-portalled subcomponents keep that behavior. The catalog's **Portal themes** section demonstrates opposing hosts, nested menus/dialogs and an explicit return to body behavior.
 
@@ -166,7 +185,7 @@ The first candidate was tested with React 19.3.0, Tailwind 4.3.3, Vite 6.4.3 and
 
 2. Pack into an ignored directory in the worktree. Inspect the file list: only selected built modules/declarations, CSS, README, license and metadata belong in it. Confirm React is a peer, CSS is retained as a side effect, and no runtime dependency uses `workspace:`.
 3. Install that archive into an independent React 19/Tailwind 4 fixture without source aliases or workspace resolution. Typecheck every export, build, inspect the React dependency graph and record the archive hash. Browser proof must cover explicit/system themes, dark opacity, source detection, focus, reduced motion and narrow-screen sizes.
-4. Run affected consumer suites, including parent compositions. A client facade change reaches the whole client suite. Run real built forms with mocked requests and inspect errors, pending state, Enter submission, labels, focus and overflow. Build and inspect embedded CSS separately.
+4. Run affected consumer suites, including parent compositions. A client facade change reaches the whole client suite. Run real built forms with mocked requests and inspect errors, pending state, Enter submission, labels, focus and overflow.
 5. Finish independent review. A package owner must authorize the concrete name, version and release; permission for another package does not apply. The `prepublishOnly` script builds the package before a directory publication.
 6. Only after authorization, confirm organization authority and version availability, and create the final release archive. Repeat distribution checks on those exact bytes before publishing them. A metadata change produces a new archive and a new hash.
 7. Consumers outside this workspace install the actual registry version and regenerate their lockfiles. Repeat their checks before landing adoption. Archive-only validation does not establish registry adoption.
@@ -178,7 +197,7 @@ No CI release pipeline, deployment or package publication is implied by the loca
 1. Confirm `0.2.0` is actually published before changing the dependency. Install the exact registry version and regenerate the consumer lockfile. Never commit the candidate archive path.
 2. Keep the existing CSS import order. Remove a separate `tw-animate-css` import when the package entry now provides it. Build with Tailwind 4 scanning the installed JavaScript.
 3. Existing 0.1 imports remain compatible. Adopt new primitives only where they fit the consumer; an intentional native select need not change.
-4. For nested themes or embedded hosts, configure `UiProvider` before opening an overlay. Default body portals are unchanged.
+4. For nested theme hosts, configure `UiProvider` before opening an overlay. Default body portals are unchanged.
 5. Verify the consumer's adopted forms, focus, disabled/pending states, light/dark/system themes and phone layout. Re-run normal build/typecheck/lint/tests and browser checks before its adoption PR lands.
 
 The public package owner reviews compatibility and authorizes each concrete release. Consumers own their upgrade timing and release process. Additive primitives use a minor version; compatible fixes use a patch; a breaking public API or visual contract needs an explicit migration plan and version decision. Record the exact archive hash, verification evidence and registry version with the release. Keep private consumer implementation and business details out of public evidence.

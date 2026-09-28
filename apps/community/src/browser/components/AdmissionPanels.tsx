@@ -1,3 +1,4 @@
+import { Button, Notice } from '@dork-labs/ui';
 import { ArrowRight, RotateCcw } from 'lucide-react';
 import {
   reactivationScope,
@@ -28,15 +29,16 @@ export function AdmissionFailurePanel({
         {instruction && <p className="mb-0 font-semibold">{instruction}</p>}
       </div>
       {failure.recovery === 'retry' && (
-        <button
-          className="button primary mt-5 w-full"
+        <Button
+          variant="default"
+          className="mt-5 w-full"
           type="button"
           disabled={busy}
           onClick={onRetry}
         >
           {busy ? 'Trying again…' : 'Try again'}
           <RotateCcw size={16} aria-hidden="true" />
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -70,10 +72,16 @@ export function ReactivationReview({
           <li key={line}>{line}</li>
         ))}
       </ul>
-      <button className="button primary w-full" type="button" disabled={busy} onClick={onConfirm}>
+      <Button
+        variant="default"
+        className="w-full"
+        type="button"
+        disabled={busy}
+        onClick={onConfirm}
+      >
         Rejoin community
         <ArrowRight size={17} aria-hidden="true" />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -81,7 +89,7 @@ export function ReactivationReview({
 /** Who sent the invitation, what it includes, and how long this browser holds it. */
 export function InvitationSummary({ preview }: { preview: PendingAdmission }) {
   return (
-    <div className="notice mb-5">
+    <Notice tone="info" className="mb-5">
       <p className="mb-0">
         Invited by <strong>{preview.inviterName}</strong>
         {preview.channelName ? (
@@ -92,19 +100,19 @@ export function InvitationSummary({ preview }: { preview: PendingAdmission }) {
         ) : null}
       </p>
       <p className="small muted mt-1 mb-0">Finish joining by {finishBy(preview.expiresAt)}.</p>
-    </div>
+    </Notice>
   );
 }
 
 /** The clean join URL has nothing left to resume, so the invitation must be opened again. */
 export function JoinLostNotice() {
   return (
-    <div className="notice mb-5">
+    <Notice tone="info" className="mb-5">
       <strong>Open your invitation link again.</strong>
       <p className="small muted mt-1 mb-0">
         This page no longer holds an invitation, so membership was not added. If you are already a
         member, sign in below.
       </p>
-    </div>
+    </Notice>
   );
 }

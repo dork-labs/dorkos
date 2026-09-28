@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice, Separator } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, KeyRound, Plus, Trash2, Unplug, UserPlus } from 'lucide-react';
 import { describeError, download, request } from '../api.js';
@@ -296,9 +297,9 @@ export function Manage({
         </p>
         <nav className="row mb-6" aria-label="Settings sections">
           {sections.map((item) => (
-            <button
+            <Button
               key={item}
-              className={`button ${tab === item ? 'primary' : ''}`}
+              variant={tab === item ? 'default' : 'outline'}
               onClick={() => {
                 setTab(item);
                 setError('');
@@ -308,18 +309,18 @@ export function Manage({
               }}
             >
               {item[0].toUpperCase() + item.slice(1)}
-            </button>
+            </Button>
           ))}
         </nav>
         {error && (
-          <div className="notice error mb-4" role="alert">
+          <Notice tone="error" className="mb-4" role="alert">
             {error}
-          </div>
+          </Notice>
         )}
         {message && (
-          <div className="notice success mb-4" role="status">
+          <Notice tone="success" className="mb-4" role="status">
             {message}
-          </div>
+          </Notice>
         )}
         {tab === 'settings' && (
           <CommunityAdministration
@@ -337,8 +338,8 @@ export function Manage({
                   <h3>Create channel</h3>
                   <form onSubmit={(event) => void createChannel(event)}>
                     <div className="field">
-                      <label htmlFor="channel-new-name">Name</label>
-                      <input
+                      <Label htmlFor="channel-new-name">Name</Label>
+                      <Input
                         id="channel-new-name"
                         value={channelName}
                         onChange={(event) => setChannelName(event.target.value)}
@@ -346,15 +347,15 @@ export function Manage({
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor="channel-description">Description</label>
-                      <input
+                      <Label htmlFor="channel-description">Description</Label>
+                      <Input
                         id="channel-description"
                         value={description}
                         onChange={(event) => setDescription(event.target.value)}
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor="channel-visibility">Visibility</label>
+                      <Label htmlFor="channel-visibility">Visibility</Label>
                       <select
                         id="channel-visibility"
                         value={visibility}
@@ -366,27 +367,27 @@ export function Manage({
                         <option value="private">Only invited members</option>
                       </select>
                     </div>
-                    <button className="button primary" disabled={busy}>
+                    <Button type="submit" variant="default" disabled={busy}>
                       <Plus size={16} /> Create channel
-                    </button>
+                    </Button>
                   </form>
                 </section>
                 <section className="panel">
                   <h3>Invite someone</h3>
                   {admissionClosed ? (
-                    <p className="notice mb-0">
+                    <Notice tone="info" className="mb-0">
                       This community is closed to new members.{' '}
                       {me.role === 'owner'
                         ? 'You can reopen it in Settings, under Access.'
                         : 'The owner can reopen it in Settings, under Access.'}
-                    </p>
+                    </Notice>
                   ) : (
                     <>
                       <p className="small muted">
                         New links last seven days and admit one person unless changed by an admin.
                       </p>
                       <div className="field">
-                        <label htmlFor="invite-channel">Channel</label>
+                        <Label htmlFor="invite-channel">Channel</Label>
                         <select
                           id="invite-channel"
                           value={inviteChannel}
@@ -400,36 +401,32 @@ export function Manage({
                           ))}
                         </select>
                       </div>
-                      <button
-                        className="button primary"
-                        disabled={busy}
-                        onClick={() => void createInvite()}
-                      >
+                      <Button variant="default" disabled={busy} onClick={() => void createInvite()}>
                         <UserPlus size={16} /> Create invite
-                      </button>
+                      </Button>
                     </>
                   )}
                   {inviteLink && (
                     <div className="field mt-4">
-                      <label htmlFor="invite-link">One-time invite link</label>
-                      <input
+                      <Label htmlFor="invite-link">One-time invite link</Label>
+                      <Input
                         id="invite-link"
                         readOnly
                         value={inviteLink}
                         onFocus={(event) => event.target.select()}
                       />
-                      <button
-                        className="button"
+                      <Button
+                        variant="outline"
                         type="button"
                         onClick={() => void navigator.clipboard.writeText(inviteLink)}
                       >
                         <Copy size={15} /> Copy link
-                      </button>
+                      </Button>
                     </div>
                   )}
                   {invites.length > 0 && (
                     <>
-                      <hr className="divider" />
+                      <Separator className="my-4" />
                       <h4 className="small font-semibold">Recent invites</h4>
                       {invites.map((invite) => (
                         <div className="row small mt-2 justify-between" key={invite.id}>
@@ -438,8 +435,8 @@ export function Manage({
                             {new Date(invite.expiresAt).toLocaleDateString()}
                           </span>
                           {!invite.revoked && (
-                            <button
-                              className="button ghost"
+                            <Button
+                              variant="ghost"
                               aria-label="Revoke invite"
                               onClick={() =>
                                 void perform(
@@ -449,7 +446,7 @@ export function Manage({
                               }
                             >
                               <Trash2 size={15} />
-                            </button>
+                            </Button>
                           )}
                         </div>
                       ))}
@@ -466,8 +463,8 @@ export function Manage({
                 </p>
                 {moderator && (
                   <div className="row">
-                    <button
-                      className="button"
+                    <Button
+                      variant="outline"
                       disabled={busy}
                       onClick={() => {
                         const name = window.prompt('Channel name', selectedChannel.name);
@@ -480,9 +477,9 @@ export function Manage({
                       }}
                     >
                       Rename
-                    </button>
-                    <button
-                      className="button"
+                    </Button>
+                    <Button
+                      variant="outline"
                       disabled={busy}
                       onClick={() =>
                         void perform(
@@ -495,12 +492,13 @@ export function Manage({
                       }
                     >
                       {selectedChannel.archived ? 'Reopen' : 'Archive'}
-                    </button>
+                    </Button>
                   </div>
                 )}
                 {selectedChannel.joined && me.role !== 'owner' && (
-                  <button
-                    className="button mt-3"
+                  <Button
+                    variant="outline"
+                    className="mt-3"
                     disabled={busy}
                     onClick={() =>
                       void perform(
@@ -510,7 +508,7 @@ export function Manage({
                     }
                   >
                     Leave channel
-                  </button>
+                  </Button>
                 )}
               </section>
             )}
@@ -537,8 +535,8 @@ export function Manage({
                       </span>
                     </div>
                     {moderator && member.memberId !== me.memberId && (
-                      <button
-                        className="button ghost"
+                      <Button
+                        variant="ghost"
                         disabled={busy}
                         onClick={() =>
                           void perform(
@@ -559,7 +557,7 @@ export function Manage({
                         }
                       >
                         Remove
-                      </button>
+                      </Button>
                     )}
                   </div>
                 ))
@@ -567,7 +565,7 @@ export function Manage({
               {moderator && (
                 <div className="mt-4">
                   <div className="field">
-                    <label htmlFor="add-member">Add member</label>
+                    <Label htmlFor="add-member">Add member</Label>
                     <select
                       id="add-member"
                       value={selectedMember}
@@ -585,8 +583,8 @@ export function Manage({
                         ))}
                     </select>
                   </div>
-                  <button
-                    className="button"
+                  <Button
+                    variant="outline"
                     disabled={!selectedMember || busy}
                     onClick={() =>
                       void perform(
@@ -599,7 +597,7 @@ export function Manage({
                     }
                   >
                     Add to channel
-                  </button>
+                  </Button>
                 </div>
               )}
             </section>
@@ -619,8 +617,8 @@ export function Manage({
                     </div>
                     <div className="row">
                       {me.role === 'owner' && member.memberId !== me.memberId && (
-                        <button
-                          className="button ghost"
+                        <Button
+                          variant="ghost"
                           aria-label={`${member.role === 'admin' ? 'Remove admin from' : 'Make'} ${member.displayName}${member.role === 'admin' ? '' : ' admin'}`}
                           disabled={busy}
                           onClick={() =>
@@ -634,11 +632,11 @@ export function Manage({
                           }
                         >
                           {member.role === 'admin' ? 'Make member' : 'Make admin'}
-                        </button>
+                        </Button>
                       )}
                       {member.memberId !== me.memberId && member.role === 'member' && (
-                        <button
-                          className="button ghost"
+                        <Button
+                          variant="ghost"
                           disabled={busy}
                           aria-label={`Remove ${member.displayName} from community`}
                           onClick={() => {
@@ -650,15 +648,15 @@ export function Manage({
                           }}
                         >
                           <Trash2 size={16} />
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>
                 ))}
                 {directoryCursor && (
-                  <button className="button mt-3" onClick={() => void moreMembers()}>
+                  <Button variant="outline" className="mt-3" onClick={() => void moreMembers()}>
                     Show more members
-                  </button>
+                  </Button>
                 )}
               </section>
             )}
@@ -683,8 +681,8 @@ export function Manage({
                       <strong>{agent.displayName}</strong>
                       <div className="small muted">@{agent.handle} · owned by you</div>
                     </div>
-                    <button
-                      className="button ghost"
+                    <Button
+                      variant="ghost"
                       aria-label={`Remove ${agent.displayName}`}
                       onClick={() => {
                         if (window.confirm(`Remove ${agent.displayName}?`))
@@ -695,15 +693,15 @@ export function Manage({
                       }}
                     >
                       <Trash2 size={16} />
-                    </button>
+                    </Button>
                   </div>
                 ))
               )}
               {selectedChannel && agents.length > 0 && (
                 <>
-                  <hr className="divider" />
+                  <Separator className="my-4" />
                   <div className="field">
-                    <label htmlFor="add-agent">Add your agent to #{selectedChannel.name}</label>
+                    <Label htmlFor="add-agent">Add your agent to #{selectedChannel.name}</Label>
                     <select
                       id="add-agent"
                       value={selectedAgent}
@@ -721,8 +719,8 @@ export function Manage({
                         ))}
                     </select>
                   </div>
-                  <button
-                    className="button"
+                  <Button
+                    variant="outline"
                     disabled={!selectedAgent || busy}
                     onClick={() =>
                       void perform(
@@ -735,7 +733,7 @@ export function Manage({
                     }
                   >
                     Add agent
-                  </button>
+                  </Button>
                 </>
               )}
             </section>
@@ -762,8 +760,8 @@ export function Manage({
                         </div>
                       </div>
                       {selectedChannel && (moderator || agent.ownerMemberId === me.memberId) && (
-                        <button
-                          className="button ghost"
+                        <Button
+                          variant="ghost"
                           onClick={() =>
                             void perform(
                               () =>
@@ -776,7 +774,7 @@ export function Manage({
                           }
                         >
                           Remove
-                        </button>
+                        </Button>
                       )}
                     </div>
                   ))
@@ -822,15 +820,16 @@ export function Manage({
                           {new Date(grant.createdAt).toLocaleDateString()}
                         </div>
                       </div>
-                      <button
-                        className="button ghost shrink-0"
+                      <Button
+                        variant="ghost"
+                        className="shrink-0"
                         type="button"
                         disabled={busy}
                         aria-label={`Disconnect ${grant.installName}`}
                         onClick={() => void disconnectInstallation(grant)}
                       >
                         <Unplug size={16} /> Disconnect
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -849,8 +848,8 @@ export function Manage({
                     connected again. You stay a member, and this browser stays signed in.
                   </p>
                   <div className="field">
-                    <label htmlFor="disconnect-all-password">Confirm password</label>
-                    <input
+                    <Label htmlFor="disconnect-all-password">Confirm password</Label>
+                    <Input
                       id="disconnect-all-password"
                       type="password"
                       autoComplete="current-password"
@@ -865,13 +864,17 @@ export function Manage({
                     />
                   </div>
                   {disconnectAllError && (
-                    <p id="disconnect-all-error" className="notice error mb-3" role="alert">
+                    <Notice id="disconnect-all-error" tone="error" className="mb-3" role="alert">
                       {disconnectAllError}
-                    </p>
+                    </Notice>
                   )}
-                  <button className="button danger" disabled={busy || !disconnectAllPassword}>
+                  <Button
+                    type="submit"
+                    variant="destructive"
+                    disabled={busy || !disconnectAllPassword}
+                  >
                     <Unplug size={16} /> Disconnect all installations
-                  </button>
+                  </Button>
                 </form>
               )}
             </section>
@@ -880,7 +883,7 @@ export function Manage({
               <ExportPanel scope="personal" idPrefix="personal-export" />
               {me.role === 'owner' && (
                 <>
-                  <hr className="divider" />
+                  <Separator className="my-4" />
                   <h3>Community export</h3>
                   <p className="small muted">
                     Includes the whole community. Confirm your password.
@@ -906,16 +909,16 @@ export function Manage({
                       erase them here instead.
                     </p>
                     <div className="field">
-                      <label htmlFor="leave-community-name">Enter {communityName}</label>
-                      <input
+                      <Label htmlFor="leave-community-name">Enter {communityName}</Label>
+                      <Input
                         id="leave-community-name"
                         value={leaveName}
                         onChange={(event) => setLeaveName(event.target.value)}
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor="leave-password">Confirm password</label>
-                      <input
+                      <Label htmlFor="leave-password">Confirm password</Label>
+                      <Input
                         id="leave-password"
                         type="password"
                         autoComplete="current-password"
@@ -923,20 +926,20 @@ export function Manage({
                         onChange={(event) => setPassword(event.target.value)}
                       />
                     </div>
-                    <button
-                      className="button danger"
+                    <Button
+                      variant="destructive"
                       aria-describedby="leave-scope-ends leave-scope-stays"
                       disabled={busy || !password || leaveName !== communityName}
                       onClick={() => void leave()}
                     >
                       Leave community
-                    </button>
+                    </Button>
                   </>
                 )}
                 {me.role === 'owner' && (
                   <>
                     <div className="field">
-                      <label htmlFor="successor">New owner</label>
+                      <Label htmlFor="successor">New owner</Label>
                       <select
                         id="successor"
                         value={successor}
@@ -953,8 +956,8 @@ export function Manage({
                       </select>
                     </div>
                     <div className="field">
-                      <label htmlFor="transfer-password">Confirm password</label>
-                      <input
+                      <Label htmlFor="transfer-password">Confirm password</Label>
+                      <Input
                         id="transfer-password"
                         type="password"
                         autoComplete="current-password"
@@ -962,8 +965,8 @@ export function Manage({
                         onChange={(event) => setPassword(event.target.value)}
                       />
                     </div>
-                    <button
-                      className="button danger"
+                    <Button
+                      variant="destructive"
                       disabled={!successor || !password || busy}
                       onClick={() =>
                         void perform(
@@ -981,7 +984,7 @@ export function Manage({
                       }
                     >
                       <KeyRound size={16} /> Transfer ownership
-                    </button>
+                    </Button>
                   </>
                 )}
               </section>

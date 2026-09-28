@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice, Textarea } from '@dork-labs/ui';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ImagePlus, Trash2 } from 'lucide-react';
 import { describeError, RequestError, request, tenantApiPath } from '../api.js';
@@ -138,9 +139,9 @@ export function FocusDialog({
       >
         <h3 id={titleId}>{title}</h3>
         {error && (
-          <p role="alert" className="notice error">
+          <Notice role="alert" tone="error">
             {error}
-          </p>
+          </Notice>
         )}
         {children}
       </div>
@@ -397,26 +398,26 @@ export function CommunityAdministration({
   if (!settings && !deletion)
     return (
       <div className="panel p-6">
-        <p role="alert" className="notice error">
+        <Notice role="alert" tone="error">
           {error}
-        </p>
-        <button className="button" onClick={() => void refresh()}>
+        </Notice>
+        <Button variant="outline" onClick={() => void refresh()}>
           Try again
-        </button>
+        </Button>
       </div>
     );
   if (deletion)
     return (
       <div className="settings-grid" aria-label="Community administration">
         {error && !dialog && (
-          <div role="alert" className="notice error admin-full-width">
+          <Notice role="alert" tone="error" className="admin-full-width">
             {error}
-          </div>
+          </Notice>
         )}
         {message && (
-          <div role="status" className="notice success admin-full-width">
+          <Notice role="status" tone="success" className="admin-full-width">
             {message}
-          </div>
+          </Notice>
         )}
         <section className="panel admin-full-width">
           <h3>Deletion scheduled</h3>
@@ -444,9 +445,9 @@ export function CommunityAdministration({
               {/* The server refuses a cancel once the deletion date has passed, so the button
                   goes too; the deletion may start at any moment from then on. */}
               {deletion.deleteAfter && Date.parse(deletion.deleteAfter) > clock ? (
-                <button className="button" onClick={() => setDialog('cancel-delete')}>
+                <Button variant="outline" onClick={() => setDialog('cancel-delete')}>
                   Cancel deletion
-                </button>
+                </Button>
               ) : (
                 <p className="small muted">The deletion date has passed. It can’t be cancelled.</p>
               )}
@@ -456,27 +457,27 @@ export function CommunityAdministration({
         {dialog === 'cancel-delete' && (
           <FocusDialog title="Cancel community deletion?" onClose={resetDialog} error={error}>
             <p>{RETURNS_TO[deletion.returnsTo ?? 'archived']}</p>
-            <label className="field" htmlFor="cancel-delete-password">
+            <Label className="field" htmlFor="cancel-delete-password">
               Password
-              <input
+              <Input
                 id="cancel-delete-password"
                 type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
-            </label>
+            </Label>
             <div className="row justify-end gap-2">
-              <button className="button" onClick={resetDialog}>
+              <Button variant="outline" onClick={resetDialog}>
                 Keep deletion scheduled
-              </button>
-              <button
-                className="button primary"
+              </Button>
+              <Button
+                variant="default"
                 disabled={busy || !password}
                 onClick={() => void cancelDeletion()}
               >
                 Cancel deletion
-              </button>
+              </Button>
             </div>
           </FocusDialog>
         )}
@@ -488,14 +489,14 @@ export function CommunityAdministration({
   return (
     <div className="settings-grid" aria-label="Community administration">
       {error && !dialog && (
-        <div role="alert" className="notice error admin-full-width">
+        <Notice role="alert" tone="error" className="admin-full-width">
           {error}
-        </div>
+        </Notice>
       )}
       {message && (
-        <div role="status" className="notice success admin-full-width">
+        <Notice role="status" tone="success" className="admin-full-width">
           {message}
-        </div>
+        </Notice>
       )}
       {current.lifecycle === 'held' && (
         <section className="panel admin-full-width">
@@ -522,27 +523,27 @@ export function CommunityAdministration({
           <h3>Presentation</h3>
           <form onSubmit={(event) => void savePresentation(event)}>
             {owner && (
-              <label className="field" htmlFor="community-title">
+              <Label className="field" htmlFor="community-title">
                 Name
-                <input
+                <Input
                   id="community-title"
                   value={name}
                   maxLength={80}
                   disabled={!editable || busy}
                   onChange={(event) => setName(event.target.value)}
                 />
-              </label>
+              </Label>
             )}
-            <label className="field" htmlFor="community-description">
+            <Label className="field" htmlFor="community-description">
               Description
-              <textarea
+              <Textarea
                 id="community-description"
                 value={description}
                 maxLength={1000}
                 disabled={!editable || busy}
                 onChange={(event) => setDescription(event.target.value)}
               />
-            </label>
+            </Label>
             <div className="field">
               <span>Icon</span>
               {current.hasIcon && (
@@ -553,36 +554,42 @@ export function CommunityAdministration({
                 />
               )}
               <div className="row flex-wrap gap-2">
-                <label className={`button ${!editable || busy ? 'disabled' : ''}`}>
-                  <ImagePlus size={16} /> {current.hasIcon ? 'Replace icon' : 'Upload icon'}
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept="image/png,image/jpeg,image/gif,image/webp"
-                    disabled={!editable || busy}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) void updateIcon(file);
-                      event.currentTarget.value = '';
-                    }}
-                  />
-                </label>
+                <Button
+                  asChild
+                  variant="outline"
+                  className={!editable || busy ? 'pointer-events-none opacity-50' : undefined}
+                >
+                  <Label aria-disabled={!editable || busy}>
+                    <ImagePlus size={16} /> {current.hasIcon ? 'Replace icon' : 'Upload icon'}
+                    <input
+                      className="sr-only"
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      disabled={!editable || busy}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void updateIcon(file);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                  </Label>
+                </Button>
                 {current.hasIcon && (
-                  <button
-                    className="button"
+                  <Button
+                    variant="outline"
                     type="button"
                     disabled={!editable || busy}
                     onClick={() => void removeIcon()}
                   >
                     <Trash2 size={16} /> Remove icon
-                  </button>
+                  </Button>
                 )}
               </div>
               <span className="small muted">PNG, JPEG, GIF, or WebP up to 2 MiB.</span>
             </div>
-            <button className="button primary" disabled={!editable || busy}>
+            <Button type="submit" variant="default" disabled={!editable || busy}>
               Save presentation
-            </button>
+            </Button>
           </form>
         </section>
       )}
@@ -594,7 +601,7 @@ export function CommunityAdministration({
               Closing access revokes every open invitation and pending admission. No one new can
               join until you reopen it.
             </p>
-            <label className="field" htmlFor="community-admission">
+            <Label className="field" htmlFor="community-admission">
               Admission policy
               <select
                 id="community-admission"
@@ -607,10 +614,10 @@ export function CommunityAdministration({
                 <option value="invite_only">Invite only</option>
                 <option value="closed">Closed</option>
               </select>
-            </label>
-            <button className="button primary" disabled={!editable || busy}>
+            </Label>
+            <Button type="submit" variant="default" disabled={!editable || busy}>
               Save access
-            </button>
+            </Button>
           </form>
           <p className="small muted mb-0">Community ID: {current.communityId}</p>
         </section>
@@ -619,9 +626,9 @@ export function CommunityAdministration({
         <section className="panel">
           <h3>People</h3>
           <p className="muted">Review members, roles, and channel access.</p>
-          <button className="button" onClick={onOpenPeople}>
+          <Button variant="outline" onClick={onOpenPeople}>
             Open people
-          </button>
+          </Button>
         </section>
       )}
       {owner && (
@@ -641,16 +648,16 @@ export function CommunityAdministration({
           </p>
           <div className="row flex-wrap gap-2">
             {current.lifecycle !== 'held' && (
-              <button
-                className="button danger"
+              <Button
+                variant="destructive"
                 onClick={() => setDialog(current.lifecycle === 'archived' ? 'restore' : 'archive')}
               >
                 {current.lifecycle === 'archived' ? 'Restore community' : 'Archive community'}
-              </button>
+              </Button>
             )}
-            <button className="button danger" onClick={() => setDialog('delete')}>
+            <Button variant="destructive" onClick={() => setDialog('delete')}>
               Schedule deletion
-            </button>
+            </Button>
           </div>
         </section>
       )}
@@ -666,36 +673,36 @@ export function CommunityAdministration({
               : 'Posting becomes available again. Revoked credentials and agents stay inactive.'}
           </p>
           {dialog === 'archive' && (
-            <label className="field" htmlFor="archive-name">
+            <Label className="field" htmlFor="archive-name">
               Type {current.name}
-              <input
+              <Input
                 id="archive-name"
                 value={confirmName}
                 onChange={(event) => setConfirmName(event.target.value)}
               />
-            </label>
+            </Label>
           )}
-          <label className="field" htmlFor="lifecycle-password">
+          <Label className="field" htmlFor="lifecycle-password">
             Password
-            <input
+            <Input
               id="lifecycle-password"
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
-          </label>
+          </Label>
           <div className="row justify-end gap-2">
-            <button className="button" onClick={resetDialog}>
+            <Button variant="outline" onClick={resetDialog}>
               Cancel
-            </button>
-            <button
-              className="button danger"
+            </Button>
+            <Button
+              variant="destructive"
               disabled={busy || !password || (dialog === 'archive' && confirmName !== current.name)}
               onClick={() => void submitLifecycle()}
             >
               {dialog === 'archive' ? 'Archive community' : 'Restore community'}
-            </button>
+            </Button>
           </div>
         </FocusDialog>
       )}
@@ -713,38 +720,38 @@ export function CommunityAdministration({
             <strong>Export first if you need a copy.</strong> You can still delete if an export
             fails.
           </p>
-          <label className="field" htmlFor="delete-name">
+          <Label className="field" htmlFor="delete-name">
             Type {current.name}
-            <input
+            <Input
               id="delete-name"
               value={confirmName}
               onChange={(event) => setConfirmName(event.target.value)}
             />
-          </label>
-          <label className="field" htmlFor="delete-id">
+          </Label>
+          <Label className="field" htmlFor="delete-id">
             Type the final eight characters: {current.communityId.slice(-8)}
-            <input
+            <Input
               id="delete-id"
               value={confirmIdSuffix}
               onChange={(event) => setConfirmIdSuffix(event.target.value)}
             />
-          </label>
-          <label className="field" htmlFor="delete-password">
+          </Label>
+          <Label className="field" htmlFor="delete-password">
             Password
-            <input
+            <Input
               id="delete-password"
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
-          </label>
+          </Label>
           <div className="row justify-end gap-2">
-            <button className="button" onClick={resetDialog}>
+            <Button variant="outline" onClick={resetDialog}>
               Cancel
-            </button>
-            <button
-              className="button danger"
+            </Button>
+            <Button
+              variant="destructive"
               disabled={
                 busy ||
                 !password ||
@@ -754,7 +761,7 @@ export function CommunityAdministration({
               onClick={() => void requestDeletion()}
             >
               Schedule permanent deletion
-            </button>
+            </Button>
           </div>
         </FocusDialog>
       )}

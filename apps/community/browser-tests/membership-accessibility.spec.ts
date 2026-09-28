@@ -152,7 +152,7 @@ async function smallTargets(page: Page, exclude: string | undefined): Promise<st
       const found: string[] = [];
       for (const element of Array.from(
         document.querySelectorAll<HTMLElement>(
-          'button, a.button, input:not([type="hidden"]), select, textarea, [role="button"]'
+          'button, a[data-slot="button"], input:not([type="hidden"]), select, textarea, [role="button"]'
         )
       )) {
         const box = element.getBoundingClientRect();

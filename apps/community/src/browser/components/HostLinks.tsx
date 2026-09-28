@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Button, type ButtonProps } from '@dork-labs/ui';
 import { ExternalLink, Flag } from 'lucide-react';
 import { reportAbuseHref, useHostLinks } from '../host-links.js';
 
@@ -12,18 +13,22 @@ const NEW_TAB = '(opens in a new tab)';
 function HostLink({
   href,
   className,
+  buttonVariant,
+  buttonSize,
   label,
   children,
 }: {
   href: string;
   className?: string;
+  buttonVariant?: ButtonProps['variant'];
+  buttonSize?: ButtonProps['size'];
   /** Replaces the visible text as the accessible name, before the new-tab note. */
   label?: string;
   children: ReactNode;
 }) {
   const mail = href.startsWith('mailto:');
   const tab = mail ? {} : ({ target: '_blank', rel: 'noopener noreferrer' } as const);
-  return (
+  const anchor = (
     <a
       className={className}
       href={href}
@@ -33,6 +38,13 @@ function HostLink({
       {children}
       {!label && !mail && <span className="sr-only"> {NEW_TAB}</span>}
     </a>
+  );
+  return buttonVariant ? (
+    <Button asChild variant={buttonVariant} size={buttonSize} className={className}>
+      {anchor}
+    </Button>
+  ) : (
+    anchor
   );
 }
 
@@ -59,17 +71,17 @@ export function HostLinksPanel({ communityId }: { communityId: string }) {
       <p className="small muted">The host that runs this community sets these.</p>
       <div className="row flex-wrap gap-2">
         {termsUrl && (
-          <HostLink className="button" href={termsUrl}>
+          <HostLink buttonVariant="outline" href={termsUrl}>
             Terms <ExternalLink size={14} aria-hidden="true" />
           </HostLink>
         )}
         {privacyUrl && (
-          <HostLink className="button" href={privacyUrl}>
+          <HostLink buttonVariant="outline" href={privacyUrl}>
             Privacy <ExternalLink size={14} aria-hidden="true" />
           </HostLink>
         )}
         {report && (
-          <HostLink className="button" href={report}>
+          <HostLink buttonVariant="outline" href={report}>
             Report a problem <ExternalLink size={14} aria-hidden="true" />
           </HostLink>
         )}
@@ -90,7 +102,13 @@ export function ReportEntryLink({
   const report = reportAbuseUrl ? reportAbuseHref(reportAbuseUrl, communityId, entryId) : null;
   if (!report) return null;
   return (
-    <HostLink className="button ghost small mt-1" href={report} label="Report this message">
+    <HostLink
+      buttonVariant="ghost"
+      buttonSize="sm"
+      className="mt-1"
+      href={report}
+      label="Report this message"
+    >
       <Flag size={14} aria-hidden="true" /> Report
     </HostLink>
   );

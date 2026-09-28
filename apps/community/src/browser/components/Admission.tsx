@@ -1,4 +1,4 @@
-import { Button, Field, FieldLabel, Input, Notice } from '@dork-labs/ui';
+import { Button, Field, FieldLabel, Input, Notice, Separator } from '@dork-labs/ui';
 import { useEffect, useRef, useState } from 'react';
 import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import { createAuthClient } from 'better-auth/react';
@@ -452,7 +452,7 @@ export function Admission({
             </Field>
             {isOwner && (
               <>
-                <hr className="divider" />
+                <Separator className="my-4" />
                 <Field className="mb-4 gap-1.5">
                   <FieldLabel htmlFor="community-name">Community name</FieldLabel>
                   <Input

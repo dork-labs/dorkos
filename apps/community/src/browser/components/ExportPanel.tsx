@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Download, Shield, X } from 'lucide-react';
 import type { CommunityWireExport } from '@dorkos/shared/community-wire';
@@ -160,26 +161,29 @@ export function ExportPanel({ scope, idPrefix }: Props) {
               messages and files
             </p>
           )}
-          <button className="button" disabled={busy} onClick={() => void cancel()}>
+          <Button variant="outline" disabled={busy} onClick={() => void cancel()}>
             <X size={16} /> Cancel
-          </button>
+          </Button>
         </div>
       )}
       {current?.state === 'ready' && (
         <div className="export-ready">
-          <a
-            className="button primary"
-            href={tenantApiPath(`/api/v1/exports/${current.id}/archive`)}
-            download={fileName}
-            onClick={(event) => void downloadIfStillReady(event)}
-            aria-label={
-              current.byteSize !== null ? `Download (${formatSize(current.byteSize)})` : 'Download'
-            }
-          >
-            <Download size={16} aria-hidden="true" />
-            <span>Download</span>
-            {current.byteSize !== null && <span>({formatSize(current.byteSize)})</span>}
-          </a>
+          <Button asChild variant="default" className="max-w-full flex-wrap gap-y-0.5">
+            <a
+              href={tenantApiPath(`/api/v1/exports/${current.id}/archive`)}
+              download={fileName}
+              onClick={(event) => void downloadIfStillReady(event)}
+              aria-label={
+                current.byteSize !== null
+                  ? `Download (${formatSize(current.byteSize)})`
+                  : 'Download'
+              }
+            >
+              <Download size={16} aria-hidden="true" />
+              <span>Download</span>
+              {current.byteSize !== null && <span>({formatSize(current.byteSize)})</span>}
+            </a>
+          </Button>
           {current.expiresAt && (
             <p className="small muted">
               {availableUntil(current.expiresAt)} If a download stops, your browser can resume it
@@ -189,21 +193,21 @@ export function ExportPanel({ scope, idPrefix }: Props) {
         </div>
       )}
       {gone && (
-        <p className="notice" role="status">
+        <Notice tone="info" role="status">
           {gone}
-        </p>
+        </Notice>
       )}
       {current?.state === 'failed' && current.failureCode && (
-        <p className="notice error" role="alert">
+        <Notice tone="error" role="alert">
           {EXPORT_FAILURE_TEXT[current.failureCode]}
-        </p>
+        </Notice>
       )}
       {!inProgress && current?.state !== 'ready' && (
         <>
           {owner && (
             <div className="field">
-              <label htmlFor={passwordId}>Password</label>
-              <input
+              <Label htmlFor={passwordId}>Password</Label>
+              <Input
                 id={passwordId}
                 type="password"
                 autoComplete="current-password"
@@ -212,20 +216,20 @@ export function ExportPanel({ scope, idPrefix }: Props) {
               />
             </div>
           )}
-          <button
-            className="button"
+          <Button
+            variant="outline"
             disabled={busy || (owner && !password)}
             onClick={() => void start()}
           >
             {owner ? <Shield size={16} /> : <Download size={16} />}{' '}
             {current?.state === 'failed' ? 'Try again' : startLabel}
-          </button>
+          </Button>
         </>
       )}
       {error && (
-        <p className="notice error" role="alert">
+        <Notice tone="error" role="alert">
           {error}
-        </p>
+        </Notice>
       )}
     </div>
   );

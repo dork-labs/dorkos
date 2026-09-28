@@ -1,3 +1,4 @@
+import { Button, Label, Notice, Separator } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUp, MessageCircle, Paperclip, RotateCcw, X } from 'lucide-react';
 import {
@@ -464,19 +465,19 @@ export function ChannelView({
             {channel.description ?? 'Join to read and take part in this channel.'}
           </p>
           {readOnly ? (
-            <p className="notice mb-0">
+            <Notice tone="info" className="mb-0">
               {held ? 'While this community is on hold, history' : 'Archived history'} is available
               only for channels you joined.
-            </p>
+            </Notice>
           ) : (
-            <button className="button primary" onClick={() => void join()}>
+            <Button variant="default" onClick={() => void join()}>
               Join channel <ArrowUp size={16} />
-            </button>
+            </Button>
           )}
           {error && (
-            <div className="notice error mt-4" role="alert">
+            <Notice tone="error" className="mt-4" role="alert">
               {error}
-            </div>
+            </Notice>
           )}
         </div>
       </div>
@@ -492,9 +493,9 @@ export function ChannelView({
           <>
             {nextCursor && (
               <div className="text-center">
-                <button className="button" onClick={() => void older()}>
+                <Button variant="outline" onClick={() => void older()}>
                   Load older messages
-                </button>
+                </Button>
               </div>
             )}
             {entries.length === 0 && (
@@ -517,15 +518,15 @@ export function ChannelView({
           </>
         )}
         {(error || (livePaused && !readOnly)) && (
-          <div role="alert" className="notice error row mt-3">
+          <Notice role="alert" tone="error" className="row mt-3">
             {error || 'Live updates paused. Reconnecting…'}
             {errorAction === 'remove-file' && rejectedFile ? (
               <>
                 <span className="small">
                   Remove the rejected file, then choose a supported file.
                 </span>
-                <button
-                  className="button"
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setFiles((previous) => previous.filter((file) => file !== rejectedFile));
                     setRejectedFile(null);
@@ -535,18 +536,18 @@ export function ChannelView({
                   }}
                 >
                   Remove rejected file
-                </button>
+                </Button>
               </>
             ) : errorAction === 'retry-send' ? (
-              <button className="button" onClick={() => void submit()}>
+              <Button variant="outline" onClick={() => void submit()}>
                 <RotateCcw size={14} /> Retry sending
-              </button>
+              </Button>
             ) : errorAction === 'reload' ? (
-              <button className="button" onClick={() => void load()}>
+              <Button variant="outline" onClick={() => void load()}>
                 <RotateCcw size={14} /> Retry
-              </button>
+              </Button>
             ) : null}
-          </div>
+          </Notice>
         )}
       </div>
       {readOnly ? (
@@ -565,9 +566,9 @@ export function ChannelView({
             void submit();
           }}
         >
-          <label htmlFor="message" className="sr-only">
+          <Label htmlFor="message" className="sr-only">
             Message #{channel.name}
-          </label>
+          </Label>
           <textarea
             id="message"
             placeholder={channel.archived ? 'This channel is archived' : `Message #${channel.name}`}
@@ -612,26 +613,29 @@ export function ChannelView({
             </p>
           )}
           <div className="composer-foot">
-            <label className="button" aria-label="Add files">
-              <Paperclip size={17} /> Attach
-              <input
-                type="file"
-                multiple
-                className="sr-only"
-                disabled={busy || channel.archived}
-                onChange={(event) => {
-                  chooseFiles(event.target.files);
-                  event.target.value = '';
-                }}
-              />
-            </label>
-            <button
-              className="button primary"
+            <Button asChild variant="outline">
+              <label aria-label="Add files">
+                <Paperclip size={17} /> Attach
+                <input
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  disabled={busy || channel.archived}
+                  onChange={(event) => {
+                    chooseFiles(event.target.files);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+            </Button>
+            <Button
+              type="submit"
+              variant="default"
               disabled={busy || channel.archived || (!text.trim() && !files.length)}
             >
               {busy ? 'Sending…' : 'Send'}
               <ArrowUp size={17} />
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -644,25 +648,22 @@ export function ChannelView({
           />
           <aside className="drawer" aria-label="Thread">
             <div className="drawer-head row">
-              <button
-                className="button ghost"
-                onClick={() => setThread(null)}
-                aria-label="Close thread"
-              >
+              <Button variant="ghost" onClick={() => setThread(null)} aria-label="Close thread">
                 <ArrowLeft size={18} />
-              </button>
+              </Button>
               <strong>Thread</strong>
-              <button
-                className="button ghost ml-auto"
+              <Button
+                variant="ghost"
+                className="ml-auto"
                 onClick={() => setThread(null)}
                 aria-label="Close thread"
               >
                 <X size={18} />
-              </button>
+              </Button>
             </div>
             <div className="drawer-content">
               <EntryCard communityId={communityId} entry={thread} controls={controlsFor(thread)} />
-              <hr className="divider" />
+              <Separator className="my-4" />
               {replies.map((entry) => (
                 <EntryCard
                   key={entry.id}
@@ -689,9 +690,9 @@ export function ChannelView({
                   void submit();
                 }}
               >
-                <label htmlFor="reply" className="sr-only">
+                <Label htmlFor="reply" className="sr-only">
                   Reply in thread
-                </label>
+                </Label>
                 <textarea
                   id="reply"
                   placeholder="Reply in thread"
@@ -701,12 +702,13 @@ export function ChannelView({
                 />
                 <div className="composer-foot">
                   <span className="small muted">Replies stay in this thread.</span>
-                  <button
-                    className="button primary"
+                  <Button
+                    type="submit"
+                    variant="default"
                     disabled={busy || !text.trim() || channel.archived}
                   >
                     Reply <ArrowUp size={16} />
-                  </button>
+                  </Button>
                 </div>
               </form>
             )}
