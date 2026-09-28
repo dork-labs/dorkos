@@ -756,6 +756,25 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
     category: 'Status',
     keywords: ['account', 'popover', 'usage', 'window', 'reset', 'plan', 'flow', 'continue'],
   },
+  // ContinueOnAccountShowcases (spec claude-account-ui §6.6, §13)
+  {
+    id: 'continueonaccountdialog',
+    title: 'ContinueOnAccountDialog',
+    page: 'conversation',
+    category: 'Status',
+    keywords: [
+      'account',
+      'continue',
+      'picker',
+      'limit',
+      'out',
+      'recommended',
+      'reserved',
+      'kept out',
+      'runtime',
+      'wait',
+    ],
+  },
   // ModelPickerShowcases — the panel behind the status line's model name, and
   // the widths a stranger's catalog forces on it (DOR-1673).
   {

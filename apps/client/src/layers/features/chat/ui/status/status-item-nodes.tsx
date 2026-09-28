@@ -17,7 +17,6 @@ import {
   PermissionModeItem,
   PlanModeItem,
   RuntimeItem,
-  AccountItem,
   ModelConfigPopover,
   ContextItem,
   UsageStatusItem,
@@ -36,6 +35,7 @@ import {
   type MakeDefaultStopLineProps,
 } from '@/layers/features/status';
 import { AgentIdentityChip } from './AgentIdentityChip';
+import { AccountStatusItem } from './AccountStatusItem';
 
 /** The Plan switch's declared mode, current state, and toggle. */
 export interface PlanChipState {
@@ -217,7 +217,7 @@ export function buildStatusItemNodes(
   // accounts are told apart (two or more on a runtime that supports them).
   const accountPromotion = accountChipPromotion(input.account);
   if (accountPromotion !== null) {
-    nodes.account = <AccountItem sessionId={sessionId} account={input.account} />;
+    nodes.account = <AccountStatusItem sessionId={sessionId} account={input.account} />;
   }
 
   nodes.model = (
