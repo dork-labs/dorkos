@@ -493,7 +493,9 @@ export async function finishDisconnectCleanup(
     externalCleanup = 'failed';
   }
   if (externalCleanup === 'complete' && 'revokedInstance' in principal) {
-    await traceReboundDeletion(db, principal, binding, provider);
+    // The trace is advisory: a failed read must not hold the receipt's claim
+    // until the lease expires after the account is already gone.
+    await traceReboundDeletion(db, principal, binding, provider).catch(() => undefined);
   }
   const [updated] = await db
     .update(schema.managedConnectorAuthorityCommand)
