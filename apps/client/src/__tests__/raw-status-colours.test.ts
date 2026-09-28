@@ -14,9 +14,9 @@
  *
  * Every file still allowed a raw colour is listed with its EXACT count and
  * the reason: a ratchet, so a fix must lower its entry in the same change and
- * the list can never hold room for a raw colour to creep back. Comments are
- * stripped before counting, since a comment naming the class a fix replaced
- * paints nothing. A colour that is not a status (diff counts, syntax highlighting, a
+ * the list can never hold room for a raw colour to creep back. Only the
+ * file's strings are counted (it is parsed, not pattern-matched), so a comment
+ * naming the class a fix replaced paints nothing and counts nothing. A colour that is not a status (diff counts, syntax highlighting, a
  * legend, a promo tint) stays raw on purpose; a tinted callout or chip that
  * needs its whole surface moved, not just its text, is tracked work.
  *
@@ -26,6 +26,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, relative, resolve } from 'node:path';
+import ts from 'typescript';
 
 const SRC = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
@@ -138,20 +139,48 @@ function sourceFiles(dir: string): string[] {
 }
 
 /**
- * Source with its comments removed, so a comment naming a class is not a use.
+ * How many raw status colours a file's strings hold.
  *
- * A `//` right after a `:` or a quote is left alone: that is a URL, not a comment.
+ * The file is parsed, and only nodes that carry text are searched: string
+ * literals (JSX attribute strings are these too), template pieces and JSX
+ * text. A comment is never one of those, so a comment naming the class a fix
+ * replaced does not count, and no string that merely looks like a comment
+ * (a glob, a `//` URL) can hide a real class from the count.
+ *
+ * @param source - The file's text.
+ * @param fileName - Its name; the extension picks TS or TSX parsing.
  */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+function countRaw(source: string, fileName = 'probe.tsx'): number {
+  const file = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  let count = 0;
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node) ||
+      ts.isJsxText(node)
+    ) {
+      count += node.text.match(RAW_STATUS_COLOUR)?.length ?? 0;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return count;
 }
 
 /** How many raw status colours each file paints, keyed by its path under `src/`. */
 function rawHits(): Record<string, number> {
   const hits: Record<string, number> = {};
   for (const path of sourceFiles(SRC)) {
-    const code = stripComments(readFileSync(path, 'utf8'));
-    const count = code.match(RAW_STATUS_COLOUR)?.length ?? 0;
+    const count = countRaw(readFileSync(path, 'utf8'), path);
     if (count > 0) hits[relative(SRC, path)] = count;
   }
   return hits;
@@ -203,9 +232,24 @@ describe('raw status colours', () => {
     expect(src).toContain('text-status-warning-fg');
   });
 
-  it('comments do not count, and a URL is not mistaken for one', () => {
-    expect(stripComments('// text-amber-500\n/* text-red-500 */ x')).not.toMatch(RAW_STATUS_COLOUR);
-    expect(stripComments("'https://x' text-red-500")).toMatch(RAW_STATUS_COLOUR);
+  it('comments do not count', () => {
+    expect(countRaw('// text-amber-500\n/* text-red-500 */ const x = 1;')).toBe(0);
+    expect(countRaw('const a = <p>{/* text-red-500 */}</p>;')).toBe(0);
+  });
+
+  it('nothing that looks like a comment can hide a real class', () => {
+    // A glob holding `/*` must not swallow code up to the next `*/`.
+    expect(countRaw(`const g = '**/*.md'; const c = 'text-red-500'; /* x */`)).toBe(1);
+    expect(countRaw(`const g = "src/*"; const c = "text-amber-600"; /* x */`)).toBe(1);
+    // A `//` inside an arbitrary-value class.
+    expect(countRaw(`const c = 'bg-[url(//cdn/x.png)] text-red-500';`)).toBe(1);
+    // A `//` in JSX text, then a real class.
+    expect(countRaw(`const e = <><p>and // then</p><span className="text-amber-600" /></>;`)).toBe(
+      1
+    );
+    // A `//` in a template piece.
+    expect(countRaw('const c = `${a}//x text-red-500`;')).toBe(1);
+    expect(countRaw('const c = `${a} text-red-500 ${b} text-green-500`;')).toBe(2);
   });
 
   it('the ratchet fails on an inflated entry, an unlisted file and a stale one', () => {
