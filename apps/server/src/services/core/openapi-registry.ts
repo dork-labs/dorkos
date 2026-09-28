@@ -4065,7 +4065,7 @@ registry.registerPath({
   tags: ['Connectors'],
   summary: 'Turn one app on or off for one chat',
   description:
-    'Owner-only. Off hides the app from the chat’s agent in this chat alone. On brings back the access the agent was given account-wide, and never more. Only apps the agent was given account-wide can be switched.',
+    'Owner-only. Off hides the app from the chat’s agent in this chat alone. On only undoes Off: the chat gets back the access it had (its own hand-picked access, or else the agent’s account-wide access), and never more. Only apps the agent was given account-wide can be switched; switching to the state the chat is already in changes nothing.',
   request: {
     params: z.object({ sessionId: z.string().min(1), connectionId: z.string().min(1) }),
     body: { content: { 'application/json': { schema: ConnectorSessionAccessUpdateSchema } } },

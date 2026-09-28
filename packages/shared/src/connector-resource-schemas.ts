@@ -645,9 +645,11 @@ export const ConnectorSessionEffectiveAccessSchema = z
     readiness: ConnectionReadinessSchema,
     /**
      * Whether the owner has this app on or off for this chat alone. Present
-     * only when the agent was given the app account-wide, because the switch
-     * only ever limits or restores that access: turning it on for a chat
-     * never gives the agent more than it already has everywhere else.
+     * only when the agent was given the app account-wide and it is still
+     * connected. Off always narrows; on only undoes an off, putting back the
+     * access this chat had (its own hand-picked access, or else the agent's
+     * account-wide access), so it never adds any. When it is `off`, readiness
+     * carries the `turn_on_for_this_chat` fix.
      */
     thisChat: z.enum(['on', 'off']).optional(),
   })
@@ -668,8 +670,8 @@ export type ConnectorSessionConnections = z.infer<typeof ConnectorSessionConnect
 
 /**
  * Owner request to turn one app on or off for one chat's agent. Off hides the
- * app from the agent in this chat only; on brings back the access the agent
- * already has account-wide, and nothing more.
+ * app from the agent in this chat only; on puts back the access this chat had
+ * before, and never adds any.
  */
 export const ConnectorSessionAccessUpdateSchema = z.object({ on: z.boolean() }).strict();
 /** Owner request to turn one app on or off for one chat's agent. */

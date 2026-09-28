@@ -4053,6 +4053,7 @@ async function start() {
       actions: connectorAppActions,
       signIns: connectorSignIns,
       sessionAccess: new ConnectorSessionAccessService({
+        db,
         query: connectorOperatorQueries,
         overrides: sessionConnectorAttachmentStore,
       }),

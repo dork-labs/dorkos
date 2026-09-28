@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   agents,
+  and,
   connectionOperationGrants,
   connections,
   connectorOperationRevisions,
   createDb,
+  eq,
+  isNull,
   runMigrations,
   sessionConnectionOverrides,
   type Db,
@@ -46,6 +49,57 @@ describe('ConnectorSessionAccessService', () => {
   const scope = (connectionId: string) =>
     agentGrantScope(db, { agentId: 'agent-a', sessionId: 'session-a', connectionId });
   const overrides = () => db.select().from(sessionConnectionOverrides).all();
+  /**
+   * The revisions an agent can actually use on connection-a in session-a, read
+   * exactly as the execution check reads them, or why it is denied.
+   */
+  const usable = (agentId: string) => {
+    const resolved = agentGrantScope(db, {
+      agentId,
+      sessionId: 'session-a',
+      connectionId: 'connection-a',
+    });
+    if (resolved.kind === 'denied') return resolved.reason;
+    return db
+      .select({ id: connectionOperationGrants.operationRevisionId })
+      .from(connectionOperationGrants)
+      .where(
+        and(
+          resolved.subject,
+          eq(connectionOperationGrants.connectionId, 'connection-a'),
+          isNull(connectionOperationGrants.revokedAt)
+        )
+      )
+      .all()
+      .map((row) => row.id)
+      .sort();
+  };
+  /** Give the chat its own hand-picked grant: agentId may use `revision` here only. */
+  const chatGrant = (agentId: string, revision: string) =>
+    db
+      .insert(connectionOperationGrants)
+      .values({
+        id: `session-grant-${agentId}-${revision}`,
+        subjectType: 'session',
+        subjectId: 'session-a',
+        agentId,
+        connectionId: 'connection-a',
+        operationRevisionId: revision,
+        createdBy: 'operator',
+        createdAt: NOW,
+      })
+      .run();
+  const override = (agentId: string, state: 'attached' | 'detached') =>
+    db
+      .insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'session-a',
+        agentId,
+        connectionId: 'connection-a',
+        state,
+        updatedAt: NOW,
+      })
+      .run();
 
   beforeEach(() => {
     db = createDb(':memory:');
@@ -87,6 +141,20 @@ describe('ConnectorSessionAccessService', () => {
       .run();
     db.insert(connectorOperationRevisions)
       .values({
+        id: 'revision-send',
+        providerInstanceId: PROVIDER_ID,
+        toolkit: 'gmail',
+        operationSlug: 'gmail.messages.send',
+        toolkitVersion: '20260901',
+        schemaHash: 'sha256:send',
+        capabilityClassification: 'write',
+        retryPolicy: 'never',
+        inputSchemaJson: JSON.stringify({ type: 'object', properties: {} }),
+        discoveredAt: NOW,
+      })
+      .run();
+    db.insert(connectorOperationRevisions)
+      .values({
         id: 'revision-a',
         providerInstanceId: PROVIDER_ID,
         toolkit: 'gmail',
@@ -99,17 +167,20 @@ describe('ConnectorSessionAccessService', () => {
         discoveredAt: NOW,
       })
       .run();
+    // Account-wide, agent-a may read and send on connection-a.
     db.insert(connectionOperationGrants)
-      .values({
-        id: 'grant-a',
-        subjectType: 'agent',
-        subjectId: 'agent-a',
-        agentId: 'agent-a',
-        connectionId: 'connection-a',
-        operationRevisionId: 'revision-a',
-        createdBy: 'operator',
-        createdAt: NOW,
-      })
+      .values(
+        ['revision-a', 'revision-send'].map((revision) => ({
+          id: `grant-${revision}`,
+          subjectType: 'agent' as const,
+          subjectId: 'agent-a',
+          agentId: 'agent-a',
+          connectionId: 'connection-a',
+          operationRevisionId: revision,
+          createdBy: 'operator',
+          createdAt: NOW,
+        }))
+      )
       .run();
     const query = new ConnectorOperatorQueryService({
       db,
@@ -125,6 +196,7 @@ describe('ConnectorSessionAccessService', () => {
       agentOwnership: { ownsAgent: () => true },
     });
     service = new ConnectorSessionAccessService({
+      db,
       query,
       overrides: new SessionConnectorAttachmentStore(db, () => undefined),
     });
@@ -159,12 +231,53 @@ describe('ConnectorSessionAccessService', () => {
       },
     ]);
     expect(overrides()).toEqual([]);
-    expect(scope('connection-a')).toMatchObject({ kind: 'scope' });
+    expect(usable('agent-a')).toEqual(['revision-a', 'revision-send']);
   });
 
   it('turning on is a no-op when the chat already inherits the app', async () => {
     await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
     expect(overrides()).toEqual([]);
+  });
+
+  it('turns a chat the owner narrowed by hand off and back on to exactly what it had', async () => {
+    // The chat may only read, although the agent may also send everywhere else.
+    chatGrant('agent-a', 'revision-a');
+    override('agent-a', 'attached');
+    const before = { overrides: overrides(), usable: usable('agent-a') };
+    expect(before.usable).toEqual(['revision-a']);
+    const start = await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
+    // Already on: nothing written.
+    expect(overrides()).toEqual(before.overrides);
+    expect(start.connections).toMatchObject([
+      { source: 'this_chat', thisChat: 'on', operationRevisionIds: ['revision-a'] },
+    ]);
+
+    const off = await service.setAccess(OWNER, 'session-a', 'connection-a', { on: false });
+    expect(off.connections).toMatchObject([
+      {
+        thisChat: 'off',
+        readiness: {
+          reason: 'off_for_this_chat',
+          fix: { action: 'turn_on_for_this_chat', fixableBy: 'person' },
+        },
+      },
+    ]);
+    expect(usable('agent-a')).toBe('detached');
+    // Off leaves the chat's own grant in place, so on can put it back.
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .all()
+        .filter((row) => row.subjectType === 'session' && row.revokedAt === null)
+    ).toHaveLength(1);
+
+    const on = await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
+    expect(on).toEqual(start);
+    expect(usable('agent-a')).toEqual(before.usable);
+    expect(overrides()).toMatchObject(
+      before.overrides.map(({ updatedAt: _updatedAt, ...row }) => row)
+    );
   });
 
   it('never widens a chat past what the agent was given account-wide', async () => {
@@ -188,19 +301,23 @@ describe('ConnectorSessionAccessService', () => {
     expect(overrides()).toMatchObject([{ connectionId: 'connection-b', state: 'detached' }]);
   });
 
-  it('turns a chat handed to another agent back to its current agent’s own access', async () => {
-    db.insert(sessionConnectionOverrides)
-      .values({
-        sessionId: 'session-a',
-        agentId: 'agent-b',
-        connectionId: 'connection-a',
-        state: 'attached',
-        updatedAt: NOW,
-      })
-      .run();
-    expect(scope('connection-a')).toEqual({ kind: 'denied', reason: 'other_agent' });
+  it('turns a chat handed over from another agent on to only its current agent’s access', async () => {
+    // agent-b narrowed this chat to sending before the chat moved to agent-a.
+    chatGrant('agent-b', 'revision-send');
+    override('agent-b', 'attached');
+    expect(usable('agent-a')).toBe('other_agent');
     await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
-    expect(scope('connection-a')).toMatchObject({ kind: 'scope' });
+    // agent-b's override is gone, and none of agent-b's chat grants carried over.
+    expect(overrides()).toEqual([]);
+    expect(usable('agent-a')).toEqual(['revision-a', 'revision-send']);
+
+    // With agent-a's own chat grant, the handover lands on that, not wider.
+    db.delete(sessionConnectionOverrides).run();
+    chatGrant('agent-a', 'revision-a');
+    override('agent-b', 'attached');
+    await service.setAccess(OWNER, 'session-a', 'connection-a', { on: true });
+    expect(overrides()).toMatchObject([{ agentId: 'agent-a', state: 'attached' }]);
+    expect(usable('agent-a')).toEqual(['revision-a']);
   });
 
   it('refuses an unknown chat, a foreign owner’s chat, and a malformed account id', async () => {

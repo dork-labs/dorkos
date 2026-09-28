@@ -1,13 +1,27 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ConnectorSessionConnections } from '@dorkos/shared/connector-resource-schemas';
-import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
+import {
+  CONNECTION_READINESS_COPY,
+  TURN_ON_FOR_THIS_CHAT_COPY,
+} from '@dorkos/shared/connector-schemas';
 import { SessionConnectionAccessList } from '@/layers/entities/connectors';
 import { TransportProvider } from '@/layers/shared/model';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { createPlaygroundTransport } from '../playground-transport';
 import { READY } from '../mock-samples';
+
+/** An app turned off for this chat, as the server says it when the switch can turn it back on. */
+const TURNED_OFF_HERE = {
+  state: 'unavailable',
+  reason: 'off_for_this_chat',
+  fix: { action: 'turn_on_for_this_chat', fixableBy: 'person' },
+  copy: {
+    owner: `${CONNECTION_READINESS_COPY.off_for_this_chat.owner} ${TURN_ON_FOR_THIS_CHAT_COPY.owner}`,
+    agent: CONNECTION_READINESS_COPY.off_for_this_chat.agent,
+  },
+} as const;
 
 /**
  * What a chat's side panel lists: one account usable, one turned off here, one
@@ -32,11 +46,7 @@ const MOCK_SESSION_CONNECTIONS = {
       label: 'Acme workspace',
       source: 'this_chat',
       operationRevisionIds: [],
-      readiness: {
-        state: 'unavailable',
-        reason: 'off_for_this_chat',
-        copy: CONNECTION_READINESS_COPY.off_for_this_chat,
-      },
+      readiness: TURNED_OFF_HERE,
       thisChat: 'off',
     },
     {
@@ -56,7 +66,7 @@ const MOCK_SESSION_CONNECTIONS = {
   ],
 } as unknown as ConnectorSessionConnections;
 
-/** What each account's agent was given account-wide, which turning it on brings back. */
+/** What each account's agent was given account-wide, which turning an inherited app back on puts back. */
 const AGENT_ACTIONS: Record<string, string[]> = {
   'conn-gmail-personal': ['gmail-list-v1', 'gmail-read-v1'],
   'conn-notion': ['notion-search-v1'],
@@ -88,11 +98,7 @@ function SessionFrame() {
                   ...row,
                   source: 'this_chat',
                   thisChat: 'off',
-                  readiness: {
-                    state: 'unavailable',
-                    reason: 'off_for_this_chat',
-                    copy: CONNECTION_READINESS_COPY.off_for_this_chat,
-                  },
+                  readiness: TURNED_OFF_HERE,
                 }
         ),
       } as ConnectorSessionConnections;

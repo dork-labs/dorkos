@@ -109,7 +109,7 @@ export function AgentConnectionAccessList({
 
 /** What the per-chat switch does, said once above the list. */
 const THIS_CHAT_SWITCH_NOTE =
-  'Turning an app off here only affects this chat. Turning it back on gives this agent the access it already has, nothing more.';
+  'Turning an app off here only affects this chat. Turning it back on puts back the access this chat had, and never adds any.';
 
 /** Why a switch did not change. The server refused or was unreachable. */
 const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change it. Nothing changed. Try again.';
@@ -117,8 +117,10 @@ const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change it. Nothing changed. Try agai
 /**
  * Canonical effective account access shown in Session Inspector, with the
  * owner's per-chat switch on every app the agent was given account-wide.
- * Everything a row says is the server's: the switch writes, and the list
- * shows the readiness the server answers with.
+ * Everything a row says is the server's: a switch shows where the server
+ * sends `thisChat`, and an app that is off there is exactly where readiness
+ * names `turn_on_for_this_chat` as the fix. The switch writes, and the list
+ * shows the readiness the server answers with; it is never guessed here.
  */
 export function SessionConnectionAccessList({
   sessionId,
@@ -250,7 +252,9 @@ function SessionConnectionRow({
           />
         )}
       </div>
-      {setAccess.isError && (
+      {/* Only while there is still a switch: a refused change refetches the
+          server's view, and a row that lost its switch has nothing to try again. */}
+      {setAccess.isError && connection.thisChat && (
         <p role="alert" className="text-destructive mt-1 text-xs">
           {THIS_CHAT_SWITCH_FAILED}
         </p>

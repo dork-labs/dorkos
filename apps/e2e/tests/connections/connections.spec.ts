@@ -558,9 +558,9 @@ test.describe('Connections — session access status', () => {
       db.close();
     }
 
-    // The owner's per-chat switch (DOR-2448): off hides the app from this
-    // chat's agent; on puts the chat back on the agent's own access, which
-    // also clears the chat-only fixture above.
+    // The owner's per-chat switch (DOR-2448) is exactly reversible: off hides
+    // the app from this chat's agent, and on puts back what the chat had —
+    // here its own hand-picked access, never the agent's account-wide access.
     await page.reload();
     await rightPanel.open();
     await page.getByRole('tab', { name: 'Session', exact: true }).click();
@@ -570,8 +570,32 @@ test.describe('Connections — session access status', () => {
     await expect(row.getByText('Turned off for this chat.')).toBeVisible();
     await expect(toggle).not.toBeChecked();
     await toggle.click();
-    await expect(row.getByText('Inherited from agent')).toBeVisible();
     await expect(toggle).toBeChecked();
+    await expect(row.getByText('Allowed only in this session')).toBeVisible();
+    const restored = await request.get(
+      `${API_URL}/api/connectors/sessions/${sessionId}/connections`
+    );
+    expect(await restored.json()).toMatchObject({
+      connections: [
+        expect.objectContaining({
+          connectionId,
+          source: 'this_chat',
+          thisChat: 'on',
+          operationRevisionIds: [read!.operationRevisionId],
+        }),
+      ],
+    });
+    // Restore inherited state before proving the owner editor link below.
+    const cleanup = new Database(`/tmp/dorkos-test-mode-${MOCK_PORT}/dork.db`);
+    try {
+      cleanup
+        .prepare(
+          'DELETE FROM session_connection_overrides WHERE session_id = ? AND connection_id = ?'
+        )
+        .run(sessionId, connectionId);
+    } finally {
+      cleanup.close();
+    }
 
     // What the agent may do account-wide is reviewed on Connections, where
     // the exact connection and named agent are reviewable rather than

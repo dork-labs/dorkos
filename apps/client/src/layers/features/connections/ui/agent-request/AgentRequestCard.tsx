@@ -6,6 +6,7 @@ import {
   useConnectorCatalog,
   useConnectorConnections,
   useResolveConnectorAgentRequest,
+  useSessionConnectorConnections,
   useSetSessionConnectorAccess,
   serviceName as appServiceName,
   serviceLogo,
@@ -31,13 +32,18 @@ export interface AgentRequestCardProps {
 /** Why "Not now" did not save. Declining writes nothing, so nothing changed. */
 const DECLINE_FAILED = 'Couldn’t save your answer. Nothing changed. Try again.';
 
+/** Whether an answer was refused because this chat has the app turned off. */
+function refusedAsOffHere(error: Error | null): boolean {
+  return (error as { code?: string } | null)?.code === 'session_access_off';
+}
+
 /** Why turning the app back on for this chat did not land. */
 const TURN_ON_FAILED = 'Couldn’t turn it on for this chat. Nothing changed. Try again.';
 
 /**
  * Why an Allow's answer did not reach the request after the access itself had
  * already been saved, and the one fix: send it again, turn the app back on for
- * this chat, or nothing.
+ * this chat (only when the server's view of the chat offers it), or nothing.
  */
 function unansweredReason(
   error: Error | null,
@@ -46,11 +52,13 @@ function unansweredReason(
 ): { reason: string; fix: 'retry' | 'turn_on' | null } {
   switch ((error as { code?: string } | null)?.code) {
     case 'session_access_off':
-      // The chat's own switch is off. Turning it on here is the same switch the
-      // chat's details show, and it brings back only what the agent was just
-      // given, so the card offers it and then answers the request.
+      // The chat's own switch is off. Turning it on is the same switch the
+      // chat's details show: it only undoes that off, putting back the access
+      // this chat had (its own hand-picked access, else what the agent has
+      // everywhere), never more. The card offers it only when the chat's
+      // readiness names it as the fix, then answers the request.
       return {
-        reason: `this chat has ${serviceName} turned off for ${agentName}. Turning it on here only affects this chat.`,
+        reason: `this chat has ${serviceName} turned off for ${agentName}.`,
         fix: 'turn_on',
       };
     case 'request_already_resolved':
@@ -91,6 +99,10 @@ function unansweredReason(
 export function AgentRequestCard({ request, className }: AgentRequestCardProps) {
   const resolve = useResolveConnectorAgentRequest();
   const turnOn = useSetSessionConnectorAccess(request.sessionId);
+  // Read the chat's own view only once the answer came back "turned off here":
+  // whether turning it on is the fix is the server's call, not this card's.
+  const offHere = refusedAsOffHere(resolve.error) ? request.sessionId : null;
+  const chatAccess = useSessionConnectorConnections(offHere);
   const connections = useConnectorConnections();
   const catalog = useConnectorCatalog(request.serviceSlug, request.status === 'awaiting_owner');
   const service =
@@ -133,6 +145,10 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
 
   if (allowedId && resolve.isError) {
     const { reason, fix } = unansweredReason(resolve.error, agentName, serviceName);
+    const canTurnOn =
+      fix === 'turn_on' &&
+      chatAccess.data?.connections.find((row) => row.connectionId === allowedId)?.readiness.fix
+        ?.action === 'turn_on_for_this_chat';
     return (
       <AccessCardFrame
         titleId={`agent-request-unanswered-${request.requestId}`}
@@ -148,6 +164,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
             aria-hidden
           />
           The access is saved, but {agentName}’s request wasn’t answered: {reason}
+          {canTurnOn && ' Turning it on here only affects this chat.'}
         </p>
         {fix === 'retry' && (
           <div className="flex justify-end">
@@ -156,7 +173,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
             </Button>
           </div>
         )}
-        {fix === 'turn_on' && (
+        {canTurnOn && (
           <>
             {turnOn.isError && (
               <p role="alert" className="text-destructive text-sm">

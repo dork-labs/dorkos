@@ -926,7 +926,7 @@ export class ConnectorOperatorQueryService {
     >();
     // Accounts the agent holds account-wide, while still connected: the only
     // ones the owner can switch on or off for this chat, since the switch only
-    // limits or restores that access and never adds to it.
+    // hides the app here or undoes that, and never adds access.
     const switchable = new Set<string>();
     for (const row of this.agentGrantedConnections(owner, agentId)) {
       if (row.lifecycleState === 'connected') switchable.add(row.connectionId);
@@ -999,7 +999,8 @@ export class ConnectorOperatorQueryService {
       // Turned on with nothing of its own, or waiting on reconciliation: its
       // agent can't use the account here, so it reads as turned off here. When
       // the agent holds the account account-wide, the owner's switch turns it
-      // back on (DOR-2448); otherwise there is nothing to restore.
+      // back on (DOR-2448) and readiness names that as the fix; otherwise
+      // there is nothing to put back, and no fix.
       const nothingHere =
         turnedOff || override.needsReconciliation || sessionRevisions.length === 0;
       byConnection.set(override.connectionId, {
@@ -1012,7 +1013,10 @@ export class ConnectorOperatorQueryService {
           override,
           agentId,
           { named: true, everyAgent: false },
-          { offForThisChat: nothingHere }
+          {
+            offForThisChat: nothingHere,
+            canTurnOnForThisChat: switchable.has(override.connectionId),
+          }
         ),
         ...(switchable.has(override.connectionId) && {
           thisChat: nothingHere ? ('off' as const) : ('on' as const),

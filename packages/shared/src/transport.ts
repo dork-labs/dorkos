@@ -3150,8 +3150,8 @@ export interface Transport
   getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections>;
 
   /**
-   * Turn one app on or off for one chat's agent (owner only). On brings back
-   * the access the agent was given account-wide, never more; off hides the app
+   * Turn one app on or off for one chat's agent (owner only). On only undoes
+   * off, putting back the access this chat had and never more; off hides the app
    * in this chat alone. Resolves to the chat's access after the change.
    */
   setSessionConnectorAccess(

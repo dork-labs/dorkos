@@ -1004,8 +1004,10 @@ describe('ConnectorOperatorQueryService', () => {
       .where(eq(sessionConnectionOverrides.sessionId, 'session-a'))
       .run();
     const empty = (await service.sessionConnections(OWNER, 'session-a')).connections[0];
-    expect(empty?.readiness).toMatchObject({ reason: 'off_for_this_chat' });
-    expect(empty?.readiness.fix).toBeUndefined();
+    expect(empty?.readiness).toMatchObject({
+      reason: 'off_for_this_chat',
+      fix: { action: 'turn_on_for_this_chat', fixableBy: 'person' },
+    });
     expect(empty?.thisChat).toBe('off');
 
     // With its own grant, the account's own state shows through.
@@ -1078,6 +1080,8 @@ describe('ConnectorOperatorQueryService', () => {
     expect(own?.thisChat).toBe('on');
     expect(foreign).toMatchObject({ readiness: { reason: 'off_for_this_chat' } });
     expect(foreign?.thisChat).toBeUndefined();
+    // Nothing to put back, so readiness offers no fix either.
+    expect(foreign?.readiness.fix).toBeUndefined();
 
     // Given to every agent counts as account-wide.
     db.insert(connectionOperationGrants)
@@ -1096,6 +1100,10 @@ describe('ConnectorOperatorQueryService', () => {
       (row) => row.connectionId === 'connection-b'
     );
     expect(inherited?.thisChat).toBe('off');
+    expect(inherited?.readiness.fix).toEqual({
+      action: 'turn_on_for_this_chat',
+      fixableBy: 'person',
+    });
 
     // A disconnected account has nothing to switch.
     db.update(connections)

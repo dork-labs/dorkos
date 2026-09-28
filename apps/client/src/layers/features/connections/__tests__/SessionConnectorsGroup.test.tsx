@@ -174,6 +174,54 @@ describe('SessionConnectorsGroup', () => {
     expect(screen.getByRole('switch', { name: 'Gmail (work) in this chat' })).toBeChecked();
   });
 
+  it('shows the switch as on from the server even while the app itself can’t be used', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [
+        sessionConnection({
+          thisChat: 'on',
+          readiness: createMockConnectionReadiness({
+            state: 'needs_you',
+            reason: 'signed_out',
+            fix: { action: 'sign_in_again', fixableBy: 'person' },
+          }),
+        }),
+      ],
+    });
+    renderGroup(transport);
+
+    // On for this chat is not the same as usable: the account is signed out.
+    expect(await screen.findByRole('switch', { name: 'Gmail (work) in this chat' })).toBeChecked();
+    expect(screen.getByText(CONNECTION_READINESS_COPY.signed_out.owner)).toBeInTheDocument();
+  });
+
+  it('drops a refused change’s error once the server’s view has no switch left', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [sessionConnection({ thisChat: 'on' })],
+    });
+    vi.mocked(transport.setSessionConnectorAccess).mockRejectedValue(
+      Object.assign(new Error('Nothing to switch.'), { status: 404 })
+    );
+    renderGroup(transport);
+    const toggle = await screen.findByRole('switch', { name: 'Gmail (work) in this chat' });
+    // Meanwhile the agent lost the app account-wide: the refetch has no switch.
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [sessionConnection()],
+    });
+    await user.click(toggle);
+
+    await waitFor(() => expect(screen.queryByRole('switch')).not.toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('offers no switch on an app the agent was not given account-wide', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
