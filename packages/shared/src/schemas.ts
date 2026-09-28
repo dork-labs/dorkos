@@ -4153,6 +4153,10 @@ export const ServerConfigSchema = z
           description:
             "The color the default account is drawn in, as lowercase #rrggbb, decided by the server: the registered account that has the default folder's own color, else defaultAccountColor, else the default for its position. Draw this rather than re-deriving it. Absent when the config could not be read, or on a server too old to report it",
         }),
+        resolvedAccountId: z.string().optional().openapi({
+          description:
+            "Which row new sessions run on, decided by the server: the id of the registered account whose folder resolvedAccount is (compared by real path, so a trailing slash, a symlink or a ~ spelling still matches), or 'default' when no registered account has that folder and the default stands alone. Mark this row as in use rather than comparing paths. Absent when the config could not be read, or on a server too old to report it",
+        }),
         accountsUnavailable: z.boolean().optional().openapi({
           description:
             'True when the account registry could NOT be read (the config store threw, or was consulted before it was initialized), so `accounts` is empty because nothing could be learned rather than because nothing is registered. Absent means the list is an answer. A client must not judge an agent or session account reference against an unavailable registry — an override that cannot be verified is unknown, never wrong',

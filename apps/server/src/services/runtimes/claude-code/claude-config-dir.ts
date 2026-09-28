@@ -48,6 +48,7 @@ import { configManager } from '../../core/config-manager.js';
 import { IMPLICIT_ACCOUNT_ID, isAccountColor } from '@dorkos/shared/account-usage';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import {
+  accountForPath,
   canonicalAccountPath,
   defaultAccountFolder,
   resolveRuntimeAccounts,
@@ -559,25 +560,46 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
 }
 
 /**
- * The color `claude-code:default` is drawn in, by `resolveRuntimeAccounts`:
- * an alias row's own color (matched by real path, routable rows only), else
- * `runtimes.claudeCode.defaultAccountColor`, else the default for its
- * position among the listed rows. The default folder comes from config and the
- * OS home only, exactly as the usage store resolves it, never from this
- * process's `CLAUDE_CONFIG_DIR` (DOR-2492).
+ * Two answers about the default account that `GET /api/config` hands the
+ * client, both read off ONE `resolveRuntimeAccounts` pass so no client
+ * re-derives either by comparing path strings:
  *
- * Omitted, rather than guessed, when the config cannot be read.
+ * - `defaultAccountResolvedColor`: the color `claude-code:default` is drawn
+ *   in: an alias row's own color (matched by real path, routable rows only),
+ *   else `runtimes.claudeCode.defaultAccountColor`, else the default for its
+ *   position among the listed rows. The default folder comes from config and
+ *   the OS home only, exactly as the usage store resolves it, never from this
+ *   process's `CLAUDE_CONFIG_DIR` (DOR-2492).
+ * - `resolvedAccountId`: the row a NEW session runs on, the one Settings marks
+ *   "in use". The folder is {@link resolveActiveClaudeRoot}'s, the function the
+ *   launch ladder falls back to, so it DOES follow `$CLAUDE_CONFIG_DIR` when no
+ *   default is chosen, because new sessions do. It is matched to a row by
+ *   {@link accountForPath}, the usage store's own canonical comparison (`~`
+ *   expanded, real path), so a trailing slash, a symlink or a `~` spelling
+ *   still names its row. `default` when no routable row has that folder.
+ *
+ * Both are omitted, rather than guessed, when the config cannot be read.
  */
-function resolvedDefaultColor(config: ConfigReader): { defaultAccountResolvedColor?: string } {
+function resolvedDefaultAccount(
+  config: ConfigReader,
+  unavailable: boolean
+): { defaultAccountResolvedColor?: string; resolvedAccountId?: string } {
+  if (unavailable) return {};
   try {
+    const home = os.homedir();
     const { accounts } = resolveRuntimeAccounts('claude-code', {
       config: { runtimes: { claudeCode: config.get('runtimes')?.claudeCode } },
+      home,
       defaultFolder: (_runtime, raw) => claudeDefaultAccountFolder(raw),
     });
     const color = accounts.find((account) => account.isDefault)?.color;
-    return color ? { defaultAccountResolvedColor: color } : {};
+    const row = accountForPath(accounts, 'claude-code', resolveActiveClaudeRoot(config), home);
+    return {
+      ...(color ? { defaultAccountResolvedColor: color } : {}),
+      resolvedAccountId: row?.id ?? IMPLICIT_ACCOUNT_ID,
+    };
   } catch (err) {
-    logger.debug('[claude-config-dir] default account color unavailable', { err: String(err) });
+    logger.debug('[claude-config-dir] default account unavailable', { err: String(err) });
     return {};
   }
 }
@@ -609,9 +631,10 @@ export function describeClaudeCodeAccounts(
     // follows its position (DOR-2492): the Settings color control's value, so
     // it can tell "chosen" from "default", as a row's `colorIsDefault` does.
     defaultAccountColor,
-    // The color the default account is DRAWN in, decided here and nowhere
-    // else: the same rule the usage store applies, so no client re-derives it.
-    ...resolvedDefaultColor(config),
+    // The color the default account is DRAWN in, and the row new sessions run
+    // on, decided here and nowhere else: the same rules the usage store and the
+    // launch ladder apply, so no client re-derives them from path strings.
+    ...resolvedDefaultAccount(config, unavailable),
     // Sent only when it is true, so an ordinary response carries no extra key
     // and a client that never learned about this field reads the same wire it
     // always did. What it buys the client is the difference between "your
