@@ -113,8 +113,8 @@ export interface SessionStreamState {
    * usage beat a newer account reading. So the simplest rule that is never
    * wrong in the harmful direction: losing the connection stops the clock, and
    * replayed frames keep the previous stamp. It restarts on a snapshot (what
-   * follows one is the short gap after its cursor) or on a turn this window
-   * itself triggered (every frame of that turn is after the reconnect). A frame
+   * follows one is the short gap after its cursor) or on the turn that carries
+   * this window's own message (every frame of that turn is after the reconnect). A frame
    * it declines to stamp only ranks below the account's reading, which is the
    * safe direction.
    */
@@ -938,8 +938,20 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
         session.status.limit = null;
       }
       // A turn this window triggered is after any reconnect, so its usage
-      // frames are new again (see `usageClockLive`).
-      if (session.triggerPending) session.usageClockLive = true;
+      // frames are new again (see `usageClockLive`). `triggerPending` alone is
+      // not enough: a person can send while a reconnect is still replaying, and
+      // a REPLAYED turn_start from another client's turn would then match it.
+      // So the turn must also carry this window's own message. A turn whose text
+      // the server reshaped fails the match and stays unstamped, which only
+      // ranks its usage below the account's reading (the safe direction).
+      if (
+        session.triggerPending &&
+        event.origin !== 'runtime' &&
+        session.optimisticUserMessage !== null &&
+        event.userMessage === session.optimisticUserMessage.content
+      ) {
+        session.usageClockLive = true;
+      }
       // The triggered turn materialized — the trigger window is over.
       session.triggerPending = false;
       break;

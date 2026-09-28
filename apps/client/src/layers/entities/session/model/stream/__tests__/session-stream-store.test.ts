@@ -1675,14 +1675,29 @@ describe('the live-usage stamp (spec claude-account-ui §6.8)', () => {
     expect(stamp()).toBeNull();
   });
 
-  it('stamps again once a turn this window triggered starts', () => {
+  it("stamps again once the turn carrying this window's own message starts", () => {
     const store = useSessionStreamStore.getState();
     store.applySnapshot(SID, snapshot());
     store.setConnectionState(SID, 'reconnecting');
     store.setConnectionState(SID, 'connected');
+    store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'next please' });
     store.setTriggerPending(SID, true);
-    store.applyEvent(SID, { type: 'turn_start', seq: 6 });
+    store.applyEvent(SID, { type: 'turn_start', seq: 6, userMessage: 'next please' });
     store.applyEvent(SID, usageFrame(7, 0.5));
     expect(stamp()).not.toBeNull();
+  });
+
+  it("does not restart on a replayed turn from another client's message", () => {
+    // A person sends while the reconnect is still replaying: the replay's
+    // turn_start is someone else's, older turn.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    store.setConnectionState(SID, 'reconnecting');
+    store.setConnectionState(SID, 'connected');
+    store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'next please' });
+    store.setTriggerPending(SID, true);
+    store.applyEvent(SID, { type: 'turn_start', seq: 6, userMessage: 'from the other tab' });
+    store.applyEvent(SID, usageFrame(7, 0.9));
+    expect(stamp()).toBeNull();
   });
 });

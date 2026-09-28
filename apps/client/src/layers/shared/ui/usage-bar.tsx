@@ -104,8 +104,9 @@ function Track({
   return <FilledTrack entry={entry} tone={tone} vertical={vertical} className={className} />;
 }
 
-/** `5-hour window 40% used`, or `5-hour window usage unknown`. */
+/** `5-hour window 40% used`, `5-hour window reset`, or `5-hour window usage unknown`. */
 function windowPhrase(name: string, entry: AccountWindow | null): string {
+  if (entry?.expired) return `${name} reset`;
   if (barTone(entry) === 'unknown' || !entry) return `${name} usage unknown`;
   return `${name} ${pctText(entry)} used`;
 }

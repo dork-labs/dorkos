@@ -12,7 +12,8 @@ import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import { useAccountIdentityGate, useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useSessions, useSessionStreamStatus } from '@/layers/entities/session';
 import { chipState, type ChipState, type SessionLimitView } from '@/layers/shared/lib';
-import { useAccountUsage, useClaudeAccounts } from '@/layers/shared/model';
+import { useAccountUsage, useClaudeAccounts, useNow } from '@/layers/shared/model';
+import { withExpiredWindows } from '../lib/account-usage-status';
 import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from './use-account-switch';
 import { useResolvedSessionRuntime } from './use-runtime-chip';
 import type { AccountPromotionState } from './status-bar-registry';
@@ -164,7 +165,11 @@ export function useSessionAccount(sessionId: string | null): SessionAccount {
   // started session: before launch the account is a hint the status is not
   // about.
   const statusUsage = pending ? null : (streamStatus?.accountUsage ?? null);
-  const usage = newerReading(cachedUsage, statusUsage);
+  // Expiry is read once, here, on a one-minute clock: a window past its reset
+  // reads "reset" on the chip's words and bars, its popover, and the usage
+  // item alike, even before the server marks it (spec `claude-account-ui` §6.8).
+  const tick = useNow();
+  const usage = withExpiredWindows(newerReading(cachedUsage, statusUsage), new Date(tick));
 
   const registered =
     (accountId !== null ? accounts.find((account) => account.id === accountId) : undefined) ??

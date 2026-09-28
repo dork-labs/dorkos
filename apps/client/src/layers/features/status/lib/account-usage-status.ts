@@ -42,7 +42,9 @@ export function isWindowExpired(window: AccountWindow, now: Date): boolean {
  * An account's usage with every window whose reset has passed marked the way
  * the server marks one (`expired`, 0%, status cleared), so the chip, the
  * popovers and the bars all agree on expiry even before the server catches up.
- * Returns the same object when nothing changed.
+ * When a window is marked here, the account's `state` and `limit` are read
+ * again from the windows still in force, as the server would. Returns the same
+ * object when nothing changed.
  *
  * @param usage - The account's usage, or nothing when there is no reading.
  * @param now - The moment to read expiry from.
@@ -58,17 +60,35 @@ export function withExpiredWindows(
     changed = true;
     return { ...entry, expired: true, usedPct: 0, status: null };
   });
-  return changed ? { ...usage, windows } : usage;
+  if (!changed) return usage;
+  const inForce = windows.filter((entry) => !entry.expired);
+  const limit =
+    usage.limit && inForce.some((entry) => entry.key === usage.limit!.window) ? usage.limit : null;
+  const readable = inForce.some((entry) => entry.usedPct !== null);
+  const state = readable ? ACCOUNT_STATE_OF[stateOfWindows(inForce, limit)!] : 'unknown';
+  return { ...usage, windows, limit, state };
 }
+
+/** The usage item's state as the account's own `state`. */
+const ACCOUNT_STATE_OF: Record<NonNullable<UsageStatus['state']>, AccountUsage['state']> = {
+  ok: 'ok',
+  warning: 'warning',
+  exhausted: 'limited',
+};
 
 /** The share from which a window is near its limit (S4's usage `state` rule). */
 const WARNING_PCT = 90;
 
 /**
- * How the windows still in force read, by S4's rule: out when one rejected work
- * or is full, near when one is at 90% or warned, else fine.
+ * How the windows still in force read, by S4's rule: out when the account's
+ * limit names one of them, or one rejected work or is full; near when one is at
+ * 90% or warned; else fine.
  */
-function stateOfWindows(windows: readonly AccountWindow[]): UsageStatus['state'] {
+function stateOfWindows(
+  windows: readonly AccountWindow[],
+  limit: AccountUsage['limit']
+): UsageStatus['state'] {
+  if (limit && windows.some((w) => w.key === limit.window)) return 'exhausted';
   if (windows.some((w) => w.status === 'rejected' || (w.usedPct ?? 0) >= 100)) return 'exhausted';
   if (windows.some((w) => w.status === 'allowed_warning' || (w.usedPct ?? 0) >= WARNING_PCT)) {
     return 'warning';
@@ -134,7 +154,8 @@ export function accountUsageToStatus(
   // The account's overall state may be about a window that has since reset
   // (the 5-hour window hit 100%, then reset): then it is read again from the
   // windows still in force.
-  const state = live.length < usage.windows.length ? stateOfWindows(live) : STATE_OF[usage.state];
+  const state =
+    live.length < usage.windows.length ? stateOfWindows(live, usage.limit) : STATE_OF[usage.state];
   return {
     kind: 'subscription',
     utilization: window.usedPct / 100,

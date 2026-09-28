@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(status): show usage and context in the status bar from the moment a session opens (DOR-2387)'
+  - 'fix(status): read state and expiry from the windows in force, keep cost wording, and never stamp replayed usage as new (DOR-2387)'
 ---
 
 ### Changed

@@ -11,7 +11,7 @@ import {
 import { planName, type AccountWindow } from '@/layers/shared/lib';
 import type { SessionAccount } from '../model/use-session-account';
 import { canOfferContinue, popoverWindowLabel } from '../lib/account-chip';
-import { newestObservedAt, readableWindows, withExpiredWindows } from '../lib/account-usage-status';
+import { newestObservedAt, readableWindows } from '../lib/account-usage-status';
 import { UsageFreshnessLine } from './UsageFreshnessLine';
 
 /** Props for {@link AccountPopover}. */
@@ -76,9 +76,9 @@ export function AccountPopover({
   const plan = planName(account.usage?.plan?.name ?? account.usage?.subscriptionType);
   const offerContinue =
     onContinue !== undefined && canOfferContinue(account.limit, account.lifecycle, account.pending);
-  // A window whose reset has passed reads "reset", as on the chip (spec §6.8).
-  const usage = withExpiredWindows(account.usage, now);
-  // How fresh the bars are: the newest reading among them.
+  // Expiry is already read (`useSessionAccount`), so "reset" matches the chip.
+  const usage = account.usage;
+  // How fresh the bars are: the newest reading among them (spec §6.8).
   const observedAt = newestObservedAt(readableWindows(usage));
 
   return (

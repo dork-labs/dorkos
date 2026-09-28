@@ -109,6 +109,19 @@ describe('accountUsageToStatus', () => {
     expect(accountUsageToStatus(nearOnWeek, NOW)?.state).toBe('warning');
   });
 
+  it("reads out when the account's limit names a window still in force", () => {
+    // The 5-hour window reset, but the account is limited on the week at 60%.
+    const limitedOnWeek = createMockAccountUsage({
+      state: 'limited',
+      limit: { window: 'seven_day', resetsAt: '2026-10-01T09:00:00.000Z' },
+      windows: [
+        usageWindow({ usedPct: 100, expired: true }),
+        usageWindow({ key: 'seven_day', label: 'Weekly', usedPct: 60, resetsAt: null }),
+      ],
+    });
+    expect(accountUsageToStatus(limitedOnWeek, NOW)?.state).toBe('exhausted');
+  });
+
   it('returns null for a spend-only record, so pay-as-you-go keeps showing', () => {
     const spendOnly = createMockAccountUsage({
       runtime: 'opencode',
@@ -142,6 +155,20 @@ describe('withExpiredWindows', () => {
     const [fiveHour, week] = withExpiredWindows(past, NOW)!.windows;
     expect(fiveHour).toMatchObject({ expired: true, usedPct: 0, status: null });
     expect(week).toMatchObject({ expired: false, usedPct: 30 });
+  });
+
+  it("reads the account's state and limit again from the windows still in force", () => {
+    const limitedOnFiveHour = createMockAccountUsage({
+      state: 'limited',
+      limit: { window: 'five_hour', resetsAt: '2026-09-28T11:00:00.000Z' },
+      windows: [
+        usageWindow({ usedPct: 100, status: 'rejected', resetsAt: '2026-09-28T11:00:00.000Z' }),
+        usageWindow({ key: 'seven_day', usedPct: 30, resetsAt: null }),
+      ],
+    });
+    const read = withExpiredWindows(limitedOnFiveHour, NOW)!;
+    expect(read.state).toBe('ok');
+    expect(read.limit).toBeNull();
   });
 
   it('returns the same record when nothing has reset', () => {

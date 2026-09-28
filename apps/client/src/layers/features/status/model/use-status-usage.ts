@@ -10,7 +10,6 @@ import type { UsageStatus } from '@dorkos/shared/types';
 import { useSessionUsageArrivedAt } from '@/layers/entities/session';
 import { useNow } from '@/layers/shared/model';
 import {
-  withExpiredWindows,
   accountUsageToStatus,
   newestObservedAt,
   pickUsage,
@@ -53,8 +52,8 @@ export function useStatusUsage(
   const tick = useNow();
   const liveTurnAt = useSessionUsageArrivedAt(sessionId);
   const now = new Date(tick);
-  // Expiry read once, here, so the item and the popover's bars agree.
-  const accountUsage = withExpiredWindows(account.pending ? null : account.usage, now);
+  // Expiry is already read in `useSessionAccount`, once for every surface.
+  const accountUsage = account.pending ? null : account.usage;
   const picked = pickUsage({
     liveTurnUsage: turnUsage,
     liveTurnAt,

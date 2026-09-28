@@ -7,7 +7,8 @@
  * event.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
@@ -62,6 +63,10 @@ beforeAll(() => {
 const SID = '11111111-1111-4111-8111-111111111111';
 
 beforeEach(() => {
+  // The fixtures' readings are from 2026-09-27 noon, with the 5-hour window
+  // resetting at 15:00; the chip now reads a past reset as "reset", so the
+  // clock is pinned to when the readings were taken.
+  vi.useFakeTimers({ now: new Date('2026-09-27T12:05:00.000Z'), shouldAdvanceTime: true });
   handlers.clear();
   mockSessions = [];
   useAppStore.setState({ pendingAccount: null, pendingRuntime: null, selectedCwd: '/work' });
@@ -69,6 +74,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   useSessionStreamStore.getState().removeSession(SID);
 });
 
@@ -168,6 +174,41 @@ describe('the identity gate (invariant 1)', () => {
     const chip = await screen.findByRole('button', { name: /^Acct 2/ });
     expect(chip).toHaveAccessibleName('Acct 2, 5-hour window 40% used, weekly 72% used');
     expect(transport.getAccountUsage).not.toHaveBeenCalled();
+  });
+});
+
+describe('a window past its reset (spec claude-account-ui §6.8)', () => {
+  it('reads "reset" on the chip and in its popover alike, before the server marks it', async () => {
+    mockSessions = [
+      createMockSession({
+        id: SID,
+        runtime: 'claude-code',
+        accountId: 'acct-2',
+        account: '/Users/test/.claude-acct-2',
+      }),
+    ];
+    const queryClient = createTestQueryClient();
+    // A cached reading: the 5-hour window reset a minute ago, still at 97%, and
+    // the server has not flagged it yet, so the account still reads `warning`.
+    const past = new Date(Date.now() - 60_000).toISOString();
+    seedAccountUsage(queryClient, [
+      createMockAccountUsage({
+        state: 'warning',
+        windows: [
+          { ...ACCT_2.windows[0]!, usedPct: 97, resetsAt: past, status: 'allowed_warning' },
+          { ...ACCT_2.windows[1]!, usedPct: 30, resetsAt: null },
+        ],
+      }),
+    ]);
+    renderChip(transportWith(2), queryClient);
+
+    // No "97% of 5h" words: the chip draws its bars, and names the window reset.
+    const chip = await screen.findByRole('button', { name: /^Acct 2/ });
+    expect(chip).toHaveAccessibleName('Acct 2, 5-hour window reset, weekly 30% used');
+
+    await userEvent.setup().click(chip);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('img', { name: '5-hour reset' })).toBeInTheDocument();
   });
 });
 
