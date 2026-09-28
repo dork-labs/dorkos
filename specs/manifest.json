@@ -11,6 +11,15 @@
       "linearIssue": "DOR-2086"
     },
     {
+      "id": "260928-001526",
+      "slug": "central-workspace-disposal",
+      "title": "Central adoption of workspace reconciliation disposal",
+      "created": "2026-09-28",
+      "status": "implemented",
+      "project": "Maintenance",
+      "linearIssue": "DOR-2429"
+    },
+    {
       "id": "260927-155808",
       "slug": "connection-app-details",
       "title": "Connections: app logos, descriptions, actions and a kept app list",

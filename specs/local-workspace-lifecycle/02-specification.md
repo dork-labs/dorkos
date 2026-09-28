@@ -152,3 +152,7 @@ No new ADR is extracted: this specification proposes a bounded experiment and ma
 - [Workspace reconciler source](../../apps/server/src/services/workspace/workspace-reconciler.ts)
 - [Warm-process lifecycle specification](../warm-process-lifecycle/02-specification.md)
 - [Local marketplace recovery evidence](../../research/20260926-local-marketplace-recovery-evidence.md)
+
+## Central adoption follow-up
+
+DOR-2429 selects the separate [central workspace disposal](../central-workspace-disposal/02-specification.md) slice. The class-local pilot above remains its historical scope; the new specification covers root ownership and its evidence limits.
