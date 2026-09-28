@@ -27,6 +27,7 @@ import { CompactPendingRow } from '../primitives';
 import { AutoHideThinking, ToolCallWithApp } from './auto-hiding-parts';
 import { CollapsibleRun } from './CollapsibleRun';
 import { TouchChipStrip } from '../chips';
+import { approvalHeading } from '@dorkos/shared/approval-schemas';
 import { ApprovalCard } from '@/layers/features/approvals';
 import { ChatAgentRequest, isConnectionRequestTool } from '@/layers/features/connections';
 
@@ -123,6 +124,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           message={part.message}
           category={part.category}
           details={part.details}
+          // A `rate_limit` part becomes the out-of-usage marker, found by the
+          // message's time (spec `claude-account-ui` §6.7).
+          code={part.code}
+          at={message.timestamp}
           // Retry inside the transcript re-sends the session's LAST user
           // message, so a card only earns the button by passing BOTH tests
           // below. Neither is the other in disguise, and each was found the
@@ -243,7 +248,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         return (
           <CapabilityApprovalTimedOut
             key={`capability-approval-${part.approval.approvalId}`}
-            title={part.approval.capabilityTitle}
+            title={approvalHeading(part.approval)}
           />
         );
       }

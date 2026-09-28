@@ -321,7 +321,11 @@ export function createPlaygroundTransport(): Transport {
         });
       }
       if (prop === 'getContinueOptions') return async () => MOCK_CONTINUE_OPTIONS;
-      if (prop === 'getLimitHistory') return async () => ({ entries: MOCK_LIMIT_HISTORY });
+      if (prop === 'getLimitHistory') {
+        return async (sessionId: string) => ({
+          entries: MOCK_LIMIT_HISTORY.filter((entry) => entry.sessionId === sessionId),
+        });
+      }
       if (prop === 'continueSession') return async () => ({});
       if (prop === 'waitForReset' || prop === 'cancelAutoContinue') {
         return async () => undefined;

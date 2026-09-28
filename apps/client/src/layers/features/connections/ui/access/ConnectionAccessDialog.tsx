@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
+import {
+  actionNameFromSlug,
+  type ConnectorReconciliationPreview,
+} from '@dorkos/shared/connector-schemas';
 import {
   Badge,
   Button,
@@ -31,12 +34,6 @@ interface ConnectionAccessDialogProps {
   open: boolean;
   /** Close or reopen the editor. */
   onOpenChange: (open: boolean) => void;
-}
-
-/** Human label for a provider operation slug without exposing internal IDs. */
-function operationLabel(slug: string): string {
-  const leaf = slug.split('.').at(-1) ?? slug;
-  return leaf.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 /** Exact operation-revision access editor backed by one complete server snapshot. */
@@ -238,7 +235,7 @@ function ReconciliationEditor({
                           className="bg-background flex gap-3 rounded-md p-2.5"
                         >
                           <Checkbox
-                            aria-label={`${operationLabel(candidate.operationSlug)} for ${agent.displayName}`}
+                            aria-label={`${actionNameFromSlug(candidate.operationSlug, preview.connection.toolkit)} for ${agent.displayName}`}
                             checked={checked}
                             disabled={cannotAdd}
                             onCheckedChange={(next) => {
@@ -254,7 +251,10 @@ function ReconciliationEditor({
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="text-sm font-medium">
-                                {operationLabel(candidate.operationSlug)}
+                                {actionNameFromSlug(
+                                  candidate.operationSlug,
+                                  preview.connection.toolkit
+                                )}
                               </span>
                               <Badge size="xs" variant="secondary">
                                 {candidate.capabilityClassification}

@@ -301,20 +301,22 @@ describe('TrustDial', () => {
     it('warms to amber when the runtime cannot keep the stop’s promise', () => {
       render(<TrustDial mode="acceptEdits" descriptors={CODEX} onChangeMode={vi.fn()} />);
 
-      expect(screen.getByTestId('trust-dial-caption').className).toContain('amber');
+      expect(screen.getByTestId('trust-dial-caption').className).toContain(
+        'text-status-warning-fg'
+      );
     });
 
     it('stays quiet when the runtime does what the stop says', () => {
       render(<TrustDial mode="acceptEdits" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
 
-      expect(screen.getByTestId('trust-dial-caption').className).not.toContain('amber');
+      expect(screen.getByTestId('trust-dial-caption').className).not.toContain('status-warning');
     });
 
     it('leaves the safest mode alone even though it never asks', () => {
       // Codex's read-only default has nothing to ask about.
       render(<TrustDial mode="default" descriptors={CODEX} onChangeMode={vi.fn()} />);
 
-      expect(screen.getByTestId('trust-dial-caption').className).not.toContain('amber');
+      expect(screen.getByTestId('trust-dial-caption').className).not.toContain('status-warning');
     });
 
     it('goes green at the top stop — full power, and it looks like it', () => {
@@ -346,7 +348,7 @@ describe('TrustDial', () => {
 
       const caption = screen.getByTestId('trust-dial-caption').className;
       expect(caption).not.toContain('text-status-success');
-      expect(caption).not.toContain('amber');
+      expect(caption).not.toContain('status-warning');
     });
 
     it('spends no red on any stop — red is left for real alarms', () => {

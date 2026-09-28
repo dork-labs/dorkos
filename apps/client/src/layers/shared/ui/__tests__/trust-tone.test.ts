@@ -149,7 +149,7 @@ describe('the classes each tone paints', () => {
 
   it('paints muted where a surface owns its whole colour', () => {
     expect(trustToneText(ASK_FIRST)).toBe('text-muted-foreground');
-    expect(trustToneText(CODEX_WORKSPACE_WRITE)).toContain('amber');
+    expect(trustToneText(CODEX_WORKSPACE_WRITE)).toBe('text-status-warning-fg');
     expect(trustToneText(CLAUDE_AUTONOMY)).toBe('text-status-success');
   });
 });

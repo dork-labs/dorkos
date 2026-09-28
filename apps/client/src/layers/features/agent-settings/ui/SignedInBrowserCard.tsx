@@ -70,7 +70,7 @@ export function SignedInBrowserCard({ agentId, agentLabel }: SignedInBrowserCard
       <FieldCardContent className="space-y-3">
         <div className="flex items-start gap-2">
           {pending ? (
-            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
+            <ShieldAlert className="text-status-warning-dot mt-0.5 size-4 shrink-0" />
           ) : (
             <Globe className="text-muted-foreground mt-0.5 size-4 shrink-0" />
           )}
@@ -86,7 +86,7 @@ export function SignedInBrowserCard({ agentId, agentLabel }: SignedInBrowserCard
             {data.saved ? (
               <p className="text-xs">Signed in to {sites}.</p>
             ) : (
-              <p className="text-xs text-amber-600 dark:text-amber-500">
+              <p className="text-status-warning-fg text-xs">
                 No sign-ins saved yet, so it starts signed out. Run{' '}
                 <code className="font-mono">{loginHint}</code>
                 <CopyButton

@@ -128,10 +128,10 @@ function ExecutionRow({
               className={cn(
                 'truncate',
                 warning
-                  ? 'text-amber-700 dark:text-amber-400'
+                  ? 'text-status-warning-fg'
                   : isSetHere
-                    ? 'md:text-foreground text-amber-700 dark:text-amber-400'
-                    : 'md:text-foreground text-emerald-700 dark:text-emerald-400'
+                    ? 'md:text-foreground text-status-warning-fg'
+                    : 'md:text-foreground text-status-success-fg'
               )}
             >
               {valueLabel}
@@ -536,7 +536,7 @@ function EffortNote({
   return (
     <div className="flex h-8 flex-col justify-center" data-testid={testId}>
       <p className="text-muted-foreground text-xs">{text}</p>
-      {warning && <p className="text-xs text-amber-700 dark:text-amber-400">{warning}</p>}
+      {warning && <p className="text-status-warning-fg text-xs">{warning}</p>}
     </div>
   );
 }

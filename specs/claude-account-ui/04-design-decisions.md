@@ -241,3 +241,14 @@ Spec: §6.6, §11.
 - **One name for Main everywhere.** Every surface that names a Claude account uses the one shared naming helper, so this computer's own sign-in reads "Main (this computer's sign-in)" (§12) on the chip and its popover, the sidebar dot, the header badge, the pre-launch picker, the session details and Settings. Places that show a folder as a folder, such as the path line and "Found on this computer", keep the folder.
 
 Spec: §6.2, §11, §12.
+
+## 16. Out-of-usage banner details (orchestrator, 2026-09-28)
+
+Four calls on the out-of-usage banner and its transcript marker (task 3.3).
+
+1. **When the server gives no reason for a refusal**, the banner says "Couldn't do that. Try again." Any message the server sends is still shown as it is.
+2. **After the work moved to another account**, the message box keeps its usual placeholder. It stays shut until "Continue here anyway", and the banner above it says why.
+3. **A marker for a model switch whose new model is unknown** reads "<name> ran out · continued here at 4:02pm". It never claims a switch it cannot name.
+4. **The accessibility check runs with no skips.** The four older findings it met on these pages (the usage item's amber, red and faded numbers, the runtime card's green "Ready", and the Settings sections' heading order and repeated label) were fixed at their roots in their own components, so the check skips nothing: a finding there is a defect to fix, never an entry in an allowlist.
+
+Spec: §6.7, §11, §12.

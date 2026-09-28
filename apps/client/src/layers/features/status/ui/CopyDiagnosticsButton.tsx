@@ -12,7 +12,7 @@ interface CopyDiagnosticsButtonProps {
 
 /** The icon: a check on success, an X on failure, the clipboard glyph otherwise. */
 function DiagnosticsIcon({ copied, failed }: { copied: boolean; failed: boolean }) {
-  if (copied) return <Check className="size-3.5 text-green-500" aria-hidden />;
+  if (copied) return <Check className="text-status-success size-3.5" aria-hidden />;
   if (failed) return <X className="text-destructive size-3.5" aria-hidden />;
   return <ClipboardCopy className="size-3.5" aria-hidden />;
 }

@@ -146,7 +146,7 @@ export function CandidateCard({
         </div>
 
         {registrationFailed && (
-          <p role="alert" className="text-xs text-red-700 dark:text-red-400">
+          <p role="alert" className="text-destructive text-xs">
             Couldn’t add this project. Try again.
           </p>
         )}

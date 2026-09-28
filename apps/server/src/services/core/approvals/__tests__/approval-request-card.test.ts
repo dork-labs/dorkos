@@ -126,4 +126,29 @@ describe('the request card an approval projects', () => {
     expect(approvals.getPending(ticket.approvalId)).toMatchObject({ area: 'rooms' });
     expect(approvals.getPending(ticket.approvalId)).not.toHaveProperty('roomId');
   });
+
+  it('carries a connected-app action, swept for secrets, and drops one that does not parse', () => {
+    const approvals = new ApprovalService(db);
+    const action = {
+      serviceId: 'gmail',
+      serviceName: 'Gmail',
+      accountLabel: 'work@acme.com',
+      actionName: 'Delete message',
+      details: [{ label: 'Message ID', value: `m-${TOKEN}` }],
+    };
+    const ticket = approvals.request({ ...BASE, serviceAction: action });
+    expect(approvals.getPending(ticket.approvalId)?.serviceAction).toEqual({
+      ...action,
+      details: [{ label: 'Message ID', value: 'm-(hidden)' }],
+    });
+
+    const broken = approvals.request({
+      ...BASE,
+      serviceAction: { ...action, actionName: '' },
+    });
+    const card = approvals.getPending(broken.approvalId)!;
+    expect(card).not.toHaveProperty('serviceAction');
+    // The card still has its sentence.
+    expect(card.summary).toBe(BASE.summary);
+  });
 });

@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Clock3, ShieldAlert } from 'lucide-react';
 import type { ConnectorReceiveScope } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
-import type { ConnectionId, ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
+import {
+  actionNameFromSlug,
+  type ConnectionId,
+  type ConnectorAgentRequestItem,
+} from '@dorkos/shared/connector-schemas';
 import {
   useConnectorAgentRequest,
   useConnectorCatalog,
@@ -32,11 +36,6 @@ import {
   Skeleton,
 } from '@/layers/shared/ui';
 import { AgentRequestEventScopes } from './AgentRequestEventScopes';
-
-function operationName(slug: string): string {
-  const leaf = slug.split('.').at(-1) ?? slug;
-  return leaf.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
 
 function requestStateLabel(status: ConnectorAgentRequestItem['status']): string {
   switch (status) {
@@ -327,7 +326,10 @@ export function AgentRequestDialog({
                               <Checkbox
                                 checked={checked}
                                 disabled={!candidate.supported}
-                                aria-label={operationName(candidate.operationSlug)}
+                                aria-label={actionNameFromSlug(
+                                  candidate.operationSlug,
+                                  candidate.toolkit
+                                )}
                                 onCheckedChange={(next) =>
                                   setOperationRevisionIds((current) =>
                                     next === true
@@ -338,7 +340,7 @@ export function AgentRequestDialog({
                               />
                               <span className="min-w-0 flex-1">
                                 <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                                  {operationName(candidate.operationSlug)}
+                                  {actionNameFromSlug(candidate.operationSlug, candidate.toolkit)}
                                   <Badge
                                     size="xs"
                                     variant={

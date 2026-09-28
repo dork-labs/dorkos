@@ -105,17 +105,37 @@ See the [Configuration reference](/docs/getting-started/configuration) for the f
 
 ## Choose an Account
 
-If you've registered more than one Claude account (see [Configuration](/docs/getting-started/configuration#runtimes)), you can send a chat's work, and what it bills, to a specific one. This only shows up once DorkOS knows about more than one account — with just one, there's nothing to choose.
+If you use more than one Claude account, you can pick which one a chat runs on, and so which one it bills. With only one account, none of this shows up, because there is nothing to choose.
+
+This is for Claude Code only. Codex and OpenCode each use the one sign-in on this computer, and DorkOS doesn't support several accounts for them.
+
+### Add Your Accounts
+
+Open Settings and go to **Runtimes**. On the Claude Code card, under **Billing account**, choose **Add account**, pick the account's folder and give it a name you'll recognize. You can also edit the settings file by hand (see [Configuration](/docs/getting-started/configuration#runtimes)).
+
+DorkOS also looks for Claude account folders on this computer that you haven't added yet. They appear in a group called **Found on this computer**, each with its folder and when it was last used. Choose **Add** to add one, or **Dismiss** to stop seeing it. A folder that looks like it belongs to a company or school account is marked **managed by an organization**. DorkOS never adds a folder until you click Add.
+
+This computer's own Claude sign-in (usually the `~/.claude` folder) is your main account. DorkOS calls it **Main (this computer's sign-in)** everywhere it names an account. With two or more accounts, it gets its own row in the list, with its usage. It has no remove button, because it is the computer's own sign-in rather than something you added. If you add its folder as an account yourself, that row takes its place. When a row is marked **in use**, that's the account new chats run on. If the server was started pointing at a folder no row stands for, a line above the list names that folder, and no row is marked.
+
+With two or more accounts, each account has a color, and its dot wears that color everywhere in the app. To change it, click the account's dot in Settings and pick one of 8 colors, or **Default**. Main's dot works the same way.
 
 ### For One Chat
 
-With two or more Claude accounts, the status bar shows an account chip: the account's name and two small bars for its 5-hour and weekly limits. It turns amber when the account is close to a limit and red when it runs out. Click it to see each limit and when it resets.
+With two or more Claude accounts, the status bar at the bottom of a chat shows an account chip. It has the account's color dot, its name, and two small bars for its 5-hour and weekly limits.
 
 Before the first message, click the account chip and pick an account. It applies to that chat only, and the choice locks once the first message sends.
 
-### When an Account Runs Out
+After that, the chip tells you how the account is doing:
 
-When a chat's account runs out of usage, click the account chip and choose **Continue on another account**. You see each of your other accounts with how much it has left and when it resets. Pick one, and DorkOS starts a new chat in the same folder with a short summary of where this one stopped. For now, only Claude Code chats can move this way.
+- **Amber, with words**, when the account is close to a limit: "Acct 3 · 91% of week".
+- **Red** when the account is out: "Acct 4 · out until Tue 3pm", or "Acct 4 · back in 47 min" when the 5-hour limit ran out.
+- **Amber** when only one model is out, such as "Acct 3 · Opus out until Tue 3pm". The account still has room for other models.
+
+Click the chip to see each limit, when it resets, and how long ago that reading was taken. If the chat is working on a flow task, the popover names the task too.
+
+### See Which Account a Chat Uses
+
+With two or more Claude accounts, each Claude Code chat in the sidebar has a small dot in its account's color, just before its name. Hover over the dot to see the account's name. The chat's header shows the same dot and name.
 
 ### For an Agent
 
@@ -126,6 +146,97 @@ Settings → Runtimes lists every agent billing somewhere other than your defaul
 ### As the Default
 
 Set which account new chats bill to when neither the chat nor the agent names one, at Settings → Runtimes → Claude Code under **Default account**.
+
+## Watch Your Usage
+
+You don't have to send a message to see where you stand. As soon as you open a chat you've already used, the status bar shows its usage and context numbers. This works for every runtime and any number of accounts. With two or more Claude accounts, the account chip carries the usage numbers instead, and shows your usage even before the first message.
+
+Usage belongs to the account, not the chat. Every chat on the same account shows the same numbers, and they change together.
+
+The numbers come from the last time DorkOS read them. Their popover or tooltip says when, such as "as of 12 min ago". A reading more than about an hour old looks a little faded. A limit whose reset time has passed reads **reset**.
+
+Settings → Runtimes shows usage bars for every runtime that reports them, even with one account. Claude Code shows its 5-hour and weekly limits, and Codex shows its weekly limit too. OpenCode only reports what it spends, so its card shows one line instead, like "$4.20 spent this month". With two or more Claude accounts, each account's row has its own bars.
+
+## When Usage Runs Out
+
+Every account has usage limits. When a chat's account runs out, the chat can't go on until the limit resets, or, for some Claude Code chats, until you move the work to another account. This applies to every runtime, with any number of accounts.
+
+A notice appears above the message box, such as "Acct 4 is out of usage until Tue 3pm." When the 5-hour limit ran out, it says how long to wait instead: "Acct 4 is out of usage · back in 47 min." With one account, or on Codex or OpenCode, the notice names the runtime rather than an account, like "Codex is out of usage until Tue 3pm."
+
+On a Claude Code chat that can move, the notice usually has two buttons: **Continue on another account…** and **Wait for reset**. Otherwise it offers only **Wait for reset**. Until the limit resets or you move the work, the message box is paused: "Paused until you continue or the account resets". If DorkOS doesn't know when the limit resets, the message box stays open.
+
+The notice is red while the chat needs you, including when only one model is out. It turns grey once there is nothing you need to do: while you wait, after the reset, and after the work has moved.
+
+With two or more Claude accounts, the sidebar shows the same thing in words, in place of the chat's time:
+
+- "out · needs you" in red, while the chat waits for you to choose;
+- "out · waiting for reset" once you chose to wait;
+- "out · handing off" while the work moves to another account.
+
+The header badge shows the same words. On a narrow window, the header shortens "out · waiting for reset" to "out · waiting". Once the work has moved on, the old chat goes back to looking normal.
+
+If something goes wrong when you choose a button, the notice says why in a line of its own, or "Couldn't do that. Try again." when there is no reason to give.
+
+### Continue on Another Account
+
+Only Claude Code chats can continue on another account, and only ones you started in DorkOS, or that an agent started for you. Any other chat can only wait for its reset, such as one started by a schedule, in a room or channel, from Telegram or Slack, or in the terminal. So can every Codex or OpenCode chat.
+
+To move on, choose **Continue on another account…** on the notice, or click the account chip and choose it there. It only shows while the chat is out of usage. A list opens with your other accounts, each with how much of its week is left and when it resets, like "28% left · resets Sun". An account that is out too can't be picked.
+
+Pick one and choose **Continue on** followed by its name, like **Continue on Acct 2**. DorkOS starts a new chat in the same folder, on the account you picked, with a summary of this one. The chat itself does not move: the old chat stays where it was, and the new one picks up the work. On a flow run, flow picks the task up in the same folder and branch from where it last saved its progress.
+
+Without flow, every other account is listed, the one with the most usage left first. With flow installed, flow may shape the list:
+
+- one account may be marked **recommended**;
+- your main account may show dimmed, because flow keeps it in reserve (you can still pick it);
+- accounts you keep out of flow are not listed.
+
+If no account can take the work, the list says "No other account can take this work right now."
+
+### Wait for the Reset
+
+Choose **Wait for reset** and the notice turns grey, such as "Waiting for Acct 4 · back in 1h 12m", or "Waiting for Acct 4 · back Tue 3pm" when the reset is more than a day away.
+
+On a chat that could move to another account, the notice also has a **Continue automatically when it resets** checkbox. Tick it and the chat picks up again on its own when the limit resets. Only Claude Code chats can do this. Codex and OpenCode chats, and any chat that can only wait, never continue on their own: you choose when to carry on.
+
+When the reset comes, the notice says "Acct 4 has reset." with a **Continue** button that picks the chat up where it left off. If DorkOS can't confirm the reset, it says "Acct 4 should have reset by now." instead. The same words appear if the reset time passes while the notice still waits for you, and the message box opens again so you can just send a message.
+
+Once the limit is over, the notice goes away and leaves a one-line note in the chat where the work stopped:
+
+- "Resumed after reset at 4:02pm" after a reset;
+- "Acct 4 ran out · moved to Acct 2 at 2:14pm" after the work moved (the new account's name opens the new chat);
+- "Opus ran out · continued on Sonnet at 4:02pm" after a switch to another model;
+- "Acct 4 ran out · continued here at 4:02pm" when you kept going in this chat before the reset.
+
+### Other Things You Might See
+
+- **"All accounts are out."** Every account you could use has run out. The notice names the one that comes back soonest, like "Soonest back: Acct 2, Sun 9am", and the only choice is **Wait for reset**.
+- **"Opus is out on Acct 3 for this week."** Only one model ran out. Choose **Keep going on Sonnet, same account** to carry on with a different model. The notice may also offer **Continue on another account…** and always offers **Wait for reset**.
+- **"This task continued on Acct 2."** The work moved to a new chat. Choose **Open it →** to go there. The message box here stays shut, so you don't split the work by accident. To keep using this chat anyway, choose **Continue here anyway**. That choice lasts for this limit only; if the account runs out again later, the notice asks again.
+
+### On a Flow Run
+
+If flow is set to **Hand off automatically**, the notice counts down for 10 seconds before moving the task: "Moving this task to Acct 2 in 10s…". The message box reads "Paused until the task moves or the account resets". Choose **Move now** to skip the wait, **Choose account…** to pick a different account, or **Wait for reset** to stay. On a flow run, the notice then says "Moving this task to Acct 2…" until flow reports the move, and after that it says the task continued elsewhere.
+
+Choosing **Wait for reset** on a flow run hands the wait to flow. Flow holds the run, and picks it up again at the reset only when **Continue automatically when it resets** is on.
+
+If DorkOS can't reach flow, the notice says "Flow could not be reached, so this was not changed."
+
+## Let Flow Share the Work
+
+The [/flow plugin](/docs/guides/flow/what-flow-is) can spread its work across all your accounts, so a task keeps going when one account runs out. [Use all your accounts](/docs/guides/flow/use-all-your-accounts) walks through setting it up. This section only covers where its settings live in the app.
+
+Install the flow plugin from the [Marketplace](/docs/marketplace). The first time, Settings → Extensions shows it waiting for you: choose **Allow it to run**, once. After that, Settings has a **Flow** tab under Add-ons. With two or more Claude accounts, the account list in Settings → Runtimes points to it: "Flow uses these accounts for your work. Choose how in Settings → Flow."
+
+The Flow tab lists your accounts grouped by runtime. Give each one a role:
+
+- **Main** is your own everyday account. **Keep 50% for me** sets how much of its weekly limit flow leaves alone, and **Use it all in the last N hours before it resets** lets flow spend the rest just before the week resets.
+- **Rotation** accounts are ones flow may use freely.
+- **Kept out** accounts are never used by flow, unless you list repositories under **Only for these repos**. Then flow uses it only for those.
+
+On your first visit, a short notice explains the three roles. If you have a Main account but nothing in rotation, the tab says "Nothing is in rotation yet, so flow only uses your main account."
+
+Two more settings apply to every account. **When an account runs out** is either **Hand off automatically** (flow moves the task to another account) or **Ask me** (flow waits for you to choose). **Cross-runtime fallback** is an **Off** or **On** choice, and starts on **Off**.
 
 ## See the Runtime
 

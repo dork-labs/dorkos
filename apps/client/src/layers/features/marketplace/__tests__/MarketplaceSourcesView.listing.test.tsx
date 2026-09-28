@@ -194,7 +194,7 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     renderView({});
     const row = await findRow('my-team');
     const dot = within(row).getByLabelText('Enabled, not fetched yet');
-    expect(dot.getAttribute('class')).not.toMatch(/emerald|amber/);
+    expect(dot.getAttribute('class')).not.toMatch(/status-(success|warning)/);
     expect(within(row).queryByText(/didn't load|Couldn't/)).not.toBeInTheDocument();
   });
 

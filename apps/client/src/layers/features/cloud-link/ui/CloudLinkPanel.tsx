@@ -227,7 +227,7 @@ function IdleState({
         {busy ? 'Starting…' : 'Link this instance'}
       </Button>
       {(consentError ?? startError) && (
-        <p className="text-sm text-red-500" role="alert">
+        <p className="text-destructive text-sm" role="alert">
           {consentError ?? startError}
         </p>
       )}
@@ -277,7 +277,7 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
             aria-label={failed ? 'Couldn’t copy code. Try again' : 'Copy code'}
           >
             {copied ? (
-              <Check className="size-4 text-green-500" />
+              <Check className="text-status-success size-4" />
             ) : failed ? (
               <X className="text-destructive size-4" />
             ) : (
@@ -293,7 +293,7 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
           Open the approval page
         </Button>
         {openError && (
-          <p className="text-sm text-red-500" role="alert">
+          <p className="text-destructive text-sm" role="alert">
             {openError}
           </p>
         )}
@@ -435,7 +435,7 @@ function RecoveryState({
   return (
     <div className="space-y-3">
       <div className="flex items-start gap-2">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
+        <TriangleAlert className="text-status-warning-dot mt-0.5 size-4 shrink-0" />
         <div className="space-y-1">
           <p className="text-sm font-medium">{title}</p>
           <p className="text-muted-foreground text-sm">{description}</p>

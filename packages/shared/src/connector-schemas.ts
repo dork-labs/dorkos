@@ -1176,3 +1176,24 @@ export function serviceNameFromToolkit(toolkit: string): string {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }
+
+/**
+ * An action's plain name from its id: `GMAIL_SEND_EMAIL` reads "Send email",
+ * `gmail.messages.list` reads "List". The one rule for this, shared so the
+ * app's lists, the access editors and the server's approval card name an
+ * action the same way. Prefer the service's own display name for the action
+ * when you have it.
+ *
+ * @param operationSlug - The action's id.
+ * @param toolkit - The app's service id, dropped from the front of the id.
+ */
+export function actionNameFromSlug(operationSlug: string, toolkit: string): string {
+  const leaf = operationSlug.split('.').at(-1) ?? operationSlug;
+  const prefix = toolkit.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const words = leaf
+    .replace(new RegExp(`^${prefix}[_-]`, 'iu'), '')
+    .replaceAll(/[_-]+/gu, ' ')
+    .trim()
+    .toLowerCase();
+  return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : operationSlug;
+}
