@@ -5,6 +5,7 @@ covers:
   - 'fix(connections): address review — fence bug, scoped exemptions, docs tests, honesty fixes (DOR-2508)'
   - 'fix(connections): replace Prettier-broken vocab-allow markers with scoped allowlist entries'
   - 'fix(connections): fix MDX-breaking markers, add contains scoping, fix fence-closer anchoring (DOR-2508)'
+  - 'fix(connections): remove all inline vocab-allow markers, ban them in docs/, fix changelog coverage (DOR-2508)'
 ---
 
 ### Fixed
