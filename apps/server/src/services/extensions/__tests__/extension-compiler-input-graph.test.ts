@@ -462,7 +462,10 @@ describe('ExtensionCompiler — cache keyed on the whole input graph', () => {
       expect(codeOf(await compiler.compile(record))).toContain('main is b.js');
     });
   });
-  describe('the pre-build snapshot stays bounded', () => {
+  // These write thousands of files or tens of megabytes before compiling twice,
+  // which can outrun the default 5 s test timeout on a loaded CI runner. The
+  // assertions count reads and builds, never time, so a longer limit loses nothing.
+  describe('the pre-build snapshot stays bounded', { timeout: 30_000 }, () => {
     /** An extension whose build fails, so its error is cached only if the snapshot succeeds. */
     async function failingExtension(id: string, extra: Record<string, string | Buffer>) {
       const extDir = path.join(tmpDir, 'exts', id);
