@@ -15,10 +15,14 @@ import os from 'os';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionCompiler } from '../extension-compiler.js';
 
-const esbuildState = vi.hoisted(() => ({ versionOverride: null as string | null }));
+const esbuildState = vi.hoisted(() => ({
+  versionOverride: null as string | null,
+  realBuild: null as unknown as typeof import('esbuild').build,
+}));
 
 vi.mock('esbuild', async (importOriginal) => {
   const real = await importOriginal<typeof import('esbuild')>();
+  esbuildState.realBuild = real.build;
   return {
     ...real,
     build: vi.fn(real.build),
@@ -329,5 +333,133 @@ describe('ExtensionCompiler — cache keyed on the whole input graph', () => {
     await fs.rename(staged, extDir);
 
     expect(codeOf(await compiler.compile(record))).toContain('Could not pause this flow.');
+  });
+  describe('edits that race a build', () => {
+    it('does not record an edit that lands during a successful build as built', async () => {
+      const extDir = path.join(tmpDir, 'exts', 'race-ext');
+      const lib = path.join(extDir, 'lib.ts');
+      await writeTree(extDir, {
+        'index.ts': 'import { v } from "./lib";\nexport function activate() { return v; }',
+        'lib.ts': 'export const v = "before the edit";',
+      });
+      const record = makeRecord('race-ext', extDir);
+
+      // esbuild has read lib.ts; the edit lands before the compiler records anything.
+      buildSpy.mockImplementationOnce(async (options) => {
+        const result = await esbuildState.realBuild(options);
+        await fs.writeFile(lib, 'export const v = "after the edit";');
+        return result;
+      });
+      expect(codeOf(await compiler.compile(record))).toContain('before the edit');
+
+      expect(codeOf(await compiler.compile(record))).toContain('after the edit');
+      expect(buildSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not record a fix that lands during a failing build as still failing', async () => {
+      const extDir = path.join(tmpDir, 'exts', 'race-error-ext');
+      await writeTree(extDir, {
+        'index.ts':
+          'import { later } from "./later";\nexport function activate() { return later; }',
+      });
+      const record = makeRecord('race-error-ext', extDir);
+
+      buildSpy.mockImplementationOnce(async (options) => {
+        try {
+          return await esbuildState.realBuild(options);
+        } finally {
+          await fs.writeFile(path.join(extDir, 'later.ts'), 'export const later = "fixed";');
+        }
+      });
+      expect('error' in (await compiler.compile(record))).toBe(true);
+
+      expect(codeOf(await compiler.compile(record))).toContain('fixed');
+    });
+
+    it("never lets an older overlapping build overwrite a newer build's record", async () => {
+      const extDir = path.join(tmpDir, 'exts', 'overlap-ext');
+      const lib = path.join(extDir, 'lib.ts');
+      await writeTree(extDir, {
+        'index.ts': 'import { v } from "./lib";\nexport function activate() { return v; }',
+        'lib.ts': 'export const v = "version one";',
+      });
+      const record = makeRecord('overlap-ext', extDir);
+
+      // The older build reads version one, then stalls before recording it.
+      let release!: () => void;
+      const stalled = new Promise<void>((resolve) => (release = resolve));
+      let olderHasBuilt!: () => void;
+      const olderBuilt = new Promise<void>((resolve) => (olderHasBuilt = resolve));
+      buildSpy.mockImplementationOnce(async (options) => {
+        const result = await esbuildState.realBuild(options);
+        olderHasBuilt();
+        await stalled;
+        return result;
+      });
+      const older = compiler.compile(record);
+      await olderBuilt;
+
+      // A newer build of version two starts and finishes meanwhile.
+      await fs.writeFile(lib, 'export const v = "version two";');
+      expect(codeOf(await compiler.compile(record))).toContain('version two');
+
+      release();
+      expect(codeOf(await older)).toContain('version one');
+
+      // The newer record survived: served from cache, no third build.
+      expect(codeOf(await compiler.compile(record))).toContain('version two');
+      expect(buildSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('config files esbuild reads without listing them', () => {
+    it('rebuilds when a tsconfig.json at the plugin root changes', async () => {
+      const pluginRoot = path.join(tmpDir, 'plugins', 'jsx-plugin');
+      const extDir = path.join(pluginRoot, '.dork', 'extensions', 'jsx-ext');
+      const tsconfig = (factory: string) =>
+        JSON.stringify({ compilerOptions: { jsx: 'react', jsxFactory: factory } });
+      await writeTree(pluginRoot, { 'tsconfig.json': tsconfig('firstFactory') });
+      await writeTree(extDir, {
+        'index.ts': 'export function activate() { return <div />; }',
+      });
+      const record = makeRecord('jsx-ext', extDir);
+      expect(codeOf(await compiler.compile(record))).toContain('firstFactory(');
+
+      await fs.writeFile(path.join(pluginRoot, 'tsconfig.json'), tsconfig('secondFactory'));
+      expect(codeOf(await compiler.compile(record))).toContain('secondFactory(');
+    });
+
+    it('rebuilds when a tsconfig.json appears where there was none', async () => {
+      const pluginRoot = path.join(tmpDir, 'plugins', 'new-config-plugin');
+      const extDir = path.join(pluginRoot, '.dork', 'extensions', 'new-config-ext');
+      await writeTree(extDir, { 'index.ts': 'export function activate() { return <div />; }' });
+      const record = makeRecord('new-config-ext', extDir);
+      expect(codeOf(await compiler.compile(record))).not.toContain('addedFactory(');
+
+      await writeTree(pluginRoot, {
+        'tsconfig.json': JSON.stringify({
+          compilerOptions: { jsx: 'react', jsxFactory: 'addedFactory' },
+        }),
+      });
+      expect(codeOf(await compiler.compile(record))).toContain('addedFactory(');
+    });
+
+    it("rebuilds when a dependency's package.json points main at another file", async () => {
+      const extDir = path.join(tmpDir, 'exts', 'main-ext');
+      await writeTree(extDir, {
+        'index.ts': 'import { dep } from "tiny-dep";\nexport function activate() { return dep; }',
+        'node_modules/tiny-dep/package.json': JSON.stringify({ name: 'tiny-dep', main: 'a.js' }),
+        'node_modules/tiny-dep/a.js': 'exports.dep = "main is a.js";',
+        'node_modules/tiny-dep/b.js': 'exports.dep = "main is b.js";',
+      });
+      const record = makeRecord('main-ext', extDir);
+      expect(codeOf(await compiler.compile(record))).toContain('main is a.js');
+
+      await fs.writeFile(
+        path.join(extDir, 'node_modules/tiny-dep/package.json'),
+        JSON.stringify({ name: 'tiny-dep', main: 'b.js' })
+      );
+      expect(codeOf(await compiler.compile(record))).toContain('main is b.js');
+    });
   });
 });

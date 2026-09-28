@@ -6,16 +6,20 @@ import path from 'path';
 import { logger } from '../../lib/logger.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
+  buildStartTime,
   computeBuildKey,
+  createInputRecorder,
   digestBuildInputs,
-  digestSourceTree,
+  digestFailedBuild,
   readCurrentManifest,
+  snapshotSourceTree,
   shortHash,
   writeFileAtomic,
   writeBuildManifest,
   type BuildManifest,
   type CompilationError,
   type SourceDigest,
+  type TreeSnapshot,
 } from './extension-build-cache.js';
 
 /** Bundle size threshold for warning log. Not a hard limit. */
@@ -304,6 +308,13 @@ interface BuildContext {
   cwd: string;
 }
 
+/** Per-build state: when it started, the tree before it, and what esbuild read. */
+interface BuildRun {
+  startedAt: number;
+  snapshot: TreeSnapshot | null;
+  recorder: ReturnType<typeof createInputRecorder>;
+}
+
 /**
  * Compiles TypeScript extensions with esbuild and serves pre-compiled JS extensions.
  *
@@ -577,6 +588,12 @@ export class ExtensionCompiler {
    * Run esbuild, cache the bundle under its content hash, and record the
    * files it was built from.
    *
+   * What gets recorded is what esbuild actually consumed: the input recorder
+   * hashes each file's bytes as esbuild reads them, and the extension's tree
+   * is snapshotted before the build starts. So an edit that lands while the
+   * build runs leaves a manifest that no longer matches, and the next load
+   * rebuilds, instead of vouching for the old bundle (DOR-2491 review).
+   *
    * Two separate `try` blocks, deliberately: a failure from `build()`
    * itself goes through {@link handleEsbuildError} and is worded as a
    * compilation failure, because it is one. A failure writing the
@@ -586,10 +603,16 @@ export class ExtensionCompiler {
    * it; {@link buildIoFailureError} words it as what it actually is.
    *
    * A manifest that cannot be written costs only speed: the bundle is on
-   * disk and served, and the next load, finding no manifest, builds again.
+   * disk and served, and the next load, finding no current manifest, builds
+   * again.
    */
   private async runBuild(ctx: BuildContext): Promise<CompileResult> {
     const { extId, target } = ctx;
+    const run: BuildRun = {
+      startedAt: buildStartTime(),
+      snapshot: await snapshotSourceTree(ctx.extRoot, this.cacheDir),
+      recorder: createInputRecorder(),
+    };
     let code: string;
     let inputs: Record<string, unknown> | undefined;
     try {
@@ -598,11 +621,12 @@ export class ExtensionCompiler {
         entryPoints: [ctx.entryPath],
         absWorkingDir: ctx.cwd,
         metafile: true,
+        plugins: [run.recorder.plugin],
       });
       code = result.outputFiles?.[0]?.text ?? '';
       inputs = result.metafile?.inputs;
     } catch (err) {
-      return this.handleEsbuildError(ctx, err);
+      return this.handleEsbuildError(ctx, run, err);
     }
 
     const sizeKb = Buffer.byteLength(code, 'utf-8') / 1024;
@@ -623,16 +647,17 @@ export class ExtensionCompiler {
     }
     logger.info(`[Extensions] Compiled ${target.noun} for ${extId} (${sizeKb.toFixed(1)}KB)`);
 
-    const digest = inputs ? await digestBuildInputs(inputs, ctx.cwd) : null;
-    if (!digest) {
+    const digest = inputs
+      ? await digestBuildInputs(inputs, ctx.cwd, run.recorder.hashes, run.snapshot)
+      : null;
+    if (digest) {
+      await this.persistManifest(ctx, run, key, digest, { kind: 'bundle' });
+    } else {
       logger.warn(
         `[Extensions] Could not record the files ${extId}'s ${target.noun} was built from; ` +
           `it will be rebuilt on the next load`
       );
-      await fs.unlink(ctx.manifestPath).catch(() => {});
-      return { code, sourceHash: key };
     }
-    await this.persistManifest(ctx, key, digest, { kind: 'bundle' });
     return { code, sourceHash: key };
   }
 
@@ -645,11 +670,14 @@ export class ExtensionCompiler {
    * replaying a one-time environment hiccup forever.
    *
    * A failed build has no metafile, so a genuine error is cached against the
-   * extension's whole source tree ({@link digestSourceTree}): editing any
-   * file in it, or adding the module an import was missing, rebuilds.
+   * extension's whole source tree as it was before the build
+   * ({@link digestFailedBuild}): editing any file in it, or adding the module
+   * an import was missing, rebuilds. A tree too large to snapshot is not
+   * cached; the next compile simply runs esbuild again.
    */
   private async handleEsbuildError(
     ctx: BuildContext,
+    run: BuildRun,
     err: unknown
   ): Promise<{ error: CompilationError; sourceHash: string }> {
     const { extId, target } = ctx;
@@ -681,17 +709,12 @@ export class ExtensionCompiler {
     }
 
     const key = shortHash(JSON.stringify(compilationError));
-    const locatedFiles = compilationError.errors.flatMap((e) =>
-      e.location ? [path.resolve(ctx.cwd, e.location.file)] : []
-    );
-    const digest = await digestSourceTree(ctx.extRoot, [ctx.entryPath, ...locatedFiles]);
+    const digest = run.snapshot ? await digestFailedBuild(run.snapshot, run.recorder.hashes) : null;
     if (digest) {
-      await this.persistManifest(ctx, key, digest, { kind: 'error', error: compilationError });
-    } else {
-      // The error itself is genuine and still returned below; without a
-      // record of the tree it came from it cannot be cached safely, so the
-      // next compile simply runs esbuild again.
-      await fs.unlink(ctx.manifestPath).catch(() => {});
+      await this.persistManifest(ctx, run, key, digest, {
+        kind: 'error',
+        error: compilationError,
+      });
     }
 
     logger.error(
@@ -702,23 +725,30 @@ export class ExtensionCompiler {
 
   /**
    * Write a build's manifest. Never throws: a manifest that fails to write
-   * (a full disk) only means the next load rebuilds.
+   * (a full disk) only means the next load rebuilds. A manifest from a build
+   * that started later than this one is left in place.
    */
   private async persistManifest(
     ctx: BuildContext,
+    run: BuildRun,
     key: string,
     digest: SourceDigest,
     outcome: BuildManifest['outcome']
   ): Promise<void> {
     try {
-      await writeBuildManifest(ctx.manifestPath, {
+      const written = await writeBuildManifest(ctx.manifestPath, {
         buildKey: ctx.buildKey,
         entryPath: ctx.entryPath,
+        startedAt: run.startedAt,
         key,
         files: digest.files,
         dirs: digest.dirs,
+        absent: digest.absent,
         outcome,
       });
+      if (!written) {
+        logger.debug(`[Extensions] Kept the record of a newer build of ${ctx.extId}`);
+      }
     } catch (err) {
       logger.warn(
         `[Extensions] Could not record the build of ${ctx.extId}; it will be rebuilt on the ` +

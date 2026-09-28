@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(extensions): rebuild an extension when any file it imports changes (DOR-2491)'
+  - 'fix(extensions): record the exact bytes a build read, and the config it used (DOR-2491)'
 ---
 
 ### Fixed
