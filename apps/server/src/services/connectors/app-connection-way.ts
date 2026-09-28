@@ -16,6 +16,10 @@
  *
  * No config field backs this: the answer follows from what is set up.
  *
+ * Also here: what an agent reads when no way reaches an app or an account's
+ * way is down, and the Activity record for accounts closed because the DorkOS
+ * account was linked again with a new link.
+ *
  * @module services/connectors/app-connection-way
  */
 import type {
@@ -24,6 +28,12 @@ import type {
   ConnectorAppWay,
   ConnectorWayProblem,
 } from '@dorkos/shared/connector-resource-schemas';
+import type { ClosedConnection } from './connection-store.js';
+import {
+  everyAgentActivityLink,
+  serviceName,
+  type EveryAgentActivitySink,
+} from './every-agent-activity.js';
 
 /**
  * The connection service each route type signs in through — the name an app's
@@ -184,5 +194,35 @@ export function agentWayProblemNote(problem: ConnectorWayProblem): string {
         'when DorkOS last checked it. The person fixes the key in Settings › Connections in the ' +
         'DorkOS app, or connects this app again another way.'
       );
+  }
+}
+
+/** Event type for an account closed because a new link does not reach it. */
+export const CONNECTION_CLOSED_BY_NEW_LINK_EVENT = 'connectors.connection_closed_by_new_link';
+
+/**
+ * Record one Activity entry per closed account.
+ *
+ * @param activity - The Activity writer.
+ * @param closed - The accounts that were closed.
+ */
+export async function recordConnectionsClosedByNewLink(
+  activity: EveryAgentActivitySink,
+  closed: readonly ClosedConnection[]
+): Promise<void> {
+  for (const account of closed) {
+    const name = `${serviceName(account.toolkit)} (${account.label})`;
+    await activity.emit({
+      actorType: 'system',
+      actorLabel: 'DorkOS',
+      category: 'system',
+      eventType: CONNECTION_CLOSED_BY_NEW_LINK_EVENT,
+      resourceType: 'connection',
+      resourceId: account.connectionId,
+      resourceLabel: name,
+      summary: `${name} was closed: it was connected through your DorkOS account's earlier link, which the new link can't reach. Connect it again to use it.`,
+      linkPath: everyAgentActivityLink(account.connectionId),
+      metadata: { connectionId: account.connectionId },
+    });
   }
 }

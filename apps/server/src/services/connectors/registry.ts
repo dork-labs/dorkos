@@ -28,6 +28,7 @@ import { connectorExecutionConfigDigest } from './execution/execution-config.js'
 import { ConnectorCatalogCache, type KeptCatalogRead } from './resources/catalog-cache.js';
 import {
   ConnectionStore,
+  type ClosedConnection,
   type ConnectorProviderDeploymentMode,
   type StableConnectionBinding,
 } from './connection-store.js';
@@ -318,6 +319,18 @@ export class ConnectorRegistry {
   }
 
   /**
+   * The execution-material fingerprint last stored for one instance, which
+   * outlives unregistering and restarts. `undefined` while the connection
+   * store is unavailable or the instance was never registered.
+   *
+   * @param instanceId - The configured instance.
+   */
+  storedExecutionConfigDigest(instanceId: ConnectorProviderInstanceId): string | undefined {
+    if (this._connections.health().status !== 'ready') return undefined;
+    return this._connections.storedExecutionConfigDigest(instanceId);
+  }
+
+  /**
    * Whether accounts connected through one provider instance are still kept,
    * registered or not. `false` while the connection store is unavailable.
    *
@@ -336,12 +349,12 @@ export class ConnectorRegistry {
    *
    * @param provider - The registered instance the listing came from.
    * @param listed - Every account that listing returned.
-   * @returns The ids closed.
+   * @returns The accounts closed.
    */
   closeUnlistedConnections(
     provider: ConnectorProvider,
     listed: readonly ProviderConnectedAccount[]
-  ): ConnectionId[] {
+  ): ClosedConnection[] {
     if (this._connections.health().status !== 'ready') return [];
     return this._connections.closeUnlistedConnections(
       provider.instanceId,

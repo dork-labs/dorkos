@@ -99,6 +99,16 @@ export interface ConnectionStoreOptions {
 /** Server-owned deployment and payer mode for a configured provider instance. */
 export type ConnectorProviderDeploymentMode = 'managed' | 'byo';
 
+/** One account {@link ConnectionStore.closeUnlistedConnections} closed. */
+export interface ClosedConnection {
+  /** Stable connection id. */
+  readonly connectionId: ConnectionId;
+  /** The service, e.g. `gmail`. */
+  readonly toolkit: string;
+  /** The owner's label for the account. */
+  readonly label: string;
+}
+
 /** Stable connection store and sole writer after the application backfill. */
 export class ConnectionStore {
   private readonly db: Db;
@@ -245,6 +255,23 @@ export class ConnectionStore {
       .from(connectorProviderInstances)
       .where(eq(connectorProviderInstances.id, instanceId))
       .get()?.generation;
+  }
+
+  /**
+   * The execution-material fingerprint last stored for one instance, kept
+   * across unregistering and restarts; `undefined` for an instance never
+   * registered.
+   *
+   * @param instanceId - The configured instance.
+   */
+  storedExecutionConfigDigest(instanceId: ConnectorProviderInstanceId): string | undefined {
+    return (
+      this.db
+        .select({ digest: connectorProviderInstances.executionConfigDigest })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.id, instanceId))
+        .get()?.digest ?? undefined
+    );
   }
 
   /** Mark a provider unavailable while retaining its identity and connections. */
@@ -505,8 +532,7 @@ export class ConnectionStore {
 
   /**
    * Whether any account connected through one provider instance is still kept
-   * (not disconnected, not removed) — the accounts that come back once that
-   * instance works again. A missing instance has none.
+   * (not disconnected, not removed). A missing instance has none.
    *
    * @param providerInstanceId - The instance the accounts were connected through.
    */
@@ -622,15 +648,20 @@ export class ConnectionStore {
    *
    * @param instanceId - The instance the listing came from.
    * @param listedRefs - Every account the listing returned.
-   * @returns The ids closed, for the caller's log line.
+   * @returns The accounts closed, for the caller's record of it.
    */
   closeUnlistedConnections(
     instanceId: ConnectorProviderInstanceId,
     listedRefs: ReadonlySet<string>
-  ): ConnectionId[] {
+  ): ClosedConnection[] {
     this.assertAvailable();
     const unlisted = this.db
-      .select({ id: connections.id, externalAccountRef: connections.externalAccountRef })
+      .select({
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        externalAccountRef: connections.externalAccountRef,
+      })
       .from(connections)
       .where(
         and(
@@ -641,13 +672,20 @@ export class ConnectionStore {
       )
       .all()
       .filter((row) => !listedRefs.has(row.externalAccountRef))
-      .map((row) => row.id as ConnectionId);
+      .map(({ connectionId, toolkit, label }) => ({
+        connectionId: connectionId as ConnectionId,
+        toolkit,
+        label,
+      }));
     if (unlisted.length > 0) {
-      this.closeConnections(unlisted, {
-        externalCleanupState: 'not_required',
-        status: 'revoked',
-        enabled: false,
-      });
+      this.closeConnections(
+        unlisted.map((row) => row.connectionId),
+        {
+          externalCleanupState: 'not_required',
+          status: 'revoked',
+          enabled: false,
+        }
+      );
     }
     return unlisted;
   }

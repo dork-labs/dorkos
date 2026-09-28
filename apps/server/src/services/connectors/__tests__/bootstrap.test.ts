@@ -13,6 +13,7 @@ import {
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
   ConnectorExternalAccountRef,
+  ConnectorProvider,
   ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-provider';
 import type { CredentialProvider, CredentialResolution } from '../../core/credential-provider.js';
@@ -28,6 +29,7 @@ import { MANAGED_CUSTODY_CANONICAL_SENTENCE } from '../custody-disclosure.js';
 import { COMPOSIO_API_KEY_REF } from '../providers/composio.js';
 import { ComposioApiError, type ComposioHttpClient } from '../providers/composio-client.js';
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
+import { ManagedCloudConnectorProvider } from '../providers/managed/managed-cloud.js';
 import type { NangoHttpClient } from '../providers/nango-client.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
 import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
@@ -117,6 +119,19 @@ describe('ConnectorProviderBootstrapper', () => {
       ...(opts?.onUnregistered && { onUnregistered: opts.onUnregistered }),
       ...(opts?.managedCloud && { managedCloud: opts.managedCloud }),
     });
+  }
+
+  /** The options {@link makeBootstrapper} builds, for tests that construct one themselves. */
+  function bootstrapperOptions() {
+    return {
+      rawMcpPendingConnect: () => undefined,
+      registry,
+      credentials: fakeCredentials(secrets),
+      nangoEnv: () => ({}),
+      rawMcpServers: () => [],
+      makeComposioClient: () => fakeComposioClient(),
+      makeNangoClient: () => fakeNangoClient(),
+    };
   }
 
   describe('registerBootProviders', () => {
@@ -1013,6 +1028,26 @@ describe('ConnectorProviderBootstrapper', () => {
     describe('after linking again', () => {
       const AT = '2026-09-28T00:00:00.000Z';
 
+      /** A DorkOS account link whose fingerprint the test can change, as a new link does. */
+      function link(initial: string | null) {
+        const state = {
+          digest: initial,
+          provider: new FakeConnectorProvider({
+            instanceId: 'managed-provider' as never,
+            type: 'dorkos-managed',
+            custody: 'managed',
+            toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
+          }) as ConnectorProvider,
+        };
+        const cloud = {
+          instanceId: 'managed-provider' as never,
+          configured: () => state.digest !== null,
+          executionConfigDigest: () => state.digest ?? undefined,
+          create: () => state.provider,
+        };
+        return { state, cloud };
+      }
+
       function keptManagedRow(id: string, externalAccountRef: string) {
         db.insert(connections)
           .values({
@@ -1031,46 +1066,10 @@ describe('ConnectorProviderBootstrapper', () => {
           .run();
       }
 
-      function row(id: string) {
-        return db.select().from(connections).where(eq(connections.id, id)).get()!;
-      }
-
-      it('closes a kept account the linked account no longer lists, and keeps one it does', async () => {
-        let linked = true;
-        let current = new FakeConnectorProvider({
-          instanceId: 'managed-provider' as never,
-          type: 'dorkos-managed',
-          custody: 'managed',
-          toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
-        });
-        const bootstrapper = makeBootstrapper({
-          managedCloud: managedCloud(
-            () => linked,
-            () => current
-          ),
-        });
-        await bootstrapper.registerBootProviders();
-        keptManagedRow('connection-old', 'managed-old-account');
-
-        linked = false;
-        await bootstrapper.reloadManagedCloud();
-        // Unlinked: the row is kept as it was; nothing listed it either way.
-        expect(row('connection-old').lifecycleState).toBe('connected');
-
-        // Linked again: a new hosted side that has one account of its own.
-        current = new FakeConnectorProvider({
-          instanceId: 'managed-provider' as never,
-          type: 'dorkos-managed',
-          custody: 'managed',
-          toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
-        });
-        const flow = await current.startConnect('gmail');
-        const poll = await current.pollConnect(flow.flowId);
-        const listedRef = poll.status === 'connected' ? poll.account!.externalAccountRef : '';
-        keptManagedRow('connection-new', listedRef);
+      function grantOn(connectionId: string) {
         db.insert(connectorOperationRevisions)
           .values({
-            id: 'revision-old',
+            id: `revision-${connectionId}`,
             providerInstanceId: 'managed-provider',
             toolkit: 'gmail',
             operationSlug: 'gmail.list',
@@ -1084,17 +1083,67 @@ describe('ConnectorProviderBootstrapper', () => {
           .run();
         db.insert(connectionOperationGrants)
           .values({
-            id: 'grant-old',
+            id: `grant-${connectionId}`,
             subjectType: 'agent',
             subjectId: 'agent-x',
             agentId: 'agent-x',
-            connectionId: 'connection-old',
-            operationRevisionId: 'revision-old',
+            connectionId,
+            operationRevisionId: `revision-${connectionId}`,
             createdBy: 'operator',
             createdAt: AT,
           })
           .run();
-        linked = true;
+      }
+
+      function row(id: string) {
+        return db.select().from(connections).where(eq(connections.id, id)).get()!;
+      }
+
+      /** A new hosted side for a new link, listing one account of its own. */
+      async function freshSideWithOneAccount(state: { provider: ConnectorProvider }) {
+        const fresh = new FakeConnectorProvider({
+          instanceId: 'managed-provider' as never,
+          type: 'dorkos-managed',
+          custody: 'managed',
+          toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
+        });
+        const flow = await fresh.startConnect('gmail');
+        const poll = await fresh.pollConnect(flow.flowId);
+        state.provider = fresh;
+        return poll.status === 'connected' ? poll.account!.externalAccountRef : '';
+      }
+
+      it('leaves every account alone when the same link answers without one', async () => {
+        const { cloud } = link('link-1');
+        const closed: unknown[] = [];
+        const bootstrapper = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: cloud,
+          onClosedByNewLink: (accounts) => closed.push(...accounts),
+        });
+        await bootstrapper.registerBootProviders();
+        keptManagedRow('connection-old', 'managed-old-account');
+
+        await bootstrapper.reloadManagedCloud();
+
+        expect(row('connection-old').lifecycleState).toBe('connected');
+        expect(closed).toEqual([]);
+      });
+
+      it('closes a kept account a new link does not list, keeps one it does, and says so', async () => {
+        const { state, cloud } = link('link-1');
+        const closed: unknown[] = [];
+        const bootstrapper = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: cloud,
+          onClosedByNewLink: (accounts) => closed.push(...accounts),
+        });
+        await bootstrapper.registerBootProviders();
+        keptManagedRow('connection-old', 'managed-old-account');
+        grantOn('connection-old');
+
+        state.digest = 'link-2';
+        keptManagedRow('connection-new', await freshSideWithOneAccount(state));
         await bootstrapper.reloadManagedCloud();
 
         // Closed, not removed: it reads as disconnected, nothing to clean up
@@ -1110,15 +1159,69 @@ describe('ConnectorProviderBootstrapper', () => {
           db
             .select()
             .from(connectionOperationGrants)
-            .where(eq(connectionOperationGrants.id, 'grant-old'))
+            .where(eq(connectionOperationGrants.id, 'grant-connection-old'))
             .get()?.revokedAt
         ).toBeTruthy();
-        // The account the new link lists is left alone, and the way is working.
         expect(row('connection-new').lifecycleState).toBe('connected');
-        expect(bootstrapper.wayProblem('managed-provider')).toBeUndefined();
+        expect(closed).toEqual([
+          { connectionId: 'connection-old', toolkit: 'gmail', label: 'connection-old' },
+        ]);
+      });
+
+      it('closes it after unlinking, restarting and linking again with a new link', async () => {
+        const first = link('link-1');
+        const before = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: first.cloud,
+        });
+        await before.registerBootProviders();
+        keptManagedRow('connection-old', 'managed-old-account');
+        first.state.digest = null;
+        await before.reloadManagedCloud();
+        expect(row('connection-old').lifecycleState).toBe('connected');
+
+        // A restart: a fresh registry and bootstrapper over the same database,
+        // now linked again with a different link.
+        registry = new ConnectorRegistry({ db });
+        const again = link('link-2');
+        await freshSideWithOneAccount(again.state);
+        const after = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: again.cloud,
+        });
+        await after.registerBootProviders();
+
+        expect(row('connection-old').lifecycleState).toBe('disconnected');
+      });
+
+      it('never closes from a recovery, even under a different link', async () => {
+        const { state, cloud } = link('link-1');
+        const bootstrapper = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: cloud,
+        });
+        await bootstrapper.registerBootProviders();
+        keptManagedRow('connection-old', 'managed-old-account');
+        registry.unregisterProviderInstance('managed-provider' as never);
+
+        state.digest = 'link-2';
+        await freshSideWithOneAccount(state);
+        await bootstrapper.recoverManagedCloud();
+
+        expect(registry.resolveProviderInstance('managed-provider' as never)).toBeDefined();
+        expect(row('connection-old').lifecycleState).toBe('connected');
       });
 
       it('touches nothing when the listing fails', async () => {
+        const { state, cloud } = link('link-1');
+        const bootstrapper = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: cloud,
+        });
+        await bootstrapper.registerBootProviders();
+        keptManagedRow('connection-old', 'managed-old-account');
+
+        state.digest = 'link-2';
         const failing = new FakeConnectorProvider({
           instanceId: 'managed-provider' as never,
           type: 'dorkos-managed',
@@ -1127,36 +1230,38 @@ describe('ConnectorProviderBootstrapper', () => {
         Object.defineProperty(failing, 'listAccounts', {
           value: () => Promise.reject(new Error('listing interrupted')),
         });
-        const bootstrapper = makeBootstrapper({
-          managedCloud: managedCloud(
-            () => true,
-            () => failing
-          ),
-        });
-        // A row from an earlier link, which a failed read must never close.
-        db.insert(connectorProviderInstances)
-          .values({
-            id: 'managed-provider',
-            type: 'dorkos-managed',
-            mode: 'managed',
-            displayName: 'DorkOS',
-            custody: 'managed',
-            capabilityJson: '{}',
-            status: 'unavailable',
-            createdAt: AT,
-            updatedAt: AT,
-          })
-          .run();
-        keptManagedRow('connection-old', 'managed-old-account');
-
-        await bootstrapper.registerBootProviders();
-        await bootstrapper.recoverManagedCloud();
+        state.provider = failing;
+        await bootstrapper.reloadManagedCloud();
 
         expect(row('connection-old')).toMatchObject({
           lifecycleState: 'connected',
           status: 'active',
           enabled: true,
         });
+      });
+
+      it('touches nothing when the new link answers with only part of its list', async () => {
+        const { state, cloud } = link('link-1');
+        const bootstrapper = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: cloud,
+        });
+        await bootstrapper.registerBootProviders();
+        keptManagedRow('connection-old', 'managed-old-account');
+
+        // The real DorkOS account route, over a first page that says more follow.
+        state.digest = 'link-2';
+        state.provider = new ManagedCloudConnectorProvider({
+          instanceId: 'managed-provider' as never,
+          cloud: {
+            listManagedConnectorAccounts: async () => ({ accounts: [], nextCursor: 'page-2' }),
+          } as never,
+          executionContext: () => undefined,
+        });
+        await bootstrapper.reloadManagedCloud();
+
+        expect(row('connection-old').lifecycleState).toBe('connected');
+        expect(registry.resolveProviderInstance('managed-provider' as never)).toBeUndefined();
       });
     });
 

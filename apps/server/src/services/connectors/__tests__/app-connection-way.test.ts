@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ConnectorAppWay } from '@dorkos/shared/connector-resource-schemas';
 import {
+  CONNECTION_CLOSED_BY_NEW_LINK_EVENT,
+  recordConnectionsClosedByNewLink,
   agentAppSetupNote,
   agentWayProblemNote,
   appReachProblem,
@@ -154,5 +156,36 @@ describe('signInThroughFor', () => {
     expect(signInThroughFor('nango')).toBeUndefined();
     expect(signInThroughFor('mcp')).toBeUndefined();
     expect(signInThroughFor('test-connector')).toBeUndefined();
+  });
+});
+
+describe('recordConnectionsClosedByNewLink', () => {
+  it('writes one plain entry per closed account, linking to that app', async () => {
+    const emit = vi.fn();
+    await recordConnectionsClosedByNewLink({ emit }, [
+      { connectionId: 'connection-1' as never, toolkit: 'gmail', label: 'work' },
+      { connectionId: 'connection-2' as never, toolkit: 'notion', label: 'team' },
+    ]);
+
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        actorType: 'system',
+        eventType: CONNECTION_CLOSED_BY_NEW_LINK_EVENT,
+        resourceId: 'connection-1',
+        resourceLabel: 'Gmail (work)',
+        summary:
+          "Gmail (work) was closed: it was connected through your DorkOS account's earlier link, which the new link can't reach. Connect it again to use it.",
+        linkPath: '/connections?app=connection-1',
+      })
+    );
+    expect(emit.mock.calls[1]![0].summary).toMatch(/^Notion \(team\) was closed/);
+  });
+
+  it('writes nothing when nothing was closed', async () => {
+    const emit = vi.fn();
+    await recordConnectionsClosedByNewLink({ emit }, []);
+    expect(emit).not.toHaveBeenCalled();
   });
 });

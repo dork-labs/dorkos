@@ -49,6 +49,7 @@ import { chooseNewAppsWay, signInThroughFor, wayProblemFor } from './app-connect
 import type { CredentialProvider } from '../core/credential-provider.js';
 import { custodyDisclosure, MANAGED_CUSTODY_CANONICAL_SENTENCE } from './custody-disclosure.js';
 import type { ConnectorRegistry } from './registry.js';
+import type { ClosedConnection } from './connection-store.js';
 import {
   legacyDefaultProviderInstanceId,
   type ConnectorMigrationResult,
@@ -123,6 +124,12 @@ export interface ConnectorProviderBootstrapperOpts {
     /** Build the test provider, or `null` while its key is unconfigured. */
     create: () => Promise<ConnectorProvider | null>;
   };
+  /**
+   * Told about the kept accounts closed because the DorkOS account was linked
+   * again with a different link that does not list them. Boot records one
+   * Activity entry per account.
+   */
+  onClosedByNewLink?: (closed: readonly ClosedConnection[]) => void;
   /**
    * Fired when a swap takes a previously-registered provider AWAY (credential
    * deleted, or a reload refused it). Boot wires it to drop the provider's
@@ -213,6 +220,7 @@ export class ConnectorProviderBootstrapper {
     ((providerInstanceId: string, providerType: string) => void) | undefined;
   private readonly _specs = new Map<string, ManagedProviderSpec>();
   private readonly _managedCloud: ConnectorProviderBootstrapperOpts['managedCloud'];
+  private readonly _onClosedByNewLink: ConnectorProviderBootstrapperOpts['onClosedByNewLink'];
   private _managedCloudReload: Promise<void> = Promise.resolve();
   private _managedCloudRecovery: Promise<void> | undefined;
   private readonly _instanceBySpecType = new Map<string, ConnectorProvider['instanceId']>();
@@ -231,6 +239,7 @@ export class ConnectorProviderBootstrapper {
     this._rawMcpPendingConnect = opts.rawMcpPendingConnect;
     this._onUnregistered = opts.onUnregistered;
     this._managedCloud = opts.managedCloud;
+    this._onClosedByNewLink = opts.onClosedByNewLink;
 
     const { credentials, nangoEnv } = opts;
     const specs: ManagedProviderSpec[] = [
@@ -365,7 +374,7 @@ export class ConnectorProviderBootstrapper {
     if (!managed.configured() || !expectedDigest) return;
     try {
       const provider = managed.create();
-      const accounts = await provider.listAccounts();
+      await provider.listAccounts();
       if (
         !managed.configured() ||
         managed.executionConfigDigest() !== expectedDigest ||
@@ -375,7 +384,6 @@ export class ConnectorProviderBootstrapper {
       }
       this._registry.register(provider, expectedDigest, 'managed');
       logger.info('[Connectors] DorkOS managed provider recovered');
-      this._closeUnlistedManagedConnections(provider, accounts);
     } catch (error) {
       logger.error(
         `[Connectors] DorkOS managed provider recovery check failed: ${
@@ -394,9 +402,16 @@ export class ConnectorProviderBootstrapper {
       if (!managed.configured()) return;
       const provider = managed.create();
       const accounts = await provider.listAccounts();
-      this._registry.register(provider, managed.executionConfigDigest(), 'managed');
+      // Read before registering, which overwrites it: the fingerprint of the
+      // link this instance last worked through, kept across unlinking and
+      // restarts.
+      const previousDigest = this._registry.storedExecutionConfigDigest(managed.instanceId);
+      const digest = managed.executionConfigDigest();
+      this._registry.register(provider, digest, 'managed');
       logger.info('[Connectors] DorkOS managed provider registered');
-      this._closeUnlistedManagedConnections(provider, accounts);
+      if (previousDigest !== undefined && digest !== undefined && previousDigest !== digest) {
+        this._closeUnlistedManagedConnections(provider, accounts);
+      }
     } catch (error) {
       logger.error(
         `[Connectors] DorkOS managed provider failed its connection check: ${
@@ -520,23 +535,28 @@ export class ConnectorProviderBootstrapper {
   }
 
   /**
-   * After the DorkOS account's route answered with its whole account list,
-   * close the kept accounts that list no longer has. Linking the account again
-   * does not currently restore connections made through the old link, so such
-   * an account would otherwise look healthy while nothing could use it; closed,
-   * it reads as disconnected and the owner is offered to connect the app again.
-   * Only a listing that succeeded reaches here: a failed read throws before it,
-   * and a partial one throws inside the route's own `listAccounts`.
+   * After the DorkOS account was linked again with a different link, and its
+   * route answered with its whole account list, close the kept accounts that
+   * list does not have. Linking again does not currently restore connections
+   * made through the earlier link, so such an account would otherwise look
+   * healthy while nothing could use it; closed, it reads as disconnected and
+   * the owner is offered to connect the app again. Only a listing that
+   * succeeded in full reaches here: a failed read throws before it, and a
+   * partial one throws inside the route's own `listAccounts`.
    */
   private _closeUnlistedManagedConnections(
     provider: ConnectorProvider,
     accounts: readonly ProviderConnectedAccount[]
   ): void {
     const closed = this._registry.closeUnlistedConnections(provider, accounts);
-    if (closed.length > 0) {
-      logger.info(
-        `[Connectors] Closed ${closed.length} DorkOS account connection(s) the linked account no longer lists; the person connects those apps again`
-      );
+    if (closed.length === 0) return;
+    logger.info(
+      `[Connectors] Closed ${closed.length} DorkOS account connection(s) the new link does not list`
+    );
+    try {
+      this._onClosedByNewLink?.(closed);
+    } catch (error) {
+      logger.warn('[Connectors] Could not record connections closed by a new link', { error });
     }
   }
 
