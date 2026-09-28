@@ -103,7 +103,7 @@ const fixture = vi.hoisted(() => {
         yield new TextEncoder().encode('hello');
       })(),
     })),
-    subscribeRoom: vi.fn(() =>
+    subscribeRoom: vi.fn<() => AsyncIterable<unknown>>(() =>
       (async function* () {
         yield { type: 'snapshot' as const, room, entries: [entry], cursor: 'cursor-a' };
       })()
@@ -140,6 +140,8 @@ const fixture = vi.hoisted(() => {
   };
   return {
     ref,
+    currentOwner: 'owner-a',
+    adapterOwners: [] as string[],
     room,
     entry,
     adapter,
@@ -158,10 +160,13 @@ const fixture = vi.hoisted(() => {
 });
 
 vi.mock('../community-connections.js', () => ({
-  resolveCommunityOwner: () => 'owner-a',
+  resolveCommunityOwner: () => fixture.currentOwner,
 }));
 vi.mock('../../services/communities/remote/state.js', () => ({
-  getRemoteCommunityAdapter: () => fixture.adapter,
+  getRemoteCommunityAdapter: (_ref: string, owner: string) => {
+    fixture.adapterOwners.push(owner);
+    return fixture.adapter;
+  },
   getRemotePairingService: () => ({
     status: fixture.connectionStatus,
   }),
@@ -224,7 +229,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
 vi.mock('../../services/communities/remote/remote-community-adapter.js', () => ({
   remoteSequenceOf: () => 1,
   remoteAuthorOf: (entry: { id: string }) =>
-    entry.id === 'agent-wire-a'
+    entry.id === 'agent-wire-a' || entry.id === 'agent-echo-a'
       ? { displayName: 'Build Agent', kind: 'agent' as const }
       : { displayName: 'Owner', kind: 'human' as const },
   remoteOriginIdempotencyKeyOf: (entry: { id: string }) =>
@@ -284,6 +289,8 @@ function connectionWithAccess(
 describe('qualified remote community writes and live projections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fixture.currentOwner = 'owner-a';
+    fixture.adapterOwners.length = 0;
     fixture.uploadedBytes.length = 0;
     fixture.retryResult = 'retried';
     fixture.retryCalls.length = 0;
@@ -587,6 +594,75 @@ describe('qualified remote community writes and live projections', () => {
         active: true,
       }),
     ]);
+  });
+
+  it('keeps the opening owner on an existing stream while another caller opens a distinct connection', async () => {
+    let releaseEntry: () => void = () => undefined;
+    const nextEntry = new Promise<void>((resolve) => {
+      releaseEntry = resolve;
+    });
+    fixture.adapter.subscribeRoom.mockImplementationOnce(() =>
+      (async function* () {
+        yield {
+          type: 'snapshot' as const,
+          room: fixture.room,
+          entries: [fixture.entry],
+          cursor: 'cursor-a',
+        };
+        await nextEntry;
+        yield {
+          type: 'entry' as const,
+          entry: { ...fixture.entry, id: 'agent-echo-a', text: 'A after B opens' },
+        };
+      })()
+    );
+    const address = testServer.address();
+    if (!address || typeof address === 'string') throw new Error('Local test server has no port');
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/communities/${fixture.ref}/rooms/room-a/events`
+    );
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const readUntil = async (needle: string) => {
+      let text = '';
+      while (!text.includes(needle)) {
+        const part = await reader.read();
+        if (part.done) throw new Error(`Stream ended before ${needle}`);
+        text += decoder.decode(part.value);
+      }
+      return text;
+    };
+    try {
+      expect(await readUntil('"type":"snapshot"')).toContain('event: snapshot');
+      expect(fixture.adapterOwners).toEqual(['owner-a']);
+      const bRef = 'remote_owner_b' as CommunityRef;
+      fixture.currentOwner = 'owner-b';
+      fixture.connectionStatus.mockResolvedValueOnce({
+        ...connectionWithAccess(fixture.access),
+        ref: bRef,
+        remoteCommunityId: 'community-b',
+        label: 'Community B',
+        pinnedOrigin: 'https://other.example',
+        connectedHumanMemberId: 'human-b',
+      });
+      fixture.adapter.listRooms.mockResolvedValueOnce([
+        { ...fixture.room, community: bRef, roomId: 'room-b' },
+      ]);
+      const bRooms = await request(testServer).get(`/api/communities/${bRef}/rooms`);
+      expect(bRooms.status).toBe(200);
+      expect(bRooms.body.community).toBe(bRef);
+      expect(bRooms.body.rooms[0]).toMatchObject({ community: bRef, roomId: 'room-b' });
+      expect(fixture.adapterOwners).toEqual(['owner-a', 'owner-b']);
+      releaseEntry();
+      const continued = await readUntil('A after B opens');
+      expect(continued).toContain('event: entry');
+      expect(continued).toContain('"originIdempotencyKey":"delivery-origin-a"');
+      expect(fixture.adapterOwners).toEqual(['owner-a', 'owner-b']);
+    } finally {
+      releaseEntry();
+      await reader.cancel();
+    }
   });
 
   it('closes a stream as revoked when its personal grant is authoritatively rejected', async () => {

@@ -79,12 +79,13 @@ async function connect(
   origin: string,
   token = plantedCredential,
   remoteCommunityId = communityId,
-  memberId = ownerMemberId
+  memberId = ownerMemberId,
+  localOwner = ownerKey
 ) {
   await store.addPending(
     {
       ref: refToUse,
-      ownerKey,
+      ownerKey: localOwner,
       remoteCommunityId,
       label: 'Conformance Community',
       pinnedOrigin: origin,
@@ -94,7 +95,7 @@ async function connect(
     randomUUID()
   );
   const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
-  await store.complete(refToUse, ownerKey, memberId, token, {
+  await store.complete(refToUse, localOwner, memberId, token, {
     state: 'verified',
     effective: capabilities,
     lastKnown: {
@@ -492,6 +493,114 @@ describe('RemoteCommunityAdapter caller stream cancellation', () => {
       await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
     } finally {
       await iterator.return?.();
+    }
+  });
+});
+
+describe('RemoteCommunityAdapter owner and grant changes', () => {
+  it('keeps open streams on their original owners and origins, then ends only the revoked grant', async () => {
+    const ownerA = 'local-stream-owner-a';
+    const ownerB = 'local-stream-owner-b';
+    const oldRef = randomUUID() as CommunityRef;
+    const newRef = randomUUID() as CommunityRef;
+    const otherRef = randomUUID() as CommunityRef;
+    const oldToken = `stream-old-${randomUUID()}`;
+    const newToken = `stream-new-${randomUUID()}`;
+    const otherToken = `stream-other-${randomUUID()}`;
+    await Promise.all([
+      pool.query(
+        'INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4,$5)',
+        [communityId, ownerMemberId, hashSecret(oldToken), ['read', 'post'], 'Old A stream']
+      ),
+      secondPool.query(
+        'INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4,$5)',
+        [
+          secondCommunityId,
+          secondOwnerMemberId,
+          hashSecret(otherToken),
+          ['read', 'post'],
+          'B stream',
+        ]
+      ),
+    ]);
+    await connect(oldRef, baseUrl, oldToken, communityId, ownerMemberId, ownerA);
+    await connect(
+      otherRef,
+      secondBaseUrl,
+      otherToken,
+      secondCommunityId,
+      secondOwnerMemberId,
+      ownerB
+    );
+    const oldAdapter = new RemoteCommunityAdapter(oldRef, ownerA, store);
+    const otherAdapter = new RemoteCommunityAdapter(otherRef, ownerB, store);
+    const roomA = await seedRoom(oldAdapter);
+    const roomB = await secondPool.query<{ id: string }>(
+      "INSERT INTO channels(community_id,name,visibility) VALUES($1,$2,'private') RETURNING id",
+      [secondCommunityId, `Stream B ${randomUUID()}`]
+    );
+    const roomBId = roomB.rows[0]!.id;
+    await secondPool.query(
+      'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+      [secondCommunityId, roomBId, secondOwnerMemberId]
+    );
+    await otherAdapter.post(roomBId, { text: 'B before switch', idempotencyKey: randomUUID() });
+
+    const oldStream = oldAdapter.subscribeRoom(roomA)[Symbol.asyncIterator]();
+    const otherStream = otherAdapter.subscribeRoom(roomBId)[Symbol.asyncIterator]();
+    try {
+      expect((await oldStream.next()).value).toMatchObject({ type: 'snapshot' });
+      expect((await otherStream.next()).value).toMatchObject({ type: 'snapshot' });
+      // A second local caller opening B does not change A's already-open bearer.
+      await oldAdapter.post(roomA, { text: 'A after B opens', idempotencyKey: randomUUID() });
+      expect((await oldStream.next()).value).toMatchObject({
+        type: 'entry',
+        entry: { text: 'A after B opens', community: oldRef },
+      });
+      await expect(store.personalToken(oldRef, ownerB)).rejects.toThrow();
+      await expect(store.personalToken(otherRef, ownerA)).rejects.toThrow();
+
+      await pool.query(
+        'UPDATE connection_grants SET revoked_at=now() WHERE community_id=$1 AND token_hash=$2',
+        [communityId, hashSecret(oldToken)]
+      );
+      await pool.query(
+        'INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name) VALUES($1,$2,$3,$4,$5)',
+        [communityId, ownerMemberId, hashSecret(newToken), ['read', 'post'], 'New A stream']
+      );
+      await connect(newRef, baseUrl, newToken, communityId, ownerMemberId, ownerA);
+      expect(await store.personalToken(newRef, ownerA)).toBe(newToken);
+      await expect(store.personalToken(newRef, ownerB)).rejects.toThrow();
+      const currentAdapter = new RemoteCommunityAdapter(newRef, ownerA, store);
+      const currentStream = currentAdapter.subscribeRoom(roomA)[Symbol.asyncIterator]();
+      try {
+        expect((await currentStream.next()).value).toMatchObject({ type: 'snapshot' });
+        await currentAdapter.post(roomA, {
+          text: 'A through replacement grant',
+          idempotencyKey: randomUUID(),
+        });
+        expect((await currentStream.next()).value).toMatchObject({
+          type: 'entry',
+          entry: { text: 'A through replacement grant', community: newRef },
+        });
+        expect((await oldStream.next()).value).toMatchObject({
+          type: 'room_closed',
+          reason: 'access-revoked',
+        });
+        expect((await oldStream.next()).done).toBe(true);
+        await otherAdapter.post(roomBId, {
+          text: 'B survives A revocation',
+          idempotencyKey: randomUUID(),
+        });
+        expect((await otherStream.next()).value).toMatchObject({
+          type: 'entry',
+          entry: { text: 'B survives A revocation', community: otherRef },
+        });
+      } finally {
+        await currentStream.return?.();
+      }
+    } finally {
+      await Promise.all([oldStream.return?.(), otherStream.return?.()]);
     }
   });
 });
