@@ -146,6 +146,8 @@ function account(id: string, label: string | null = id.toUpperCase()): RuntimeAc
     canonicalPath: `/accounts/${id}`,
     label,
     color: '#123456',
+    // No colour of its own: `color` above is the default for its position.
+    storedColor: null,
     routable: true,
     implicit: false,
     isDefault: false,
