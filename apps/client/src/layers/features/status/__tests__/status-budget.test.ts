@@ -10,9 +10,10 @@ function item(
   cluster: 'left' | 'right',
   severity: number,
   pinned = false,
-  rigid = false
+  rigid = false,
+  wide = false
 ): PromotedStatusItem {
-  return { key, cluster, severity, pinned, rigid, node: `node:${key}` };
+  return { key, cluster, severity, pinned, rigid, wide, node: `node:${key}` };
 }
 
 /** The degraded session from the design notes: everything promoted at once. */
@@ -194,6 +195,52 @@ describe('applyStatusBudget — items that cannot shrink', () => {
       { density: 'full', rightBudget: 4, dropped: [] }
     );
     expect(items.map((i) => i.key)).toEqual(['context', 'usage', 'model']);
+  });
+});
+
+describe('applyStatusBudget — an item drawn wider than one slot', () => {
+  // A stale usage number says "100% · old": about 36px more than the slot it is
+  // charged for, and rigid, so it cannot give any of it back. At the full
+  // floor that put `connection` 17px into the `⋯` (status-line-fit, 04 §13).
+  it('takes two slots, so the least urgent item moves under the ⋯', () => {
+    const { items, overflow } = applyStatusBudget(
+      [
+        item('connection', 'right', 100),
+        item('context', 'right', 90, false, true),
+        item('usage', 'right', 80, false, true, true),
+        item('model', 'right', 10),
+      ],
+      { density: 'full', rightBudget: 4, dropped: [] }
+    );
+    expect(items.map((i) => i.key)).toEqual(['connection', 'context', 'usage']);
+    expect(overflow).toBe(1);
+  });
+
+  it('still takes the last slot when only one is left, rather than hiding', () => {
+    // Three items at the compact and identity floors: measured clean with the
+    // wide item in the last slot, so the word stays on screen there.
+    const { items, overflow } = applyStatusBudget(
+      [
+        item('connection', 'right', 100),
+        item('context', 'right', 90, false, true),
+        item('usage', 'right', 80, false, true, true),
+      ],
+      { density: 'compact', rightBudget: 3, dropped: ['cwd'] }
+    );
+    expect(items.map((i) => i.key)).toEqual(['connection', 'context', 'usage']);
+    expect(overflow).toBe(0);
+  });
+
+  it('leaves room for one fewer item after it when it is the most urgent', () => {
+    const { items } = applyStatusBudget(
+      [
+        item('connection', 'right', 60),
+        item('usage', 'right', 100, false, true, true),
+        item('model', 'right', 10),
+      ],
+      { density: 'compact', rightBudget: 3, dropped: ['cwd'] }
+    );
+    expect(items.map((i) => i.key)).toEqual(['connection', 'usage']);
   });
 });
 

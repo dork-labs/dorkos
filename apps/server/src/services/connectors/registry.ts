@@ -28,6 +28,7 @@ import { connectorExecutionConfigDigest } from './execution/execution-config.js'
 import { ConnectorCatalogCache, type KeptCatalogRead } from './resources/catalog-cache.js';
 import {
   ConnectionStore,
+  type ClosedConnection,
   type ConnectorProviderDeploymentMode,
   type StableConnectionBinding,
 } from './connection-store.js';
@@ -315,6 +316,50 @@ export class ConnectorRegistry {
   /** Resolve one exact configured provider instance. */
   resolveProviderInstance(instanceId: ConnectorProviderInstanceId): ConnectorProvider | undefined {
     return this._providers.get(instanceId);
+  }
+
+  /**
+   * The execution-material fingerprint last stored for one instance, which
+   * outlives unregistering and restarts. `undefined` while the connection
+   * store is unavailable or the instance was never registered.
+   *
+   * @param instanceId - The configured instance.
+   */
+  storedExecutionConfigDigest(instanceId: ConnectorProviderInstanceId): string | undefined {
+    if (this._connections.health().status !== 'ready') return undefined;
+    return this._connections.storedExecutionConfigDigest(instanceId);
+  }
+
+  /**
+   * Whether accounts connected through one provider instance are still kept,
+   * registered or not. `false` while the connection store is unavailable.
+   *
+   * @param instanceId - The instance the accounts were connected through.
+   */
+  hasLiveConnections(instanceId: ConnectorProviderInstanceId): boolean {
+    if (this._connections.health().status !== 'ready') return false;
+    return this._connections.hasLiveConnections(instanceId);
+  }
+
+  /**
+   * Close the kept accounts of one registered instance that its complete,
+   * successful account listing no longer contains (see
+   * {@link ConnectionStore.closeUnlistedConnections}). A no-op while the
+   * connection store is unavailable.
+   *
+   * @param provider - The registered instance the listing came from.
+   * @param listed - Every account that listing returned.
+   * @returns The accounts closed.
+   */
+  closeUnlistedConnections(
+    provider: ConnectorProvider,
+    listed: readonly ProviderConnectedAccount[]
+  ): ClosedConnection[] {
+    if (this._connections.health().status !== 'ready') return [];
+    return this._connections.closeUnlistedConnections(
+      provider.instanceId,
+      new Set(listed.map((account) => account.externalAccountRef))
+    );
   }
 
   /**

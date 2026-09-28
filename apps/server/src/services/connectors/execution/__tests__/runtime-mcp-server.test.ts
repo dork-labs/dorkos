@@ -217,15 +217,22 @@ describe('createConnectorRuntimeMcpServer', () => {
       services: {
         serviceDirectory: vi.fn(async () => ({
           services: [
-            { serviceSlug: 'gmail', displayName: 'Gmail', requestable: true as const },
+            {
+              serviceSlug: 'gmail',
+              displayName: 'Gmail',
+              requestable: true as const,
+              reached: true,
+            },
             {
               serviceSlug: 'composio_search',
               displayName: 'Composio Search',
               requestable: true as const,
+              reached: true,
             },
           ],
           warnings: [],
           routeTypes: ['composio'],
+          reachProblem: 'app_not_reached' as const,
         })),
       },
       runtimePrincipals: { revalidatePrincipal: vi.fn(async () => true) },

@@ -29,6 +29,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     runtime: { isDefault: true, canSelect: false },
     account: null,
     usage: null,
+    usageStale: false,
     subagentsInFlight: 0,
     ...overrides,
   };
@@ -593,5 +594,22 @@ describe('STATUS_BAR_REGISTRY — permission severity comes from the mode’s me
     expect(severityOf('permission', ctx)).toBe(
       severityOf('permission', restingContext({ permissionMode: 'default' }))
     );
+  });
+});
+
+describe('STATUS_BAR_REGISTRY — items drawn wider than one slot', () => {
+  const usage = { kind: 'subscription', utilization: 1, state: 'exhausted' } as const;
+  const wideOf = (key: StatusBarItemKey, ctx: StatusPromotionContext) =>
+    STATUS_BAR_REGISTRY.find((entry) => entry.key === key)!.wide?.(ctx) === true;
+
+  it('marks the usage item wide while it says "· old", and only then', () => {
+    expect(wideOf('usage', restingContext({ usage, usageStale: true }))).toBe(true);
+    expect(wideOf('usage', restingContext({ usage, usageStale: false }))).toBe(false);
+  });
+
+  it('marks nothing else wide', () => {
+    const ctx = restingContext({ usage, usageStale: true });
+    const wide = STATUS_BAR_REGISTRY.filter((entry) => entry.wide?.(ctx)).map((entry) => entry.key);
+    expect(wide).toEqual(['usage']);
   });
 });

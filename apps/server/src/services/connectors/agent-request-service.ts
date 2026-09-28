@@ -57,6 +57,7 @@ import type {
   ConnectorOperatorQueryService,
   ConnectorServiceDirectory,
 } from './resources/operator-query-service.js';
+import type { AppReachProblem } from './app-connection-way.js';
 import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
@@ -359,7 +360,8 @@ function suggestServices(guess: string, directory: ConnectorServiceDirectory): s
  * has one next step instead of a dead end (DOR-2231): wait out a partial
  * catalog, hand the person the one setup step only they can take, send a
  * Messaging-only service to the person, or look the exact id up. The catalog
- * warning text is not repeated to the agent.
+ * warning text is not repeated to the agent. A popular app no way reaches is
+ * never refused here (DOR-2494): it is requestable, and its card runs the fix.
  */
 function unavailableServiceMessage(
   serviceSlug: string,
@@ -376,34 +378,66 @@ function unavailableServiceMessage(
   }
   // A chat-only app does not depend on the catalog; anything else missing a
   // route may be missing it because of the outage itself.
-  if (directory.warnings.length > 0) {
-    return (
-      `DorkOS could not load the full list of services just now, so ${quoted} could not be ` +
-      'checked. Try again in a moment.'
-    );
-  }
-  if (listed && !listed.requestable) {
-    return (
-      `DorkOS cannot reach ${listed.displayName} yet, so there is nothing to request. Ask the ` +
-      `person to open Connections in the DorkOS app and connect ${listed.displayName}; the first ` +
-      'app they connect also sets up how DorkOS reaches apps. Then ask again.'
-    );
-  }
-  if (!directory.services.some((service) => service.requestable)) {
-    return (
-      'DorkOS has no account services set up yet, so there is nothing to request. Ask the person to ' +
-      'open Connections in the DorkOS app and connect an app there; the first app they connect ' +
-      "also sets up how DorkOS reaches apps. Then ask again. Signing in to a service's " +
-      'command-line tool in a shell does not give DorkOS access.'
-    );
+  if (directory.warnings.length > 0) return partialCatalogMessage(quoted);
+  // Nothing reached: an id beyond the popular apps cannot be checked until a
+  // way works, so the refusal names that way's fix instead of "no such id".
+  if (
+    directory.reachProblem !== 'app_not_reached' &&
+    !directory.services.some((service) => service.requestable && service.reached)
+  ) {
+    return unreachedDirectoryMessage(quoted, directory.reachProblem);
   }
   const suggestions = suggestServices(serviceSlug, directory);
   return [
     `DorkOS has no service with the id ${quoted}. Service ids are exact, lowercase names.`,
     ...(suggestions.length > 0 ? [`Close matches: ${suggestions.join(', ')}.`] : []),
     `Search the services by name with ${catalogTool} (for example {"query":"mail"}), then ask ` +
-      'again with the exact serviceSlug of an entry in its toolkits list.',
+      'again with the exact serviceSlug of an entry in its services list.',
   ].join(' ');
+}
+
+/** The refusal while part of the service list failed to load: a retry, not a verdict. */
+function partialCatalogMessage(quoted: string): string {
+  return (
+    `DorkOS could not load the full list of services just now, so ${quoted} could not be ` +
+    'checked. Try again in a moment.'
+  );
+}
+
+/** The refusal for an id no way can check, by what stands in the way. */
+function unreachedDirectoryMessage(
+  quoted: string,
+  problem: Exclude<AppReachProblem, 'app_not_reached'>
+): string {
+  switch (problem) {
+    case 'way_not_answering':
+      return partialCatalogMessage(quoted);
+    case 'dorkos_account_unlinked':
+      return (
+        `DorkOS cannot check ${quoted} right now: the person's DorkOS account isn't linked ` +
+        'anymore. They can link it again in Settings › Access in the DorkOS app, or add their ' +
+        'own key in Settings › Connections; then ask again.'
+      );
+    case 'dorkos_account_unavailable':
+      return (
+        `DorkOS cannot check ${quoted} right now: the person's DorkOS account is linked but ` +
+        'cannot reach apps. Try again later.'
+      );
+    case 'own_key_unavailable':
+      return (
+        `DorkOS cannot check ${quoted} right now: the person's own key for reaching apps ` +
+        "isn't set up or didn't answer when DorkOS last checked it. Ask them to fix it in " +
+        'Settings › Connections in the DorkOS app, then ask again.'
+      );
+    case 'nothing_set_up':
+      return (
+        `DorkOS is not set up to reach apps yet, so it cannot check ${quoted}; only the popular ` +
+        'apps it lists can be requested now. Ask the person to open Connections in the DorkOS ' +
+        'app and connect an app there; the first app they connect also sets up how DorkOS ' +
+        "reaches apps. Then ask again. Signing in to a service's command-line tool in a shell " +
+        'does not give DorkOS access.'
+      );
+  }
 }
 
 /** Durable private request service. */
@@ -571,6 +605,8 @@ export class ConnectorAgentRequestService {
         services: [],
         warnings: [{ code: 'catalog_timeout', message: 'The service list took too long.' }],
         routeTypes: [],
+        // Unread; the warning answers first ("try again").
+        reachProblem: 'app_not_reached',
       };
     }
   }

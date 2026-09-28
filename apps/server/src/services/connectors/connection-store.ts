@@ -99,6 +99,16 @@ export interface ConnectionStoreOptions {
 /** Server-owned deployment and payer mode for a configured provider instance. */
 export type ConnectorProviderDeploymentMode = 'managed' | 'byo';
 
+/** One account {@link ConnectionStore.closeUnlistedConnections} closed. */
+export interface ClosedConnection {
+  /** Stable connection id. */
+  readonly connectionId: ConnectionId;
+  /** The service, e.g. `gmail`. */
+  readonly toolkit: string;
+  /** The owner's label for the account. */
+  readonly label: string;
+}
+
 /** Stable connection store and sole writer after the application backfill. */
 export class ConnectionStore {
   private readonly db: Db;
@@ -245,6 +255,23 @@ export class ConnectionStore {
       .from(connectorProviderInstances)
       .where(eq(connectorProviderInstances.id, instanceId))
       .get()?.generation;
+  }
+
+  /**
+   * The execution-material fingerprint last stored for one instance, kept
+   * across unregistering and restarts; `undefined` for an instance never
+   * registered.
+   *
+   * @param instanceId - The configured instance.
+   */
+  storedExecutionConfigDigest(instanceId: ConnectorProviderInstanceId): string | undefined {
+    return (
+      this.db
+        .select({ digest: connectorProviderInstances.executionConfigDigest })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.id, instanceId))
+        .get()?.digest ?? undefined
+    );
   }
 
   /** Mark a provider unavailable while retaining its identity and connections. */
@@ -504,6 +531,25 @@ export class ConnectionStore {
   }
 
   /**
+   * Whether any account connected through one provider instance is still kept
+   * (not disconnected, not removed). A missing instance has none.
+   *
+   * @param providerInstanceId - The instance the accounts were connected through.
+   */
+  hasLiveConnections(providerInstanceId: ConnectorProviderInstanceId): boolean {
+    this.assertAvailable();
+    return (
+      this.db.$client
+        .prepare(
+          `SELECT 1 FROM connections
+           WHERE provider_instance_id = ? AND lifecycle_state = 'connected' AND removed_at IS NULL
+           LIMIT 1`
+        )
+        .get(providerInstanceId) !== undefined
+    );
+  }
+
+  /**
    * Resolve an unambiguous disconnected connection targeted by a new connect
    * flow. A label narrows multi-account providers; without one, exactly one
    * disconnected connection for the provider and toolkit must exist.
@@ -589,29 +635,94 @@ export class ConnectionStore {
   /** Tombstone a connection and synchronously revoke local active access. */
   revokeConnection(connectionId: ConnectionId): void {
     this.assertAvailable();
+    this.closeConnections([connectionId]);
+  }
+
+  /**
+   * Close every kept account of one instance that a complete, successful
+   * listing from that instance no longer contains: the route cannot reach it,
+   * so nothing here can use it and the owner connects the app again. The
+   * account may still be live at the service — the listing only shows what
+   * this route can reach — so cleanup there is still owed and cannot be done
+   * from here: it is recorded as `unknown`, exactly as a local revoke is.
+   * Closed, not removed, so the account's history stays. Callers pass only a
+   * listing that succeeded in full — a failed or partial read must never
+   * reach here.
+   *
+   * @param instanceId - The instance the listing came from.
+   * @param listedRefs - Every account the listing returned.
+   * @returns The accounts closed, for the caller's record of it.
+   */
+  closeUnlistedConnections(
+    instanceId: ConnectorProviderInstanceId,
+    listedRefs: ReadonlySet<string>
+  ): ClosedConnection[] {
+    this.assertAvailable();
+    const unlisted = this.db
+      .select({
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        externalAccountRef: connections.externalAccountRef,
+      })
+      .from(connections)
+      .where(
+        and(
+          eq(connections.providerInstanceId, instanceId),
+          eq(connections.lifecycleState, 'connected'),
+          isNull(connections.removedAt)
+        )
+      )
+      .all()
+      .filter((row) => !listedRefs.has(row.externalAccountRef))
+      .map(({ connectionId, toolkit, label }) => ({
+        connectionId: connectionId as ConnectionId,
+        toolkit,
+        label,
+      }));
+    if (unlisted.length > 0) {
+      this.closeConnections(
+        unlisted.map((row) => row.connectionId),
+        { status: 'revoked', enabled: false }
+      );
+    }
+    return unlisted;
+  }
+
+  /**
+   * Mark connections disconnected with their external cleanup `unknown`, and
+   * synchronously end every local authority hanging off them: agent
+   * attachments, session overrides, grants and event subscriptions.
+   */
+  private closeConnections(
+    ids: readonly ConnectionId[],
+    close: { status?: 'revoked'; enabled?: false } = {}
+  ): void {
     const now = new Date().toISOString();
     // Read before the connection-wide revoke below ends it, so the owner is
     // told sharing with every agent stopped (ADR 260926-192625).
     const ended = this.db.transaction((tx) => {
-      const endedSharing = liveEveryAgentConnections(tx, [connectionId]);
+      const endedSharing = liveEveryAgentConnections(tx, [...ids]);
       tx.update(connections)
         .set({
           lifecycleState: 'disconnected',
           externalCleanupState: 'unknown',
+          ...(close.status && { status: close.status }),
+          ...(close.enabled === false && { enabled: false }),
           cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
           updatedAt: now,
         })
-        .where(eq(connections.id, connectionId))
+        .where(inArray(connections.id, [...ids]))
         .run();
       tx.delete(agentConnectionAttachments)
-        .where(eq(agentConnectionAttachments.connectionId, connectionId))
+        .where(inArray(agentConnectionAttachments.connectionId, [...ids]))
         .run();
       tx.delete(sessionConnectionOverrides)
-        .where(eq(sessionConnectionOverrides.connectionId, connectionId))
+        .where(inArray(sessionConnectionOverrides.connectionId, [...ids]))
         .run();
       tx.update(connectionOperationGrants)
         .set({ revokedAt: now })
-        .where(eq(connectionOperationGrants.connectionId, connectionId))
+        .where(inArray(connectionOperationGrants.connectionId, [...ids]))
         .run();
       tx.update(connectorEventSubscriptions)
         .set({
@@ -622,7 +733,7 @@ export class ConnectionStore {
         })
         .where(
           and(
-            eq(connectorEventSubscriptions.connectionId, connectionId),
+            inArray(connectorEventSubscriptions.connectionId, [...ids]),
             isNull(connectorEventSubscriptions.revokedAt)
           )
         )

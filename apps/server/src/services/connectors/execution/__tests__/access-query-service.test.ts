@@ -272,6 +272,95 @@ describe('ConnectorAccessQueryService', () => {
     });
   });
 
+  it('says why an account it was given went quiet when its way is down, instead of dropping it silently', async () => {
+    db.update(connections).set({ enabled: true }).where(eq(connections.id, 'connection-a')).run();
+    const withWays = new ConnectorAccessQueryService(
+      db,
+      { ownsAgent: (_owner, agentId) => agentId === 'agent-a' },
+      registry,
+      { revalidatePrincipal: async () => true },
+      (providerInstanceId) =>
+        registry.resolveProviderInstance(providerInstanceId as never)
+          ? undefined
+          : 'dorkos_account_unlinked'
+    );
+    // Working: listed as usable, nothing under unavailable.
+    await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
+      connections: [expect.objectContaining({ connectionId: 'connection-a' })],
+    });
+
+    // The way goes (the DorkOS account was unlinked): not usable, but named with the fix.
+    registry.unregisterProviderInstance(ConnectorProviderInstanceIdSchema.parse('provider-a'));
+    const listed = await withWays.listRuntimeConnections(RUNTIME_PRINCIPAL);
+    expect(listed.connections).toEqual([]);
+    expect(listed.unavailable).toEqual([
+      {
+        toolkit: 'gmail',
+        label: 'Work Gmail',
+        note: expect.stringContaining("isn't linked anymore"),
+      },
+    ]);
+    await expect(
+      withWays.listRuntimeOperations(RUNTIME_PRINCIPAL, 'connection-a')
+    ).rejects.toMatchObject({ code: 'connection_not_found' });
+
+    // The same agent and session under a different owner never learns of an
+    // account on this owner's instance, even one that cannot be used.
+    const foreign = createServerPrincipal({
+      kind: 'runtime',
+      owner: OTHER_OWNER,
+      bindingId: 'binding-foreign',
+      runtime: 'codex',
+      canonicalSessionId: 'session-a',
+      agentId: 'agent-a',
+      agentPath: '/agents/agent-a',
+      canonicalCwd: '/repo-a',
+    });
+    await expect(withWays.listRuntimeConnections(foreign)).resolves.toEqual({ connections: [] });
+
+    // The same grant and session rules as usable accounts: a chat with the
+    // account turned off, or a paused account, is not named.
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'session-a',
+        agentId: 'agent-a',
+        connectionId: 'connection-a',
+        state: 'detached',
+        updatedAt: STARTED_AT,
+      })
+      .run();
+    await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
+      connections: [],
+    });
+    db.delete(sessionConnectionOverrides).run();
+    db.update(connections).set({ enabled: false }).where(eq(connections.id, 'connection-a')).run();
+    await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
+      connections: [],
+    });
+
+    // Another agent's grant on the account never names it to this one.
+    db.update(connections).set({ enabled: true }).where(eq(connections.id, 'connection-a')).run();
+    db.update(connectionOperationGrants)
+      .set({ revokedAt: STARTED_AT })
+      .where(eq(connectionOperationGrants.id, 'grant-a'))
+      .run();
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-foreign',
+        subjectType: 'agent',
+        subjectId: 'agent-b',
+        agentId: 'agent-b',
+        connectionId: 'connection-a',
+        operationRevisionId: 'revision-a',
+        createdBy: 'operator',
+        createdAt: STARTED_AT,
+      })
+      .run();
+    await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
+      connections: [],
+    });
+  });
+
   it('pages immutable usage without exposing actor ids, provider logs, arguments, or results', async () => {
     for (const [index, attemptId] of ['attempt-c', 'attempt-b', 'attempt-a'].entries()) {
       db.insert(connectorUsageAttempts)

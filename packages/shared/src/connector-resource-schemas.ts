@@ -86,8 +86,12 @@ export const ConnectorAppWaySchema = z
     kind: z.enum(['dorkos_account', 'own_key']),
     /** Route type behind the way, e.g. `composio`, `nango`, `dorkos-managed`. */
     type: z.string().min(1).max(100),
-    /** `ready` when it answered its last check; `unavailable` when set up but not answering. */
-    status: z.enum(['ready', 'unavailable']),
+    /**
+     * `ready` when it answered its last check; `unavailable` when set up but not
+     * answering; `unlinked` for a DorkOS account that is no longer linked while
+     * apps connected through it are still kept.
+     */
+    status: z.enum(['ready', 'unavailable', 'unlinked']),
     /** The live route, present only while the way is ready. */
     providerInstanceId: ConnectorProviderInstanceIdSchema.optional(),
     /** The connection service this way signs in through, when it names one. */
@@ -103,11 +107,32 @@ export const ConnectorAppSetupReasonSchema = z.enum([
   'nothing_set_up',
   /** A DorkOS account is linked, but it cannot connect apps right now. */
   'dorkos_account_unavailable',
+  /** Apps were connected through a DorkOS account that is no longer linked. */
+  'dorkos_account_unlinked',
   /** The person's own key is saved, but it did not answer its last check. */
   'own_key_unavailable',
 ]);
 /** Why connecting an app has to start with the one-time setup step. */
 export type ConnectorAppSetupReason = z.infer<typeof ConnectorAppSetupReasonSchema>;
+
+/**
+ * Why a connected account cannot be used although it is still connected: the
+ * way it was connected through is not working.
+ */
+export const ConnectorWayProblemSchema = z.enum([
+  /**
+   * It was connected through a DorkOS account that is no longer linked.
+   * Linking again does not currently restore connections made through the
+   * old link, so the person connects the app again.
+   */
+  'dorkos_account_unlinked',
+  /** It was connected through a DorkOS account that cannot reach apps right now. */
+  'dorkos_account_unavailable',
+  /** It was connected through the person's own key, which is not answering or was removed. */
+  'own_key_unavailable',
+]);
+/** Why a connected account cannot be used although it is still connected. */
+export type ConnectorWayProblem = z.infer<typeof ConnectorWayProblemSchema>;
 
 /**
  * How DorkOS reaches apps right now: every way set up, and the one new apps use.
@@ -320,6 +345,11 @@ export const ConnectorConnectionSummarySchema = z
     subscriptionCount: z.number().int().nonnegative(),
     usage: ConnectorUsageCountsSchema,
     warnings: z.array(ConnectorPublicWarningSchema).max(50),
+    /**
+     * Present while the way this account was connected through is not working,
+     * so no agent can use it until that way is fixed.
+     */
+    wayProblem: ConnectorWayProblemSchema.optional(),
   })
   .strict();
 /** Owner-visible summary of one stable connection. */

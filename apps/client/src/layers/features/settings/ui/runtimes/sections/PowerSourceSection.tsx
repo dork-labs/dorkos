@@ -51,9 +51,11 @@ export function PowerSourceSectionView({
       data-testid="power-source-section"
     >
       <div className="flex items-center justify-between gap-3">
-        <h4 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+        {/* h3: the runtime card's sections sit under the Settings dialog's h2
+            with no heading between on a phone, so an h4 skipped a level. */}
+        <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
           Power source
-        </h4>
+        </h3>
         {provider && !changing && (
           <Button
             variant="ghost"

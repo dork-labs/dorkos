@@ -66,19 +66,22 @@ function contextReading(observedAt: string, totalTokens = 62_000) {
 }
 
 /** The `/context` reveal, opened by a button rather than the slash command. */
-function RevealDemo({ usage, label }: { usage: AccountUsage; label: string }) {
+function RevealDemo({
+  usage,
+  label,
+  reading = ACCOUNT_READING,
+}: {
+  usage: AccountUsage;
+  label: string;
+  reading?: UsageStatus;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex items-center gap-2">
       <Button size="sm" variant="outline" onClick={() => setOpen((o) => !o)}>
         {label}
       </Button>
-      <UsageRevealPopover
-        usage={ACCOUNT_READING}
-        accountUsage={usage}
-        open={open}
-        onOpenChange={setOpen}
-      />
+      <UsageRevealPopover usage={reading} accountUsage={usage} open={open} onOpenChange={setOpen} />
     </div>
   );
 }
@@ -322,7 +325,9 @@ export function StatusShowcases() {
             </span>
           </ShowcaseDemo>
 
-          <ShowcaseLabel>Stale — older than an hour: the number dims, “as of 2h ago”</ShowcaseLabel>
+          <ShowcaseLabel>
+            {'Stale, older than an hour: “· old” after the number, “as of 2h ago” on hover'}
+          </ShowcaseLabel>
           <ShowcaseDemo>
             <span className="text-muted-foreground text-xs">
               <UsageStatusItem usage={ACCOUNT_READING} observedAt={minutesAgo(125)} />
@@ -330,7 +335,7 @@ export function StatusShowcases() {
           </ShowcaseDemo>
 
           <ShowcaseLabel>
-            Stale near a limit — the amber number dims, the gauge stays amber
+            Stale near a limit: the number turns muted with “· old”, the gauge stays amber
           </ShowcaseLabel>
           <ShowcaseDemo>
             <span className="text-muted-foreground text-xs">
@@ -347,6 +352,22 @@ export function StatusShowcases() {
           </ShowcaseLabel>
           <ShowcaseDemo>
             <RevealDemo usage={ACCT_1_FIVE_HOUR_RESET} label="Open the usage reveal" />
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>
+            The /context reveal when out: the overage note in amber, “Rate limit reached” in red
+          </ShowcaseLabel>
+          <ShowcaseDemo>
+            <RevealDemo
+              usage={ACCT_1}
+              reading={{
+                ...ACCOUNT_READING,
+                utilization: 1,
+                state: 'exhausted',
+                detail: 'Using overage capacity',
+              }}
+              label="Open the out-of-usage reveal"
+            />
           </ShowcaseDemo>
         </TooltipProvider>
       </PlaygroundSection>

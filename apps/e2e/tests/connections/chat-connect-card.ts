@@ -110,6 +110,60 @@ export function registerChatConnectCardTests(harness: ChatConnectHarness): void 
   });
 }
 
+/**
+ * Register the case where no way to reach apps is set up yet (DOR-2494): the
+ * agent's request is still taken, and the card runs the one-time step before
+ * sign-in. The spec's own `beforeEach` deletes the key, so the case starts with
+ * nothing set up and no Slack account.
+ */
+export function registerChatConnectFirstStepTests(harness: ChatConnectHarness): void {
+  test.describe('Connections — asked for an app before anything is set up', () => {
+    test('takes the request, shows the one-time step first, then signs in and allows', async ({
+      page,
+      request,
+    }, testInfo) => {
+      test.setTimeout(90_000);
+      const agent = await seedAgent(request, harness.apiUrl);
+      const { sessionId } = await openRequestingChat(page, request, harness.apiUrl, agent);
+      const held = startHeldRequest(request, harness.apiUrl, sessionId, agent.agentDir);
+
+      // Nothing reaches Slack yet, and the request was still recorded.
+      const card = page.getByTestId('chat-agent-request');
+      await expect(card.getByRole('heading', { name: 'Connect Slack' })).toBeVisible();
+      await card.getByRole('button', { name: 'Connect Slack' }).click();
+      const step = card.getByTestId('first-connect-step');
+      await expect(step.getByRole('button', { name: /Use my Composio key/ })).toBeVisible();
+      await card.screenshot({ path: testInfo.outputPath('first-step-card-desktop.png') });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(step).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+      ).toBe(true);
+      await card.screenshot({ path: testInfo.outputPath('first-step-card-phone.png') });
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      // A way gets set up (the scripted key stands in for the person's own);
+      // the same request, read again, goes straight to sign-in and the question.
+      await harness.enableTestConnector(request);
+      await page.reload();
+      const reloaded = page.getByTestId('chat-agent-request');
+      await reloaded.getByRole('button', { name: 'Connect Slack' }).click();
+      await expect(
+        reloaded.getByRole('heading', { name: `Let ${agent.agentName} use Slack?` })
+      ).toBeVisible();
+      await reloaded.getByRole('button', { name: 'Allow' }).click();
+      await expect(reloaded.getByTestId('agent-request-receipt')).toHaveText(
+        `Allowed ${agent.agentName} to use Slack`
+      );
+
+      const answer = await held;
+      expect(answer.ok(), await answer.text()).toBe(true);
+      expect(readMcpResult(await answer.json())).toMatchObject({ status: 'granted' });
+      await releaseStep(request, harness.apiUrl, sessionId);
+    });
+  });
+}
+
 /** Disconnect every Slack account still connected, so a case starts with none. */
 async function disconnectSlackAccounts(request: APIRequestContext, apiUrl: string): Promise<void> {
   const list = await request.get(`${apiUrl}/api/connectors/connections`);

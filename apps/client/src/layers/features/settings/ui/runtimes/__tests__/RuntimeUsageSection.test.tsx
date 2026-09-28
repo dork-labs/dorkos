@@ -84,6 +84,22 @@ describe('RuntimeUsageSection', () => {
     expect(screen.getByRole('img', { name: /^Weekly 72% used/ })).toBeInTheDocument();
   });
 
+  it("names each runtime's usage region apart from the others, under a level-3 heading", () => {
+    // Codex's and OpenCode's cards open side by side in Settings: two regions
+    // both called "Usage" are two landmarks a screen reader cannot tell apart.
+    renderWith(
+      <>
+        <RuntimeUsageSection type="codex" />
+        <RuntimeUsageSection type="opencode" />
+      </>,
+      [codexUsage(), codexUsage({ runtime: 'opencode', windows: [], spend: SPEND })]
+    );
+    expect(screen.getByRole('region', { name: 'Codex usage' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'OpenCode usage' })).toBeInTheDocument();
+    // h3 under the Settings dialog's h2 on a phone, where the panel's h3 title is not drawn.
+    expect(screen.getAllByRole('heading', { name: 'Usage', level: 3 })).toHaveLength(2);
+  });
+
   it('draws a window the account lacks as unknown', () => {
     const weekOnly = codexUsage({ windows: [createMockAccountUsage().windows[1]!] });
     renderWith(<RuntimeUsageSection type="codex" />, [weekOnly]);

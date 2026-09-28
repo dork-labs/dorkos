@@ -421,7 +421,25 @@ export type AccessibleConnectorOperation = z.infer<typeof AccessibleConnectorOpe
 
 /** Agent-scoped connection list response. */
 export const ConnectorAccessibleConnectionsResponseSchema = z
-  .object({ connections: z.array(AccessibleConnectorConnectionSchema) })
+  .object({
+    connections: z.array(AccessibleConnectorConnectionSchema),
+    /**
+     * Accounts this agent was given that cannot be used right now because the
+     * way they were connected through is not working. Each note says why, and
+     * what the person does about it.
+     */
+    unavailable: z
+      .array(
+        z
+          .object({
+            toolkit: z.string().min(1),
+            label: z.string().min(1),
+            note: z.string().min(1),
+          })
+          .strict()
+      )
+      .optional(),
+  })
   .strict();
 /** Agent-scoped connection list response. */
 export type ConnectorAccessibleConnectionsResponse = z.infer<

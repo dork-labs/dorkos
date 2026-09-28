@@ -1,7 +1,13 @@
 import { CircleDashed, Recycle } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { STATUS_TONE_TEXT, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import {
+  STATUS_TONE_TEXT,
+  TOOLTIP_MUTED_TEXT,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/layers/shared/ui';
 // Same-slice imports via sibling modules (not the entities/session barrel).
 import { useSessionContextHealth } from '../model/context/use-session-context-health';
 import type { ContextSeverity } from '../lib/context-health';
@@ -104,7 +110,7 @@ export function SessionContextGauge({ session }: { session: Session }) {
           <TooltipContent side="top">
             <div>Context {health.percent}% full</div>
             {!health.fresh && (
-              <div className="text-muted-foreground">as of {formatRelativeTime(health.asOf)}.</div>
+              <div className={TOOLTIP_MUTED_TEXT}>as of {formatRelativeTime(health.asOf)}.</div>
             )}
           </TooltipContent>
         </Tooltip>

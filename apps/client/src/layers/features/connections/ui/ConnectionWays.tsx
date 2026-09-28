@@ -221,8 +221,8 @@ function AccountWayRow({
     >
       {!linked && !checkFailed && apps.length > 0 && (
         <p className="text-muted-foreground text-xs">
-          These apps stopped working when the account was unlinked. Link it again in Access to bring
-          them back.
+          These apps stopped working when the account was no longer linked. To use them again,
+          connect them again through a way that works.
         </p>
       )}
     </WayRow>
