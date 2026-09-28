@@ -125,13 +125,14 @@ export function registerSessionContinueOpenApi(registry: OpenAPIRegistry): void 
     summary: 'List how the session got past its recent usage limits',
     description:
       'The most recent usage-limit episodes that ended, at most 20, oldest first: what ran out and when, and whether the work moved to another session (`moved`, with where it went) or the session resumed after the reset, on another model, or before the reset. A limit still in effect is not listed; the session status carries it.',
-    request: { params },
+    request: { params, query: z.object({ cwd: z.string().optional() }) },
     responses: {
       200: {
         description: 'The episodes, oldest first.',
         content: { 'application/json': { schema: LimitHistoryResponseSchema } },
       },
       400: error('The session id is not valid.'),
+      403: error("The session's directory is outside the configured boundary."),
       404: error('No session with this id is known here.'),
     },
   });

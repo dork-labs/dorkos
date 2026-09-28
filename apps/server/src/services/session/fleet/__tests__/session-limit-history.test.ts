@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionMetadata, type Db } from '@dorkos/db';
+import { sessionLimits, sessionMetadata, type Db } from '@dorkos/db';
 import type { LimitPlan, SessionLimit } from '@dorkos/shared/schemas';
 import { SessionLimitStore } from '../session-limit-store.js';
 import { LIMIT_HISTORY_PAGE, LIMIT_HISTORY_RETENTION_MS } from '../session-limit-history.js';
@@ -140,6 +140,28 @@ describe('resumed at the next turn_start', () => {
         modelTo: 'sonnet',
         resolvedAt: clock.toISOString(),
       }),
+    ]);
+  });
+
+  it('is resumed-model from the runtime’s default to a chosen model', () => {
+    bind('s-1', 'claude-code');
+    hit('s-1');
+    bind('s-1', 'claude-code', 'sonnet');
+    store.delete('s-1');
+    expect(store.history('s-1')).toEqual([
+      expect.objectContaining({ resolution: 'resumed-model', modelFrom: null, modelTo: 'sonnet' }),
+    ]);
+  });
+
+  it('never reads a limit whose model was not recorded as a model switch', () => {
+    bind('s-1', 'claude-code');
+    hit('s-1');
+    // A row that predates the column and escaped the backfill.
+    db.update(sessionLimits).set({ model: null }).run();
+    bind('s-1', 'claude-code', 'opus');
+    store.delete('s-1');
+    expect(store.history('s-1')).toEqual([
+      expect.objectContaining({ resolution: 'resumed-early', modelFrom: null, modelTo: null }),
     ]);
   });
 

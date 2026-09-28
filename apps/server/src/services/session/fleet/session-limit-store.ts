@@ -46,6 +46,7 @@ import {
   recordLimitResolution,
   rekeyLimitHistory,
   resumedResolutionOf,
+  RUNTIME_DEFAULT_MODEL,
   sweepLimitHistory,
 } from './session-limit-history.js';
 
@@ -233,8 +234,9 @@ export class SessionLimitStore {
       claimedBy: null,
       // The model the session was on when it ran out, so its next turn can
       // tell a model switch from a wait (the limit history, spec
-      // claude-account-ui §7.1).
-      model: metadataOf(this.db, write.sessionId)?.model ?? null,
+      // claude-account-ui §7.1). Always recorded: the runtime's default is
+      // its own value, since NULL means "not recorded".
+      model: metadataOf(this.db, write.sessionId)?.model ?? RUNTIME_DEFAULT_MODEL,
       updatedAt: this.now().toISOString(),
     };
     const { sessionId: _key, ...update } = values;

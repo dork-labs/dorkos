@@ -35,6 +35,13 @@ import { LimitPlanSchema } from '@dorkos/shared/schemas';
 /** A database handle or an open transaction on it. */
 type DbOrTx = Db | DbTransaction;
 
+/**
+ * What `session_limits.model` holds for a session on its runtime's default
+ * model. NULL there means something else: the model was never recorded (a row
+ * written before the column existed), which is unknown, never a switch.
+ */
+export const RUNTIME_DEFAULT_MODEL = '';
+
 /** How many entries the history route serves: the most recent ones. */
 export const LIMIT_HISTORY_PAGE = 20;
 
@@ -82,7 +89,9 @@ function resetConfirmedAtOf(planJson: string): string | undefined {
  * How a limit that was never moved ended, when its row is deleted at the
  * session's next `turn_start`: `resumed-model` when the session's model changed
  * since the limit was hit, else `resumed-reset` when a reading confirmed the
- * reset or its time has passed, else `resumed-early`.
+ * reset or its time has passed, else `resumed-early`. A limit whose model was
+ * never recorded (`model` NULL) is never read as a switch; a `null` model on
+ * either side of a real switch is the runtime's default.
  *
  * @param row - The `session_limits` row being deleted.
  * @param facts - The session's model now, and the clock.
@@ -91,9 +100,14 @@ export function resumedResolutionOf(
   row: SessionLimitRow,
   facts: LimitResumeFacts
 ): ResumedResolution {
-  const modelAtLimit = row.model ?? null;
-  if (facts.currentModel !== modelAtLimit) {
-    return { resolution: 'resumed-model', modelFrom: modelAtLimit, modelTo: facts.currentModel };
+  const modelAtLimit = row.model;
+  const modelNow = facts.currentModel ?? RUNTIME_DEFAULT_MODEL;
+  if (modelAtLimit !== null && modelAtLimit !== modelNow) {
+    return {
+      resolution: 'resumed-model',
+      modelFrom: modelAtLimit === RUNTIME_DEFAULT_MODEL ? null : modelAtLimit,
+      modelTo: facts.currentModel,
+    };
   }
   const resetPassed = row.resetsAt !== null && facts.now.getTime() >= Date.parse(row.resetsAt);
   if (resetConfirmedAtOf(row.plan) !== undefined || resetPassed) {

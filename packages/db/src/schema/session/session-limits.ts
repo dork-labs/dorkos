@@ -47,9 +47,10 @@ export const sessionLimits = sqliteTable('session_limits', {
   claimedBy: text('claimed_by'),
   /**
    * The session's chosen model when the limit was hit (`session_metadata.model`),
-   * or NULL for the runtime's default. What the limit history compares against
-   * at the next `turn_start` to tell a model switch from a wait (spec
-   * `claude-account-ui` §7.1).
+   * `''` for the runtime's default, or NULL when never recorded (unknown, never
+   * read as a switch). What the limit history compares against at the next
+   * `turn_start` to tell a model switch from a wait (spec `claude-account-ui`
+   * §7.1). Migration 0120 backfilled the rows that predate it.
    */
   model: text('model'),
   /** The row's last write. */

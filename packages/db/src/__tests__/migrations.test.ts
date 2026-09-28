@@ -327,15 +327,28 @@ describe('Database Migrations', () => {
     const raw = db.$client;
     raw
       .prepare(
-        "INSERT INTO session_limits (session_id, since, window, scope, plan, state, updated_at) VALUES ('s-1', '2026-01-01T00:00:00Z', 'five_hour', 'account', '{\"mode\":\"ask\"}', 'limited', '2026-01-01T00:00:00Z')"
+        "INSERT INTO session_metadata (session_id, runtime, created_at, model) VALUES ('s-1', 'claude-code', '2026-01-01T00:00:00Z', 'opus'), ('s-2', 'claude-code', '2026-01-01T00:00:00Z', NULL)"
       )
       .run();
+    for (const id of ['s-1', 's-2', 's-3']) {
+      raw
+        .prepare(
+          "INSERT INTO session_limits (session_id, since, window, scope, plan, state, updated_at) VALUES (?, '2026-01-01T00:00:00Z', 'five_hour', 'account', '{\"mode\":\"ask\"}', 'limited', '2026-01-01T00:00:00Z')"
+        )
+        .run(id);
+    }
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    // The live limit is untouched, and remembers no model it never recorded.
-    expect(raw.prepare('SELECT session_id, model FROM session_limits').all()).toEqual([
-      { session_id: 's-1', model: null },
+    // Each live limit takes the session's current model ('' = the runtime's
+    // default, and for a session with no settings row), so its next turn does
+    // not read a model switch that never happened.
+    expect(
+      raw.prepare('SELECT session_id, model FROM session_limits ORDER BY session_id').all()
+    ).toEqual([
+      { session_id: 's-1', model: 'opus' },
+      { session_id: 's-2', model: '' },
+      { session_id: 's-3', model: '' },
     ]);
     const insert = raw.prepare(
       "INSERT OR IGNORE INTO session_limit_history (id, session_id, since, runtime, window, scope, resolution, resolved_at) VALUES (?, 's-1', '2026-01-01T00:00:00Z', 'claude-code', 'five_hour', 'account', 'moved', '2026-01-01T00:01:00Z')"

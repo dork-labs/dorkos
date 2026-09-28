@@ -12,7 +12,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { agents, type Db } from '@dorkos/db';
+import { BoundaryError, validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -20,7 +22,14 @@ vi.mock('../../lib/boundary.js', () => ({
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
-  BoundaryError: class BoundaryError extends Error {},
+  BoundaryError: class BoundaryError extends Error {
+    constructor(
+      message: string,
+      readonly code?: string
+    ) {
+      super(message);
+    }
+  },
 }));
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -217,6 +226,8 @@ describe('GET /api/sessions/:id/limit-history', () => {
   beforeEach(() => {
     db = createTestDb();
     runtimeRegistry.setDb(db);
+    // The route places the session through its runtime, as `/events` does.
+    runtimeRegistry.register(new FakeAgentRuntime('claude-code') as never);
     clock = new Date();
     store = new SessionLimitStore(db, () => clock);
     setSessionLimitStore(store);
@@ -285,6 +296,23 @@ describe('GET /api/sessions/:id/limit-history', () => {
     const res = await request(testServer).get(`${base}/limit-history`);
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('SESSION_NOT_FOUND');
+  });
+
+  it('refuses a session outside the boundary as the other session reads do', async () => {
+    await runtimeRegistry.saveSessionSettings(SESSION, { model: 'opus' });
+    const outside = () =>
+      new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY');
+    // The directory the session's runtime places it in…
+    vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(outside());
+    const placed = await request(testServer).get(`${base}/limit-history`);
+    expect(placed.status).toBe(403);
+    expect(placed.body.code).toBe('OUTSIDE_BOUNDARY');
+    // …and one the caller names.
+    vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(outside());
+    const named = await request(testServer).get(`${base}/limit-history?cwd=/elsewhere`);
+    expect(named.status).toBe(403);
+    expect(named.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(validateBoundaryOrDorkHome).toHaveBeenLastCalledWith('/elsewhere');
   });
 
   it('answers 400 for an invalid id', async () => {

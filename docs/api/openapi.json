@@ -15114,6 +15114,14 @@
             "required": true,
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cwd",
+            "in": "query"
           }
         ],
         "responses": {
@@ -15129,6 +15137,16 @@
           },
           "400": {
             "description": "The session id is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session's directory is outside the configured boundary.",
             "content": {
               "application/json": {
                 "schema": {
