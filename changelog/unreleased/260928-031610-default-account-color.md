@@ -2,6 +2,7 @@
 covers:
   - "feat(server): let this computer's own Claude sign-in have a color of its own (DOR-2492)"
   - "fix(server): let the server alone decide the default account's color (DOR-2492)"
+  - "fix(server): keep the implicit default's contract color null (DOR-2492)"
 ---
 
 ### Added
