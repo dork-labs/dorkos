@@ -989,6 +989,28 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(screen.queryByText('in use')).not.toBeInTheDocument();
     });
 
+    it.each([
+      ['~/.claude itself, so Main', HOME_DEFAULT, 'default', 2],
+      ['a registered row', WORK, 'acme-corp', 0],
+    ])(
+      'shows no $CLAUDE_CONFIG_DIR line when the variable names %s, which already says "in use"',
+      async (_case, folder, id, rowIndex) => {
+        renderSection(
+          standalone({
+            resolvedAccount: folder,
+            resolvedAccountId: id,
+            launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: folder },
+          }),
+          { usage: [mainUsage()] }
+        );
+        await screen.findByRole('button', { name: `Color for ${MAIN}` });
+        const rows = screen.getAllByTestId('claude-account-row');
+        expect(within(rows[rowIndex]!).getByText('in use')).toBeInTheDocument();
+        expect(screen.getAllByText('in use')).toHaveLength(1);
+        expect(screen.queryByTestId('claude-account-launch-override')).not.toBeInTheDocument();
+      }
+    );
+
     it('shows no $CLAUDE_CONFIG_DIR line when the server reports no override', async () => {
       renderSection(standalone(), { usage: [mainUsage()] });
       await screen.findByRole('button', { name: `Color for ${MAIN}` });

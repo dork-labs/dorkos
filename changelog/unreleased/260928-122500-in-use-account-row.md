@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(settings): show which Claude account new chats use, even when the folder is written differently'
+  - 'fix(settings): name no row "in use" when $CLAUDE_CONFIG_DIR picks an unregistered folder'
 ---
 
 ### Fixed

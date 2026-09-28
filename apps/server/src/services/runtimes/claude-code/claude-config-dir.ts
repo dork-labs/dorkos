@@ -622,17 +622,22 @@ function resolvedDefaultAccount(
 }
 
 /**
- * The launch-only override in force, if any: the server's inherited
- * `$CLAUDE_CONFIG_DIR` while no default account is chosen, which is exactly
- * when {@link resolveActiveClaudeRoot} hands new sessions that folder.
+ * The launch-only override Settings has to say in words, if any: the server's
+ * inherited `$CLAUDE_CONFIG_DIR` while no default account is chosen (exactly
+ * when {@link resolveActiveClaudeRoot} hands new sessions that folder), AND no
+ * row can say "in use" for it. When the variable names `~/.claude` itself or a
+ * registered row, that row already says it, so the line would only repeat it.
+ * Never sent when the config could not be read: nobody can say then.
  *
  * The path is no new disclosure: `resolvedAccount` already carries it then.
  */
-function launchOverride(defaultAccount: string | null): {
-  launchOverride?: { env: 'CLAUDE_CONFIG_DIR'; path: string };
-} {
+function launchOverride(
+  defaultAccount: string | null,
+  resolvedAccountId: string | undefined,
+  unavailable: boolean
+): { launchOverride?: { env: 'CLAUDE_CONFIG_DIR'; path: string } } {
   const ambient = ambientClaudeConfigDir();
-  if (defaultAccount !== null || !ambient) return {};
+  if (defaultAccount !== null || !ambient || resolvedAccountId || unavailable) return {};
   return { launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: ambient } };
 }
 
@@ -656,6 +661,7 @@ export function describeClaudeCodeAccounts(
 ): NonNullable<ServerConfig['claudeCode']> {
   const { defaultAccount, accounts, defaultAccountColor, unavailable } =
     readClaudeCodeConfig(config);
+  const resolved = resolvedDefaultAccount(config, unavailable);
   return {
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
@@ -666,11 +672,11 @@ export function describeClaudeCodeAccounts(
     // The color the default account is DRAWN in, and the row new sessions run
     // on, decided here and nowhere else: the same rules the usage store and the
     // launch ladder apply, so no client re-derives them from path strings.
-    ...resolvedDefaultAccount(config, unavailable),
+    ...resolved,
     // Set only when the server's own `$CLAUDE_CONFIG_DIR` decides where new
-    // sessions go (no default chosen), so Settings can say so: Main never
-    // follows that variable (contract rev 6d), and the row it names may be none.
-    ...launchOverride(defaultAccount),
+    // sessions go (no default chosen) and no row stands for that folder, so
+    // Settings can say so: Main never follows that variable (contract rev 6d).
+    ...launchOverride(defaultAccount, resolved.resolvedAccountId, unavailable),
     // Sent only when it is true, so an ordinary response carries no extra key
     // and a client that never learned about this field reads the same wire it
     // always did. What it buys the client is the difference between "your

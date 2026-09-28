@@ -417,7 +417,6 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       accounts: [],
       defaultAccountColor: null,
       accountsUnavailable: true,
-      launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/tmp/inherited-claude' },
     });
   });
 
@@ -541,6 +540,24 @@ describe('describeClaudeCodeAccounts: the row new sessions run on (resolvedAccou
     expect(described.launchOverride).toEqual({ env: 'CLAUDE_CONFIG_DIR', path: loose });
   });
 
+  it('names Main and sends no launch override when $CLAUDE_CONFIG_DIR is ~/.claude itself', () => {
+    process.env.CLAUDE_CONFIG_DIR = `${path.join(tmp, '.claude')}/`;
+    const described = describeClaudeCodeAccounts(
+      fakeConfig({ accounts: [row('acme', path.join(tmp, '.claude2'))] })
+    );
+    expect(described.resolvedAccountId).toBe('default');
+    expect(described).not.toHaveProperty('launchOverride');
+  });
+
+  it('names the row and sends no launch override when $CLAUDE_CONFIG_DIR is a registered row', () => {
+    process.env.CLAUDE_CONFIG_DIR = path.join(tmp, '.claude2');
+    const described = describeClaudeCodeAccounts(
+      fakeConfig({ accounts: [row('acme', path.join(tmp, '.claude2'))] })
+    );
+    expect(described.resolvedAccountId).toBe('acme');
+    expect(described).not.toHaveProperty('launchOverride');
+  });
+
   it('reports no launch override once a default is chosen, even with the variable set', () => {
     process.env.CLAUDE_CONFIG_DIR = path.join(tmp, '.claude2');
     const described = describeClaudeCodeAccounts(
@@ -560,6 +577,7 @@ describe('describeClaudeCodeAccounts: the row new sessions run on (resolvedAccou
       fakeConfig({ accounts: [row('acme', path.join(tmp, '.claude2'))] })
     );
     expect(described).not.toHaveProperty('resolvedAccountId');
+    expect(described.launchOverride).toEqual({ env: 'CLAUDE_CONFIG_DIR', path: loose });
   });
 
   it('omits it when the registry cannot be read, rather than guessing', () => {

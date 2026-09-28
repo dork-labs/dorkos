@@ -4165,7 +4165,7 @@ export const ServerConfigSchema = z
           .optional()
           .openapi({
             description:
-              "Present only when the server process's own $CLAUDE_CONFIG_DIR decides where new sessions run (no default account is chosen): the variable and the folder it names. A launch-only override: the default account (Main) never follows it (shared account contract rev 6d), so resolvedAccountId may be absent then",
+              "Present only when the server process's own $CLAUDE_CONFIG_DIR decides where new sessions run (no default account is chosen) AND no row stands for that folder, so resolvedAccountId is absent: the variable and the folder it names. A launch-only override: the default account (Main) never follows it (shared account contract rev 6d)",
           }),
         accountsUnavailable: z.boolean().optional().openapi({
           description:
