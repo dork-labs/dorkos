@@ -163,6 +163,14 @@ const NEAR_FIVE_HOUR: AccountUsage = {
   ),
 };
 
+/** Acct 1 after its 5-hour window reset: the server reads it at 0%, `expired`. */
+const FIVE_HOUR_RESET: AccountUsage = {
+  ...claudeUsage(1),
+  windows: claudeUsage(1).windows.map((entry) =>
+    entry.key === 'five_hour' ? { ...entry, usedPct: 0, status: null, expired: true } : entry
+  ),
+};
+
 /** 47 minutes after the page loaded: the 5-hour window's reset, for the countdown chip. */
 const IN_FORTY_SEVEN_MIN = new Date(Date.now() + 47 * MINUTE_MS).toISOString();
 
@@ -177,6 +185,10 @@ export function AccountItemShowcases() {
       description="The status-bar account chip: which Claude account a session spends and how much is left. It shows only with two or more accounts. Click a chip for its popover."
     >
       <Chip label="ok — the name and two usage bars (5-hour, week)" account={onAccount(1)} />
+      <Chip
+        label="reset — the 5-hour window reset; its popover row says so (click)"
+        account={onAccount(1, { usage: FIVE_HOUR_RESET })}
+      />
       <Chip
         label="unknown — no reading yet, never an empty 0%"
         account={onAccount(4, { chipState: 'unknown' })}

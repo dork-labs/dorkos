@@ -18,7 +18,8 @@ import { formatTokens } from '../lib/format-tokens';
 import { partitionSubagents } from '../lib/fold-active-subagents';
 import { CONNECTION_STATE_CONFIG } from './ConnectionItem';
 import { CopyDiagnosticsButton } from './CopyDiagnosticsButton';
-import { UsageDetail, hasRenderableUsage } from './UsageStatusItem';
+import { UsageDetail } from './UsageStatusItem';
+import { hasRenderableUsage } from '../lib/account-usage-status';
 
 /** How often the "time since last event" clock ticks while the readout is open. */
 const AGE_TICK_MS = 1000;

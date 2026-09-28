@@ -86,6 +86,7 @@ export {
   useSessionStreamStore,
   useSessionStreamState,
   useSessionStreamStatus,
+  useSessionUsageArrivedAt,
   useSessionStreamLifecycle,
   useSessionSteerable,
   useSessionAwaitingDecision,

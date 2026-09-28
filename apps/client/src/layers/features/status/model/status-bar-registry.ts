@@ -8,6 +8,12 @@
  * number that always reads 34% is wallpaper, so the 91% that matters would not
  * register either.
  *
+ * Two items are the deliberate exception: `context` and `usage` show whenever
+ * they have a reading, from the moment a session opens, because the operator
+ * asked to see those numbers without waiting for a turn (spec
+ * `claude-account-ui` §6.8). Their severity still rises near a limit, which is
+ * what keeps the 91% louder than the 34%.
+ *
  * @module features/status/model/status-bar-registry
  */
 import type { LucideIcon } from 'lucide-react';
@@ -31,6 +37,7 @@ import type { ConnectionState, UsageStatus } from '@dorkos/shared/types';
 import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
 import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
+import { hasRenderableUsage } from '../lib/account-usage-status';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { isBypassPermissionMode, isBypassSemantics, type ChipState } from '@/layers/shared/lib';
 import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
@@ -304,6 +311,21 @@ function runtimeSeverity(ctx: StatusPromotionContext): number {
   return ctx.runtime && !ctx.runtime.isDefault ? SEVERITY.RUNTIME_NON_DEFAULT : SEVERITY.QUIET;
 }
 
+/**
+ * Whether the account chip is showing and so carries the usage display itself
+ * (its bars and popover), which leaves the `usage` item with nothing to add:
+ * one usage display, never two (spec `claude-account-ui` §6.8).
+ *
+ * The one rule both places read: `usage.promote` below, and
+ * `buildStatusItemNodes`, which skips the usage node so a PIN (which bypasses
+ * `promote`) cannot bring the second display back.
+ *
+ * @param ctx - The promotion context, or just its `account` field.
+ */
+export function isUsageAbsorbed(ctx: Pick<StatusPromotionContext, 'account'>): boolean {
+  return ctx.account !== null;
+}
+
 /** The account chip states that are news: out, near, or one model out. */
 const ACCOUNT_ATTENTION_STATES: ReadonlySet<ChipState> = new Set(['near', 'model-out', 'out']);
 
@@ -423,7 +445,10 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     group: 'session',
     icon: BarChart3,
     rigid: true,
-    promote: (ctx) => ctx.contextPercent !== null && ctx.contextPercent >= CONTEXT_PROMOTE_PERCENT,
+    // Shown whenever there is a reading, cached or live (spec
+    // `claude-account-ui` §6.8, the operator's ask): the number is there the
+    // moment a session opens. How loud it is still rises near the limit.
+    promote: (ctx) => ctx.contextPercent !== null,
     severity: (ctx) => {
       if (ctx.contextPercent === null) return SEVERITY.QUIET;
       if (ctx.contextPercent >= CONTEXT_ACTION_PERCENT) return SEVERITY.CONTEXT_CRITICAL;
@@ -439,7 +464,10 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     group: 'session',
     icon: Gauge,
     rigid: true,
-    promote: (ctx) => ctx.usage?.state === 'warning' || ctx.usage?.state === 'exhausted',
+    // Shown whenever there is a reading (spec `claude-account-ui` §6.8), unless
+    // the account chip is showing, which carries usage itself. Severity still
+    // rises near a limit.
+    promote: (ctx) => ctx.usage !== null && hasRenderableUsage(ctx.usage) && !isUsageAbsorbed(ctx),
     severity: (ctx) => {
       if (ctx.usage?.state === 'exhausted') return SEVERITY.USAGE_EXHAUSTED;
       if (ctx.usage?.state === 'warning') return SEVERITY.USAGE_WARNING;

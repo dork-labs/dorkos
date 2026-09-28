@@ -22,6 +22,7 @@ import type {
 } from '@/layers/features/chat/ui/status/status-item-nodes';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { RuntimeChipState, SessionAccount } from '@/layers/features/status';
+import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
 
 /**
  * One account on this machine, so the identity gate is closed and the account
@@ -262,7 +263,8 @@ const DEGRADED_DIAGNOSTICS: SessionDiagnostics = {
 /**
  * A resting session: clean tree on the default branch, a third of the context
  * window used, connected, default permissions, the default runtime. Nothing here
- * is news, so almost nothing shows.
+ * is news, so almost nothing shows — except usage and context, which show
+ * whenever they have a reading (spec `claude-account-ui` §6.8), quietly.
  */
 export const HEALTHY: StatusScenario = {
   label: 'Healthy — nothing to report',
@@ -297,14 +299,45 @@ export const HEALTHY: StatusScenario = {
     account: NO_ACCOUNT_CHIP,
     contextPercent: 31,
     contextUsage: null,
+    contextReading: null,
     compact: null,
     usage: USAGE_OK,
+    usageSource: 'live',
+    usageObservedAt: null,
     supportsCostTracking: true,
     runningSubagents: [],
     liveSubagentCount: 0,
     waitingOnSubagents: false,
     connectionState: 'connected',
   },
+  diagnostics: HEALTHY_DIAGNOSTICS,
+};
+
+/** Acct 1 of {@link MOCK_ACCOUNT_USAGE}, with a second account registered: the gate is open. */
+const ACCT_1_CHIP: SessionAccount = {
+  visible: true,
+  runtime: 'claude-code',
+  accountId: MOCK_ACCOUNT_USAGE[0]!.accountId,
+  path: MOCK_ACCOUNT_USAGE[0]!.path,
+  name: MOCK_ACCOUNT_USAGE[0]!.label,
+  color: MOCK_ACCOUNT_USAGE[0]!.color,
+  usage: MOCK_ACCOUNT_USAGE[0]!,
+  limit: null,
+  chipState: 'ok',
+  trackerItem: null,
+  lifecycle: 'idle',
+  pending: false,
+};
+
+/**
+ * The healthy session with two or more Claude accounts: the account chip shows,
+ * and it carries the usage display itself, so the usage item does not show even
+ * though there is a reading (spec `claude-account-ui` §6.8, one usage display).
+ */
+export const ABSORBED_BY_CHIP: StatusScenario = {
+  label: 'Two Claude accounts — the chip carries usage',
+  ctx: { ...HEALTHY.ctx, account: { chipState: 'ok' } },
+  input: { ...HEALTHY.input, sessionId: 'showcase-absorbed', account: ACCT_1_CHIP },
   diagnostics: HEALTHY_DIAGNOSTICS,
 };
 
@@ -355,8 +388,11 @@ export const DEGRADED: StatusScenario = {
     account: NO_ACCOUNT_CHIP,
     contextPercent: 88,
     contextUsage: null,
+    contextReading: null,
     compact: null,
     usage: USAGE_WARNING,
+    usageSource: 'live',
+    usageObservedAt: null,
     supportsCostTracking: true,
     runningSubagents: RUNNING_SUBAGENTS,
     liveSubagentCount: RUNNING_SUBAGENTS.length,
@@ -527,8 +563,11 @@ export const PLANNING: StatusScenario = {
     account: NO_ACCOUNT_CHIP,
     contextPercent: 92,
     contextUsage: null,
+    contextReading: null,
     compact: null,
     usage: USAGE_OK,
+    usageSource: 'live',
+    usageObservedAt: null,
     supportsCostTracking: true,
     runningSubagents: [],
     liveSubagentCount: 0,

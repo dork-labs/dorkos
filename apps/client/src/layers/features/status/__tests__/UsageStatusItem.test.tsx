@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { UsageStatusItem, UsageDetail, hasRenderableUsage } from '../ui/UsageStatusItem';
+import { UsageStatusItem, UsageDetail } from '../ui/UsageStatusItem';
+import { hasRenderableUsage } from '../lib/account-usage-status';
 
 afterEach(cleanup);
 
@@ -246,5 +248,44 @@ describe('UsageDetail — the sentence beside the figure', () => {
       }
     );
     expect(screen.queryByText(/Estimated/)).not.toBeInTheDocument();
+  });
+});
+
+describe('UsageStatusItem — freshness (spec claude-account-ui §6.8)', () => {
+  const NOW = new Date('2026-09-28T12:00:00.000Z');
+  const usage: UsageStatus = {
+    kind: 'subscription',
+    utilization: 0.4,
+    windowLabel: '5-hour window',
+    state: 'ok',
+  };
+  const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
+
+  it('dims the number once the reading is older than 60 minutes', () => {
+    render(<UsageStatusItem usage={usage} observedAt={minutesAgo(61)} now={NOW} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.getByText('40%')).toHaveClass('text-muted-foreground');
+    expect(screen.getByLabelText('Subscription usage')).not.toHaveClass('text-muted-foreground');
+  });
+
+  it('does not dim it at 59 minutes', () => {
+    render(<UsageStatusItem usage={usage} observedAt={minutesAgo(59)} now={NOW} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.getByText('40%')).not.toHaveClass('text-muted-foreground');
+  });
+
+  it('never dims a reading whose time is unknown', () => {
+    render(<UsageStatusItem usage={usage} now={NOW} />, { wrapper: Wrapper });
+    expect(screen.getByText('40%')).not.toHaveClass('text-muted-foreground');
+  });
+
+  it('ends the tooltip with how old the reading is', async () => {
+    render(<UsageStatusItem usage={usage} observedAt={minutesAgo(120)} now={NOW} />, {
+      wrapper: Wrapper,
+    });
+    fireEvent.focus(screen.getByLabelText('Subscription usage'));
+    expect((await screen.findAllByText('as of 2h ago')).length).toBeGreaterThan(0);
   });
 });

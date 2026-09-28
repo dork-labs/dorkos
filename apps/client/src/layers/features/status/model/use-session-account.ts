@@ -9,12 +9,36 @@
  */
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import { useAccountIdentityGate } from '@/layers/entities/runtime';
+import { useAccountIdentityGate, useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useSessions, useSessionStreamStatus } from '@/layers/entities/session';
 import { chipState, type ChipState, type SessionLimitView } from '@/layers/shared/lib';
 import { useAccountUsage, useClaudeAccounts } from '@/layers/shared/model';
 import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from './use-account-switch';
 import { useResolvedSessionRuntime } from './use-runtime-chip';
+import type { AccountPromotionState } from './status-bar-registry';
+
+/** The registry id every runtime without an account registry bills (S4 N9). */
+const IMPLICIT_ACCOUNT_ID = 'default';
+
+/** Milliseconds of `updatedAt`, with `null` (and anything unreadable) losing to any time. */
+function updatedAtMs(usage: AccountUsage): number {
+  const ms = usage.updatedAt === null ? Number.NaN : Date.parse(usage.updatedAt);
+  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+}
+
+/**
+ * The newer of two readings of one account: the shared cache's (seeded from the
+ * session list, kept current by `account_usage`) and the one the session's own
+ * status carries from open (`status.accountUsage`). The cache wins a tie.
+ */
+function newerReading(
+  cached: AccountUsage | null,
+  fromStatus: AccountUsage | null
+): AccountUsage | null {
+  if (!cached) return fromStatus;
+  if (!fromStatus) return cached;
+  return updatedAtMs(fromStatus) > updatedAtMs(cached) ? fromStatus : cached;
+}
 
 /** The flow work item a session serves, as `Session.trackerItem` carries it. */
 export interface SessionTrackerItem {
@@ -64,12 +88,29 @@ export interface SessionAccount {
 }
 
 /**
+ * The account chip's promotion state, or `null` when the chip draws nothing:
+ * the identity gate is closed, or a started session's account cannot be named
+ * (the chip then renders nothing rather than invent a label). The status line
+ * reads this for the `account` item AND for whether it absorbs the usage
+ * display (`isUsageAbsorbed`), so a chip that draws nothing never hides usage.
+ *
+ * @param account - The session's account, from {@link useSessionAccount}.
+ */
+export function accountChipPromotion(account: SessionAccount): AccountPromotionState | null {
+  if (!account.visible) return null;
+  if (!account.pending && account.name === null) return null;
+  return { chipState: account.chipState };
+}
+
+/**
  * Which account a session spends and how that account is doing.
  *
  * Reads only data already on the client: the session row (its `accountId`,
  * `account` path, `status` and `trackerItem`), the session stream's live
  * status (its `limit` and `lifecycle` win over the row's, which is only as
- * fresh as the last list read), and the account usage the session list seeds.
+ * fresh as the last list read, and its `accountUsage` stands in until the
+ * shared cache has a newer reading), and the account usage the session list
+ * seeds. A runtime without accounts resolves to its implicit `default` account.
  * So it normally makes no request of its own: usage is fetched only when the
  * gate is open and the seed lacks this account.
  *
@@ -88,6 +129,8 @@ export function useSessionAccount(sessionId: string | null): SessionAccount {
   const streamStatus = useSessionStreamStatus(id);
   const accountSwitch = useAccountSwitch(id);
   const { accounts, nameFor, colorFor } = useClaudeAccounts();
+  // A runtime that does not tell accounts apart bills its one implicit account.
+  const supportsAccounts = useCapabilitiesForRuntime(runtime)?.supportsAccounts ?? true;
 
   // `canSelect` is true exactly until the session has a row, which is the same
   // signal the first send spends the pre-launch hint on.
@@ -104,17 +147,24 @@ export function useSessionAccount(sessionId: string | null): SessionAccount {
     accountId =
       picked?.id ?? (path ? (accounts.find((account) => account.path === path)?.id ?? null) : null);
   } else {
-    accountId = row?.accountId ?? null;
+    accountId = row?.accountId ?? (supportsAccounts ? null : IMPLICIT_ACCOUNT_ID);
     path = row?.account ?? null;
   }
 
   // Asked about the account only while the gate is open, so a one-account chat
   // never makes a usage request (spec §12, gate row). The cache is still read.
   const usageView = useAccountUsage(runtime, visible ? { accountId, path } : {});
-  const usage =
+  const cachedUsage =
     (accountId !== null ? usageView.byId.get(accountId) : undefined) ??
     (path !== null ? usageView.byPath.get(path) : undefined) ??
     null;
+  // A session opened cold already carries its account's reading in its own
+  // status (spec `claude-account-ui` §6.8), so its numbers show before the list
+  // or an `account_usage` event has reached the shared cache. Only for a
+  // started session: before launch the account is a hint the status is not
+  // about.
+  const statusUsage = pending ? null : (streamStatus?.accountUsage ?? null);
+  const usage = newerReading(cachedUsage, statusUsage);
 
   const registered =
     (accountId !== null ? accounts.find((account) => account.id === accountId) : undefined) ??

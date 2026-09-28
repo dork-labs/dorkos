@@ -11,6 +11,8 @@ import {
 import { planName, type AccountWindow } from '@/layers/shared/lib';
 import type { SessionAccount } from '../model/use-session-account';
 import { canOfferContinue, popoverWindowLabel } from '../lib/account-chip';
+import { newestObservedAt, readableWindows } from '../lib/account-usage-status';
+import { UsageFreshnessLine } from './UsageFreshnessLine';
 
 /** Props for {@link AccountPopover}. */
 export interface AccountPopoverProps {
@@ -58,7 +60,7 @@ function windowsToShow(
 /**
  * The detail behind the status-bar account chip (spec `claude-account-ui`
  * §6.1): the account and its plan, one bar per usage window with when it
- * resets, the flow item the session serves, and, only while the session is out
+ * resets, how fresh those numbers are (§6.8), the flow item the session serves, and, only while the session is out
  * and the server would take the move, "Continue on another account".
  */
 export function AccountPopover({
@@ -73,6 +75,8 @@ export function AccountPopover({
   const plan = planName(account.usage?.plan?.name ?? account.usage?.subscriptionType);
   const offerContinue =
     onContinue !== undefined && canOfferContinue(account.limit, account.lifecycle, account.pending);
+  // How fresh the bars are: the newest reading among them (spec §6.8).
+  const observedAt = newestObservedAt(readableWindows(account.usage));
 
   return (
     // `autoFocus` is the sheet's own option, not the DOM attribute: on a phone it
@@ -101,6 +105,7 @@ export function AccountPopover({
               <UsageBar key={key} window={window} label={label} now={now} />
             ))}
           </div>
+          {observedAt !== null && <UsageFreshnessLine observedAt={observedAt} now={now} />}
           {account.trackerItem && (
             <p className="text-muted-foreground text-2xs">Working on {account.trackerItem.id}</p>
           )}

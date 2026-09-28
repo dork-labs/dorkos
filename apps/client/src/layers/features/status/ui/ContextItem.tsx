@@ -9,7 +9,9 @@ import {
   CONTEXT_ACTION_PERCENT,
 } from '@/layers/entities/session';
 import type { ContextUsage } from '@dorkos/shared/types';
+import type { SessionContextUsage } from '@dorkos/shared/session-stream';
 import { formatTokens } from '../lib/format-tokens';
+import { UsageFreshnessLine } from './UsageFreshnessLine';
 
 /** The one-click compaction action offered when the window is nearly full. */
 export interface ContextCompactAction {
@@ -30,6 +32,15 @@ interface ContextItemProps {
    * than in a row of its own below it.
    */
   compact?: ContextCompactAction | null;
+  /**
+   * The session status's own context reading (`status.contextUsage`), which a
+   * reopened session has before any turn (spec `claude-account-ui` §6.8). Its
+   * totals head the tooltip when the SDK breakdown has not arrived, and its
+   * `observedAt` ends the tooltip with how fresh the number is.
+   */
+  reading?: SessionContextUsage | null;
+  /** A fixed moment to read freshness from (tests and the Dev Playground); else the clock. */
+  now?: Date;
 }
 
 /**
@@ -39,7 +50,7 @@ interface ContextItemProps {
  *
  * @param props - The percent to show, the optional SDK breakdown, and the compact action.
  */
-export function ContextItem({ percent, contextUsage, compact }: ContextItemProps) {
+export function ContextItem({ percent, contextUsage, compact, reading, now }: ContextItemProps) {
   // Prefer the SDK breakdown when available, else the passed estimate — the one
   // shared resolution + severity source (entities/session/lib/context-health).
   const displayPercent = resolveDisplayContextPercent(percent, contextUsage) ?? percent;
@@ -51,6 +62,14 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
         ? STATUS_TONE_TEXT.warning
         : '';
   const showCompact = compact != null && displayPercent >= CONTEXT_ACTION_PERCENT;
+  // The tooltip's heading: the SDK breakdown's totals, else the cached reading's.
+  const totals = contextUsage
+    ? { total: contextUsage.totalTokens, max: contextUsage.maxTokens }
+    : reading && reading.maxTokens > 0
+      ? { total: reading.totalTokens, max: reading.maxTokens }
+      : null;
+  const observedAt = reading?.observedAt ?? null;
+  const hasTooltip = totals !== null;
 
   // The percent never abbreviates. The registry marks this item `rigid`, so the
   // row cannot squeeze it in the first place — and if it ever does, `88%` must
@@ -61,10 +80,10 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
     <span
       // `aria-label`, not a wrapper: an extra box between the tooltip trigger and
       // this one is another place for a stray `min-w-0` to squeeze the number.
-      aria-label={contextUsage ? 'Context window usage' : undefined}
+      aria-label={hasTooltip ? 'Context window usage' : undefined}
       className={cn(
         'inline-flex shrink-0 items-center gap-1',
-        contextUsage && 'cursor-default',
+        hasTooltip && 'cursor-default',
         colorClass
       )}
     >
@@ -75,7 +94,18 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
 
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
-      {contextUsage ? <ContextBreakdown usage={contextUsage}>{badge}</ContextBreakdown> : badge}
+      {totals ? (
+        <ContextBreakdown
+          totals={totals}
+          categories={contextUsage?.categories ?? []}
+          observedAt={observedAt}
+          now={now}
+        >
+          {badge}
+        </ContextBreakdown>
+      ) : (
+        badge
+      )}
       <AnimatePresence initial={false}>
         {showCompact && (
           <motion.button
@@ -118,13 +148,26 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
 }
 
 /**
- * Hover breakdown of what is occupying the context window.
+ * Hover breakdown of what is occupying the context window, ending with how
+ * fresh the reading is when its time is known.
  *
  * @internal
  */
-function ContextBreakdown({ usage, children }: { usage: ContextUsage; children: ReactNode }) {
+function ContextBreakdown({
+  totals,
+  categories,
+  observedAt,
+  now,
+  children,
+}: {
+  totals: { total: number; max: number };
+  categories: ContextUsage['categories'];
+  observedAt: string | null;
+  now?: Date;
+  children: ReactNode;
+}) {
   // Filter out zero-token categories and sort by size descending
-  const significantCategories = usage.categories
+  const significantCategories = categories
     .filter((c) => c.tokens > 0)
     .sort((a, b) => b.tokens - a.tokens);
 
@@ -134,7 +177,7 @@ function ContextBreakdown({ usage, children }: { usage: ContextUsage; children: 
       <TooltipContent side="top" className="max-w-64">
         <div className="space-y-1.5">
           <div className="text-xs font-medium">
-            {formatTokens(usage.totalTokens)} / {formatTokens(usage.maxTokens)} tokens
+            {formatTokens(totals.total)} / {formatTokens(totals.max)} tokens
           </div>
           {significantCategories.length > 0 && (
             <div className="space-y-0.5">
@@ -152,6 +195,7 @@ function ContextBreakdown({ usage, children }: { usage: ContextUsage; children: 
               ))}
             </div>
           )}
+          {observedAt !== null && <UsageFreshnessLine observedAt={observedAt} now={now} />}
         </div>
       </TooltipContent>
     </Tooltip>

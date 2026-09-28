@@ -6,19 +6,82 @@ import {
   STATUS_DOT_LABEL,
   type StatusSignal,
 } from '@/layers/shared/ui';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import type { UsageStatus } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 import { AgentActivityBadge } from '@/layers/features/dashboard-sidebar';
 import { ErrorMessageBlock, StreamingText, TaskListPanel } from '@/layers/features/chat';
-import { UsageStatusItem } from '@/layers/features/status';
+import { ContextItem, UsageRevealPopover, UsageStatusItem } from '@/layers/features/status';
+import { Button } from '@/layers/shared/ui';
 import type { TransportErrorInfo } from '@/layers/features/chat/model/chat-types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { SAMPLE_TASKS } from '../mock-chat-data';
+import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
 import { IDENTITY_STATUSES, SAMPLE_LONG_PLAN } from '../mock-samples';
 
 /** A fixed "three hours from now", picked once at import: a showcase reads the clock nowhere near a render. */
 const SHOWCASE_RESETS_AT = new Date(Date.now() + 3 * 3600 * 1000).toISOString();
+
+/** A reading `minutes` before the page loaded. */
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+/**
+ * Acct 1 of {@link MOCK_ACCOUNT_USAGE}: 5-hour 40%, weekly 72%. The status bar
+ * shows its most-used window, the week.
+ */
+const ACCT_1 = MOCK_ACCOUNT_USAGE[0]!;
+const ACCT_1_WEEK = ACCT_1.windows.find((entry) => entry.key === 'seven_day')!;
+
+/** Acct 1's reading as the usage item draws it (`accountUsageToStatus`). */
+const ACCOUNT_READING: UsageStatus = {
+  kind: 'subscription',
+  utilization: ACCT_1_WEEK.usedPct! / 100,
+  windowLabel: ACCT_1_WEEK.label,
+  resetsAt: ACCT_1_WEEK.resetsAt ?? undefined,
+  state: 'ok',
+};
+
+/** Acct 1 after its 5-hour window reset: the server reads it at 0%, `expired`. */
+const ACCT_1_FIVE_HOUR_RESET: AccountUsage = {
+  ...ACCT_1,
+  windows: ACCT_1.windows.map((entry) =>
+    entry.key === 'five_hour'
+      ? { ...entry, usedPct: 0, status: null, expired: true, observedAt: minutesAgo(12) }
+      : { ...entry, observedAt: minutesAgo(12) }
+  ),
+};
+
+/** A session's own context reading, as a reopened session carries it. */
+function contextReading(observedAt: string, totalTokens = 62_000) {
+  return {
+    totalTokens,
+    maxTokens: 200_000,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    observedAt,
+  };
+}
+
+/** The `/context` reveal, opened by a button rather than the slash command. */
+function RevealDemo({ usage, label }: { usage: AccountUsage; label: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="outline" onClick={() => setOpen((o) => !o)}>
+        {label}
+      </Button>
+      <UsageRevealPopover
+        usage={ACCOUNT_READING}
+        accountUsage={usage}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    </div>
+  );
+}
 
 /** What each dot signal means, in the words the app uses for it. */
 const SIGNALS: readonly { signal: StatusSignal; means: string }[] = [
@@ -241,6 +304,86 @@ export function StatusShowcases() {
             <UsageStatusItem
               usage={{ kind: 'pay-as-you-go', costUsd: 0.42, detail: 'anthropic/claude-opus-4-6' }}
             />
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>
+            {'Cached on open — the account’s reading before any turn; hover for “as of 12 min ago”'}
+          </ShowcaseLabel>
+          <ShowcaseDemo>
+            <span className="text-muted-foreground text-xs">
+              <UsageStatusItem usage={ACCOUNT_READING} observedAt={minutesAgo(12)} />
+            </span>
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>Fresh — a reading under a minute old reads “just now”</ShowcaseLabel>
+          <ShowcaseDemo>
+            <span className="text-muted-foreground text-xs">
+              <UsageStatusItem usage={ACCOUNT_READING} observedAt={minutesAgo(0)} />
+            </span>
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>Stale — older than an hour: the number dims, “as of 2h ago”</ShowcaseLabel>
+          <ShowcaseDemo>
+            <span className="text-muted-foreground text-xs">
+              <UsageStatusItem usage={ACCOUNT_READING} observedAt={minutesAgo(125)} />
+            </span>
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>
+            Stale near a limit — the amber number dims, the gauge stays amber
+          </ShowcaseLabel>
+          <ShowcaseDemo>
+            <span className="text-muted-foreground text-xs">
+              <UsageStatusItem
+                usage={{ ...ACCOUNT_READING, utilization: 0.91, state: 'warning' }}
+                observedAt={minutesAgo(125)}
+              />
+            </span>
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>
+            The /context reveal — every window as a bar; the 5-hour window reset, so it reads
+            “reset”
+          </ShowcaseLabel>
+          <ShowcaseDemo>
+            <RevealDemo usage={ACCT_1_FIVE_HOUR_RESET} label="Open the usage reveal" />
+          </ShowcaseDemo>
+        </TooltipProvider>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="ContextItem"
+        description="How full the conversation window is. It shows whenever there is a reading, from the moment a session opens: a reopened session shows its last known context at once, and the tooltip says how fresh it is. It turns amber, then red, near the limit."
+      >
+        <TooltipProvider>
+          <ShowcaseLabel>Cached on open — hover for “as of 12 min ago”</ShowcaseLabel>
+          <ShowcaseDemo>
+            <span className="text-muted-foreground text-xs">
+              <ContextItem percent={31} reading={contextReading(minutesAgo(12))} />
+            </span>
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>Live — a reading under a minute old reads “just now”</ShowcaseLabel>
+          <ShowcaseDemo>
+            <span className="text-muted-foreground text-xs">
+              <ContextItem percent={31} reading={contextReading(minutesAgo(0))} />
+            </span>
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>Near the limit — amber at 80%, still shown from open</ShowcaseLabel>
+          <ShowcaseDemo>
+            <span className="text-muted-foreground text-xs">
+              <ContextItem percent={82} reading={contextReading(minutesAgo(125), 164_000)} />
+            </span>
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>
+            An older server with no time on the reading — no freshness line
+          </ShowcaseLabel>
+          <ShowcaseDemo>
+            <span className="text-muted-foreground text-xs">
+              <ContextItem percent={31} />
+            </span>
           </ShowcaseDemo>
         </TooltipProvider>
       </PlaygroundSection>

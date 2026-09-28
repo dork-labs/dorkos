@@ -35,6 +35,7 @@ import {
   DEGRADED_ON_DEFAULT,
   DELEGATING,
   HEALTHY,
+  ABSORBED_BY_CHIP,
   PLANNING,
   WAITING_ON_BACKGROUND_TASKS,
   RATE_LIMITED,
@@ -285,12 +286,20 @@ export function StatusLineShowcases() {
 
       <PlaygroundSection
         title="StatusLine — promoted set"
-        description="The same component at the same width, two session states. Quiet by default means a healthy session says almost nothing; every promotion rule fires at once under stress, which is exactly when severity ordering has to be right."
+        description="The same component at the same width, a few session states. Quiet by default means a healthy session says almost nothing beyond its usage and context, which show whenever there is a reading; every promotion rule fires at once under stress, which is exactly when severity ordering has to be right."
       >
         <ShowcaseLabel>At rest — clean tree, connected, default permissions</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
           <BudgetedLine scenario={HEALTHY} width={648} />
           <BudgetedLine scenario={WAITING_ON_BACKGROUND_TASKS} width={648} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          At rest with two Claude accounts — the account chip carries usage, so the usage item does
+          not show, even pinned
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <BudgetedLine scenario={ABSORBED_BY_CHIP} width={648} pins={['usage']} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Under stress — same width, everything wrong</ShowcaseLabel>

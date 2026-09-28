@@ -181,8 +181,11 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
     account: HIDDEN_ACCOUNT,
     contextPercent: null,
     contextUsage: null,
+    contextReading: null,
     compact: null,
     usage: null,
+    usageSource: null,
+    usageObservedAt: null,
     supportsCostTracking: false,
     runningSubagents: [],
     liveSubagentCount: 0,
@@ -230,6 +233,93 @@ describe('buildStatusItemNodes — the cost gate', () => {
         // utilization nor cost has nothing to say.
         usage: { kind: 'subscription' },
       }).usage
+    ).toBeUndefined();
+  });
+});
+
+describe('buildStatusItemNodes — one usage display, never two (spec claude-account-ui §6.8)', () => {
+  const ACCOUNT_USAGE: UsageStatus = { kind: 'subscription', utilization: 0.4, state: 'ok' };
+  const SHOWN_ACCOUNT: SessionAccount = { ...HIDDEN_ACCOUNT, visible: true };
+
+  it('builds no usage node while the account chip shows, so a PIN cannot bring it back', () => {
+    const nodes = buildStatusItemNodes(
+      inputWith({
+        account: SHOWN_ACCOUNT,
+        usage: ACCOUNT_USAGE,
+        usageSource: 'account',
+        supportsCostTracking: true,
+      })
+    );
+    expect(nodes.account).toBeDefined();
+    expect(nodes.usage).toBeUndefined();
+    // A pin bypasses `promote`, never a missing node: `usage` pinned stays out.
+    const promoted = selectPromotedItems({
+      ctx: {
+        cwd: null,
+        git: null,
+        contextPercent: null,
+        connectionState: 'connected',
+        permissionMode: 'default',
+        permissionDescriptor: null,
+        plan: null,
+        runtime: null,
+        account: { chipState: 'ok' },
+        usage: ACCOUNT_USAGE,
+        subagentsInFlight: 0,
+      },
+      pins: ['usage'],
+      nodes,
+    });
+    expect(promoted.map((item) => item.key)).not.toContain('usage');
+    expect(promoted.map((item) => item.key)).toContain('account');
+  });
+
+  it('builds the usage node when the chip is not showing', () => {
+    expect(
+      buildStatusItemNodes(
+        inputWith({ usage: ACCOUNT_USAGE, usageSource: 'account', supportsCostTracking: true })
+      ).usage
+    ).toBeDefined();
+  });
+
+  it('keeps usage when the gate is open but the chip cannot name the account (draws nothing)', () => {
+    const nodes = buildStatusItemNodes(
+      inputWith({
+        account: { ...SHOWN_ACCOUNT, name: null },
+        usage: ACCOUNT_USAGE,
+        usageSource: 'account',
+        supportsCostTracking: true,
+      })
+    );
+    expect(nodes.account).toBeUndefined();
+    expect(nodes.usage).toBeDefined();
+  });
+
+  it("shows an account reading on a runtime that tracks no cost, without the session's cost", () => {
+    // Codex declares `supportsCostTracking: false`; its weekly window comes from
+    // the account store, not a turn, so it still shows from open.
+    render(
+      <TooltipProvider>
+        {
+          buildStatusItemNodes(
+            inputWith({
+              usage: { ...ACCOUNT_USAGE, costUsd: 3.5 },
+              usageSource: 'account',
+              supportsCostTracking: false,
+            })
+          ).usage
+        }
+      </TooltipProvider>
+    );
+    expect(screen.getByText('40%')).toBeInTheDocument();
+    expect(screen.queryByText('$3.50')).not.toBeInTheDocument();
+  });
+
+  it("still hides the session's OWN usage on such a runtime", () => {
+    expect(
+      buildStatusItemNodes(
+        inputWith({ usage: ACCOUNT_USAGE, usageSource: 'live', supportsCostTracking: false })
+      ).usage
     ).toBeUndefined();
   });
 });

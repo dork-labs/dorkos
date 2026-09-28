@@ -302,6 +302,30 @@ describe('AccountPopover', () => {
     expect(names).toEqual(['5-hour 20% used', 'This week 45% used', 'Weekly Opus 60% used']);
   });
 
+  it('ends the bars with how fresh they are, from the newest reading (§6.8)', async () => {
+    const at = (minutesAgo: number) => new Date(NOW.getTime() - minutesAgo * 60_000).toISOString();
+    const fresh = usage({
+      windows: [
+        { ...win('five_hour', '5-hour window', 40, null), observedAt: at(30) },
+        { ...win('seven_day', 'Weekly', 72, null), observedAt: at(12) },
+      ],
+    });
+    const { dialog } = await openPopover({ account: account({ usage: fresh }) });
+    expect(within(dialog).getByText('as of 12 min ago')).toBeInTheDocument();
+  });
+
+  it('shows a window whose reset passed as an empty bar that says "reset" (§6.8)', async () => {
+    const reset = usage({
+      windows: [
+        { ...win('five_hour', '5-hour window', 0, null), expired: true, status: null },
+        win('seven_day', 'Weekly', 72, null),
+      ],
+    });
+    const { dialog } = await openPopover({ account: account({ usage: reset }) });
+    expect(within(dialog).getByRole('img', { name: '5-hour reset' })).toBeInTheDocument();
+    expect(within(dialog).getByText('reset')).toBeInTheDocument();
+  });
+
   it('leaves the plan out when no source reported one', async () => {
     const { dialog } = await openPopover({
       account: account({ usage: usage({ plan: null, subscriptionType: null }) }),

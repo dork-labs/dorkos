@@ -7,23 +7,28 @@ import {
   getStatusBarItem,
   gitPromotionState,
   isPinnable,
+  isUsageAbsorbed,
   type StatusBarItemKey,
   type StatusPromotionContext,
 } from '../model/status-bar-registry';
 
-/** A resting session: connected, default everything, nothing to report. */
+/**
+ * A resting session: connected, default everything, nothing to report — and no
+ * usage or context reading yet, since either one now shows whenever it exists
+ * (spec `claude-account-ui` §6.8).
+ */
 function restingContext(overrides: Partial<StatusPromotionContext> = {}): StatusPromotionContext {
   return {
     cwd: '/work/repo',
     git: { dirty: false, onDefaultBranch: true },
-    contextPercent: 12,
+    contextPercent: null,
     connectionState: 'connected',
     permissionMode: 'default',
     permissionDescriptor: null,
     plan: null,
     runtime: { isDefault: true, canSelect: false },
     account: null,
-    usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
+    usage: null,
     subagentsInFlight: 0,
     ...overrides,
   };
@@ -43,8 +48,6 @@ function severityOf(key: StatusBarItemKey, ctx: StatusPromotionContext): number 
 
 describe('STATUS_BAR_REGISTRY — quiet by default', () => {
   it('shows only identity, directory, and model on a resting session', () => {
-    // A creeping $0.03 and a 12%-full window are wallpaper. If they showed here,
-    // the 91% that matters would not register either.
     expect(promotedKeys(restingContext())).toEqual(['agent', 'cwd', 'model']);
   });
 
@@ -124,9 +127,17 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     expect(promotedKeys(restingContext())).not.toContain('git');
   });
 
-  it('promotes context at 70% and not at 69%', () => {
-    expect(promotedKeys(restingContext({ contextPercent: 69 }))).not.toContain('context');
-    expect(promotedKeys(restingContext({ contextPercent: 70 }))).toContain('context');
+  it('promotes context whenever it has a reading, below any warning threshold (§6.8)', () => {
+    expect(promotedKeys(restingContext({ contextPercent: 12 }))).toContain('context');
+    expect(promotedKeys(restingContext({ contextPercent: 0 }))).toContain('context');
+  });
+
+  it('still raises context severity near the limit', () => {
+    // Shown, but quiet: a pin-level rank, below everything that is news.
+    expect(severityOf('context', restingContext({ contextPercent: 12 }))).toBe(0);
+    expect(severityOf('context', restingContext({ contextPercent: 70 }))).toBeGreaterThan(
+      severityOf('context', restingContext({ contextPercent: 69 }))
+    );
   });
 
   it('keeps context quiet before the first reading', () => {
@@ -169,8 +180,42 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     ).toContain('usage');
   });
 
-  it('keeps usage quiet while it is healthy', () => {
-    expect(promotedKeys(restingContext())).not.toContain('usage');
+  it('promotes a healthy usage reading too (§6.8)', () => {
+    expect(
+      promotedKeys(
+        restingContext({ usage: { kind: 'subscription', utilization: 0.4, state: 'ok' } })
+      )
+    ).toContain('usage');
+    expect(
+      promotedKeys(restingContext({ usage: { kind: 'pay-as-you-go', costUsd: 0.03 } }))
+    ).toContain('usage');
+  });
+
+  it('keeps usage out with no reading, never as 0%', () => {
+    expect(promotedKeys(restingContext({ usage: null }))).not.toContain('usage');
+    expect(promotedKeys(restingContext({ usage: { kind: 'subscription' } }))).not.toContain(
+      'usage'
+    );
+  });
+
+  it('does not promote usage while the account chip shows, and does otherwise (§6.8)', () => {
+    const usage = { kind: 'subscription' as const, utilization: 0.4, state: 'ok' as const };
+    const withChip = restingContext({ usage, account: { chipState: 'ok' } });
+    expect(isUsageAbsorbed(withChip)).toBe(true);
+    expect(promotedKeys(withChip)).toContain('account');
+    expect(promotedKeys(withChip)).not.toContain('usage');
+    // Even at a limit: the chip says it in words, so there is still one display.
+    expect(
+      promotedKeys(
+        restingContext({
+          usage: { ...usage, utilization: 1, state: 'exhausted' },
+          account: { chipState: 'out' },
+        })
+      )
+    ).not.toContain('usage');
+    const withoutChip = restingContext({ usage, account: null });
+    expect(isUsageAbsorbed(withoutChip)).toBe(false);
+    expect(promotedKeys(withoutChip)).toContain('usage');
   });
 
   it('promotes subagents once one is actually running', () => {

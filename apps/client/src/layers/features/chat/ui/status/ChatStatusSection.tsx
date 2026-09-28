@@ -3,6 +3,7 @@ import type { SessionStatusEvent, ConnectionState } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import {
   useSessionStatus,
+  useSessionStreamStatus,
   useSessionChatStore,
   useModels,
   useHasConfirmedAuto,
@@ -25,6 +26,8 @@ import {
   isGitStatusOk,
   useRuntimeChip,
   useSessionAccount,
+  accountChipPromotion,
+  useStatusUsage,
   useSessionDiagnostics,
   useStatusBarPins,
   useSessionPopoverShortcut,
@@ -110,8 +113,15 @@ export function ChatStatusSection({
   // and they resolve to the same values, since both paths read the same stores
   // through the same selectors and the optimistic overrides are now shared.
   const diagnostics = useSessionDiagnostics(sessionId);
-  const usage = diagnostics.usage;
+  // Usage is account-wide and shows from the moment the session opens (spec
+  // `claude-account-ui` §6.8): the account's reading, unless a live turn frame
+  // is newer.
+  const statusUsage = useStatusUsage(sessionId, account, diagnostics.usage);
+  const usage = statusUsage.usage;
   const contextUsage = diagnostics.contextUsage;
+  // The session's own context reading, which a reopened session has before any
+  // turn, with the time it was measured.
+  const contextReading = useSessionStreamStatus(sessionId)?.contextUsage ?? null;
   const usageRevealOpen = useUsageReveal((s) => s.open);
   const setUsageRevealOpen = useUsageReveal((s) => s.setOpen);
 
@@ -435,7 +445,9 @@ export function ChatStatusSection({
             isDefault: runtimeChip.runtime === runtimeCaps.defaultRuntime,
             canSelect: runtimeChip.canSelect,
           },
-    account: account.visible ? { chipState: account.chipState } : null,
+    // `null` whenever the chip draws nothing, which is also what lets the usage
+    // item show (`isUsageAbsorbed`).
+    account: accountChipPromotion(account),
     usage,
     subagentsInFlight: liveSubagentCount,
   };
@@ -469,10 +481,13 @@ export function ChatStatusSection({
     account,
     contextPercent: displayContextPercent,
     contextUsage,
+    contextReading,
     compact: inlineCompact
       ? { pending: compaction.pending, onCompact: compaction.onCompact }
       : null,
     usage,
+    usageSource: statusUsage.source,
+    usageObservedAt: statusUsage.observedAt,
     supportsCostTracking: activeCaps?.supportsCostTracking ?? true,
     runningSubagents,
     liveSubagentCount,
@@ -534,6 +549,8 @@ export function ChatStatusSection({
       {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
       <UsageRevealPopover
         usage={usage ?? null}
+        accountUsage={statusUsage.accountUsage}
+        observedAt={statusUsage.observedAt}
         open={usageRevealOpen}
         onOpenChange={setUsageRevealOpen}
       />

@@ -1,25 +1,26 @@
 import { Gauge, DollarSign } from 'lucide-react';
 import type { UsageStatus } from '@dorkos/shared/types';
 import { DetailRow, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, isStale } from '@/layers/shared/lib';
+import { useNow } from '@/layers/shared/model';
 import { formatCost } from '../lib/format-tokens';
+import { staleNumberClass } from '../lib/account-usage-status';
+import { UsageFreshnessLine } from './UsageFreshnessLine';
 
-interface UsageStatusItemProps {
+interface UsageDetailProps {
+  /** The runtime-neutral usage descriptor. */
   usage: UsageStatus;
 }
 
-/**
- * Whether a {@link UsageStatus} has a metric worth rendering. A subscription
- * renders when it has utilization or cost; pay-as-you-go renders when it has
- * cost. The parent gates its mount on this so an empty usage hides the item.
- *
- * @param usage - The runtime-neutral usage descriptor.
- */
-export function hasRenderableUsage(usage: UsageStatus): boolean {
-  if (usage.kind === 'subscription') {
-    return usage.utilization != null || usage.costUsd != null;
-  }
-  return usage.costUsd != null;
+interface UsageStatusItemProps extends UsageDetailProps {
+  /**
+   * When the usage was observed, ISO-8601, or nothing when that is not known
+   * (a snapshot's usage). With it, the tooltip ends with the freshness line and
+   * a reading older than an hour dims the number (spec `claude-account-ui` §6.8).
+   */
+  observedAt?: string | null;
+  /** A fixed moment to read freshness from (tests and the Dev Playground); else the clock. */
+  now?: Date;
 }
 
 /**
@@ -72,7 +73,7 @@ function costHeading(usage: UsageStatus): string {
  *
  * @param usage - The runtime-neutral usage descriptor.
  */
-export function UsageDetail({ usage }: UsageStatusItemProps) {
+export function UsageDetail({ usage }: UsageDetailProps) {
   const basisNote = costBasisNote(usage);
   if (usage.kind === 'subscription' && usage.utilization != null) {
     const pct = Math.round(usage.utilization * 100);
@@ -132,7 +133,9 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
  *
  * @param props - The usage descriptor to render.
  */
-export function UsageStatusItem({ usage }: UsageStatusItemProps) {
+export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: UsageStatusItemProps) {
+  const tick = useNow();
+  const now = fixedNow ?? new Date(tick);
   const showUtilization = usage.kind === 'subscription' && usage.utilization != null;
 
   if (showUtilization) {
@@ -140,6 +143,8 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
     const isExhausted = usage.state === 'exhausted';
     const isWarning = usage.state === 'warning' || pct >= 80;
     const colorClass = isExhausted ? 'text-red-500' : isWarning ? 'text-amber-500' : '';
+    // An old reading keeps its number, dimmed; the tooltip says how old (Q17).
+    const stale = observedAt !== null && isStale(observedAt, now);
 
     return (
       <Tooltip>
@@ -147,13 +152,17 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
           <span
             className={cn('inline-flex shrink-0 cursor-default items-center gap-1', colorClass)}
             aria-label="Subscription usage"
+            data-stale={stale || undefined}
           >
             <Gauge className="size-(--size-icon-xs)" />
-            <span>{pct}%</span>
+            <span className={staleNumberClass(stale)}>{pct}%</span>
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-56">
-          <UsageDetail usage={usage} />
+          <div className="space-y-1">
+            <UsageDetail usage={usage} />
+            {observedAt !== null && <UsageFreshnessLine observedAt={observedAt} now={now} />}
+          </div>
         </TooltipContent>
       </Tooltip>
     );
