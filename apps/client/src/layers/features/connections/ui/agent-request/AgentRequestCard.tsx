@@ -64,6 +64,13 @@ function unansweredReason(
       return { reason: 'the request is no longer open.', retry: false };
     case 'authority_sync_failed':
       return { reason: 'the access is still being set up.', retry: true };
+    case 'event_selection_unavailable':
+      // Sending the same updates again would fail the same way, so the card
+      // offers the two answers that can work instead of a retry.
+      return {
+        reason: `the updates you picked can’t be set up right now. Pick them again, or answer without updates.`,
+        retry: false,
+      };
     case 'selection_invalid':
       return { reason: 'that account isn’t ready for it yet.', retry: true };
     default:
@@ -153,6 +160,9 @@ export function AgentRequestCard({
 
   if (allowedId && resolve.isError) {
     const { reason, retry } = unansweredReason(resolve.error, agentName, serviceName);
+    const updatesFailed =
+      updatesFor !== null &&
+      (resolve.error as { code?: string } | null)?.code === 'event_selection_unavailable';
     return (
       <AccessCardFrame
         titleId={`agent-request-unanswered-${request.requestId}`}
@@ -169,12 +179,30 @@ export function AgentRequestCard({
           />
           The access is saved, but {agentName}’s request wasn’t answered: {reason}
         </p>
-        {retry && (
-          <div className="flex justify-end">
-            <Button onClick={() => answer(allowedId, answeredScopes)} disabled={resolve.isPending}>
-              {resolve.isPending ? 'Sending…' : 'Try again'}
+        {updatesFailed ? (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => answer(allowedId, [])}
+              disabled={resolve.isPending}
+            >
+              Answer without updates
+            </Button>
+            <Button onClick={() => resolve.reset()} disabled={resolve.isPending}>
+              Pick updates again
             </Button>
           </div>
+        ) : (
+          retry && (
+            <div className="flex justify-end">
+              <Button
+                onClick={() => answer(allowedId, answeredScopes)}
+                disabled={resolve.isPending}
+              >
+                {resolve.isPending ? 'Sending…' : 'Try again'}
+              </Button>
+            </div>
+          )
         )}
       </AccessCardFrame>
     );

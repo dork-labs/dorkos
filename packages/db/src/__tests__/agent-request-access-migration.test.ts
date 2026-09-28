@@ -31,12 +31,12 @@ function foldersBefore(tag: string): string {
   return folder;
 }
 
-describe('agents ask by level (0124, 0125)', () => {
+describe('agents ask by level (0125, 0126)', () => {
   it('reads each open request’s named actions by class, then drops the names', () => {
     const sqlite = new Database(':memory:');
     try {
       const db = drizzle(sqlite);
-      migrate(db, { migrationsFolder: foldersBefore('0124_agent_request_access') });
+      migrate(db, { migrationsFolder: foldersBefore('0125_agent_request_access') });
       const now = '2026-09-28T00:00:00.000Z';
       sqlite
         .prepare(
@@ -54,11 +54,12 @@ describe('agents ask by level (0124, 0125)', () => {
       );
       revision.run('revision-read', 'GMAIL_FETCH_EMAILS', 'hash-read', 'read', now);
       revision.run('revision-send', 'GMAIL_SEND_EMAIL', 'hash-send', 'write', now);
+      revision.run('revision-delete', 'GMAIL_DELETE_MESSAGE', 'hash-delete', 'destructive', now);
       const review = sqlite.prepare(
         `INSERT INTO connector_review_requests
            (id, action_kind, action_version, requester_kind, requester_id, target_kind, target_id,
             action_payload_json, state, expires_at, idempotency_key, created_at)
-         VALUES (?, 'agent_connection_request', 1, 'agent', 'agent-1', 'service', 'gmail', '{}',
+         VALUES (?, 'agent_connection_request', 1, 'agent', 'agent-1', 'service', 'gmail', ?,
            'pending', ?, ?, ?)`
       );
       const request = sqlite.prepare(
@@ -71,8 +72,17 @@ describe('agents ask by level (0124, 0125)', () => {
         ['asks-read', '["GMAIL_FETCH_EMAILS"]'],
         ['asks-send', '["GMAIL_FETCH_EMAILS","GMAIL_SEND_EMAIL"]'],
         ['asks-unknown', '["gmail.invented"]'],
+        ['asks-delete', '["GMAIL_DELETE_MESSAGE"]'],
       ] as const) {
-        review.run(`review-${id}`, now, `key-${id}`, now);
+        const legacyAction = JSON.stringify({
+          kind: 'agent_connection_request',
+          reason: 'Mail',
+          requestedEvents: [],
+          requestedOperations: JSON.parse(operations),
+          serviceSlug: 'gmail',
+          version: 1,
+        });
+        review.run(`review-${id}`, legacyAction, now, `key-${id}`, now);
         request.run(id, `review-${id}`, operations, `token-${id}`, now);
       }
 
@@ -83,6 +93,9 @@ describe('agents ask by level (0124, 0125)', () => {
           .prepare('SELECT id, requested_access FROM connector_agent_requests ORDER BY id')
           .all()
       ).toEqual([
+        // A delete is in no level (ADR 260928-121730); the widest level is the
+        // nearest one to ask the person for, and they still decide.
+        { id: 'asks-delete', requested_access: 'read-write' },
         { id: 'asks-read', requested_access: 'read' },
         { id: 'asks-send', requested_access: 'read-write' },
         // A guessed name matches no action; Read is the level that asks least.
@@ -93,6 +106,27 @@ describe('agents ask by level (0124, 0125)', () => {
         .all('connector_agent_requests')
         .map((column) => (column as { name: string }).name);
       expect(columns).not.toContain('requested_operations_json');
+
+      // The stored action and context carry the level too, and name no action.
+      const reviews = sqlite
+        .prepare(
+          'SELECT id, action_payload_json, review_context_json FROM connector_review_requests ORDER BY id'
+        )
+        .all() as Array<{ id: string; action_payload_json: string; review_context_json: string }>;
+      expect(reviews).toHaveLength(4);
+      for (const row of reviews)
+        expect(row.action_payload_json).not.toContain('requestedOperations');
+      const send = reviews.find((row) => row.id === 'review-asks-send')!;
+      // Canonical form: keys in sorted order, as the service writes them.
+      expect(send.action_payload_json).toBe(
+        '{"access":"read-write","kind":"agent_connection_request","reason":"Mail","requestedEvents":[],"serviceSlug":"gmail","version":1}'
+      );
+      expect(JSON.parse(send.review_context_json)).toEqual({
+        access: 'read-write',
+        reason: 'Mail',
+        requestedEvents: [],
+        serviceSlug: 'gmail',
+      });
     } finally {
       sqlite.close();
     }

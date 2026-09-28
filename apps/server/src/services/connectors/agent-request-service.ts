@@ -501,6 +501,9 @@ export class ConnectorAgentRequestService {
     const appName =
       directory.services.find((service) => service.serviceSlug === input.serviceSlug)
         ?.displayName ?? serviceNameFromToolkit(input.serviceSlug);
+    // An overdue request must not hold the app open for the agent's other
+    // chats until the next maintenance tick.
+    this.materializeExpiry();
     const now = this.now();
     const origin = originFromClaims(claims);
     // One synchronous transaction reads the open request and writes the new
@@ -510,17 +513,28 @@ export class ConnectorAgentRequestService {
         tx
       ):
         | { kind: 'existing'; requestId: string; raised: boolean }
-        | { kind: 'elsewhere'; answered: boolean }
+        | {
+            kind: 'elsewhere';
+            /** Allowed there already: what it holds; `null` while unanswered. */
+            held: ReadonlySet<string> | null;
+            /** What that request asks for. */
+            asked: ConnectorRequestAccess;
+          }
         | { kind: 'rate_limited'; retryAt: number }
         | { kind: 'created'; requestId: string } => {
-        const open = openAgentRequest(tx, claims.agentId, input.serviceSlug);
+        const open = openAgentRequest(tx, claims.agentId, input.serviceSlug, now.toISOString());
         if (open) {
           if (
             open.request.sessionId !== claims.canonicalSessionId ||
             open.request.originRuntime !== claims.runtime ||
             open.request.originAgentPath !== claims.agentPath
           ) {
-            return { kind: 'elsewhere', answered: open.request.outcome === 'granted' };
+            return {
+              kind: 'elsewhere',
+              held:
+                open.request.outcome === 'granted' ? grantedClasses(tx, open.request).held : null,
+              asked: open.request.requestedAccess,
+            };
           }
           return {
             kind: 'existing',
@@ -611,13 +625,7 @@ export class ConnectorAgentRequestService {
       case 'elsewhere':
         throw new ConnectorAgentRequestError(
           'request_open_elsewhere',
-          outcome.answered
-            ? `The person already allowed you to use ${appName} when you asked in another ` +
-                "chat. List your accounts again to use it here; don't ask again."
-            : `You already asked for ${appName} in another chat, and the person hasn't ` +
-                'answered yet. They can answer it there, or under Needs you on the Connections ' +
-                `page in DorkOS. Once they allow it, you can use ${appName} in this chat too, ` +
-                "so don't ask again here."
+          elsewhereMessage(appName, input.access, outcome.asked, outcome.held)
         );
       case 'rate_limited': {
         const minutes = Math.max(1, Math.ceil((outcome.retryAt - now.getTime()) / 60_000));
@@ -626,7 +634,7 @@ export class ConnectorAgentRequestService {
           `You've asked for access to ${CONNECTOR_REQUEST_RATE_LIMIT} apps in the last ` +
             `${CONNECTOR_REQUEST_RATE_WINDOW_MS / 60_000} minutes, which is as many as DorkOS ` +
             'takes at once. Wait for the person to answer those. You can ask for ' +
-            `${appName} again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`
+            `${appName} in about ${minutes} minute${minutes === 1 ? '' : 's'}.`
         );
       }
       case 'existing':
@@ -962,20 +970,29 @@ export class ConnectorAgentRequestService {
       return this.getForOwner(owner, requestId);
     }
 
-    // Updates too: record the answer first, so a retry reuses it, then ask the
-    // event side for the exact scopes. The request resumes only once both the
-    // access and the updates are live.
+    // Updates too: record the answer first, so a second identical answer
+    // reuses it rather than racing it, then ask the event side for the exact
+    // scopes. If they can't be set up the answer is taken back, so the person
+    // can choose again, answer without updates, or say no (DOR-2503). The
+    // request resumes only once both the access and the updates are live.
     this.validateEventScopes(owner, row.request, decision.connectionId, decision.eventScopes);
     const claimed = this.resolveWithCurrentAccess(owner, row.request, row.review, decision);
-    const result = await this.options.eventGrants!.approve(
-      owner,
-      { reviewId: row.review.id, scopes: decision.eventScopes },
-      signal
-    );
+    let result: Awaited<ReturnType<ConnectorEventGrantPort['approve']>>;
+    try {
+      result = await this.options.eventGrants!.approve(
+        owner,
+        { reviewId: row.review.id, scopes: decision.eventScopes },
+        signal
+      );
+    } catch (error) {
+      this.withdrawAnswer(requestId, claimed.reviewId, decision);
+      throw error;
+    }
     if (result.state === 'unavailable') {
+      this.withdrawAnswer(requestId, claimed.reviewId, decision);
       throw new ConnectorAgentRequestError(
         'event_selection_unavailable',
-        'The selected event access is no longer available. Review the current options and try again.'
+        'Those updates can’t be set up right now. Choose them again, or answer without updates.'
       );
     }
     const resolvedEvents: ResolvedEventSelectionEnvelope = {
@@ -1014,6 +1031,52 @@ export class ConnectorAgentRequestService {
     if (ready) this.notifyResolved(requestId);
     else this.options.onChanged?.();
     return this.getForOwner(owner, requestId);
+  }
+
+  /**
+   * Take back an answer recorded for updates that could not be set up, so the
+   * request is unanswered again. Only the exact answer this call recorded is
+   * taken back; one that has since finished or changed is left alone.
+   */
+  private withdrawAnswer(
+    requestId: string,
+    reviewId: string,
+    decision: Extract<ConnectorAgentRequestDecision, { decision: 'current_access' }>
+  ): void {
+    const claim: ConnectorAgentResolutionClaim = { version: 1, decision };
+    const withdrawn = this.options.db.transaction((tx) => {
+      const changed = tx
+        .update(connectorReviewRequests)
+        .set({ resolutionJson: null, resolvedBy: null, resolutionSummary: null })
+        .where(
+          and(
+            eq(connectorReviewRequests.id, reviewId),
+            eq(connectorReviewRequests.state, 'pending'),
+            eq(connectorReviewRequests.resolutionJson, canonicalJson(claim))
+          )
+        )
+        .run().changes;
+      if (changed !== 1) return false;
+      tx.update(connectorAgentRequests)
+        .set({
+          outcome: null,
+          resumeState: 'pending',
+          resolvedConnectionId: null,
+          resolvedOperationRevisionIdsJson: null,
+          resolvedEventsJson: null,
+          resolvedAt: null,
+        })
+        .where(
+          and(
+            eq(connectorAgentRequests.id, requestId),
+            eq(connectorAgentRequests.outcome, 'granted'),
+            eq(connectorAgentRequests.resumeState, 'pending')
+          )
+        )
+        .run();
+      return true;
+    });
+    if (withdrawn) this.options.onChanged?.();
   }
 
   /** Whether a decision repeats the answer an already-resolved request recorded. */
@@ -1624,6 +1687,8 @@ export class ConnectorAgentRequestService {
   ): string[] {
     const claim = parseResolutionClaim(review.resolutionJson);
     if (!claim || claim.decision.eventScopes.length === 0 || !this.options.eventGrants) return [];
+    // Only updates that were actually set up count; chosen but never live is none.
+    if (!parseResolvedEventSelection(request.resolvedEventsJson).appliedEventScopeHash) return [];
     const owner = rowOwner(review);
     if (!owner) return [];
     try {
@@ -1734,7 +1799,67 @@ export class ConnectorAgentRequestService {
     for (const row of rows) {
       if (this.expireRequest(row.request, row.review)) expired += 1;
     }
-    return expired;
+    return expired + this.finishUnreadyUpdates(now);
+  }
+
+  /**
+   * End an answer whose updates never became live within the request's time
+   * (DOR-2503). The agent's access was given and is live, so the request
+   * finishes as allowed without updates, and its note says so; it no longer
+   * holds the app open for the agent's other chats. Returns how many ended.
+   */
+  private finishUnreadyUpdates(now: string): number {
+    const stuck = this.options.db
+      .select({ request: connectorAgentRequests, review: connectorReviewRequests })
+      .from(connectorAgentRequests)
+      .innerJoin(
+        connectorReviewRequests,
+        eq(connectorAgentRequests.reviewRequestId, connectorReviewRequests.id)
+      )
+      .where(
+        and(
+          eq(connectorAgentRequests.outcome, 'granted'),
+          eq(connectorAgentRequests.resumeState, 'pending'),
+          eq(connectorReviewRequests.state, 'pending'),
+          lte(connectorReviewRequests.expiresAt, now)
+        )
+      )
+      .all();
+    let ended = 0;
+    for (const { request, review } of stuck) {
+      const finished = this.options.db.transaction((tx) => {
+        const changed = tx
+          .update(connectorReviewRequests)
+          .set({
+            state: 'approved',
+            resolvedAt: now,
+            resolutionSummary: 'Access ready, no updates',
+          })
+          .where(
+            and(
+              eq(connectorReviewRequests.id, review.id),
+              eq(connectorReviewRequests.state, 'pending')
+            )
+          )
+          .run().changes;
+        if (changed !== 1) return false;
+        tx.update(connectorAgentRequests)
+          .set({ resumeState: 'ready', resolvedEventsJson: canonicalJson(emptyEventSelection()) })
+          .where(
+            and(
+              eq(connectorAgentRequests.id, request.id),
+              eq(connectorAgentRequests.resumeState, 'pending')
+            )
+          )
+          .run();
+        return true;
+      });
+      if (finished) {
+        this.notifyResolved(request.id);
+        ended += 1;
+      }
+    }
+    return ended;
   }
 
   private materializeAuthenticationFailure(requestId: string): boolean {
@@ -1997,6 +2122,8 @@ function requestStatus(request: ConnectorAgentRequest): RequestStatusName {
 interface GrantedClasses {
   readonly held: ReadonlySet<string>;
   readonly notGranted: Array<'read' | 'write'>;
+  /** It asked to hear about new activity and no updates were set up for it. */
+  readonly noUpdates: boolean;
 }
 
 /** The classes a level covers: Read is `read`; Read and write adds `write`. */
@@ -2053,6 +2180,9 @@ function grantedClasses(db: Db | DbTransaction, request: ConnectorAgentRequest):
     notGranted: classesFor(request.requestedAccess).filter(
       (kind) => !held.has(kind) && offered.has(kind)
     ),
+    noUpdates:
+      parseStringArray(request.requestedEventsJson).length > 0 &&
+      !parseResolvedEventSelection(request.resolvedEventsJson).appliedEventScopeHash,
   };
 }
 
@@ -2086,12 +2216,15 @@ function requestNote(request: ConnectorAgentRequest, answer?: GrantedClasses): s
         "hear here when it's ready, so don't ask again."
       );
     case 'granted': {
-      const classes = answer ?? { held: new Set<string>(), notGranted: [] };
+      const classes = answer ?? { held: new Set<string>(), notGranted: [], noUpdates: false };
       const missing = classes.notGranted.map((kind) =>
         kind === 'write' ? `change anything in ${app}` : `read ${app}`
       );
       return [
         `You can now ${grantedVerb(classes.held)} ${app}.`,
+        ...(classes.noUpdates
+          ? [`You won't get updates when something new happens in ${app}.`]
+          : []),
         ...(missing.length > 0
           ? [
               `The person didn't allow you to ${missing.join(' or ')}. Do what you can with ` +
@@ -2118,8 +2251,47 @@ function requestNote(request: ConnectorAgentRequest, answer?: GrantedClasses): s
   }
 }
 
+/**
+ * The refusal for an app the agent already asked for in another chat, saying
+ * only what is true: whether it was answered, and whether that answer (or
+ * ask) covers what this chat needs.
+ */
+function elsewhereMessage(
+  app: string,
+  wanted: ConnectorRequestAccess,
+  asked: ConnectorRequestAccess,
+  held: ReadonlySet<string> | null
+): string {
+  const needsChange = wanted === 'read-write';
+  if (held) {
+    const covered = !needsChange || held.has('write');
+    return (
+      `The person already allowed you to ${grantedVerb(held)} ${app} when you asked in ` +
+      "another chat. List your accounts again to use it here; don't ask again." +
+      (covered
+        ? ''
+        : ` That doesn't cover changing things there. If this chat needs that, ask for ` +
+          `"read-write" once that answer reaches the other chat.`)
+    );
+  }
+  const covered = !needsChange || asked === 'read-write';
+  return (
+    `You already asked for ${app} in another chat, and the person hasn't answered yet. They ` +
+    'can answer it there, or under Needs you on the Connections page in DorkOS. ' +
+    (covered
+      ? `If they allow it, you can use ${app} in this chat too, so don't ask again here.`
+      : `That request asks only to read ${app}. If this chat needs to change things there, ` +
+        'ask again once the person has answered it.')
+  );
+}
+
 /** One agent's open request for one app: unanswered, or allowed and not yet delivered. */
-function openAgentRequest(tx: Db | DbTransaction, agentId: string, serviceSlug: string) {
+function openAgentRequest(
+  tx: Db | DbTransaction,
+  agentId: string,
+  serviceSlug: string,
+  now: string
+) {
   return tx
     .select({ request: connectorAgentRequests, review: connectorReviewRequests })
     .from(connectorAgentRequests)
@@ -2133,10 +2305,23 @@ function openAgentRequest(tx: Db | DbTransaction, agentId: string, serviceSlug: 
         eq(connectorAgentRequests.serviceSlug, serviceSlug),
         eq(connectorReviewRequests.requesterKind, 'agent'),
         or(
-          eq(connectorReviewRequests.state, 'pending'),
+          // Unanswered, and still within its time.
+          and(
+            eq(connectorReviewRequests.state, 'pending'),
+            gt(connectorReviewRequests.expiresAt, now)
+          ),
+          // Allowed, with the answer on its way to the agent. One still
+          // waiting on updates past its time is not open: it is ended as
+          // allowed without updates (`finishUnreadyUpdates`).
           and(
             eq(connectorAgentRequests.outcome, 'granted'),
-            inArray(connectorAgentRequests.resumeState, ['pending', 'ready'])
+            or(
+              eq(connectorAgentRequests.resumeState, 'ready'),
+              and(
+                eq(connectorAgentRequests.resumeState, 'pending'),
+                gt(connectorReviewRequests.expiresAt, now)
+              )
+            )
           )
         )
       )

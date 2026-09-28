@@ -374,8 +374,47 @@ describe('ConnectorAgentRequestService', () => {
         requests.create(principal({ canonicalSessionId: 'session-2' }), INPUT)
       ).rejects.toMatchObject({
         code: 'request_open_elsewhere',
-        message: expect.stringContaining('already allowed you to use Gmail'),
+        message: expect.stringContaining('already allowed you to read Gmail'),
       });
+    });
+
+    it('never promises another chat’s narrower ask covers what this chat needs', async () => {
+      const requests = service();
+      await requests.create(principal(), INPUT);
+      const refusal = await requests
+        .create(principal({ canonicalSessionId: 'session-2' }), READ_WRITE)
+        .then(
+          () => new Error('expected a refusal'),
+          (error: Error) => error
+        );
+      expect(refusal).toMatchObject({ code: 'request_open_elsewhere' });
+      expect(refusal.message).toContain('That request asks only to read Gmail.');
+      expect(refusal.message).not.toContain('you can use Gmail in this chat too');
+    });
+
+    it('says an allowed Read in another chat does not cover changing things here', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+      await expect(
+        requests.create(principal({ canonicalSessionId: 'session-2' }), READ_WRITE)
+      ).rejects.toMatchObject({
+        message: expect.stringContaining("That doesn't cover changing things there."),
+      });
+    });
+
+    it('lets an overdue request go before checking what is open', async () => {
+      const requests = service({ requestTtlMs: 1_000 });
+      await requests.create(principal(), INPUT);
+      clock = new Date(NOW.getTime() + 2_000);
+      // No maintenance tick ran; another chat can still ask.
+      await expect(
+        requests.create(principal({ canonicalSessionId: 'session-2' }), INPUT)
+      ).resolves.toMatchObject({ status: 'awaiting_owner' });
     });
 
     it('opens a new request once the last one is answered and delivered', async () => {
@@ -422,7 +461,7 @@ describe('ConnectorAgentRequestService', () => {
         requests.create(principal(), { ...INPUT, serviceSlug: 'figma' })
       ).rejects.toMatchObject({
         code: 'request_rate_limited',
-        message: expect.stringContaining('ask for figma again in about 7 minutes'),
+        message: expect.stringContaining('You can ask for figma in about 7 minutes.'),
       });
       // Another agent is not held back by this one.
       await expect(
@@ -2311,5 +2350,192 @@ describe('ConnectorAgentRequestService', () => {
       })
     ).rejects.toMatchObject({ code: 'request_already_resolved' });
     expect(db.select().from(connectionOperationGrants).all()).toEqual([]);
+  });
+  describe('updates that cannot be set up (fix round 1)', () => {
+    const eventScope = {
+      connectionId: CONNECTION_ID,
+      definitionId: 'definition-1',
+      filter: {},
+      agentId: 'agent-1',
+      destination: { kind: 'agent' as const, id: 'agent-1' },
+    };
+
+    function eventPort(state: () => 'ready' | 'pending' | 'unavailable'): ConnectorEventGrantPort {
+      return {
+        describe: vi.fn<ConnectorEventGrantPort['describe']>((_owner, scopes) =>
+          scopes.map((scope) => ({
+            definitionId: scope.definitionId,
+            eventType: 'gmail.message_received',
+          }))
+        ),
+        approve: vi.fn<ConnectorEventGrantPort['approve']>(async (_owner, review) => {
+          const selections = review.scopes.map((scope) => ({
+            subscriptionId: 'subscription-1',
+            scopeVersion: 1,
+            definitionId: scope.definitionId,
+            eventScopeHash: 'a'.repeat(64),
+          }));
+          const now = state();
+          if (now === 'ready') {
+            return { state: 'ready', selections, appliedEventScopeHash: 'b'.repeat(64) };
+          }
+          return now === 'pending'
+            ? { state: 'pending', selections }
+            : { state: 'unavailable', selections: [] };
+        }),
+        ready: vi.fn(() => state() === 'ready'),
+      };
+    }
+
+    it('takes the answer back when the updates are unavailable, so the person can still choose', async () => {
+      const eventGrants = eventPort(() => 'unavailable');
+      const requests = service({ eventGrants, resume: undefined });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.message_received'],
+      });
+      grantLive(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: [eventScope],
+        })
+      ).rejects.toMatchObject({ code: 'event_selection_unavailable' });
+      expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
+
+      // The same answer again is tried again, not refused as already answered.
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: [eventScope],
+        })
+      ).rejects.toMatchObject({ code: 'event_selection_unavailable' });
+      // Answering without updates works, and says so to the agent.
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).resolves.toMatchObject({
+        status: 'granted',
+        grantedEvents: [],
+        note: expect.stringContaining("You won't get updates when something new happens in Gmail."),
+      });
+    });
+
+    it('lets the person say no after updates failed', async () => {
+      const requests = service({ eventGrants: eventPort(() => 'unavailable'), resume: undefined });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.message_received'],
+      });
+      grantLive(['revision-read']);
+      await requests
+        .resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: [eventScope],
+        })
+        .catch(() => undefined);
+      await expect(
+        requests.resolve(OWNER, created.requestId, { decision: 'denied' })
+      ).resolves.toMatchObject({ status: 'denied' });
+    });
+
+    it('ends an answer whose updates never become live, and stops holding the app open', async () => {
+      const requests = service({
+        eventGrants: eventPort(() => 'pending'),
+        resume: undefined,
+        requestTtlMs: 60_000,
+      });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.message_received'],
+      });
+      grantLive(['revision-read']);
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: [eventScope],
+        })
+      ).resolves.toMatchObject({ status: 'access_pending' });
+
+      clock = new Date(NOW.getTime() + 61_000);
+      await requests.reconcile();
+      await expect(requests.getForRuntime(principal(), created.requestId)).resolves.toMatchObject({
+        status: 'granted',
+        grantedEvents: [],
+        note: expect.stringContaining("You won't get updates"),
+      });
+      await requests.waitForResolution(principal(), created.requestId);
+      // Delivered: the agent's other chats can ask for the app again.
+      await expect(
+        requests.create(principal({ canonicalSessionId: 'session-2' }), INPUT)
+      ).resolves.toMatchObject({ status: 'awaiting_owner' });
+    });
+
+    it('does not count a past-due answer still waiting on updates as open', async () => {
+      const requests = service({
+        eventGrants: eventPort(() => 'pending'),
+        resume: undefined,
+        requestTtlMs: 60_000,
+      });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.message_received'],
+      });
+      grantLive(['revision-read']);
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+        eventScopes: [eventScope],
+      });
+      clock = new Date(NOW.getTime() + 61_000);
+      // No tick ran: create() ends it itself, then it is allowed and on its way.
+      await expect(
+        requests.create(principal({ canonicalSessionId: 'session-2' }), INPUT)
+      ).rejects.toMatchObject({
+        code: 'request_open_elsewhere',
+        message: expect.stringContaining('already allowed you to read Gmail'),
+      });
+    });
+
+    it('never raises a request once it has been answered', async () => {
+      const onChanged = vi.fn();
+      const requests = service({
+        eventGrants: eventPort(() => 'pending'),
+        resume: undefined,
+        onChanged,
+      });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.message_received'],
+      });
+      grantLive(['revision-read']);
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+        eventScopes: [eventScope],
+      });
+      const before = {
+        request: db.select().from(connectorAgentRequests).get(),
+        review: db.select().from(connectorReviewRequests).get(),
+      };
+      const calls = onChanged.mock.calls.length;
+
+      await expect(
+        requests.create(principal(), {
+          ...READ_WRITE,
+          requestedEvents: ['gmail.message_received', 'gmail.label_added'],
+        })
+      ).resolves.toMatchObject({ requestId: created.requestId, access: 'read' });
+      expect(db.select().from(connectorAgentRequests).get()).toEqual(before.request);
+      expect(db.select().from(connectorReviewRequests).get()).toEqual(before.review);
+      expect(onChanged.mock.calls.length).toBe(calls);
+    });
   });
 });

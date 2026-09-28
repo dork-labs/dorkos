@@ -517,6 +517,61 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     expect(screen.queryByRole('link', { name: /Review request/ })).not.toBeInTheDocument();
   });
 
+  it('never resends updates that failed, and offers the two answers that can work', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
+      Object.assign(new Error('unavailable'), { code: 'event_selection_unavailable' })
+    );
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+
+    expect(await screen.findByTestId('agent-request-unanswered')).toHaveTextContent(
+      'the updates you picked can’t be set up right now'
+    );
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Pick updates again' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Send Bo updates from Gmail?' })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'No updates' }));
+    await waitFor(() =>
+      expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
+        decision: 'current_access',
+        connectionId: 'connection-1',
+        eventScopes: [],
+      })
+    );
+  });
+
+  it('answers without updates straight from the failure', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
+      Object.assign(new Error('unavailable'), { code: 'event_selection_unavailable' })
+    );
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+    await user.click(await screen.findByRole('button', { name: 'Answer without updates' }));
+    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
+      decision: 'current_access',
+      connectionId: 'connection-1',
+      eventScopes: [],
+    });
+  });
+
   it('can leave updates out and still answer the access', async () => {
     const user = userEvent.setup();
     const transport = updatesTransport();
