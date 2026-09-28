@@ -374,7 +374,7 @@ export class ConnectorProviderBootstrapper {
     if (!managed.configured() || !expectedDigest) return;
     try {
       const provider = managed.create();
-      await provider.listAccounts();
+      const accounts = await provider.listAccounts();
       if (
         !managed.configured() ||
         managed.executionConfigDigest() !== expectedDigest ||
@@ -382,7 +382,9 @@ export class ConnectorProviderBootstrapper {
       ) {
         return;
       }
-      this._registry.register(provider, expectedDigest, 'managed');
+      // A reload whose listing failed leaves the new link to this recovery,
+      // so the same gated close runs here too.
+      this._registerManaged(provider, expectedDigest, accounts);
       logger.info('[Connectors] DorkOS managed provider recovered');
     } catch (error) {
       logger.error(
@@ -402,16 +404,8 @@ export class ConnectorProviderBootstrapper {
       if (!managed.configured()) return;
       const provider = managed.create();
       const accounts = await provider.listAccounts();
-      // Read before registering, which overwrites it: the fingerprint of the
-      // link this instance last worked through, kept across unlinking and
-      // restarts.
-      const previousDigest = this._registry.storedExecutionConfigDigest(managed.instanceId);
-      const digest = managed.executionConfigDigest();
-      this._registry.register(provider, digest, 'managed');
+      this._registerManaged(provider, managed.executionConfigDigest(), accounts);
       logger.info('[Connectors] DorkOS managed provider registered');
-      if (previousDigest !== undefined && digest !== undefined && previousDigest !== digest) {
-        this._closeUnlistedManagedConnections(provider, accounts);
-      }
     } catch (error) {
       logger.error(
         `[Connectors] DorkOS managed provider failed its connection check: ${
@@ -532,6 +526,28 @@ export class ConnectorProviderBootstrapper {
       ...(ready && { providerInstanceId: ready.instanceId }),
       ...(signInThrough !== undefined && { signInThrough }),
     };
+  }
+
+  /**
+   * Register the DorkOS account's route from a listing that succeeded in full,
+   * and when the link changed since the route last worked, close the kept
+   * accounts that listing does not have.
+   */
+  private _registerManaged(
+    provider: ConnectorProvider,
+    digest: string | undefined,
+    accounts: readonly ProviderConnectedAccount[]
+  ): void {
+    // Read before registering, which overwrites it: the fingerprint of the
+    // link this instance last worked through, kept across unlinking and
+    // restarts. None stored means a first registration, which closes nothing.
+    const previousDigest = this._registry.storedExecutionConfigDigest(provider.instanceId);
+    this._registry.register(provider, digest, 'managed');
+    // Assumes a changed key fingerprint means a new link, not the same link
+    // with a replaced key.
+    if (previousDigest !== undefined && digest !== undefined && previousDigest !== digest) {
+      this._closeUnlistedManagedConnections(provider, accounts);
+    }
   }
 
   /**

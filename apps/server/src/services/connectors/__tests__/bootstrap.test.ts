@@ -1194,7 +1194,7 @@ describe('ConnectorProviderBootstrapper', () => {
         expect(row('connection-old').lifecycleState).toBe('disconnected');
       });
 
-      it('never closes from a recovery, even under a different link', async () => {
+      it('closes from a recovery under a new link, and not under the same one', async () => {
         const { state, cloud } = link('link-1');
         const bootstrapper = new ConnectorProviderBootstrapper({
           ...bootstrapperOptions(),
@@ -1202,11 +1202,73 @@ describe('ConnectorProviderBootstrapper', () => {
         });
         await bootstrapper.registerBootProviders();
         keptManagedRow('connection-old', 'managed-old-account');
-        registry.unregisterProviderInstance('managed-provider' as never);
 
-        state.digest = 'link-2';
+        // Same link: recovery registers again and closes nothing.
+        registry.unregisterProviderInstance('managed-provider' as never);
         await freshSideWithOneAccount(state);
         await bootstrapper.recoverManagedCloud();
+        expect(registry.resolveProviderInstance('managed-provider' as never)).toBeDefined();
+        expect(row('connection-old').lifecycleState).toBe('connected');
+
+        // New link: recovery closes what that link does not list.
+        registry.unregisterProviderInstance('managed-provider' as never);
+        state.digest = 'link-2';
+        await bootstrapper.recoverManagedCloud();
+        expect(registry.resolveProviderInstance('managed-provider' as never)).toBeDefined();
+        expect(row('connection-old').lifecycleState).toBe('disconnected');
+      });
+
+      it('still closes when the reload after linking again failed and recovery finished it', async () => {
+        const { state, cloud } = link('link-1');
+        const bootstrapper = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: cloud,
+        });
+        await bootstrapper.registerBootProviders();
+        keptManagedRow('connection-old', 'managed-old-account');
+
+        // Linked again, but the reload's listing fails.
+        state.digest = 'link-2';
+        const failing = new FakeConnectorProvider({
+          instanceId: 'managed-provider' as never,
+          type: 'dorkos-managed',
+          custody: 'managed',
+        });
+        Object.defineProperty(failing, 'listAccounts', {
+          value: () => Promise.reject(new Error('listing interrupted')),
+        });
+        state.provider = failing;
+        await bootstrapper.reloadManagedCloud();
+        expect(row('connection-old').lifecycleState).toBe('connected');
+
+        // A later recovery registers the new link and closes what it lacks.
+        await freshSideWithOneAccount(state);
+        await bootstrapper.recoverManagedCloud();
+        expect(row('connection-old').lifecycleState).toBe('disconnected');
+      });
+
+      it('closes nothing the first time the route registers, with no earlier link on record', async () => {
+        db.insert(connectorProviderInstances)
+          .values({
+            id: 'managed-provider',
+            type: 'dorkos-managed',
+            mode: 'managed',
+            displayName: 'dorkos-managed',
+            custody: 'managed',
+            capabilityJson: '{}',
+            status: 'unavailable',
+            createdAt: AT,
+            updatedAt: AT,
+          })
+          .run();
+        keptManagedRow('connection-old', 'managed-old-account');
+        const { cloud } = link('link-1');
+        const bootstrapper = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: cloud,
+        });
+
+        await bootstrapper.registerBootProviders();
 
         expect(registry.resolveProviderInstance('managed-provider' as never)).toBeDefined();
         expect(row('connection-old').lifecycleState).toBe('connected');

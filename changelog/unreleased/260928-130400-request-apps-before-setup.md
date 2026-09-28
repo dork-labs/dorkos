@@ -3,6 +3,7 @@ covers:
   - "feat(connections): let an agent ask for an app DorkOS can't reach yet, and say why it can't (DOR-2494)"
   - 'fix(connections): say plainly that relinking does not restore old connections, and offer Connect again (DOR-2494)'
   - 'fix(connections): close accounts only when the DorkOS account is linked with a new link, and record each in Activity (DOR-2494)'
+  - 'fix(connections): run the new-link close when a recovery finishes the relink too (DOR-2494)'
 ---
 
 ### Changed
