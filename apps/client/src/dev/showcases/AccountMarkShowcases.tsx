@@ -167,7 +167,7 @@ export function AccountMarkShowcase() {
   return (
     <PlaygroundSection
       title="AccountMark"
-      description="With two or more Claude accounts, every Claude Code session row leads its title with a dot in its account's color; the name is the dot's tooltip. A session that ran out says so where its time sits."
+      description="With two or more Claude accounts, every Claude Code session row leads its title with a dot in its account's color; the row's tooltip names the account. A session that ran out says so where its time sits."
     >
       <ShowcaseLabel>A dot per palette color (hover for the name)</ShowcaseLabel>
       <ShowcaseDemo>
