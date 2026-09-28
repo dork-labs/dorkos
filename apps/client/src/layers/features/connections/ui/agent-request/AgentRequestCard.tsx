@@ -103,6 +103,9 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   // swapping the question out then would unmount the save that answers the
   // request.
   const [accessShown, setAccessShown] = useState(false);
+  // The owner chose to connect the app again because the kept account's way
+  // is down: the connect step shows even though that account still exists.
+  const [connectingAgain, setConnectingAgain] = useState(false);
 
   const decline = useCallback(() => {
     setAllowedId(null);
@@ -200,7 +203,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   const usable = usableAccounts(all, request.serviceSlug);
   const showAccess = accessShown || Boolean(signedInId) || usable.length > 0;
 
-  if (!showAccess && connected.length === 0) {
+  if (!showAccess && (connected.length === 0 || connectingAgain)) {
     return (
       <div className={cn('space-y-2', frameClass)}>
         <RequestConnectStep
@@ -229,6 +232,9 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           agentName={agentName}
           onDecline={decline}
           deciding={resolve.isPending}
+          onRecheck={() => void connections.refetch()}
+          rechecking={connections.isFetching}
+          onConnectAgain={() => setConnectingAgain(true)}
         />
         {declineFailure}
       </div>

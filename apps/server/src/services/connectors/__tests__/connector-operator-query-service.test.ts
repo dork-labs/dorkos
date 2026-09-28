@@ -13,6 +13,7 @@ import {
   sessionConnectionOverrides,
   type Db,
 } from '@dorkos/db';
+import type { ConnectorAppConnections } from '@dorkos/shared/connector-resource-schemas';
 import { ConnectorProviderInstanceIdSchema } from '@dorkos/shared/connector-schemas';
 import { ManagedConnectorCatalogRequestSchema } from '@dorkos/shared/connector-managed-discovery-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
@@ -154,6 +155,38 @@ describe('ConnectorOperatorQueryService', () => {
     expect(db.select().from(connectionOperationGrants).all()).toHaveLength(1);
   });
 
+  it('marks a kept account whose way is down, so the card asks for that fix, not a new sign-in', async () => {
+    const wayProblem = vi.fn((providerInstanceId: string) =>
+      providerInstanceId === PROVIDER_ID ? ('dorkos_account_unlinked' as const) : undefined
+    );
+    const withWays = new ConnectorOperatorQueryService({
+      db,
+      registry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+      wayProblem,
+    });
+
+    const [kept] = await withWays.listConnections(OWNER);
+    expect(kept).toMatchObject({
+      connectionId: 'connection-a',
+      wayProblem: 'dorkos_account_unlinked',
+    });
+    expect(wayProblem).toHaveBeenCalledWith(PROVIDER_ID);
+
+    // A disconnected account needs its own sign-in whatever its way's state.
+    db.update(connections)
+      .set({ lifecycleState: 'disconnected' })
+      .where(eq(connections.id, 'connection-a'))
+      .run();
+    const [disconnected] = await withWays.listConnections(OWNER);
+    expect(disconnected).not.toHaveProperty('wayProblem');
+
+    // Nothing is marked while the way works.
+    const [working] = await service.listConnections(OWNER);
+    expect(working).not.toHaveProperty('wayProblem');
+  });
+
   it('returns one account-free catalog with per-route authentication and message intents', async () => {
     const catalog = await service.catalog({ signal: new AbortController().signal });
 
@@ -255,14 +288,54 @@ describe('ConnectorOperatorQueryService', () => {
       'developer'
     );
 
-    // Listed, but an agent cannot request an app no way reaches yet.
+    // An agent can still ask for an app no way reaches yet (DOR-2494): the
+    // request's card runs the one-time step first. The reason travels with it.
     const directory = await empty.serviceDirectory(new AbortController().signal);
     expect(directory.services).toContainEqual({
       serviceSlug: 'gmail',
       displayName: 'Gmail',
-      requestable: false,
-      unavailableBecause: 'not_reached',
+      requestable: true,
+      reached: false,
     });
+    expect(directory.reachProblem).toBe('nothing_set_up');
+    // A chat app still has no account to ask for.
+    expect(directory.services).toContainEqual({
+      serviceSlug: 'telegram',
+      displayName: 'Telegram',
+      requestable: false,
+      unavailableBecause: 'messaging_only',
+    });
+  });
+
+  it('says why no way reaches an app: which way is down, or that the working one misses it', async () => {
+    const registry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    const signal = new AbortController().signal;
+    const directoryFor = (appConnections: ConnectorAppConnections) =>
+      new ConnectorOperatorQueryService({
+        db,
+        registry,
+        sessions: { resolveSessionAgent: () => undefined },
+        agentOwnership: { ownsAgent: () => false },
+        appConnections: async () => appConnections,
+      }).serviceDirectory(signal);
+
+    const unlinked = await directoryFor({
+      ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
+      newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+    });
+    expect(unlinked.reachProblem).toBe('dorkos_account_unlinked');
+
+    const nango = {
+      kind: 'own_key' as const,
+      type: 'nango',
+      status: 'ready' as const,
+      providerInstanceId: ConnectorProviderInstanceIdSchema.parse('provider-nango'),
+    };
+    const misses = await directoryFor({ ways: [nango], newApps: { status: 'ready', way: nango } });
+    expect(misses.reachProblem).toBe('app_not_reached');
   });
 
   it('gives each app a same-origin logo path and one line, never the service’s logo URL', async () => {
@@ -398,12 +471,13 @@ describe('ConnectorOperatorQueryService', () => {
     );
     expect(slugs).toContain('acme-crm');
 
-    // An agent may now ask for Gmail, and the Nango key is not a service it can name.
+    // Gmail is now reached, and the Nango key is not a service it can name.
     const directory = await queries.serviceDirectory(signal);
     expect(directory.services).toContainEqual({
       serviceSlug: 'gmail',
       displayName: 'Gmail',
       requestable: true,
+      reached: true,
     });
     expect(directory.services.map((entry) => entry.serviceSlug)).not.toContain('google-mail');
   });
@@ -819,6 +893,7 @@ describe('ConnectorOperatorQueryService', () => {
       serviceSlug: 'gmail',
       displayName: 'Gmail',
       requestable: true,
+      reached: true,
     });
     expect(directory.services).toContainEqual({
       serviceSlug: 'telegram',

@@ -28,6 +28,8 @@ import {
   type ConnectorUsagePage,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-provider';
+import type { ConnectorWayProblem } from '@dorkos/shared/connector-resource-schemas';
+import { agentWayProblemNote } from '../app-connection-way.js';
 import {
   isServerPrincipal,
   type ConnectorOwnerAuthority,
@@ -140,6 +142,36 @@ function decodeUsageCursor(cursor: string): z.infer<typeof UsageCursorSchema> {
   }
 }
 
+/** One session's access override for one connection. */
+interface SessionOverride {
+  connectionId: string;
+  agentId: string | null;
+  state: 'attached' | 'detached';
+  needsReconciliation: boolean;
+}
+
+/**
+ * Whether one grant row gives this agent the connection in this session. The
+ * same precedence as `ConnectorExecutionAuthorizationService.hasGrant`: a
+ * session override decides alone; without one, named-agent and every-agent
+ * grants both count.
+ */
+function grantApplies(
+  row: { subjectType: string },
+  override: SessionOverride | undefined,
+  agentId: string
+): boolean {
+  if (!override) return row.subjectType === 'agent' || row.subjectType === 'every_agent';
+  if (
+    override.agentId !== agentId ||
+    override.needsReconciliation ||
+    override.state === 'detached'
+  ) {
+    return false;
+  }
+  return row.subjectType === 'session';
+}
+
 /** SQLite-backed, owner-scoped access and usage query service. */
 export class ConnectorAccessQueryService {
   /** Construct owner-bound reads over canonical connector state. */
@@ -147,7 +179,8 @@ export class ConnectorAccessQueryService {
     private readonly db: Db,
     private readonly agentOwnership: ConnectorAgentOwnershipPort,
     private readonly registry: ConnectorRegistry,
-    private readonly runtimePrincipals: ConnectorRuntimeDiscoveryPrincipalPort
+    private readonly runtimePrincipals: ConnectorRuntimeDiscoveryPrincipalPort,
+    private readonly wayProblem?: (providerInstanceId: string) => ConnectorWayProblem | undefined
   ) {}
 
   /** Build a private, server-only awareness snapshot for the next normal agent turn. */
@@ -337,7 +370,19 @@ export class ConnectorAccessQueryService {
     const rows = this.listRuntimeGrantRows(claims.owner, claims.agentId, claims.canonicalSessionId);
     const unique = new Map<string, (typeof rows)[number]>();
     for (const row of rows) unique.set(row.connectionId, row);
+    const unavailable = this.listWayBlockedConnections(
+      claims.owner,
+      claims.agentId,
+      claims.canonicalSessionId
+    ).filter((row) => !unique.has(row.connectionId));
     return ConnectorAccessibleConnectionsResponseSchema.parse({
+      ...(unavailable.length > 0 && {
+        unavailable: unavailable.map((row) => ({
+          toolkit: row.toolkit,
+          label: row.label,
+          note: agentWayProblemNote(row.problem),
+        })),
+      }),
       connections: [...unique.values()]
         .sort(
           (left, right) =>
@@ -445,19 +490,7 @@ export class ConnectorAccessQueryService {
     connectionId?: string
   ) {
     const ownerKey = ownerColumns(owner);
-    const overrides = new Map(
-      this.db
-        .select({
-          connectionId: sessionConnectionOverrides.connectionId,
-          agentId: sessionConnectionOverrides.agentId,
-          state: sessionConnectionOverrides.state,
-          needsReconciliation: sessionConnectionOverrides.needsReconciliation,
-        })
-        .from(sessionConnectionOverrides)
-        .where(eq(sessionConnectionOverrides.sessionId, sessionId))
-        .all()
-        .map((row) => [row.connectionId, row] as const)
-    );
+    const overrides = this.sessionOverrides(sessionId);
     const rows = this.db
       .select({
         subjectType: connectionOperationGrants.subjectType,
@@ -518,21 +551,90 @@ export class ConnectorAccessQueryService {
       ) {
         return false;
       }
-      // The same precedence as `ConnectorExecutionAuthorizationService.hasGrant`:
-      // a session override decides alone; without one, named-agent and
-      // every-agent grants both count.
-      const override = overrides.get(row.connectionId);
-      if (!override) return row.subjectType === 'agent' || row.subjectType === 'every_agent';
-      if (
-        override.agentId !== agentId ||
-        override.needsReconciliation ||
-        override.state === 'detached'
-      ) {
-        return false;
-      }
-      return row.subjectType === 'session';
+      return grantApplies(row, overrides.get(row.connectionId), agentId);
     });
     return uniqueRevisions(executable);
+  }
+
+  /**
+   * Accounts this agent was given that it cannot use only because the way they
+   * were connected through is not working (an unlinked DorkOS account, a key
+   * that stopped answering). Same owner, grant and session-override rules as
+   * {@link listRuntimeGrantRows}; nothing here is executable, it only lets the
+   * agent say why instead of "connect it" (DOR-2494). Empty without a way port.
+   */
+  private listWayBlockedConnections(
+    owner: ConnectorOwnerAuthority,
+    agentId: string,
+    sessionId: string
+  ): Array<{ connectionId: string; toolkit: string; label: string; problem: ConnectorWayProblem }> {
+    const wayProblem = this.wayProblem;
+    if (!wayProblem) return [];
+    const ownerKey = ownerColumns(owner);
+    const overrides = this.sessionOverrides(sessionId);
+    const rows = this.db
+      .select({
+        subjectType: connectionOperationGrants.subjectType,
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        providerInstanceId: connections.providerInstanceId,
+      })
+      .from(connectionOperationGrants)
+      .innerJoin(connections, eq(connections.id, connectionOperationGrants.connectionId))
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          isNull(connectionOperationGrants.revokedAt),
+          agentGrantRows(agentId, sessionId),
+          eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
+          eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
+          isNull(connections.removedAt),
+          eq(connections.lifecycleState, 'connected'),
+          eq(connections.enabled, true),
+          eq(connections.status, 'active')
+        )
+      )
+      .all();
+    const blocked = new Map<
+      string,
+      { connectionId: string; toolkit: string; label: string; problem: ConnectorWayProblem }
+    >();
+    for (const row of rows) {
+      if (!grantApplies(row, overrides.get(row.connectionId), agentId)) continue;
+      const problem = wayProblem(row.providerInstanceId);
+      if (!problem) continue;
+      blocked.set(row.connectionId, {
+        connectionId: row.connectionId,
+        toolkit: row.toolkit,
+        label: row.label,
+        problem,
+      });
+    }
+    return [...blocked.values()].sort(
+      (left, right) =>
+        left.label.localeCompare(right.label) || left.connectionId.localeCompare(right.connectionId)
+    );
+  }
+
+  /** This session's per-connection access overrides, by connection id. */
+  private sessionOverrides(sessionId: string): Map<string, SessionOverride> {
+    return new Map(
+      this.db
+        .select({
+          connectionId: sessionConnectionOverrides.connectionId,
+          agentId: sessionConnectionOverrides.agentId,
+          state: sessionConnectionOverrides.state,
+          needsReconciliation: sessionConnectionOverrides.needsReconciliation,
+        })
+        .from(sessionConnectionOverrides)
+        .where(eq(sessionConnectionOverrides.sessionId, sessionId))
+        .all()
+        .map((row) => [row.connectionId, row] as const)
+    );
   }
 
   private listUsage(

@@ -765,7 +765,7 @@ export class CloudLinkManager {
     this.setState('unlinked');
     void this.notifyManagedProviderSync();
     logger.warn(
-      `[CloudLink] ${UNLINKED_REASON} — cloud revoked the instance key; cleared local token`
+      `[CloudLink] ${UNLINKED_REASON} — cloud refused the instance key (401); cleared local token`
     );
   }
 

@@ -40,6 +40,11 @@ export interface PromotedStatusItem {
    * squeezing it, and the row draws what it is handed.
    */
   rigid: boolean;
+  /**
+   * True when the item draws more than one slot's worth in its current state, so
+   * the budget charges it two. See {@link StatusBarItemConfig.wide}.
+   */
+  wide: boolean;
   /** The rendered item. */
   node: ReactNode;
 }
@@ -101,6 +106,7 @@ export function selectPromotedItems({
       severity: item.severity(ctx),
       pinned,
       rigid: item.rigid === true,
+      wide: item.wide?.(ctx) === true,
       node,
     });
   }

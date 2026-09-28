@@ -63,9 +63,11 @@ function directory(services: ReadonlyArray<readonly [string, string]>): Connecto
       serviceSlug,
       displayName,
       requestable: true,
+      reached: true,
     })),
     warnings: [],
     routeTypes: ['composio'],
+    reachProblem: 'app_not_reached',
   };
 }
 
@@ -548,10 +550,14 @@ describe('ConnectorAgentRequestService', () => {
       expect(Date.now() - started).toBeLessThan(1_000);
     });
 
-    it('tells the agent who can fix it when no service is set up at all', async () => {
-      const message = await refusal(withDirectory(directory([])), 'gmail');
+    it('tells the agent who can fix it when an app beyond the popular ones cannot be checked yet', async () => {
+      const message = await refusal(
+        withDirectory({ ...directory([]), reachProblem: 'nothing_set_up' }),
+        'acme'
+      );
 
-      expect(message).toContain('DorkOS has no account services set up yet');
+      expect(message).toContain('DorkOS is not set up to reach apps yet');
+      expect(message).toContain('only the popular apps it lists can be requested now');
       expect(message).toContain('Connections');
       // The page's Accounts card that linked a DorkOS account is gone; the first
       // connect is where a way to reach apps gets set up.
@@ -585,8 +591,23 @@ describe('ConnectorAgentRequestService', () => {
       );
 
       expect(message).toContain('Try again');
-      expect(message).not.toContain('no account services set up');
+      expect(message).not.toContain('not set up to reach apps');
     });
+
+    it.each([
+      ['dorkos_account_unlinked', "isn't linked anymore", 'Settings › Access'],
+      ['dorkos_account_unavailable', 'is linked but cannot reach apps', 'Try again later'],
+      ['own_key_unavailable', "isn't set up or didn't answer", 'Settings › Connections'],
+    ] as const)(
+      'names the fix for a way that is set up but down (%s), not "connect an app"',
+      async (reachProblem, why, fix) => {
+        const message = await refusal(withDirectory({ ...directory([]), reachProblem }), 'acme');
+
+        expect(message).toContain(why);
+        expect(message).toContain(fix);
+        expect(message).not.toContain('connect an app');
+      }
+    );
 
     it('treats a service list that ran out of time as a retry', async () => {
       const requests = service({
@@ -646,20 +667,29 @@ describe('ConnectorAgentRequestService', () => {
       });
     }
 
-    it('asks the person to connect a popular app no way reaches yet, not to use Messaging', async () => {
-      const message = await refusal(service({ services: bareDirectory() }), 'gmail');
+    it('records a request for a popular app no way reaches yet, once, like any other (DOR-2494)', async () => {
+      const requests = service({ services: bareDirectory() });
 
-      expect(message).toContain('DorkOS cannot reach Gmail yet');
-      expect(message).toContain('connect Gmail');
-      expect(message).toContain('sets up how DorkOS reaches apps');
-      expect(message).not.toContain('Messaging');
-      // A chat app from the same real read still goes to Messaging.
+      const created = await requests.create(principal(), INPUT);
+      expect(created).toMatchObject({ status: 'awaiting_owner', serviceSlug: 'gmail' });
+      // The same ask again is the same request: no second card, no second row.
+      const again = await requests.create(principal(), INPUT);
+      expect(again.requestId).toBe(created.requestId);
+      expect(db.select().from(connectorReviewRequests).all()).toHaveLength(1);
+      // Nothing is granted by asking: the owner still decides.
+      expect(db.select().from(connectionOperationGrants).all()).toEqual([]);
+    });
+
+    it('still refuses a chat app and an app beyond the popular ones when nothing is set up', async () => {
       expect(await refusal(service({ services: bareDirectory() }), 'telegram')).toContain(
         'Telegram connects through Messaging'
       );
+      expect(await refusal(service({ services: bareDirectory() }), 'acme-crm')).toContain(
+        'DorkOS is not set up to reach apps yet'
+      );
     });
 
-    it('reads a failing way as a retry even for a listed popular app', async () => {
+    it('reads a failing way as a retry for an unlisted app, and still takes a popular one', async () => {
       const failingDb = createDb(':memory:');
       runMigrations(failingDb);
       const registry = new ConnectorRegistry({
@@ -675,15 +705,19 @@ describe('ConnectorAgentRequestService', () => {
       });
       registry.register(failing);
 
-      const message = await refusal(service({ services: bareDirectory(registry) }), 'gmail');
+      const message = await refusal(service({ services: bareDirectory(registry) }), 'acme-crm');
 
       expect(message).toContain('Try again');
       expect(message).not.toContain('Messaging');
-      expect(message).not.toContain('cannot reach Gmail');
+
       // A chat-only app does not depend on the catalog: same outage, Messaging guidance.
       const telegram = await refusal(service({ services: bareDirectory(registry) }), 'telegram');
       expect(telegram).toContain('Telegram connects through Messaging');
       expect(telegram).not.toContain('Try again');
+      // A popular app is requestable through the outage; its card offers the retry.
+      await expect(
+        service({ services: bareDirectory(registry) }).create(principal(), INPUT)
+      ).resolves.toMatchObject({ status: 'awaiting_owner', serviceSlug: 'gmail' });
     });
   });
 

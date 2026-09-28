@@ -23,6 +23,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { createPlaygroundTransport } from '../playground-transport';
+import { CLAUDE_CODE_CATALOG } from './model-picker-showcase-data';
 import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
 
 /** The palette's color names, by position (spec §5). */
@@ -52,6 +53,9 @@ function accountTransport(): Transport {
   return new Proxy(base, {
     get: (target, prop, receiver) => {
       if (prop === 'getConfig') return async () => ACCOUNTS_CONFIG;
+      // The catalog gives a row's context gauge its window, so a row with a
+      // listed context reading draws a percent and an "as of" tooltip.
+      if (prop === 'getModels') return async () => CLAUDE_CODE_CATALOG;
       return Reflect.get(target, prop, receiver) as unknown;
     },
   });
@@ -206,6 +210,24 @@ export function AccountMarkShowcase() {
                 onRename={() => {}}
               />
             ))}
+          </SidebarColumn>
+        </ShowcaseDemo>
+        <ShowcaseLabel>
+          A full row with a context reading from the list: hover the ring for how old it is
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <SidebarColumn>
+            <SessionRow
+              variant="full"
+              session={{
+                ...sessionOn(1, 'context-row', 'Long refactor', null),
+                model: 'claude-opus-4-6',
+                contextTokens: 170_000,
+              }}
+              isActive={false}
+              onClick={() => {}}
+              onRename={() => {}}
+            />
           </SidebarColumn>
         </ShowcaseDemo>
         <ShowcaseLabel>Compact rows</ShowcaseLabel>

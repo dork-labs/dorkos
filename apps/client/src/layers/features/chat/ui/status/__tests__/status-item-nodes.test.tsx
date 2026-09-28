@@ -186,6 +186,7 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
     usage: null,
     usageSource: null,
     usageObservedAt: null,
+    now: new Date(),
     supportsCostTracking: false,
     runningSubagents: [],
     liveSubagentCount: 0,
@@ -195,6 +196,31 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
     ...overrides,
   };
 }
+
+describe('buildStatusItemNodes — one clock for "· old"', () => {
+  it("reads staleness from the line's own moment, not the item's clock", () => {
+    // The budget charges for "· old" from the section's clock; the item must
+    // read the same one, or near the hour the two disagree for up to a minute.
+    const observedAt = '2026-09-28T10:00:00.000Z';
+    const usage: UsageStatus = { kind: 'subscription', utilization: 0.4, state: 'ok' };
+    const at = (iso: string) =>
+      buildStatusItemNodes(
+        inputWith({
+          usage,
+          usageSource: 'account',
+          usageObservedAt: observedAt,
+          supportsCostTracking: true,
+          now: new Date(iso),
+        })
+      ).usage;
+
+    render(<TooltipProvider>{at('2026-09-28T10:59:00.000Z')}</TooltipProvider>);
+    expect(screen.queryByText('· old')).not.toBeInTheDocument();
+    cleanup();
+    render(<TooltipProvider>{at('2026-09-28T11:01:00.000Z')}</TooltipProvider>);
+    expect(screen.getByText('· old')).toBeInTheDocument();
+  });
+});
 
 describe('buildStatusItemNodes — the cost gate', () => {
   it('builds the usage item for a runtime that declares it can track cost', () => {
@@ -265,6 +291,7 @@ describe('buildStatusItemNodes — one usage display, never two (spec claude-acc
         runtime: null,
         account: { chipState: 'ok' },
         usage: ACCOUNT_USAGE,
+        usageStale: false,
         subagentsInFlight: 0,
       },
       pins: ['usage'],
@@ -521,6 +548,7 @@ function buildLine(
     runtime: null,
     account: null,
     usage: null,
+    usageStale: false,
     subagentsInFlight: 0,
   };
   return applyStatusBudget(selectPromotedItems({ ctx, pins: [], nodes }), budget);

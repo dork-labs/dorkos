@@ -7,6 +7,7 @@ import type {
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import type {
+  ConnectorAppConnections,
   ConnectorCatalogService,
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
@@ -122,7 +123,10 @@ function preview(connectionId: string): ConnectorReconciliationPreview {
  * connected account, a sign-in that waits, and an answer that lands as granted
  * or denied so the card collapses to its record.
  */
-function requestTransport(accounts: ConnectorConnectionSummary[]): Transport {
+function requestTransport(
+  accounts: ConnectorConnectionSummary[],
+  appConnections?: ConnectorAppConnections
+): Transport {
   const base = createPlaygroundTransport();
   const pendingFlow = {
     flowId: 'flow-1',
@@ -133,7 +137,30 @@ function requestTransport(accounts: ConnectorConnectionSummary[]): Transport {
   };
   const overrides: Partial<Record<keyof Transport, unknown>> = {
     getConnectorConnections: async () => ({ connections: accounts }),
-    getConnectorCatalog: async () => ({ services: [GMAIL], warnings: [] }),
+    // With `appConnections`, no way reaches Gmail yet and that is the reason.
+    getConnectorCatalog: async () =>
+      appConnections
+        ? {
+            services: [{ ...GMAIL, intents: [{ ...GMAIL.intents[0]!, routes: [] }] }],
+            warnings: [],
+            appConnections,
+          }
+        : { services: [GMAIL], warnings: [] },
+    ...(appConnections && {
+      getConnectorProviders: async () => ({
+        providers: [
+          {
+            type: 'composio',
+            providerInstanceId: 'composio-1',
+            configured: false,
+            registered: false,
+            custody: 'managed',
+            disclosure: 'Composio keeps the sign-in for each app you connect.',
+          },
+        ],
+        appConnections,
+      }),
+    }),
     previewConnectorReconciliation: async ({ connectionId }: { connectionId: string }) =>
       preview(connectionId),
     applyConnectorReconciliation: async (request: ConnectorReconciliationApplyRequest) => ({
@@ -156,11 +183,14 @@ function requestTransport(accounts: ConnectorConnectionSummary[]): Transport {
 function CardDemo({
   accounts,
   request = REQUEST,
+  appConnections,
 }: {
   accounts: ConnectorConnectionSummary[];
   request?: ConnectorAgentRequestItem;
+  /** Set to show the card while no way reaches the app. */
+  appConnections?: ConnectorAppConnections;
 }) {
-  const [transport] = useState(() => requestTransport(accounts));
+  const [transport] = useState(() => requestTransport(accounts, appConnections));
   const [client] = useState(
     () =>
       new QueryClient({
@@ -193,9 +223,38 @@ export function AgentRequestCardShowcase() {
         <CardDemo accounts={[]} />
       </ShowcaseDemo>
 
+      <ShowcaseLabel>
+        Nothing reaches Gmail because the DorkOS account isn’t linked anymore: the one-time step
+        offers linking it again or a key, as equal choices
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <CardDemo
+          accounts={[]}
+          appConnections={{
+            ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
+            newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+          }}
+        />
+      </ShowcaseDemo>
+
       <ShowcaseLabel>Already connected: only “Let DorkBot use Gmail?”</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <CardDemo accounts={[account('gmail-work', 'work')]} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Connected through a DorkOS account that isn’t linked anymore: connect it again
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <CardDemo
+          accounts={[
+            {
+              ...account('gmail-work', 'work'),
+              mode: 'managed',
+              wayProblem: 'dorkos_account_unlinked',
+            },
+          ]}
+        />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Two accounts: asks which one first</ShowcaseLabel>

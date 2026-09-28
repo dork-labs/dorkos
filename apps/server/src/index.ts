@@ -317,6 +317,7 @@ import {
   createEveryAgentEndedRecorder,
   setOnEveryAgentEnded,
 } from './services/connectors/every-agent-activity.js';
+import { recordConnectionsClosedByNewLink } from './services/connectors/app-connection-way.js';
 import {
   startSkillsWatcher,
   startTurnEndReprojection,
@@ -3090,6 +3091,11 @@ async function start() {
         displayName: server.displayName,
         connection: { transport: server.transport, url: server.url },
       })),
+    onClosedByNewLink: (closed) => {
+      void recordConnectionsClosedByNewLink(activityService, closed).catch((err: unknown) =>
+        logger.warn('[Connectors] Could not record connections closed by a new link', { err })
+      );
+    },
     managedCloud: {
       instanceId: managedCloudProviderInstanceId,
       configured: () => getCloudLinkManager().getSummary().linked,
@@ -3311,6 +3317,7 @@ async function start() {
     keptLogos: () => catalogLogos.keptServiceIds(),
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
     appConnections: () => connectorBootstrapper.appConnections(),
+    wayProblem: (providerInstanceId) => connectorBootstrapper.wayProblem(providerInstanceId),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),
@@ -3464,7 +3471,8 @@ async function start() {
     {
       revalidatePrincipal: async (principal) =>
         connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
-    }
+    },
+    (providerInstanceId) => connectorBootstrapper.wayProblem(providerInstanceId)
   );
   const connectorBroker = new ConnectorExecutionBroker(
     connectorAuthorization,

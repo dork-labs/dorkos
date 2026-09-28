@@ -1,22 +1,46 @@
 import { Gauge, DollarSign } from 'lucide-react';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { DetailRow, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
-import { cn, isStale } from '@/layers/shared/lib';
+import {
+  DetailRow,
+  STATUS_TONE_TEXT,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import { formatCost } from '../lib/format-tokens';
-import { staleNumberClass } from '../lib/account-usage-status';
+import { showsStaleMark, staleNumberClass } from '../lib/account-usage-status';
+import { MUTED_TEXT, type UsageSurface } from '../lib/usage-surface';
 import { UsageFreshnessLine } from './UsageFreshnessLine';
 
 interface UsageDetailProps {
   /** The runtime-neutral usage descriptor. */
   usage: UsageStatus;
+  /**
+   * What the rows are painted on. `panel` (the default) is a popover or panel
+   * on the page's own colors, where the overage note and "Rate limit reached"
+   * wear the text-tuned warning and error tokens (4.5:1 or better, both
+   * themes). `tooltip` is the inverted tooltip, where no warning or error token
+   * reaches 4.5:1 in either theme, so both lines wear the tooltip's own text
+   * color and the words carry the state, and the labels and notes wear its
+   * own muted step (04 §13).
+   */
+  surface?: UsageSurface;
 }
+
+/** The overage note's and the out-of-usage line's colors, by surface. */
+const TONE_BY_SURFACE = {
+  panel: { warning: STATUS_TONE_TEXT.warning, error: STATUS_TONE_TEXT.error },
+  tooltip: { warning: '', error: '' },
+} as const;
 
 interface UsageStatusItemProps extends UsageDetailProps {
   /**
    * When the usage was observed, ISO-8601, or nothing when that is not known
    * (a snapshot's usage). With it, the tooltip ends with the freshness line and
-   * a reading older than an hour dims the number (spec `claude-account-ui` §6.8).
+   * a reading older than an hour mutes the number and says "· old" after it (spec
+   * `claude-account-ui` §6.8).
    */
   observedAt?: string | null;
   /** A fixed moment to read freshness from (tests and the Dev Playground); else the clock. */
@@ -74,16 +98,28 @@ function costHeading(usage: UsageStatus): string {
  *
  * @param props - The usage descriptor whose cost to show.
  */
-export function UsageCostRows({ usage }: UsageDetailProps) {
+export function UsageCostRows({ usage, surface = 'panel' }: UsageDetailProps) {
   const basisNote = costBasisNote(usage);
+  const tone = TONE_BY_SURFACE[surface];
+  const muted = MUTED_TEXT[surface];
   return (
     <>
       {usage.costUsd != null && (
-        <DetailRow label={costHeading(usage)}>{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+        <DetailRow label={costHeading(usage)} labelClassName={muted}>
+          {`$${usage.costUsd.toFixed(2)}`}
+        </DetailRow>
       )}
-      {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
-      {usage.detail && <div className="text-amber-500">{usage.detail}</div>}
-      {usage.state === 'exhausted' && <div className="text-red-500">Rate limit reached</div>}
+      {basisNote && <div className={muted}>{basisNote}</div>}
+      {usage.detail && (
+        <div data-slot="usage-detail-note" className={tone.warning || undefined}>
+          {usage.detail}
+        </div>
+      )}
+      {usage.state === 'exhausted' && (
+        <div data-slot="usage-limit-note" className={tone.error || undefined}>
+          Rate limit reached
+        </div>
+      )}
     </>
   );
 }
@@ -94,10 +130,11 @@ export function UsageCostRows({ usage }: UsageDetailProps) {
  * item's hover tooltip and the pinned `/context` reveal so both read identically
  * (DOR-100 / DOR-109). Render only for a usage that {@link hasRenderableUsage}.
  *
- * @param usage - The runtime-neutral usage descriptor.
+ * @param props - The usage descriptor, and the surface the rows are painted on.
  */
-export function UsageDetail({ usage }: UsageDetailProps) {
+export function UsageDetail({ usage, surface = 'panel' }: UsageDetailProps) {
   const basisNote = costBasisNote(usage);
+  const muted = MUTED_TEXT[surface];
   if (usage.kind === 'subscription' && usage.utilization != null) {
     const pct = Math.round(usage.utilization * 100);
     const resetsAtLabel = usage.resetsAt
@@ -107,10 +144,18 @@ export function UsageDetail({ usage }: UsageDetailProps) {
       <div className="space-y-1">
         <div className="text-xs font-medium">Subscription usage</div>
         <div className="text-3xs space-y-0.5">
-          <DetailRow label="Utilization">{`${pct}%`}</DetailRow>
-          {usage.windowLabel && <DetailRow label="Window">{usage.windowLabel}</DetailRow>}
-          {resetsAtLabel && <DetailRow label="Resets at">{resetsAtLabel}</DetailRow>}
-          <UsageCostRows usage={usage} />
+          <DetailRow label="Utilization" labelClassName={muted}>{`${pct}%`}</DetailRow>
+          {usage.windowLabel && (
+            <DetailRow label="Window" labelClassName={muted}>
+              {usage.windowLabel}
+            </DetailRow>
+          )}
+          {resetsAtLabel && (
+            <DetailRow label="Resets at" labelClassName={muted}>
+              {resetsAtLabel}
+            </DetailRow>
+          )}
+          <UsageCostRows usage={usage} surface={surface} />
         </div>
       </div>
     );
@@ -121,10 +166,13 @@ export function UsageDetail({ usage }: UsageDetailProps) {
       <div className="text-xs font-medium">{costHeading(usage)}</div>
       <div className="text-3xs space-y-0.5">
         {usage.costUsd != null && (
-          <DetailRow label="Cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+          <DetailRow
+            label="Cost"
+            labelClassName={muted}
+          >{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
         )}
-        {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
-        {usage.detail && <div className="text-muted-foreground">{usage.detail}</div>}
+        {basisNote && <div className={muted}>{basisNote}</div>}
+        {usage.detail && <div className={muted}>{usage.detail}</div>}
       </div>
     </div>
   );
@@ -159,9 +207,14 @@ export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: Usa
     const pct = Math.round(usage.utilization! * 100);
     const isExhausted = usage.state === 'exhausted';
     const isWarning = usage.state === 'warning' || pct >= 80;
-    const colorClass = isExhausted ? 'text-red-500' : isWarning ? 'text-amber-500' : '';
-    // An old reading keeps its number, dimmed; the tooltip says how old (Q17).
-    const stale = observedAt !== null && isStale(observedAt, now);
+    // The text-tuned amber and red: each clears 4.5:1 on the status bar in both
+    // themes, where text-amber-500 read 2.06:1 and text-red-500 3.60:1 in light.
+    const colorClass = isExhausted ? 'text-destructive' : isWarning ? 'text-status-warning-fg' : '';
+    // An old reading keeps its number, muted, and says "· old" after it, so the
+    // word, not a shade of gray, is what tells it from a fresh one; the tooltip
+    // says how old (Q17, 04 §13).
+    const stale = showsStaleMark(usage, observedAt, now);
+    const numberClass = staleNumberClass(stale);
 
     return (
       <Tooltip>
@@ -172,13 +225,16 @@ export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: Usa
             data-stale={stale || undefined}
           >
             <Gauge className="size-(--size-icon-xs)" />
-            <span className={staleNumberClass(stale, colorClass !== '')}>{pct}%</span>
+            <span className={numberClass}>{pct}%</span>
+            {stale && <span className={numberClass}>· old</span>}
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-56">
           <div className="space-y-1">
-            <UsageDetail usage={usage} />
-            {observedAt !== null && <UsageFreshnessLine observedAt={observedAt} now={now} />}
+            <UsageDetail usage={usage} surface="tooltip" />
+            {observedAt !== null && (
+              <UsageFreshnessLine observedAt={observedAt} now={now} surface="tooltip" />
+            )}
           </div>
         </TooltipContent>
       </Tooltip>
@@ -225,8 +281,8 @@ export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: Usa
       <TooltipContent side="top" className="max-w-56">
         <div className="space-y-1">
           <div className="text-xs font-medium">{label}</div>
-          {basisNote && <div className="text-muted-foreground text-3xs">{basisNote}</div>}
-          {usage.detail && <div className="text-muted-foreground text-3xs">{usage.detail}</div>}
+          {basisNote && <div className={cn(MUTED_TEXT.tooltip, 'text-3xs')}>{basisNote}</div>}
+          {usage.detail && <div className={cn(MUTED_TEXT.tooltip, 'text-3xs')}>{usage.detail}</div>}
         </div>
       </TooltipContent>
     </Tooltip>

@@ -217,13 +217,30 @@ function byUrgency(a: PromotedStatusItem, b: PromotedStatusItem): number {
 const MAX_RIGID_ITEMS = 2;
 
 /**
+ * Slots a wide item is charged (see `StatusBarItemConfig.wide`).
+ *
+ * The count prices every slot at one bounded value. A stale usage reading,
+ * "100% · old", is about 36px past that and rigid, so at the `full` floor its
+ * four slots put `connection` 17px into the `⋯` (status-line-fit). Charging it
+ * two moves the least urgent item under the `⋯` instead, where it is one tap
+ * away, and "· old" stays on screen.
+ *
+ * When only one slot is left, a wide item still takes it: at the `compact` and
+ * `identity` floors three items with the wide one last measured clean, because
+ * below `full` every other item has already dropped its label. Hiding the item
+ * there would buy room nobody needed.
+ */
+const WIDE_ITEM_SLOTS = 2;
+
+/**
  * Fit the promoted set into a measured budget.
  *
  * Slots are won by urgency but rendered in registry order: what survives is what
  * is most likely to be a real problem, while positions stay put as numbers cross
  * their thresholds — nothing shuffles under the finger that is reaching for it.
  * Rigid items are taken in the same order and capped at {@link MAX_RIGID_ITEMS},
- * so the one that gives way is always the least urgent of them.
+ * so the one that gives way is always the least urgent of them. A wide item is
+ * charged {@link WIDE_ITEM_SLOTS}, or whatever is left when that is less.
  *
  * The left cluster is trimmed by density rather than by count, and those drops are
  * deliberately **not** counted in `overflow`. Saying less about where you are is
@@ -241,11 +258,13 @@ export function applyStatusBudget(
   const right = items.filter((item) => item.cluster === 'right');
   const kept = new Set<StatusBarItemKey>();
   let rigidKept = 0;
+  let slotsUsed = 0;
   for (const item of [...right].sort(byUrgency)) {
-    if (kept.size >= budget.rightBudget) break;
+    if (slotsUsed >= budget.rightBudget) break;
     if (item.rigid && rigidKept >= MAX_RIGID_ITEMS) continue;
     if (item.rigid) rigidKept += 1;
     kept.add(item.key);
+    slotsUsed += item.wide ? Math.min(WIDE_ITEM_SLOTS, budget.rightBudget - slotsUsed) : 1;
   }
 
   return {

@@ -133,7 +133,7 @@ describe('connector discovery capabilities', () => {
     });
   });
 
-  it('lists popular apps to agents without owner setup or an account intent nothing reaches', async () => {
+  it('lists a popular app nothing reaches as requestable, with a note on what the owner does', async () => {
     const withSetup: ConnectorCapabilityDeps = {
       registry,
       catalog: async (input) => ({
@@ -164,21 +164,48 @@ describe('connector discovery capabilities', () => {
       { query: 'notion' },
       {}
     )) as {
-      services: Array<{ serviceSlug: string; intents: unknown[]; notRequestable?: string }>;
+      services: Array<{ serviceSlug: string; intents: unknown[]; setupNote?: string }>;
       toolkits: unknown[];
     };
 
     expect(JSON.stringify(result)).not.toContain('appConnections');
     expect(JSON.stringify(result)).not.toContain('private-route-id');
-    // Notion is listed (popular), but the fake route does not reach it.
+    // Notion is listed (popular) and can be asked for (DOR-2494); the working
+    // way does not reach it, and the note says so rather than "connect it".
     expect(result.services).toEqual([
       expect.objectContaining({
         serviceSlug: 'notion',
-        intents: [],
-        notRequestable: expect.stringContaining('cannot be requested'),
+        intents: [expect.objectContaining({ kind: 'account', routes: [] })],
+        setupNote: expect.stringContaining('does not reach Notion. You can still request it'),
       }),
     ]);
     expect(result.toolkits).toEqual([]);
+  });
+
+  it.each([
+    ['nothing_set_up', 'DorkOS is not set up to reach apps yet'],
+    ['dorkos_account_unlinked', "DorkOS account isn't linked anymore"],
+    ['dorkos_account_unavailable', 'linked but cannot reach apps right now'],
+    ['own_key_unavailable', "isn't set up or didn't answer"],
+  ] as const)('says plainly why no way reaches a popular app (%s)', async (reason, sentence) => {
+    const deps: ConnectorCapabilityDeps = {
+      registry,
+      catalog: async (input) => ({
+        ...(await queries.catalog({ ...input, includeAuthenticationSetup: false })),
+        appConnections: { ways: [], newApps: { status: 'setup_needed', reason } },
+      }),
+    };
+    const result = (await capability('connector.list_toolkits').invoke(
+      { logger: noopLogger, connectorDeps: deps },
+      { query: 'notion' },
+      {}
+    )) as { services: Array<{ serviceSlug: string; setupNote?: string }> };
+
+    const note = result.services.find((service) => service.serviceSlug === 'notion')?.setupNote;
+    expect(note).toContain(sentence);
+    expect(note).toContain('still request');
+    // Never a promise that linking again restores anything.
+    expect(note).not.toMatch(/come back|work again|brings? (it|them) back/);
   });
 
   it('omits sign-in setup even when provider metadata supplies it', async () => {

@@ -18,6 +18,12 @@ import { TransportProvider } from '@/layers/shared/model';
 import { AgentRequestCard } from '../ui/agent-request/AgentRequestCard';
 import { ChatAgentRequest } from '../ui/agent-request/ChatAgentRequest';
 
+const openSettings = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSettingsDeepLink: () => ({ open: openSettings }),
+}));
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, search }: { children: React.ReactNode; to: string; search: object }) => (
     <a href={`${to}?${new URLSearchParams(search as Record<string, string>)}`}>{children}</a>
@@ -217,6 +223,46 @@ describe('AgentRequestCard — no account yet', () => {
     await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
     expect(await screen.findByTestId('first-connect-step')).toBeInTheDocument();
     expect(transport.startConnectorAgentRequestAuthentication).not.toHaveBeenCalled();
+  });
+
+  it('says the DorkOS account isn’t linked anymore in the one-time step, beside a key as an equal choice', async () => {
+    const user = userEvent.setup();
+    openSettings.mockClear();
+    const transport = transportWith([]);
+    const appConnections = {
+      ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
+      newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+    };
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [{ ...GMAIL, intents: [{ ...GMAIL.intents[0], routes: [] }] }],
+      warnings: [],
+      appConnections,
+    } as never);
+    vi.mocked(transport.getConnectorProviders).mockResolvedValue({
+      providers: [
+        {
+          type: 'composio',
+          providerInstanceId: 'composio-1',
+          configured: false,
+          registered: false,
+          custody: 'managed',
+          disclosure: 'Composio keeps sign-ins.',
+        },
+      ],
+      appConnections,
+    } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+    const step = await screen.findByTestId('first-connect-step');
+    expect(step).toHaveTextContent('Your DorkOS account isn’t linked anymore.');
+    expect(step).not.toHaveTextContent(/come back|bring/);
+    const relink = await screen.findByRole('button', { name: 'Link my DorkOS account again' });
+    const key = screen.getByRole('button', { name: /Use my Composio key/ });
+    // Equal choices: the same weight, neither pressed on the person.
+    expect(relink.className).toBe(key.className);
+    await user.click(relink);
+    expect(openSettings).toHaveBeenCalledWith('access', 'account');
   });
 
   it('answers "Not now" as a denial', async () => {
@@ -449,6 +495,68 @@ describe('ChatAgentRequest', () => {
 });
 
 describe('AgentRequestCard — an account that needs attention first', () => {
+  it('says the account’s DorkOS account isn’t linked anymore, and offers to connect the app again', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([
+      { ...account('connection-1'), mode: 'managed', wayProblem: 'dorkos_account_unlinked' },
+    ]);
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [{ ...GMAIL, intents: [{ ...GMAIL.intents[0], routes: [] }] }],
+      warnings: [],
+      appConnections: {
+        ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
+        newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+      },
+    } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    const line = await screen.findByTestId('account-attention');
+    expect(line).toHaveAttribute('data-kind', 'way_down');
+    expect(line).toHaveTextContent(
+      'Gmail (work) was connected through your DorkOS account, which isn’t linked anymore'
+    );
+    expect(line).not.toHaveTextContent(/come back|bring/);
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+
+    // Connect again goes to the connect step, whose one-time step offers every way.
+    await user.click(screen.getByRole('button', { name: 'Connect Gmail again' }));
+    await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+    expect(await screen.findByTestId('first-connect-step')).toBeInTheDocument();
+  });
+
+  it('names a key that isn’t set up or didn’t answer, with its fix and Connect again', async () => {
+    const user = userEvent.setup();
+    openSettings.mockClear();
+    const transport = transportWith([
+      { ...account('connection-1'), wayProblem: 'own_key_unavailable' },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    expect(await screen.findByTestId('account-attention')).toHaveTextContent(
+      'isn’t set up or didn’t answer when DorkOS last checked it'
+    );
+    expect(screen.getByRole('button', { name: 'Connect Gmail again' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Fix the key' }));
+    expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
+  });
+
+  it('offers a fresh check when the linked DorkOS account can’t reach the app right now', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([
+      { ...account('connection-1'), wayProblem: 'dorkos_account_unavailable' },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    expect(await screen.findByTestId('account-attention')).toHaveTextContent(
+      'can’t reach Gmail right now'
+    );
+    const reads = vi.mocked(transport.getConnectorConnections).mock.calls.length;
+    await user.click(screen.getByRole('button', { name: 'Check again' }));
+    await waitFor(() =>
+      expect(vi.mocked(transport.getConnectorConnections).mock.calls.length).toBeGreaterThan(reads)
+    );
+  });
+
   it('asks to resume a paused account before any Allow', async () => {
     const user = userEvent.setup();
     const transport = transportWith([{ ...account('connection-1'), lifecycle: 'paused' }]);

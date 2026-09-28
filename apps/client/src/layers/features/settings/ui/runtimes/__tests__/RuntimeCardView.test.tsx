@@ -261,6 +261,14 @@ describe('RuntimeCardView', () => {
     expect(screen.getByRole('button', { name: 'Sign in to Claude Code' })).toBeInTheDocument();
   });
 
+  it('draws Ready in the text-tuned green, which clears 4.5:1 on the card in both themes', () => {
+    renderCard({ expiringSignIn: { expiresAt: '2026-09-20T04:51:04.000Z', timeLeft: '2 days' } });
+    const ready = screen.getByTestId('runtime-ready-claude-code');
+    // text-emerald-500 read 2.54:1 on the light card; the status green reads 6.87:1.
+    expect(ready).toHaveClass('text-status-success-fg');
+    expect(ready).not.toHaveClass('text-emerald-500');
+  });
+
   it('warns before a working sign-in runs out, while the card still reads Ready', () => {
     // The point of the warning is that nothing is broken yet: the card is Ready,
     // and this is the window in which signing in again costs nothing.
