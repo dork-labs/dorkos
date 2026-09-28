@@ -47,7 +47,12 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe('every read of what an agent may do goes through the gate reader', () => {
-  it('finds no direct read outside the allowed sites', () => {
+  // A synchronous walk + lex of every .ts file under apps/server/src is cheap
+  // on a quiet machine but can clear vitest's 5s default on a busy CI runner
+  // or under parallel suite load (DOR-2478); the explicit timeout below is
+  // generous rather than tuned to a benchmark, since a real hang here has no
+  // other way to end than eventually timing out.
+  it('finds no direct read outside the allowed sites', { timeout: 20_000 }, () => {
     const offenders: string[] = [];
     for (const file of walk(SRC)) {
       const rel = path.relative(SRC, file).split(path.sep).join('/');
