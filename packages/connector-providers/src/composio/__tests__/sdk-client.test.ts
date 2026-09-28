@@ -384,8 +384,20 @@ describe('ComposioSdkClient', () => {
     ['GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint'], 'write'],
     ['GMAIL_CREATE_EMAIL_DRAFT', ['important', 'openWorldHint', 'createHint'], 'write'],
     ['GOOGLECALENDAR_CREATE_EVENT', ['createHint'], 'write'],
-    ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'write'],
+    // Only audited apps (Gmail, Google Calendar) get a write tier; every other
+    // app's create and update actions stay one at a time.
+    ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'destructive'],
+    ['GOOGLEDRIVE_CREATE_FILE', ['createHint'], 'destructive'],
     // DorkOS keeps account-reach actions out of levels, by name for future tools too.
+    ['GOOGLEDRIVE_CREATE_PERMISSION', ['createHint'], 'destructive'],
+    ['OUTLOOK_CREATE_EMAIL_RULE', ['createHint'], 'destructive'],
+    ['GITHUB_ADD_A_REPOSITORY_COLLABORATOR', ['createHint'], 'destructive'],
+    ['GOOGLEDRIVE_WATCH_FILE', ['createHint'], 'destructive'],
+    // The same names inside an audited app, where only the pattern stops them.
+    ['GMAIL_CREATE_PERMISSION', ['createHint'], 'destructive'],
+    ['GOOGLECALENDAR_CREATE_WEBHOOK', ['createHint'], 'destructive'],
+    ['GMAIL_WATCH_INBOX', ['createHint'], 'destructive'],
+    ['GMAIL_DELEGATE_ACCESS', ['updateHint'], 'destructive'],
     ['OUTLOOK_SET_AUTO_FORWARDING', ['updateHint'], 'destructive'],
     ['GOOGLEDRIVE_CREATE_ACL_ENTRY', ['createHint'], 'destructive'],
     ['SLACK_CHANNELS_WATCH', ['createHint', 'openWorldHint'], 'destructive'],
@@ -434,9 +446,11 @@ describe('ComposioSdkClient', () => {
       'destructive',
     ],
   ])('retains %s with conservative effects for %j', async (slug, tags, classification) => {
+    // Each action is listed under its own app, as Composio names it: GMAIL_… is gmail.
+    const toolkit = slug.split('_')[0]!.toLowerCase();
     const metadata = {
       ...tool(slug, tags),
-      toolkit: { slug: 'gmail', name: 'Gmail', logo: 'https://fixture.invalid/gmail.svg' },
+      toolkit: { slug: toolkit, name: toolkit, logo: 'https://fixture.invalid/app.svg' },
     };
     const local = await fixture((_request, response) =>
       json(response, 200, {
@@ -448,7 +462,7 @@ describe('ComposioSdkClient', () => {
       })
     );
     const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
-      toolkit: 'gmail',
+      toolkit,
       toolkitVersion: TOOLKIT_VERSION,
       limit: 10,
       signal: new AbortController().signal,
@@ -456,7 +470,7 @@ describe('ComposioSdkClient', () => {
     expect(result.page.operations).toHaveLength(1);
     expect(result.page.operations[0]).toMatchObject({
       operationSlug: slug,
-      toolkit: 'gmail',
+      toolkit,
       toolkitVersion: TOOLKIT_VERSION,
       capabilityClassification: classification,
       retryPolicy: 'never',
@@ -471,31 +485,31 @@ describe('ComposioSdkClient', () => {
     const live = JSON.parse(
       readFileSync(new URL('./fixtures/live-tool-tags.json', import.meta.url), 'utf8')
     ) as Record<string, Array<{ slug: string; tags: string[] }>>;
-    const items = Object.values(live)
-      .flat()
-      .map(({ slug, tags }) => tool(slug, tags));
-    const local = await fixture((_request, response) =>
-      json(response, 200, {
-        current_page: 1,
-        total_pages: 1,
-        total_items: items.length,
-        next_cursor: null,
-        items,
-      })
-    );
-    const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
-      toolkit: 'github',
-      toolkitVersion: TOOLKIT_VERSION,
-      limit: 1_000,
-      signal: new AbortController().signal,
-    });
-    const classOf = new Map(
-      result.page.operations.map((operation) => [
-        operation.operationSlug,
-        operation.capabilityClassification,
-      ])
-    );
-    expect(classOf.size).toBe(items.length);
+    const classOf = new Map<string, string>();
+    for (const [toolkit, actions] of Object.entries(live)) {
+      const items = actions.map(({ slug, tags }) => ({
+        ...tool(slug, tags),
+        toolkit: { slug: toolkit, name: toolkit, logo: 'https://fixture.invalid/app.svg' },
+      }));
+      const local = await fixture((_request, response) =>
+        json(response, 200, {
+          current_page: 1,
+          total_pages: 1,
+          total_items: items.length,
+          next_cursor: null,
+          items,
+        })
+      );
+      const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
+        toolkit,
+        toolkitVersion: TOOLKIT_VERSION,
+        limit: 1_000,
+        signal: new AbortController().signal,
+      });
+      for (const operation of result.page.operations)
+        classOf.set(operation.operationSlug, operation.capabilityClassification);
+    }
+    expect(classOf.size).toBe(Object.values(live).flat().length);
 
     const removing = [...classOf.keys()].filter((slug) => /DELETE|REMOVE|CLEAR/.test(slug));
     expect(removing.length).toBeGreaterThan(0);
@@ -531,6 +545,8 @@ describe('ComposioSdkClient', () => {
       'GMAIL_IMPORT_MESSAGE',
       'GMAIL_INSERT_MESSAGE',
       'GMAIL_UPDATE_VACATION_SETTINGS',
+      'GMAIL_BATCH_MODIFY_MESSAGES',
+      'GOOGLECALENDAR_EVENTS_MOVE',
     ];
     for (const slug of accountReach)
       expect([slug, classOf.get(slug)]).toEqual([slug, 'destructive']);
@@ -553,7 +569,6 @@ describe('ComposioSdkClient', () => {
         .sort()
     ).toEqual([
       'GMAIL_ADD_LABEL_TO_EMAIL',
-      'GMAIL_BATCH_MODIFY_MESSAGES',
       'GMAIL_CREATE_EMAIL_DRAFT',
       'GMAIL_CREATE_LABEL',
       'GMAIL_MODIFY_THREAD_LABELS',
@@ -575,7 +590,6 @@ describe('ComposioSdkClient', () => {
       'GOOGLECALENDAR_CREATE_EVENT',
       'GOOGLECALENDAR_DUPLICATE_CALENDAR',
       'GOOGLECALENDAR_EVENTS_IMPORT',
-      'GOOGLECALENDAR_EVENTS_MOVE',
       'GOOGLECALENDAR_PATCH_CALENDAR',
       'GOOGLECALENDAR_PATCH_EVENT',
       'GOOGLECALENDAR_QUICK_ADD',
@@ -584,11 +598,13 @@ describe('ComposioSdkClient', () => {
   });
 
   it('classifies identically on this computer and in the hosted DorkOS account path', async () => {
+    const gmail = { slug: 'gmail', name: 'Gmail', logo: 'https://fixture.invalid/gmail.svg' };
     const items = [
-      tool('GITHUB_GET_AN_ISSUE', ['readOnlyHint']),
-      tool('GITHUB_CREATE_AN_ISSUE', ['important', 'openWorldHint', 'createHint']),
-      tool('GITHUB_DELETE_A_REPOSITORY', ['destructiveHint']),
-      tool('GITHUB_FUTURE', ['createHint', 'futureEffectHint']),
+      { ...tool('GMAIL_FETCH_EMAILS', ['readOnlyHint']), toolkit: gmail },
+      { ...tool('GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint']), toolkit: gmail },
+      { ...tool('GMAIL_FORWARD_MESSAGE', ['createHint']), toolkit: gmail },
+      { ...tool('GMAIL_DELETE_MESSAGE', ['destructiveHint']), toolkit: gmail },
+      { ...tool('GMAIL_FUTURE', ['createHint', 'futureEffectHint']), toolkit: gmail },
     ];
     const local = await fixture((_request, response) =>
       json(response, 200, {
@@ -607,7 +623,7 @@ describe('ComposioSdkClient', () => {
     }).operations;
     const classes = async (operations: ComposioSdkClient) => {
       const result = await operations.listOperationSchemas(INSTANCE_ID, {
-        toolkit: 'github',
+        toolkit: 'gmail',
         toolkitVersion: TOOLKIT_VERSION,
         limit: 10,
         signal: new AbortController().signal,
@@ -618,10 +634,11 @@ describe('ComposioSdkClient', () => {
       ]);
     };
     const expected = [
-      ['GITHUB_GET_AN_ISSUE', 'read'],
-      ['GITHUB_CREATE_AN_ISSUE', 'write'],
-      ['GITHUB_DELETE_A_REPOSITORY', 'destructive'],
-      ['GITHUB_FUTURE', 'destructive'],
+      ['GMAIL_FETCH_EMAILS', 'read'],
+      ['GMAIL_SEND_EMAIL', 'write'],
+      ['GMAIL_FORWARD_MESSAGE', 'destructive'],
+      ['GMAIL_DELETE_MESSAGE', 'destructive'],
+      ['GMAIL_FUTURE', 'destructive'],
     ];
     expect(await classes(client(local.baseUrl))).toEqual(expected);
     expect(await classes(hosted)).toEqual(expected);

@@ -188,12 +188,22 @@ function classifyComposioTags(tags: readonly string[]): ConnectorOperationClassi
 }
 
 /**
+ * The Composio apps whose live action tags DorkOS has audited: every action
+ * read, its class checked, and the resulting "Read and write" list pinned by a
+ * test over a fixture of those tags. Only these apps get a `write` tier; for
+ * any other app, create and update actions stay `destructive`. Adding an app
+ * means auditing its live tags, adding them to the fixture, and pinning its
+ * write list.
+ */
+const AUDITED_WRITE_TOOLKITS = new Set(['gmail', 'googlecalendar']);
+
+/**
  * Composio `write` actions DorkOS keeps out of "Read and write": ones that
  * share access, redirect or forward mail, change the sending identity, change
- * how the account delivers mail (including an automatic reply), or start a
- * subscription. They can hand data
- * or access to someone else, so they are allowed one action at a time, like a
- * delete. Exact slugs from Composio's Gmail and Google Calendar lists.
+ * how the account delivers mail (including an automatic reply), start a
+ * subscription, or act on many items at once. They can hand data or access to
+ * someone else, so they are allowed one action at a time, like a delete.
+ * Exact slugs from Composio's Gmail and Google Calendar lists.
  */
 const ACCOUNT_REACH_ACTIONS = new Set([
   'GOOGLECALENDAR_ACL_INSERT',
@@ -201,8 +211,10 @@ const ACCOUNT_REACH_ACTIONS = new Set([
   'GOOGLECALENDAR_ACL_UPDATE',
   'GOOGLECALENDAR_ACL_WATCH',
   'GOOGLECALENDAR_CALENDAR_LIST_WATCH',
+  'GOOGLECALENDAR_EVENTS_MOVE',
   'GOOGLECALENDAR_EVENTS_WATCH',
   'GOOGLECALENDAR_SETTINGS_WATCH',
+  'GMAIL_BATCH_MODIFY_MESSAGES',
   'GMAIL_CREATE_FILTER',
   'GMAIL_FORWARD_MESSAGE',
   'GMAIL_PATCH_SEND_AS',
@@ -215,29 +227,36 @@ const ACCOUNT_REACH_ACTIONS = new Set([
 ]);
 
 /**
- * The same kinds of action by name, so a tool Composio adds later is caught
- * too. A match only ever moves `write` to `destructive`, never the other way,
- * so a pattern that matches too much costs convenience, not safety.
+ * The same kinds of action by name, as defense in depth for actions added
+ * later: sharing, permissions, rules, webhooks, subscriptions, secrets and
+ * transfers. A match only ever moves `write` to `destructive`, never the other
+ * way, so a pattern that matches too much costs convenience, not safety.
  */
 const ACCOUNT_REACH_PATTERN =
-  /_ACL_|FORWARD|SEND_AS|_IMAP_|_POP_|FILTER|VACATION|AUTO_REPLY|_WATCH$/;
+  /_ACL_|FORWARD|SEND_AS|_IMAP_|_POP_|FILTER|VACATION|AUTO_REPL|WATCH|PERMISSION|SHARING|SHARE_|COLLABORAT|MEMBERSHIP|INVITAT|_RULE|WEBHOOK|_HOOK|SUBSCRI|DEPLOY_KEY|SECRET|TRANSFER|DELEGAT|VISIBILITY|MAILBOX_SETTINGS/;
 
 /**
  * Classify one Composio action: its safety hints ({@link classifyComposioTags}),
- * then DorkOS's own tightening for actions with reach beyond the account.
+ * then DorkOS's own tightening. A `write` verdict stands only for an audited
+ * app and only when the action has no reach beyond the account; otherwise the
+ * action is `destructive`.
  *
+ * @param toolkit - The app's Composio toolkit slug, e.g. `gmail`.
  * @param slug - The action's Composio slug, e.g. `GMAIL_SEND_EMAIL`.
  * @param tags - The action's `tags` exactly as Composio listed them.
  */
 function classifyComposioAction(
+  toolkit: string,
   slug: string,
   tags: readonly string[]
 ): ConnectorOperationClassification {
   const classification = classifyComposioTags(tags);
-  return classification === 'write' &&
-    (ACCOUNT_REACH_ACTIONS.has(slug) || ACCOUNT_REACH_PATTERN.test(slug))
-    ? 'destructive'
-    : classification;
+  if (classification !== 'write') return classification;
+  return AUDITED_WRITE_TOOLKITS.has(toolkit) &&
+    !ACCOUNT_REACH_ACTIONS.has(slug) &&
+    !ACCOUNT_REACH_PATTERN.test(slug)
+    ? 'write'
+    : 'destructive';
 }
 
 /** Hash the exact input schema body reviewed by the operator. */
@@ -457,7 +476,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
       }
 
       const operations = result.items.map((item) => {
-        const classification = classifyComposioAction(item.slug, item.tags);
+        const classification = classifyComposioAction(request.toolkit, item.slug, item.tags);
         if (item.toolkit.slug !== request.toolkit || item.version !== request.toolkitVersion) {
           throw new ComposioCatalogError(
             'Composio returned operation metadata for another version.'
