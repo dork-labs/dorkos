@@ -12,8 +12,11 @@
  * guard is what keeps call sites on them: it scans the client source for a raw
  * status colour and fails on any file not listed below.
  *
- * Every file still allowed a raw colour is listed with its count and the
- * reason. A colour that is not a status (diff counts, syntax highlighting, a
+ * Every file still allowed a raw colour is listed with its EXACT count and
+ * the reason: a ratchet, so a fix must lower its entry in the same change and
+ * the list can never hold room for a raw colour to creep back. Comments are
+ * stripped before counting, since a comment naming the class a fix replaced
+ * paints nothing. A colour that is not a status (diff counts, syntax highlighting, a
  * legend, a promo tint) stays raw on purpose; a tinted callout or chip that
  * needs its whole surface moved, not just its text, is tracked work.
  *
@@ -53,7 +56,7 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
     reason: `${NOT_STATUS}: diff +/- counts`,
   },
   'layers/features/chat/ui/message/OutputRenderer.tsx': {
-    count: 2,
+    count: 1,
     reason: `${NOT_STATUS}: JSON syntax highlighting`,
   },
   'layers/features/canvas/ui/CanvasJsonContent.tsx': {
@@ -73,17 +76,12 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
     reason: `${NOT_STATUS}: a featured star`,
   },
   'layers/widgets/mobile-tabs/ui/MobileTabBar.tsx': {
-    count: 2,
-    reason: `${NOT_STATUS}: a count badge on an amber fill, tuned for that fill (one hit is its comment)`,
+    count: 1,
+    reason: `${NOT_STATUS}: a count badge on an amber fill, tuned for that fill`,
   },
   'layers/entities/activity/model/activity-types.ts': {
     count: 1,
     reason: `${NOT_STATUS}: an activity category colour`,
-  },
-  'layers/shared/ui/status-dot.ts': { count: 4, reason: 'comments naming the classes it replaced' },
-  'layers/features/relay/lib/status-colors.ts': {
-    count: 2,
-    reason: 'a comment naming the classes it replaced',
   },
   'layers/features/settings/ui/ServerTab.tsx': { count: 14, reason: TINTED_SURFACE },
   'layers/features/settings/ui/external-mcp/DuplicateToolWarning.tsx': {
@@ -122,15 +120,6 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
     count: 6,
     reason: 'a warning summary that darkens on hover: no hover token yet, tracked separately',
   },
-  'layers/features/status/ui/UsageStatusItem.tsx': {
-    count: 4,
-    reason:
-      'the usage number and its inverted-tooltip detail: moved to tokens by a separate change',
-  },
-  'layers/features/settings/ui/runtimes/RuntimeCardHeader.tsx': {
-    count: 1,
-    reason: 'the "ready" label: moved to a token by a separate change',
-  },
 };
 
 /** Every non-test, non-playground source file under `src/`. */
@@ -148,14 +137,53 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
-/** How many raw status colours each file holds, keyed by its path under `src/`. */
+/**
+ * Source with its comments removed, so a comment naming a class is not a use.
+ *
+ * A `//` right after a `:` or a quote is left alone: that is a URL, not a comment.
+ */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+}
+
+/** How many raw status colours each file paints, keyed by its path under `src/`. */
 function rawHits(): Record<string, number> {
   const hits: Record<string, number> = {};
   for (const path of sourceFiles(SRC)) {
-    const count = readFileSync(path, 'utf8').match(RAW_STATUS_COLOUR)?.length ?? 0;
+    const code = stripComments(readFileSync(path, 'utf8'));
+    const count = code.match(RAW_STATUS_COLOUR)?.length ?? 0;
     if (count > 0) hits[relative(SRC, path)] = count;
   }
   return hits;
+}
+
+/**
+ * Every way the counts and the list disagree, as a sentence saying what to do.
+ *
+ * @param hits - Raw colours per file, from {@link rawHits}.
+ * @param allowed - The list, file to count.
+ */
+function ratchetProblems(
+  hits: Record<string, number>,
+  allowed: Record<string, { count: number }>
+): string[] {
+  const problems: string[] = [];
+  for (const [file, count] of Object.entries(hits)) {
+    const ceiling = allowed[file]?.count ?? 0;
+    if (count > ceiling)
+      problems.push(`${file} paints ${count} raw status colours (allowed ${ceiling})`);
+  }
+  for (const [file, { count }] of Object.entries(allowed)) {
+    const actual = hits[file] ?? 0;
+    if (actual < count) {
+      problems.push(
+        actual === 0
+          ? `remove the entry for ${file}: it paints no raw status colour now`
+          : `lower the ceiling for ${file} to ${actual}`
+      );
+    }
+  }
+  return problems;
 }
 
 describe('raw status colours', () => {
@@ -175,12 +203,25 @@ describe('raw status colours', () => {
     expect(src).toContain('text-status-warning-fg');
   });
 
-  it('no file uses more raw status colours than the list allows it', () => {
-    // A ceiling, not an exact count: a later fix that lowers a count passes on
-    // its own, and the entry is removed in that change.
-    const over = Object.entries(rawHits())
-      .filter(([file, count]) => count > (ALLOWED[file]?.count ?? 0))
-      .map(([file, count]) => `${file}: ${count} (allowed ${ALLOWED[file]?.count ?? 0})`);
-    expect(over).toEqual([]);
+  it('comments do not count, and a URL is not mistaken for one', () => {
+    expect(stripComments('// text-amber-500\n/* text-red-500 */ x')).not.toMatch(RAW_STATUS_COLOUR);
+    expect(stripComments("'https://x' text-red-500")).toMatch(RAW_STATUS_COLOUR);
+  });
+
+  it('the ratchet fails on an inflated entry, an unlisted file and a stale one', () => {
+    expect(ratchetProblems({ 'a.tsx': 2 }, { 'a.tsx': { count: 3 } })).toEqual([
+      'lower the ceiling for a.tsx to 2',
+    ]);
+    expect(ratchetProblems({}, { 'a.tsx': { count: 1 } })).toEqual([
+      'remove the entry for a.tsx: it paints no raw status colour now',
+    ]);
+    expect(ratchetProblems({ 'b.tsx': 1 }, {})).toEqual([
+      'b.tsx paints 1 raw status colours (allowed 0)',
+    ]);
+    expect(ratchetProblems({ 'a.tsx': 2 }, { 'a.tsx': { count: 2 } })).toEqual([]);
+  });
+
+  it('every file paints exactly the raw status colours the list allows it', () => {
+    expect(ratchetProblems(rawHits(), ALLOWED)).toEqual([]);
   });
 });
