@@ -112,7 +112,7 @@ const ROWS: { label: string; session: Session }[] = [
     session: sessionOn(2, 'account-mark-ok', 'DOR-2353 memory stamps', null),
   },
   {
-    label: 'Out, handing off (plan auto): red tint',
+    label: 'Out, handing off (plan auto): red tint, “out · handing off”',
     session: sessionOn(
       4,
       'account-mark-handing-off',
@@ -125,7 +125,7 @@ const ROWS: { label: string; session: Session }[] = [
     ),
   },
   {
-    label: 'Out, waiting for the person (plan ask): red tint',
+    label: 'Out, waiting for the person to choose (plan ask): red tint, “out · needs you”',
     session: sessionOn(
       4,
       'account-mark-limited',
@@ -134,7 +134,7 @@ const ROWS: { label: string; session: Session }[] = [
     ),
   },
   {
-    label: 'Chose to wait for the reset: no tint (Q13)',
+    label: 'Chose to wait for the reset: no tint, “out · waiting for reset” (Q13)',
     session: sessionOn(
       3,
       'account-mark-waiting',

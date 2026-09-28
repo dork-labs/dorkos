@@ -14,12 +14,22 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { Session, ServerConfig } from '@dorkos/shared/types';
 import type { SessionLimit } from '@dorkos/shared/session-stream';
-import { createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import {
+  createMockAccountUsage,
+  createMockSessionLimit,
+  createMockTransport,
+} from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { formatRelativeTime } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { TransportProvider, useAppStore, useClaudeAccounts } from '@/layers/shared/model';
+import {
+  TransportProvider,
+  seedAccountUsage,
+  useAppStore,
+  useClaudeAccounts,
+} from '@/layers/shared/model';
 import { SessionRow } from '../ui/SessionRow';
 import { useSessionChatStore } from '../model/stream/session-chat-store';
 import { useSessionListStore } from '../model/stream/session-list-store';
@@ -92,7 +102,7 @@ function ReadsProbe() {
 
 function renderRow(
   session: Session,
-  { accounts = 2, variant = 'full' as 'full' | 'compact' } = {}
+  { accounts = 2, variant = 'full' as 'full' | 'compact', usage = [] as AccountUsage[] } = {}
 ) {
   const base = createMockTransport();
   const config = {
@@ -107,6 +117,8 @@ function renderRow(
     getCapabilities: base.getCapabilities,
   });
   const queryClient = createTestQueryClient();
+  // What the session list's envelope seeds.
+  seedAccountUsage(queryClient, usage);
   const view = render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
@@ -128,13 +140,10 @@ function rowControl() {
   return screen.getByRole('button', { name: /Memory stamps/ });
 }
 
-const ACCOUNT_WAITING_STATES = [
-  'limited',
-  'wait-only',
-  'all-accounts-out',
-  'waiting-reset',
-  'reset-ready',
-] as const;
+/** Account-wide states that wait on the person: red, "out · needs you". */
+const NEEDS_YOU_STATES = ['limited', 'wait-only', 'all-accounts-out'] as const;
+/** States after the person chose to wait: neutral, "out · waiting for reset". */
+const CHOSE_TO_WAIT_STATES = ['waiting-reset', 'reset-ready'] as const;
 
 describe('session row account dot', () => {
   beforeEach(() => {
@@ -218,22 +227,27 @@ describe('session row out of usage', () => {
     }
   );
 
-  it.each(ACCOUNT_WAITING_STATES)(
-    'says "out · waiting for reset" for an account-wide `%s` limit',
+  it.each(NEEDS_YOU_STATES)(
+    'says "out · needs you", tinted red, for an account-wide `%s` limit',
     async (state) => {
       renderRow(limitedSession(createMockSessionLimit('ask', { scope: 'account', state })));
-      expect(await screen.findByText('out · waiting for reset')).toBeInTheDocument();
-      expect(rowControl()).toHaveAccessibleName(expect.stringContaining('out · waiting for reset'));
+      expect(await screen.findByText('out · needs you')).toBeInTheDocument();
+      expect(rowControl()).toHaveAccessibleName(expect.stringContaining('out · needs you'));
       // The border's tooltip and spoken state.
       expect(rowControl()).toHaveAccessibleName(expect.stringContaining('Out of usage'));
+      expect(screen.getByTestId('session-row')).toHaveAttribute('data-limit', 'action');
     }
   );
 
-  it('tints red only while the account needs action, and not once the person chose to wait (Q13)', async () => {
-    renderRow(limitedSession(createMockSessionLimit('waiting')));
-    expect(await screen.findByText('out · waiting for reset')).toBeInTheDocument();
-    expect(screen.getByTestId('session-row')).toHaveAttribute('data-limit', 'waiting');
-  });
+  it.each(CHOSE_TO_WAIT_STATES)(
+    'says "out · waiting for reset", untinted, once the person chose to wait (`%s`, Q13)',
+    async (state) => {
+      renderRow(limitedSession(createMockSessionLimit('waiting', { scope: 'account', state })));
+      expect(await screen.findByText('out · waiting for reset')).toBeInTheDocument();
+      expect(rowControl()).toHaveAccessibleName(expect.stringContaining('out · waiting for reset'));
+      expect(screen.getByTestId('session-row')).toHaveAttribute('data-limit', 'waiting');
+    }
+  );
 
   it.each([
     ['model-limited', createMockSessionLimit('ask', { scope: 'model', state: 'model-limited' })],
@@ -278,8 +292,45 @@ describe('session row out of usage', () => {
     } as never);
     renderRow(session);
     expect(await screen.findByText('out · handing off')).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId('session-row')).queryByText('out · waiting for reset')
-    ).toBeNull();
+    expect(within(screen.getByTestId('session-row')).queryByText('out · needs you')).toBeNull();
+  });
+});
+
+describe('session row naming the standalone default (decision §12)', () => {
+  beforeEach(() => {
+    useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
+    useSessionStreamStore.setState({ sessions: {} });
+    useAppStore.setState({ selectedCwd: null });
+  });
+  afterEach(cleanup);
+
+  const MAIN = "Main (this computer's sign-in)";
+  const mainUsage = createMockAccountUsage({
+    accountId: 'default',
+    path: '/Users/dev/.claude',
+    label: MAIN,
+    color: '#2f7be0',
+  });
+
+  it.each(['full', 'compact'] as const)(
+    'names this computer’s own sign-in by the host’s label, never ".claude", on a %s row',
+    async (variant) => {
+      renderRow(makeSession({ accountId: 'default', account: '/Users/dev/.claude' }), {
+        variant,
+        usage: [mainUsage],
+      });
+      const dot = await screen.findByRole('img', { name: MAIN });
+      expect(screen.queryByRole('img', { name: '.claude' })).toBeNull();
+      await userEvent.hover(dot);
+      const tooltips = await screen.findAllByRole('tooltip');
+      expect(tooltips.some((tip) => tip.textContent === MAIN)).toBe(true);
+      expect(rowControl()).toHaveAccessibleName(expect.stringContaining(MAIN));
+    }
+  );
+
+  it('keeps a registered account’s own label', async () => {
+    renderRow(makeSession(), { usage: [mainUsage] });
+    expect(await screen.findByRole('img', { name: 'Acct 2' })).toBeInTheDocument();
   });
 });

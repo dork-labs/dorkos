@@ -228,3 +228,12 @@ Four small calls on the "Continue on another account" picker (task 3.2), each in
 4. **The "Other runtimes" heading** is the same small, uppercase, muted group caption the Flow tab and Settings use, not a style of its own.
 
 Spec: §6.6, §11.
+
+## 15. Out-of-usage sidebar rows and the account name (orchestrator, 2026-09-28)
+
+- **Rows follow Q13, like the banner.** A row is red (soft tint, red text, red border) only while its account is out and the session needs the person: `limited`, `wait-only`, `all-accounts-out` and `handing-off`. Once the person chose to wait (`waiting-reset`, `reset-ready`) the row is neutral grey. A moved session and a limit on one model show nothing (Q14).
+- **The words change with the color**, so color is never the only signal: "out · handing off" while the work is about to move by itself, "out · needs you" while it waits for the person to choose, and "out · waiting for reset" after they chose to wait.
+- **The row's hover covers the tint.** The house hover background is kept. While the pointer is on a row, its text and its border still say what happened.
+- **One name for Main everywhere.** Every surface that names a Claude account uses the one shared naming helper, so this computer's own sign-in reads "Main (this computer's sign-in)" (§12) on the chip and its popover, the sidebar dot, the header badge, the pre-launch picker, the session details and Settings. Places that show a folder as a folder, such as the path line and "Found on this computer", keep the folder.
+
+Spec: §6.2, §11, §12.

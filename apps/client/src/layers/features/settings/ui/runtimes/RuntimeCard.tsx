@@ -40,9 +40,9 @@ import type {
   RuntimeReadiness as RuntimeConnectState,
 } from '@dorkos/shared/agent-runtime';
 import { runtimeAuthConnectKind, runtimeDisplayName } from '@dorkos/shared/agent-runtime';
-import { claudeAccountName, cn } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import { LEDGER_RUNTIMES } from '@dorkos/shared/account-usage';
-import { useAccountUsage, useTransport } from '@/layers/shared/model';
+import { useAccountUsage, useClaudeAccounts, useTransport } from '@/layers/shared/model';
 import { Badge, Button, InlineCode, Spinner } from '@/layers/shared/ui';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
@@ -163,6 +163,7 @@ export function RuntimeCard({
   onMakeDefault,
 }: RuntimeCardProps) {
   const { data: config } = useConfig();
+  const { nameFor: accountName } = useClaudeAccounts();
   // Fresh account usage while this tab is open, for the card's usage rows
   // (spec `claude-account-ui` §6.5). Only a runtime that keeps a usage ledger
   // has a route to ask; the rest read nothing.
@@ -278,7 +279,7 @@ export function RuntimeCard({
         ? // The inherited default is not a billing choice anybody made, so the
           // line stays quiet rather than naming a folder as if it were one.
           null
-        : claudeAccountName(claudeCode.resolvedAccount, claudeCode.accounts ?? []),
+        : accountName(claudeCode.resolvedAccount),
     'opencode-power-source': requirementsEntry?.provider
       ? describePowerSource(requirementsEntry.provider)
       : null,

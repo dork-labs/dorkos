@@ -12,9 +12,20 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import type { Session, ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockSession, createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import {
+  createMockAccountUsage,
+  createMockSession,
+  createMockSessionLimit,
+  createMockTransport,
+} from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
-import { TransportProvider, configKeys, useAppStore } from '@/layers/shared/model';
+import {
+  TransportProvider,
+  configKeys,
+  seedAccountUsage,
+  useAppStore,
+} from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 
 // The session list: stubbed, because the real one needs a router.
@@ -67,8 +78,9 @@ function transportWith(count: number): Transport {
   return createMockTransport({ getConfig: vi.fn().mockResolvedValue(config) });
 }
 
-function renderBadge(transport: Transport): QueryClient {
+function renderBadge(transport: Transport, usage: AccountUsage[] = []): QueryClient {
   const queryClient = createTestQueryClient();
+  seedAccountUsage(queryClient, usage);
   render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
@@ -162,5 +174,22 @@ describe('AccountBadge', () => {
     const queryClient = renderBadge(transportWith(2));
     await settled(queryClient);
     expect(screen.getByTestId('header')).toBeEmptyDOMElement();
+  });
+
+  it('names this computer’s own sign-in by the host’s label, never ".claude"', async () => {
+    const MAIN = "Main (this computer's sign-in)";
+    mockSessions = [
+      createMockSession({
+        id: SID,
+        runtime: 'claude-code',
+        accountId: 'default',
+        account: '/Users/test/.claude',
+      }),
+    ];
+    renderBadge(transportWith(2), [
+      createMockAccountUsage({ accountId: 'default', path: '/Users/test/.claude', label: MAIN }),
+    ]);
+    expect(await screen.findByText(MAIN)).toBeInTheDocument();
+    expect(screen.queryByText('.claude')).toBeNull();
   });
 });

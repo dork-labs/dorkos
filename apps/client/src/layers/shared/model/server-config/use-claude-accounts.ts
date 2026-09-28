@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { claudeAccountName, type ClaudeAccountRef } from '../../lib/claude-accounts';
 import { useTransport } from '../TransportContext';
+import { useAccountUsage } from './use-account-usage';
 import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
 
 /** A registered account with the color its dot and badge are drawn in. */
@@ -36,7 +37,12 @@ export interface ClaudeAccountsView {
    * fact that never varies.
    */
   isMultiAccount: boolean;
-  /** The shortest honest name for an account path (label, else folder name). */
+  /**
+   * The shortest honest name for an account path: a registered account's label,
+   * the host's label for the standalone default ("Main (this computer's
+   * sign-in)"), else the folder name. Every surface that names a Claude account
+   * by its path reads this, so the default reads the same everywhere.
+   */
   nameFor: (path: string) => string;
   /**
    * The color the operator STORED for the standalone default account
@@ -79,6 +85,14 @@ export function useClaudeAccounts(): ClaudeAccountsView {
 
   const claudeCode = data?.claudeCode;
   const accounts: ClaudeAccountEntry[] = claudeCode?.accounts ?? [];
+  // The standalone default's reading carries the host's label for it
+  // (decision §12). Read from the cache the session list and Settings seed;
+  // this never fetches.
+  const defaultReading = useAccountUsage('claude-code').byId.get(IMPLICIT_ACCOUNT_ID);
+  const standaloneDefault =
+    defaultReading && !accounts.some((account) => account.path === defaultReading.path)
+      ? { path: defaultReading.path, label: defaultReading.label }
+      : null;
 
   return {
     accounts,
@@ -87,7 +101,7 @@ export function useClaudeAccounts(): ClaudeAccountsView {
     isMultiAccount: accounts.length > 1,
     defaultAccountColor: claudeCode?.defaultAccountColor ?? null,
     defaultAccountResolvedColor: claudeCode?.defaultAccountResolvedColor ?? null,
-    nameFor: (path: string) => claudeAccountName(path, accounts),
+    nameFor: (path: string) => claudeAccountName(path, accounts, standaloneDefault),
     colorFor: (pathOrId: string) => {
       const registered =
         accounts.find((account) => account.id === pathOrId) ??

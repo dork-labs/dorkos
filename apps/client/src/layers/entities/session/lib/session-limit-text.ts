@@ -14,7 +14,7 @@ import {
 
 /** What a limited row shows: its trailing text, and whether it wears the red tint. */
 export interface SessionLimitDisplay {
-  /** `out · handing off` or `out · waiting for reset`. */
+  /** `out · handing off`, `out · needs you` or `out · waiting for reset`. */
   text: string;
   /**
    * True while the account is out and the session needs action (red tint and
@@ -41,17 +41,20 @@ export function sessionLimitDisplay(
   if (!limit || limitScopeOf(limit) === 'model') return null;
   const state = limitStateOf(limit);
   if (state === 'moved') return null;
-  return {
-    text: state === 'handing-off' ? 'out · handing off' : 'out · waiting for reset',
-    needsAction: !WAITING_STATES.has(state),
-  };
+  if (state === 'handing-off') return { text: 'out · handing off', needsAction: true };
+  // The words differ wherever the tint does, so color is never the only
+  // signal: the red rows need the person, the neutral ones are waiting.
+  if (WAITING_STATES.has(state)) return { text: 'out · waiting for reset', needsAction: false };
+  return { text: 'out · needs you', needsAction: true };
 }
 
 /**
  * The words a sidebar row shows in place of its time for a session that ran
  * out: `out · handing off` while the work is about to move on its own, `out ·
- * waiting for reset` in every other account-wide limited state, and `null`
- * when the row shows nothing (see {@link sessionLimitDisplay}).
+ * waiting for reset` once the person chose to wait (`waiting-reset`,
+ * `reset-ready`), `out · needs you` in every other account-wide limited state
+ * (`limited`, `wait-only`, `all-accounts-out`), and `null` when the row shows
+ * nothing (see {@link sessionLimitDisplay}).
  *
  * @param limit - The session's usage limit, or nothing when it has none.
  */

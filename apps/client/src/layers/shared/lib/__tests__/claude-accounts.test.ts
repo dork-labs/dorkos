@@ -500,9 +500,9 @@ describe('accountIdentity', () => {
   });
 
   it('takes the usage reading’s folder and color for an account nothing else knows', () => {
-    const usage = { path: '/u/.claude-9', label: 'Main', color: '#78716c' };
+    const usage = { accountId: null, path: '/u/.claude-9', label: null, color: '#78716c' };
     expect(
-      accountIdentity({ accountId: 'default', path: null, accounts, usage, nameFor, colorFor })
+      accountIdentity({ accountId: null, path: null, accounts, usage, nameFor, colorFor })
     ).toEqual({ path: '/u/.claude-9', name: '.claude-9', color: '#78716c' });
   });
 
@@ -510,5 +510,44 @@ describe('accountIdentity', () => {
     expect(
       accountIdentity({ accountId: null, path: null, accounts, usage: null, nameFor, colorFor })
     ).toEqual({ path: null, name: null, color: null });
+  });
+
+  it('names the standalone default by the host’s label, never its folder (decision §12)', () => {
+    const usage = {
+      accountId: 'default',
+      path: '/u/.claude',
+      label: "Main (this computer's sign-in)",
+      color: '#2f7be0',
+    };
+    // By id, with the folder known too.
+    expect(
+      accountIdentity({
+        accountId: 'default',
+        path: '/u/.claude',
+        accounts,
+        usage,
+        nameFor,
+        colorFor,
+      }).name
+    ).toBe("Main (this computer's sign-in)");
+    // By the reading alone, for a session the server named only by its folder.
+    expect(
+      accountIdentity({ accountId: null, path: '/u/.claude', accounts, usage, nameFor, colorFor })
+        .name
+    ).toBe("Main (this computer's sign-in)");
+  });
+
+  it('keeps a registered row’s own label even when it aliases the default folder', () => {
+    const usage = { accountId: 'acct-1', path: '/u/.claude-1', label: 'Acct 1', color: '#2f7be0' };
+    expect(
+      accountIdentity({
+        accountId: 'acct-1',
+        path: '/u/.claude-1',
+        accounts,
+        usage,
+        nameFor,
+        colorFor,
+      }).name
+    ).toBe('Acct 1');
   });
 });

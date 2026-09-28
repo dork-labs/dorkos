@@ -147,6 +147,7 @@ export const SIDEBAR_MODEL_SECTIONS: PlaygroundSection[] = [
       'limit',
       'handing off',
       'waiting for reset',
+      'needs you',
       'moved',
     ],
   },

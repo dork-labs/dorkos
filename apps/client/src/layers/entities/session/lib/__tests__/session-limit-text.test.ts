@@ -7,10 +7,19 @@ describe('sessionLimitText', () => {
     expect(sessionLimitText(createMockSessionLimit('auto'))).toBe('out · handing off');
   });
 
-  it.each(['limited', 'wait-only', 'all-accounts-out', 'waiting-reset', 'reset-ready'] as const)(
-    'says "out · waiting for reset" for an account-wide `%s` limit',
+  it.each(['limited', 'wait-only', 'all-accounts-out', 'model-limited'] as const)(
+    'says "out · needs you" for an account-wide `%s` limit that waits on the person',
     (state) => {
       expect(sessionLimitText(createMockSessionLimit('ask', { scope: 'account', state }))).toBe(
+        'out · needs you'
+      );
+    }
+  );
+
+  it.each(['waiting-reset', 'reset-ready'] as const)(
+    'says "out · waiting for reset" once the person chose to wait (`%s`)',
+    (state) => {
+      expect(sessionLimitText(createMockSessionLimit('waiting', { scope: 'account', state }))).toBe(
         'out · waiting for reset'
       );
     }
