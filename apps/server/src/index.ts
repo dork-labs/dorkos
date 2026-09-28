@@ -3463,7 +3463,6 @@ async function start() {
       runtimePrincipals: connectorRuntimePrincipals,
       authority: requestAuthority,
       bootEpoch: connectorBootEpoch,
-      managedAuthority: managedConnectorAuthority,
       eventGrants: connectorEventGrants,
       authentication: connectorAuthenticationFlows,
       resume: {

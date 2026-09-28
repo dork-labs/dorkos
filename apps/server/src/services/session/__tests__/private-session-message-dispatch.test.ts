@@ -63,7 +63,7 @@ function seedRequest(db: Db, suffix: string, originRuntime = 'claude-code'): Age
       agentId: 'agent-1',
       sessionId: SESSION_ID,
       serviceSlug: 'gmail',
-      requestedOperationsJson: '["gmail.read"]',
+      requestedAccess: 'read',
       requestedEventsJson: '[]',
       reason: 'Read new mail',
       resumeState: 'ready',

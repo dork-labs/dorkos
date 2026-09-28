@@ -64,7 +64,14 @@ export const connectorAgentRequests = sqliteTable(
     agentId: text('agent_id').notNull(),
     sessionId: text('session_id').notNull(),
     serviceSlug: text('service_slug').notNull(),
-    requestedOperationsJson: text('requested_operations_json').notNull(),
+    /**
+     * The level the agent asked for: everything the app lets agents read, or
+     * that plus everything that changes something there. Agents ask by level,
+     * never by action name, so a request and its answer compare by class.
+     */
+    requestedAccess: text('requested_access', { enum: ['read', 'read-write'] })
+      .notNull()
+      .default('read'),
     requestedEventsJson: text('requested_events_json').notNull(),
     reason: text('reason').notNull(),
     resumeState: text('resume_state', {

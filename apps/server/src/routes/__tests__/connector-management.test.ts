@@ -157,7 +157,7 @@ describe('connector management routes', () => {
     expect(agentRequests.resolve).toHaveBeenCalledWith(
       OWNER,
       'request-a',
-      { decision: 'current_access', connectionId: 'connection-a' },
+      { decision: 'current_access', connectionId: 'connection-a', eventScopes: [] },
       expect.any(AbortSignal)
     );
 

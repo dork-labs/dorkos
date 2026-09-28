@@ -21,11 +21,11 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 
 const REQUEST = {
   requestId: 'request-1',
-  reviewUrl: '/connections?request=request-1',
   serviceSlug: 'gmail',
   reason: 'Summarise today’s inbox',
-  requestedOperations: ['gmail.list-messages'],
+  access: 'read',
   requestedEvents: [],
+  note: 'The person hasn’t answered yet.',
   createdAt: '2026-09-26T10:00:00.000Z',
   expiresAt: '2099-09-26T12:00:00.000Z',
   status: 'awaiting_owner',

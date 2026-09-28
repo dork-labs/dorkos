@@ -34,3 +34,15 @@ export function isConnectorRuntimeCapabilityId(
 ): capabilityId is ConnectorRuntimeCapabilityId {
   return CONNECTOR_RUNTIME_CAPABILITY_IDS.some((candidate) => candidate === capabilityId);
 }
+
+/**
+ * How long one `connectors.request_connection` call holds open waiting for the
+ * person's answer before it returns the still-open request. Every runtime's
+ * ceiling for one call on the connection tools is derived from this
+ * (`CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS` in `runtimes/connector-tools.ts`), so a
+ * held call never times out on the agent's side before the person could
+ * answer. Past the hold nothing is lost: the answer reaches the agent's chat as
+ * a follow-up when the person gives it. It lives here, beside the tool list,
+ * because this module has no dependencies and every runtime can import it.
+ */
+export const CONNECTOR_REQUEST_LIVE_HOLD_MS = 10 * 60_000;

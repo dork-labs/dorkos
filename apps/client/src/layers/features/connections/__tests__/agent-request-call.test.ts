@@ -10,11 +10,11 @@ import {
 function request(overrides: Partial<ConnectorAgentRequestItem>): ConnectorAgentRequestItem {
   return {
     requestId: 'request-1',
-    reviewUrl: '/connections?request=request-1',
     serviceSlug: 'gmail',
     reason: 'Summarise today’s inbox',
-    requestedOperations: ['GMAIL_FETCH_EMAILS'],
+    access: 'read',
     requestedEvents: [],
+    note: 'The person hasn’t answered yet.',
     createdAt: '2026-09-26T10:00:00.000Z',
     expiresAt: '2026-09-26T12:00:00.000Z',
     status: 'awaiting_owner',
@@ -28,7 +28,7 @@ const INPUT = JSON.stringify({
   version: 1,
   serviceSlug: 'gmail',
   reason: 'Summarise today’s inbox',
-  requestedOperations: ['GMAIL_FETCH_EMAILS'],
+  access: 'read',
 });
 
 describe('isConnectionRequestTool', () => {
@@ -48,7 +48,6 @@ describe('reading a call', () => {
     expect(connectionRequestIntent(INPUT)).toEqual({
       serviceSlug: 'gmail',
       reason: 'Summarise today’s inbox',
-      requestedOperations: ['GMAIL_FETCH_EMAILS'],
     });
     expect(connectionRequestIntent('{"serviceSlug":"gmail"}')).toBeUndefined();
     expect(connectionRequestIntent('not json')).toBeUndefined();
@@ -71,7 +70,7 @@ describe('reading a call', () => {
 describe('findCallRequest', () => {
   const older = request({ requestId: 'older', createdAt: '2026-09-26T09:00:00.000Z' });
   const newer = request({ requestId: 'newer', createdAt: '2026-09-26T11:00:00.000Z' });
-  const other = request({ requestId: 'other', reason: 'Something else' });
+  const other = request({ requestId: 'other', serviceSlug: 'slack' });
 
   it('trusts the returned id over the intent', () => {
     expect(
@@ -80,11 +79,23 @@ describe('findCallRequest', () => {
     ).toBe('older');
   });
 
-  it('matches a held call by intent, newest first, and ignores other intents', () => {
+  it('matches a held call by its app, newest first, and ignores other apps', () => {
     expect(
       findCallRequest([older, other, newer], { input: INPUT, result: undefined })?.requestId
     ).toBe('newer');
     expect(findCallRequest([other], { input: INPUT, result: undefined })).toBeUndefined();
+  });
+
+  it('matches a reworded or raised ask to the one open request it reused', () => {
+    const reworded = JSON.stringify({
+      version: 1,
+      serviceSlug: 'gmail',
+      reason: 'Check for anything from the bank',
+      access: 'read-write',
+    });
+    expect(findCallRequest([newer], { input: reworded, result: undefined })?.requestId).toBe(
+      'newer'
+    );
   });
 
   it('finds nothing for a call whose result names no request', () => {

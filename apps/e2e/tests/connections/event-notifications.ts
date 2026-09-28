@@ -278,16 +278,16 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       const grantRequestTrigger = page.getByTestId(`needs-you-request-${grantRequest.requestId}`);
       await grantRequestTrigger.click();
 
-      const dialog = page.getByRole('dialog', { name: 'Review agent access' });
+      // The page answers with the chat's own card (DOR-2503): the level the
+      // agent asked for, then the updates it asked to hear about.
+      const dialog = page.getByTestId('agent-request-dialog');
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByRole('combobox', { name: 'Account', exact: true })).toContainText(
-        'agent work'
-      );
+      await allowOnAccount(dialog, 'agent work');
       const notificationChoices = dialog.getByTestId('agent-request-event-scopes');
       await choose(page, notificationChoices, 'Account activity', 'New message');
-      await expect(dialog.getByRole('button', { name: 'Grant access' })).toBeEnabled();
+      await expect(dialog.getByRole('button', { name: 'Send updates' })).toBeEnabled();
       await attachAgentRequestProof(page, dialog, testInfo);
-      await dialog.getByRole('button', { name: 'Grant access' }).click();
+      await dialog.getByRole('button', { name: 'Send updates' }).click();
 
       const grantedWire = await grantedCall;
       expect(grantedWire.ok(), await grantedWire.text()).toBe(true);
@@ -315,8 +315,8 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
           data: { messages: [{ subject: `Offline Gmail account ${expectedAccountOrdinal}` }] },
         },
       });
-      await expect(dialog.getByTestId('agent-request-outcome')).toContainText('Granted');
-      await dialog.getByRole('button', { name: 'Close', exact: true }).last().click();
+      await expect(dialog.getByTestId('agent-request-receipt')).toContainText('Allowed');
+      await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       // The decided request left the "Needs you" strip, so focus lands on the page heading.
       await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeFocused();
@@ -336,7 +336,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.getByTestId(`needs-you-request-${denyRequest.requestId}`).click();
       await expect(dialog).toBeVisible();
-      await dialog.getByRole('button', { name: 'Deny' }).click();
+      await dialog.getByRole('button', { name: 'Not now' }).click();
 
       const deniedWire = await deniedCall;
       expect(deniedWire.ok(), await deniedWire.text()).toBe(true);
@@ -419,7 +419,8 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       const pending = await waitForPendingAgentRequest(request, harness.apiUrl, agent.agentId);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.getByTestId(`needs-you-request-${pending.requestId}`).click();
-      const dialog = page.getByRole('dialog', { name: 'Review agent access' });
+      const dialog = page.getByTestId('agent-request-dialog');
+      await allowOnAccount(dialog, 'defaults proof');
       const scopes = dialog.getByTestId('agent-request-event-scopes');
       await choose(page, scopes, 'Account activity', 'New Gmail message');
       await expect(scopes.getByRole('textbox', { name: 'Query' })).toHaveValue('');
@@ -431,8 +432,9 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
           candidate.method() === 'POST' &&
           candidate.url().includes(`/agent-requests/${pending.requestId}/`)
       );
-      await dialog.getByRole('button', { name: 'Grant access' }).click();
+      await dialog.getByRole('button', { name: 'Send updates' }).click();
       expect((await decision).postDataJSON()).toMatchObject({
+        decision: 'current_access',
         eventScopes: [
           {
             connectionId,
@@ -523,7 +525,7 @@ function startAgentRequest(
         version: 1,
         serviceSlug: 'gmail',
         reason: input.reason,
-        requestedOperations: ['GMAIL_FETCH_EMAILS'],
+        access: 'read',
         requestedEvents: [input.eventType ?? 'GMAIL_NEW_MESSAGE'],
       },
     },
@@ -800,9 +802,26 @@ async function attachNotificationProof(
   await page.emulateMedia({ colorScheme: 'light' });
 }
 
+/**
+ * Allow the agent on one named account from the request card: pick the account
+ * when there is more than one Gmail account to choose from, then Allow at the
+ * level the agent asked for.
+ */
+async function allowOnAccount(dialog: Locator, label: string): Promise<void> {
+  const which = dialog.getByRole('heading', { name: 'Which Gmail account?' });
+  const allow = dialog.getByRole('button', { name: 'Allow' });
+  await expect(which.or(allow)).toBeVisible();
+  if (await which.isVisible()) {
+    await dialog.getByRole('radio', { name: new RegExp(label) }).check();
+    await dialog.getByRole('button', { name: 'Continue' }).click();
+  }
+  await expect(dialog.getByTestId('connection-access-card')).toContainText(label);
+  await allow.click();
+}
+
 async function attachAgentRequestProof(
   page: Page,
-  dialog: ReturnType<Page['getByRole']>,
+  dialog: Locator,
   testInfo: TestInfo
 ): Promise<void> {
   await testInfo.attach('agent-request-event-scope.png', {
@@ -850,7 +869,7 @@ async function attachAgentRequestProof(
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.emulateMedia({ colorScheme: 'light' });
-  await focusWithKeyboard(page, dialog.getByRole('button', { name: 'Grant access' }));
+  await focusWithKeyboard(page, dialog.getByRole('button', { name: 'Send updates' }));
 }
 
 async function expectSurfaceWithinViewport(page: Page, surface: Locator): Promise<void> {

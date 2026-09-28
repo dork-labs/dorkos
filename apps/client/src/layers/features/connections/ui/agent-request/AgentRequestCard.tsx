@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowUpRight, Check } from 'lucide-react';
-import { Link } from '@tanstack/react-router';
+import { Check } from 'lucide-react';
+import type { ConnectorReceiveScope } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectionId, ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorCatalog,
@@ -15,6 +15,7 @@ import { cn } from '@/layers/shared/lib';
 import { offerableAccounts } from '../../lib/readiness';
 import { AccessCardFrame } from '../access/AccessCardFrame';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
+import { AgentRequestEventScopes } from '../AgentRequestEventScopes';
 import { AccountAttentionStep } from './AccountAttentionStep';
 import { RequestConnectStep } from './RequestConnectStep';
 import { RequestReceipt } from './RequestReceipt';
@@ -23,6 +24,11 @@ import { RequestReceipt } from './RequestReceipt';
 export interface AgentRequestCardProps {
   /** One agent's request for an app, as the owner reads it. */
   request: ConnectorAgentRequestItem;
+  /**
+   * Open the exact per-action editor for an account, where the page has one.
+   * A chat has nowhere to open it, so the card then says where to go instead.
+   */
+  onEditExactActions?: (connectionId: string) => void;
   /** Extra classes for the card. */
   className?: string;
 }
@@ -66,10 +72,12 @@ function unansweredReason(
 }
 
 /**
- * The card an agent's request for an app draws in the conversation where it
- * asked (connections-one-list design §3): connect the app if it has no account
- * yet, fix the account if it is paused or signed out, then "Let DorkBot use
- * Gmail?", then a one-line record of the answer.
+ * The one way a person answers an agent's request for an app, in the
+ * conversation where it asked and on the Connections page alike (DOR-2503):
+ * connect the app if it has no account yet, fix the account if it is paused
+ * or signed out, then "Let DorkBot use Gmail?" at the level it asked for, then
+ * the updates it asked to hear about, if any, then a one-line record of the
+ * answer.
  *
  * Everything it shows is the server's state for this request, so a second
  * window, a reload and the Connections page all agree. It is always about the
@@ -82,7 +90,11 @@ function unansweredReason(
  * second write fails the first has still landed, so the card says so and never
  * claims that nothing changed. Not now answers no.
  */
-export function AgentRequestCard({ request, className }: AgentRequestCardProps) {
+export function AgentRequestCard({
+  request,
+  onEditExactActions,
+  className,
+}: AgentRequestCardProps) {
   const resolve = useResolveConnectorAgentRequest();
   const connections = useConnectorConnections();
   const catalog = useConnectorCatalog(request.serviceSlug, request.status === 'awaiting_owner');
@@ -98,6 +110,8 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   // The account whose access Allow saved. Set before the answer is sent, so a
   // failed answer is reported as "saved, not answered", never "nothing changed".
   const [allowedId, setAllowedId] = useState<string | null>(null);
+  // The updates that answer carried, so sending it again sends the same answer.
+  const [answeredScopes, setAnsweredScopes] = useState<ConnectorReceiveScope[]>([]);
   // Once the access question is on screen it stays: the readiness gate below
   // only decides what shows BEFORE it. A save changes the account list, and
   // swapping the question out then would unmount the save that answers the
@@ -106,20 +120,33 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   // The owner chose to connect the app again because the kept account's way
   // is down: the connect step shows even though that account still exists.
   const [connectingAgain, setConnectingAgain] = useState(false);
+  // The account Allow saved access on, while the person picks the updates a
+  // request asked to hear about. The answer waits for that choice.
+  const [updatesFor, setUpdatesFor] = useState<string | null>(null);
 
   const decline = useCallback(() => {
     setAllowedId(null);
     resolve.mutate({ requestId: request.requestId, decision: { decision: 'denied' } });
   }, [resolve, request.requestId]);
   const answer = useCallback(
-    (connectionId: string) => {
+    (connectionId: string, eventScopes: ConnectorReceiveScope[] = []) => {
       setAllowedId(connectionId);
+      setAnsweredScopes(eventScopes);
       resolve.mutate({
         requestId: request.requestId,
-        decision: { decision: 'current_access', connectionId: connectionId as ConnectionId },
+        decision: {
+          decision: 'current_access',
+          connectionId: connectionId as ConnectionId,
+          eventScopes,
+        },
       });
     },
     [resolve, request.requestId]
+  );
+  const wantsUpdates = request.requestedEvents.length > 0;
+  const allowed = useCallback(
+    (connectionId: string) => (wantsUpdates ? setUpdatesFor(connectionId) : answer(connectionId)),
+    [answer, wantsUpdates]
   );
 
   const frameClass = cn('max-w-xl', className);
@@ -144,7 +171,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
         </p>
         {retry && (
           <div className="flex justify-end">
-            <Button onClick={() => answer(allowedId)} disabled={resolve.isPending}>
+            <Button onClick={() => answer(allowedId, answeredScopes)} disabled={resolve.isPending}>
               {resolve.isPending ? 'Sending…' : 'Try again'}
             </Button>
           </div>
@@ -163,18 +190,18 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
     </p>
   );
 
-  // Asking to hear about new activity needs the full review, which chooses the
-  // exact events; the card does not pretend to answer it.
-  if (request.requestedEvents.length > 0) {
+  // Access is saved; the request also asked to hear about new activity there.
+  if (updatesFor) {
     return (
-      <EventRequestCard
+      <UpdatesStep
+        key={updatesFor}
         request={request}
+        connectionId={updatesFor}
         serviceName={serviceName}
         logo={serviceLogo(service)}
-        onDecline={decline}
+        onAnswer={(scopes) => answer(updatesFor, scopes)}
         deciding={resolve.isPending}
         className={frameClass}
-        failure={declineFailure}
       />
     );
   }
@@ -248,9 +275,10 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           serviceName={serviceName}
           logo={serviceLogo(service)}
           {...(signedInId ? { connectionId: signedInId } : {})}
-          request={{ reason: request.reason, operations: request.requestedOperations }}
+          request={{ reason: request.reason, access: request.access }}
+          {...(onEditExactActions ? { onEditExactActions } : {})}
           onSkip={decline}
-          onAllowed={answer}
+          onAllowed={allowed}
         />
         {declineFailure}
       </div>
@@ -270,50 +298,52 @@ function AccessStepMount({
   return <>{children}</>;
 }
 
-function EventRequestCard({
+/**
+ * The updates step: the agent's access is saved, and its request also asked to
+ * hear when something new happens in the app. The person picks where each
+ * kind of update goes, or leaves updates out; either way the request is
+ * answered here, never on another screen.
+ */
+function UpdatesStep({
   request,
+  connectionId,
   serviceName,
   logo,
-  onDecline,
+  onAnswer,
   deciding,
   className,
-  failure,
 }: {
   request: ConnectorAgentRequestItem;
+  connectionId: string;
   serviceName: string;
   logo: ServiceLogo;
-  onDecline: () => void;
+  onAnswer: (scopes: ConnectorReceiveScope[]) => void;
   deciding: boolean;
   className: string;
-  failure: React.ReactNode;
 }) {
+  const [scopes, setScopes] = useState<ConnectorReceiveScope[] | null>(null);
   return (
     <AccessCardFrame
-      titleId={`agent-request-${request.requestId}`}
+      titleId={`agent-request-updates-${request.requestId}`}
       toolkit={request.serviceSlug}
       serviceName={serviceName}
       logo={logo}
-      title={`Let ${request.agent.displayName} use ${serviceName}?`}
-      subtitle="It also wants to hear when something new happens there"
+      title={`Send ${request.agent.displayName} updates from ${serviceName}?`}
+      subtitle={`${request.agent.displayName} can now use ${serviceName}`}
       className={className}
     >
-      <p className="text-sm">
-        <span className="text-muted-foreground">{request.agent.displayName} asked: </span>
-        {request.reason}
-      </p>
-      <p className="text-muted-foreground text-sm">
-        Choose which updates it gets on the full request.
-      </p>
-      {failure}
+      <AgentRequestEventScopes
+        connectionId={connectionId}
+        requestedEvents={request.requestedEvents}
+        agent={request.agent}
+        onChange={setScopes}
+      />
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="ghost" onClick={onDecline} disabled={deciding}>
-          Not now
+        <Button variant="ghost" onClick={() => onAnswer([])} disabled={deciding}>
+          No updates
         </Button>
-        <Button asChild>
-          <Link to="/connections" search={{ request: request.requestId }}>
-            Review request
-            <ArrowUpRight className="size-4" aria-hidden />
-          </Link>
+        <Button onClick={() => scopes && onAnswer(scopes)} disabled={deciding || !scopes}>
+          {deciding ? 'Sending…' : 'Send updates'}
         </Button>
       </div>
     </AccessCardFrame>
