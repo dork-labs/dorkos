@@ -271,13 +271,17 @@ function SheetItem({
       disabled={disabled}
       className={cn(
         SHEET_ROW_CLASS,
-        // **`--status-error-fg`, not `--destructive`.** The destructive token is
-        // a FILL, tuned for white text on a red button; as text on the sheet's
-        // own background it measures 3.6:1 in the light theme, under the 4.5:1
-        // the design system requires (measured by the showcase's axe gate). The
-        // status ramp has a foreground value for exactly this, and it is what
-        // every other danger LABEL in the cockpit already wears.
-        variant === 'destructive' && 'text-status-error-fg'
+        // **`text-destructive` at rest, `text-foreground` while pressed.**
+        // Bare red on grey wears `--destructive`, the red tuned as text (5.43:1
+        // light, 5.76:1 dark on the sheet's background); `--status-error-fg` is
+        // tuned for its own tint and misses AA on grey in dark mode (DOR-2493).
+        // No red clears AA on the pressed `bg-sidebar-accent` in both themes
+        // (4.11:1 light, 4.25:1 dark), so for the moment the finger is down the
+        // label goes to the foreground (12.99:1 light, 10.83:1 dark there) and
+        // the icon keeps the danger meaning: it stays red, at 4.11:1 / 4.25:1,
+        // above the 3:1 a non-text mark needs.
+        variant === 'destructive' &&
+          'text-destructive active:text-foreground [&>svg]:text-destructive'
       )}
       onClick={() => {
         onClick?.();

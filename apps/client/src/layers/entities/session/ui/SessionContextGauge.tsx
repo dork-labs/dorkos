@@ -74,8 +74,8 @@ function AutoCompactedMarker({ at }: { at: string }) {
  * - **Auto-compacted** — a discreet recycle marker rides EITHER state when the
  *   session's tail carries a recent auto-compaction.
  *
- * Presentational within the `role="button"` row: the triggers are non-interactive
- * spans that let clicks bubble, so the gauge never steals the row's click target.
+ * Presentational within the session row: the triggers are non-interactive spans
+ * that let clicks bubble, so the gauge never steals the row's click target.
  *
  * @param session - The session row to gauge.
  */
@@ -93,6 +93,8 @@ export function SessionContextGauge({ session }: { session: Session }) {
                 'inline-flex cursor-default items-center gap-1',
                 SEVERITY_TEXT[health.severity]
               )}
+              // A labelled glyph: `img` is the role that may carry a name.
+              role="img"
               aria-label={`Context ${health.percent}% full`}
             >
               <ContextRing percent={health.percent} />
@@ -111,6 +113,7 @@ export function SessionContextGauge({ session }: { session: Session }) {
           <TooltipTrigger asChild>
             <span
               className="text-muted-foreground/40 inline-flex cursor-default items-center"
+              role="img"
               aria-label="Context usage unknown"
             >
               <CircleDashed className="size-3.5 shrink-0" aria-hidden="true" />

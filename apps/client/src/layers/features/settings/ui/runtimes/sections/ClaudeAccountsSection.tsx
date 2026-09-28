@@ -209,16 +209,27 @@ export function ClaudeAccountsSection() {
   const accounts: Account[] = claudeCode?.accounts ?? [];
   const resolvedAccount = claudeCode?.resolvedAccount;
   const inherited = claudeCode?.inherited ?? true;
-  const activeValue = inherited || !resolvedAccount ? DEFAULT_ACCOUNT : resolvedAccount;
+  // The row new sessions run on, NAMED BY THE SERVER: a registered id, or
+  // `default` when the default stands alone (Main). Never re-derived here by
+  // comparing path strings: the server compares folders by real path, so a
+  // default written with a trailing slash, through a symlink or with `~` still
+  // names its row, and it also knows about its own `$CLAUDE_CONFIG_DIR`, which
+  // this screen cannot see. Absent (an old server, an unreadable config): no
+  // row claims "in use" rather than a guessed one.
+  const resolvedAccountId = claudeCode?.resolvedAccountId;
+  const resolvedRow =
+    resolvedAccountId && resolvedAccountId !== IMPLICIT_ACCOUNT_ID
+      ? accounts.find((account) => account.id === resolvedAccountId)
+      : undefined;
+  // The picker's value in the registered row's OWN spelling, so a chosen default
+  // written differently from its row selects that row instead of appending a
+  // second, unregistered-looking option for the same folder.
+  const chosenPath = resolvedRow?.path ?? resolvedAccount;
+  const activeValue = inherited || !chosenPath ? DEFAULT_ACCOUNT : chosenPath;
   // The server lists `default` on its own only while no registered row has its
   // folder (an aliased default is listed under that row), so this record is the
   // one signal that Main needs a row of its own. Folders are never re-resolved here.
   const mainUsage = identityGate ? usage.byId.get(IMPLICIT_ACCOUNT_ID) : undefined;
-  // New sessions run on Main whenever no REGISTERED row is the resolved default:
-  // with no default chosen, or with one that names a folder nobody registered
-  // (that folder is then the standalone default Main stands for). So exactly one
-  // row says "in use".
-  const registeredDefault = !inherited && accounts.some((a) => a.path === resolvedAccount);
 
   const trimmedPath = newPath.trim();
   const isDuplicate = accounts.some((account) => account.path === trimmedPath);
@@ -309,7 +320,7 @@ export function ClaudeAccountsSection() {
     // Removing the account work is currently running on has to release it too,
     // or DorkOS would keep billing an account the operator just took off the
     // list. `defaultAccount` is a path, so nothing else can inherit the slot.
-    const releasesActive = !inherited && resolvedAccount === path;
+    const releasesActive = !inherited && resolvedRow !== undefined && resolvedRow.path === path;
     write({
       accounts: remaining,
       accountsSeen: shownIds(accounts),
@@ -363,7 +374,7 @@ export function ClaudeAccountsSection() {
                 ? `Default (${shortenHomePath(resolvedAccount)})`
                 : 'Default'}
             </SelectItem>
-            {claudeAccountOptions(accounts, inherited ? null : resolvedAccount).map((option) => (
+            {claudeAccountOptions(accounts, inherited ? null : chosenPath).map((option) => (
               <SelectItem key={option.path} value={option.path}>
                 {nameFor(option.path)}
               </SelectItem>
@@ -372,12 +383,22 @@ export function ClaudeAccountsSection() {
         </Select>
       </SettingRow>
 
+      {/* Said in words only when no row can say it: Main never follows the
+          server's own `$CLAUDE_CONFIG_DIR` (shared account contract rev 6d).
+          When a row stands for that folder, its "in use" already says it. */}
+      {claudeCode?.launchOverride && !resolvedAccountId && (
+        <p className="text-muted-foreground text-xs" data-testid="claude-account-launch-override">
+          New sessions use $CLAUDE_CONFIG_DIR ({shortenHomePath(claudeCode.launchOverride.path)})
+          set on the server.
+        </p>
+      )}
+
       {accounts.map((account) => (
         <AccountRow
           key={account.path}
           name={nameFor(account.path)}
           account={account}
-          isActive={!inherited && resolvedAccount === account.path}
+          isActive={account.id !== null && account.id === resolvedAccountId}
           onRemove={() => removeAccount(account.path)}
           onChooseColor={(color) => chooseColor(account.path, color)}
           disabled={updateConfig.isPending}
@@ -405,8 +426,8 @@ export function ClaudeAccountsSection() {
             colorIsDefault: (claudeCode?.defaultAccountColor ?? null) === null,
             isAccountRoot: true,
           }}
-          // No registered account is the default, so new sessions run on this sign-in.
-          isActive={!registeredDefault}
+          // The server says no registered row has the folder new sessions run in.
+          isActive={resolvedAccountId === IMPLICIT_ACCOUNT_ID}
           onChooseColor={(color) => write({ defaultAccountColor: color })}
           disabled={updateConfig.isPending}
           identity={{ usage: mainUsage }}

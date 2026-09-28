@@ -23,6 +23,7 @@ import { configManager } from '../config-manager.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
+import { expandClaudeAccountHome } from '../../runtimes/claude-code/claude-config-dir.js';
 import {
   defaultAccountColorRefusal,
   planClaudeAccountWrite,
@@ -473,6 +474,16 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   // Apply each patched top-level key from the validated result, with the
   // registry rows the reader skips put back behind the listed ones.
   const validated = parseResult.data;
+  // The default account is stored absolute. The schema accepts any text (it is
+  // shared with the client, which has no home folder to expand against), and a
+  // `~/.claude2` from `dorkos config set` or the `config_patch` tool would
+  // otherwise reach `CLAUDE_CONFIG_DIR` literally, where no shell expands it.
+  // Normalized after the parse, not before, so a legacy `activeAccount` the
+  // schema's heal carries across is expanded too. Accepted, never refused.
+  const claudeCode = validated.runtimes?.claudeCode;
+  if (claudeCode && typeof claudeCode.defaultAccount === 'string') {
+    claudeCode.defaultAccount = expandClaudeAccountHome(claudeCode.defaultAccount);
+  }
   if (Array.isArray(accountPlan.accounts)) {
     type Row = (typeof validated.runtimes.claudeCode.accounts)[number];
     const raw = accountPlan.accounts;

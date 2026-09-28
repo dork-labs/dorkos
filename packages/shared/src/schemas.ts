@@ -4153,6 +4153,20 @@ export const ServerConfigSchema = z
           description:
             "The color the default account is drawn in, as lowercase #rrggbb, decided by the server: the registered account that has the default folder's own color, else defaultAccountColor, else the default for its position. Draw this rather than re-deriving it. Absent when the config could not be read, or on a server too old to report it",
         }),
+        resolvedAccountId: z.string().optional().openapi({
+          description:
+            "Which row new sessions run on, decided by the server: the id of the registered account whose folder resolvedAccount is (compared by real path, so a trailing slash, a symlink or a ~ spelling still matches), or 'default' when no registered account has that folder and it is the standalone default's own folder. Mark this row as in use rather than comparing paths. Absent when the config could not be read, when an inherited $CLAUDE_CONFIG_DIR names a folder nobody registered (no row stands for it), or on a server too old to report it",
+        }),
+        launchOverride: z
+          .object({
+            env: z.literal('CLAUDE_CONFIG_DIR'),
+            path: z.string(),
+          })
+          .optional()
+          .openapi({
+            description:
+              "Present only when the server process's own $CLAUDE_CONFIG_DIR decides where new sessions run (no default account is chosen) AND no row stands for that folder, so resolvedAccountId is absent: the variable and the folder it names. A launch-only override: the default account (Main) never follows it (shared account contract rev 6d)",
+          }),
         accountsUnavailable: z.boolean().optional().openapi({
           description:
             'True when the account registry could NOT be read (the config store threw, or was consulted before it was initialized), so `accounts` is empty because nothing could be learned rather than because nothing is registered. Absent means the list is an answer. A client must not judge an agent or session account reference against an unavailable registry — an override that cannot be verified is unknown, never wrong',

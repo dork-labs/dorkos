@@ -399,6 +399,53 @@ describe('ClaudeAccountsSection', () => {
     const transport = renderSection({
       resolvedAccount: WORK,
       inherited: false,
+      resolvedAccountId: 'acme-corp',
+      accounts: [
+        {
+          id: 'personal',
+          path: HOME,
+          label: 'Personal',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+        {
+          id: 'acme-corp',
+          path: WORK,
+          label: 'Acme Corp',
+          color: '#3b82f6',
+          colorIsDefault: true,
+          isAccountRoot: true,
+        },
+      ],
+    });
+    await waitFor(() => expect(screen.getAllByTestId('claude-account-row')).toHaveLength(2));
+
+    await user.click(screen.getByRole('button', { name: 'Remove Acme Corp' }));
+
+    // Removing the account work runs on must stop the work running there too,
+    // or DorkOS keeps billing an account the operator just took off the list.
+    // One patch, both leaves: a second request could land after a reload that
+    // already re-read the old active account.
+    expect(transport.updateConfig).toHaveBeenCalledTimes(1);
+    expect(transport.updateConfig).toHaveBeenCalledWith({
+      runtimes: {
+        claudeCode: {
+          accounts: [{ id: 'personal', path: HOME, label: 'Personal', color: null }],
+          accountsSeen: ['personal', 'acme-corp'],
+          defaultAccount: null,
+        },
+      },
+    });
+  });
+
+  it('releases the active account when its default is written differently from its row', async () => {
+    const user = userEvent.setup();
+    const transport = renderSection({
+      // A trailing slash: the server still names the row (by real path).
+      resolvedAccount: `${WORK}/`,
+      inherited: false,
+      resolvedAccountId: 'acme-corp',
       accounts: [
         {
           id: 'personal',
@@ -803,6 +850,7 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       accounts: [ACME, CLIENT],
       defaultAccountColor: null,
       defaultAccountResolvedColor: '#7c3aed',
+      resolvedAccountId: 'default',
       ...over,
     });
 
@@ -865,13 +913,108 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
     });
 
     it('does not say "in use" when a registered account is the default', async () => {
-      renderSection(standalone({ resolvedAccount: WORK, inherited: false }), {
-        usage: [mainUsage()],
-      });
+      renderSection(
+        standalone({ resolvedAccount: WORK, inherited: false, resolvedAccountId: 'acme-corp' }),
+        { usage: [mainUsage()] }
+      );
       await screen.findByRole('button', { name: `Color for ${MAIN}` });
       const rows = screen.getAllByTestId('claude-account-row');
       expect(within(rows[2]!).queryByText('in use')).not.toBeInTheDocument();
       expect(within(rows[0]!).getByText('in use')).toBeInTheDocument();
+    });
+
+    // The server names the row by comparing folders by real path; the screen
+    // must follow that name and never re-compare the strings (they differ here).
+    it.each([
+      ['a trailing slash', `${WORK}/`],
+      ['a symlink', '/Users/dev/links/acme'],
+      ['a ~ spelling', '~/.claude2'],
+    ])(
+      'marks only the registered row the server names, when the default is written with %s',
+      async (_case, spelling) => {
+        renderSection(
+          standalone({
+            resolvedAccount: spelling,
+            inherited: false,
+            resolvedAccountId: 'acme-corp',
+          }),
+          { usage: [mainUsage()] }
+        );
+        await screen.findByRole('button', { name: `Color for ${MAIN}` });
+        const rows = screen.getAllByTestId('claude-account-row');
+        expect(within(rows[0]!).getByText('in use')).toBeInTheDocument();
+        expect(screen.getAllByText('in use')).toHaveLength(1);
+        // The picker selects that row too, rather than a second option for the
+        // same folder in the default's own spelling.
+        expect(screen.getByRole('combobox', { name: 'Default account' })).toHaveTextContent(
+          'Acme Corp'
+        );
+      }
+    );
+
+    it('marks the row $CLAUDE_CONFIG_DIR points at when the server says new sessions run there', async () => {
+      // Inherited: no default chosen, and the server process's own
+      // `$CLAUDE_CONFIG_DIR` names the Client folder, which this screen cannot see.
+      renderSection(
+        standalone({ resolvedAccount: THIRD, inherited: true, resolvedAccountId: 'client' }),
+        { usage: [mainUsage()] }
+      );
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      const rows = screen.getAllByTestId('claude-account-row');
+      expect(within(rows[1]!).getByText('in use')).toBeInTheDocument();
+      expect(screen.getAllByText('in use')).toHaveLength(1);
+    });
+
+    it('marks no row when the server does not name one, rather than guessing', async () => {
+      renderSection(standalone({ resolvedAccountId: undefined }), { usage: [mainUsage()] });
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      expect(screen.queryByText('in use')).not.toBeInTheDocument();
+    });
+
+    it('says new sessions use $CLAUDE_CONFIG_DIR when the server reports it, and marks no row', async () => {
+      // An unregistered inherited folder: Main stands for ~/.claude, not it, so
+      // the server names no row and the line is the only honest answer.
+      renderSection(
+        standalone({
+          resolvedAccount: '/Users/dev/.claude-env',
+          resolvedAccountId: undefined,
+          launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/Users/dev/.claude-env' },
+        }),
+        { usage: [mainUsage()] }
+      );
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      expect(screen.getByTestId('claude-account-launch-override')).toHaveTextContent(
+        'New sessions use $CLAUDE_CONFIG_DIR (~/.claude-env) set on the server.'
+      );
+      expect(screen.queryByText('in use')).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['~/.claude itself, so Main', HOME_DEFAULT, 'default', 2],
+      ['a registered row', WORK, 'acme-corp', 0],
+    ])(
+      'shows no $CLAUDE_CONFIG_DIR line when the variable names %s, which already says "in use"',
+      async (_case, folder, id, rowIndex) => {
+        renderSection(
+          standalone({
+            resolvedAccount: folder,
+            resolvedAccountId: id,
+            launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: folder },
+          }),
+          { usage: [mainUsage()] }
+        );
+        await screen.findByRole('button', { name: `Color for ${MAIN}` });
+        const rows = screen.getAllByTestId('claude-account-row');
+        expect(within(rows[rowIndex]!).getByText('in use')).toBeInTheDocument();
+        expect(screen.getAllByText('in use')).toHaveLength(1);
+        expect(screen.queryByTestId('claude-account-launch-override')).not.toBeInTheDocument();
+      }
+    );
+
+    it('shows no $CLAUDE_CONFIG_DIR line when the server reports no override', async () => {
+      renderSection(standalone(), { usage: [mainUsage()] });
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      expect(screen.queryByTestId('claude-account-launch-override')).not.toBeInTheDocument();
     });
 
     it('draws its dot in the resolved color', async () => {
