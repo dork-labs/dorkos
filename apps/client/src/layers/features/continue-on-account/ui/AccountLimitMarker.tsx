@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ArrowRight, Clock, type LucideIcon } from 'lucide-react';
 import type { LimitHistoryEntry, LimitResolution } from '@dorkos/shared/account-usage';
 import { useAccountIdentityGate } from '@/layers/entities/runtime';
@@ -138,15 +138,31 @@ export interface AccountLimitMarkerProps {
 export function AccountLimitMarker({ sessionId, at, fallback, now }: AccountLimitMarkerProps) {
   const { limit } = useSessionAccount(sessionId, { fetchUsage: false });
   const history = useLimitHistory(sessionId);
+  // How far the history had got while this episode was still open. Until it
+  // has been read again after the limit cleared, the row for this episode
+  // cannot be in it yet, so the card waits instead of flashing in. Any later
+  // refetch (a window regaining focus) never hides anything.
+  const [readWhileOpen, setReadWhileOpen] = useState<{ data: number; error: number } | null>(null);
 
   // This episode is still open: its banner above the message box speaks for
   // it. A live turn's message has no timestamp yet, and its limit is the open one.
-  if (limit && (at === '' || isEpisodeOf(limit.since, at))) return null;
+  const open = limit !== null && (at === '' || isEpisodeOf(limit.since, at));
+  if (
+    open &&
+    (readWhileOpen?.data !== history.dataUpdatedAt ||
+      readWhileOpen.error !== history.errorUpdatedAt)
+  ) {
+    setReadWhileOpen({ data: history.dataUpdatedAt, error: history.errorUpdatedAt });
+  }
+  if (open) return null;
   // Nothing flashes in while the history loads.
   if (history.isPending) return null;
   const entry = history.data && at ? episodeFor(history.data.entries, at) : null;
-  // Just after a limit clears the history is read again; the card waits for
-  // it rather than flashing in before the episode's row arrives.
-  if (!entry) return history.isFetching ? null : <>{fallback}</>;
-  return <AccountLimitMarkerLine entry={entry} now={now} />;
+  if (entry) return <AccountLimitMarkerLine entry={entry} now={now} />;
+  const awaitingRow =
+    limit === null &&
+    readWhileOpen !== null &&
+    history.dataUpdatedAt === readWhileOpen.data &&
+    history.errorUpdatedAt === readWhileOpen.error;
+  return awaitingRow ? null : <>{fallback}</>;
 }

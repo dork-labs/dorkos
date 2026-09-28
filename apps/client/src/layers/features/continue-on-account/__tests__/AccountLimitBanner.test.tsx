@@ -375,6 +375,19 @@ describe('the picker belongs to its episode', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('stays open through its own cancel, when handing-off turns limited in the same episode', async () => {
+    const handingOff = limitOf('auto', { state: 'handing-off' });
+    const { transport } = await renderBanner({ limit: handingOff });
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose account…' }));
+    await waitFor(() => expect(transport.cancelAutoContinue).toHaveBeenCalledTimes(1));
+    // The server reports the cancelled move: same episode, now `limited`.
+    streamLimit(limitOf('ask', { since: handingOff.since }), 1);
+    await waitFor(() => expect(bannerEl()).toHaveAttribute('data-state', 'limited'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => expect(transport.getContinueOptions).toHaveBeenCalledWith(SID));
+    expect(transport.cancelAutoContinue).toHaveBeenCalledTimes(1);
+  });
+
   it("never cancels the next episode's automatic move unasked", async () => {
     const { transport } = await renderBanner({ limit: limitOf('auto', { state: 'handing-off' }) });
     await userEvent.click(await screen.findByRole('button', { name: 'Choose account…' }));
@@ -447,6 +460,21 @@ describe('all-accounts-out', () => {
     await waitFor(() => expect(bannerEl()).toHaveTextContent('All accounts are out.'));
     expect(bannerEl()).toHaveTextContent('Soonest back: Acct 2, Sat 9am');
     expect(buttons()).toEqual(['Wait for reset']);
+  });
+
+  it('never shows a soonest time already past', async () => {
+    await renderBanner({
+      limit: limitOf('ask', {
+        state: 'all-accounts-out',
+        allOut: { accountId: 'acct-2', resetsAt: at(30_000) },
+      }),
+    });
+    await waitFor(() => expect(bannerEl()).toHaveTextContent('Soonest back: Acct 2, 12pm'));
+    act(() => {
+      vi.advanceTimersByTime(MINUTE);
+    });
+    expect(bannerEl()).toHaveTextContent('All accounts are out. Acct 2 should have reset by now.');
+    expect(bannerEl()).not.toHaveTextContent('Soonest back');
   });
 
   it('leaves out "Soonest back" when its reset is unknown', async () => {

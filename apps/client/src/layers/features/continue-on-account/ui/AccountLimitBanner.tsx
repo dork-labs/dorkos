@@ -7,6 +7,7 @@ import {
   bannerActions,
   bannerVariantFor,
   hasPassed,
+  shouldHaveResetSentence,
   isCarryOverRefused,
   outOfUsageSentence,
   PRIMARY_ACTIONS,
@@ -130,10 +131,12 @@ export function AccountLimitBanner({
   // Seconds only while a move counts down; minutes otherwise. One interval.
   const tick = useNow(state === 'handing-off' ? 1000 : 60_000);
   const now = fixedNow ?? new Date(tick);
-  // The picker belongs to the episode and state it was opened in: a limit
-  // that clears, moves on or stops offering the picker closes it, and the
-  // next episode never finds it open (and never cancels a move unasked).
-  const pickerKey = limit && state ? `${limit.since}:${state}` : null;
+  // The picker belongs to the episode it was opened in: a new episode never
+  // finds it open (and never cancels a move unasked), and a state that stops
+  // offering it (moved) closes it through `canPick`. Not keyed by the state:
+  // "Choose account…" itself cancels the move, which turns handing-off into
+  // limited in the same episode, and the picker must stay open through that.
+  const pickerKey = limit ? limit.since : null;
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const pickerOpen = banner.canPick && pickerKey !== null && pickerFor === pickerKey;
   const setPickerOpen = (open: boolean) => setPickerFor(open ? pickerKey : null);
@@ -161,7 +164,10 @@ export function AccountLimitBanner({
       const soonest = limit.allOut;
       if (soonest?.resetsAt) {
         const back = banner.nameOf(soonest.accountId);
-        detail = (
+        // A time already past reads as Q12's words, never as a past time.
+        detail = hasPassed(soonest.resetsAt, now) ? (
+          shouldHaveResetSentence(back.name)
+        ) : (
           <>
             Soonest back: <Named account={back} showDot={identityGate} />,{' '}
             {formatResetTime(soonest.resetsAt, now)}

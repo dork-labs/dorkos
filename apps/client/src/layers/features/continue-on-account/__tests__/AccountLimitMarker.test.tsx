@@ -323,4 +323,15 @@ describe('no card flashes beside the banner', () => {
     await waitFor(() => expect(marker()).toHaveTextContent('Resumed after reset at 4:02pm'));
     expect(screen.queryByTestId('plain-card')).toBeNull();
   });
+
+  it("keeps an old episode's plain card through a background refetch", async () => {
+    const { transport, queryClient } = renderMarker({ entries: [] });
+    expect(await screen.findByTestId('plain-card')).toBeInTheDocument();
+    vi.mocked(transport.getLimitHistory).mockReturnValueOnce(new Promise(() => {}));
+    act(() => {
+      void queryClient.invalidateQueries({ queryKey: accountKeys.limitHistory(SID) });
+    });
+    await waitFor(() => expect(transport.getLimitHistory).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('plain-card')).toBeInTheDocument();
+  });
 });
