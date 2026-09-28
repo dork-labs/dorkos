@@ -462,4 +462,67 @@ describe('ExtensionCompiler — cache keyed on the whole input graph', () => {
       expect(codeOf(await compiler.compile(record))).toContain('main is b.js');
     });
   });
+  describe('the pre-build snapshot stays bounded', () => {
+    /** An extension whose build fails, so its error is cached only if the snapshot succeeds. */
+    async function failingExtension(id: string, extra: Record<string, string | Buffer>) {
+      const extDir = path.join(tmpDir, 'exts', id);
+      await writeTree(extDir, {
+        'index.ts': 'import { nope } from "./nope";\nexport function activate() { return nope; }',
+      });
+      for (const [rel, content] of Object.entries(extra)) {
+        await fs.mkdir(path.dirname(path.join(extDir, rel)), { recursive: true });
+        await fs.writeFile(path.join(extDir, rel), content);
+      }
+      return { extDir, record: makeRecord(id, extDir) };
+    }
+
+    /** Count `fs.readFile` calls on paths under `dir` while `run` runs. */
+    async function readsUnder(dir: string, run: () => Promise<unknown>): Promise<number> {
+      const spy = vi.spyOn(fs, 'readFile');
+      try {
+        await run();
+        return spy.mock.calls.filter(([p]) => String(p).startsWith(dir + path.sep)).length;
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
+    it('stops at the entry cap inside a single flat folder, not after hashing all of it', async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 2500; i++) files[`assets/f${i}.txt`] = `${i}`;
+      const { extDir, record } = await failingExtension('flat-ext', files);
+
+      const reads = await readsUnder(path.join(extDir, 'assets'), () => compiler.compile(record));
+      expect(reads).toBeLessThanOrEqual(2000);
+
+      // Past the cap nothing is cached, so the failing build runs again.
+      await compiler.compile(record);
+      expect(buildSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('never reads a single file over the size cap', async () => {
+      const { extDir, record } = await failingExtension('big-file-ext', {
+        'vendor/huge.bin': Buffer.alloc(6 * 1024 * 1024),
+      });
+
+      const reads = await readsUnder(path.join(extDir, 'vendor'), () => compiler.compile(record));
+      expect(reads).toBe(0);
+
+      await compiler.compile(record);
+      expect(buildSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops reading once the total size cap would be passed', async () => {
+      const chunk = Buffer.alloc(4.9 * 1024 * 1024);
+      const files: Record<string, Buffer> = {};
+      for (let i = 0; i < 11; i++) files[`media/part${i}.bin`] = chunk;
+      const { extDir, record } = await failingExtension('big-total-ext', files);
+
+      const reads = await readsUnder(path.join(extDir, 'media'), () => compiler.compile(record));
+      expect(reads).toBeLessThanOrEqual(10);
+
+      await compiler.compile(record);
+      expect(buildSpy).toHaveBeenCalledTimes(2);
+    });
+  });
 });

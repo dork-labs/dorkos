@@ -37,7 +37,6 @@
 import { createHash, randomBytes } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
-import { performance } from 'perf_hooks';
 import type { Plugin } from 'esbuild';
 import { z } from 'zod';
 
@@ -54,6 +53,15 @@ const MANIFEST_FORMAT_VERSION = 1;
  * directory listings after the build.
  */
 const MAX_TREE_ENTRIES = 2000;
+
+/**
+ * Largest single file, and most bytes in total, the pre-build snapshot will
+ * read. A vendored asset past these would be re-read on every rebuild, so the
+ * snapshot gives up (the same fallback as {@link MAX_TREE_ENTRIES}) before
+ * reading it.
+ */
+const MAX_SNAPSHOT_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_SNAPSHOT_TOTAL_BYTES = 50 * 1024 * 1024;
 
 /** Files esbuild reads for configuration without reporting them as inputs. */
 const CONFIG_FILE_NAMES = ['package.json', 'tsconfig.json', 'jsconfig.json'];
@@ -132,11 +140,16 @@ export function shortHash(data: string | Buffer): string {
 }
 
 /**
- * A monotonic timestamp for ordering builds that overlap in this process.
- * Sub-millisecond, so two builds started in the same millisecond still order.
+ * Wall-clock start time of a build, for ordering overlapping builds.
+ *
+ * Wall clock rather than a monotonic one: two server processes can share one
+ * DorkOS home, and a monotonic clock is per process (and stops while macOS
+ * sleeps), so it cannot be compared across them. A tie or a clock step only
+ * costs a rebuild, because every manifest's hashes are the bytes its own
+ * build read.
  */
 export function buildStartTime(): number {
-  return performance.timeOrigin + performance.now();
+  return Date.now();
 }
 
 /**
@@ -221,6 +234,11 @@ async function hashDirListing(dirPath: string): Promise<string | null> {
  * still taken, so installing or removing a package counts as a change) and
  * anything under `exclude` (the compiler's own cache, if it sits inside).
  *
+ * Gives up as soon as the walk passes {@link MAX_TREE_ENTRIES} entries, a
+ * file is larger than {@link MAX_SNAPSHOT_FILE_BYTES}, or the bytes read
+ * would pass {@link MAX_SNAPSHOT_TOTAL_BYTES}, checking each before reading
+ * any further.
+ *
  * @param root - The extension's directory.
  * @param exclude - A directory never to walk into.
  * @returns The snapshot, or `null` when the tree is too large or unreadable.
@@ -230,6 +248,8 @@ export async function snapshotSourceTree(
   exclude: string
 ): Promise<TreeSnapshot | null> {
   const snapshot: TreeSnapshot = { files: new Map(), dirs: new Map() };
+  const tooManyEntries = () => snapshot.files.size + snapshot.dirs.size > MAX_TREE_ENTRIES;
+  let totalBytes = 0;
   const pending = [root];
   while (pending.length > 0) {
     const dir = pending.pop()!;
@@ -249,6 +269,7 @@ export async function snapshotSourceTree(
       )
     );
     for (const entry of entries) {
+      if (tooManyEntries()) return null;
       if (entry.name.startsWith('.')) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -261,12 +282,20 @@ export async function snapshotSourceTree(
           pending.push(full);
         }
       } else if (entry.isFile()) {
+        let size: number;
+        try {
+          size = (await fs.stat(full)).size;
+        } catch {
+          return null;
+        }
+        totalBytes += size;
+        if (size > MAX_SNAPSHOT_FILE_BYTES || totalBytes > MAX_SNAPSHOT_TOTAL_BYTES) return null;
         const hash = await hashFile(full);
         if (hash === null) return null;
         snapshot.files.set(full, hash);
       }
     }
-    if (snapshot.files.size + snapshot.dirs.size > MAX_TREE_ENTRIES) return null;
+    if (tooManyEntries()) return null;
   }
   return snapshot;
 }
