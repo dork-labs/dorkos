@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(sessions): let keyboard and screen readers reach a chat's rename and details buttons"
+  - "fix(sessions): keep the full row's box out of the tab order, and check it in a real browser"
 ---
 
 ### Fixed

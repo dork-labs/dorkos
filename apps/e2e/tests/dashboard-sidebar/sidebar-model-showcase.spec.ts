@@ -497,9 +497,6 @@ test.describe('Sidebar model showcase @smoke', () => {
     await expect(header).not.toHaveClass(/font-semibold/);
   });
 
-  // The R1 gate. A `for` loop rather than two copies so neither theme can be
-  // quietly dropped: removing one is removing a loop entry, which reads as a
-  // deletion in a diff.
   // A real browser, because the trap this guards is one jsdom never shows:
   // motion's press gesture (`whileTap`) gives any non-native element without a
   // tabindex `tabindex="0"`, so the full row's box became an unnamed tab stop
@@ -563,6 +560,9 @@ test.describe('Sidebar model showcase @smoke', () => {
     ).toEqual(['session-row-open', 'session-row-open']);
   });
 
+  // The R1 gate. A `for` loop rather than two copies so neither theme can be
+  // quietly dropped: removing one is removing a loop entry, which reads as a
+  // deletion in a diff.
   for (const theme of ['light', 'dark'] as const) {
     test(`meets 4.5:1 on the zone tint in the ${theme} theme`, async ({ page }, testInfo) => {
       await openShowcase(page);
