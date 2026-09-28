@@ -393,11 +393,33 @@ describe('ComposioSdkClient', () => {
     ['OUTLOOK_CREATE_EMAIL_RULE', ['createHint'], 'destructive'],
     ['GITHUB_ADD_A_REPOSITORY_COLLABORATOR', ['createHint'], 'destructive'],
     ['GOOGLEDRIVE_WATCH_FILE', ['createHint'], 'destructive'],
-    // The same names inside an audited app, where only the pattern stops them.
-    ['GMAIL_CREATE_PERMISSION', ['createHint'], 'destructive'],
-    ['GOOGLECALENDAR_CREATE_WEBHOOK', ['createHint'], 'destructive'],
-    ['GMAIL_WATCH_INBOX', ['createHint'], 'destructive'],
-    ['GMAIL_DELEGATE_ACCESS', ['updateHint'], 'destructive'],
+    // Every word of the name pattern, inside an audited app where only the
+    // pattern stops it (none of these is on the exact list).
+    ['GOOGLECALENDAR_CREATE_ACL_ENTRY', ['createHint'], 'destructive'], // _ACL_
+    ['GMAIL_SET_FORWARDING_ADDRESS', ['createHint'], 'destructive'], // FORWARD
+    ['GMAIL_CREATE_SEND_AS_ALIAS', ['createHint'], 'destructive'], // SEND_AS
+    ['GMAIL_SET_IMAP_ACCESS', ['createHint'], 'destructive'], // _IMAP_
+    ['GMAIL_SET_POP_ACCESS', ['createHint'], 'destructive'], // _POP_
+    ['GMAIL_ADD_FILTER_ENTRY', ['createHint'], 'destructive'], // FILTER
+    ['GMAIL_SET_VACATION_RESPONDER', ['createHint'], 'destructive'], // VACATION
+    ['GMAIL_ENABLE_AUTO_REPLIES', ['createHint'], 'destructive'], // AUTO_REPL
+    ['GMAIL_START_WATCH_INBOX', ['createHint'], 'destructive'], // WATCH
+    ['GOOGLECALENDAR_ADD_PERMISSION', ['createHint'], 'destructive'], // PERMISSION
+    ['GOOGLECALENDAR_UPDATE_SHARING', ['createHint'], 'destructive'], // SHARING
+    ['GOOGLECALENDAR_SHARE_CALENDAR', ['createHint'], 'destructive'], // SHARE_
+    ['GMAIL_ADD_COLLABORATOR', ['createHint'], 'destructive'], // COLLABORAT
+    ['GMAIL_CREATE_GROUP_MEMBERSHIP', ['createHint'], 'destructive'], // MEMBERSHIP
+    ['GOOGLECALENDAR_SEND_INVITATION', ['createHint'], 'destructive'], // INVITAT
+    ['GMAIL_CREATE_INBOX_RULE', ['createHint'], 'destructive'], // _RULE
+    ['GOOGLECALENDAR_CREATE_WEBHOOK', ['createHint'], 'destructive'], // WEBHOOK
+    ['GMAIL_ADD_HOOK', ['createHint'], 'destructive'], // _HOOK
+    ['GOOGLECALENDAR_CREATE_SUBSCRIPTION', ['createHint'], 'destructive'], // SUBSCRI
+    ['GMAIL_ADD_DEPLOY_KEY', ['createHint'], 'destructive'], // DEPLOY_KEY
+    ['GMAIL_SET_CLIENT_SECRET', ['createHint'], 'destructive'], // SECRET
+    ['GOOGLECALENDAR_TRANSFER_OWNERSHIP', ['createHint'], 'destructive'], // TRANSFER
+    ['GMAIL_ADD_DELEGATE', ['createHint'], 'destructive'], // DELEGAT
+    ['GOOGLECALENDAR_SET_VISIBILITY', ['createHint'], 'destructive'], // VISIBILITY
+    ['GMAIL_UPDATE_MAILBOX_SETTINGS', ['createHint'], 'destructive'], // MAILBOX_SETTINGS
     ['OUTLOOK_SET_AUTO_FORWARDING', ['updateHint'], 'destructive'],
     ['GOOGLEDRIVE_CREATE_ACL_ENTRY', ['createHint'], 'destructive'],
     ['SLACK_CHANNELS_WATCH', ['createHint', 'openWorldHint'], 'destructive'],
