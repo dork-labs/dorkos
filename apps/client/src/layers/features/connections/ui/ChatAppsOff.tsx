@@ -32,8 +32,10 @@ export function chatAppsOffReason(
   relay: ReturnType<typeof useRelayEnabledState>
 ): ChatAppsOffReason | null {
   if (relay.isLoading || relay.isError || relay.enabled) return null;
-  if (relay.lockedByEnv) return 'env';
+  // A failed start comes first: it only happens when something asked chat
+  // apps to run (the setting or the variable), and a restart is its fix.
   if (relay.initError) return 'failed';
+  if (relay.lockedByEnv) return 'env';
   if (relay.enabledInConfig === true) return 'restart';
   return 'off';
 }

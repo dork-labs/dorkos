@@ -66,9 +66,10 @@ export interface NotificationStatus {
 /**
  * The one line that says how a notification is doing.
  *
- * Every problem line names what happened in plain words; Remove is always on
- * the row, so a line only adds a second step when there is one ("open the
- * chat"). DorkOS retrying on its own is said as such, never as a problem.
+ * Every problem line names what happened in plain words and ends with the next
+ * step, even when that step is "nothing to do". There is no retry: a failed
+ * event's content is deleted, and one that may have arrived can't be resent
+ * safely. DorkOS retrying on its own is said as such, never as a problem.
  *
  * @param subscription - The notification.
  * @param destination - Who or where it goes, in words ("Researcher", "#updates").
@@ -89,9 +90,11 @@ export function notificationStatus(
     case 'pending':
       return plain('Setting up. DorkOS keeps trying on its own.');
     case 'unavailable':
-      return problem('Paused while this account can’t be used.');
+      return problem(
+        'Paused while this account can’t be used. Fix the account above to start it again.'
+      );
     case 'revoked':
-      return problem('Stopped for good. Remove it, then set it up again if you still want it.');
+      return problem('Stopped for good. Remove it and set it up again to keep getting these.');
     case 'active':
       break;
   }
@@ -114,20 +117,30 @@ export function notificationStatus(
       return problem(
         inChat
           ? `DorkOS can’t tell whether ${destination} got the newest one (${when}). Open the chat to check.`
-          : `DorkOS can’t tell whether the newest one reached ${destination} (${when}).`,
+          : `DorkOS can’t tell whether the newest one reached ${destination} (${when}). Look there to check.`,
         inChat
       );
     case 'refused':
-      return problem(`The newest one (${when}) was turned away by ${destination}.`);
+      return problem(
+        `The newest one (${when}) was turned away by ${destination}. Check that it still lets this agent post there.`
+      );
     case 'changed':
-      return problem(`The newest one (${when}) was held back because this notification changed.`);
+      return problem(
+        `The newest one (${when}) was held back because this notification changed. Nothing to do: the next one comes as usual.`
+      );
     case 'cancelled':
-      return problem(`The newest one (${when}) was cancelled before ${destination} read it.`);
+      return problem(
+        `The newest one (${when}) was cancelled before ${destination} read it. Nothing to do: the next one comes as usual.`
+      );
     case 'expired':
-      return problem(`The newest one (${when}) waited too long and was dropped.`);
+      return problem(
+        `The newest one (${when}) waited too long and was dropped. If it keeps happening, remove it and set it up again.`
+      );
     case 'unreachable':
     case null:
-      return problem(`The newest one (${when}) didn’t reach ${destination}.`);
+      return problem(
+        `The newest one (${when}) didn’t reach ${destination}. If it keeps happening, remove it and set it up again.`
+      );
   }
 }
 

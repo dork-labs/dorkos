@@ -264,9 +264,9 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
     const origin = await this.target.resolve(owner, scope.agentId);
     if (!origin || origin.agentId !== scope.agentId) this.refuse('event_target_unavailable');
     // One chat per notification: every event joins the chat the last one went
-    // to. A new chat is opened only for the first event, or when that chat can
-    // no longer carry this agent (its runtime or folder moved, or the chat is
-    // gone), because a session's runtime binding never changes.
+    // to. A new chat is opened only for the first event, or when the agent's
+    // runtime or folder has moved since, because a chat's runtime binding never
+    // changes and the old chat can no longer carry this agent.
     const kept = readChatSession(this.subscriptions.db, scope.subscriptionId);
     const reuse = kept !== undefined && this.target.current(owner, kept, origin);
     const sessionId = reuse ? kept : randomUUID();

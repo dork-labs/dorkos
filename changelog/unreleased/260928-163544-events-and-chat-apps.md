@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(connections): keep app notifications in one chat, show when they fail, and turn chat apps on from the app (DOR-2507)'
+  - 'fix(connections): let the chat apps switch work on CLI installs, and give every notification problem a next step (DOR-2507)'
 ---
 
 ### Changed
@@ -10,7 +11,7 @@ covers:
 
 ### Fixed
 
-- Each notification now says how its newest event went: delivered, on its way, being tried again, or what stopped it. Before, a notification that failed looked exactly like one that worked. A notification sent to an agent has an Open chat button. (DOR-2507)
+- Each notification now says how its newest event went: delivered, on its way, being tried again, or what stopped it and what to do next. Before, a notification that failed looked exactly like one that worked. A notification sent to an agent has an Open chat button. (DOR-2507)
 - You can remove any notification, including ones that stopped working. Before, a notification that stopped stayed on the list forever with no way to remove it, and a removed one stayed listed as "revoked". (DOR-2507)
 - Notifications are described in plain words: who they go to, and what they filter on ("Only when Folder is inbox"). Raw codes, ids and filter code no longer show. (DOR-2507)
 - An account that can't send notifications says so once, instead of showing a setup box plus a second error. An account connected through your DorkOS account no longer claims delivery is taken care of before its notifications actually load. (DOR-2507)

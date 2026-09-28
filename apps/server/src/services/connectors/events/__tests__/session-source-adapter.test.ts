@@ -329,22 +329,37 @@ describe('event source through real durable private acceptance', () => {
     expect(readChatSession(f.db, f.subscriptionId)).toBe(first.receipt.sessionId);
   });
 
-  it('opens a new chat only when the kept one can no longer carry the agent', async () => {
+  it('opens a new chat only when the agent’s folder has moved since the kept one', async () => {
     const f = await fixture();
     await f.adapter.prepareTarget(f.ref);
     const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
     f.acceptance.claim(first.receipt.id, await f.acceptance.prepare(first.receipt.id));
     f.acceptance.markTurnStarted(first.receipt.id, 1);
-    // The chat was deleted: its runtime binding is gone, so it cannot take the event.
+    // The agent moved: same id and runtime, a new folder. The kept chat is bound
+    // to the old folder for good, so it cannot carry this agent's next event.
+    const moved = mkdtempSync(join(tmpdir(), 'dork-event-moved-'));
+    disposers.push(() => rmSync(moved, { recursive: true, force: true }));
+    mkdirSync(join(moved, '.dork'));
+    writeFileSync(
+      join(moved, '.dork/agent.json'),
+      JSON.stringify({
+        id: 'agent-one',
+        name: 'event-agent',
+        runtime: 'claude-code',
+        registeredAt: BASE,
+        registeredBy: 'owner',
+      })
+    );
     f.db.$client
-      .prepare('DELETE FROM session_metadata WHERE session_id = ?')
-      .run(first.receipt.sessionId);
+      .prepare('UPDATE agents SET project_path = ?, updated_at = ? WHERE id = ?')
+      .run(moved, '2026-09-07T12:04:00.000Z', 'agent-one');
 
     const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
     await f.adapter.prepareTarget(second);
     const accepted = f.adapter.acceptPrepared(f.acceptance, second);
 
     expect(accepted.receipt.sessionId).not.toBe(first.receipt.sessionId);
+    expect(accepted.receipt.originAgentPath).toBe(moved);
     expect(readChatSession(f.db, f.subscriptionId)).toBe(accepted.receipt.sessionId);
   });
 

@@ -200,6 +200,17 @@ describe('ChatAppSettings', () => {
     expect(screen.queryByRole('button', { name: 'Turn on chat apps' })).toBeNull();
   });
 
+  it('offers the restart when the environment variable asked for chat apps and they failed to start', async () => {
+    renderSettings(
+      createMockTransport({
+        getConfig: await configWith({ enabled: false, lockedByEnv: true, initError: 'boom' }),
+      })
+    );
+    expect(await screen.findByText(/Chat apps didn’t start/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restart DorkOS' })).toBeInTheDocument();
+    expect(screen.queryByText(/DORKOS_RELAY_ENABLED/)).toBeNull();
+  });
+
   it('offers a restart, not a refresh, when chat apps failed to start', async () => {
     renderSettings(
       createMockTransport({

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Bell, MessageSquare, Trash2 } from 'lucide-react';
+import { Bell, Loader2, MessageSquare, Trash2 } from 'lucide-react';
 import type {
   ConnectionEventDefinitionPage,
   ConnectionEventSubscription,
@@ -145,10 +145,15 @@ function ConnectionNotificationRow({
           size="icon-sm"
           variant="ghost"
           aria-label={`Remove ${subscription.displayName}: ${scopeLabel}`}
+          aria-busy={removing}
           disabled={removing}
           onClick={onRemove}
         >
-          <Trash2 className="size-4" />
+          {removing ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Trash2 className="size-4" />
+          )}
         </Button>
       </div>
     </li>
@@ -180,6 +185,22 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
     emptyConnectionEventScopeDraft()
   );
   const [manageExistingTrigger, setManageExistingTrigger] = useState(false);
+  // Per row: removing one notification leaves every other row's Remove usable.
+  const [removingIds, setRemovingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const remove = (subscriptionId: string) => {
+    setRemovingIds((ids) => new Set(ids).add(subscriptionId));
+    deleteSubscription.mutate(
+      { connectionId, subscriptionId },
+      {
+        onSettled: () =>
+          setRemovingIds((ids) => {
+            const next = new Set(ids);
+            next.delete(subscriptionId);
+            return next;
+          }),
+      }
+    );
+  };
   const decisionRef = useRef<{ signature: string; requestId: string } | null>(null);
 
   const definitionItems = definitions.data?.pages.flatMap((page) => page.definitions) ?? [];
@@ -274,10 +295,8 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
                   agents={agentChoices}
                   definition={definitionItems.find((item) => item.id === subscription.definitionId)}
                   channelLabel={channel ? channel.label || 'a chat app conversation' : undefined}
-                  removing={deleteSubscription.isPending}
-                  onRemove={() =>
-                    deleteSubscription.mutate({ connectionId, subscriptionId: subscription.id })
-                  }
+                  removing={removingIds.has(subscription.id)}
+                  onRemove={() => remove(subscription.id)}
                 />
               );
             })}
@@ -308,7 +327,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
           role="alert"
           className="border-destructive/30 bg-destructive/10 text-foreground rounded-md border p-3 text-sm"
         >
-          Couldn’t reach DorkOS to remove that notification. Check the list, then try again.
+          Couldn’t confirm that notification was removed. Check the list.
         </p>
       )}
 

@@ -174,7 +174,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await expect(
         detail
           .getByRole('alert')
-          .filter({ hasText: 'Couldn’t reach DorkOS to remove that notification.' })
+          .filter({ hasText: 'Couldn’t confirm that notification was removed. Check the list.' })
       ).toBeVisible();
       expect(revokeReachedServer).toBe(true);
       // The removal landed even though its answer was lost, so the row is gone.
@@ -232,7 +232,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         'Choose activity'
       );
       releaseResponse();
-      await expect(detail.getByText(/New message is active/i)).toHaveCount(0);
+      await expect(detail.getByText(/New message is on/i)).toHaveCount(0);
       await expect(
         detail.getByTestId('connection-notification-list').getByText('New message', { exact: true })
       ).toHaveCount(0);

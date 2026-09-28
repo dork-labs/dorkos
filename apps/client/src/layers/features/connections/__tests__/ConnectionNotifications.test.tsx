@@ -249,7 +249,7 @@ describe('ConnectionNotifications', () => {
     await user.click(screen.getByRole('button', { name: 'Load more notifications' }));
     expect(
       await screen.findByText(
-        'Stopped for good. Remove it, then set it up again if you still want it.'
+        'Stopped for good. Remove it and set it up again to keep getting these.'
       )
     ).toBeInTheDocument();
     expect(
@@ -551,6 +551,42 @@ describe('ConnectionNotifications', () => {
     expect(remove).toHaveBeenCalledWith('connection-a', 'subscription-fields');
   });
 
+  it('marks only the row being removed as busy, so others can still be removed', async () => {
+    const user = userEvent.setup();
+    let finish!: () => void;
+    const remove = vi.fn().mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+    );
+    const transport = createMockTransport({
+      getConnectionEventSource: vi.fn().mockResolvedValue({
+        setupMode: 'managed',
+        configured: false,
+        endpoint: null,
+        reason: null,
+      }),
+      listConnectionEventDefinitions: vi.fn().mockResolvedValue({ definitions: [] }),
+      listConnectionEventSubscriptions: vi.fn().mockResolvedValue({
+        subscriptions: [
+          subscription({ filter: { folder: 'inbox' } }),
+          subscription({ id: 'subscription-b', filter: { folder: 'sent' } }),
+        ],
+      }),
+      deleteConnectionEventSubscription: remove,
+    });
+
+    renderNotifications(transport);
+    const first = await screen.findByRole('button', { name: /^Remove New email.*inbox$/ });
+    const second = screen.getByRole('button', { name: /^Remove New email.*sent$/ });
+    await user.click(first);
+    expect(first).toBeDisabled();
+    expect(first).toHaveAttribute('aria-busy', 'true');
+    expect(second).toBeEnabled();
+    finish();
+    await waitFor(() => expect(first).toBeEnabled());
+  });
+
   it('reloads the exact subscription list after a remove response is lost', async () => {
     const user = userEvent.setup();
     const list = vi
@@ -576,7 +612,7 @@ describe('ConnectionNotifications', () => {
       })
     );
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Couldn’t reach DorkOS to remove that notification.'
+      'Couldn’t confirm that notification was removed. Check the list.'
     );
     await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(1));
     expect(list.mock.calls.every(([connectionId]) => connectionId === 'connection-a')).toBe(true);
@@ -793,7 +829,9 @@ describe('ConnectionNotifications', () => {
     });
 
     renderNotifications(transport);
-    expect(await screen.findByText('Paused while this account can’t be used.')).toBeInTheDocument();
+    expect(
+      await screen.findByText(/^Paused while this account can’t be used\./)
+    ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Remove New email/ }));
     expect(remove).toHaveBeenCalledWith('connection-a', 'subscription-a');
   });

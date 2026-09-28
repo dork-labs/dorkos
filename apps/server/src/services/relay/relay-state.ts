@@ -18,6 +18,17 @@ export const setRelayEnabled = relayFlag.setEnabled;
 /** Return whether the Relay message bus is currently enabled. */
 export const isRelayEnabled = relayFlag.isEnabled;
 
+/**
+ * Whether Relay starts at boot: the `DORKOS_RELAY_ENABLED` override when it is
+ * set, the person's `relay.enabled` setting otherwise.
+ *
+ * @param override - The environment variable's value, `undefined` when unset.
+ * @param setting - The saved `relay.enabled` setting.
+ */
+export function relayStartsEnabled(override: boolean | undefined, setting: boolean): boolean {
+  return override ?? setting;
+}
+
 /** Record why Relay failed to initialize. */
 export const setRelayInitError = relayFlag.setInitError;
 
