@@ -851,6 +851,16 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(screen.getAllByText('in use')).toHaveLength(1);
     });
 
+    it('says "in use" when the default names a folder nobody registered, since Main stands for it', async () => {
+      renderSection(standalone({ resolvedAccount: '/Users/me/.claude-other', inherited: false }), {
+        usage: [mainUsage()],
+      });
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      const rows = screen.getAllByTestId('claude-account-row');
+      expect(within(rows[2]!).getByText('in use')).toBeInTheDocument();
+      expect(screen.getAllByText('in use')).toHaveLength(1);
+    });
+
     it('does not say "in use" when a registered account is the default', async () => {
       renderSection(standalone({ resolvedAccount: WORK, inherited: false }), {
         usage: [mainUsage()],

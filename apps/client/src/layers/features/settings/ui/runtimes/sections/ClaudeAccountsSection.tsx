@@ -211,6 +211,11 @@ export function ClaudeAccountsSection() {
   // folder (an aliased default is listed under that row), so this record is the
   // one signal that Main needs a row of its own. Folders are never re-resolved here.
   const mainUsage = identityGate ? usage.byId.get(IMPLICIT_ACCOUNT_ID) : undefined;
+  // New sessions run on Main whenever no REGISTERED row is the resolved default:
+  // with no default chosen, or with one that names a folder nobody registered
+  // (that folder is then the standalone default Main stands for). So exactly one
+  // row says "in use".
+  const registeredDefault = !inherited && accounts.some((a) => a.path === resolvedAccount);
 
   const trimmedPath = newPath.trim();
   const isDuplicate = accounts.some((account) => account.path === trimmedPath);
@@ -398,7 +403,7 @@ export function ClaudeAccountsSection() {
             isAccountRoot: true,
           }}
           // No default account chosen means new sessions run on this sign-in.
-          isActive={inherited}
+          isActive={!registeredDefault}
           onChooseColor={(color) => write({ defaultAccountColor: color })}
           disabled={updateConfig.isPending}
           identity={{ usage: mainUsage }}
