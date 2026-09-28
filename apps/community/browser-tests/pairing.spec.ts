@@ -145,7 +145,7 @@ test.describe('Community pairing approval @smoke', () => {
       ['Continue with Team SSO', 'oidc'],
     ]) {
       await page.getByRole('button', { name }).click();
-      await expect.poll(() => handoffs.length).toBeGreaterThan(0);
+      await expect.poll(() => handoffs.length).toBe(1);
       const handoff = handoffs.pop();
       expect(handoff).toEqual({
         provider,
