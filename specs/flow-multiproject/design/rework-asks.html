@@ -1,0 +1,422 @@
+<h2>8 · Every ask, redone from your side</h2>
+<p class="subtitle">
+  Three rules. Say what will happen and why, never a command. Anything that asks must say why. Every
+  ask offers a way to never ask again. Below: the same inbox items, rewritten. Then two picks.
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 13px/1.5 system-ui;
+  }
+  .ax-pop {
+    width: 400px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    color: #18181b;
+  }
+  .ax-pophead {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid #f4f4f5;
+    font-weight: 600;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 12px;
+  }
+  .ax-why {
+    color: #52525b;
+    font-size: 12px;
+    margin-top: 1px;
+  }
+  .ax-proj {
+    font-size: 11px;
+    font-weight: 600;
+    color: #3f3f46;
+    padding: 8px 14px 0;
+  }
+  .ax-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px 12px 8px 14px;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-ico {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #f4f4f5;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #3f3f46;
+    margin-top: 1px;
+  }
+  .ax-t {
+    font-weight: 600;
+    font-size: 13px;
+    color: #18181b;
+  }
+  .ax-acts {
+    display: flex;
+    gap: 5px;
+    flex: none;
+    align-items: center;
+  }
+  .ax-ib {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid #e4e4e7;
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+  }
+  .ax-wb {
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px solid #d4d4d8;
+    font-size: 12px;
+    background: #fff;
+    color: #18181b;
+    white-space: nowrap;
+  }
+  .ax-wb.pri {
+    background: #18181b;
+    color: #fff;
+    border-color: #18181b;
+  }
+  .ax-chips {
+    display: flex;
+    gap: 5px;
+    margin-top: 5px;
+    flex-wrap: wrap;
+  }
+  .ax-chip {
+    font-size: 12px;
+    padding: 1px 9px;
+    border-radius: 999px;
+    border: 1px solid #d4d4d8;
+    color: #18181b;
+  }
+  .ax-chip.pick {
+    border-color: #18181b;
+  }
+  .ax-after {
+    margin: 0 12px 8px 44px;
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    font-size: 12px;
+    color: #14532d;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .ax-q {
+    font-weight: 600;
+    font-size: 15px;
+    margin: 24px 0 4px;
+    color: #18181b;
+  }
+  .ax-dial {
+    display: flex;
+    border: 1px solid #d4d4d8;
+    border-radius: 9px;
+    overflow: hidden;
+    width: 420px;
+  }
+  .ax-dial div {
+    flex: 1;
+    padding: 6px 8px;
+    font-size: 12px;
+    color: #3f3f46;
+    border-right: 1px solid #e4e4e7;
+  }
+  .ax-dial div:last-child {
+    border-right: 0;
+  }
+  .ax-dial .on {
+    background: #18181b;
+    color: #fff;
+  }
+  .ax-tbl {
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+    color: #18181b;
+  }
+  .ax-tbl td,
+  .ax-tbl th {
+    border-bottom: 1px solid #f4f4f5;
+    padding: 4px 10px 4px 0;
+    text-align: left;
+    vertical-align: top;
+  }
+  .ax-tbl th {
+    color: #71717a;
+    font-weight: 500;
+    font-size: 11px;
+  }
+  .ax-sw {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid #f4f4f5;
+    font-size: 12px;
+    width: 420px;
+  }
+  .ax-seg {
+    display: inline-flex;
+    border: 1px solid #e4e4e7;
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .ax-seg span {
+    padding: 1px 8px;
+    font-size: 11px;
+    color: #52525b;
+  }
+  .ax-seg .on {
+    background: #f4f4f5;
+    color: #18181b;
+    font-weight: 600;
+  }
+</style>
+
+<h3 style="color: #18181b">
+  The inbox, rewritten (react to the words; the row shape is the one you picked)
+</h3>
+<div class="ax">
+  <div class="ax-pop">
+    <div class="ax-pophead"><span>Activity</span><span class="ax-muted">4 need you</span></div>
+
+    <div class="ax-row">
+      <div class="ax-ico">⧉</div>
+      <div style="flex: 1; min-width: 0">
+        <div class="ax-t">Turn on Flow?</div>
+        <div class="ax-why">
+          You installed the flow plugin. This adds a Flow tab that shows what your agents are
+          working on. It runs as you.
+        </div>
+      </div>
+      <div class="ax-acts">
+        <span class="ax-ib">ⓘ</span><span class="ax-ib" title="Not now">👎</span
+        ><span class="ax-ib" title="Turn it on">👍</span>
+      </div>
+    </div>
+
+    <div class="ax-proj">dorkos</div>
+    <div class="ax-row">
+      <div class="ax-ico">✓</div>
+      <div style="flex: 1; min-width: 0">
+        <div class="ax-t">Ship the new out-of-usage banner?</div>
+        <div class="ax-why">
+          It's built, tests pass, and the reviewer agent found nothing. Shipping merges it into the
+          app.
+        </div>
+      </div>
+      <div class="ax-acts">
+        <span class="ax-ib">ⓘ</span><span class="ax-ib" title="Send it back">👎</span
+        ><span class="ax-ib" title="Ship it">👍</span>
+      </div>
+    </div>
+    <div class="ax-after">
+      <span>Shipped. Next time, ship on its own when the reviewer agent approves?</span
+      ><span class="ax-wb">Yes</span>
+    </div>
+
+    <div class="ax-row">
+      <div class="ax-ico">?</div>
+      <div style="flex: 1; min-width: 0">
+        <div class="ax-t">Should the old API keep working?</div>
+        <div class="ax-why">
+          The agent needs this to finish "Faster sidebar". If you don't answer by 5pm, it keeps it
+          (the safer choice).
+        </div>
+        <div class="ax-chips">
+          <span class="ax-chip pick">Keep it · agent's pick</span
+          ><span class="ax-chip">Remove it</span><span class="ax-chip">Reply…</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ax-row">
+      <div class="ax-ico">✦</div>
+      <div style="flex: 1; min-width: 0">
+        <div class="ax-t">12 new ideas haven't been sorted</div>
+        <div class="ax-why">
+          Sorting them lets agents start on the good ones. Takes about 5 minutes.
+        </div>
+      </div>
+      <div class="ax-acts"><span class="ax-wb pri">Sort them</span></div>
+    </div>
+
+    <div class="ax-proj">blintz</div>
+    <div class="ax-row">
+      <div class="ax-ico">⚠</div>
+      <div style="flex: 1; min-width: 0">
+        <div class="ax-t">Sign in to Linear again</div>
+        <div class="ax-why">
+          Linear signed flow out at 9:14, so agents can't pick up new work in blintz. Only you can
+          sign in.
+        </div>
+      </div>
+      <div class="ax-acts"><span class="ax-wb pri">Sign in</span></div>
+    </div>
+  </div>
+</div>
+<ul class="ax-muted" style="color: #52525b; max-width: 640px">
+  <li>
+    "Sort them" just starts the work in a new chat. The row becomes "Sorting 12 ideas… · Watch". No
+    command, no second confirm: your click was the yes.
+  </li>
+  <li>
+    A question always carries the agent's own pick and a time. Silence means the agent goes ahead.
+    You're never the bottleneck.
+  </li>
+  <li>
+    "Sign in" appears only when a sign-in is truly gone. Blips retry quietly and never reach you.
+  </li>
+</ul>
+
+<div class="ax-q">Pick 1 · How do you say "do this on its own next time"?</div>
+<div class="options">
+  <div class="option" data-choice="always-a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Offer it right after you answer (my pick)</h3>
+      <p>
+        The green line in the "Ship" example above. It appears once, at the moment it makes sense,
+        then goes away. You learn it exists by using it.
+      </p>
+    </div>
+  </div>
+  <div class="option" data-choice="always-b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>An "Always" button beside 👍</h3>
+      <p>
+        Always there, one click. But it's one more button on every row, and "always" is easy to
+        click by accident on something that matters.
+      </p>
+      <div class="ax" style="margin-top: 6px">
+        <span class="ax-ib">ⓘ</span> <span class="ax-ib">👎</span> <span class="ax-ib">👍</span>
+        <span class="ax-wb">Always</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ax-q">Pick 2 · The one control for "how much does it do on its own"</div>
+<p class="subtitle" style="margin-top: 0">
+  Per project, in its settings ("Just me" box). Every "yes, next time" above just moves it along.
+</p>
+<div class="options">
+  <div class="option" data-choice="dial-a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>One dial with three stops, plus "Customize" (my pick)</h3>
+      <p>
+        Most people set it once. The table shows what each stop means. "Customize" opens the
+        per-item switches (B) for people who want them.
+      </p>
+      <div class="ax">
+        <div class="ax-dial">
+          <div>Ask me first</div>
+          <div class="on">Tell me after</div>
+          <div>Just do it</div>
+        </div>
+        <table class="ax-tbl">
+          <tr>
+            <th></th>
+            <th>Ask me first</th>
+            <th>Tell me after</th>
+            <th>Just do it</th>
+          </tr>
+          <tr>
+            <td>Ship finished work</td>
+            <td>asks you</td>
+            <td>reviewer agent approves, you're told</td>
+            <td>reviewer agent approves</td>
+          </tr>
+          <tr>
+            <td>Agent questions</td>
+            <td>waits for you</td>
+            <td>agent picks at the deadline</td>
+            <td>agent picks, writes why</td>
+          </tr>
+          <tr>
+            <td>Sort new ideas</td>
+            <td>asks you</td>
+            <td>daily, you're told</td>
+            <td>daily</td>
+          </tr>
+          <tr>
+            <td>Retry and fix problems</td>
+            <td>asks you</td>
+            <td>on its own, you're told</td>
+            <td>on its own</td>
+          </tr>
+        </table>
+        <div class="ax-muted" style="margin-top: 4px"><u>Customize…</u></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="dial-b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>A switch per kind of ask</h3>
+      <p>Precise, but you have to think about each one, and new kinds of ask add new rows.</p>
+      <div class="ax">
+        <div class="ax-sw">
+          <span>Ship finished work</span
+          ><span class="ax-seg"><span>Me</span><span class="on">Reviewer agent</span></span>
+        </div>
+        <div class="ax-sw">
+          <span>Agent questions</span
+          ><span class="ax-seg"><span>Me</span><span class="on">Agent decides</span></span>
+        </div>
+        <div class="ax-sw">
+          <span>Sort new ideas</span
+          ><span class="ax-seg"><span>Me</span><span class="on">Daily</span></span>
+        </div>
+        <div class="ax-sw">
+          <span>Retry and fix problems</span
+          ><span class="ax-seg"><span>Me</span><span class="on">On its own</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Always true, at every stop</h3>
+  <ul>
+    <li>
+      Three things still reach you, because only you can do them: signing in to an outside service,
+      spending past a limit you set, and trusting code from a source you haven't trusted yet.
+      Trusting a source is once: "Always trust extensions from dork-labs".
+    </li>
+    <li>
+      "Tell me after" and "Just do it" show a quiet "While you were away" summary in Activity, not
+      asks.
+    </li>
+    <li>
+      This fits with DorkOS's existing "full power" setting for agents. Same idea, one level up:
+      that one covers tool prompts, this one covers flow's work.
+    </li>
+  </ul>
+</div>
