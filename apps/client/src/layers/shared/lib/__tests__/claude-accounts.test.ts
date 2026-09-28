@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { createMockAccountUsage, createMockSessionLimit } from '@dorkos/test-utils';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import {
+  accountIdentity,
   accountWindow,
   barTone,
   chipState,
@@ -467,5 +468,86 @@ describe('limitSubject', () => {
     expect(limitSubject({ runtime: 'opencode', accountLabel: null, identityGate: false })).toBe(
       'OpenCode'
     );
+  });
+});
+
+describe('accountIdentity', () => {
+  const accounts = [
+    { id: 'acct-1', path: '/u/.claude-1', label: 'Acct 1' },
+    { id: 'acct-2', path: '/u/.claude-2', label: null },
+  ];
+  const nameFor = (path: string) => claudeAccountName(path, accounts);
+  const colors: Record<string, string> = { 'acct-1': '#2f7be0', '/u/.claude-2': '#1d8a4a' };
+  const colorFor = (key: string) => colors[key] ?? null;
+
+  it('names and colors a registered account by its id alone', () => {
+    expect(
+      accountIdentity({ accountId: 'acct-1', path: null, accounts, usage: null, nameFor, colorFor })
+    ).toEqual({ path: '/u/.claude-1', name: 'Acct 1', color: '#2f7be0' });
+  });
+
+  it('falls back to the folder name and the folder’s color', () => {
+    expect(
+      accountIdentity({
+        accountId: null,
+        path: '/u/.claude-2',
+        accounts,
+        usage: null,
+        nameFor,
+        colorFor,
+      })
+    ).toEqual({ path: '/u/.claude-2', name: '.claude-2', color: '#1d8a4a' });
+  });
+
+  it('takes the usage reading’s folder and color for an account nothing else knows', () => {
+    const usage = { accountId: null, path: '/u/.claude-9', label: null, color: '#78716c' };
+    expect(
+      accountIdentity({ accountId: null, path: null, accounts, usage, nameFor, colorFor })
+    ).toEqual({ path: '/u/.claude-9', name: '.claude-9', color: '#78716c' });
+  });
+
+  it('knows nothing of an account with no id, folder or reading', () => {
+    expect(
+      accountIdentity({ accountId: null, path: null, accounts, usage: null, nameFor, colorFor })
+    ).toEqual({ path: null, name: null, color: null });
+  });
+
+  it('names the standalone default by the host’s label, never its folder (decision §12)', () => {
+    const usage = {
+      accountId: 'default',
+      path: '/u/.claude',
+      label: "Main (this computer's sign-in)",
+      color: '#2f7be0',
+    };
+    // By id, with the folder known too.
+    expect(
+      accountIdentity({
+        accountId: 'default',
+        path: '/u/.claude',
+        accounts,
+        usage,
+        nameFor,
+        colorFor,
+      }).name
+    ).toBe("Main (this computer's sign-in)");
+    // By the reading alone, for a session the server named only by its folder.
+    expect(
+      accountIdentity({ accountId: null, path: '/u/.claude', accounts, usage, nameFor, colorFor })
+        .name
+    ).toBe("Main (this computer's sign-in)");
+  });
+
+  it('keeps a registered row’s own label even when it aliases the default folder', () => {
+    const usage = { accountId: 'acct-1', path: '/u/.claude-1', label: 'Acct 1', color: '#2f7be0' };
+    expect(
+      accountIdentity({
+        accountId: 'acct-1',
+        path: '/u/.claude-1',
+        accounts,
+        usage,
+        nameFor,
+        colorFor,
+      }).name
+    ).toBe('Acct 1');
   });
 });

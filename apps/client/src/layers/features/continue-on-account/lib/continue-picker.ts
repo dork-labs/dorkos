@@ -88,7 +88,9 @@ export function choiceKey(row: ContinueOptionAccount, sessionRuntime: string): s
 
 /**
  * What a row is called. On the session's own runtime: the server's label,
- * else the name the rest of the app uses for that folder. On another runtime,
+ * else (for this computer's own sign-in) the host's label on its reading, else
+ * the name the rest of the app uses for that folder (`useClaudeAccounts().nameFor`,
+ * which names the standalone default "Main (this computer's sign-in)" too). On another runtime,
  * by `limitSubject`'s rules: its label, else the runtime's name, with an
  * implicit account reading "Codex (this computer's sign-in)".
  *
@@ -111,6 +113,9 @@ export function rowName(
     return limitSubject({ runtime, accountLabel: row.label, identityGate: true });
   }
   if (row.label) return row.label;
+  // This computer's own sign-in reads the host's label, never its folder
+  // (decision §12): the reading carries it when the row does not.
+  if (row.id === IMPLICIT_ACCOUNT_ID && row.usage.label) return row.usage.label;
   return row.usage.path ? nameForPath(row.usage.path) : row.id;
 }
 

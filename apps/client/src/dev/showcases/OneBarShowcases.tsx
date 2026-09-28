@@ -18,7 +18,9 @@ import {
   type OneBarRouteState,
 } from '@/layers/widgets/one-bar';
 import type { TeamViewMode } from '@/layers/shared/lib';
+import { AccountBadgeView, type SessionAccount } from '@/layers/features/status';
 import { ARCHIVED_ROOM, BRIDGED_CHANNEL_ROOM, CHANNEL_ROOM, DM_ROOM } from './rooms-showcase-data';
+import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -43,6 +45,9 @@ const TEAM_VIEW_MODES: TeamViewMode[] = ['cards', 'table', 'topology', 'denied',
 
 /** The width a phone gives the bar. */
 const PHONE_WIDTH = 390;
+
+/** The narrowest phone the app supports, where the account badge's long words shorten. */
+const NARROW_BADGE_WIDTH = 360;
 
 /**
  * The width the page really has at 768px with the sidebar and the right panel
@@ -702,6 +707,101 @@ export function OneBarShowcases() {
           </BarFrame>
         </ShowcaseDemo>
       </PlaygroundSection>
+
+      <PlaygroundSection
+        title="AccountBadge"
+        description="The session header names the account the session spends, after the origin chip, once two or more Claude accounts are set up. When the session ran out it prints its sidebar row's words, in red only while it needs you; a moved session or a limit on one model only keeps the normal pill."
+      >
+        <ShowcaseLabel>Normal</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            <OneBar
+              identity={<BarTitle>DOR-2353 memory stamps</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(2)} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Out of usage and needs you: red</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            <OneBar
+              identity={<BarTitle>DOR-2361 issuer column</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(4, 'limited')} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Out of usage, chose to wait for the reset: neutral (Q13)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            <OneBar
+              identity={<BarTitle>Main · groom check</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(3, 'waiting-reset')} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The same wait at 360px: the words shorten to “out · waiting”, and the spoken name and the
+          tooltip keep “waiting for reset”
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={NARROW_BADGE_WIDTH}>
+            <OneBar
+              identity={<BarTitle>Main · groom check</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(3, 'waiting-reset')} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Needs you at 360px: its words fit and stay whole</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={NARROW_BADGE_WIDTH}>
+            <OneBar
+              identity={<BarTitle>DOR-2361 issuer column</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(4, 'limited')} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+      </PlaygroundSection>
     </OneBarProvider>
   );
+}
+
+/**
+ * A started Claude session on the playground's account `n`, as
+ * `useSessionAccount` reads it with the identity gate open.
+ */
+function badgeAccount(n: number, limitState?: 'limited' | 'waiting-reset'): SessionAccount {
+  const usage = MOCK_ACCOUNT_USAGE[n - 1]!;
+  const resetsAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+  const limit: SessionAccount['limit'] = limitState
+    ? {
+        accountId: usage.accountId,
+        window: 'seven_day',
+        resetsAt,
+        since: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+        plan:
+          limitState === 'limited'
+            ? { mode: 'ask' }
+            : { mode: 'waiting', resumeAt: resetsAt, autoResume: false },
+        scope: 'account',
+        state: limitState,
+      }
+    : null;
+  return {
+    visible: true,
+    runtime: 'claude-code',
+    accountId: usage.accountId,
+    path: usage.path,
+    name: usage.label,
+    color: usage.color,
+    usage,
+    limit,
+    chipState: limit ? 'out' : 'ok',
+    trackerItem: null,
+    lifecycle: 'idle',
+    pending: false,
+  };
 }

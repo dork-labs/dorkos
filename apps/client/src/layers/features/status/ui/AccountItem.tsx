@@ -14,8 +14,8 @@ import {
   UsageMiniBars,
   usageMiniBarsLabel,
 } from '@/layers/shared/ui';
-import { accountWindow, claudeAccountName, cn, type ChipState } from '@/layers/shared/lib';
-import { useAccountUsage, useNow } from '@/layers/shared/model';
+import { accountWindow, cn, type ChipState } from '@/layers/shared/lib';
+import { useAccountUsage, useClaudeAccounts, useNow } from '@/layers/shared/model';
 import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from '../model/use-account-switch';
 import type { SessionAccount } from '../model/use-session-account';
 import { accountChipText, chipToneFor } from '../lib/account-chip';
@@ -148,6 +148,7 @@ function AccountPicker({
   stateText: string | null;
 }) {
   const accountSwitch = useAccountSwitch(sessionId);
+  const { nameFor } = useClaudeAccounts();
   // Cache only: the chip's own read already fetched the runtime's usage when
   // the seed lacked it, and that answer covers every account.
   const { byId, byPath } = useAccountUsage(account.runtime);
@@ -216,7 +217,7 @@ function AccountPicker({
               }
             >
               <AccountMenuRow
-                label={claudeAccountName(entry.path, accountSwitch.accounts)}
+                label={nameFor(entry.path)}
                 color={entry.color}
                 usage={usageOf(entry.id, entry.path)}
               />

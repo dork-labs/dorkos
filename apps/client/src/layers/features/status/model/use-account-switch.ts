@@ -16,7 +16,6 @@
  * @module features/status/model/use-account-switch
  */
 import { useEffect } from 'react';
-import { claudeAccountName } from '@/layers/shared/lib';
 import { useAppStore, useClaudeAccounts, type ClaudeAccountEntry } from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
 
@@ -91,7 +90,7 @@ export interface AccountSwitch {
  * read settles the label is `undefined` — silence beats a confident wrong name.
  */
 export function useAccountSwitch(sessionId: string): AccountSwitch {
-  const { accounts, resolvedAccount, isMultiAccount } = useClaudeAccounts();
+  const { accounts, resolvedAccount, isMultiAccount, nameFor } = useClaudeAccounts();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const pendingAccount = useAppStore((s) => s.pendingAccount);
   const setPendingAccount = useAppStore((s) => s.setPendingAccount);
@@ -144,7 +143,7 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
     accounts: selectable,
     selectedValue: heldId && isRegistered(heldId) ? heldId : DEFAULT_ACCOUNT_VALUE,
     isMultiAccount,
-    defaultLabel: defaultPath ? claudeAccountName(defaultPath, accounts) : undefined,
+    defaultLabel: defaultPath ? nameFor(defaultPath) : undefined,
     defaultPath,
     choose: (value: string) =>
       setPendingAccount(value === DEFAULT_ACCOUNT_VALUE ? null : { id: value, sessionId }),

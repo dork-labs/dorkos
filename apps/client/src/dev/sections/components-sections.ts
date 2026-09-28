@@ -550,4 +550,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
       'comfortable',
     ],
   },
+  // AccountFullRowsShowcase (spec claude-account-ui §13): full rows only; the
+  // compact ones sit in the Sidebar Model page's AccountMark section.
+  {
+    id: 'sessionrow-out-of-usage',
+    title: 'SessionRow out of usage',
+    page: 'components',
+    category: 'Sidebar',
+    keywords: ['session', 'row', 'account', 'dot', 'out of usage', 'limit', 'needs you', 'waiting'],
+  },
 ];

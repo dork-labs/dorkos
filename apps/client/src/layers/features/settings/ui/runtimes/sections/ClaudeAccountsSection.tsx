@@ -17,7 +17,6 @@ import {
 import type { ServerConfig } from '@dorkos/shared/types';
 import {
   accountWindow,
-  claudeAccountName,
   claudeAccountOptions,
   cn,
   isAbsoluteAccountPath,
@@ -41,6 +40,7 @@ import {
 import {
   accountKeys,
   useAccountUsage,
+  useClaudeAccounts,
   useSettingsDeepLink,
   useSlotContributions,
   useTransport,
@@ -168,6 +168,9 @@ function describeWriteFailure(err: unknown): string {
  */
 export function ClaudeAccountsSection() {
   const { data: config } = useConfig();
+  // Names every account the one way (the standalone default reads "Main (this
+  // computer's sign-in)", decision §12).
+  const { nameFor } = useClaudeAccounts();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
 
@@ -362,7 +365,7 @@ export function ClaudeAccountsSection() {
             </SelectItem>
             {claudeAccountOptions(accounts, inherited ? null : resolvedAccount).map((option) => (
               <SelectItem key={option.path} value={option.path}>
-                {claudeAccountName(option.path, accounts)}
+                {nameFor(option.path)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -372,7 +375,7 @@ export function ClaudeAccountsSection() {
       {accounts.map((account) => (
         <AccountRow
           key={account.path}
-          name={claudeAccountName(account.path, accounts)}
+          name={nameFor(account.path)}
           account={account}
           isActive={!inherited && resolvedAccount === account.path}
           onRemove={() => removeAccount(account.path)}
@@ -395,7 +398,7 @@ export function ClaudeAccountsSection() {
           remove button, and its color is stored on its own. */}
       {mainUsage && (
         <AccountRow
-          name={mainUsage.label ?? claudeAccountName(mainUsage.path, [])}
+          name={mainUsage.label ?? nameFor(mainUsage.path)}
           account={{
             path: mainUsage.path,
             color: claudeCode?.defaultAccountResolvedColor ?? mainUsage.color,
@@ -510,15 +513,14 @@ function ClaudeUsageBlock({
   accounts: readonly Account[];
   usage: AccountUsageView;
 }) {
+  const { nameFor } = useClaudeAccounts();
   if (accounts.length > 1) return null;
   const only = accounts[0];
   const record: AccountUsage | undefined = only
     ? ((only.id ? usage.byId.get(only.id) : undefined) ?? usage.byPath.get(only.path))
     : usage.byId.get(IMPLICIT_ACCOUNT_ID);
   if (!record) return null;
-  const name = only
-    ? claudeAccountName(only.path, accounts)
-    : (record.label ?? claudeAccountName(record.path, []));
+  const name = only ? nameFor(only.path) : (record.label ?? nameFor(record.path));
   return <AccountUsageBars usage={record} name={name} />;
 }
 

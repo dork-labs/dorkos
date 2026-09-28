@@ -32,6 +32,10 @@ export { deriveStatusBarValues } from './lib/derive-status-bar';
 export { selectRenderedStatus } from './lib/select-rendered-status';
 export { useSessionRenderedStatus } from './model/status/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
+// The sidebar row's out-of-usage rule, which the session header's account
+// badge follows too so the two never disagree (spec `claude-account-ui` §6.3).
+export { sessionLimitDisplay } from './lib/session-limit-text';
+export type { SessionLimitDisplay } from './lib/session-limit-text';
 export { useSessionRuntime } from './model/query/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/navigation/use-session-id';
 export type { SetSessionIdOptions } from './model/navigation/use-session-id';
@@ -159,6 +163,9 @@ export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
 export { SessionOriginMark } from './ui/SessionOriginMark';
+// The sidebar's account dot (spec `claude-account-ui` §6.2); the Dev
+// Playground shows it by palette color.
+export { AccountMark } from './ui/AccountMark';
 export {
   humanOriginSessionIds,
   partitionSessionsByOrigin,

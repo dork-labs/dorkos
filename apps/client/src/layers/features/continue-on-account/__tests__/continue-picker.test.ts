@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ContinueOptionAccount } from '@dorkos/shared/account-usage';
 import { createMockAccountUsage } from '@dorkos/test-utils';
-import { canOpenPicker, isSelectable, keptOutLine } from '../lib/continue-picker';
+import { canOpenPicker, isSelectable, keptOutLine, rowName } from '../lib/continue-picker';
 
 function row(extra: Partial<ContinueOptionAccount> = {}): ContinueOptionAccount {
   return {
@@ -62,5 +62,38 @@ describe('keptOutLine', () => {
       "Client and Acct 5 are kept out, so they aren't listed."
     );
     expect(keptOutLine(['A', 'B', 'C'])).toBe("A, B and C are kept out, so they aren't listed.");
+  });
+});
+
+describe('rowName', () => {
+  const MAIN = "Main (this computer's sign-in)";
+  const folderName = (path: string) => path.split('/').pop()!;
+
+  it('names this computer’s own Claude sign-in by the host’s label, never ".claude" (§12)', () => {
+    const main = row({
+      id: 'default',
+      label: null,
+      usage: createMockAccountUsage({ accountId: 'default', path: '/u/.claude', label: MAIN }),
+    });
+    expect(rowName(main, 'claude-code', folderName)).toBe(MAIN);
+  });
+
+  it('asks the app’s shared name for a folder the reading does not label', () => {
+    const unlabeled = row({
+      id: 'default',
+      label: null,
+      usage: createMockAccountUsage({ accountId: 'default', path: '/u/.claude', label: null }),
+    });
+    expect(rowName(unlabeled, 'claude-code', () => MAIN)).toBe(MAIN);
+  });
+
+  it('keeps a registered account’s own label', () => {
+    expect(rowName(row(), 'claude-code', folderName)).toBe('Acct 2');
+  });
+
+  it('names another runtime’s implicit account "<Runtime> (this computer’s sign-in)"', () => {
+    expect(
+      rowName(row({ id: 'default', label: null, runtime: 'codex' }), 'claude-code', folderName)
+    ).toBe("Codex (this computer's sign-in)");
   });
 });

@@ -5,6 +5,7 @@ import {
   SessionOriginMark,
   sessionDisplayTitle,
 } from '@/layers/entities/session';
+import { AccountBadge } from '@/layers/features/status';
 import { useOneBarState } from '../model/one-bar-context';
 import { useLastKnownAgent } from '../model/use-last-known-agent';
 import { OneBar } from './OneBar';
@@ -117,46 +118,52 @@ export function SessionHeader() {
         </div>
       }
       chips={
-        descriptor ? (
-          <span
-            className="text-muted-foreground flex max-w-[12rem] min-w-0 shrink items-center gap-1 text-sm"
-            data-testid="session-origin-chip"
-          >
-            {/* Not decorative below the threshold: once the words are gone the
+        <>
+          {descriptor ? (
+            <span
+              className="text-muted-foreground flex max-w-[12rem] min-w-0 shrink items-center gap-1 text-sm"
+              data-testid="session-origin-chip"
+            >
+              {/* Not decorative below the threshold: once the words are gone the
                 icon is the only origin signal left, so it has to carry the
                 label itself — which is exactly the mode this component already
                 has. Above the threshold the visible text would be announced
                 twice, so it goes back to decorative. */}
-            {/* `min-w-0` is load-bearing, not tidying. A flex item's automatic
+              {/* `min-w-0` is load-bearing, not tidying. A flex item's automatic
                 minimum size is its CONTENT, so without it this wrapper refuses
                 to shrink, the `truncate` below never engages, and the label
                 spills straight past the 12rem cap on its parent — measured at
                 +182px, painting over the fixed cluster. The cap only caps a box
                 that is allowed to get smaller. */}
-            <span className="inline-flex min-w-0 items-center gap-1 @max-md/bar:hidden">
-              <SessionOriginMark origin={origin} label={originText} decorative />
-              {bareOriginText === originText ? (
-                <span className="min-w-0 truncate" title={originText}>
-                  {originText}
-                </span>
-              ) : (
-                <>
-                  {/* `select-none` so the mark a screen reader hears never
+              <span className="inline-flex min-w-0 items-center gap-1 @max-md/bar:hidden">
+                <SessionOriginMark origin={origin} label={originText} decorative />
+                {bareOriginText === originText ? (
+                  <span className="min-w-0 truncate" title={originText}>
+                    {originText}
+                  </span>
+                ) : (
+                  <>
+                    {/* `select-none` so the mark a screen reader hears never
                       lands in a copied selection or matches find-in-page —
                       the same reasoning `RoomTitle` documents for the
                       identical split. */}
-                  <span className="sr-only select-none">{originText}</span>
-                  <span className="min-w-0 truncate" aria-hidden title={originText}>
-                    {bareOriginText}
-                  </span>
-                </>
-              )}
+                    <span className="sr-only select-none">{originText}</span>
+                    <span className="min-w-0 truncate" aria-hidden title={originText}>
+                      {bareOriginText}
+                    </span>
+                  </>
+                )}
+              </span>
+              <span className="hidden @max-md/bar:inline-flex">
+                <SessionOriginMark origin={origin} label={originText} />
+              </span>
             </span>
-            <span className="hidden @max-md/bar:inline-flex">
-              <SessionOriginMark origin={origin} label={originText} />
-            </span>
-          </span>
-        ) : null
+          ) : null}
+          {/* Which account this session spends, after the origin (spec
+              `claude-account-ui` §6.3). Draws nothing unless two or more
+              accounts can be told apart. */}
+          <AccountBadge sessionId={sessionId ?? null} />
+        </>
       }
     />
   );
