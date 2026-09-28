@@ -123,58 +123,64 @@ function rethrowDiscoveryError(error: unknown, signal: AbortSignal): never {
   throw new ComposioCatalogError('Composio catalog discovery failed. Check the provider status.');
 }
 
-/** Tags that do not contradict an explicit read-only assertion. */
-const READ_COMPATIBLE_TAGS = new Set([
-  'readOnlyHint',
-  'idempotentHint',
-  'openWorldHint',
-  'important',
-]);
+/**
+ * Composio's safety verdicts are its tags that end in `Hint`. The same `tags`
+ * list also carries category labels ("gmail", "messages", "Events
+ * Management", "deprecated") and the `important` mark; those say nothing about
+ * what an action does, so classification ignores them.
+ */
+const HINT_TAG = /Hint$/;
+
+/** Hints that do not contradict an explicit read-only verdict. */
+const READ_COMPATIBLE_HINTS = new Set(['readOnlyHint', 'idempotentHint', 'openWorldHint']);
 
 /**
- * Composio's two verdict tags for an action that makes or changes something
+ * Composio's two verdicts for an action that makes or changes something
  * without removing it: `createHint` (sending an email, opening an issue) and
  * `updateHint` (editing something in place).
  */
-const WRITE_VERDICT_TAGS = new Set(['createHint', 'updateHint']);
+const WRITE_VERDICT_HINTS = new Set(['createHint', 'updateHint']);
 
 /**
- * Tags that do not contradict a create or update verdict. `destructiveHint`
+ * Hints that do not contradict a create or update verdict. `destructiveHint`
  * and `readOnlyHint` are deliberately absent: Composio puts `destructiveHint`
  * on every irreversible action, including an irreversible update that also
  * carries `updateHint`, and a read verdict beside a write verdict is a
  * contradiction.
  */
-const WRITE_COMPATIBLE_TAGS = new Set([
+const WRITE_COMPATIBLE_HINTS = new Set([
   'createHint',
   'updateHint',
   'idempotentHint',
   'openWorldHint',
-  'important',
 ]);
 
 /**
- * Classify one action from the tags Composio sends, failing toward the
- * strictest tier.
+ * Classify one action from the safety hints Composio sends, failing toward
+ * the strictest tier. Only tags ending in `Hint` count; category tags are
+ * ignored, but an unknown `…Hint` is treated as a verdict DorkOS does not
+ * understand.
  *
- * - `read`: an explicit `readOnlyHint` that no other tag contradicts.
- * - `write`: an explicit `createHint` or `updateHint` with no `destructiveHint`,
- *   no `readOnlyHint` and no tag DorkOS does not know. Composio documents
- *   `destructiveHint` as "irreversibly removes, cancels or revokes data", so a
- *   delete never lands here.
+ * - `read`: `readOnlyHint`, and every hint is one of `readOnlyHint`,
+ *   `idempotentHint`, `openWorldHint`.
+ * - `write`: `createHint` or `updateHint`, and every hint is one of those or
+ *   `idempotentHint`, `openWorldHint` — so no `destructiveHint` and no
+ *   `readOnlyHint`. Composio documents `destructiveHint` as "irreversibly
+ *   removes, cancels or revokes data", so a delete never lands here.
  * - `destructive`: everything else — a destructive verdict, contradictory
- *   verdicts, no verdict at all, or any unknown future tag. Idempotence does
- *   not prove read-only, and a missing tag never proves safety.
+ *   verdicts, no verdict at all, or an unknown hint. Idempotence does not
+ *   prove read-only, and a missing hint never proves safety.
  *
  * @param tags - The action's `tags` exactly as Composio listed them.
  */
 function classifyComposioTags(tags: readonly string[]): ConnectorOperationClassification {
-  if (tags.includes('readOnlyHint') && tags.every((tag) => READ_COMPATIBLE_TAGS.has(tag))) {
+  const hints = tags.filter((tag) => HINT_TAG.test(tag));
+  if (hints.includes('readOnlyHint') && hints.every((hint) => READ_COMPATIBLE_HINTS.has(hint))) {
     return 'read';
   }
   if (
-    tags.some((tag) => WRITE_VERDICT_TAGS.has(tag)) &&
-    tags.every((tag) => WRITE_COMPATIBLE_TAGS.has(tag))
+    hints.some((hint) => WRITE_VERDICT_HINTS.has(hint)) &&
+    hints.every((hint) => WRITE_COMPATIBLE_HINTS.has(hint))
   ) {
     return 'write';
   }

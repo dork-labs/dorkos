@@ -22,16 +22,22 @@ Composio labels every action with at least one of four verdict tags, which it en
 
 ## Decision
 
-We classify a Composio action as `write` only on a positive create or update verdict that nothing contradicts: at least one of `createHint`/`updateHint`, and every tag in the known set `createHint`, `updateHint`, `idempotentHint`, `openWorldHint`, `important`. `destructiveHint`, `readOnlyHint` or any tag DorkOS does not know keeps it `destructive`, and so does an action with no verdict at all. The `read` rule is unchanged. Deletes stay out of both levels because Composio marks them `destructiveHint`, which our rule never lets through.
+We classify from Composio's safety hints only: the tags ending in `Hint`. A read of Composio's live Gmail and Google Calendar lists (112 actions, 2026-09-28) showed the same `tags` list also carries category labels ("gmail", "messages", "Events Management", "deprecated", "batch") and the `important` mark. The earlier rule treated any tag it did not know as a contradiction, so those labels pushed most reads into `destructive` (about 12 of 62 Gmail actions and 1 of 50 Calendar actions came out `read`) and would have kept every Calendar create and update out of "Read and write". Labels say nothing about what an action does, so we ignore them; an unknown `…Hint` still counts, as a verdict we do not understand.
 
-Classification is not rewritten on stored data. Operation revisions are immutable and their identity includes the classification, so the next discovery records a send action as a new `write` revision beside the old `destructive` one. Nobody is moved onto it: a "Read" grant keeps exactly its read actions, and an agent that picked the old destructive send action exactly keeps it, still behind per-action approval, until the person next changes that agent's access (the old revision shows as no longer offered). On the hosted DorkOS account path the same client classifies, and the hosted store already retires the old revision and its grant on a reclassification, so access there can only shrink until the person chooses again.
+- `read`: `readOnlyHint`, and every hint is `readOnlyHint`, `idempotentHint` or `openWorldHint`.
+- `write`: `createHint` or `updateHint`, and every hint is one of those or `idempotentHint`, `openWorldHint` — so never beside `destructiveHint` or `readOnlyHint`.
+- `destructive`: everything else — a destructive verdict, contradictory verdicts, no verdict at all, or an unknown hint.
+
+Deletes stay out of both levels because Composio marks them `destructiveHint`, which our rule never lets through. On the live lists every action whose name says delete, remove or clear comes out `destructive`, as do `GMAIL_SEND_DRAFT` and `GMAIL_STOP_WATCH` (Composio marks both irreversible). The read tier widens for the same reason the write tier appears: reads that were only mislabelled by category tags, such as `GMAIL_GET_DRAFT` and `GOOGLECALENDAR_FIND_FREE_SLOTS`, now count as reads.
+
+Classification is not rewritten on stored data. Operation revisions are immutable and their identity includes the classification, so the next discovery records a send action as a new `write` revision (and a newly recognised read as a new `read` revision) beside the old `destructive` one. Nobody is moved onto it: a "Read" grant keeps exactly the revisions it had, and an agent that picked the old destructive send action exactly keeps it, still behind per-action approval, until the person next changes that agent's access (the old revision shows as no longer offered). On the hosted DorkOS account path the same client classifies, and the hosted store already retires the old revision and its grant on a reclassification, so access there can only shrink until the person chooses again.
 
 ## Consequences
 
 ### Positive
 
-- Gmail, Calendar, GitHub and other Composio apps offer "Read and write": send, create and edit, never delete.
-- The rule reads only what Composio asserts; an unknown future tag or a missing verdict still lands in the strictest tier.
+- Gmail, Google Calendar and other Composio apps that mark their actions offer "Read and write": send, create and edit, never delete.
+- The rule reads only what Composio asserts; an unknown future hint or a missing verdict still lands in the strictest tier, and a test runs it over Composio's live Gmail and Calendar tags.
 - Both sides (this computer and the hosted account path) classify through one function, so they cannot disagree.
 
 ### Negative
@@ -39,3 +45,5 @@ Classification is not rewritten on stored data. Operation revisions are immutabl
 - We trust Composio's verdict. Sending an email cannot be undone, yet Composio calls it `createHint`, so "Read and write" lets an agent send; the owner chose this on purpose.
 - If a pinned toolkit version still lists tools without `createHint`/`updateHint`, those tools stay `destructive` and the app keeps offering "Read" only until Composio re-syncs it.
 - Anyone who picked Composio send or create actions one by one sees them as no longer offered and chooses again the next time they change that agent's access.
+- A "Read" grant made before this change no longer matches the wider "Read" preset, so the access card shows it as exact actions until the person picks "Read" again. That is the honest state (it covers fewer reads than "Read" now does), the same one a new service version already produces.
+- A few `write` actions change settings with reach beyond one message, such as calendar sharing (`GOOGLECALENDAR_ACL_INSERT`) and Gmail filters, forwarding and send-as addresses. Composio does not mark them destructive, so "Read and write" includes them.

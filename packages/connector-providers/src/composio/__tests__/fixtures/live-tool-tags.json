@@ -1,0 +1,510 @@
+{
+  "gmail": [
+    {
+      "slug": "GMAIL_ADD_LABEL_TO_EMAIL",
+      "tags": ["idempotentHint", "openWorldHint", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_BATCH_DELETE_MESSAGES",
+      "tags": ["gmail", "destructiveHint", "batch", "messages"]
+    },
+    {
+      "slug": "GMAIL_BATCH_MODIFY_MESSAGES",
+      "tags": ["gmail", "important", "batch", "labels", "inbox", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_CREATE_EMAIL_DRAFT",
+      "tags": ["important", "openWorldHint", "createHint"]
+    },
+    {
+      "slug": "GMAIL_CREATE_FILTER",
+      "tags": ["openWorldHint", "filters", "createHint"]
+    },
+    {
+      "slug": "GMAIL_CREATE_LABEL",
+      "tags": ["openWorldHint", "createHint"]
+    },
+    {
+      "slug": "GMAIL_DELETE_DRAFT",
+      "tags": ["destructiveHint", "idempotentHint", "important", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_DELETE_FILTER",
+      "tags": ["destructiveHint", "openWorldHint", "filters"]
+    },
+    {
+      "slug": "GMAIL_DELETE_LABEL",
+      "tags": ["destructiveHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_DELETE_MESSAGE",
+      "tags": ["destructiveHint", "important", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_DELETE_THREAD",
+      "tags": ["destructiveHint", "important", "openWorldHint", "gmail"]
+    },
+    {
+      "slug": "GMAIL_FETCH_EMAILS",
+      "tags": ["important", "openWorldHint", "readOnlyHint"]
+    },
+    {
+      "slug": "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+      "tags": ["important", "readOnlyHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
+      "tags": ["readOnlyHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_FORWARD_MESSAGE",
+      "tags": ["openWorldHint", "createHint"]
+    },
+    {
+      "slug": "GMAIL_GET_ATTACHMENT",
+      "tags": ["important", "readOnlyHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_GET_AUTO_FORWARDING",
+      "tags": ["readOnlyHint", "openWorldHint", "mailbox_automation"]
+    },
+    {
+      "slug": "GMAIL_GET_CONTACTS",
+      "tags": ["openWorldHint", "readOnlyHint"]
+    },
+    {
+      "slug": "GMAIL_GET_DRAFT",
+      "tags": ["important", "readOnlyHint", "openWorldHint", "gmail"]
+    },
+    {
+      "slug": "GMAIL_GET_FILTER",
+      "tags": ["readOnlyHint", "openWorldHint", "filters"]
+    },
+    {
+      "slug": "GMAIL_GET_LABEL",
+      "tags": ["readOnlyHint", "openWorldHint", "labels"]
+    },
+    {
+      "slug": "GMAIL_GET_LANGUAGE_SETTINGS",
+      "tags": ["readOnlyHint", "openWorldHint", "mailbox_automation"]
+    },
+    {
+      "slug": "GMAIL_GET_PEOPLE",
+      "tags": ["readOnlyHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_GET_PROFILE",
+      "tags": ["readOnlyHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_GET_VACATION_SETTINGS",
+      "tags": ["readOnlyHint", "openWorldHint", "mailbox_automation"]
+    },
+    {
+      "slug": "GMAIL_IMPORT_MESSAGE",
+      "tags": ["openWorldHint", "messages", "createHint"]
+    },
+    {
+      "slug": "GMAIL_INSERT_MESSAGE",
+      "tags": ["openWorldHint", "messages", "createHint"]
+    },
+    {
+      "slug": "GMAIL_LIST_CSE_IDENTITIES",
+      "tags": ["readOnlyHint", "openWorldHint", "security_encryption"]
+    },
+    {
+      "slug": "GMAIL_LIST_CSE_KEYPAIRS",
+      "tags": ["readOnlyHint", "openWorldHint", "security_encryption"]
+    },
+    {
+      "slug": "GMAIL_LIST_DRAFTS",
+      "tags": ["important", "openWorldHint", "readOnlyHint"]
+    },
+    {
+      "slug": "GMAIL_LIST_FILTERS",
+      "tags": ["readOnlyHint", "openWorldHint", "filters"]
+    },
+    {
+      "slug": "GMAIL_LIST_FORWARDING_ADDRESSES",
+      "tags": ["readOnlyHint", "openWorldHint", "forwarding"]
+    },
+    {
+      "slug": "GMAIL_LIST_HISTORY",
+      "tags": ["readOnlyHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_LIST_LABELS",
+      "tags": ["readOnlyHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_LIST_MESSAGES",
+      "tags": ["important", "readOnlyHint", "openWorldHint", "messages", "deprecated"]
+    },
+    {
+      "slug": "GMAIL_LIST_SEND_AS",
+      "tags": ["readOnlyHint", "openWorldHint", "send_as_aliases"]
+    },
+    {
+      "slug": "GMAIL_LIST_SMIME_INFO",
+      "tags": ["readOnlyHint", "openWorldHint", "security_encryption"]
+    },
+    {
+      "slug": "GMAIL_LIST_THREADS",
+      "tags": ["readOnlyHint", "openWorldHint"]
+    },
+    {
+      "slug": "GMAIL_MODIFY_THREAD_LABELS",
+      "tags": ["idempotentHint", "openWorldHint", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_MOVE_THREAD_TO_TRASH",
+      "tags": ["important", "openWorldHint", "gmail", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_MOVE_TO_TRASH",
+      "tags": ["important", "openWorldHint", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_PATCH_LABEL",
+      "tags": ["idempotentHint", "important", "labels", "openWorldHint", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_PATCH_SEND_AS",
+      "tags": ["idempotentHint", "important", "openWorldHint", "send_as_aliases", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_REMOVE_LABEL",
+      "tags": ["destructiveHint", "openWorldHint", "deprecated"]
+    },
+    {
+      "slug": "GMAIL_REPLY_TO_THREAD",
+      "tags": ["important", "openWorldHint", "createHint"]
+    },
+    {
+      "slug": "GMAIL_SEARCH_PEOPLE",
+      "tags": ["important", "openWorldHint", "readOnlyHint"]
+    },
+    {
+      "slug": "GMAIL_SEND_DRAFT",
+      "tags": ["important", "openWorldHint", "destructiveHint", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_SEND_EMAIL",
+      "tags": ["important", "openWorldHint", "createHint"]
+    },
+    {
+      "slug": "GMAIL_SETTINGS_GET_IMAP",
+      "tags": ["readOnlyHint", "openWorldHint", "mail_protocols"]
+    },
+    {
+      "slug": "GMAIL_SETTINGS_GET_POP",
+      "tags": ["readOnlyHint", "openWorldHint", "mail_protocols"]
+    },
+    {
+      "slug": "GMAIL_SETTINGS_SEND_AS_GET",
+      "tags": ["readOnlyHint", "openWorldHint", "send_as_aliases"]
+    },
+    {
+      "slug": "GMAIL_STOP_WATCH",
+      "tags": ["openWorldHint", "watch", "updateHint", "destructiveHint"]
+    },
+    {
+      "slug": "GMAIL_UNTRASH_MESSAGE",
+      "tags": ["important", "openWorldHint", "messages", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_UNTRASH_THREAD",
+      "tags": ["openWorldHint", "important", "gmail", "updateHint"]
+    },
+    {
+      "slug": "GMAIL_UPDATE_DRAFT",
+      "tags": ["important", "openWorldHint", "updateHint", "messages"]
+    },
+    {
+      "slug": "GMAIL_UPDATE_IMAP_SETTINGS",
+      "tags": ["updateHint", "openWorldHint", "mail_protocols"]
+    },
+    {
+      "slug": "GMAIL_UPDATE_LABEL",
+      "tags": ["updateHint", "important", "openWorldHint", "labels"]
+    },
+    {
+      "slug": "GMAIL_UPDATE_LANGUAGE_SETTINGS",
+      "tags": ["updateHint", "openWorldHint", "settings"]
+    },
+    {
+      "slug": "GMAIL_UPDATE_POP_SETTINGS",
+      "tags": ["updateHint", "openWorldHint", "mail_protocols"]
+    },
+    {
+      "slug": "GMAIL_UPDATE_SEND_AS",
+      "tags": ["updateHint", "openWorldHint", "send_as_aliases"]
+    },
+    {
+      "slug": "GMAIL_UPDATE_VACATION_SETTINGS",
+      "tags": ["updateHint", "openWorldHint", "mailbox_automation"]
+    },
+    {
+      "slug": "GMAIL_WHO_AM_I",
+      "tags": ["important", "readOnlyHint", "idempotentHint", "auth"]
+    }
+  ],
+  "googlecalendar": [
+    {
+      "slug": "GOOGLECALENDAR_ACL_DELETE",
+      "tags": ["important", "destructiveHint", "idempotentHint", "openWorldHint", "access_control"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_GET",
+      "tags": ["important", "readOnlyHint", "openWorldHint", "access_control"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_INSERT",
+      "tags": ["important", "openWorldHint", "access_control", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_LIST",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint", "Access Control"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_PATCH",
+      "tags": ["updateHint", "idempotentHint", "openWorldHint", "Access Control"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_UPDATE",
+      "tags": ["updateHint", "idempotentHint", "openWorldHint", "Access Control"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_ACL_WATCH",
+      "tags": ["openWorldHint", "notifications_and_channels", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_BATCH_EVENTS",
+      "tags": ["Events Management", "batch", "createHint", "destructiveHint", "updateHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_DELETE",
+      "tags": ["important", "destructiveHint", "idempotentHint", "openWorldHint", "calendar_list"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_GET",
+      "tags": ["important", "readOnlyHint", "openWorldHint", "calendar_list"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_INSERT",
+      "tags": ["openWorldHint", "idempotentHint", "important", "Calendars Management", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_PATCH",
+      "tags": ["important", "updateHint", "idempotentHint", "openWorldHint", "calendar_list"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_UPDATE",
+      "tags": ["updateHint", "idempotentHint", "openWorldHint", "CalendarList"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDAR_LIST_WATCH",
+      "tags": ["openWorldHint", "notifications_and_channels", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDARS_DELETE",
+      "tags": [
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint",
+        "important",
+        "Calendars Management"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CALENDARS_UPDATE",
+      "tags": ["updateHint", "idempotentHint", "openWorldHint", "important", "Calendars Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CHANNELS_STOP",
+      "tags": [
+        "important",
+        "idempotentHint",
+        "openWorldHint",
+        "notifications_and_channels",
+        "updateHint",
+        "destructiveHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CLEAR_CALENDAR",
+      "tags": [
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint",
+        "Calendars Management",
+        "updateHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_COLORS_GET",
+      "tags": ["readOnlyHint", "openWorldHint", "configuration"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CREATE_CALENDAR",
+      "tags": ["createHint", "openWorldHint", "important", "Calendars Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_CREATE_EVENT",
+      "tags": ["openWorldHint", "important", "Events Management", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_DELETE_EVENT",
+      "tags": [
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint",
+        "important",
+        "Events Management"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_DUPLICATE_CALENDAR",
+      "tags": ["openWorldHint", "important", "Calendars Management", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_GET",
+      "tags": ["important", "readOnlyHint", "openWorldHint", "events"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_IMPORT",
+      "tags": ["openWorldHint", "events", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_INSTANCES",
+      "tags": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint",
+        "important",
+        "Instances and Queries"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_LIST",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint", "Events Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS",
+      "tags": ["important", "readOnlyHint", "openWorldHint", "Events Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_MOVE",
+      "tags": ["updateHint", "idempotentHint", "openWorldHint", "Events Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_EVENTS_WATCH",
+      "tags": ["openWorldHint", "idempotentHint", "Notifications and Watching", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_FIND_EVENT",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint", "important", "Events Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_FIND_FREE_SLOTS",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint", "Instances and Queries"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_FREE_BUSY_QUERY",
+      "tags": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint",
+        "important",
+        "Instances and Queries"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_GET_CALENDAR",
+      "tags": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint",
+        "important",
+        "Calendars Management"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_GET_CALENDAR_PROFILE",
+      "tags": ["important", "readOnlyHint", "openWorldHint", "profile", "deprecated"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_GET_CURRENT_DATE_TIME",
+      "tags": ["readOnlyHint", "idempotentHint", "Time and Date Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_GET_CURRENT_USER",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint", "profile"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_LIST_BUILDINGS",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint", "configuration"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_LIST_CALENDAR_RESOURCES",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint", "Calendars Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_LIST_CALENDARS",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_LIST_SETTINGS",
+      "tags": ["readOnlyHint", "openWorldHint", "configuration", "deprecated"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_PATCH_CALENDAR",
+      "tags": ["updateHint", "idempotentHint", "openWorldHint", "important", "Calendars Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_PATCH_EVENT",
+      "tags": ["updateHint", "idempotentHint", "openWorldHint", "important", "Events Management"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_QUICK_ADD",
+      "tags": ["openWorldHint", "Quick Operations", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_REMOVE_ATTENDEE",
+      "tags": [
+        "updateHint",
+        "idempotentHint",
+        "openWorldHint",
+        "Events Management",
+        "destructiveHint"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_SETTINGS_GET",
+      "tags": ["readOnlyHint", "openWorldHint", "configuration"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_SETTINGS_LIST",
+      "tags": ["readOnlyHint", "idempotentHint", "openWorldHint", "Settings and Configuration"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_SETTINGS_WATCH",
+      "tags": ["openWorldHint", "idempotentHint", "Notifications and Watching", "createHint"]
+    },
+    {
+      "slug": "GOOGLECALENDAR_SYNC_EVENTS",
+      "tags": [
+        "readOnlyHint",
+        "idempotentHint",
+        "openWorldHint",
+        "important",
+        "Events Management",
+        "deprecated"
+      ]
+    },
+    {
+      "slug": "GOOGLECALENDAR_UPDATE_EVENT",
+      "tags": ["updateHint", "idempotentHint", "openWorldHint", "important", "Events Management"]
+    }
+  ]
+}

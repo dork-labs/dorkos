@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -375,7 +376,7 @@ describe('ComposioSdkClient', () => {
     expect(local.requests.every((entry) => entry.apiKey === API_KEY)).toBe(true);
   });
 
-  // Tag shapes follow Composio's documented verdicts: every action carries at
+  // Tag shapes follow Composio's documented verdicts (only `…Hint` tags count): every action carries at
   // least one of readOnlyHint / createHint / updateHint / destructiveHint, and
   // an irreversible update carries updateHint AND destructiveHint.
   it.each([
@@ -402,7 +403,7 @@ describe('ComposioSdkClient', () => {
     ['GMAIL_UNKNOWN', ['futureEffectHint'], 'destructive'],
     ['GMAIL_UNKNOWN', ['openWorldHint', 'idempotentHint'], 'destructive'],
     ['GMAIL_UNKNOWN', ['createHint', 'futureEffectHint'], 'destructive'],
-    ['GMAIL_UNKNOWN', ['updateHint', 'email'], 'destructive'],
+    ['GMAIL_UNKNOWN', ['important', 'gmail', 'messages'], 'destructive'],
     // Contradictory verdicts.
     ['GMAIL_CONFLICT', ['readOnlyHint', 'createHint'], 'destructive'],
     ['GMAIL_CONFLICT', ['updateHint', 'readOnlyHint'], 'destructive'],
@@ -411,6 +412,22 @@ describe('ComposioSdkClient', () => {
     // Explicit, uncontradicted read.
     ['GMAIL_GET_PROFILE', ['readOnlyHint'], 'read'],
     ['GMAIL_GET_PROFILE', ['important', 'openWorldHint', 'idempotentHint', 'readOnlyHint'], 'read'],
+    // Category tags ride in the same list and are not verdicts: ignored.
+    [
+      'GMAIL_LIST_MESSAGES',
+      ['important', 'readOnlyHint', 'openWorldHint', 'messages', 'deprecated'],
+      'read',
+    ],
+    [
+      'GOOGLECALENDAR_CREATE_EVENT',
+      ['openWorldHint', 'important', 'Events Management', 'createHint'],
+      'write',
+    ],
+    [
+      'GMAIL_BATCH_DELETE_MESSAGES',
+      ['gmail', 'destructiveHint', 'batch', 'messages'],
+      'destructive',
+    ],
   ])('retains %s with conservative effects for %j', async (slug, tags, classification) => {
     const metadata = {
       ...tool(slug, tags),
@@ -442,6 +459,57 @@ describe('ComposioSdkClient', () => {
       schemaHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     });
     expect(local.requests.map(({ method }) => method)).toEqual(['GET']);
+  });
+
+  it('classifies Composio’s live Gmail and Calendar tags: deletes never in a level', async () => {
+    // Slugs and tags exactly as Composio listed them (latest versions, 2026-09-28).
+    const live = JSON.parse(
+      readFileSync(new URL('./fixtures/live-tool-tags.json', import.meta.url), 'utf8')
+    ) as Record<string, Array<{ slug: string; tags: string[] }>>;
+    const items = Object.values(live)
+      .flat()
+      .map(({ slug, tags }) => tool(slug, tags));
+    const local = await fixture((_request, response) =>
+      json(response, 200, {
+        current_page: 1,
+        total_pages: 1,
+        total_items: items.length,
+        next_cursor: null,
+        items,
+      })
+    );
+    const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
+      toolkit: 'github',
+      toolkitVersion: TOOLKIT_VERSION,
+      limit: 1_000,
+      signal: new AbortController().signal,
+    });
+    const classOf = new Map(
+      result.page.operations.map((operation) => [
+        operation.operationSlug,
+        operation.capabilityClassification,
+      ])
+    );
+    expect(classOf.size).toBe(items.length);
+
+    const removing = [...classOf.keys()].filter((slug) => /DELETE|REMOVE|CLEAR/.test(slug));
+    expect(removing.length).toBeGreaterThan(0);
+    for (const slug of removing) expect([slug, classOf.get(slug)]).toEqual([slug, 'destructive']);
+    for (const slug of [
+      'GMAIL_SEND_EMAIL',
+      'GMAIL_REPLY_TO_THREAD',
+      'GOOGLECALENDAR_CREATE_EVENT',
+      'GOOGLECALENDAR_UPDATE_EVENT',
+    ])
+      expect([slug, classOf.get(slug)]).toEqual([slug, 'write']);
+    for (const slug of [
+      'GMAIL_LIST_MESSAGES',
+      'GMAIL_GET_DRAFT',
+      'GOOGLECALENDAR_EVENTS_LIST',
+      'GOOGLECALENDAR_FIND_FREE_SLOTS',
+    ])
+      expect([slug, classOf.get(slug)]).toEqual([slug, 'read']);
+    expect(classOf.get('GMAIL_SEND_DRAFT')).toBe('destructive');
   });
 
   it('classifies identically on this computer and in the hosted DorkOS account path', async () => {
