@@ -1,6 +1,6 @@
 # Cloud instance identity adoption — tasks
 
-DOR-2348 checklist; no new issues. Canonical source: `03-tasks.json`. Implementation tasks are complete; independent review and merge verification remain in progress. Tracker projection is owned by the coordinating session.
+DOR-2348 checklist; no new issues. Canonical source: `03-tasks.json`. All bounded tasks are complete; independent review converged and PR #2260 merged as `31f22d33f105dfd8181ab21031edfda39be91d61`. Tracker projection is owned by the coordinating session.
 
 ### Task 1.1: Resolve authoritative identity with a captured context
 
@@ -36,7 +36,7 @@ On CloudLinkManager.unlink capture retiring credential, advance generation, canc
 
 ### Task 3.1: Verify and independently review the bounded adoption
 
-- [ ] Complete and verify.
+- [x] Complete and verify.
 
 Dependencies: 2.2.
 
