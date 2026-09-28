@@ -1146,11 +1146,12 @@ describe('ConnectorProviderBootstrapper', () => {
         keptManagedRow('connection-new', await freshSideWithOneAccount(state));
         await bootstrapper.reloadManagedCloud();
 
-        // Closed, not removed: it reads as disconnected, nothing to clean up
-        // on the other side, and its access has ended.
+        // Closed, not removed: it reads as disconnected, and its access has
+        // ended. The account may still be live at the service, so cleanup is
+        // owed and unknown, as after a local revoke.
         expect(row('connection-old')).toMatchObject({
           lifecycleState: 'disconnected',
-          externalCleanupState: 'not_required',
+          externalCleanupState: 'unknown',
           status: 'revoked',
           enabled: false,
           removedAt: null,

@@ -635,16 +635,19 @@ export class ConnectionStore {
   /** Tombstone a connection and synchronously revoke local active access. */
   revokeConnection(connectionId: ConnectionId): void {
     this.assertAvailable();
-    this.closeConnections([connectionId], { externalCleanupState: 'unknown' });
+    this.closeConnections([connectionId]);
   }
 
   /**
    * Close every kept account of one instance that a complete, successful
-   * listing from that instance no longer contains: the hosted side has no such
-   * account, so it can never be used again and the owner connects the app
-   * again. Closed, not removed, so the account's history stays; there is
-   * nothing left to clean up on the other side. Callers pass only a listing
-   * that succeeded in full — a failed or partial read must never reach here.
+   * listing from that instance no longer contains: the route cannot reach it,
+   * so nothing here can use it and the owner connects the app again. The
+   * account may still be live at the service — the listing only shows what
+   * this route can reach — so cleanup there is still owed and cannot be done
+   * from here: it is recorded as `unknown`, exactly as a local revoke is.
+   * Closed, not removed, so the account's history stays. Callers pass only a
+   * listing that succeeded in full — a failed or partial read must never
+   * reach here.
    *
    * @param instanceId - The instance the listing came from.
    * @param listedRefs - Every account the listing returned.
@@ -680,28 +683,20 @@ export class ConnectionStore {
     if (unlisted.length > 0) {
       this.closeConnections(
         unlisted.map((row) => row.connectionId),
-        {
-          externalCleanupState: 'not_required',
-          status: 'revoked',
-          enabled: false,
-        }
+        { status: 'revoked', enabled: false }
       );
     }
     return unlisted;
   }
 
   /**
-   * Mark connections disconnected and synchronously end every local authority
-   * hanging off them: agent attachments, session overrides, grants and event
-   * subscriptions.
+   * Mark connections disconnected with their external cleanup `unknown`, and
+   * synchronously end every local authority hanging off them: agent
+   * attachments, session overrides, grants and event subscriptions.
    */
   private closeConnections(
     ids: readonly ConnectionId[],
-    close: {
-      externalCleanupState: 'unknown' | 'not_required';
-      status?: 'revoked';
-      enabled?: false;
-    }
+    close: { status?: 'revoked'; enabled?: false } = {}
   ): void {
     const now = new Date().toISOString();
     // Read before the connection-wide revoke below ends it, so the owner is
@@ -711,7 +706,7 @@ export class ConnectionStore {
       tx.update(connections)
         .set({
           lifecycleState: 'disconnected',
-          externalCleanupState: close.externalCleanupState,
+          externalCleanupState: 'unknown',
           ...(close.status && { status: close.status }),
           ...(close.enabled === false && { enabled: false }),
           cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
