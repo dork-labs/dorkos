@@ -204,6 +204,200 @@
       "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
       "terms": ["adapter", "provider", "connector", "connectors"],
       "reason": "Comparison pages describe OTHER products in their own words, and a competitor's feature name is not ours to rename: DeepSeek Harness's plugin architecture (\"the model adapter, the tools, the session log\"), Grok Bot's Plugins screen, whose own documentation calls what it installs \"connectors\", and the model-provider sense in \"whatever provider or local model you chose\", which the ADR keeps anyway. None of it is DorkOS naming its own Connections surface — the rows that describe DorkOS say \"connection\"."
+    },
+    {
+      "path": "docs/integrations/",
+      "terms": ["integration", "integrations", "adapter", "adapters"],
+      "reason": "DOR-2508. The builder section (Building Integrations, MCP Server, SSE Protocol, Extensions, Building Relay Adapters) is explicitly for people writing custom clients or plugin adapters on top of DorkOS — its own opening Callout sends anyone else to /docs/connections instead. Mirrors the ADR's marketplace-author + architecture carve-out (RelayAdapter, ConnectorProvider) and the 'docs concept pages, architecture docs' row of its scoped-word registry; the viewport test holds because this section and the Connections page never co-render. A code review on DOR-2508 asked for line-scoped `vocab-allow` markers instead of file-wide passes wherever a page mixes user-facing and developer content; this directory is the one exception kept, because its whole audience — never the Connections reader — is the builder the ADR's own carve-out names."
+    },
+    {
+      "path": "docs/marketplace/publishing.mdx",
+      "terms": ["adapter", "adapters"],
+      "reason": "DOR-2508. 'Publishing a package' is a developer-authoring guide start to finish (its own description: 'Build an agent, plugin, skill pack, or adapter and share it'); 'Adapter' is a real marketplace package-type facet an author picks and the manifest key an author writes — the ADR's marketplace-author domain carve-out, same as apps/site's marketplace privacy page above. Narrower than the earlier docs/marketplace/ directory entry: docs/marketplace/index.mdx (browse/install, a general audience) uses line-scoped `vocab-allow` markers where they survive Prettier, and its own narrower allowlist entry below for the one spot they cannot, per DOR-2508 code review."
+    },
+    {
+      "path": "docs/contributing/architecture.mdx",
+      "terms": ["adapter", "adapters", "provider", "providers", "integration", "integrations"],
+      "reason": "DOR-2508. Every page under docs/contributing/ is contributor documentation by definition — the hexagonal ports & adapters pattern, the Transport interface's React context provider, and 'integrations may open the same path as SSE' (a third-party client's own integration with DorkOS's API) are architecture/developer senses throughout, not the Connections page's own copy."
+    },
+    {
+      "path": "docs/guides/flow/",
+      "terms": ["adapter", "adapters", "connector", "connectors"],
+      "reason": "DOR-2508. The /flow engine's own tracker-adapter architecture (the linear-adapter skill, the typed PMClient the adapter realizes) is a distinct, named pattern unrelated to Connections/ConnectorProvider — developer/architecture docs for how /flow talks to a tracker, not a general-audience guide."
+    },
+    {
+      "path": "docs/contributing/development-setup.mdx",
+      "terms": ["integration", "integrations"],
+      "contains": "'pnpm smoke:integration'",
+      "reason": "DOR-2508. `'pnpm smoke:integration'` is the real, unrenameable pnpm script name, used as a TypeTable object key. A `vocab-allow` marker cannot stay on that line: Prettier always moves a trailing `//` comment on a multi-property object's opening line onto its own following line, which was tried, committed, and confirmed broken (the marker no longer shares a line with the violation) before this entry replaced it. `contains` (DOR-2508, second review round) pins this entry to that exact key, so a new, unrelated 'integration' anywhere else in the file is still caught."
+    },
+    {
+      "path": "docs/getting-started/configuration.mdx",
+      "terms": ["provider", "providers"],
+      "contains": "'memory.provider'",
+      "reason": "DOR-2508. `memory.provider` is the real, unrenameable TypeTable object key for the MemoryProvider port, same Prettier comment-placement limitation as development-setup.mdx above. `contains` pins this entry to that exact key."
+    },
+    {
+      "path": "docs/getting-started/configuration.mdx",
+      "terms": ["connector", "connectors"],
+      "contains": "'connectors.rawMcpServers'",
+      "reason": "DOR-2508. `connectors.rawMcpServers` is the real, unrenameable TypeTable object key for the raw-MCP config field, same Prettier comment-placement limitation as development-setup.mdx above. `contains` pins this entry to that exact key — the user-facing '### Connectors' heading in this same file was reworded to '### Connections' instead, not allowlisted, and stays caught if it ever comes back."
+    },
+    {
+      "path": "docs/getting-started/configuration.mdx",
+      "terms": ["provider", "providers"],
+      "contains": "'runtimes.opencode.provider'",
+      "reason": "DOR-2508. `runtimes.opencode.provider` is the real, unrenameable TypeTable object key for OpenCode's model-provider picker, same Prettier comment-placement limitation as development-setup.mdx above. `contains` pins this entry to that exact key — a new, unrelated 'provider' anywhere else in this file (the AI-service prose above was reworded instead of allowlisted) is still caught."
+    },
+    {
+      "path": "docs/guides/workspaces.mdx",
+      "terms": ["provider", "providers"],
+      "contains": "provider: {",
+      "reason": "DOR-2508. `provider:` is the real TypeTable object key for `workspace.defaultProvider` / `WorkspaceProvider` (the workspace-provisioning backend, unrelated to Connections or AI-model providers), same Prettier comment-placement limitation as development-setup.mdx above. `contains` pins this entry to that exact key — every other 'provider' mention in this file was reworded to 'checkout kind' instead, and a new one is still caught."
+    },
+    {
+      "path": "docs/guides/agent-coordination.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "title=\"Building Relay Adapters\"",
+      "reason": "DOR-2508. The 'Building Relay Adapters' Card links to the docs/integrations/ builder page by its own real title. A `vocab-allow` marker cannot stay on the Card's line: Prettier always moves a trailing JSX comment on a multi-child Card onto its own line (inserting a `{' '}` token), which was tried, committed, and confirmed broken before this entry replaced it. `contains` pins this entry to that exact title — this page's own instructional line was reworded to point at Connections instead, and a new, unrelated 'adapter' anywhere else in the file is still caught."
+    },
+    {
+      "path": "docs/index.mdx",
+      "terms": ["integration", "integrations"],
+      "contains": "title=\"Building Integrations\"",
+      "reason": "DOR-2508. The 'Building Integrations' Card links to docs/integrations/ by that section's own established title — same Prettier JSX-comment limitation as agent-coordination.mdx above. `contains` pins this entry to that exact title."
+    },
+    {
+      "path": "docs/concepts/sessions.mdx",
+      "terms": ["integration", "integrations"],
+      "contains": "title=\"Building Integrations\"",
+      "reason": "DOR-2508. The 'Building Integrations' Card title has the same Prettier JSX-comment limitation as docs/index.mdx above. `contains` pins this entry to that exact title; the 'extension authors' body copy on the line below was reworded to drop the word instead of relying on this entry."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "title=\"Building Relay Adapters\"",
+      "reason": "DOR-2508. The 'Building Relay Adapters' Card title has the same Prettier JSX-comment limitation as agent-coordination.mdx above. `contains` pins this entry to that exact title."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "Build a custom adapter and ship it to the marketplace.",
+      "reason": "DOR-2508. The Card body copy below the 'Building Relay Adapters' title, same Prettier limitation. `contains` pins this second entry to that exact sentence."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The DorkOS Marketplace is a curated catalog of pre-built agents, plugins, skill packs, and adapters.",
+      "reason": "DOR-2508, third review round. 'Adapter' is a real marketplace package-type facet an author picks — the ADR's marketplace-author domain carve-out. Was an inline `vocab-allow` marker; removed because Fumadocs' remarkStructure copies a marked paragraph's raw text, comment included, into the page's search index entry. `contains` pins this entry to the catalog-summary sentence."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "Adapters that connect messaging services like Discord",
+      "reason": "DOR-2508, third review round. Same marketplace-facet carve-out and same reason for dropping the marker as the entry above. `contains` pins this entry to the Discord bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Adapters",
+      "reason": "DOR-2508, third review round. Names Relay's own adapter architecture (RelayAdapter, adapters.json), the ADR's carved-out sense. Was an inline `vocab-allow` marker on this heading; removed because Fumadocs' remarkHeading copies a heading's children, comment included, into BOTH the sidebar table-of-contents title and the anchor slug generated from it — a marker meant to be invisible showed up as visible, malformed heading text and a broken anchor on the live site. `contains` pins this entry to the heading text instead."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "Relay connects to external platforms through **adapters**:",
+      "reason": "DOR-2508, third review round. Defines the real architecture term. Same reason for dropping the marker as the heading entry above (this one leaked into the paragraph's search-index entry via remarkStructure). `contains` pins this entry to the start of that sentence — inside the first 140 characters, since a violation's snippet is truncated there and `contains` is checked against it."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "**Claude Code adapter**: routes messages to Claude sessions",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "**Telegram adapter**: connects a Telegram bot to the bus via the grammy library",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "**Slack adapter**: bridges Slack workspaces into Relay using Socket Mode",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "**Webhook adapter**: a generic HTTP webhook bridge",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "You can add custom adapters from npm packages or local file paths.",
+      "reason": "DOR-2508, third review round. Covers this line's whole sentence ('...Plugin adapters implement the same RelayAdapter interface as built-in adapters.', RelayAdapter being the ADR's own carved-out identifier). Same marker-removal reason as the entries above. `contains` pins this entry to the start of the line — inside the first 140 characters, since a violation's snippet is truncated there and `contains` is checked against it."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "## Built-in adapters",
+      "reason": "DOR-2508, third review round. Names Relay's own adapter architecture (adapters.json, /api/relay/adapters), the ADR's carved-out sense. Was an inline `vocab-allow` marker on this heading; removed for the same remarkHeading title/anchor leak documented on docs/concepts/relay.mdx's '### Adapters' entry above. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "Adapters connect external platforms to Relay's subject system.",
+      "reason": "DOR-2508, third review round. Same Relay architecture noun and same marker-removal reason as the heading entry above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Claude Code adapter",
+      "reason": "DOR-2508, third review round. The real config \"type\" value and built-in component name. Same heading-leak marker-removal reason as docs/concepts/relay.mdx's '### Adapters' entry. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The Claude Code adapter is on by default whenever Relay starts.",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Telegram adapter",
+      "reason": "DOR-2508, third review round. The real config \"type\" value and built-in component name. Same heading-leak marker-removal reason as docs/concepts/relay.mdx's '### Adapters' entry. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The Telegram adapter connects a Telegram bot to Relay.",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Slack adapter",
+      "reason": "DOR-2508, third review round. The real config \"type\" value and built-in component name. Same heading-leak marker-removal reason as docs/concepts/relay.mdx's '### Adapters' entry. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The Slack adapter connects a Slack workspace to Relay using Socket Mode",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Webhook adapter",
+      "reason": "DOR-2508, third review round. The real config \"type\" value and built-in component name. Same heading-leak marker-removal reason as docs/concepts/relay.mdx's '### Adapters' entry. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The webhook adapter is a generic HTTP bridge.",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
     }
   ]
 }

@@ -84,7 +84,7 @@ Agents can talk to each other and to you through the relay. These controls keep 
 - **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
 - **An hourly ceiling caps the cost, whatever the route in.** A message, a scheduled task, and an outside system speaking A2A all end at the same counted checkpoint before a turn starts, so no route around the relay buys a bigger allowance. You set the cap per agent and for everything combined; see [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling).
 - **An agent cannot choose its own identity through the supported messaging path.** The server resolves the "from" address from the session instead of trusting the tool call. This stops one normal agent call from naming another agent. It is not operating-system isolation: software running as your user can read the same files and credentials that you can.
-- **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on an integration like Telegram is a per-integration setting you control.
+- **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on a chat app like Telegram is set for each agent on each chat app.
 
 ## What stops an agent operating DorkOS itself
 
@@ -127,11 +127,21 @@ choice with their own event, filter, receiving agent, and destination. DorkOS ke
 tokens and private account references out of the agent-facing response. Removing a grant or
 connection stops the next checked call, but it cannot recall a request already sent to a service.
 
-When you sign in to a service, Composio keeps that service’s login tokens. Some services ask for an
-API key or other account details instead. You enter those on the signed-in `dorkos.ai` page.
-DorkOS passes them to Composio to create the account connection. It does not save or log those
+Where your service login lives depends on the route you chose: Composio's vault for the
+DorkOS-managed and bring-your-own-key routes, your own Nango server's database for the Nango route,
+or the remote server itself for raw MCP, which never asks DorkOS to sign you in at all. Some services
+ask for an API key or other account details instead. You enter those on the signed-in `dorkos.ai`
+page. DorkOS passes them to Composio to create the account connection. It does not save or log those
 values, and they never pass through your local app, agents or CLI. Your service’s own permissions
 still apply alongside the grants you choose in DorkOS.
+
+With login off (the default), DorkOS cannot tell a write that changes who can use an app apart from
+one the app itself made — so anything with a shell on this machine can make that change, the same as
+the app could: sharing an app, narrowing it, disconnecting it. Sharing an app with **Every agent** is
+just the widest version of that change, worth naming because it needs no per-agent review: a caller
+with a shell on this machine could turn it on for itself and every other agent. Turning login on
+closes the gap for all of these writes, because only the signed-in owner's session can make them from
+then on.
 
 During a turn, DorkOS gives the runtime a private Connections token. The server checks its runtime,
 session, registered agent, working folder, and server start. The token has a four-hour

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "39c3647f-6b2e-4a97-8d31-870bcd3ba52b",
-  "prevId": "1d8e78e4-60fa-48cd-b58d-2ab5e31da66b",
+  "id": "fe254bae-8708-48bb-801e-8113f22a54a9",
+  "prevId": "39c3647f-6b2e-4a97-8d31-870bcd3ba52b",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -6240,6 +6240,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "reconnect_was_paused": {
+          "name": "reconnect_was_paused",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "cleanup_snapshot_json": {
           "name": "cleanup_snapshot_json",

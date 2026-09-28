@@ -24,10 +24,10 @@ Agents publish messages to named addresses. Relay routes each one to the right p
 
 ## See it work
 
-The easiest way to see Relay in action is the Telegram adapter:
+The easiest way to see Relay in action is Telegram:
 
 1. Create a bot with Telegram's [@BotFather](https://t.me/botfather) and copy its token.
-2. Add a Telegram adapter in DorkOS with that token.
+2. Open [Connections](/docs/connections), select **Connect** on Telegram, and paste the token.
 3. Message the bot. Your message shows up on the `relay.human.telegram.{chatId}` address, and any agent listening there can reply.
 
 You don't need Telegram to see Relay working, either: your own console session is already wired up. Send a session a message and watch the reply stream back through Relay under the hood, no setup required.
@@ -38,7 +38,7 @@ You don't need Telegram to see Relay working, either: your own console session i
 
 ## Addresses, in plain terms
 
-Every message travels to a named address, like `relay.human.telegram.{chatId}` for one specific Telegram chat, or `relay.agent.{namespace}.{agentId}` for one specific agent. You rarely need to write these yourself. DorkOS and its adapters generate them for you, and each agent's own address is shown as its `relaySubject`; the pattern is here mostly so log lines make sense when you're troubleshooting.
+Every message travels to a named address, like `relay.human.telegram.{chatId}` for one specific Telegram chat, or `relay.agent.{namespace}.{agentId}` for one specific agent. You rarely need to write these yourself. DorkOS generates them for you, and each agent's own address is shown as its `relaySubject`; the pattern is here mostly so log lines make sense when you're troubleshooting.
 
 If you want to know how these addresses are matched, wildcarded, stored, and secured, the reference section below covers all of it.
 
@@ -46,7 +46,7 @@ If you want to know how these addresses are matched, wildcarded, stored, and sec
 
 ## Reference
 
-Here's how Relay works under the hood. Useful if you're debugging delivery, tuning limits, or building an adapter. This section assumes a developer's background.
+Here's how Relay works under the hood. Useful if you're debugging delivery, tuning limits, or building your own bridge into Relay. This section assumes a developer's background.
 
 ### Subjects and endpoints
 
@@ -115,7 +115,7 @@ Relay connects to external platforms through **adapters**: plugins that bridge e
 - **Slack adapter**: bridges Slack workspaces into Relay using Socket Mode (Slack's WebSocket-based connection, which avoids exposing a public webhook URL). Supports streaming responses, threading, and a working indicator driven by the turn itself.
 - **Webhook adapter**: a generic HTTP webhook bridge with HMAC-SHA256 signature verification (a cryptographic check that confirms a webhook payload wasn't tampered with) for both directions.
 
-You can add custom adapters from npm packages or local file paths. Plugin adapters implement the same `RelayAdapter` interface as built-in adapters. Multi-agent coordination through Relay is shipped, but we haven't verified every agent-to-agent path end to end yet, so test your specific setup before relying on it in production.
+You can add custom adapters from npm packages or local file paths. Plugin adapters implement the same `RelayAdapter` interface as built-in adapters. Multi-agent coordination through Relay carries end-to-end test coverage and Rooms — DorkOS's multi-agent conversations — are generally available; test your specific setup before relying on it for anything time-sensitive.
 
 ### Storage
 
@@ -144,9 +144,9 @@ Three mechanisms protect endpoints under load:
   All reliability settings can be tuned in `~/.dork/relay/config.json`. Changes are hot-reloaded.
 </Callout>
 
-### Integration with sessions
+### How sessions use Relay
 
-When Relay is enabled, session messaging routes through Relay instead of calling the agent SDK directly. A `POST` to `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}`. The Claude Code adapter picks it up and routes it to the SDK. Response chunks flow back through `relay.human.console.{clientId}` and into the client's SSE (server-sent events) stream as `relay_message` events.
+When Relay is enabled, session messaging routes through Relay instead of calling the agent SDK directly. A `POST` to `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}`. DorkOS's Claude Code side picks it up and routes it to the SDK. Response chunks flow back through `relay.human.console.{clientId}` and into the client's SSE (server-sent events) stream as `relay_message` events.
 
 Every session message is tracked in the Relay index with full delivery tracing. The same access control and budget rules apply here as everywhere else in Relay.
 

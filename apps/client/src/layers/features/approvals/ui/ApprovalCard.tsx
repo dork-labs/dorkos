@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react';
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import { getPermissionArea, isFloorArea } from '@dorkos/shared/permissions';
 import { Badge, Button } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
@@ -14,6 +14,7 @@ import {
   useRecordedApprovalDecision,
   type ApprovalDecision,
 } from '../model/settling-approvals';
+import { ApprovalServiceAction } from './ApprovalServiceAction';
 import { ApprovalSubject } from './ApprovalSubject';
 import { RequestingAgent } from './RequestingAgent';
 
@@ -142,6 +143,15 @@ export interface ApprovalCardProps {
  * card says the area is blocked for it and quotes the reason it gave. Quoted,
  * never paraphrased: it is the agent's claim, and the card must not dress it up
  * as DorkOS's own.
+ *
+ * ## A connected-app action says what it does
+ *
+ * When the server describes the action (`serviceAction`: a Gmail deletion, a
+ * Slack post), the heading is the action in plain words, and under it sit the
+ * app's logo and the account, the arguments as label and value, and, when it
+ * can't be undone, one line saying so (DOR-2504). That block takes the
+ * summary's place: the summary says the same thing in one sentence for the
+ * surfaces that have no card.
  */
 export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   const now = useNow(30_000);
@@ -181,6 +191,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   };
 
   const agentLabel = approval.requestedBy ? agentLabelFrom(approval.requestedBy) : 'this agent';
+  const heading = approval.serviceAction?.actionName ?? approval.capabilityTitle;
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -218,20 +229,38 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
         className="border-status-warning-border bg-background/60 flex min-w-0 flex-col gap-2 rounded-lg border p-3 @[34rem]/approval:flex-row @[34rem]/approval:items-center"
       >
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="text-foreground truncate text-sm font-medium">
-              {approval.capabilityTitle}
-            </span>
-            <Badge
-              size="xs"
-              variant="outline"
+          {/* A connected-app action's heading IS the action ("Delete message"),
+              so on a narrow card it wraps, and the badge moves under it, rather
+              than cutting the action's name short. */}
+          <div
+            className={cn(
+              'flex min-w-0 items-center gap-2',
+              approval.serviceAction && 'flex-wrap gap-y-0.5'
+            )}
+          >
+            <span
               className={cn(
-                'shrink-0',
-                approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
+                'text-foreground text-sm font-medium',
+                approval.serviceAction ? 'min-w-0 break-words' : 'truncate'
               )}
             >
-              {TIER_LABEL[approval.tier]}
-            </Badge>
+              {heading}
+            </span>
+            {/* A connected-app action that can't be undone says so once, in a
+                sentence naming the app (`ApprovalServiceAction`), so the badge
+                would only repeat it. */}
+            {!(approval.serviceAction && approval.tier === 'destructive') && (
+              <Badge
+                size="xs"
+                variant="outline"
+                className={cn(
+                  'shrink-0',
+                  approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
+                )}
+              >
+                {TIER_LABEL[approval.tier]}
+              </Badge>
+            )}
           </div>
           {/* WHAT this would act on, named, directly under the title — the first
               thing the eye lands on after "cannot be undone". Above the summary
@@ -255,6 +284,12 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             </p>
           )}
           {approval.subject && <ApprovalSubject subject={approval.subject} />}
+          {approval.serviceAction && (
+            <ApprovalServiceAction
+              action={approval.serviceAction}
+              destructive={approval.tier === 'destructive'}
+            />
+          )}
           {/* Never clamped for an action that cannot be undone: truncating the
             consequence is how a padded argument used to push the real one out of
             view. The server caps each value and the whole sentence, so showing it
@@ -266,17 +301,19 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             — a wall of text exactly where a person is deciding. The server sends
             the remainder instead (`otherArguments`), and when nothing remains the
             card says nothing rather than repeating itself. Without a subject this
-            is the whole summary, unchanged. */}
-          {(approval.subject ? approval.otherArguments : approval.summary) !== undefined && (
-            <p
-              className={cn(
-                'text-muted-foreground mt-0.5 text-xs break-words',
-                approval.tier !== 'destructive' && 'line-clamp-2'
-              )}
-            >
-              {approval.subject ? approval.otherArguments : approval.summary}
-            </p>
-          )}
+            is the whole summary, unchanged. A connected-app action draws none of
+            it: its own block above already says everything the sentence would. */}
+          {!approval.serviceAction &&
+            (approval.subject ? approval.otherArguments : approval.summary) !== undefined && (
+              <p
+                className={cn(
+                  'text-muted-foreground mt-0.5 text-xs break-words',
+                  approval.tier !== 'destructive' && 'line-clamp-2'
+                )}
+              >
+                {approval.subject ? approval.otherArguments : approval.summary}
+              </p>
+            )}
           {/* The one argument that IS the decision, shown whole (DOR-1698).
               The summary above caps every value at 80 characters so no argument
               can crowd out another — right for a package name, wrong when the
@@ -318,7 +355,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               tone={decision === 'denied' ? 'denied' : 'allowed'}
               className="shrink-0"
             >
-              {receiptFor(decision, agentLabel, approval.capabilityTitle)}
+              {receiptFor(decision, agentLabel, approvalHeading(approval))}
             </AskCard.Receipt>
           ) : (
             <>
@@ -331,7 +368,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                   <button
                     type="button"
                     className="hover:text-foreground underline underline-offset-2"
-                    aria-label={`Not now: stop suggesting Always allow for ${approval.capabilityTitle}`}
+                    aria-label={`Not now: stop suggesting Always allow for ${approvalHeading(approval)}`}
                     disabled={dismissSuggestion.isPending}
                     onClick={() => dismissSuggestion.mutate(approval.approvalId)}
                   >

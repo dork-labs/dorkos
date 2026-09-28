@@ -8,7 +8,7 @@
  *
  * @module features/connections/lib/app-panel-copy
  */
-import type { ConnectorUsageItem } from '@dorkos/shared/connector-schemas';
+import { actionNameFromSlug, type ConnectorUsageItem } from '@dorkos/shared/connector-schemas';
 
 /** Two or three one-click prompts per popular app, written as a person would ask. */
 const TRY_IT_PROMPTS: Record<string, readonly string[]> = {
@@ -64,22 +64,6 @@ export function eventNoticeLabel(toolkit: string, appName: string): string {
 }
 
 /**
- * An action's plain name from its id: `GMAIL_SEND_EMAIL` reads "Send email".
- *
- * @param operationSlug - The action's id.
- * @param toolkit - The app's service id, dropped from the front of the id.
- */
-export function actionName(operationSlug: string, toolkit: string): string {
-  const leaf = operationSlug.split('.').at(-1) ?? operationSlug;
-  const words = leaf
-    .replace(new RegExp(`^${toolkit}[_-]`, 'iu'), '')
-    .replaceAll(/[_-]+/gu, ' ')
-    .trim()
-    .toLowerCase();
-  return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : operationSlug;
-}
-
-/**
  * Who did a recorded action, in words.
  *
  * @param item - One usage record.
@@ -112,7 +96,7 @@ export function usageLine(
   toolkit: string,
   agentNames: Readonly<Record<string, string>>
 ): string {
-  const line = `${actorName(item, agentNames)} · ${actionName(item.operationSlug, toolkit)}`;
+  const line = `${actorName(item, agentNames)} · ${actionNameFromSlug(item.operationSlug, toolkit)}`;
   if (item.outcome === undefined) return item.completedAt ? line : `${line} (in progress)`;
   if (item.outcome === 'success') return line;
   if (item.outcome === 'outcome_unknown') return `${line} (result unknown)`;

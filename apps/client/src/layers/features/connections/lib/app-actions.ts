@@ -12,12 +12,12 @@
  * @module features/connections/lib/app-actions
  */
 import type { ConnectorAppAction } from '@dorkos/shared/connector-resource-schemas';
-import type {
-  ConnectorOperationClassification,
-  ConnectorReconciliationCandidate,
+import {
+  actionNameFromSlug,
+  type ConnectorOperationClassification,
+  type ConnectorReconciliationCandidate,
 } from '@dorkos/shared/connector-schemas';
 import type { CardAccessLevel } from './access-card-selection';
-import { actionName } from './app-panel-copy';
 import { levelIncludes } from './reconciliation-selection';
 
 /** The two buckets an action falls into. */
@@ -45,7 +45,7 @@ export function actionKind(classification: ConnectorOperationClassification): Ac
  */
 export function plainActionName(action: ConnectorAppAction, toolkit: string): string {
   const name = action.displayName?.trim();
-  if (!name) return actionName(action.operationSlug, toolkit);
+  if (!name) return actionNameFromSlug(action.operationSlug, toolkit);
   const words = name.split(/\s+/u).map((word, index) => {
     if (index === 0) return `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
     // An acronym ("PR", "URL") or a brand with an inner capital ("GitHub") keeps its shape.

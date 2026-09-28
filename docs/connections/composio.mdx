@@ -92,6 +92,10 @@ Managed availability has two separate switches:
 
 Accounts are enabled after the real-account check passed. Managed notifications stay off until their separate live delivery check passes. A configured key alone does not enable either capability.
 
+### If your DorkOS account link ends
+
+Managed access runs through your linked DorkOS account. If that link ends — you unlink it, or DorkOS can no longer confirm it — the accounts you reached that way stop working locally, even though the sign-in at the service (Gmail's own consent, for example) is untouched and still live there. Linking again today does not automatically bring those accounts back; reconnect them from **Connections** once you've relinked. To end the sign-in at the service itself while the link is down, remove the access directly in that service's own account settings — look for an entry named **Composio**, not DorkOS, since Composio is who actually holds the connection.
+
 ## Add notifications
 
 <Callout type="warn">
@@ -99,7 +103,7 @@ Accounts are enabled after the real-account check passed. Managed notifications 
   are available for your chosen route. This does not affect Slack or Telegram Messaging.
 </Callout>
 
-Open a connected account and choose **Notifications**. Select an activity type, any supported filter, the receiving agent, and the destination. Action access does not grant notification access.
+Open a connected account's side panel, then **More** and choose the activity — Gmail names it "When a new email arrives…"; another app names its own. Select any supported filter, the receiving agent, and the destination. Action access does not grant notification access.
 
 For a managed notification, DorkOS hosting keeps an encrypted delivery copy until your linked installation stores it or the original seven-day window ends. Your installation then keeps its protected copy until the destination outcome is known or that same deadline ends. Cleanup runs in bounded sweeps, so physical deletion can happen after the logical deadline.
 

@@ -299,6 +299,89 @@ export function ApprovalCardShowcase() {
         />
       </ShowcaseDemo>
 
+      <ShowcaseLabel>An agent deleting something in a connected app</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            sample({
+              approvalId: '01JZ0000000000000000000061',
+              capabilityId: 'connectors.execute_destructive',
+              capabilityTitle: "Make a change that can't be undone in a connected app",
+              requestedBy: 'DorkBot',
+              area: null,
+              alwaysOffered: false,
+              summary:
+                '"DorkBot" wants to run "Delete message" in Gmail on "Work (work@acme.com)" with Message ID: "18c2f0a9d1b7e4c3", Permanent: "Yes"',
+              serviceAction: {
+                serviceId: 'gmail',
+                serviceName: 'Gmail',
+                accountLabel: 'Work (work@acme.com)',
+                actionName: 'Delete message',
+                details: [
+                  { label: 'Message ID', value: '18c2f0a9d1b7e4c3' },
+                  { label: 'Permanent', value: 'Yes' },
+                ],
+              },
+            }),
+            // Six lines is the most a card lists; long values are already
+            // shortened by the server and wrap rather than widen the card.
+            sample({
+              approvalId: '01JZ0000000000000000000062',
+              capabilityId: 'connectors.execute_destructive',
+              capabilityTitle: "Make a change that can't be undone in a connected app",
+              requestedBy: 'DorkBot',
+              area: null,
+              alwaysOffered: false,
+              summary: '"DorkBot" wants to run "Delete event" in Google Calendar',
+              serviceAction: {
+                serviceId: 'googlecalendar',
+                serviceName: 'Google Calendar',
+                accountLabel: 'you@gmail.com',
+                actionName: 'Delete event',
+                details: [
+                  { label: 'Event ID', value: 'k3j2h1g0f9e8d7c6b5a4' },
+                  { label: 'Calendar ID', value: 'primary' },
+                  {
+                    label: 'Summary',
+                    value:
+                      'Quarterly planning with the whole team, the board observers, and the two new hires who start on Monday morning…',
+                  },
+                  {
+                    label: 'Attendees',
+                    value: '12 items',
+                  },
+                  { label: 'Access token', value: '(hidden)' },
+                  { label: 'Send updates', value: 'No' },
+                ],
+                moreDetails: 2,
+                // Everything the glance shortened or left out, whole, behind
+                // "Show everything".
+                everything: [
+                  { label: 'Event ID', value: 'k3j2h1g0f9e8d7c6b5a4', depth: 0 },
+                  { label: 'Calendar ID', value: 'primary', depth: 0 },
+                  {
+                    label: 'Summary',
+                    value:
+                      'Quarterly planning with the whole team, the board observers, and the two new hires who start on Monday morning.\nBring the Q3 numbers.',
+                    depth: 0,
+                  },
+                  { label: 'Attendees', value: '12 items', depth: 0 },
+                  ...Array.from({ length: 12 }, (_, i) => [
+                    { label: String(i + 1), value: '2 fields', depth: 1 },
+                    { label: 'Email', value: `person${i + 1}@acme.com`, depth: 2 },
+                    { label: 'Optional', value: i % 3 === 0 ? 'Yes' : 'No', depth: 2 },
+                  ]).flat(),
+                  { label: 'Access token', value: '(hidden)', depth: 0 },
+                  { label: 'Send updates', value: 'No', depth: 0 },
+                  { label: 'Color ID', value: '5', depth: 0 },
+                  { label: 'Reminders', value: 'None', depth: 0 },
+                ],
+              },
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
       <ShowcaseLabel>A summary at the 500-character cap</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <ApprovalList

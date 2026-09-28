@@ -24,11 +24,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import {
   collectFiles,
+  collectMdxFiles,
   isAllowlisted,
   loadAllowlist,
   loadBannedTerms,
   runVocabGate,
+  scanMdx,
   scanSource,
+  stripNonProse,
   termMatcher,
   type AllowlistEntry,
   type BannedTerm,
@@ -352,6 +355,69 @@ describe('isAllowlisted', () => {
 });
 
 // ---------------------------------------------------------------------------
+// isAllowlisted's `contains` field (DOR-2508, second review round): a
+// path-only entry exempts every matching line in that file, which is exactly
+// what a genuinely whole-page developer guide needs (docs/integrations/) but
+// too wide for a narrow, single-purpose entry (one real config-field-name key
+// or one Card title). `contains` narrows such an entry to the line that
+// actually needs it, so a NEW, unrelated use of the same term anywhere else
+// in the file is still caught.
+// ---------------------------------------------------------------------------
+
+describe("isAllowlisted's `contains` field", () => {
+  const scopedEntries: AllowlistEntry[] = [
+    {
+      path: 'docs/getting-started/configuration.mdx',
+      terms: ['connector', 'connectors'],
+      contains: "'connectors.rawMcpServers'",
+      reason: 'The real config field name key.',
+    },
+  ];
+
+  it('suppresses a hit whose snippet contains the pinned substring', () => {
+    expect(
+      isAllowlisted(
+        'docs/getting-started/configuration.mdx',
+        'connectors',
+        scopedEntries,
+        "'connectors.rawMcpServers': {"
+      )
+    ).toBe(true);
+  });
+
+  it('does NOT suppress a hit at the same path and term whose snippet lacks the pinned substring — the mutation this field exists to catch', () => {
+    expect(
+      isAllowlisted(
+        'docs/getting-started/configuration.mdx',
+        'connectors',
+        scopedEntries,
+        '### Connectors'
+      )
+    ).toBe(false);
+  });
+
+  it('treats a missing snippet as never satisfying a `contains` entry, rather than throwing', () => {
+    expect(
+      isAllowlisted('docs/getting-started/configuration.mdx', 'connectors', scopedEntries)
+    ).toBe(false);
+  });
+
+  it('an entry with no `contains` still covers every matching line at its path (unchanged whole-file behavior)', () => {
+    const pathOnly: AllowlistEntry[] = [
+      { path: 'docs/integrations/', terms: ['adapter'], reason: 'Whole-page developer guide.' },
+    ];
+    expect(
+      isAllowlisted(
+        'docs/integrations/building-relay-adapters.mdx',
+        'adapter',
+        pathOnly,
+        'anything at all'
+      )
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // File discovery
 // ---------------------------------------------------------------------------
 
@@ -411,6 +477,424 @@ describe('runVocabGate', () => {
     const root = makeTempDir();
     mkdirSync(join(root, 'apps/client/src'), { recursive: true });
     expect(runVocabGate(root, ['apps/client/src'])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The docs scan (DOR-2508): stripNonProse's fence handling
+//
+// A fenced code block is tracked with a small state machine, and real files
+// in this repo broke a naive version of it before these tests existed:
+// `docs/contributing/testing.mdx` (Prettier collapses a short fenced block
+// onto one line inside a JSX child) and `docs/self-hosting/deployment.mdx`
+// (a multi-line fence whose closer trailed real code content instead of
+// opening its own line — a genuine site bug, not just a gate false negative;
+// the fence never closed, silently swallowing the "Interactive Setup" tab
+// into the wrong code block, fixed alongside these tests). Both shapes are
+// pinned here as synthetic fixtures, plus the nested-fence-length case a
+// 4-backtick block needs.
+// ---------------------------------------------------------------------------
+
+describe("stripNonProse — fence detection the docs scan's line/column pins depend on", () => {
+  it('blanks a normal multi-line fence and resumes scanning the line after it closes', () => {
+    const text = [
+      'Before.',
+      '```bash',
+      'a connector mention inside the fence',
+      '```',
+      'After.',
+    ].join('\n');
+    const stripped = stripNonProse(text).split('\n');
+    expect(stripped).toEqual(['Before.', '', '', '', 'After.']);
+  });
+
+  it('a fence that opens AND closes on the same line is inline code — real text on either side stays prose (docs/contributing/testing.mdx:18 shape)', () => {
+    // Mirrors `    \`\`\`bash pnpm vitest run ... \`\`\`` — Prettier collapsed a
+    // fenced block onto one line with nothing else on it.
+    const text = '    ```bash pnpm vitest run apps/server -- a connector test ```';
+    const stripped = stripNonProse(text);
+    expect(stripped.trim()).toBe('');
+  });
+
+  it('the banned noun INSIDE a same-line fence is never flagged, but a banned noun on the very next line still is (DOR-2508, second review round: the meaningful version of the test above)', () => {
+    // A `stripNonProse`-only assertion on one isolated line cannot tell a
+    // correct same-line-fence-is-inline-code implementation from a broken one
+    // that falls through to "this line OPENS a multi-line fence" instead —
+    // both blank the fence line itself. The difference only shows up on the
+    // line AFTER it: a real multi-line-fence-open would swallow line 2 as
+    // still-fenced content and hide its violation; the correct same-line
+    // handling leaves line 2 as ordinary prose. Driven through scanMdx, not
+    // stripNonProse, so this is the same seam a docs reader's compiled page
+    // — and check-vocab-gate's own scan — actually goes through.
+    const text = [
+      '    ```bash pnpm vitest run apps/server -- a connector test ```',
+      'A connector mention on the very next line should still be flagged.',
+    ].join('\n');
+    const violations = scanMdx('docs/fixture.mdx', text, WAVE_4_TERMS);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.line).toBe(2);
+    expect(violations[0]?.term).toBe('connector');
+  });
+
+  it('a same-line fence pair with prose on both sides leaves the prose scannable (docs/contributing/testing.mdx:15 shape)', () => {
+    // Mirrors `<Tab value="All tests">\`\`\`bash pnpm test \`\`\` Runs all tests
+    // via a connector.</Tab>` — text before AND after the inline fence.
+    const text =
+      '  <Tab value="All tests">```bash pnpm test ``` Runs all tests via a connector.</Tab>';
+    const stripped = stripNonProse(text);
+    expect(stripped).toContain('<Tab value="All tests">');
+    expect(stripped).toContain('Runs all tests via a connector.</Tab>');
+    expect(stripped).not.toContain('pnpm test');
+  });
+
+  it("a closer trailing real content on the same physical line does NOT close the fence, per CommonMark — verified against the real MDX compiler, not assumed (docs/self-hosting/deployment.mdx's ORIGINAL, now-fixed shape)", () => {
+    // An earlier version of this suite assumed the opposite — that a closer
+    // trailing content still closes the fence — and shipped that as the
+    // "deployment.mdx shape." It was never checked against a real parser.
+    // Compiling the real file as it shipped at the time with @mdx-js/mdx, by
+    // hand, showed the fence genuinely never closed there: the ``` at the end of
+    // "...DORKOS_BOUNDARY=/path/to/boundary ```" was swallowed as code text,
+    // and the block absorbed everything after it — including the entire
+    // "Interactive Setup" tab, which never rendered. A real, pre-existing
+    // site bug, fixed directly in that file in the same change that added
+    // this test (real fenced block, closer alone on its own line). This
+    // fixture keeps the ORIGINAL broken shape as a synthetic regression pin
+    // for what the fence tracker SHOULD do when it sees it again anywhere
+    // else: stay open past a closer that isn't alone on its own line.
+    const text = [
+      '  ```bash export ANTHROPIC_API_KEY=your-key-here export',
+      '  DORKOS_DEFAULT_CWD=/path/to/projects export DORKOS_BOUNDARY=/path/to/boundary ```',
+      'Still inside the fence: a connector mention here must NOT be flagged.',
+      '```',
+      'A connector mention after the REAL closer is flagged.',
+    ].join('\n');
+    const stripped = stripNonProse(text).split('\n');
+    expect(stripped[0]).toBe('');
+    expect(stripped[1]).toBe('');
+    expect(stripped[2]).toBe('');
+    expect(stripped[3]).toBe('');
+    expect(stripped[4]).toBe('A connector mention after the REAL closer is flagged.');
+  });
+
+  it('a fence-character run in the MIDDLE of a content line is never a closer — only a line that is the run alone, per CommonMark (DOR-2508, second review round)', () => {
+    const text = [
+      '```bash',
+      'echo "look, a ``` sequence mid-line"',
+      '```',
+      'A connector mention after the real closer.',
+    ].join('\n');
+    const stripped = stripNonProse(text).split('\n');
+    expect(stripped[0]).toBe('');
+    // The mid-line ``` inside the echo string does not close the fence, so
+    // this whole content line stays blanked as fenced content.
+    expect(stripped[1]).toBe('');
+    expect(stripped[2]).toBe('');
+    expect(stripped[3]).toBe('A connector mention after the real closer.');
+  });
+
+  it('a closer may be indented, but nothing may follow it on the line — verified with scanMdx end to end', () => {
+    const text = [
+      '```',
+      '  a connector mention as fenced content',
+      '   ```   ',
+      'A connector mention after the indented closer is flagged.',
+    ].join('\n');
+    const violations = scanMdx('docs/fixture.mdx', text, WAVE_4_TERMS);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.line).toBe(4);
+  });
+
+  it('a fence only closes on a run of its own character at least as long as the opener — a shorter same-character run inside is content, never a closer (4-backtick block with an inner 3-backtick fence)', () => {
+    const text = [
+      'Before.',
+      '````',
+      'a connector mention inside the outer fence',
+      '```',
+      'inner fenced content, a second connector mention here too',
+      '```',
+      '````',
+      'After: a connector mention should be caught now.',
+    ].join('\n');
+    const stripped = stripNonProse(text).split('\n');
+    expect(stripped).toHaveLength(8);
+    expect(stripped[0]).toBe('Before.');
+    // Every line from the opener through the true (4-backtick) closer is
+    // blanked, including both inner 3-backtick lines that look like closers
+    // but are one character short.
+    for (let i = 1; i <= 6; i++) expect(stripped[i]).toBe('');
+    expect(stripped[7]).toBe('After: a connector mention should be caught now.');
+  });
+
+  it('a tilde fence does not close on a backtick run, or vice versa', () => {
+    const text = [
+      '~~~',
+      'a connector mention, and a fake ``` closer that is the wrong character',
+      '~~~',
+      'After.',
+    ].join('\n');
+    const stripped = stripNonProse(text).split('\n');
+    expect(stripped).toEqual(['', '', '', 'After.']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The docs scan (DOR-2508): scanMdx
+// ---------------------------------------------------------------------------
+
+describe('scanMdx — copy positions the docs gate must catch', () => {
+  it('catches a banned noun in an ordinary prose sentence', () => {
+    const violations = scanMdx(
+      'docs/guide.mdx',
+      'Connect a chat integration to your agents.',
+      WAVE_4_TERMS
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('integration');
+    expect(violations[0]?.line).toBe(1);
+  });
+
+  it('catches a banned noun in a heading', () => {
+    const violations = scanMdx('docs/guide.mdx', '## Built-in adapters\n', WAVE_4_TERMS);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('adapters');
+  });
+
+  it('catches link TEXT, but not the URL sitting in the same link target', () => {
+    // The word appears twice: once in the visible link text (a reader reads
+    // it) and once in the URL (a reader does not) — only the first counts.
+    const violations = scanMdx(
+      'docs/guide.mdx',
+      'See the [integration guide](/docs/integrations/building-integrations) for details.',
+      WAVE_4_TERMS
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('integration');
+    expect(violations[0]?.column).toBeLessThan(
+      'See the [integration guide]('.length + '/docs/integrations/'.length
+    );
+  });
+
+  it('a "vocab-allow" marker inside docs/ is ITSELF a violation, not an exemption (DOR-2508, third review round)', () => {
+    // An inline marker was tried and reverted: Fumadocs' remarkHeading and
+    // remarkStructure copy a JSX comment's text into the live page's heading
+    // titles/anchors and search index. There is no longer any per-line
+    // exemption mechanism for docs/ — only a `contains`-scoped
+    // allowlist.json entry (see AllowlistEntry.contains) works.
+    const violations = scanMdx(
+      'docs/guide.mdx',
+      '### Claude Code adapter {/* vocab-allow: names the real built-in component */}\n',
+      WAVE_4_TERMS
+    );
+    // Two independent violations on the same line: the banned term itself
+    // (still fully reported — the marker text does not suppress it anymore)
+    // and the marker-ban hit.
+    expect(violations.map((v) => v.term).sort()).toEqual(['adapter', 'vocab-allow']);
+    expect(violations.every((v) => v.line === 1)).toBe(true);
+    const markerHit = violations.find((v) => v.term === 'vocab-allow');
+    expect(markerHit?.wave).toBe('docs-marker-ban');
+  });
+
+  it('the marker ban fires even on a line with no banned term at all', () => {
+    const violations = scanMdx(
+      'docs/guide.mdx',
+      'Nothing retired here. {/* vocab-allow: reason */}\n',
+      WAVE_4_TERMS
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('vocab-allow');
+  });
+
+  it('the marker ban is NOT allowlistable — a normal contains-scoped entry never suppresses it (mutation this bans-not-exempts design exists to catch)', () => {
+    const scopedButNotForMarkers: AllowlistEntry[] = [
+      {
+        path: 'docs/guide.mdx',
+        terms: ['vocab-allow'],
+        reason: 'An entry someone might mistakenly add, naming the marker text as its own term.',
+      },
+    ];
+    const violations = scanMdx(
+      'docs/guide.mdx',
+      '### Claude Code adapter {/* vocab-allow: reason */}\n',
+      WAVE_4_TERMS
+    );
+    const markerHit = violations.find((v) => v.term === 'vocab-allow')!;
+    expect(markerHit).toBeDefined();
+    // isAllowlisted alone WOULD suppress it (it only checks path/terms/contains) —
+    // proving the real protection lives in runVocabGate's `v.wave !==
+    // 'docs-marker-ban'` guard, not in scanMdx or isAllowlisted individually.
+    expect(
+      isAllowlisted(markerHit.file, markerHit.term, scopedButNotForMarkers, markerHit.snippet)
+    ).toBe(true);
+  });
+});
+
+describe('scanMdx — non-copy positions the docs gate must ignore', () => {
+  it('ignores a banned noun inside a fenced code block', () => {
+    const text = ['```bash', 'dorkos package init my-adapter --type adapter', '```'].join('\n');
+    expect(scanMdx('docs/guide.mdx', text, WAVE_4_TERMS)).toEqual([]);
+  });
+
+  it('ignores a banned noun inside an inline code span', () => {
+    const text = 'Set `connectors.rawMcpServers` in your config file.';
+    expect(scanMdx('docs/guide.mdx', text, WAVE_4_TERMS)).toEqual([]);
+  });
+
+  it('ignores a banned noun inside an href attribute value', () => {
+    const text = '<Card title="MCP Server" href="/docs/integrations/mcp-server">Learn more.</Card>';
+    expect(scanMdx('docs/guide.mdx', text, WAVE_4_TERMS)).toEqual([]);
+  });
+
+  it('ignores a banned noun inside a src attribute value', () => {
+    const text = '<img src="/img/adapter-diagram.png" alt="Diagram" />';
+    expect(scanMdx('docs/guide.mdx', text, WAVE_4_TERMS)).toEqual([]);
+  });
+
+  it('ignores an import line naming a banned noun in its path', () => {
+    const text =
+      "import { IntegrationCard } from '../integrations/IntegrationCard';\nReal prose below.";
+    const violations = scanMdx('docs/guide.mdx', text, WAVE_4_TERMS);
+    expect(violations).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The docs scan (DOR-2508): collectMdxFiles
+// ---------------------------------------------------------------------------
+
+describe('collectMdxFiles', () => {
+  it('finds .mdx files under the docs root, skipping node_modules', () => {
+    const root = makeTempDir();
+    const paths = [
+      'docs/connections/index.mdx',
+      'docs/connections/composio.mdx',
+      'docs/node_modules/pkg/README.mdx',
+      'docs/connections/README.md', // wrong extension, not .mdx
+    ];
+    for (const p of paths) {
+      const full = join(root, p);
+      mkdirSync(join(full, '..'), { recursive: true });
+      writeFileSync(full, '# Title\n');
+    }
+    const found = collectMdxFiles(['docs'], root).map((f) => f.slice(root.length + 1));
+    expect(found.sort()).toEqual(
+      ['docs/connections/index.mdx', 'docs/connections/composio.mdx'].sort()
+    );
+  });
+
+  it('excludes docs/api/** (generated OpenAPI reference)', () => {
+    const root = makeTempDir();
+    const apiPath = join(root, 'docs/api/api/connectors/providers/get.mdx');
+    mkdirSync(join(apiPath, '..'), { recursive: true });
+    writeFileSync(apiPath, '# Generated\n');
+    const guidePath = join(root, 'docs/guides/real-guide.mdx');
+    mkdirSync(join(guidePath, '..'), { recursive: true });
+    writeFileSync(guidePath, '# Real guide\n');
+
+    const found = collectMdxFiles(['docs'], root).map((f) => f.slice(root.length + 1));
+    expect(found).toEqual(['docs/guides/real-guide.mdx']);
+  });
+
+  it('excludes the two compiled changelog files (frozen historical record)', () => {
+    const root = makeTempDir();
+    for (const p of [
+      'docs/changelog.mdx',
+      'docs/changelog-archive.mdx',
+      'docs/guides/real-guide.mdx',
+    ]) {
+      const full = join(root, p);
+      mkdirSync(join(full, '..'), { recursive: true });
+      writeFileSync(full, '# Title\n');
+    }
+    const found = collectMdxFiles(['docs'], root).map((f) => f.slice(root.length + 1));
+    expect(found).toEqual(['docs/guides/real-guide.mdx']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The docs scan (DOR-2508): end to end through runVocabGate
+//
+// These are the mutation-catching tests: if the docs half of runVocabGate is
+// ever removed, disabled, or its result silently dropped, the FIRST test
+// below fails, because it drives the seeded violation through runVocabGate
+// itself (never scanMdx directly). The second proves the wave-scoping
+// decision (wave 4 only, not wave 1) survives at the same seam.
+// ---------------------------------------------------------------------------
+
+describe('runVocabGate — docs scan wired end to end', () => {
+  it('reports a docs violation merged with source violations (fails if the docs scan is ever disabled)', () => {
+    const root = makeTempDir();
+    const docPath = join(root, 'docs/guides/fixture-guide.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(docPath, 'Connect a chat integration to your agents.\n');
+
+    const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.file).toBe('docs/guides/fixture-guide.mdx');
+    expect(violations[0]?.term).toBe('integration');
+  });
+
+  it('scans docs against wave 4 only — a wave-1 "connection" hit in docs prose is not flagged', () => {
+    const root = makeTempDir();
+    const docPath = join(root, 'docs/guides/fixture-guide.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(
+      docPath,
+      'Your connection drops sometimes; that is an ordinary network sentence, not a Connections violation. But this chat integration line should still be caught.\n'
+    );
+
+    const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(violations.map((v) => v.term)).toEqual(['integration']);
+  });
+
+  it('applies the real allowlist to docs the same way it does to source', () => {
+    const root = makeTempDir();
+    // Reuses a real, shipped allowlist path substring so this test proves the
+    // SAME allowlist.json — not a fixture copy — is consulted for docs.
+    const docPath = join(root, 'docs/integrations/fixture.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(docPath, 'Build a custom integration adapter on top of DorkOS.\n');
+
+    expect(runVocabGate(root, ['apps/client/src'], ['docs'])).toEqual([]);
+  });
+
+  it('finds nothing when the docs root holds no .mdx files', () => {
+    const root = makeTempDir();
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    expect(runVocabGate(root, ['apps/client/src'], ['docs'])).toEqual([]);
+  });
+
+  it('a NEW "### Connectors" heading in configuration.mdx is still caught, even though the real allowlist covers three other lines in that exact file (DOR-2508, second review round — `contains` scoping)', () => {
+    const root = makeTempDir();
+    // The real shipped file, byte for byte, plus one mutation: an unrelated
+    // "### Connectors" heading nobody reworded or allowlisted. Reusing the
+    // real repo-relative path means the real, shipped allowlist.json entries
+    // for `'memory.provider'`, `'connectors.rawMcpServers'` and
+    // `'runtimes.opencode.provider'` are in play — this is the regression a
+    // path-only (no `contains`) version of those entries would have hidden.
+    const real = readFileSync(
+      join(import.meta.dirname, '../../docs/getting-started/configuration.mdx'),
+      'utf8'
+    );
+    const docPath = join(root, 'docs/getting-started/configuration.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(docPath, `${real}\n### Connectors\n`);
+
+    const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('connectors');
+    expect(violations[0]?.snippet).toBe('### Connectors');
+  });
+
+  it('a vocab-allow marker anywhere under docs/ fails the real, end-to-end gate — never suppressed by any allowlist.json entry (DOR-2508, third review round)', () => {
+    const root = makeTempDir();
+    const docPath = join(root, 'docs/guides/fixture-guide.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(docPath, '### Ordinary heading {/* vocab-allow: some reason */}\n');
+
+    const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('vocab-allow');
+    expect(violations[0]?.wave).toBe('docs-marker-ban');
   });
 });
 

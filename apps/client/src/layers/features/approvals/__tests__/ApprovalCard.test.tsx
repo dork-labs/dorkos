@@ -17,6 +17,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { APP_LOGO_MAP } from '@dorkos/icons/app-logos';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import {
@@ -447,5 +448,151 @@ describe('naming what would be destroyed (DOR-1929)', () => {
 
     expect(screen.getByText('Asked from a session on this computer')).toBeInTheDocument();
     expect(screen.queryByText(/doesn’t know who asked/)).toBeNull();
+  });
+});
+
+describe('a connected-app action says what it does (DOR-2504)', () => {
+  const GMAIL_DELETE = {
+    serviceId: 'gmail',
+    serviceName: 'Gmail',
+    accountLabel: 'Work (work@acme.com)',
+    actionName: 'Delete message',
+    details: [
+      { label: 'Message ID', value: '18c2f0a9d1' },
+      { label: 'Access token', value: '(hidden)' },
+    ],
+  };
+  const connectorApproval = (serviceAction: PendingApproval['serviceAction']) =>
+    buildApproval({
+      capabilityId: 'connectors.execute_destructive',
+      capabilityTitle: "Make a change that can't be undone in a connected app",
+      summary:
+        '"DorkBot" wants to run "Delete message" in Gmail on "Work (work@acme.com)" with Message ID: "18c2f0a9d1"',
+      serviceAction,
+    });
+
+  it('names the action, the app with its logo, the account and each argument', () => {
+    const { container } = renderCard(connectorApproval(GMAIL_DELETE));
+
+    expect(screen.getByText('Delete message')).toBeInTheDocument();
+    expect(screen.getByText('Gmail')).toBeInTheDocument();
+    expect(screen.getByText('Work (work@acme.com)')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="service-logo"] img')).toHaveAttribute(
+      'src',
+      APP_LOGO_MAP.gmail
+    );
+    const details = container.querySelector('[data-slot="approval-service-details"]')!;
+    expect(details.querySelectorAll('dt')).toHaveLength(2);
+    expect(details).toHaveTextContent('Message ID18c2f0a9d1');
+    expect(details).toHaveTextContent('Access token(hidden)');
+  });
+
+  it('says plainly that it cannot be undone', () => {
+    renderCard(connectorApproval(GMAIL_DELETE));
+    expect(screen.getByText("Once this runs, it can't be undone in Gmail.")).toBeInTheDocument();
+  });
+
+  it('never shows the jargon title, the ids, or the summary sentence on top of it', () => {
+    const { container } = renderCard(connectorApproval(GMAIL_DELETE));
+    const text = container.textContent ?? '';
+    expect(text).not.toContain('connected app');
+    expect(text).not.toContain('wants to run');
+    expect(text).not.toMatch(/[{}"]/u);
+  });
+
+  it('counts the arguments the server left off the card', () => {
+    renderCard(connectorApproval({ ...GMAIL_DELETE, moreDetails: 3 }));
+    expect(screen.getByText('3 more details')).toBeInTheDocument();
+  });
+
+  it('keeps a long value inside the card instead of widening it', () => {
+    const long = 'x'.repeat(119) + '…';
+    const { container } = renderCard(
+      connectorApproval({ ...GMAIL_DELETE, details: [{ label: 'Subject', value: long }] })
+    );
+    const value = container.querySelector('[data-slot="approval-service-details"] dd')!;
+    expect(value).toHaveTextContent(long);
+    expect(value).toHaveClass('break-words', 'min-w-0');
+  });
+
+  it('does not claim a change is permanent when the tier says otherwise', () => {
+    renderCard({ ...connectorApproval(GMAIL_DELETE), tier: 'act' });
+    expect(screen.queryByText(/can't be undone in Gmail/u)).not.toBeInTheDocument();
+    expect(screen.getByText('Changes things')).toBeInTheDocument();
+  });
+
+  it('says it cannot be undone exactly once, and has no dangling separator', () => {
+    const { container } = renderCard(connectorApproval(GMAIL_DELETE));
+    const text = container.textContent ?? '';
+    expect(text.match(/undone/giu)).toHaveLength(1);
+    expect(screen.queryByText('Cannot be undone')).not.toBeInTheDocument();
+    expect(text).not.toContain('·');
+  });
+
+  it('offers no disclosure when the glance already shows everything', () => {
+    renderCard(connectorApproval(GMAIL_DELETE));
+    expect(screen.queryByRole('button', { name: 'Show everything' })).not.toBeInTheDocument();
+  });
+
+  describe('Show everything', () => {
+    const padded = `${'pad '.repeat(30)}the decisive part`;
+    const attendees = Array.from({ length: 12 }, (_, i) => `person${i + 1}@acme.com`);
+    const full = {
+      ...GMAIL_DELETE,
+      details: [
+        { label: 'Message ID', value: `${padded.slice(0, 119)}…` },
+        { label: 'Attendees', value: '12 items' },
+      ],
+      everything: [
+        { label: 'Message ID', value: padded, depth: 0 },
+        { label: 'Attendees', value: '12 items', depth: 0 },
+        ...attendees.flatMap((email, i) => [
+          { label: String(i + 1), value: '1 field', depth: 1 },
+          { label: 'Email', value: email, depth: 2 },
+        ]),
+      ],
+    };
+
+    it('reads every attendee and the whole padded value after expanding, on the card', async () => {
+      const user = userEvent.setup();
+      const { container } = renderCard(connectorApproval(full));
+      expect(screen.queryByText('person12@acme.com')).not.toBeInTheDocument();
+      expect(screen.queryByText(padded)).not.toBeInTheDocument();
+
+      const toggle = screen.getByRole('button', { name: 'Show everything' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await user.click(toggle);
+
+      const list = container.querySelector('[data-slot="approval-service-everything"]')!;
+      for (const email of attendees) expect(list).toHaveTextContent(email);
+      expect(screen.getByText(padded)).toBeInTheDocument();
+      expect(list.textContent).not.toMatch(/[{}[\]"]/u);
+      // Nested lines are indented under their parent.
+      expect(screen.getAllByText('Email')[0]).toHaveClass('pl-6');
+      const less = screen.getByRole('button', { name: 'Show less' });
+      expect(less).toHaveAttribute('aria-expanded', 'true');
+      expect(less).toHaveAttribute('aria-controls', list.id);
+
+      await user.click(less);
+      expect(screen.queryByText(padded)).not.toBeInTheDocument();
+    });
+
+    it('says plainly when some values were too long to include', async () => {
+      const user = userEvent.setup();
+      renderCard(connectorApproval({ ...full, everythingCut: 2 }));
+      await user.click(screen.getByRole('button', { name: 'Show everything' }));
+      expect(
+        screen.getByText(
+          "2 values are too long to show here. If you're not sure what this sends, deny it."
+        )
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('renders exactly as before for an approval with no connected-app action', () => {
+    const { container } = renderCard(buildApproval());
+    expect(screen.getByText('Uninstall a marketplace package')).toBeInTheDocument();
+    expect(screen.getByText('Uninstall "sentry-monitor"')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="approval-service-action"]')).toBeNull();
   });
 });

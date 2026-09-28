@@ -25,6 +25,7 @@ import type {
   CapabilityDeps,
   CapabilityDomain,
 } from './capability-definition.js';
+import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import {
   CapabilityGateRefusal,
@@ -186,6 +187,12 @@ export interface CapabilityInvocationContext {
 export interface CapabilityPreflightResult {
   /** Process-authenticated binding over authority, target, and parsed input. */
   readonly authorityBinding: CapabilityAuthorityBindingProof;
+  /**
+   * What a connected-app action would do, for its approval card (DOR-2504).
+   * Built by the preflight from the stored records it just checked, so the
+   * card's app, account and action are the server's, never the caller's.
+   */
+  readonly approvalServiceAction?: ApprovalServiceAction;
 }
 
 /**
@@ -670,6 +677,9 @@ export function composeRegistry(
               }
             : {}),
           ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
+          ...(preflight?.approvalServiceAction
+            ? { serviceAction: preflight.approvalServiceAction }
+            : {}),
           ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);

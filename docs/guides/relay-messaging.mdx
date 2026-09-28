@@ -12,12 +12,12 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Relay lets your agents send and receive messages: to each other, to you in DorkOS, or to a Telegram or Slack chat. Every message is saved, so nothing goes missing even if an agent is busy.
 
-This guide gets you sending your first message, then covers adapters, budgets, and tracing for when you want more control.
+This guide gets you sending your first message, then covers chat apps, budgets, and tracing for when you want more control.
 
 <Callout type="info">
   To connect Telegram or Slack from the app, no config file required, use the
   [Connections](/docs/connections) page: they are rows in its list with a **Chat** tag. This guide
-  is the layer underneath: the API, the adapter config on disk, and the tools your agents call.
+  is the layer underneath: the API, the config file on disk, and the tools your agents call.
 </Callout>
 
 <Callout type="info">
@@ -79,7 +79,7 @@ That's the whole loop: publish a message to a subject, Relay routes it, the reci
 
 ## Reference
 
-The rest of this page is a deeper look at how Relay works: the built-in tools, chat adapters, budgets, and configuration. Agent-to-agent chains are still a newer part of DorkOS, so if you're chaining more than a couple of hops, set explicit budgets (below) to keep things bounded.
+The rest of this page is a deeper look at how Relay works: the built-in tools, the chat apps it bridges, budgets, and configuration. Agent-to-agent chains are still a newer part of DorkOS, so if you're chaining more than a couple of hops, set explicit budgets (below) to keep things bounded.
 
 ### Using MCP tools
 
@@ -132,9 +132,9 @@ You can subscribe with wildcards: `*` stands in for exactly one segment, `>` for
 
 Agents publish messages to named subjects, and Relay routes each one to the right recipient. Agents don't need to know about each other directly; they just need to agree on a subject name.
 
-Along the way, a message passes through a few checks: is the subject valid, is the sender allowed to send it, is it within its rate limit and budget. If a recipient adapter is failing repeatedly, Relay's circuit breaker (a safety switch that stops sending to something that's clearly broken) pauses deliveries to it rather than retrying forever. Anything that can't be delivered lands in the dead letter queue, and the full path a message took is recorded so you can look it up later (see [Tracing](#message-tracing) below).
+Along the way, a message passes through a few checks: is the subject valid, is the sender allowed to send it, is it within its rate limit and budget. If delivery to a recipient keeps failing, Relay's circuit breaker (a safety switch that stops sending to something that's clearly broken) pauses deliveries to it rather than retrying forever. Anything that can't be delivered lands in the dead letter queue, and the full path a message took is recorded so you can look it up later (see [Tracing](#message-tracing) below).
 
-When Relay is on, it also takes over how session messages are delivered. Instead of `POST /api/sessions/:id/messages` calling the agent SDK directly, the message is published to `relay.agent.{sessionId}` and the Claude Code adapter picks it up from there. That means every session message gets Relay's tracing, budgets, and retry handling for free.
+When Relay is on, it also takes over how session messages are delivered. Instead of `POST /api/sessions/:id/messages` calling the agent SDK directly, the message is published to `relay.agent.{sessionId}` and DorkOS's Claude Code side picks it up from there. That means every session message gets Relay's tracing, budgets, and retry handling for free.
 
 ### Enabling and disabling Relay
 
@@ -241,7 +241,7 @@ The Claude Code adapter is on by default whenever Relay starts. It listens on `r
 }
 ```
 
-You can change both in the app, under **Settings → Connections**: **Most chats at once** is `maxConcurrent`, and **Give up after** is `defaultTimeoutMs` in seconds. **Start working right away** turns this adapter on or off.
+You can change both in the app, under **Settings → Connections**: **Most chats at once** is `maxConcurrent`, and **Give up after** is `defaultTimeoutMs` in seconds. **Start working right away** turns it on or off.
 
 `maxConcurrent` limits how many agent sessions run at once. `defaultTimeoutMs` sets the longest a message may wait for a busy agent — not how long a session may run. What bounds a running session is the message's own lifetime, and nothing else: a message that runs out of time is turned away rather than given a fresh clock.
 
@@ -319,11 +319,11 @@ The webhook adapter is a generic HTTP bridge. It can receive messages from other
 }
 ```
 
-Inbound requests arrive at `POST /api/relay/webhooks/{adapterId}`. The adapter checks the signature, reads the payload, and publishes it under the configured subject prefix. You can rotate your secret with a 24-hour overlap window so nothing breaks mid-rotation.
+Inbound requests arrive at `POST /api/relay/webhooks/{adapterId}`. DorkOS checks the signature, reads the payload, and publishes it under the configured subject prefix. You can rotate your secret with a 24-hour overlap window so nothing breaks mid-rotation.
 
 ### Hot reload
 
-DorkOS watches `~/.dork/relay/adapters.json` for changes. Edit the file and it reconciles automatically: adapters you removed or disabled stop, and newly enabled ones start. No restart needed.
+DorkOS watches `~/.dork/relay/adapters.json` for changes. Edit the file and it reconciles automatically: ones you removed or disabled stop, and newly enabled ones start. No restart needed.
 
 You can also trigger a reload by hand:
 
@@ -365,7 +365,7 @@ For more on debugging failed deliveries, see the [Relay Observability](/docs/gui
 
 ## Relay and Tasks
 
-When both Relay and Tasks are on, scheduled jobs are dispatched through Relay. Tasks publishes to `relay.system.tasks.{scheduleId}`, and the Claude Code adapter starts the agent session from there. That gives every scheduled run Relay's budget limits, tracing, and retry handling too.
+When both Relay and Tasks are on, scheduled jobs are dispatched through Relay. Tasks publishes to `relay.system.tasks.{scheduleId}`, and DorkOS's Claude Code side starts the agent session from there. That gives every scheduled run Relay's budget limits, tracing, and retry handling too.
 
 ```bash
 export DORKOS_RELAY_ENABLED=true
@@ -393,7 +393,7 @@ Subscribe to `relay.system.tasks.*` on the SSE stream to watch every Tasks dispa
 | --------------------------------- | ------------------------------------------------------------------ |
 | `~/.dork/relay/index.db`          | SQLite index database (messages, traces; WAL mode)                 |
 | `~/.dork/relay/endpoints/`        | Maildir message store, one directory per endpoint                  |
-| `~/.dork/relay/adapters.json`     | Adapter configuration (hot-reloaded)                               |
+| `~/.dork/relay/adapters.json`     | Chat app bridge configuration (hot-reloaded)                       |
 | `~/.dork/relay/config.json`       | Reliability settings (rate limits, circuit breakers, backpressure) |
 | `~/.dork/relay/access-rules.json` | Access control rules (hot-reloaded)                                |
 
@@ -454,15 +454,15 @@ The `config.json` file controls rate limiting, circuit breakers, and backpressur
 | `GET`    | `/api/relay/metrics`                  | Relay system metrics                             |
 | `GET`    | `/api/relay/trace/metrics`            | Aggregate delivery metrics                       |
 | `GET`    | `/api/relay/stream`                   | SSE event stream (supports `?subject=` filter)   |
-| `GET`    | `/api/relay/adapters`                 | List adapters with status                        |
-| `GET`    | `/api/relay/adapters/catalog`         | List available adapter types                     |
-| `GET`    | `/api/relay/adapters/:id`             | Get a single adapter's status                    |
-| `POST`   | `/api/relay/adapters/reload`          | Hot-reload adapter configuration                 |
-| `POST`   | `/api/relay/adapters/test`            | Test an adapter configuration before saving it   |
-| `POST`   | `/api/relay/adapters/:id/enable`      | Enable an adapter                                |
-| `POST`   | `/api/relay/adapters/:id/disable`     | Disable an adapter                               |
-| `GET`    | `/api/relay/bindings`                 | List adapter-to-agent bindings                   |
-| `POST`   | `/api/relay/bindings`                 | Create an adapter-to-agent binding               |
+| `GET`    | `/api/relay/adapters`                 | List chat apps and other bridges with status     |
+| `GET`    | `/api/relay/adapters/catalog`         | List available bridge types                      |
+| `GET`    | `/api/relay/adapters/:id`             | Get a single bridge's status                     |
+| `POST`   | `/api/relay/adapters/reload`          | Hot-reload bridge configuration                  |
+| `POST`   | `/api/relay/adapters/test`            | Test a bridge configuration before saving it     |
+| `POST`   | `/api/relay/adapters/:id/enable`      | Enable a bridge                                  |
+| `POST`   | `/api/relay/adapters/:id/disable`     | Disable a bridge                                 |
+| `GET`    | `/api/relay/bindings`                 | List bridge-to-agent bindings                    |
+| `POST`   | `/api/relay/bindings`                 | Create a bridge-to-agent binding                 |
 | `DELETE` | `/api/relay/bindings/:id`             | Remove a binding                                 |
 | `POST`   | `/api/relay/webhooks/:adapterId`      | Inbound webhook receiver                         |
 

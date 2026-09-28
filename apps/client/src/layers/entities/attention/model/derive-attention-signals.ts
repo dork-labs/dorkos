@@ -7,7 +7,7 @@
  *
  * @module entities/attention/model/derive-attention-signals
  */
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { PendingInteractionDTO, Session, Task } from '@dorkos/shared/types';
@@ -151,8 +151,8 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
     signals.push({
       id: approvalSignalId(approval.approvalId),
       kind: 'permission-prompt',
-      primary: approval.requestedBy ?? approval.capabilityTitle,
-      ...(approval.requestedBy === undefined ? {} : { secondary: approval.capabilityTitle }),
+      primary: approval.requestedBy ?? approvalHeading(approval),
+      ...(approval.requestedBy === undefined ? {} : { secondary: approvalHeading(approval) }),
       since: approval.requestedAt,
       deepLink: APPROVAL_HREF,
     });

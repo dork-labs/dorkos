@@ -2711,6 +2711,9 @@
           "otherArguments": {
             "type": "string",
             "maxLength": 500
+          },
+          "serviceAction": {
+            "$ref": "#/components/schemas/ApprovalServiceAction"
           }
         },
         "required": [
@@ -2751,6 +2754,105 @@
           "label",
           "id"
         ]
+      },
+      "ApprovalServiceAction": {
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "serviceName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "accountLabel": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "actionName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalServiceActionDetail"
+            },
+            "maxItems": 6
+          },
+          "moreDetails": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "everything": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalServiceActionLine"
+            },
+            "maxItems": 2000
+          },
+          "everythingCut": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "serviceId",
+          "serviceName",
+          "accountLabel",
+          "actionName",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalServiceActionDetail": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalServiceActionLine": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 16000
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "depth"
+        ],
+        "additionalProperties": false
       },
       "McpSigninPart": {
         "type": "object",

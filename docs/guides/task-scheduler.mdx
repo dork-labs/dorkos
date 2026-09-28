@@ -478,7 +478,7 @@ To pause a scheduled task yourself, switch it off. That is saved in the skill fi
 
 ### Scheduled tasks + Relay
 
-When both scheduled tasks and [Relay](/docs/guides/relay-messaging) are enabled, a run on Claude Code gets dispatched as a Relay message (`relay.system.tasks.{scheduleId}`) instead of calling the agent runtime directly. A run on Codex or OpenCode calls its runtime directly for now; Relay grows adapters for those next. Multi-agent coordination through Relay is shipped but still working toward full end-to-end verification, so treat this integration as functional, not battle-tested. In practice it means:
+When both scheduled tasks and [Relay](/docs/guides/relay-messaging) are enabled, a run on Claude Code gets dispatched as a Relay message (`relay.system.tasks.{scheduleId}`) instead of calling the agent runtime directly. A run on Codex or OpenCode calls its runtime directly for now; Relay grows support for those next. In practice, Claude Code runs dispatched through Relay:
 
 - Each run gets a Relay trace ID, so you can follow the delivery path from trigger to agent execution.
 - Runs share Relay's delivery machinery (retries, backpressure handling, a dead-letter queue for messages that can't be delivered) with every other message on the bus.

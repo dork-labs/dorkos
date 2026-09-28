@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectorUsageItem } from '@dorkos/shared/connector-schemas';
-import {
-  actionName,
-  eventNoticeLabel,
-  retryLine,
-  tryItPrompts,
-  usageLine,
-} from '../lib/app-panel-copy';
+import { eventNoticeLabel, retryLine, tryItPrompts, usageLine } from '../lib/app-panel-copy';
 import { disconnectImpactLine } from '../ui/panel/AccountPanelMore';
 
 function usage(over: Partial<ConnectorUsageItem> = {}): ConnectorUsageItem {
@@ -27,14 +21,6 @@ function usage(over: Partial<ConnectorUsageItem> = {}): ConnectorUsageItem {
     ...over,
   };
 }
-
-describe('actionName', () => {
-  it('turns an action id into plain words, dropping the app’s own prefix', () => {
-    expect(actionName('GMAIL_SEND_EMAIL', 'gmail')).toBe('Send email');
-    expect(actionName('gmail.messages.list', 'gmail')).toBe('List');
-    expect(actionName('LINEAR_CREATE_ISSUE', 'linear')).toBe('Create issue');
-  });
-});
 
 describe('usageLine', () => {
   const names = { dorkbot: 'DorkBot' };

@@ -60,8 +60,10 @@ import {
   APPROVAL_DETAIL_MAX_LENGTH,
   APPROVAL_REQUEST_REASON_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
+  ApprovalServiceActionSchema,
   type ApprovalOrigin,
   type ApprovalOutcome,
+  type ApprovalServiceAction,
   type ApprovalSubject,
   type PendingApproval,
 } from '@dorkos/shared/approval-schemas';
@@ -206,6 +208,12 @@ export interface ApprovalRequestInput {
    * `subject`, and only when any remain. See the wire schema's `otherArguments`.
    */
   otherArguments?: string;
+  /**
+   * What a connected-app action would do, in words (DOR-2504). Built by the
+   * connector preflight from stored records; see the wire schema's
+   * `serviceAction`.
+   */
+  serviceAction?: ApprovalServiceAction;
   /**
    * Which surface an UNATTRIBUTED request arrived over.
    *
@@ -477,6 +485,58 @@ function clampForStorage(value: string, max: number): string {
   return `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
+/**
+ * Make a connected-app action safe to store: every string swept for secrets
+ * again, then checked against the wire schema.
+ *
+ * The builder already sweeps and caps, but `ApprovalRequestInput` is public API
+ * and this JSON is broadcast and agent-readable exactly like the summary, so
+ * the store does not take a producer's word for it. A value that does not
+ * parse is not stored, and the card falls back to the summary sentence.
+ *
+ * @param action - The described action.
+ * @returns The JSON to store, or null.
+ */
+function storableServiceAction(action: ApprovalServiceAction): string | null {
+  const swept = {
+    ...action,
+    serviceName: redactSecretsInText(action.serviceName),
+    accountLabel: redactSecretsInText(action.accountLabel),
+    actionName: redactSecretsInText(action.actionName),
+    details: action.details.map((detail) => ({
+      label: redactSecretsInText(detail.label),
+      value: redactSecretsInText(detail.value),
+    })),
+    ...(action.everything
+      ? {
+          everything: action.everything.map((line) => ({
+            ...line,
+            label: redactSecretsInText(line.label),
+            value: redactSecretsInText(line.value),
+          })),
+        }
+      : {}),
+  };
+  const parsed = ApprovalServiceActionSchema.safeParse(swept);
+  return parsed.success ? JSON.stringify(parsed.data) : null;
+}
+
+/**
+ * Read a stored connected-app action back, or nothing when the row has none or
+ * it no longer parses — a card without it still has its summary.
+ *
+ * @param stored - The column's JSON.
+ */
+function storedServiceAction(stored: string | null): ApprovalServiceAction | undefined {
+  if (stored === null) return undefined;
+  try {
+    const parsed = ApprovalServiceActionSchema.safeParse(JSON.parse(stored));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A stored approval row, as Drizzle infers it. */
 type ApprovalRow = typeof approvals.$inferSelect;
 
@@ -514,6 +574,12 @@ export function isAlwaysOffered(row: {
     row.authorityBindingDigest === null &&
     (row.detail ?? null) === null
   );
+}
+
+/** The stored connected-app action as a spreadable field, or nothing. */
+function withServiceAction(stored: string | null): { serviceAction?: ApprovalServiceAction } {
+  const serviceAction = storedServiceAction(stored);
+  return serviceAction ? { serviceAction } : {};
 }
 
 /** The recorded area, read defensively: a hand-edited row never breaks a card. */
@@ -554,6 +620,7 @@ function toPendingApproval(
     // for this when it has a subject block to swap it for, so a remainder
     // without one would be a clause nothing renders.
     ...(row.otherArguments && row.subjectLabel ? { otherArguments: row.otherArguments } : {}),
+    ...withServiceAction(row.serviceAction),
     // The raw path stays off the wire (see `requestedByPath`'s own comment); what
     // goes out is the one bit a surface needs, which is whether there is one.
     hasAgentPath: row.requestedByPath !== null,
@@ -704,6 +771,7 @@ export class ApprovalService {
       subjectId: input.subject ? renderRequesterLabel(input.subject.id) : null,
       subjectLabel: input.subject ? renderRequesterLabel(input.subject.label) : null,
       otherArguments: input.otherArguments ? storableSummary(input.otherArguments) : null,
+      serviceAction: input.serviceAction ? storableServiceAction(input.serviceAction) : null,
       // Withheld the moment a caller IS named, so the two can never contradict
       // each other on a card.
       origin: input.requestedBy ? null : (input.origin ?? null),

@@ -27,6 +27,7 @@ import { CompactPendingRow } from '../primitives';
 import { AutoHideThinking, ToolCallWithApp } from './auto-hiding-parts';
 import { CollapsibleRun } from './CollapsibleRun';
 import { TouchChipStrip } from '../chips';
+import { approvalHeading } from '@dorkos/shared/approval-schemas';
 import { ApprovalCard } from '@/layers/features/approvals';
 import { ChatAgentRequest, isConnectionRequestTool } from '@/layers/features/connections';
 
@@ -247,7 +248,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         return (
           <CapabilityApprovalTimedOut
             key={`capability-approval-${part.approval.approvalId}`}
-            title={part.approval.capabilityTitle}
+            title={approvalHeading(part.approval)}
           />
         );
       }
