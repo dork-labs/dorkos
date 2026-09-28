@@ -1,12 +1,14 @@
 /**
  * OpenAPI entries for the out-of-usage routes (spec `claude-account-fleet` D9):
- * `continue-options`, `continue`, `wait` and `continue/cancel`, projected from
- * the same schemas the routes parse and answer with.
+ * `continue-options`, `continue`, `wait` and `continue/cancel`, plus the
+ * `limit-history` read (spec `claude-account-ui` §7.1), projected from the same
+ * schemas the routes parse and answer with.
  *
  * @module services/session/fleet/continue-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import { LimitHistoryResponseSchema } from '@dorkos/shared/account-usage';
 import {
   ContinueOptionsResponseSchema,
   ContinueSessionRequestSchema,
@@ -28,7 +30,7 @@ const flowUnreachable = error(
 );
 
 /**
- * Register the four out-of-usage routes on the OpenAPI registry.
+ * Register the four out-of-usage routes and the limit history on the OpenAPI registry.
  *
  * @param registry - The server's OpenAPI registry.
  */
@@ -114,6 +116,23 @@ export function registerSessionContinueOpenApi(registry: OpenAPIRegistry): void 
       403: peopleOnly,
       409: error('The session has no limit, or no handoff is pending.'),
       503: flowUnreachable,
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/api/sessions/{id}/limit-history',
+    tags: ['Sessions'],
+    summary: 'List how the session got past its recent usage limits',
+    description:
+      'The most recent usage-limit episodes that ended, at most 20, oldest first: what ran out and when, and whether the work moved to another session (`moved`, with where it went) or the session resumed after the reset, on another model, or before the reset. A limit still in effect is not listed; the session status carries it.',
+    request: { params },
+    responses: {
+      200: {
+        description: 'The episodes, oldest first.',
+        content: { 'application/json': { schema: LimitHistoryResponseSchema } },
+      },
+      400: error('The session id is not valid.'),
+      404: error('No session with this id is known here.'),
     },
   });
 }

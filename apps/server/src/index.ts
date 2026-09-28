@@ -1066,7 +1066,16 @@ async function start() {
   // A session's usage limit, kept so a restart or an idle eviction does not
   // turn a limited session back into a merely failed one (spec
   // claude-account-fleet D4).
-  setSessionLimitStore(new SessionLimitStore(db));
+  const sessionLimitStore = new SessionLimitStore(db);
+  setSessionLimitStore(sessionLimitStore);
+  // How past limits ended is kept for 30 days (spec claude-account-ui §7.1).
+  try {
+    sessionLimitStore.sweepHistory();
+  } catch (err) {
+    logger.warn('[session-limits] could not sweep the limit history', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read

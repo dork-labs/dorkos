@@ -862,6 +862,20 @@ export const LimitHistoryEntrySchema = z
 /** Inferred type for {@link LimitHistoryEntrySchema}. */
 export type LimitHistoryEntry = z.infer<typeof LimitHistoryEntrySchema>;
 
+/**
+ * `GET /api/sessions/:id/limit-history`: a session's most recent resolved
+ * usage-limit episodes, at most 20, oldest first (spec `claude-account-ui` §7.1).
+ */
+export const LimitHistoryResponseSchema = z
+  .object({
+    /** The episodes, oldest first. */
+    entries: z.array(LimitHistoryEntrySchema),
+  })
+  .openapi('LimitHistoryResponse');
+
+/** Inferred type for {@link LimitHistoryResponseSchema}. */
+export type LimitHistoryResponse = z.infer<typeof LimitHistoryResponseSchema>;
+
 // === A session's subscription usage, read from its account ===
 //
 // The server derives a Claude Code session's subscription `usage` from its

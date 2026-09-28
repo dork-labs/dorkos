@@ -8,13 +8,29 @@
  * limit, read by a projector created for that session, deleted at the
  * session's next `turn_start`, and moved when the session is rekeyed.
  *
+ * It also keeps each episode's ending in `session_limit_history` (spec
+ * `claude-account-ui` §7.1), from inside the same writes: a plan that becomes
+ * `continued` records `moved`, and the delete at `turn_start` records how the
+ * session resumed. One code path, so the live limit and its history cannot
+ * disagree.
+ *
  * Every method is synchronous (better-sqlite3), and every caller on a turn's
  * path goes through {@link getSessionLimitStore}, which is `undefined` until
  * boot wires a store, so a unit test without a database simply keeps nothing.
  *
  * @module services/session/fleet/session-limit-store
  */
-import { sessionLimits, and, eq, inArray, type Db, type SessionLimitRow } from '@dorkos/db';
+import {
+  sessionLimits,
+  sessionMetadata,
+  and,
+  eq,
+  inArray,
+  type Db,
+  type DbTransaction,
+  type SessionLimitRow,
+} from '@dorkos/db';
+import type { LimitHistoryEntry } from '@dorkos/shared/account-usage';
 import {
   LimitPlanSchema,
   LimitStateSchema,
@@ -24,6 +40,14 @@ import {
 } from '@dorkos/shared/schemas';
 
 import { logger } from '../../../lib/logger.js';
+import {
+  hasLimitHistory,
+  listLimitHistory,
+  recordLimitResolution,
+  rekeyLimitHistory,
+  resumedResolutionOf,
+  sweepLimitHistory,
+} from './session-limit-history.js';
 
 /** Whether a limit stopped the whole account or one model's window. */
 export type SessionLimitScope = 'account' | 'model';
@@ -131,6 +155,21 @@ function parseAllOut(json: string | null): SessionLimit['allOut'] {
   }
 }
 
+/** The runtime a history row names when the session has no binding on record. */
+const UNKNOWN_RUNTIME = 'unknown';
+
+/** A session's `session_metadata` row facts the history needs, or `undefined` without one. */
+function metadataOf(
+  db: Db | DbTransaction,
+  sessionId: string
+): { runtime: string | null; model: string | null } | undefined {
+  return db
+    .select({ runtime: sessionMetadata.runtime, model: sessionMetadata.model })
+    .from(sessionMetadata)
+    .where(eq(sessionMetadata.sessionId, sessionId))
+    .get();
+}
+
 function toStored(row: SessionLimitRow): StoredSessionLimit {
   const state = parseState(row.state);
   const allOut = parseAllOut(row.allOut);
@@ -192,6 +231,10 @@ export class SessionLimitStore {
       modelFallback: null,
       allOut: null,
       claimedBy: null,
+      // The model the session was on when it ran out, so its next turn can
+      // tell a model switch from a wait (the limit history, spec
+      // claude-account-ui §7.1).
+      model: metadataOf(this.db, write.sessionId)?.model ?? null,
       updatedAt: this.now().toISOString(),
     };
     const { sessionId: _key, ...update } = values;
@@ -233,21 +276,40 @@ export class SessionLimitStore {
       set.allOut = patch.allOut === null ? null : JSON.stringify(patch.allOut);
     }
     if (patch.claimedBy !== undefined) set.claimedBy = patch.claimedBy;
-    return (
-      this.db
-        .update(sessionLimits)
-        .set(set)
-        .where(
-          and(
-            eq(sessionLimits.sessionId, sessionId),
-            eq(sessionLimits.since, since),
-            ...(opts.expectPlanJson !== undefined
-              ? [eq(sessionLimits.plan, opts.expectPlanJson)]
-              : [])
+    const plan = patch.plan;
+    return this.db.transaction((tx) => {
+      const changed =
+        tx
+          .update(sessionLimits)
+          .set(set)
+          .where(
+            and(
+              eq(sessionLimits.sessionId, sessionId),
+              eq(sessionLimits.since, since),
+              ...(opts.expectPlanJson !== undefined
+                ? [eq(sessionLimits.plan, opts.expectPlanJson)]
+                : [])
+            )
           )
-        )
-        .run().changes > 0
-    );
+          .run().changes > 0;
+      // The work moved on: that is how this episode ended, whoever moved it.
+      if (changed && plan?.mode === 'continued') {
+        const row = tx
+          .select()
+          .from(sessionLimits)
+          .where(eq(sessionLimits.sessionId, sessionId))
+          .get();
+        if (row) {
+          recordLimitResolution(tx, row, {
+            runtime: metadataOf(tx, sessionId)?.runtime ?? UNKNOWN_RUNTIME,
+            resolution: 'moved',
+            resolvedAt: this.now(),
+            move: { toSessionId: plan.sessionId, toAccountId: plan.accountId },
+          });
+        }
+      }
+      return changed;
+    });
   }
 
   /** Every stored limit, for a sweep over all limited sessions. */
@@ -313,13 +375,65 @@ export class SessionLimitStore {
    * @returns Whether a row was deleted.
    */
   delete(sessionId: string): boolean {
+    return this.db.transaction((tx) => {
+      const row = tx
+        .select()
+        .from(sessionLimits)
+        .where(eq(sessionLimits.sessionId, sessionId))
+        .get();
+      if (!row) return false;
+      tx.delete(sessionLimits).where(eq(sessionLimits.sessionId, sessionId)).run();
+      // How the session got going again. Ignored for an episode that already
+      // ended `moved`: its work went elsewhere, whatever this session does now.
+      const metadata = metadataOf(tx, sessionId);
+      const now = this.now();
+      const resumed = resumedResolutionOf(row, { currentModel: metadata?.model ?? null, now });
+      recordLimitResolution(tx, row, {
+        runtime: metadata?.runtime ?? UNKNOWN_RUNTIME,
+        resolution: resumed.resolution,
+        resolvedAt: now,
+        modelFrom: resumed.modelFrom,
+        modelTo: resumed.modelTo,
+      });
+      return true;
+    });
+  }
+
+  /**
+   * A session's most recent resolved limit episodes, oldest first (spec
+   * `claude-account-ui` §7.1).
+   *
+   * @param sessionId - The canonical session id.
+   */
+  history(sessionId: string): LimitHistoryEntry[] {
+    return listLimitHistory(this.db, sessionId);
+  }
+
+  /**
+   * Whether this server knows the session at all: it has settings or a
+   * runtime binding on record, a live limit, or a resolved one.
+   *
+   * @param sessionId - The canonical session id.
+   */
+  knowsSession(sessionId: string): boolean {
     return (
-      this.db.delete(sessionLimits).where(eq(sessionLimits.sessionId, sessionId)).run().changes > 0
+      metadataOf(this.db, sessionId) !== undefined ||
+      this.get(sessionId) !== undefined ||
+      hasLimitHistory(this.db, sessionId)
     );
   }
 
   /**
-   * Carry a session's limit onto its new id. When both ids hold a row, the
+   * Remove resolved episodes older than 30 days. Run once at boot.
+   *
+   * @returns How many were removed.
+   */
+  sweepHistory(): number {
+    return sweepLimitHistory(this.db, this.now());
+  }
+
+  /**
+   * Carry a session's limit, and its limit history, onto its new id. When both ids hold a row, the
    * newer limit (by `since`) is kept, since that is the one the session's last
    * turn reported. Idempotent.
    *
@@ -329,6 +443,8 @@ export class SessionLimitStore {
   rekeySession(fromId: string, toId: string): void {
     if (fromId === toId) return;
     this.db.transaction((tx) => {
+      // The history moves whether or not a live limit does.
+      rekeyLimitHistory(tx, fromId, toId);
       const source = tx
         .select()
         .from(sessionLimits)

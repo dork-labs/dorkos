@@ -1,5 +1,6 @@
 /**
- * The four out-of-usage routes through the REAL app mount (spec
+ * The four out-of-usage routes, and the limit history beside them (spec
+ * `claude-account-ui` §7.1), through the REAL app mount (spec
  * `claude-account-fleet` D9 "Endpoints"): they are mounted at all, a person is
  * the gate, a refusal keeps its status and code, and each body has the shape
  * the UI reads. The decisions behind them are the continue service's, tested
@@ -52,6 +53,10 @@ import {
   waitForReset,
 } from '../../services/session/fleet/continue-service.js';
 import { rejectUnknownModel } from '../session-model-gate.js';
+import {
+  SessionLimitStore,
+  setSessionLimitStore,
+} from '../../services/session/fleet/session-limit-store.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -200,5 +205,90 @@ describe('the out-of-usage routes', () => {
       expect(res.body.code).toBe('PEOPLE_ONLY');
     }
     expect(continueSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/sessions/:id/limit-history', () => {
+  const HOUR = 60 * 60 * 1000;
+  let db: Db;
+  let store: SessionLimitStore;
+  let clock: Date;
+
+  beforeEach(() => {
+    db = createTestDb();
+    runtimeRegistry.setDb(db);
+    clock = new Date();
+    store = new SessionLimitStore(db, () => clock);
+    setSessionLimitStore(store);
+  });
+
+  afterEach(() => {
+    setSessionLimitStore(undefined);
+  });
+
+  /** One resolved episode, hit `hoursAgo` hours before now and cleared a minute later. */
+  function episode(hoursAgo: number): string {
+    const since = new Date(Date.now() - hoursAgo * HOUR);
+    store.upsert({
+      sessionId: SESSION,
+      limit: {
+        accountId: 'main',
+        window: 'five_hour',
+        resetsAt: new Date(since.getTime() + 5 * HOUR).toISOString(),
+        since: since.toISOString(),
+        plan: { mode: 'ask' },
+        scope: 'account',
+        state: 'limited',
+      },
+      scope: 'account',
+      accountPath: '/accounts/main',
+    });
+    clock = new Date(since.getTime() + 60_000);
+    store.delete(SESSION);
+    return since.toISOString();
+  }
+
+  it('serves the last 20 episodes, oldest first, in the wire shape', async () => {
+    await runtimeRegistry.persistSessionRuntime(SESSION, 'claude-code', {
+      kind: 'interactive',
+    } as never);
+    const sinces = Array.from({ length: 22 }, (_, i) => episode(100 - i));
+    const res = await request(testServer).get(`${base}/limit-history`);
+    expect(res.status).toBe(200);
+    expect(res.body.entries.map((e: { since: string }) => e.since)).toEqual(sinces.slice(2));
+    expect(res.body.entries[0]).toEqual({
+      id: expect.any(String),
+      sessionId: SESSION,
+      since: sinces[2],
+      runtime: 'claude-code',
+      accountId: 'main',
+      window: 'five_hour',
+      scope: 'account',
+      resetsAt: expect.any(String),
+      resolution: 'resumed-early',
+      resolvedAt: expect.any(String),
+      toSessionId: null,
+      toAccountId: null,
+      modelFrom: null,
+      modelTo: null,
+    });
+  });
+
+  it('answers an empty list for a known session with no past limits', async () => {
+    await runtimeRegistry.saveSessionSettings(SESSION, { model: 'opus' });
+    const res = await request(testServer).get(`${base}/limit-history`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ entries: [] });
+  });
+
+  it('answers 404 for a session this server does not know', async () => {
+    const res = await request(testServer).get(`${base}/limit-history`);
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('SESSION_NOT_FOUND');
+  });
+
+  it('answers 400 for an invalid id', async () => {
+    const res = await request(testServer).get('/api/sessions/not a uuid/limit-history');
+    expect(res.status).toBe(400);
   });
 });

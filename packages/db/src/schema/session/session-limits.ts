@@ -45,6 +45,13 @@ export const sessionLimits = sqliteTable('session_limits', {
    * extension reloading.
    */
   claimedBy: text('claimed_by'),
+  /**
+   * The session's chosen model when the limit was hit (`session_metadata.model`),
+   * or NULL for the runtime's default. What the limit history compares against
+   * at the next `turn_start` to tell a model switch from a wait (spec
+   * `claude-account-ui` §7.1).
+   */
+  model: text('model'),
   /** The row's last write. */
   updatedAt: text('updated_at').notNull(),
 });

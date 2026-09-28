@@ -75,6 +75,7 @@ import {
   cancelContinueHandler,
   continueOptionsHandler,
   continueSessionHandler,
+  limitHistoryHandler,
   waitForResetHandler,
 } from './session-continue.js';
 import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
@@ -1177,6 +1178,8 @@ router.get('/:id/continue-options', continueOptionsHandler);
 router.post('/:id/continue', continueSessionHandler);
 router.post('/:id/continue/cancel', cancelContinueHandler);
 router.post('/:id/wait', waitForResetHandler);
+// How past limits ended, for the transcript (spec claude-account-ui §7.1).
+router.get('/:id/limit-history', limitHistoryHandler);
 
 // POST /api/sessions/:id/devtools/ingest — DevTools bridge capture sink (DOR-213).
 // Session-gated (credentialed same-origin client call), Zod-validated, batch-capped.

@@ -54,6 +54,12 @@ const SHIPPED_ACCOUNT_ISSUER_IDX = 87;
  */
 const PRE_ACCOUNT_ISSUER_DROP_IDX = 111;
 
+/**
+ * Last migration BEFORE the limit history (0120, spec `claude-account-ui`
+ * §7.1): an install that may already hold a live `session_limits` row.
+ */
+const PRE_LIMIT_HISTORY_IDX = 119;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -274,6 +280,10 @@ describe('Database Migrations', () => {
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
       'session_events',
+      // How each limit below ended, kept after its row is gone so the
+      // transcript can say what happened (spec claude-account-ui §7.1,
+      // migration 0120).
+      'session_limit_history',
       // A session's hard usage limit, kept across a restart until its next
       // turn starts (spec claude-account-fleet D4, migration 0117).
       'session_limits',
@@ -309,6 +319,30 @@ describe('Database Migrations', () => {
     expect(columnsOf('session_limits')).toEqual(
       expect.arrayContaining(['cwd', 'model_fallback', 'all_out', 'claimed_by'])
     );
+  });
+
+  it('adds the limit history over a database that already holds a live limit (migration 0120)', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_LIMIT_HISTORY_IDX) });
+    const raw = db.$client;
+    raw
+      .prepare(
+        "INSERT INTO session_limits (session_id, since, window, scope, plan, state, updated_at) VALUES ('s-1', '2026-01-01T00:00:00Z', 'five_hour', 'account', '{\"mode\":\"ask\"}', 'limited', '2026-01-01T00:00:00Z')"
+      )
+      .run();
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    // The live limit is untouched, and remembers no model it never recorded.
+    expect(raw.prepare('SELECT session_id, model FROM session_limits').all()).toEqual([
+      { session_id: 's-1', model: null },
+    ]);
+    const insert = raw.prepare(
+      "INSERT OR IGNORE INTO session_limit_history (id, session_id, since, runtime, window, scope, resolution, resolved_at) VALUES (?, 's-1', '2026-01-01T00:00:00Z', 'claude-code', 'five_hour', 'account', 'moved', '2026-01-01T00:01:00Z')"
+    );
+    expect(insert.run('a').changes).toBe(1);
+    // One row per episode.
+    expect(insert.run('b').changes).toBe(0);
   });
 
   it('foreign key constraint is enforced on pulse_runs.schedule_id', () => {

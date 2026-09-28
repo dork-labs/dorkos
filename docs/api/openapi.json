@@ -1165,6 +1165,110 @@
           }
         }
       },
+      "LimitHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LimitHistoryEntry"
+            }
+          }
+        },
+        "required": [
+          "entries"
+        ]
+      },
+      "LimitHistoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "window": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "resetsAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/LimitResolution"
+          },
+          "resolvedAt": {
+            "type": "string"
+          },
+          "toSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "toAccountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modelFrom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modelTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "sessionId",
+          "since",
+          "runtime",
+          "accountId",
+          "window",
+          "scope",
+          "resetsAt",
+          "resolution",
+          "resolvedAt",
+          "toSessionId",
+          "toAccountId",
+          "modelFrom",
+          "modelTo"
+        ]
+      },
+      "LimitResolution": {
+        "type": "string",
+        "enum": [
+          "moved",
+          "resumed-reset",
+          "resumed-model",
+          "resumed-early"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -14983,6 +15087,58 @@
           },
           "503": {
             "description": "The session is held by the account advisor (a Flow run), and it could not be reached, so nothing changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/limit-history": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "List how the session got past its recent usage limits",
+        "description": "The most recent usage-limit episodes that ended, at most 20, oldest first: what ran out and when, and whether the work moved to another session (`moved`, with where it went) or the session resumed after the reset, on another model, or before the reset. A limit still in effect is not listed; the session status carries it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The episodes, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitHistoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The session id is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No session with this id is known here.",
             "content": {
               "application/json": {
                 "schema": {

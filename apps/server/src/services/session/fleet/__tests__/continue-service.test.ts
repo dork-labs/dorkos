@@ -215,6 +215,13 @@ function state(id: string) {
   return store.get(id)?.limit.state;
 }
 
+/** How the session's past limits ended (spec claude-account-ui §7.1), as `[resolution, toSessionId, toAccountId, modelFrom, modelTo]`. */
+function endings(id: string) {
+  return store
+    .history(id)
+    .map((e) => [e.resolution, e.toSessionId, e.toAccountId, e.modelFrom, e.modelTo]);
+}
+
 async function refusal(promise: Promise<unknown>): Promise<ContinueError> {
   try {
     await promise;
@@ -353,6 +360,22 @@ describe('without an advisor', () => {
     });
     expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' });
     expect(state('src-1')).toBe('moved');
+    // The limit history already says where the work went, and a later turn
+    // of the old session does not rewrite it.
+    expect(store.history('src-1')).toEqual([
+      expect.objectContaining({
+        sessionId: 'src-1',
+        since: SINCE,
+        runtime: 'claude-code',
+        accountId: 'main',
+        resolution: 'moved',
+        resolvedAt: NOW.toISOString(),
+        toSessionId: 'new-1',
+        toAccountId: 'spare',
+      }),
+    ]);
+    store.delete('src-1');
+    expect(endings('src-1')).toEqual([['moved', 'new-1', 'spare', null, null]]);
     // No turn was ever sent to the source session, on any runtime path.
     expect(runtime.sendMessage).not.toHaveBeenCalled();
   });
@@ -553,6 +576,12 @@ describe('a session on another runtime', () => {
     expect(runtime.updateSession).not.toHaveBeenCalled();
     // Waiting still works.
     expect((await waitForReset('src-codex', {})).mode).toBe('waiting');
+    // Its history says it waited it out on Codex, never that it moved.
+    vi.setSystemTime(new Date(RESETS));
+    store.delete('src-codex');
+    expect(store.history('src-codex')).toEqual([
+      expect.objectContaining({ runtime: 'codex', resolution: 'resumed-reset', toSessionId: null }),
+    ]);
   });
 
   it('an OpenCode account limit only waits and never ranks or asks about Claude accounts', async () => {
@@ -641,6 +670,23 @@ describe('states', () => {
     expect(call.sessionId).toBe('src-1');
     expect(call.origin).toEqual({ kind: 'interactive' });
     expect(call.request.content).toBe(MODEL_CONTINUE_PROMPT);
+  });
+
+  it('records resumed-model when the turn a model switch sends starts', async () => {
+    installUsageStore([{ id: 'main', weekly: 60 }]);
+    await runtimeRegistry.saveSessionSettings('src-1', { model: 'opus' });
+    // The runtime stores the chosen model, as the real ones do.
+    let saved: Promise<void> = Promise.resolve();
+    runtime.updateSession.mockImplementation((id, opts) => {
+      saved = runtimeRegistry.saveSessionSettings(id, opts);
+      return { updated: true } as never;
+    });
+    await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model' });
+    await continueSession('src-1', { model: 'sonnet' }, deps);
+    await saved;
+    // The session's next turn_start clears the limit.
+    store.delete('src-1');
+    expect(endings('src-1')).toEqual([['resumed-model', null, null, 'opus', 'sonnet']]);
   });
 
   it('refuses a model the runtime does not offer', async () => {
@@ -811,6 +857,8 @@ describe('a session the advisor claims', () => {
     expect(plan('src-1')?.mode).toBe('auto');
     await vi.advanceTimersByTimeAsync(2_000);
     await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
+    // A handoff that never happened is not history.
+    expect(store.history('src-1')).toEqual([]);
   });
 
   it('shows an onLimited auto plan and settles it after 10 minutes past fireAt', async () => {
@@ -859,6 +907,7 @@ describe('a session the advisor claims', () => {
         accountId: 'spare',
       });
       expect(state('src-1')).toBe('moved');
+      expect(endings('src-1')).toEqual([['moved', 'flow-new', 'spare', null, null]]);
     }
   );
 
