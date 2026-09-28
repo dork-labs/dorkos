@@ -43,6 +43,13 @@ import type {
 /** Default per-provider deadline for an aggregation call, in milliseconds. */
 const DEFAULT_PROVIDER_TIMEOUT_MS = 5_000;
 
+/**
+ * Default per-way deadline for the background sign-in refresh. Longer than an
+ * aggregation read: nobody waits on it, and an account listing may follow
+ * several pages, so a 5-second budget would fail a large way on every run.
+ */
+export const DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS = 20_000;
+
 /** One provider's degradation notice — a backend that failed or timed out. */
 export interface ConnectorWarning {
   /** The backend type that degraded, e.g. `'composio'`. */
@@ -83,6 +90,8 @@ export interface ConnectorRegistryOpts {
   db: Db;
   /** Override the per-provider aggregation timeout (default 5s). */
   providerTimeoutMs?: number;
+  /** Override the per-way sign-in refresh deadline (default 20s). */
+  signInRefreshTimeoutMs?: number;
   /** Already-resolved application migration input. Production P1 supplies no operation set. */
   migration?: LegacyConnectionMigrationInput;
   /** Inject an authoritative store in focused tests. */
@@ -125,6 +134,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  */
 export class ConnectorRegistry {
   private readonly _providerTimeoutMs: number;
+  private readonly _signInRefreshTimeoutMs: number;
   private readonly _connections: ConnectionStore;
   private readonly _providers = new Map<string, ConnectorProvider>();
   private readonly _defaultInstanceByType = new Map<string, ConnectorProviderInstanceId>();
@@ -140,6 +150,8 @@ export class ConnectorRegistry {
    */
   constructor(opts: ConnectorRegistryOpts) {
     this._providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+    this._signInRefreshTimeoutMs =
+      opts.signInRefreshTimeoutMs ?? DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS;
     this._catalog = opts.catalogCache ?? new ConnectorCatalogCache();
     // The kept app list is dropped through the same notice as every other
     // copy kept for a way, so there is one invalidation path.
@@ -492,7 +504,7 @@ export class ConnectorRegistry {
     const startedAt = new Date().toISOString();
     const settled = await Promise.allSettled(
       providers.map((provider) =>
-        withTimeout(provider.listAccounts(), this._providerTimeoutMs, provider.type)
+        withTimeout(provider.listAccounts(), this._signInRefreshTimeoutMs, provider.type)
       )
     );
     const changes: SignInStatusChange[] = [];

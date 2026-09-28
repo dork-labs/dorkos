@@ -29,12 +29,13 @@
  * **A way that stops answering comes back by itself.** A check that failed for
  * a reason that can pass (no answer, a timeout, a 5xx) is re-run on its own,
  * waiting longer after each failure in a row ({@link WAY_RECHECK_DELAYS_MS});
- * a refused key or link credential (401/403) or a refused setup waits for
- * the person instead; {@link ConnectorProviderBootstrapper.nextWayCheckAt}
- * says when the next automatic check is due. A
- * registered way whose periodic account listing fails is checked again at
- * once ({@link ConnectorProviderBootstrapper.recheckWay}) and taken down only
- * if it still does not answer. Every successful check lists the way's
+ * a refused key (401/403), a link the DorkOS account refuses, or a refused
+ * setup waits for the person instead.
+ * {@link ConnectorProviderBootstrapper.nextWayCheckAt} says when the next
+ * automatic check is due. A registered way whose periodic account listing
+ * fails is checked again at once
+ * ({@link ConnectorProviderBootstrapper.recheckWay}) and taken down only if it
+ * still does not answer. Every successful check lists the way's
  * accounts, so it also records each kept account's sign-in status.
  *
  * Under `DORKOS_TEST_RUNTIME` a third credential-gated spec, `test-connector`,
@@ -56,6 +57,7 @@ import type {
   ConnectorWayProblem,
 } from '@dorkos/shared/connector-resource-schemas';
 import { logger } from '../../lib/logger.js';
+import { ManagedConnectorCloudError } from '../core/auth/cloud-link-client.js';
 import { chooseNewAppsWay, signInThroughFor, wayProblemFor } from './app-connection-way.js';
 import type { CredentialProvider } from '../core/credential-provider.js';
 import { custodyDisclosure, MANAGED_CUSTODY_CANONICAL_SENTENCE } from './custody-disclosure.js';
@@ -190,6 +192,19 @@ export const WAY_RECHECK_DELAYS_MS = [30_000, 60_000, 120_000, 300_000, 900_000]
 function isCredentialRefusal(err: unknown): boolean {
   const status = (err as { status?: unknown } | null)?.status;
   return status === 401 || status === 403;
+}
+
+/**
+ * Whether the DorkOS account refused the link itself: its credential is not
+ * accepted, or it needs a permission the owner must grant by linking again.
+ * Only those wait for the owner. A plain refused request (even a 403) or a
+ * network failure can pass, so the way is re-checked.
+ */
+function isLinkRefusal(err: unknown): boolean {
+  return (
+    err instanceof ManagedConnectorCloudError &&
+    (err.code === 'unauthorized' || err.code === 'permission_upgrade_required')
+  );
 }
 
 /** Strip a `file:` prefix down to the credential-store name. */
@@ -508,8 +523,9 @@ export class ConnectorProviderBootstrapper {
 
   /**
    * When DorkOS will next check, on its own, a way that failed its last check
-   * for a reason that can pass (see {@link WAY_RECHECK_DELAYS_MS}): the time a
-   * readiness line can show as "DorkOS will try again at …". `undefined` when
+   * for a reason that can pass (see {@link WAY_RECHECK_DELAYS_MS}). Connection
+   * readiness (DOR-2500, landing right after this) reads it to show "DorkOS
+   * will try again at …" beside a way that is down. `undefined` when
    * no automatic check is waiting: the way answered, is not set up, or its key
    * was refused and waits for the owner.
    *
@@ -587,10 +603,10 @@ export class ConnectorProviderBootstrapper {
 
   /**
    * The DorkOS account's way failed its check: re-check it later while it is
-   * still linked, unless the account refused the link's credential itself.
+   * still linked, unless the account refused the link itself.
    */
   private _managedWayFailed(err: unknown): void {
-    if (!this._managedCloud?.configured() || isCredentialRefusal(err)) {
+    if (!this._managedCloud?.configured() || isLinkRefusal(err)) {
       this._clearRecheck(MANAGED_CLOUD_PROVIDER_TYPE);
       return;
     }

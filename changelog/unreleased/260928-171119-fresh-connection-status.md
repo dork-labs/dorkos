@@ -2,6 +2,7 @@
 covers:
   - 'fix(connections): notice when a sign-in stops working and keep way status fresh (DOR-2501)'
   - 'fix(connections): record a sign-in status only when the service states one (DOR-2501 review)'
+  - 'fix(connections): give the sign-in refresh its own deadline and narrow when the DorkOS account way waits (DOR-2501 review)'
 ---
 
 ### Fixed

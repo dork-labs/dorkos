@@ -118,7 +118,7 @@ describe('SignInRefresher', () => {
         },
       ];
     };
-    const slowRegistry = new ConnectorRegistry({ db, providerTimeoutMs: 60_000 });
+    const slowRegistry = new ConnectorRegistry({ db, signInRefreshTimeoutMs: 60_000 });
     slowRegistry.register(provider);
     refresher = new SignInRefresher({ registry: slowRegistry, ways: { recheckWay } });
 

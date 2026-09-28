@@ -38,6 +38,7 @@ import {
 } from '../providers/composio-client.js';
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
 import { ManagedCloudConnectorProvider } from '../providers/managed/managed-cloud.js';
+import { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
 import type { NangoHttpClient } from '../providers/nango-client.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
 import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
@@ -1644,33 +1645,41 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(bootstrapper.nextWayCheckAt(composioInstance)).toBeUndefined();
     });
 
-    it('never re-checks the DorkOS account way by itself when the account refuses the link', async () => {
-      vi.useFakeTimers();
-      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
-      let probes = 0;
-      const managed = new FakeConnectorProvider({
-        instanceId,
-        type: 'dorkos-managed',
-        custody: 'managed',
-      });
-      managed.listAccounts = () => {
-        probes += 1;
-        return Promise.reject(Object.assign(new Error('unauthorized'), { status: 401 }));
-      };
-      const bootstrapper = makeBootstrapper({
-        managedCloud: {
+    it.each([
+      ['unauthorized', 401, 1],
+      ['permission_upgrade_required', 403, 1],
+      // A plain refused request, even a 403, can pass: it is checked again.
+      ['request_failed', 403, 2],
+    ] as const)(
+      'on a DorkOS account %s (%i), makes %i check(s) in the first minute',
+      async (code, status, expectedProbes) => {
+        vi.useFakeTimers();
+        const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+        let probes = 0;
+        const managed = new FakeConnectorProvider({
           instanceId,
-          configured: () => true,
-          executionConfigDigest: () => 'linked-material',
-          create: () => managed,
-        },
-      });
+          type: 'dorkos-managed',
+          custody: 'managed',
+        });
+        managed.listAccounts = () => {
+          probes += 1;
+          return Promise.reject(new ManagedConnectorCloudError(code, status));
+        };
+        const bootstrapper = makeBootstrapper({
+          managedCloud: {
+            instanceId,
+            configured: () => true,
+            executionConfigDigest: () => 'linked-material',
+            create: () => managed,
+          },
+        });
 
-      await bootstrapper.registerBootProviders();
-      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS.at(-1)! * 3);
+        await bootstrapper.registerBootProviders();
+        await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS[0]);
 
-      expect(probes).toBe(1);
-      expect(bootstrapper.nextWayCheckAt(instanceId)).toBeUndefined();
-    });
+        expect(probes).toBe(expectedProbes);
+        expect(bootstrapper.nextWayCheckAt(instanceId) !== undefined).toBe(expectedProbes > 1);
+      }
+    );
   });
 });

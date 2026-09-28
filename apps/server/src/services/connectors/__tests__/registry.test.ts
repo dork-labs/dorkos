@@ -19,7 +19,7 @@ import type {
 } from '@dorkos/shared/connector-provider';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { ConnectorCatalogCache } from '../resources/catalog-cache.js';
-import { ConnectorRegistry } from '../registry.js';
+import { ConnectorRegistry, DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS } from '../registry.js';
 
 /** A provider whose `listAccounts` always rejects — the degradation case. */
 class BrokenProvider extends FakeConnectorProvider {
@@ -51,7 +51,7 @@ describe('ConnectorRegistry', () => {
   beforeEach(() => {
     db = createDb(':memory:');
     runMigrations(db);
-    registry = new ConnectorRegistry({ db, providerTimeoutMs: 100 });
+    registry = new ConnectorRegistry({ db, providerTimeoutMs: 100, signInRefreshTimeoutMs: 100 });
   });
 
   it('registers, lists, and resolves providers by type', () => {
@@ -320,6 +320,74 @@ describe('ConnectorRegistry', () => {
 
       expect(failures).toHaveLength(1);
       expect(failures[0]!.message).toMatch(/timed out/);
+    });
+
+    it('gives a slow, many-page listing its own longer deadline than a page read gets', async () => {
+      vi.useFakeTimers();
+      try {
+        const defaults = new ConnectorRegistry({ db });
+        const composio = new FakeConnectorProvider({ type: 'composio' });
+        defaults.register(composio);
+        const gmail = await connectOne(defaults, composio, 'gmail', 'personal');
+        const account = (await composio.listAccounts())[0]!;
+        // Well past the 5-second read deadline, inside the refresh's own.
+        composio.listAccounts = () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve([{ ...account, status: 'expired' }]), 12_000)
+          );
+
+        const slow = defaults.refreshSignIns();
+        await vi.advanceTimersByTimeAsync(12_000);
+        expect(await slow).toMatchObject({ failures: [] });
+        expect(defaults.accountBinding(gmail.id)?.status).toBe('expired');
+
+        // A listing that never ends still fails, at the refresh deadline.
+        composio.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
+        const stuck = defaults.refreshSignIns();
+        await vi.advanceTimersByTimeAsync(DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS);
+        expect((await stuck).failures[0]!.message).toMatch(/timed out after 20000ms/);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('records nothing from a status the service did not state', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
+      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'expired');
+      await registry.refreshSignIns();
+      const before = db
+        .select({ status: connections.status, at: connections.lastVerifiedAt })
+        .from(connections)
+        .where(eq(connections.id, gmail.id))
+        .get();
+      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'unknown');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const { changes, failures } = await registry.refreshSignIns();
+
+      expect({ changes, failures }).toEqual({ changes: [], failures: [] });
+      expect(
+        db
+          .select({ status: connections.status, at: connections.lastVerifiedAt })
+          .from(connections)
+          .where(eq(connections.id, gmail.id))
+          .get()
+      ).toEqual(before);
+      expect(before?.status).toBe('expired');
+    });
+
+    it('records a finished sign-in the service reports without a status as signed in', async () => {
+      const composio = new FakeConnectorProvider({ type: 'composio' });
+      registry.register(composio);
+      const { flowId } = await composio.startConnect('gmail', { label: 'work' });
+      const { account } = await composio.pollConnect(flowId);
+
+      const connected = registry.recordConnect(composio, { ...account!, status: 'unknown' });
+
+      expect(connected.status).toBe('active');
+      expect(registry.accountBinding(connected.id)?.status).toBe('active');
     });
 
     it('never adds, closes, relabels or moves an account; it only records the sign-in', async () => {
