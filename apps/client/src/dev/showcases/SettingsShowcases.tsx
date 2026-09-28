@@ -56,6 +56,7 @@ import {
   MOCK_EXECUTION_EXCEPTIONS,
   MOCK_SERVER_CONFIG_EXPERIMENT_LOCKED,
   MOCK_SERVER_CONFIG_MULTI_ACCOUNT,
+  MOCK_SERVER_CONFIG_STANDALONE_DEFAULT,
   MOCK_SERVER_CONFIG_NO_EXPERIMENTS,
 } from './settings-mock-data';
 import { MOCK_FOUND_CLAUDE_FOLDERS } from './account-mock-data';
@@ -160,6 +161,18 @@ function ClaudeAccountsShowcaseSection() {
         </MockedQueryProvider>
       </ShowcaseDemo>
 
+      <ShowcaseLabel>
+        This computer’s own sign-in, not registered: Main gets its own row, with no remove button
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider
+          config={MOCK_SERVER_CONFIG_STANDALONE_DEFAULT}
+          usage={STANDALONE_USAGE}
+        >
+          <LiveRuntimeCard type="claude-code" expanded renderSection={accountsSection} />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
       <ShowcaseLabel>An account’s color picker, open</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="h-24">
@@ -203,6 +216,28 @@ const CLAUDE_USAGE: AccountUsage[] = (
   label: account.label,
   color: account.color,
 }));
+
+/**
+ * Usage for the standalone-default config: its two registered rows, plus the
+ * `default` record the server lists while this computer's sign-in stands alone.
+ */
+const STANDALONE_USAGE: AccountUsage[] = [
+  ...(MOCK_SERVER_CONFIG_STANDALONE_DEFAULT.claudeCode?.accounts ?? []).map((account, i) => ({
+    ...MOCK_ACCOUNT_USAGE[i]!,
+    accountId: account.id ?? null,
+    path: account.path,
+    label: account.label,
+    color: account.color,
+  })),
+  {
+    ...MOCK_ACCOUNT_USAGE[4]!,
+    accountId: 'default',
+    path: '/Users/dev/.claude',
+    label: "Main (this computer's sign-in)",
+    color: MOCK_SERVER_CONFIG_STANDALONE_DEFAULT.claudeCode!.defaultAccountResolvedColor!,
+    windows: MOCK_ACCOUNT_USAGE[4]!.windows.slice(0, 2),
+  },
+];
 
 /** The multi-account config cut to its one Acme Corp row. */
 const SINGLE_ACCOUNT_CONFIG = {

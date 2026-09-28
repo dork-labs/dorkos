@@ -18,6 +18,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { ClaudeAccountsSection } from '@/layers/features/settings';
@@ -30,6 +31,7 @@ import {
 import {
   MOCK_SERVER_CONFIG,
   MOCK_SERVER_CONFIG_MULTI_ACCOUNT,
+  MOCK_SERVER_CONFIG_STANDALONE_DEFAULT,
 } from '../showcases/settings-mock-data';
 
 beforeAll(() => {
@@ -127,6 +129,41 @@ describe('Claude accounts showcase states', () => {
     // The unlabeled account falls back to its folder name.
     expect(screen.getByText('.claude3')).toBeInTheDocument();
     expect(screen.getByTestId('claude-account-not-ready')).toBeInTheDocument();
+  });
+
+  it("shows this computer's own sign-in as Main's row when it stands alone", async () => {
+    // The route answers the showcase's own records, including `default`; the
+    // playground-wide fixtures have none, which would drop the row on refetch.
+    const usage: AccountUsage[] = [
+      {
+        runtime: 'claude-code',
+        accountId: 'default',
+        path: '/Users/dev/.claude',
+        label: "Main (this computer's sign-in)",
+        color: '#7c3aed',
+        subscriptionType: null,
+        plan: null,
+        credits: null,
+        spend: null,
+        windows: [],
+        state: 'unknown',
+        limit: null,
+        updatedAt: null,
+      },
+    ];
+    render(
+      <PlaygroundShell>
+        <MockedQueryProvider config={MOCK_SERVER_CONFIG_STANDALONE_DEFAULT} usage={usage}>
+          <AccountsCard />
+        </MockedQueryProvider>
+      </PlaygroundShell>
+    );
+
+    expect(
+      await screen.findByRole('button', { name: "Color for Main (this computer's sign-in)" })
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId('claude-account-row')).toHaveLength(3);
+    expect(screen.getAllByRole('button', { name: /^Remove/ })).toHaveLength(2);
   });
 
   it('really refuses the write in the refused-write state', async () => {

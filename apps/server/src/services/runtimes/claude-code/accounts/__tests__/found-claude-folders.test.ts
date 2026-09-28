@@ -88,6 +88,23 @@ describe('findUnregisteredClaudeFolders', () => {
     expect(names(config({ defaultAccount: other }))).toEqual(['.claude']);
   });
 
+  it("never offers the standalone default at <home>/.claude, which Settings shows as Main's own row", () => {
+    // Two registered accounts elsewhere, none of them the default's folder: the
+    // default stands alone and Settings lists it as Main (spec §6.5), so the
+    // found list must not offer it a second time, named or not.
+    const def = folder('.claude', 'projects');
+    const work = folder('.claude2', 'projects');
+    const client = folder('.claude3', 'projects');
+    folder('.claude4', 'projects');
+    const accounts = [
+      { id: 'work', path: work, label: 'Work' },
+      { id: 'client', path: client, label: 'Client' },
+    ];
+
+    expect(names(config({ accounts }))).toEqual(['.claude4']);
+    expect(names(config({ accounts, defaultAccount: def }))).toEqual(['.claude4']);
+  });
+
   it('hides a registered folder, also when it is registered through a symlink', () => {
     const direct = folder('.claude2', 'projects');
     folder('.claude3', 'projects');

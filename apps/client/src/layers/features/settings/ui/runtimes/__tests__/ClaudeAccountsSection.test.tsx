@@ -74,14 +74,22 @@ let updateConfigResult: () => Promise<void> = () => Promise.resolve();
 
 function renderSection(
   claudeCode: ClaudeCodeBlock,
-  { usage = [] }: { usage?: AccountUsage[] } = {}
+  {
+    usage = [],
+    routeUsage = () => usage,
+  }: {
+    usage?: AccountUsage[];
+    /** What `GET /api/usage/:runtime` answers; by default the seeded records. */
+    routeUsage?: () => AccountUsage[];
+  } = {}
 ) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue(serverConfig(claudeCode)),
     updateConfig: vi.fn(() => updateConfigResult()),
+    getAccountUsage: vi.fn(async () => ({ accounts: routeUsage() })),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  // The card fetches usage; the section only reads what is cached.
+  // Seeded as the session list would; the section also asks the route while open.
   seedAccountUsage(queryClient, usage);
   render(<ClaudeAccountsSection />, {
     wrapper: ({ children }: { children: React.ReactNode }) => (
@@ -562,6 +570,8 @@ describe('ClaudeAccountsSection', () => {
 });
 
 const THIRD = '/Users/dev/.claude3';
+/** This computer's own default folder, `<home>/.claude`. */
+const HOME_DEFAULT = HOME;
 
 /** A registered account row, `n` from 1, on its default color. */
 function row(id: string, path: string, label: string | null, over: Partial<Account> = {}): Account {
@@ -775,6 +785,128 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Only a person can change those settings'
     );
+  });
+
+  describe("Main's own row (this computer's sign-in)", () => {
+    const MAIN = "Main (this computer's sign-in)";
+    /** The implicit `default` record the server lists while the default stands alone. */
+    const mainUsage = () =>
+      createMockAccountUsage({
+        accountId: 'default',
+        path: HOME_DEFAULT,
+        label: MAIN,
+        color: '#2f7be0',
+      });
+    const standalone = (over: Partial<ClaudeCodeBlock> = {}): ClaudeCodeBlock => ({
+      resolvedAccount: HOME_DEFAULT,
+      inherited: true,
+      accounts: [ACME, CLIENT],
+      defaultAccountColor: null,
+      defaultAccountResolvedColor: '#7c3aed',
+      ...over,
+    });
+
+    it('shows Main after the registered rows, with its path, bars and no remove button', async () => {
+      renderSection(standalone(), {
+        usage: [usageFor('acme-corp', WORK), usageFor('client', THIRD), mainUsage()],
+      });
+      const control = await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      const rows = screen.getAllByTestId('claude-account-row');
+      expect(rows).toHaveLength(3);
+      const main = rows[2]!;
+      expect(main).toContainElement(control);
+      expect(within(main).getByText(MAIN)).toBeInTheDocument();
+      expect(within(main).getByText('~/.claude')).toBeInTheDocument();
+      expect(within(main).getByRole('img', { name: /^5h 40% used/ })).toBeInTheDocument();
+      expect(within(main).getByRole('img', { name: /^wk 72% used/ })).toBeInTheDocument();
+      expect(within(main).queryByRole('button', { name: /^Remove/ })).not.toBeInTheDocument();
+      // The registered rows keep theirs.
+      expect(screen.getAllByRole('button', { name: /^Remove/ })).toHaveLength(2);
+    });
+
+    it('draws its dot in the resolved color', async () => {
+      renderSection(standalone(), { usage: [mainUsage()] });
+      const control = await screen.findByRole('button', { name: `Color for ${MAIN}` });
+      expect(control.innerHTML).toContain('#7c3aed');
+    });
+
+    it.each([
+      ['no', [] as Account[]],
+      ['one', [ACME]],
+    ])('is absent with %s registered account', async (_, accounts) => {
+      renderSection(standalone({ accounts }), { usage: [mainUsage()] });
+      // Wait for the config, so the rows are the registered ones and no more.
+      await waitFor(() =>
+        expect(screen.queryAllByTestId('claude-account-row')).toHaveLength(accounts.length)
+      );
+      await screen.findByRole('combobox', { name: 'Default account' });
+      expect(screen.queryAllByTestId('claude-account-row')).toHaveLength(accounts.length);
+      expect(screen.queryByRole('button', { name: `Color for ${MAIN}` })).not.toBeInTheDocument();
+    });
+
+    it('is absent when the default is a registered row (that row is Main)', async () => {
+      // Aliased: the server lists the default under the registered row, not as `default`.
+      renderSection(standalone({ accounts: [PERSONAL, ACME] }), {
+        usage: [usageFor('personal', HOME_DEFAULT), usageFor('acme-corp', WORK)],
+      });
+      await screen.findByRole('button', { name: 'Color for Personal' });
+      expect(screen.getAllByTestId('claude-account-row')).toHaveLength(2);
+      expect(screen.queryByRole('button', { name: `Color for ${MAIN}` })).not.toBeInTheDocument();
+    });
+
+    it('writes only defaultAccountColor when a color is chosen, never accounts', async () => {
+      const user = userEvent.setup();
+      const transport = renderSection(standalone(), { usage: [mainUsage()] });
+      await user.click(await screen.findByRole('button', { name: `Color for ${MAIN}` }));
+      const group = await screen.findByRole('radiogroup', { name: `Color for ${MAIN}` });
+      // The stored value is null, so Default is the checked choice.
+      expect(within(group).getByRole('radio', { name: 'Default' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
+      await user.click(within(group).getByRole('radio', { name: 'teal' }));
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } },
+      });
+    });
+
+    it('writes null when Default is chosen', async () => {
+      const user = userEvent.setup();
+      const transport = renderSection(
+        standalone({ defaultAccountColor: '#0d9488', defaultAccountResolvedColor: '#0d9488' }),
+        { usage: [mainUsage()] }
+      );
+      await user.click(await screen.findByRole('button', { name: `Color for ${MAIN}` }));
+      const group = await screen.findByRole('radiogroup', { name: `Color for ${MAIN}` });
+      expect(within(group).getByRole('radio', { name: 'teal' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
+      await user.click(within(group).getByRole('radio', { name: 'Default' }));
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        runtimes: { claudeCode: { defaultAccountColor: null } },
+      });
+    });
+
+    it('goes away once saving accounts makes the route answer without `default`', async () => {
+      const user = userEvent.setup();
+      // The default's folder gets registered by this save, so the server stops
+      // listing `default` on its own. The cache alone would keep the record.
+      let listed = [usageFor('acme-corp', WORK), usageFor('client', THIRD), mainUsage()];
+      const transport = renderSection(standalone(), { usage: listed, routeUsage: () => listed });
+      await screen.findByRole('button', { name: `Color for ${MAIN}` });
+
+      listed = [usageFor('acme-corp', WORK), usageFor('client', THIRD), usageFor('home', HOME)];
+      await openAddForm(user);
+      await user.type(screen.getByLabelText('Account folder'), HOME_DEFAULT);
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+      expect(transport.updateConfig).toHaveBeenCalledTimes(1);
+
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: `Color for ${MAIN}` })).not.toBeInTheDocument()
+      );
+      expect(screen.queryByText(MAIN)).not.toBeInTheDocument();
+    });
   });
 
   describe('the Flow note', () => {

@@ -230,6 +230,29 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
 };
 
 /**
+ * Server config with two registered accounts and this computer's own sign-in
+ * (`~/.claude`) left unregistered, so Claude Code's default stands alone and
+ * Settings lists it as Main's own row (spec `claude-account-ui` §6.5). No
+ * color stored for it; the server resolves the default for its position,
+ * after the registered rows.
+ */
+export const MOCK_SERVER_CONFIG_STANDALONE_DEFAULT: ServerConfig = {
+  ...MOCK_SERVER_CONFIG,
+  claudeCode: {
+    resolvedAccount: '/Users/dev/.claude',
+    inherited: true,
+    accounts: MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode!.accounts.slice(1, 3).map(
+      (account, i) => ({
+        ...account,
+        color: DEFAULT_ACCOUNT_COLORS[i]!,
+      })
+    ),
+    defaultAccountColor: null,
+    defaultAccountResolvedColor: DEFAULT_ACCOUNT_COLORS[2]!,
+  },
+};
+
+/**
  * Mock `AgentManifest` consumed by the `AgentDialog` showcase and the
  * full Agent dialog section. Models a non-system agent so the dialog
  * renders the editable affordances (rename, delete, persona editor)

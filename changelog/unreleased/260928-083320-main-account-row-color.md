@@ -1,0 +1,8 @@
+---
+covers:
+  - "feat(settings): show this computer's own Claude sign-in as Main, with its color (DOR-2492)"
+---
+
+### Added
+
+- Choose a color for this computer's own Claude sign-in in Settings. With two or more Claude accounts, Settings → Runtimes → Claude Code now lists that sign-in as "Main (this computer's sign-in)" under your other accounts, with its usage and its color dot. Click the dot to pick a color. Main can't be removed there, because it isn't an account you added (DOR-2492)

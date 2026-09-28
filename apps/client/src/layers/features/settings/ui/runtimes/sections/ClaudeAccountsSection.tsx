@@ -69,6 +69,12 @@ type ClaudeCodePatch = {
    * kept rather than read as removed.
    */
   accountsSeen?: string[];
+  /**
+   * The color of this computer's own sign-in while it stands alone: a palette
+   * hex, or `null` to show its default again. Written on its own, never with
+   * `accounts`, so choosing it cannot rewrite the registry.
+   */
+  defaultAccountColor?: string | null;
 };
 
 /** The ids of the registered accounts this screen is showing. */
@@ -186,7 +192,10 @@ export function ClaudeAccountsSection() {
   // Every account-identity surface opens on this one gate (spec invariant 1):
   // the dots, the color control, the per-row bars and the Flow note.
   const identityGate = useAccountIdentityGate('claude-code');
-  const usage = useAccountUsage('claude-code');
+  // Asked afresh while Settings is open: the cache only ever adds and replaces
+  // records, so a `default` record left over from before an alias would
+  // otherwise keep Main's row on screen. The route's answer is the whole list.
+  const usage = useAccountUsage('claude-code', { fetch: true });
   const hasFlowTab = useSlotContributions('settings.tabs').some(
     (tab) => tab.id === FLOW_FLEET_SETTINGS_TAB_ID
   );
@@ -196,6 +205,10 @@ export function ClaudeAccountsSection() {
   const resolvedAccount = claudeCode?.resolvedAccount;
   const inherited = claudeCode?.inherited ?? true;
   const activeValue = inherited || !resolvedAccount ? DEFAULT_ACCOUNT : resolvedAccount;
+  // The server lists `default` on its own only while no registered row has its
+  // folder (an aliased default is listed under that row), so this record is the
+  // one signal that Main needs a row of its own. Folders are never re-resolved here.
+  const mainUsage = identityGate ? usage.byId.get(IMPLICIT_ACCOUNT_ID) : undefined;
 
   const trimmedPath = newPath.trim();
   const isDuplicate = accounts.some((account) => account.path === trimmedPath);
@@ -229,6 +242,9 @@ export function ClaudeAccountsSection() {
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({ queryKey: configKeys.all });
+          // A write can register the default's folder (Main's row then folds into
+          // that row) or change Main's color, and only the route's fresh list says so.
+          void queryClient.invalidateQueries({ queryKey: accountKeys.usage('claude-code') });
           onDone?.();
         },
         onError: (err) => onError(describeWriteFailure(err)),
@@ -349,8 +365,8 @@ export function ClaudeAccountsSection() {
       {accounts.map((account) => (
         <AccountRow
           key={account.path}
+          name={claudeAccountName(account.path, accounts)}
           account={account}
-          accounts={accounts}
           isActive={!inherited && resolvedAccount === account.path}
           onRemove={() => removeAccount(account.path)}
           onChooseColor={(color) => chooseColor(account.path, color)}
@@ -366,6 +382,25 @@ export function ClaudeAccountsSection() {
           }
         />
       ))}
+
+      {/* This computer's own sign-in, while no registered row is its folder
+          (spec §6.5, "Main's own row"). It is not a registry entry, so it has no
+          remove button, and its color is stored on its own. */}
+      {mainUsage && (
+        <AccountRow
+          name={mainUsage.label ?? claudeAccountName(mainUsage.path, [])}
+          account={{
+            path: mainUsage.path,
+            color: claudeCode?.defaultAccountResolvedColor ?? mainUsage.color,
+            colorIsDefault: (claudeCode?.defaultAccountColor ?? null) === null,
+            isAccountRoot: true,
+          }}
+          isActive={false}
+          onChooseColor={(color) => write({ defaultAccountColor: color })}
+          disabled={updateConfig.isPending}
+          identity={{ usage: mainUsage }}
+        />
+      )}
 
       {/* Not gated on the account count: a one-account user is exactly who
           it helps (spec §6.9). It renders nothing when nothing was found. */}
@@ -501,26 +536,30 @@ function FlowNote() {
   );
 }
 
-/** One registered account: what it is called, where it lives, and whether DorkOS can read it. */
+/**
+ * One account: what it is called, where it lives, and whether DorkOS can read
+ * it. A registered account can be removed; this computer's own sign-in (Main,
+ * passed without `onRemove`) cannot.
+ */
 function AccountRow({
+  name,
   account,
-  accounts,
   isActive,
   onRemove,
   onChooseColor,
   disabled,
   identity,
 }: {
-  account: Account;
-  accounts: Account[];
+  name: string;
+  account: Pick<Account, 'path' | 'color' | 'colorIsDefault' | 'isAccountRoot'>;
   isActive: boolean;
-  onRemove: () => void;
+  /** Removes the account from the registry; absent for an account that is not in it. */
+  onRemove?: () => void;
   onChooseColor: (color: string | null) => void;
   disabled: boolean;
   /** The account's identity and usage, present only while the identity gate is open. */
   identity: { usage: AccountUsage | undefined } | null;
 }) {
-  const name = claudeAccountName(account.path, accounts);
   return (
     <div className="flex items-start gap-3" data-testid="claude-account-row">
       {identity && (
@@ -561,15 +600,17 @@ function AccountRow({
           <UsageBar window={accountWindow(identity.usage, 'seven_day')} label="wk" compact />
         </div>
       )}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onRemove}
-        disabled={disabled}
-        aria-label={`Remove ${name}`}
-      >
-        <Trash2 className="size-3.5" />
-      </Button>
+      {onRemove && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          disabled={disabled}
+          aria-label={`Remove ${name}`}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      )}
     </div>
   );
 }
