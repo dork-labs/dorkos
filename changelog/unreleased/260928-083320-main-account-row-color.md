@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(settings): show this computer's own Claude sign-in as Main, with its color (DOR-2492)"
+  - "fix(settings): line up Main's bars and mark it in use when no default is chosen (DOR-2492)"
 ---
 
 ### Added
