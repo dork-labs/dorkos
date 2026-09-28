@@ -21,8 +21,8 @@ interface UsageDetailProps {
    * on the page's own colors, where the overage note and "Rate limit reached"
    * wear the text-tuned warning and error tokens (4.5:1 or better, both
    * themes). `tooltip` is the inverted tooltip, where no warning or error token
-   * reaches 4.5:1 in either theme, so it keeps its colors until that is
-   * decided.
+   * reaches 4.5:1 in either theme, so both lines wear the tooltip's own text
+   * color and the words carry the state (04 §13).
    */
   surface?: 'panel' | 'tooltip';
 }
@@ -30,7 +30,7 @@ interface UsageDetailProps {
 /** The overage note's and the out-of-usage line's colors, by surface. */
 const TONE_BY_SURFACE = {
   panel: { warning: STATUS_TONE_TEXT.warning, error: STATUS_TONE_TEXT.error },
-  tooltip: { warning: 'text-amber-500', error: 'text-red-500' },
+  tooltip: { warning: '', error: '' },
 } as const;
 
 interface UsageStatusItemProps extends UsageDetailProps {
@@ -105,8 +105,16 @@ export function UsageCostRows({ usage, surface = 'panel' }: UsageDetailProps) {
         <DetailRow label={costHeading(usage)}>{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
       )}
       {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
-      {usage.detail && <div className={tone.warning}>{usage.detail}</div>}
-      {usage.state === 'exhausted' && <div className={tone.error}>Rate limit reached</div>}
+      {usage.detail && (
+        <div data-slot="usage-detail-note" className={tone.warning || undefined}>
+          {usage.detail}
+        </div>
+      )}
+      {usage.state === 'exhausted' && (
+        <div data-slot="usage-limit-note" className={tone.error || undefined}>
+          Rate limit reached
+        </div>
+      )}
     </>
   );
 }

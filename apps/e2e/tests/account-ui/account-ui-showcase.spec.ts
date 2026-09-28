@@ -113,6 +113,33 @@ test.describe('Claude account UI showcases @smoke', () => {
           await page.keyboard.press('Escape');
           await expect(page.getByRole('dialog')).toHaveCount(0);
 
+          // The usage item's tooltip, inverted, near the limit (the overage
+          // note) and out ("Rate limit reached"): those two lines wear the
+          // tooltip's own text color (04 §13), so they need 4.5:1 there too.
+          // Scoped to the two lines this decision covers.
+          for (const [index, words, slot] of [
+            [1, 'Using overage capacity', 'usage-detail-note'],
+            [2, 'Rate limit reached', 'usage-limit-note'],
+          ] as const) {
+            await page
+              .locator('#usagestatusitem')
+              .getByLabel('Subscription usage')
+              .nth(index)
+              .hover();
+            const tip = page.locator('[data-slot="tooltip-content"]');
+            await expect(tip.getByText(words)).toBeVisible();
+            violations.push(
+              ...(await scan(
+                page,
+                `[data-slot="tooltip-content"] [data-slot="${slot}"]`,
+                `the ${words} tooltip line`
+              ))
+            );
+            await page.keyboard.press('Escape');
+            await page.mouse.move(0, 0);
+            await expect(tip).toHaveCount(0);
+          }
+
           // The open usage reveal while out: its amber overage note and its red
           // "Rate limit reached" are text on the popover, so they need 4.5:1.
           await page
