@@ -37,6 +37,7 @@ import {
   useRuntimeChip,
   useSessionPermissionPicker,
 } from '@/layers/features/status';
+import { AccountLimitBanner, useSessionHasLimit } from '@/layers/features/continue-on-account';
 import { useFiles } from '@/layers/features/files';
 import { Conversation, NO_ASKS } from '@/layers/features/conversation';
 import type { ComposerInputHandle } from '@/layers/features/composer';
@@ -477,7 +478,10 @@ export function ChatPanel({
   // event usually also folds an inline error part into the turn, which
   // suppresses this notice — it renders only when no other error surface
   // already shows the failure (see shouldShowTurnFailedNotice).
-  const showTurnFailedNotice = shouldShowTurnFailedNotice(status, error, messages);
+  // A turn that ran out of usage has the out-of-usage banner instead: one
+  // notice, not two.
+  const hasLimit = useSessionHasLimit(sessionId ?? '');
+  const showTurnFailedNotice = shouldShowTurnFailedNotice(status, error, messages, hasLimit);
   const hasUserMessage = useMemo(() => messages.some((m) => m.role === 'user'), [messages]);
 
   const handleSuggestionClick = useCallback(
@@ -792,6 +796,13 @@ export function ChatPanel({
               onRetry={() => void retryComposerAgent()}
             />
           </div>
+        )}
+
+        {/* Directly above the box it pauses: who ran out, until when, and what
+          to do about it (spec `claude-account-ui` §6.7). Its Continue sends
+          the resume message the way the person's own message goes. */}
+        {sessionId && (
+          <AccountLimitBanner sessionId={sessionId} onSend={(text) => void submitContent(text)} />
         )}
 
         <SessionComposer

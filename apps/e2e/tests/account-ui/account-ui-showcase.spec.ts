@@ -7,7 +7,8 @@ import { runAxe } from '../../axe';
  * UI added (spec `claude-account-ui` §12, Accessibility row): the account chip
  * and an open popover, the cached usage and context items, the continue
  * picker, the Settings account sections, the header badge, the sidebar's
- * account marks and the account palette, in light and dark. Nothing is
+ * account marks, the account palette, and every out-of-usage banner state
+ * and transcript marker, in light and dark. Nothing is
  * skipped: a finding here is a defect to fix, never an entry in an allowlist.
  *
  * No server, no seeding: the playground renders every state from fixtures,
@@ -28,6 +29,8 @@ const PAGES: { path: string; sections: string[] }[] = [
       'usagestatusitem',
       'contextitem',
       'continueonaccountdialog',
+      'accountlimitbanner',
+      'accountlimitmarker',
     ],
   },
   { path: '/dev/settings', sections: ['claude-code-accounts', 'runtime-usage'] },
@@ -35,6 +38,10 @@ const PAGES: { path: string; sections: string[] }[] = [
   { path: '/dev/sidebar-model', sections: ['accountmark'] },
   { path: '/dev/tokens', sections: ['account-palette'] },
 ];
+
+/** Every out-of-usage banner state the showcase draws (spec §6.7), and its markers. */
+const BANNER_COUNT = 13;
+const MARKER_COUNT = 5;
 
 /**
  * Switch the playground's theme and wait until the document wears it.
@@ -97,6 +104,16 @@ test.describe('Claude account UI showcases @smoke', () => {
           timeout: PLAYGROUND_COLD_START_MS,
         });
         await setTheme(page, theme);
+
+        if (path === '/dev/conversation') {
+          // Every banner state and marker drew, so none of them is skipped.
+          await expect(
+            page.locator('#accountlimitbanner [data-slot="account-limit-banner"]')
+          ).toHaveCount(BANNER_COUNT);
+          await expect(
+            page.locator('#accountlimitmarker [data-slot="account-limit-marker"]')
+          ).toHaveCount(MARKER_COUNT);
+        }
 
         for (const section of sections) {
           violations.push(...(await scan(page, `#${section}`, `${path}#${section}`)));

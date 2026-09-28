@@ -187,24 +187,55 @@ export const MOCK_CONTINUE_OPTIONS: ContinueOptionsResponse = {
   advised: false,
 };
 
-/** One resolved episode: the session moved from Acct 3 to Acct 1. */
-export const MOCK_LIMIT_HISTORY: LimitHistoryEntry[] = [
-  {
-    id: 'limit-history-1',
-    sessionId: 'session-limited',
-    since: new Date(Date.now() - HOUR_MS).toISOString(),
+/** When each playground episode's turn stopped: an hour ago. */
+export const MOCK_LIMIT_STOPPED_AT = new Date(Date.now() - HOUR_MS).toISOString();
+
+/** One resolved episode of session `sessionId`, hit a minute after its turn stopped. */
+function episode(
+  sessionId: string,
+  resolution: LimitHistoryEntry['resolution'],
+  extra: Partial<LimitHistoryEntry> = {}
+): LimitHistoryEntry {
+  return {
+    id: `limit-history-${sessionId}`,
+    sessionId,
+    since: new Date(Date.parse(MOCK_LIMIT_STOPPED_AT) + 60 * 1000).toISOString(),
     runtime: 'claude-code',
     accountId: 'acct-3',
     window: 'seven_day',
     scope: 'account',
     resetsAt: NEXT_TUESDAY_3PM,
-    resolution: 'moved',
+    resolution,
     resolvedAt: new Date(Date.now() - 55 * 60 * 1000).toISOString(),
-    toSessionId: 'session-moved',
-    toAccountId: 'acct-1',
+    toSessionId: null,
+    toAccountId: null,
     modelFrom: null,
     modelTo: null,
-  },
+    ...extra,
+  };
+}
+
+/**
+ * Resolved episodes, one session per way an episode ends (spec
+ * `claude-account-ui` §6.7's marker table): moved from Acct 3 to Acct 1,
+ * resumed after the reset, resumed on Sonnet after Opus ran out, and resumed
+ * early; plus a Codex session resumed early. The playground transport answers
+ * each session with its own.
+ */
+export const MOCK_LIMIT_HISTORY: LimitHistoryEntry[] = [
+  episode('playground-marker-moved', 'moved', {
+    toSessionId: 'session-moved',
+    toAccountId: 'acct-1',
+  }),
+  episode('playground-marker-reset', 'resumed-reset'),
+  episode('playground-marker-model', 'resumed-model', {
+    scope: 'model',
+    window: 'seven_day_opus',
+    modelFrom: 'claude-opus-4-6',
+    modelTo: 'claude-sonnet-4-6',
+  }),
+  episode('playground-marker-early', 'resumed-early'),
+  episode('playground-marker-codex', 'resumed-early', { runtime: 'codex', accountId: 'default' }),
 ];
 
 /**
