@@ -1,6 +1,6 @@
 /**
- * The picker's three writes: carry the work over, stop an automatic move
- * before choosing, and wait for the reset instead.
+ * The picker's two writes: carry the work over, and stop an automatic move
+ * before choosing.
  *
  * None of them retries: a refusal carries the server's own words, which the
  * picker shows as they are.
@@ -44,20 +44,6 @@ export function useCancelAutoContinue(sessionId: string) {
   const transport = useTransport();
   return useMutation({
     mutationFn: () => transport.cancelAutoContinue(sessionId),
-    retry: false,
-  });
-}
-
-/**
- * Wait for the account to reset instead of moving (`POST
- * /api/sessions/:id/wait`), for a session that can only wait.
- *
- * @param sessionId - The limited session.
- */
-export function useWaitForReset(sessionId: string) {
-  const transport = useTransport();
-  return useMutation({
-    mutationFn: () => transport.waitForReset(sessionId, {}),
     retry: false,
   });
 }

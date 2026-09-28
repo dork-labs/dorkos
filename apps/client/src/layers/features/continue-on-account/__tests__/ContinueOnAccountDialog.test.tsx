@@ -18,7 +18,11 @@ import type {
 } from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils';
+import {
+  createMockAccountUsage,
+  createMockSessionLimit,
+  createMockTransport,
+} from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
@@ -138,6 +142,8 @@ interface RenderOptions {
   registered?: number;
   runtime?: string;
   trackerItem?: { id: string } | null;
+  accountId?: string | null;
+  limitAccountId?: string | null;
   cancelAutoFirst?: boolean;
   overrides?: Partial<Transport>;
 }
@@ -147,6 +153,8 @@ function renderDialog({
   registered = 3,
   runtime = 'claude-code',
   trackerItem = null,
+  accountId = 'acct-1',
+  limitAccountId = null,
   cancelAutoFirst = false,
   overrides = {},
 }: RenderOptions) {
@@ -164,7 +172,14 @@ function renderDialog({
             open
             onOpenChange={onOpenChange}
             sessionId={SID}
-            account={{ runtime, accountId: 'acct-1', trackerItem }}
+            account={{
+              runtime,
+              accountId,
+              trackerItem,
+              limit: limitAccountId
+                ? createMockSessionLimit('ask', { accountId: limitAccountId })
+                : null,
+            }}
             cancelAutoFirst={cancelAutoFirst}
             now={NOW}
           />
@@ -319,6 +334,26 @@ describe('with an advisor', () => {
     expect(screen.queryByText('Other runtimes')).not.toBeInTheDocument();
   });
 
+  it("names another runtime's unnamed account by its runtime, never its id", async () => {
+    const codex = row(9, 30, { id: 'work-codex', label: null, runtime: 'codex' });
+    renderDialog({ answer: advised([row(2, 72), codex]) });
+    await radios();
+    const radio = screen.getByRole('radio', { name: /^Codex/ });
+    expect(radio).not.toHaveAccessibleName(/work-codex/);
+  });
+
+  it("falls back to the limit's account to leave the session's own out of the kept-out line", async () => {
+    renderDialog({ answer: advised([row(2, 72)]), accountId: null, limitAccountId: 'acct-1' });
+    await radios();
+    expect(screen.getByText("Acct 3 is kept out, so it isn't listed.")).toBeInTheDocument();
+  });
+
+  it("shows no kept-out line when the session's own account is unknown", async () => {
+    renderDialog({ answer: advised([row(2, 72)]), accountId: null, limitAccountId: null });
+    await radios();
+    expect(screen.queryByText(/kept out/)).not.toBeInTheDocument();
+  });
+
   it('groups another runtime under "Other runtimes" and posts its runtime', async () => {
     const codex = row(9, 30, { id: 'default', label: null, runtime: 'codex' });
     const { transport } = renderDialog({ answer: advised([row(2, 72), codex]) });
@@ -409,12 +444,14 @@ describe('with or without an advisor', () => {
   });
 
   it('says nothing can take the work when no row can be picked', async () => {
-    renderDialog({ answer: options([outRow(2), outRow(3)]) });
+    const { transport } = renderDialog({ answer: options([outRow(2), outRow(3)]) });
     expect(
       await screen.findByText('No other account can take this work right now.')
     ).toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    await user().click(screen.getByRole('button', { name: 'Continue' }));
+    expect(transport.continueSession).not.toHaveBeenCalled();
   });
 
   it('moves between accounts with the arrow keys', async () => {
@@ -435,35 +472,64 @@ describe('with or without an advisor', () => {
   });
 });
 
-describe('a session that can only wait (Codex, S4 RUNTIME_NOT_OFFERED)', () => {
-  const waitOnly = options([], { plan: { mode: 'ask', carryOver: false } });
+describe('a session that cannot carry over (Codex, S4 RUNTIME_NOT_OFFERED)', () => {
+  // Even a list with a row in it offers nothing when the plan says no carry-over.
+  const refused = options([row(2, 72)], { plan: { mode: 'ask', carryOver: false } });
 
-  it('offers only "Wait for reset", with no account list', async () => {
-    renderDialog({ answer: waitOnly, runtime: 'codex' });
-    const button = await screen.findByRole('button', { name: 'Wait for reset' });
+  it('shows the empty state: the message in place of the list, Continue disabled, and Cancel', async () => {
+    renderDialog({ answer: refused, runtime: 'codex' });
+    expect(
+      await screen.findByText('No other account can take this work right now.')
+    ).toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Continue/ })).not.toBeInTheDocument();
-    expect(screen.getByText('No other account can take this work right now.')).toBeInTheDocument();
-    expect(button).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Wait for reset' })).not.toBeInTheDocument();
   });
 
-  it('waits for the reset and never asks to continue', async () => {
-    const { transport, onOpenChange } = renderDialog({ answer: waitOnly, runtime: 'codex' });
-    await user().click(await screen.findByRole('button', { name: 'Wait for reset' }));
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(transport.waitForReset).toHaveBeenCalledWith(SID, {});
+  it('never asks to continue', async () => {
+    const { transport } = renderDialog({ answer: refused, runtime: 'codex' });
+    const button = await screen.findByRole('button', { name: 'Continue' });
+    await user().click(button);
     expect(transport.continueSession).not.toHaveBeenCalled();
   });
-  it('never promises the chat continues by itself (core does not auto-resume Codex)', async () => {
-    const { transport } = renderDialog({ answer: waitOnly, runtime: 'codex' });
-    expect(await screen.findByRole('button', { name: 'Wait for reset' })).toBeInTheDocument();
-    expect(screen.queryByText(/by itself|automatically/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-    await user().click(screen.getByRole('button', { name: 'Wait for reset' }));
-    await waitFor(() => expect(transport.waitForReset).toHaveBeenCalled());
-    // It never asks for an automatic resume, so nothing it showed could rest on one.
-    expect(transport.waitForReset).toHaveBeenCalledWith(SID, {});
-    expect(screen.queryByText(/by itself|automatically/i)).not.toBeInTheDocument();
+});
+
+describe('closing while a continue is in flight', () => {
+  it('stays open until the answer lands, then opens the new session', async () => {
+    let answer!: (value: { sessionId?: string }) => void;
+    const { onOpenChange } = renderDialog({
+      answer: options([row(2, 72)]),
+      overrides: {
+        continueSession: vi.fn(
+          () => new Promise<{ sessionId?: string }>((resolve) => (answer = resolve))
+        ),
+      },
+    });
+    await radios();
+    await user().click(screen.getByRole('button', { name: 'Continue on Acct 2' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled());
+    await user().keyboard('{Escape}');
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    answer({ sessionId: 'session-new' });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(mockSetSessionId).toHaveBeenCalledWith('session-new');
+  });
+});
+
+describe('an error with no message of its own', () => {
+  it('says what failed in plain words', async () => {
+    renderDialog({
+      answer: options([row(2, 72)]),
+      overrides: { continueSession: vi.fn().mockRejectedValue(new Error('')) },
+    });
+    await radios();
+    await user().click(screen.getByRole('button', { name: 'Continue on Acct 2' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't continue on that account. Try again."
+    );
   });
 });
 

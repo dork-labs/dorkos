@@ -33,11 +33,7 @@ import {
   splitByRuntime,
 } from '../lib/continue-picker';
 import { useContinueOptions } from '../model/use-continue-options';
-import {
-  useCancelAutoContinue,
-  useContinueSession,
-  useWaitForReset,
-} from '../model/use-continue-session';
+import { useCancelAutoContinue, useContinueSession } from '../model/use-continue-session';
 
 /** The runtime a session with no resolved runtime yet is read as. */
 const DEFAULT_RUNTIME = 'claude-code';
@@ -53,8 +49,12 @@ export interface ContinueOnAccountDialogProps {
   onOpenChange: (open: boolean) => void;
   /** The limited session. */
   sessionId: string;
-  /** The session's account, from `useSessionAccount`: its runtime, its own account and its flow item. */
-  account: Pick<SessionAccount, 'runtime' | 'accountId' | 'trackerItem'>;
+  /**
+   * The session's account, from `useSessionAccount`: its runtime, its own
+   * account, its limit (whose `accountId` names the account when the session's
+   * own does not) and its flow item.
+   */
+  account: Pick<SessionAccount, 'runtime' | 'accountId' | 'limit' | 'trackerItem'>;
   /**
    * Stop an automatic move before listing anything (from `handing-off`), so
    * neither the countdown nor flow moves the work while the person chooses.
@@ -68,7 +68,9 @@ export interface ContinueOnAccountDialogProps {
 
 /** The message a failed request carries, for the inline alert. */
 function messageOf(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : 'Something went wrong.';
+  return error instanceof Error && error.message
+    ? error.message
+    : "Couldn't continue on that account. Try again.";
 }
 
 /** One account the person can pick: dot, name, the recommended pill, and its state. */
@@ -133,9 +135,9 @@ function AccountRow({
  * accounts it keeps out, the checkpoint wording) arrives in the server's
  * answer.
  *
- * A session that can only wait (it did not start here, or its runtime cannot
- * move accounts yet) gets no list and only "Wait for reset": continue is never
- * called for it.
+ * A session whose plan says it cannot carry over (it did not start here, or
+ * its runtime cannot move accounts yet) lists nothing, so continue is never
+ * called for it; the out-of-usage banner offers the wait instead.
  *
  * Controlled: the popover's action and the out-of-usage banner both open it.
  */
@@ -174,21 +176,22 @@ export function ContinueOnAccountDialog({
   const ready = open && (!cancelAutoFirst || cancel.isSuccess);
   const options = useContinueOptions(sessionId, ready);
   const move = useContinueSession(sessionId);
-  const wait = useWaitForReset(sessionId);
   const [choice, setChoice] = useState<string | null>(null);
 
   const close = () => {
+    // A continue in flight keeps the picker open: closing would drop the
+    // answer that opens the new session. The primary shows it is working.
+    if (move.isPending) return;
     setChoice(null);
     move.reset();
-    wait.reset();
     onOpenChange(false);
   };
   const handleOpenChange = (next: boolean) => (next ? onOpenChange(true) : close());
 
   const data = ready ? options.data : undefined;
   const list = data?.ranking;
-  const waitOnly = data ? isWaitOnly(data.plan) : false;
-  const rows = list?.accounts ?? [];
+  // A session that cannot carry over is offered nothing, whatever the list says.
+  const rows = data && !isWaitOnly(data.plan) ? data.ranking.accounts : [];
   const anySelectable = rows.some(isSelectable);
   const selectedKey = choice ?? (list ? initialChoice(list, sessionRuntime) : null);
   const selectedRow = rows.find((row) => choiceKey(row, sessionRuntime) === selectedKey) ?? null;
@@ -196,16 +199,16 @@ export function ContinueOnAccountDialog({
   const { same, other } = splitByRuntime(rows, sessionRuntime);
   const copy = carryOverCopy(data?.advised === true, account.trackerItem !== null);
 
-  // Accounts of this runtime the advisor left out (the session's own is never listed).
+  // Accounts of this runtime the advisor left out. The session's own is never
+  // listed, so without knowing which it is there is no honest line to show.
+  const ownAccountId = account.accountId ?? account.limit?.accountId ?? null;
   const keptOut =
-    data?.advised === true && sessionRuntime === DEFAULT_RUNTIME
+    data?.advised === true && sessionRuntime === DEFAULT_RUNTIME && ownAccountId !== null
       ? keptOutLine(
           registered
             .filter(
               (entry) =>
-                entry.id &&
-                entry.id !== account.accountId &&
-                !same.some((row) => row.id === entry.id)
+                entry.id && entry.id !== ownAccountId && !same.some((row) => row.id === entry.id)
             )
             .map((entry) => nameFor(entry.path))
         )
@@ -248,11 +251,9 @@ export function ContinueOnAccountDialog({
       ? options.error
       : move.isError
         ? move.error
-        : wait.isError
-          ? wait.error
-          : null;
+        : null;
   const loading = open && !failure && (!ready || options.isPending);
-  const showList = !loading && data !== undefined && !waitOnly;
+  const showList = !loading && data !== undefined;
 
   return (
     <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
@@ -268,7 +269,7 @@ export function ContinueOnAccountDialog({
             Continue on another account
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="text-left">
-            {waitOnly ? NOTHING_TO_OFFER : copy.subtitle}
+            {copy.subtitle}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -289,8 +290,9 @@ export function ContinueOnAccountDialog({
                 className="min-w-0 grid-cols-1 gap-1.5"
               >
                 {same.map(renderRow)}
+                {/* The group caption Settings and the Flow tab use. */}
                 {other.length > 0 && (
-                  <div className="text-muted-foreground text-2xs mt-2 font-medium tracking-wide uppercase">
+                  <div className="text-muted-foreground mt-2 text-xs font-semibold tracking-wide uppercase">
                     Other runtimes
                   </div>
                 )}
@@ -317,30 +319,19 @@ export function ContinueOnAccountDialog({
         </ResponsiveDialogBody>
 
         <ResponsiveDialogFooter className="shrink-0">
-          <Button variant="outline" onClick={close}>
+          <Button variant="outline" onClick={close} disabled={move.isPending}>
             Cancel
           </Button>
-          {waitOnly ? (
-            <Button
-              onClick={() => wait.mutate(undefined, { onSuccess: close })}
-              disabled={wait.isPending}
-              aria-busy={wait.isPending || undefined}
-            >
-              {wait.isPending && <Spinner />}
-              Wait for reset
-            </Button>
-          ) : (
-            <Button
-              onClick={submit}
-              disabled={!showList || !anySelectable || !selectedRow || move.isPending}
-              aria-busy={move.isPending || undefined}
-            >
-              {move.isPending && <Spinner />}
-              {selectedRow && showList && anySelectable
-                ? `Continue on ${nameOf(selectedRow)}`
-                : 'Continue'}
-            </Button>
-          )}
+          <Button
+            onClick={submit}
+            disabled={!showList || !anySelectable || !selectedRow || move.isPending}
+            aria-busy={move.isPending || undefined}
+          >
+            {move.isPending && <Spinner />}
+            {selectedRow && showList && anySelectable
+              ? `Continue on ${nameOf(selectedRow)}`
+              : 'Continue'}
+          </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>

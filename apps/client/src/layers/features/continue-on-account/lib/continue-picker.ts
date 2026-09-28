@@ -12,8 +12,7 @@ import {
   type ContinueOptionAccount,
   type ContinueOptionsResponse,
 } from '@dorkos/shared/account-usage';
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
-import { accountWindow, formatResetDay } from '@/layers/shared/lib';
+import { accountWindow, formatResetDay, limitSubject } from '@/layers/shared/lib';
 
 /** The server's list of candidate accounts, in its order. */
 export type ContinueOptionsList = ContinueOptionsResponse['ranking'];
@@ -88,9 +87,10 @@ export function choiceKey(row: ContinueOptionAccount, sessionRuntime: string): s
 }
 
 /**
- * What a row is called. The server's label first; else, on the session's own
- * runtime, the name the rest of the app uses for that folder; else, for
- * another runtime's implicit account, "Codex (this computer's sign-in)".
+ * What a row is called. On the session's own runtime: the server's label,
+ * else the name the rest of the app uses for that folder. On another runtime,
+ * by `limitSubject`'s rules: its label, else the runtime's name, with an
+ * implicit account reading "Codex (this computer's sign-in)".
  *
  * @param row - One account from the server's list.
  * @param sessionRuntime - The limited session's runtime.
@@ -101,12 +101,16 @@ export function rowName(
   sessionRuntime: string,
   nameForPath: (path: string) => string
 ): string {
-  if (row.label) return row.label;
   if (isOtherRuntime(row, sessionRuntime)) {
-    return row.id === IMPLICIT_ACCOUNT_ID
-      ? `${runtimeDisplayName(row.runtime!)} (this computer's sign-in)`
-      : row.id;
+    const runtime = row.runtime!;
+    if (!row.label && row.id === IMPLICIT_ACCOUNT_ID) {
+      const subject = limitSubject({ runtime, accountLabel: null, identityGate: false });
+      return `${subject} (this computer's sign-in)`;
+    }
+    // A row the server lists is one the person tells apart by name, so its label wins.
+    return limitSubject({ runtime, accountLabel: row.label, identityGate: true });
   }
+  if (row.label) return row.label;
   return row.usage.path ? nameForPath(row.usage.path) : row.id;
 }
 

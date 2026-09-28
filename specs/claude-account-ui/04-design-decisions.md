@@ -215,3 +215,14 @@ Four calls on the cached usage and context in the status bar (task 2.4), each in
 4. **Only usage dims.** A context reading does not change between turns, so an old one is still true and is never dimmed. Its tooltip still says how old it is.
 
 Spec: §6.8.
+
+## 14. Continue picker details (orchestrator, 2026-09-28)
+
+Four small calls on the "Continue on another account" picker (task 3.2), each inside patterns the app already has.
+
+1. **When the server gives no reason for a refusal**, the picker says "Couldn't continue on that account. Try again." Any message the server sends is still shown as it is.
+2. **A known usage with an unknown reset** reads "72% left", with no reset part. The picker never guesses a day.
+3. **While the list loads**, the house Skeleton rows stand in for it.
+4. **The "Other runtimes" heading** is the same small, uppercase, muted group caption the Flow tab and Settings use, not a style of its own.
+
+Spec: §6.6, §11.

@@ -113,13 +113,6 @@ const NOTHING: ContinueOptionsResponse = {
   advised: false,
 };
 
-/** A Codex session: it can only wait, and the server lists nothing. */
-const WAIT_ONLY: ContinueOptionsResponse = {
-  plan: { mode: 'ask', carryOver: false },
-  ranking: { accounts: [], recommendedId: null },
-  advised: false,
-};
-
 /** Five registered Claude accounts, as `GET /api/config` would report them. */
 const ACCOUNTS_CONFIG = {
   claudeCode: {
@@ -165,13 +158,11 @@ function variantTransport(answer: ContinueOptionsResponse, continueError?: Error
 function Variant({
   label,
   answer,
-  runtime = 'claude-code',
   trackerItem = null,
   continueError,
 }: {
   label: string;
   answer: ContinueOptionsResponse;
-  runtime?: string;
   trackerItem?: SessionTrackerItem | null;
   continueError?: Error;
 }) {
@@ -193,7 +184,7 @@ function Variant({
               open={open}
               onOpenChange={setOpen}
               sessionId="playground-limited-session"
-              account={{ runtime, accountId: 'acct-3', trackerItem }}
+              account={{ runtime: 'claude-code', accountId: 'acct-3', limit: null, trackerItem }}
             />
           </TransportProvider>
         </QueryClientProvider>
@@ -229,11 +220,6 @@ export function ContinueOnAccountShowcases() {
         answer={ADVISED}
         trackerItem={{ id: 'DOR-2353', stage: 'execute' }}
         continueError={refusal('Flow could not be reached, so this was not changed.', 503)}
-      />
-      <Variant
-        label="Can only wait — a Codex session gets Wait for reset and no list"
-        answer={WAIT_ONLY}
-        runtime="codex"
       />
     </PlaygroundSection>
   );

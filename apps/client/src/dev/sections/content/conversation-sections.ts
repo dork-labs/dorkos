@@ -772,7 +772,6 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'reserved',
       'kept out',
       'runtime',
-      'wait',
     ],
   },
   // ModelPickerShowcases — the panel behind the status line's model name, and
