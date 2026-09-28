@@ -9,15 +9,11 @@
  * reproduced deterministically:
  *  - A plain `Error` with no `errors` array (what esbuild throws when it
  *    can't even start — a missing native binary, a spawn failure, an
- *    `EMFILE`) must never be written to the `.error.json` cache.
+ *    `EMFILE`) must never be cached.
  *  - A `BuildFailure`-shaped error with a populated `errors` array (what
  *    esbuild throws for a real syntax/resolution problem in the source)
  *    must still be cached and replayed, so a genuinely broken extension
  *    does not recompile on every boot.
- *  - A `.error.json` already on disk from a build that predates this
- *    classification, but whose text matches a known environment-failure
- *    signature, must be evicted and recompiled rather than replayed
- *    forever.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { build } from 'esbuild';
@@ -25,12 +21,12 @@ import type { BuildResult } from 'esbuild';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { createHash } from 'crypto';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionCompiler } from '../extension-compiler.js';
 
 vi.mock('esbuild', () => ({
   build: vi.fn(),
+  version: '0.0.0-test',
 }));
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -116,9 +112,15 @@ function buildSuccess(text: string): BuildResult {
   };
 }
 
-/** Compute the same content hash the compiler uses internally. */
-function contentHash(source: string): string {
-  return createHash('sha256').update(source).digest('hex').slice(0, 16);
+/**
+ * Assert the compiler recorded no build of `extId` in `cacheDir`: an
+ * uncached failure leaves no manifest behind to replay.
+ */
+async function expectNothingCached(cacheDir: string, extId: string): Promise<void> {
+  const entries = await fs.readdir(cacheDir).catch(() => [] as string[]);
+  expect(entries.filter((e) => e.startsWith(`${extId}.`) && e.endsWith('.manifest.json'))).toEqual(
+    []
+  );
 }
 
 describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
@@ -146,16 +148,8 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
       const result = await compiler.compile(makeRecord('env-fail-ext', extDir));
       expect('error' in result).toBe(true);
 
-      // Nothing was written to the error cache.
-      if ('error' in result) {
-        const cachedErrorPath = path.join(
-          tmpDir,
-          'cache',
-          'extensions',
-          `env-fail-ext.${result.sourceHash}.error.json`
-        );
-        await expect(fs.access(cachedErrorPath)).rejects.toThrow();
-      }
+      // Nothing was written to the cache.
+      await expectNothingCached(path.join(tmpDir, 'cache', 'extensions'), 'env-fail-ext');
 
       // A second attempt retries esbuild instead of replaying a cached error.
       await compiler.compile(makeRecord('env-fail-ext', extDir));
@@ -190,15 +184,10 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
 
       const result = await compiler.compile(makeRecord('io-fail-no-location-ext', extDir));
       expect('error' in result).toBe(true);
-      if ('error' in result) {
-        const cachedErrorPath = path.join(
-          tmpDir,
-          'cache',
-          'extensions',
-          `io-fail-no-location-ext.${result.sourceHash}.error.json`
-        );
-        await expect(fs.access(cachedErrorPath)).rejects.toThrow();
-      }
+      await expectNothingCached(
+        path.join(tmpDir, 'cache', 'extensions'),
+        'io-fail-no-location-ext'
+      );
 
       await compiler.compile(makeRecord('io-fail-no-location-ext', extDir));
       expect(mockBuild).toHaveBeenCalledTimes(2);
@@ -224,15 +213,10 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
 
       const result = await compiler.compile(makeRecord('io-fail-with-location-ext', extDir));
       expect('error' in result).toBe(true);
-      if ('error' in result) {
-        const cachedErrorPath = path.join(
-          tmpDir,
-          'cache',
-          'extensions',
-          `io-fail-with-location-ext.${result.sourceHash}.error.json`
-        );
-        await expect(fs.access(cachedErrorPath)).rejects.toThrow();
-      }
+      await expectNothingCached(
+        path.join(tmpDir, 'cache', 'extensions'),
+        'io-fail-with-location-ext'
+      );
 
       await compiler.compile(makeRecord('io-fail-with-location-ext', extDir));
       expect(mockBuild).toHaveBeenCalledTimes(2);
@@ -249,13 +233,8 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
       expect('error' in first).toBe(true);
       if (!('error' in first)) throw new Error('expected error result');
 
-      const cachedErrorPath = path.join(
-        tmpDir,
-        'cache',
-        'extensions',
-        `genuine-fail-ext.${first.sourceHash}.error.json`
-      );
-      await expect(fs.access(cachedErrorPath)).resolves.toBeUndefined();
+      const cached = await fs.readdir(path.join(tmpDir, 'cache', 'extensions'));
+      expect(cached.some((e) => e.endsWith('.manifest.json'))).toBe(true);
 
       const second = await compiler.compile(makeRecord('genuine-fail-ext', extDir));
       expect('error' in second).toBe(true);
@@ -265,104 +244,6 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
 
       // esbuild was invoked exactly once — the second call was served from cache.
       expect(mockBuild).toHaveBeenCalledTimes(1);
-    });
-
-    it('evicts a legacy cached error that looks like an environment failure', async () => {
-      const extDir = path.join(tmpDir, 'legacy-env-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      const source = 'export function activate() { return "recovered"; }';
-      await fs.writeFile(path.join(extDir, 'index.ts'), source);
-
-      const sourceHash = contentHash(source);
-      const cacheDir = path.join(tmpDir, 'cache', 'extensions');
-      await fs.mkdir(cacheDir, { recursive: true });
-      const cachedErrorPath = path.join(cacheDir, `legacy-env-ext.${sourceHash}.error.json`);
-      // Shape written by the pre-fix code: a single, location-less entry
-      // wrapping the raw esbuild Error.message.
-      await fs.writeFile(
-        cachedErrorPath,
-        JSON.stringify({
-          code: 'compilation_failed',
-          message: 'Compilation failed for legacy-env-ext',
-          errors: [{ text: MISSING_BINARY_MESSAGE }],
-        })
-      );
-
-      mockBuild.mockResolvedValue(buildSuccess(source));
-
-      const result = await compiler.compile(makeRecord('legacy-env-ext', extDir));
-
-      // The stale cache was discarded and esbuild ran fresh instead of
-      // replaying the years-old environment failure forever.
-      expect(mockBuild).toHaveBeenCalledTimes(1);
-      expect('code' in result).toBe(true);
-    });
-
-    it('evicts a legacy cached esbuild I/O failure even when it carries a location', async () => {
-      const extDir = path.join(tmpDir, 'legacy-io-with-location-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      const source = 'import "./helper.js";';
-      await fs.writeFile(path.join(extDir, 'index.ts'), source);
-
-      const sourceHash = contentHash(source);
-      const cacheDir = path.join(tmpDir, 'cache', 'extensions');
-      await fs.mkdir(cacheDir, { recursive: true });
-      const cachedErrorPath = path.join(
-        cacheDir,
-        `legacy-io-with-location-ext.${sourceHash}.error.json`
-      );
-      await fs.writeFile(
-        cachedErrorPath,
-        JSON.stringify({
-          code: 'compilation_failed',
-          message: 'Compilation failed for legacy-io-with-location-ext',
-          errors: [
-            {
-              text: 'Cannot read file "helper.ts": permission denied',
-              location: { file: 'index.ts', line: 1, column: 7 },
-            },
-          ],
-        })
-      );
-
-      mockBuild.mockResolvedValue(buildSuccess(source));
-
-      const result = await compiler.compile(makeRecord('legacy-io-with-location-ext', extDir));
-
-      expect(mockBuild).toHaveBeenCalledTimes(1);
-      expect('code' in result).toBe(true);
-    });
-
-    it('keeps a legacy cached error that looks like a genuine compile error', async () => {
-      const extDir = path.join(tmpDir, 'legacy-genuine-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      const source = 'this stays broken {{{';
-      await fs.writeFile(path.join(extDir, 'index.ts'), source);
-
-      const sourceHash = contentHash(source);
-      const cacheDir = path.join(tmpDir, 'cache', 'extensions');
-      await fs.mkdir(cacheDir, { recursive: true });
-      const cachedErrorPath = path.join(cacheDir, `legacy-genuine-ext.${sourceHash}.error.json`);
-      await fs.writeFile(
-        cachedErrorPath,
-        JSON.stringify({
-          code: 'compilation_failed',
-          message: 'Compilation failed for legacy-genuine-ext',
-          errors: [
-            { text: 'Unexpected token', location: { file: 'index.ts', line: 1, column: 5 } },
-          ],
-        })
-      );
-
-      const result = await compiler.compile(makeRecord('legacy-genuine-ext', extDir));
-
-      // A real, location-bearing compile error is trusted as-is — esbuild
-      // never runs, and the extension stays correctly marked broken.
-      expect(mockBuild).not.toHaveBeenCalled();
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error.message).toBe('Compilation failed for legacy-genuine-ext');
-      }
     });
   });
 
@@ -379,16 +260,10 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
       const result = await compiler.compileServer(record);
       expect('error' in result).toBe(true);
 
-      if ('error' in result) {
-        const cachedErrorPath = path.join(
-          tmpDir,
-          'cache',
-          'extensions',
-          'server',
-          `server-env-fail-ext.${result.sourceHash}.error.json`
-        );
-        await expect(fs.access(cachedErrorPath)).rejects.toThrow();
-      }
+      await expectNothingCached(
+        path.join(tmpDir, 'cache', 'extensions', 'server'),
+        'server-env-fail-ext'
+      );
 
       await compiler.compileServer(record);
       expect(mockBuild).toHaveBeenCalledTimes(2);
@@ -410,37 +285,6 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
       expect('error' in second).toBe(true);
 
       expect(mockBuild).toHaveBeenCalledTimes(1);
-    });
-
-    it('evicts a legacy server cached error that looks like an environment failure', async () => {
-      // This is the exact reported scenario: `marketplace.<hash>.error.json`
-      // in the server cache subdirectory, holding a stale missing-binary error.
-      const extDir = path.join(tmpDir, 'marketplace');
-      await fs.mkdir(extDir, { recursive: true });
-      const source = 'export default function register() { return "ok"; }';
-      const serverPath = path.join(extDir, 'server.ts');
-      await fs.writeFile(serverPath, source);
-
-      const sourceHash = contentHash(source);
-      const serverCacheDir = path.join(tmpDir, 'cache', 'extensions', 'server');
-      await fs.mkdir(serverCacheDir, { recursive: true });
-      const cachedErrorPath = path.join(serverCacheDir, `marketplace.${sourceHash}.error.json`);
-      await fs.writeFile(
-        cachedErrorPath,
-        JSON.stringify({
-          code: 'compilation_failed',
-          message: 'Server Compilation failed for marketplace',
-          errors: [{ text: MISSING_BINARY_MESSAGE }],
-        })
-      );
-
-      mockBuild.mockResolvedValue(buildSuccess(source));
-
-      const record = makeServerRecord('marketplace', extDir, serverPath);
-      const result = await compiler.compileServer(record);
-
-      expect(mockBuild).toHaveBeenCalledTimes(1);
-      expect('code' in result).toBe(true);
     });
   });
 });

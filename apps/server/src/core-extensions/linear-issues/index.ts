@@ -56,7 +56,7 @@ const EXT_ID = 'linear-issues';
 /**
  * Resolve the server API base URL for the current runtime (web vs Electron).
  *
- * This bundle is esbuild-compiled standalone (`ExtensionCompiler.runEsbuild`,
+ * This bundle is esbuild-compiled standalone (`ExtensionCompiler.runBuild`,
  * `platform: 'browser'`) from `apps/server/src/core-extensions/linear-issues/`
  * and dynamically `import()`-ed by the client's extension loader — it executes
  * in the renderer, not on the server. In the desktop shell the renderer loads
