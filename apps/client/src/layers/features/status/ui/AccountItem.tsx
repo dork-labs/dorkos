@@ -139,10 +139,12 @@ export function AccountMenuRow({ label, color, usage }: AccountMenuRowProps) {
 function AccountPicker({
   sessionId,
   account,
+  name,
   stateText,
 }: {
   sessionId: string;
   account: SessionAccount;
+  name: string;
   stateText: string | null;
 }) {
   const accountSwitch = useAccountSwitch(sessionId);
@@ -166,7 +168,7 @@ function AccountPicker({
     <ResponsiveDropdownMenu>
       <ResponsiveDropdownMenuTrigger asChild>
         <AccountTrigger
-          name={account.name ?? 'Account'}
+          name={name}
           color={account.color}
           chipState={account.chipState}
           stateText={stateText}
@@ -269,7 +271,9 @@ export function AccountItem({
   });
   const [internalOpen, setInternalOpen] = useState(false);
 
-  if (!account.visible) return null;
+  // Closed gate, or an account nobody can name: saying nothing beats inventing
+  // a label for money that is being spent somewhere.
+  if (!account.visible || account.name === null) return null;
 
   const stateText = accountChipText({
     chipState: account.chipState,
@@ -280,13 +284,21 @@ export function AccountItem({
   });
 
   if (account.pending) {
-    return <AccountPicker sessionId={sessionId} account={account} stateText={stateText} />;
+    return (
+      <AccountPicker
+        sessionId={sessionId}
+        account={account}
+        name={account.name}
+        stateText={stateText}
+      />
+    );
   }
 
   const isOpen = open ?? internalOpen;
   return (
     <AccountPopover
       account={account}
+      name={account.name}
       onContinue={onContinue}
       now={now}
       open={isOpen}
@@ -296,7 +308,7 @@ export function AccountItem({
       }}
     >
       <AccountTrigger
-        name={account.name ?? 'Account'}
+        name={account.name}
         color={account.color}
         chipState={account.chipState}
         stateText={stateText}

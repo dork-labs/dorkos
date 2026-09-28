@@ -258,6 +258,9 @@ describe('AccountItem before launch — the account picker', () => {
 
   it('says a bare "Default" while the agent question is still unanswered', async () => {
     mockServerConfig = withAccounts();
+    // A pick names the chip, so the menu is open to inspect while the ladder's
+    // own answer is still unknown.
+    useAppStore.setState({ pendingAccount: { id: 'personal', sessionId: SESSION } });
     const agentAnswer = createDeferred<AgentManifest | null>();
     render(<Chip />, () => agentAnswer.promise);
 
@@ -270,6 +273,17 @@ describe('AccountItem before launch — the account picker', () => {
 
     agentAnswer.resolve(agentPinnedTo('acme-corp'));
     await waitFor(() => expect(accountGroup()).toHaveTextContent('Default: Acme Corp'));
+  });
+
+  it('draws nothing, not a made-up name, while it cannot tell which account a new chat would use', async () => {
+    mockServerConfig = withAccounts();
+    const agentAnswer = createDeferred<AgentManifest | null>();
+    render(<Chip />, () => agentAnswer.promise);
+    await waitFor(() => expect(lastQueryClient.getQueryData(configKeys.current())).toBeDefined());
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+
+    agentAnswer.resolve(null);
+    expect(await screen.findByRole('button', { name: /^Personal/ })).toBeInTheDocument();
   });
 
   it('holds the pick for THIS session, shows it on the chip, and writes no config', async () => {

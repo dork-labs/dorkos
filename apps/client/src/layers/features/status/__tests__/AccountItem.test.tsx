@@ -253,6 +253,11 @@ describe('AccountItem — the chip', () => {
     expect(chip()).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('renders nothing for an account it cannot name, rather than inventing a label', () => {
+    renderChip({ account: account({ name: null, accountId: null, path: null }) });
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('renders nothing while the identity gate is closed', () => {
     renderChip({ account: account({ visible: false }) });
     expect(screen.queryByRole('button')).not.toBeInTheDocument();

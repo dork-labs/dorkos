@@ -297,6 +297,17 @@ const GROUP_LABELS: Record<StatusBarItemGroup, string> = {
 };
 
 /**
+ * The runtime item's rank, which the account item shares while its account is
+ * fine: the two sit side by side and say the same kind of fact (who runs this).
+ */
+function runtimeSeverity(ctx: StatusPromotionContext): number {
+  return ctx.runtime && !ctx.runtime.isDefault ? SEVERITY.RUNTIME_NON_DEFAULT : SEVERITY.QUIET;
+}
+
+/** The account chip states that are news: out, near, or one model out. */
+const ACCOUNT_ATTENTION_STATES: ReadonlySet<ChipState> = new Set(['near', 'model-out', 'out']);
+
+/**
  * Whether a permission mode sits off the dial's safest stop ('ask', which
  * always asks first) — the one fact both the Permissions item's `promote`
  * and `severity` need to agree on (DOR-820). Reads the descriptor when one
@@ -311,17 +322,6 @@ const GROUP_LABELS: Record<StatusBarItemGroup, string> = {
  * register-drift bug this ticket closed, and a shared predicate is what
  * keeps a future edit from reintroducing it in only one of the two places.
  */
-/**
- * The runtime item's rank, which the account item shares while its account is
- * fine: the two sit side by side and say the same kind of fact (who runs this).
- */
-function runtimeSeverity(ctx: StatusPromotionContext): number {
-  return ctx.runtime && !ctx.runtime.isDefault ? SEVERITY.RUNTIME_NON_DEFAULT : SEVERITY.QUIET;
-}
-
-/** The account chip states that are news: out, near, or one model out. */
-const ACCOUNT_ATTENTION_STATES: ReadonlySet<ChipState> = new Set(['near', 'model-out', 'out']);
-
 function isElevatedPermissionMode(ctx: StatusPromotionContext): boolean {
   return ctx.permissionDescriptor
     ? ctx.permissionDescriptor.stop !== 'ask'

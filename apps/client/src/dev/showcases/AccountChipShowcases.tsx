@@ -166,6 +166,9 @@ const NEAR_FIVE_HOUR: AccountUsage = {
 /** 47 minutes after the page loaded: the 5-hour window's reset, for the countdown chip. */
 const IN_FORTY_SEVEN_MIN = new Date(Date.now() + 47 * MINUTE_MS).toISOString();
 
+/** A label longer than a phone-width status bar can hold. */
+const LONG_NAME = 'Client work for Acme Corporation Holdings';
+
 /** The status-bar account chip in each state, then the pre-launch picker. */
 export function AccountItemShowcases() {
   return (
@@ -210,6 +213,18 @@ export function AccountItemShowcases() {
             scope: 'model',
             window: 'seven_day_opus',
           }),
+        })}
+      />
+      <Chip
+        label="A long name truncates first; near words stay whole"
+        account={onAccount(2, { chipState: 'near', name: LONG_NAME })}
+      />
+      <Chip
+        label="A long name truncates first; out words stay whole"
+        account={onAccount(3, {
+          chipState: 'out',
+          name: LONG_NAME,
+          limit: sessionLimit('limited'),
         })}
       />
       <Chip

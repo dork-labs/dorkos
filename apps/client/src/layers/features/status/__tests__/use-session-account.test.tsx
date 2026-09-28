@@ -132,16 +132,22 @@ const ACCT_2 = createMockAccountUsage();
 describe('the identity gate (invariant 1)', () => {
   it.each([0, 1])('shows no chip with %i Claude accounts', async (count) => {
     mockSessions = [createMockSession({ id: SID, runtime: 'claude-code', accountId: 'acct-1' })];
-    const queryClient = renderChip(transportWith(count));
+    const transport = transportWith(count);
+    const queryClient = renderChip(transport);
     await settled(queryClient);
-    expect(screen.queryByRole('button', { name: /^Acct/ })).not.toBeInTheDocument();
+    // Any button at all: the chip is the only one this tree can draw, and a
+    // closed gate must not name the account in any spelling.
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(transport.getAccountUsage).not.toHaveBeenCalled();
   });
 
   it('shows no chip on a Codex session, which does not tell accounts apart', async () => {
     mockSessions = [createMockSession({ id: SID, runtime: 'codex', accountId: 'default' })];
-    const queryClient = renderChip(transportWith(2));
+    const transport = transportWith(2);
+    const queryClient = renderChip(transport);
     await settled(queryClient);
-    expect(screen.queryByRole('button', { name: /^Acct/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(transport.getAccountUsage).not.toHaveBeenCalled();
   });
 
   it('shows the chip with two Claude accounts, from the seed, with no usage request', async () => {

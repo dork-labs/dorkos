@@ -16,6 +16,8 @@ import { canOfferContinue, popoverWindowLabel } from '../lib/account-chip';
 export interface AccountPopoverProps {
   /** The session's account, from `useSessionAccount`. */
   account: SessionAccount;
+  /** The account's name, already resolved by the chip (it renders nothing without one). */
+  name: string;
   /** The chip that opens the popover; focus returns to it on close. */
   children: ReactNode;
   /**
@@ -61,13 +63,13 @@ function windowsToShow(
  */
 export function AccountPopover({
   account,
+  name,
   children,
   onContinue,
   now,
   open,
   onOpenChange,
 }: AccountPopoverProps) {
-  const name = account.name ?? 'Account';
   const plan = planName(account.usage?.plan?.name ?? account.usage?.subscriptionType);
   const offerContinue =
     onContinue !== undefined && canOfferContinue(account.limit, account.lifecycle, account.pending);
