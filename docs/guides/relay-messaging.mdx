@@ -12,12 +12,12 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Relay lets your agents send and receive messages: to each other, to you in DorkOS, or to a Telegram or Slack chat. Every message is saved, so nothing goes missing even if an agent is busy.
 
-This guide gets you sending your first message, then covers adapters, budgets, and tracing for when you want more control.
+This guide gets you sending your first message, then covers chat apps, budgets, and tracing for when you want more control.
 
 <Callout type="info">
   To connect Telegram or Slack from the app, no config file required, use the
   [Connections](/docs/connections) page: they are rows in its list with a **Chat** tag. This guide
-  is the layer underneath: the API, the adapter config on disk, and the tools your agents call.
+  is the layer underneath: the API, the config file on disk, and the tools your agents call.
 </Callout>
 
 <Callout type="info">
@@ -79,7 +79,7 @@ That's the whole loop: publish a message to a subject, Relay routes it, the reci
 
 ## Reference
 
-The rest of this page is a deeper look at how Relay works: the built-in tools, chat adapters, budgets, and configuration. Agent-to-agent chains are still a newer part of DorkOS, so if you're chaining more than a couple of hops, set explicit budgets (below) to keep things bounded.
+The rest of this page is a deeper look at how Relay works: the built-in tools, the chat apps it bridges, budgets, and configuration. Agent-to-agent chains are still a newer part of DorkOS, so if you're chaining more than a couple of hops, set explicit budgets (below) to keep things bounded.
 
 ### Using MCP tools
 
@@ -132,9 +132,9 @@ You can subscribe with wildcards: `*` stands in for exactly one segment, `>` for
 
 Agents publish messages to named subjects, and Relay routes each one to the right recipient. Agents don't need to know about each other directly; they just need to agree on a subject name.
 
-Along the way, a message passes through a few checks: is the subject valid, is the sender allowed to send it, is it within its rate limit and budget. If a recipient adapter is failing repeatedly, Relay's circuit breaker (a safety switch that stops sending to something that's clearly broken) pauses deliveries to it rather than retrying forever. Anything that can't be delivered lands in the dead letter queue, and the full path a message took is recorded so you can look it up later (see [Tracing](#message-tracing) below).
+Along the way, a message passes through a few checks: is the subject valid, is the sender allowed to send it, is it within its rate limit and budget. If delivery to a recipient keeps failing, Relay's circuit breaker (a safety switch that stops sending to something that's clearly broken) pauses deliveries to it rather than retrying forever. Anything that can't be delivered lands in the dead letter queue, and the full path a message took is recorded so you can look it up later (see [Tracing](#message-tracing) below).
 
-When Relay is on, it also takes over how session messages are delivered. Instead of `POST /api/sessions/:id/messages` calling the agent SDK directly, the message is published to `relay.agent.{sessionId}` and the Claude Code adapter picks it up from there. That means every session message gets Relay's tracing, budgets, and retry handling for free.
+When Relay is on, it also takes over how session messages are delivered. Instead of `POST /api/sessions/:id/messages` calling the agent SDK directly, the message is published to `relay.agent.{sessionId}` and DorkOS's Claude Code side picks it up from there. That means every session message gets Relay's tracing, budgets, and retry handling for free.
 
 ### Enabling and disabling Relay
 
@@ -216,13 +216,13 @@ When the ceiling stops a message, it says which of the two limits it was, and th
 the agent's inbox — it just doesn't start a turn. A turn DorkOS accepted but couldn't run — every
 agent slot busy, say — doesn't count against you: the allowance is given back.
 
-## Built-in adapters
+## Built-in adapters <!-- vocab-allow: names Relay's own adapter architecture (adapters.json, /api/relay/adapters), the ADR's carved-out sense -->
 
-Adapters connect external platforms to Relay's subject system. DorkOS ships with five, configured through `~/.dork/relay/adapters.json`.
+Adapters connect external platforms to Relay's subject system. DorkOS ships with five, configured through `~/.dork/relay/adapters.json`. <!-- vocab-allow: same Relay architecture noun -->
 
-### Claude Code adapter
+### Claude Code adapter <!-- vocab-allow: the real config "type" value and built-in component name -->
 
-The Claude Code adapter is on by default whenever Relay starts. It listens on `relay.agent.*` subjects and routes incoming messages to Claude Agent SDK sessions. Replies flow back through Relay to the sender's reply address.
+The Claude Code adapter is on by default whenever Relay starts. It listens on `relay.agent.*` subjects and routes incoming messages to Claude Agent SDK sessions. Replies flow back through Relay to the sender's reply address. <!-- vocab-allow: names the real built-in component -->
 
 ```json
 {
@@ -241,7 +241,7 @@ The Claude Code adapter is on by default whenever Relay starts. It listens on `r
 }
 ```
 
-You can change both in the app, under **Settings → Connections**: **Most chats at once** is `maxConcurrent`, and **Give up after** is `defaultTimeoutMs` in seconds. **Start working right away** turns this adapter on or off.
+You can change both in the app, under **Settings → Connections**: **Most chats at once** is `maxConcurrent`, and **Give up after** is `defaultTimeoutMs` in seconds. **Start working right away** turns it on or off.
 
 `maxConcurrent` limits how many agent sessions run at once. `defaultTimeoutMs` sets the longest a message may wait for a busy agent — not how long a session may run. What bounds a running session is the message's own lifetime, and nothing else: a message that runs out of time is turned away rather than given a fresh clock.
 
@@ -254,9 +254,9 @@ Four limits keep that honest:
 - **Who gets to wait.** Only a message from a chat you connected. Anything else waiting on an answer, such as one agent asking another, gets the old immediate "too busy" reply, because those callers give up long before a wait would end.
 - **How long the wait survives.** Holds live in memory only, so restarting the server drops any message still waiting.
 
-### Telegram adapter
+### Telegram adapter <!-- vocab-allow: the real config "type" value and built-in component name -->
 
-The Telegram adapter connects a Telegram bot to Relay. Messages from the chat are published to `relay.human.telegram.{chatId}`, and replies on that subject get delivered back to the chat, including live-updating drafts as the agent writes its answer.
+The Telegram adapter connects a Telegram bot to Relay. Messages from the chat are published to `relay.human.telegram.{chatId}`, and replies on that subject get delivered back to the chat, including live-updating drafts as the agent writes its answer. <!-- vocab-allow: names the real built-in component -->
 
 ```json
 {
@@ -275,9 +275,9 @@ In a one-on-one chat the bot replies to everything you send it. In a group chat,
 
 Your bot never replies to another bot, whatever you pick. That is not a setting, because two bots that reply to each other will keep going forever and neither can tell it is happening. The one exception is an anonymous group admin: Telegram sends their messages in a way that looks like a bot, but they are a person, so your bot treats them like anyone else in the group. Posts from a linked Telegram channel are treated as automated and ignored.
 
-### Slack adapter
+### Slack adapter <!-- vocab-allow: the real config "type" value and built-in component name -->
 
-The Slack adapter connects a Slack workspace to Relay using Socket Mode, so you don't need a public URL. It supports streaming replies, threads, a working indicator, and access control per Slack channel.
+The Slack adapter connects a Slack workspace to Relay using Socket Mode, so you don't need a public URL. It supports streaming replies, threads, a working indicator, and access control per Slack channel. <!-- vocab-allow: names the real built-in component -->
 
 When an agent starts working on your message, Slack shows it: your message gets an 👀 reaction, which comes off when the agent replies or fails. A message nobody picks up is never marked — the reaction means somebody is on it, not that the message arrived. Nothing is added when the work finishes: the reply is the answer. Set the working indicator to **None** to turn it off.
 
@@ -301,9 +301,9 @@ When an agent starts working on your message, Slack shows it: your message gets 
 
 `respondMode` controls when the bot replies in a Slack channel: `thread-aware` (default: replies to @mentions and to threads it's already part of), `mention-only` (only @mentions), or `always` (every message). `dmPolicy` controls direct messages: `allowlist` (default: only the user IDs listed in `dmAllowlist`) or `open` (anyone in the workspace). A direct message can start an agent turn on your machine, so it is limited to people you name unless you open it. You can also set overrides per Slack channel with `channelOverrides`.
 
-### Webhook adapter
+### Webhook adapter <!-- vocab-allow: the real config "type" value and built-in component name -->
 
-The webhook adapter is a generic HTTP bridge. It can receive messages from other services and forward Relay messages out as HTTP requests, both directions signed with HMAC-SHA256 (a signature that proves the request wasn't tampered with).
+The webhook adapter is a generic HTTP bridge. It can receive messages from other services and forward Relay messages out as HTTP requests, both directions signed with HMAC-SHA256 (a signature that proves the request wasn't tampered with). <!-- vocab-allow: names the real built-in component -->
 
 ```json
 {
@@ -319,11 +319,11 @@ The webhook adapter is a generic HTTP bridge. It can receive messages from other
 }
 ```
 
-Inbound requests arrive at `POST /api/relay/webhooks/{adapterId}`. The adapter checks the signature, reads the payload, and publishes it under the configured subject prefix. You can rotate your secret with a 24-hour overlap window so nothing breaks mid-rotation.
+Inbound requests arrive at `POST /api/relay/webhooks/{adapterId}`. DorkOS checks the signature, reads the payload, and publishes it under the configured subject prefix. You can rotate your secret with a 24-hour overlap window so nothing breaks mid-rotation.
 
 ### Hot reload
 
-DorkOS watches `~/.dork/relay/adapters.json` for changes. Edit the file and it reconciles automatically: adapters you removed or disabled stop, and newly enabled ones start. No restart needed.
+DorkOS watches `~/.dork/relay/adapters.json` for changes. Edit the file and it reconciles automatically: ones you removed or disabled stop, and newly enabled ones start. No restart needed.
 
 You can also trigger a reload by hand:
 
@@ -365,7 +365,7 @@ For more on debugging failed deliveries, see the [Relay Observability](/docs/gui
 
 ## Relay and Tasks
 
-When both Relay and Tasks are on, scheduled jobs are dispatched through Relay. Tasks publishes to `relay.system.tasks.{scheduleId}`, and the Claude Code adapter starts the agent session from there. That gives every scheduled run Relay's budget limits, tracing, and retry handling too.
+When both Relay and Tasks are on, scheduled jobs are dispatched through Relay. Tasks publishes to `relay.system.tasks.{scheduleId}`, and DorkOS's Claude Code side starts the agent session from there. That gives every scheduled run Relay's budget limits, tracing, and retry handling too.
 
 ```bash
 export DORKOS_RELAY_ENABLED=true
@@ -393,7 +393,7 @@ Subscribe to `relay.system.tasks.*` on the SSE stream to watch every Tasks dispa
 | --------------------------------- | ------------------------------------------------------------------ |
 | `~/.dork/relay/index.db`          | SQLite index database (messages, traces; WAL mode)                 |
 | `~/.dork/relay/endpoints/`        | Maildir message store, one directory per endpoint                  |
-| `~/.dork/relay/adapters.json`     | Adapter configuration (hot-reloaded)                               |
+| `~/.dork/relay/adapters.json`     | Chat app bridge configuration (hot-reloaded)                       |
 | `~/.dork/relay/config.json`       | Reliability settings (rate limits, circuit breakers, backpressure) |
 | `~/.dork/relay/access-rules.json` | Access control rules (hot-reloaded)                                |
 
@@ -454,15 +454,15 @@ The `config.json` file controls rate limiting, circuit breakers, and backpressur
 | `GET`    | `/api/relay/metrics`                  | Relay system metrics                             |
 | `GET`    | `/api/relay/trace/metrics`            | Aggregate delivery metrics                       |
 | `GET`    | `/api/relay/stream`                   | SSE event stream (supports `?subject=` filter)   |
-| `GET`    | `/api/relay/adapters`                 | List adapters with status                        |
-| `GET`    | `/api/relay/adapters/catalog`         | List available adapter types                     |
-| `GET`    | `/api/relay/adapters/:id`             | Get a single adapter's status                    |
-| `POST`   | `/api/relay/adapters/reload`          | Hot-reload adapter configuration                 |
-| `POST`   | `/api/relay/adapters/test`            | Test an adapter configuration before saving it   |
-| `POST`   | `/api/relay/adapters/:id/enable`      | Enable an adapter                                |
-| `POST`   | `/api/relay/adapters/:id/disable`     | Disable an adapter                               |
-| `GET`    | `/api/relay/bindings`                 | List adapter-to-agent bindings                   |
-| `POST`   | `/api/relay/bindings`                 | Create an adapter-to-agent binding               |
+| `GET`    | `/api/relay/adapters`                 | List chat app bridges with status                |
+| `GET`    | `/api/relay/adapters/catalog`         | List available bridge types                      |
+| `GET`    | `/api/relay/adapters/:id`             | Get a single bridge's status                     |
+| `POST`   | `/api/relay/adapters/reload`          | Hot-reload bridge configuration                  |
+| `POST`   | `/api/relay/adapters/test`            | Test a bridge configuration before saving it     |
+| `POST`   | `/api/relay/adapters/:id/enable`      | Enable a bridge                                  |
+| `POST`   | `/api/relay/adapters/:id/disable`     | Disable a bridge                                 |
+| `GET`    | `/api/relay/bindings`                 | List bridge-to-agent bindings                    |
+| `POST`   | `/api/relay/bindings`                 | Create a bridge-to-agent binding                 |
 | `DELETE` | `/api/relay/bindings/:id`             | Remove a binding                                 |
 | `POST`   | `/api/relay/webhooks/:adapterId`      | Inbound webhook receiver                         |
 

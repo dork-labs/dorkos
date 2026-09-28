@@ -26,19 +26,41 @@ a network connection (SSE, tunnels, the reverse-proxy guide), and sweeping that
 wave is a separate, unscoped effort this change does not take on. `docs/api/**`
 (generated from `openapi.json`) and the two compiled changelog files are
 excluded, the same carve-outs `check-banned-words.sh` already documented for
-wave 2. The sweep itself — 24 new `allowlist.json` entries for real domain uses
-(the `/flow` engine's tracker-adapter pattern, OpenCode's model-provider picker,
-a marketplace package's `adapter` facet, Relay's own adapter architecture,
-"integration test" as a testing term) plus rewriting the handful of genuinely
-stale or false lines the audit found — is content work, not a pipeline change;
-this entry covers only the gate extension.
+wave 2.
+
+A code review on the first pass of this change caught two real defects before
+either landed: the fence tracker mis-parsed a fenced block that Prettier
+collapses onto one line (`docs/contributing/testing.mdx`'s shape) and a
+multi-line fence whose closer trails real content instead of opening its own
+line (`docs/self-hosting/deployment.mdx`'s shape) — both would have blanked
+every remaining line in the file as "still fenced." Fixed with a same-line
+open+close case treated as inline code, and closers tracked by character AND
+length so a shorter nested fence of the same character never closes an outer
+one. The review also asked for line-scoped `vocab-allow` markers (the same
+convention `check-banned-words.sh` already honors) in place of file-wide
+`allowlist.json` passes wherever a page mixes user-facing and developer
+content, reworking most of an initial 24-entry sweep down to 4 directory/file
+entries for genuinely developer-only sections (`docs/integrations/`,
+`docs/marketplace/publishing.mdx`, `docs/contributing/architecture.mdx`,
+`docs/guides/flow/`) plus reworded copy or inline markers everywhere else. All
+of that — the sweep itself, the false/stale lines the audit found — is content
+work, not a pipeline change; this entry covers only the gate extension
+mechanism (docs scanning, fence detection, the marker convention).
 
 No new workflow step, job or required check: the docs scan rides the existing
 `Retired-vocabulary gate` step in `typecheck` (renamed to say so) and the
 existing real-repo canary in `scripts/__tests__/check-vocab-gate.test.ts`
 (`runVocabGate(repoRoot)` now walks both `apps/{client,site,server}/src` and
-`docs/`). `kind: hygiene` — this closes a coverage gap the tool already existed
-to close, it does not change what "passing" means for any surface that was
+`docs/`). That suite also gained fixture and mutation-style tests for the new
+mechanism: fence detection (including both defects above as pinned regressions
+plus a 4-backtick/3-backtick nested-fence case), the `vocab-allow` marker, and
+two tests that drive a seeded docs violation through `runVocabGate` itself
+(never `scanMdx` directly) specifically so a future change that disables or
+drops the docs half of that function fails a test — verified by hand: deleting
+that loop reds exactly those two tests, restoring it goes green again.
+`kind: hygiene` — this closes a coverage gap the tool already existed to
+close, it does not change what "passing" means for any surface that was
 already scanned. Revert if the docs scan produces false positives faster than
-the allowlist can absorb them (nothing observed in this change: the real-repo
-canary and a full `pnpm exec tsx scripts/check-vocab-gate.ts .` both run clean).
+the allowlist and the marker convention can absorb them (nothing observed in
+this change: the real-repo canary and a full
+`pnpm exec tsx scripts/check-vocab-gate.ts .` both run clean).

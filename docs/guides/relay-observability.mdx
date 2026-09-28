@@ -18,7 +18,7 @@ When your agents talk to each other through Relay, most messages just arrive. Wh
   matures.
 </Callout>
 
-Haven't turned Relay on yet? Start with [Relay Messaging](/docs/guides/relay-messaging) to enable it and register your first adapter.
+Haven't turned Relay on yet? Start with [Relay Messaging](/docs/guides/relay-messaging) to enable it and connect your first chat app.
 
 ## The Fastest Way to Check Delivery Health
 
@@ -99,7 +99,7 @@ For messages that fan out to multiple endpoints, the trace contains one span per
 | `failed`    | Subscription handler threw an error                                                                            |
 | `timeout`   | Message rejected (budget exceeded, access denied, TTL expired, no matching endpoints, or circuit breaker open) |
 
-A healthy message moves from `sent` to `delivered`. The time between `sentAt` and `deliveredAt` is delivery latency. The time between `deliveredAt` and `processedAt` is processing latency, which includes the time the adapter (e.g., Claude Code) takes to handle the message.
+A healthy message moves from `sent` to `delivered`. The time between `sentAt` and `deliveredAt` is delivery latency. The time between `deliveredAt` and `processedAt` is processing latency, which includes the time the receiving side (e.g., Claude Code) takes to handle the message.
 
 #### Using MCP Tools
 
@@ -245,7 +245,7 @@ If the message was delivered but the handler failed, look up the trace:
 curl http://localhost:4242/api/relay/messages/{messageId}/trace
 ```
 
-Check `status` and `errorMessage` on each span. A `failed` status with an error message tells you exactly what went wrong. For Claude Code adapter failures, the error typically includes the Agent SDK error message.
+Check `status` and `errorMessage` on each span. A `failed` status with an error message tells you exactly what went wrong. For a Claude Code delivery failure, the error typically includes the Agent SDK error message.
 
 </Step>
 <Step>
@@ -293,7 +293,7 @@ The stream emits four event types:
 
 <Cards>
   <Card title="Relay Messaging" href="/docs/guides/relay-messaging">
-    Enable Relay, send messages, and configure adapters.
+    Enable Relay, send messages, and configure chat apps.
   </Card>
   <Card title="Relay Concepts" href="/docs/concepts/relay">
     Relay's architecture, envelope format, and delivery pipeline in depth.

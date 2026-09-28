@@ -208,117 +208,22 @@
     {
       "path": "docs/integrations/",
       "terms": ["integration", "integrations", "adapter", "adapters"],
-      "reason": "DOR-2508. The builder section (Building Integrations, MCP Server, SSE Protocol, Extensions, Building Relay Adapters) is explicitly for people writing custom clients or plugin adapters on top of DorkOS — its own opening Callout sends anyone else to /docs/connections instead. Mirrors the ADR's marketplace-author + architecture carve-out (RelayAdapter, ConnectorProvider) and the 'docs concept pages, architecture docs' row of its scoped-word registry; the viewport test holds because this section and the Connections page never co-render."
+      "reason": "DOR-2508. The builder section (Building Integrations, MCP Server, SSE Protocol, Extensions, Building Relay Adapters) is explicitly for people writing custom clients or plugin adapters on top of DorkOS — its own opening Callout sends anyone else to /docs/connections instead. Mirrors the ADR's marketplace-author + architecture carve-out (RelayAdapter, ConnectorProvider) and the 'docs concept pages, architecture docs' row of its scoped-word registry; the viewport test holds because this section and the Connections page never co-render. A code review on DOR-2508 asked for line-scoped `vocab-allow` markers instead of file-wide passes wherever a page mixes user-facing and developer content; this directory is the one exception kept, because its whole audience — never the Connections reader — is the builder the ADR's own carve-out names."
     },
     {
-      "path": "docs/marketplace/",
+      "path": "docs/marketplace/publishing.mdx",
       "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. 'Adapter' is a real marketplace package-type facet an author picks (agent/plugin/skill-pack/adapter) and the manifest key an author writes — exactly the ADR's marketplace-author domain carve-out, same as apps/site's marketplace privacy page above."
+      "reason": "DOR-2508. 'Publishing a package' is a developer-authoring guide start to finish (its own description: 'Build an agent, plugin, skill pack, or adapter and share it'); 'Adapter' is a real marketplace package-type facet an author picks and the manifest key an author writes — the ADR's marketplace-author domain carve-out, same as apps/site's marketplace privacy page above. Narrower than the earlier docs/marketplace/ directory entry: docs/marketplace/index.mdx (browse/install, a general audience) uses line-scoped `vocab-allow` markers instead, per DOR-2508 code review."
     },
     {
       "path": "docs/contributing/architecture.mdx",
       "terms": ["adapter", "adapters", "provider", "providers", "integration", "integrations"],
-      "reason": "DOR-2508. Contributor architecture reference: the hexagonal ports & adapters pattern, the Transport interface's React context provider, and 'integrations may open the same path as SSE' (a third-party client's own integration with DorkOS's API) — all architecture/developer senses, not the Connections page's own copy."
-    },
-    {
-      "path": "docs/contributing/development-setup.mdx",
-      "terms": ["integration", "integrations"],
-      "reason": "DOR-2508. 'Integration test' (pnpm smoke:integration) is software-testing terminology — a test that exercises more than one layer together — unrelated to the retired Connections-domain noun."
-    },
-    {
-      "path": "docs/self-hosting/telemetry.mdx",
-      "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. Describes what the telemetry payload counts ('relay adapters') — Relay's own architecture noun, not the Connections page's copy."
-    },
-    {
-      "path": "docs/guides/relay-messaging.mdx",
-      "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. This guide documents Relay's own adapter architecture by name (RelayAdapter, adapters.json, /api/relay/adapters, the built-in Claude Code/Telegram/Slack/Webhook adapters) — the ADR's architecture carve-out, not the Connections page's copy. The page already sends anyone connecting Telegram or Slack to the Connections page instead (Settings → Connections)."
-    },
-    {
-      "path": "docs/guides/relay-observability.mdx",
-      "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. Same Relay-architecture sense as relay-messaging.mdx: tracing and latency for the adapter that handles a message."
-    },
-    {
-      "path": "docs/getting-started/uninstall.mdx",
-      "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. The storage inventory table names what ~/.dork/relay/ holds ('adapter state and credentials') — Relay's own architecture noun describing a real directory on disk."
-    },
-    {
-      "path": "docs/getting-started/configuration.mdx",
-      "terms": ["provider", "providers", "connector", "connectors", "adapter", "adapters"],
-      "reason": "DOR-2508. TypeTable config blocks embed JS object literals directly in the MDX body (no fence), mixing config field names (`connectors.rawMcpServers`, `runtimes.opencode.provider`, `memory.provider`) with legitimate description copy about OpenCode's model-provider picker (the ADR's own carve-out) and the Relay adapter config file. The docs scanner reads MDX as text, not JS, so it cannot separate the two the way the source scanner separates identifiers from copy. The user-facing '### Connectors' heading and both 'integrations' mentions in this file were reworded instead of allowlisted."
-    },
-    {
-      "path": "docs/getting-started/what-is-dorkos.mdx",
-      "terms": ["provider", "providers"],
-      "reason": "DOR-2508. 'Your own AI provider' (Anthropic, OpenAI, or whichever OpenCode connects to) is the model-provider sense the ADR keeps, extended to all three runtimes' own AI backends, not a Connections-domain account."
-    },
-    {
-      "path": "docs/getting-started/troubleshooting.mdx",
-      "terms": ["provider", "providers"],
-      "reason": "DOR-2508. 'Their own AI provider' — the same model-provider sense as what-is-dorkos.mdx."
-    },
-    {
-      "path": "docs/guides/runtimes.mdx",
-      "terms": ["provider", "providers", "integration", "integrations"],
-      "reason": "DOR-2508. OpenCode's model-provider picker throughout (the ADR's own named carve-out), plus 'Deepest DorkOS integration' describing how closely a runtime is wired into DorkOS — the ordinary engineering sense, not the retired product noun."
-    },
-    {
-      "path": "docs/guides/agent-discovery.mdx",
-      "terms": ["integration", "integrations"],
-      "reason": "DOR-2508. 'Building an integration' is the same developer/API-client sense as docs/integrations/, aimed at readers past 'if you're just using the Mesh tab, you're done.'"
-    },
-    {
-      "path": "docs/guides/agent-coordination.mdx",
-      "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. A Card description and title point to the Relay Messaging reference and 'Building Relay Adapters' — architecture references, not this page's own instructions (which were reworded to point at Connections instead)."
-    },
-    {
-      "path": "docs/guides/workspaces.mdx",
-      "terms": ["provider", "providers"],
-      "reason": "DOR-2508. `workspace.defaultProvider` / `WorkspaceProvider` names the workspace-provisioning backend (git worktree vs. Docker) — an unrelated architecture sense, not a Connections-domain or AI-model provider."
-    },
-    {
-      "path": "docs/guides/task-scheduler.mdx",
-      "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. 'Relay grows adapters for those [runtimes] next' — Relay's own architecture noun."
-    },
-    {
-      "path": "docs/guides/action-approvals.mdx",
-      "terms": ["provider", "providers"],
-      "reason": "DOR-2508. 'Your provider credentials' and 'connecting a model provider' — the AI model-provider sense, same as runtimes.mdx."
-    },
-    {
-      "path": "docs/concepts/answering-agents.mdx",
-      "terms": ["integration", "integrations"],
-      "reason": "DOR-2508. 'Your own integrations' means a person's own scripts calling DorkOS's API — the developer/API-client sense docs/integrations/ covers, not a Connections-domain app."
-    },
-    {
-      "path": "docs/concepts/sessions.mdx",
-      "terms": ["integration", "integrations"],
-      "reason": "DOR-2508. A Card pointing to the Building Integrations builder section, and 'integration authors' — the same developer/API-client sense as docs/integrations/."
-    },
-    {
-      "path": "docs/concepts/relay.mdx",
-      "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. Relay's own architecture reference section ('this section assumes a developer's background'): the RelayAdapter interface and the four built-in adapters, by name. The page's instructional steps for connecting Telegram were reworded to point at Connections instead."
-    },
-    {
-      "path": "docs/index.mdx",
-      "terms": ["integration", "integrations"],
-      "reason": "DOR-2508. A Card titled 'Building Integrations' links to docs/integrations/ by that section's own established title."
-    },
-    {
-      "path": "docs/glossary.mdx",
-      "terms": ["adapter", "adapters"],
-      "reason": "DOR-2508. 'Adapters you can install' describes the Marketplace's Adapter package facet, linked from the Marketplace glossary entry."
+      "reason": "DOR-2508. Every page under docs/contributing/ is contributor documentation by definition — the hexagonal ports & adapters pattern, the Transport interface's React context provider, and 'integrations may open the same path as SSE' (a third-party client's own integration with DorkOS's API) are architecture/developer senses throughout, not the Connections page's own copy."
     },
     {
       "path": "docs/guides/flow/",
       "terms": ["adapter", "adapters", "connector", "connectors"],
-      "reason": "DOR-2508. The /flow engine's own tracker-adapter architecture (the linear-adapter skill, the typed PMClient the adapter realizes) is a distinct, named pattern unrelated to Connections/ConnectorProvider — developer/architecture docs for how /flow talks to a tracker."
+      "reason": "DOR-2508. The /flow engine's own tracker-adapter architecture (the linear-adapter skill, the typed PMClient the adapter realizes) is a distinct, named pattern unrelated to Connections/ConnectorProvider — developer/architecture docs for how /flow talks to a tracker, not a general-audience guide."
     }
   ]
 }

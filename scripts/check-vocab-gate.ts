@@ -518,18 +518,67 @@ export function scanSource(filePath: string, text: string, terms: BannedTerm[]):
 }
 
 /**
+ * Blank the inline-code spans (`` `...` ``), markdown link targets (the
+ * `(...)` half of `[text](...)`), and `href=`/`src=` JSX attribute values on
+ * one line that is not (or no longer) inside a fenced block. Shared by both
+ * branches of {@link stripNonProse} that reach a real prose line: the whole
+ * line when no fence touches it, and the leftover slices on either side of a
+ * same-line fence pair (see {@link stripNonProse}'s Case A).
+ *
+ * @param segment - A line, or a slice of one, to blank code spans and link/attribute targets in.
+ */
+function stripInlineCodeAndTargets(segment: string): string {
+  return segment
+    .replace(/`[^`]*`/g, (m) => ' '.repeat(m.length))
+    .replace(/\]\(([^)]*)\)/g, (_m, url: string) => `](${' '.repeat(url.length)})`)
+    .replace(
+      /(href|src)=(["'])([^"']*)\2/g,
+      (_m, attr: string, quote: string, value: string) =>
+        `${attr}=${quote}${' '.repeat(value.length)}${quote}`
+    );
+}
+
+/**
  * Blank out the parts of an `.mdx` file that are not prose a docs reader
- * reads, line by line so every remaining line keeps its original number:
- * fenced code blocks (` ``` `/`~~~`, tracked by a small state machine since a
- * closing fence must match its opener), inline code spans (`` `...` ``),
- * markdown link targets (the `(...)` half of `[text](...)`), and `href=`/`src=`
- * JSX attribute values. A route like `/docs/integrations/mcp-server` inside a
- * link target is never prose — only the link text beside it is — so leaving
- * targets in would flag a URL nobody reads as a sentence. Import/export lines
+ * reads, line by line so every remaining line keeps its original number.
+ *
+ * FENCES. A fenced code block (` ``` `/`~~~`) is tracked by a small state
+ * machine, because Prettier's MDX formatter routinely collapses a short
+ * fenced block onto one line inside a JSX child (`<Tab value="…">```bash
+ * pnpm test ``` Runs all tests in watch mode.</Tab>`, `docs/contributing/
+ * testing.mdx`), and sometimes lets a multi-line fence's closer trail real
+ * content instead of opening its own line (`docs/self-hosting/
+ * deployment.mdx`'s `... DORKOS_BOUNDARY=/path/to/boundary ``` `). Two rules,
+ * checked in this order on every line not already inside a fence:
+ *
+ *   1. **A fence that opens AND closes on the same line is inline code**, not
+ *      a state change — found by scanning the line for every run of 3+
+ *      backticks or 3+ tildes and pairing the first with the next run of the
+ *      SAME character whose length is at least the first's (CommonMark: a
+ *      fence only closes on its own character, at its own length or longer —
+ *      a 4-backtick opener is not closed by a 3-backtick line inside it, the
+ *      other shape this rule has to get right). Only the matched span is
+ *      blanked; whatever sits before or after it on that line — `<Tab
+ *      value="All tests">`, `Runs all tests in watch mode.` — is real prose
+ *      and is still scanned, via {@link stripInlineCodeAndTargets}.
+ *   2. Otherwise, a line whose first non-whitespace characters are a run of
+ *      3+ backticks or tildes opens a real multi-line fence: record its
+ *      character and length, and blank the rest of the line.
+ *
+ * Once inside a fence, every line is blanked outright, and the fence closes
+ * only when a line contains a run of the SAME character at least as long as
+ * the opener — never a shorter run of the same character (the nested-fence
+ * case above), and never the other character.
+ *
+ * EVERYTHING ELSE. Inline code spans (`` `...` ``), markdown link targets
+ * (the `(...)` half of `[text](...)`), and `href=`/`src=` JSX attribute
+ * values are blanked wherever they appear on a non-fenced line or slice — a
+ * route like `/docs/integrations/mcp-server` inside a link target is never
+ * prose a reader reads, only the link text beside it is. Import/export lines
  * (MDX component imports) are blanked outright, the same reasoning as
- * {@link isCopySink} ignoring an import specifier in source. Everything a line
- * has left after that counts as copy: unlike component source, a docs body is
- * prose all the way down, so this strips only what is provably code or a
+ * {@link isCopySink} ignoring an import specifier in source. Everything left
+ * standing after that counts as copy: unlike component source, a docs body
+ * is prose all the way down, so this strips only what is provably code or a
  * link/attribute target rather than allow-listing what counts as copy.
  *
  * @param text - The raw `.mdx` file contents.
@@ -538,41 +587,82 @@ export function stripNonProse(text: string): string {
   const lines = text.split('\n');
   let inFence = false;
   let fenceChar = '';
+  let fenceLen = 0;
 
   return lines
     .map((line) => {
-      const fenceMatch = /^\s*(`{3,}|~{3,})/.exec(line);
-      if (fenceMatch) {
-        const char = fenceMatch[1]!.charAt(0);
-        if (!inFence) {
-          inFence = true;
-          fenceChar = char;
-        } else if (char === fenceChar) {
-          inFence = false;
-        }
-        return '';
-      }
-      if (inFence) return '';
       if (/^\s*(import|export)\s/.test(line)) return '';
 
-      return line
-        .replace(/`[^`]*`/g, (m) => ' '.repeat(m.length))
-        .replace(/\]\(([^)]*)\)/g, (_m, url: string) => `](${' '.repeat(url.length)})`)
-        .replace(
-          /(href|src)=(["'])([^"']*)\2/g,
-          (_m, attr: string, quote: string, value: string) =>
-            `${attr}=${quote}${' '.repeat(value.length)}${quote}`
-        );
+      if (inFence) {
+        // A shorter run of the fence character is content (the nested-fence
+        // case), never a closer — only a run at least as long as the opener
+        // closes it, per CommonMark.
+        if (new RegExp(`${fenceChar}{${fenceLen},}`).test(line)) inFence = false;
+        return '';
+      }
+
+      // Case 1: every run of 3+ backticks or tildes on this line, in order.
+      const markers: { index: number; char: string; length: number }[] = [];
+      const markerRe = /`{3,}|~{3,}/g;
+      let markerMatch: RegExpExecArray | null;
+      while ((markerMatch = markerRe.exec(line)) !== null) {
+        markers.push({
+          index: markerMatch.index,
+          char: markerMatch[0]!.charAt(0),
+          length: markerMatch[0]!.length,
+        });
+      }
+      if (markers.length >= 2) {
+        const opener = markers[0]!;
+        const closer = markers
+          .slice(1)
+          .find((cand) => cand.char === opener.char && cand.length >= opener.length);
+        if (closer) {
+          const closerEnd = closer.index + closer.length;
+          const before = stripInlineCodeAndTargets(line.slice(0, opener.index));
+          const after = stripInlineCodeAndTargets(line.slice(closerEnd));
+          return before + ' '.repeat(closerEnd - opener.index) + after;
+        }
+      }
+
+      // Case 2: this line opens a real multi-line fence.
+      const openMatch = /^\s*(`{3,}|~{3,})/.exec(line);
+      if (openMatch) {
+        const marker = openMatch[1]!;
+        inFence = true;
+        fenceChar = marker.charAt(0);
+        fenceLen = marker.length;
+        return '';
+      }
+
+      return stripInlineCodeAndTargets(line);
     })
     .join('\n');
 }
+
+/**
+ * The inline exemption marker `check-banned-words.sh` already honours
+ * (its `ALLOW_PATTERNS` list), extended here to {@link scanMdx}: a line
+ * containing this substring anywhere — typically an MDX comment wrapping it
+ * in JSX-comment syntax, opening curly-brace-slash-star and closing
+ * star-slash-curly-brace, with a reason after the colon — is exempt from
+ * every banned term on that line, the same per-line scope
+ * `check-banned-words.sh` gives it. This is the scoped alternative to a file-
+ * or directory-wide `allowlist.json` entry: a heading or sentence that must
+ * name a real architecture term (`### Claude Code adapter`) gets a one-line,
+ * self-documenting exemption instead of silencing every other line in the file.
+ */
+const MDX_ALLOW_MARKER = 'vocab-allow';
 
 /**
  * Scan one already-read `.mdx` docs file for banned-term hits in prose, after
  * {@link stripNonProse} removes code and link/attribute targets. A line-based
  * regex scan rather than {@link scanSource}'s parser walk, because MDX is not
  * TypeScript — see the module doc (DOR-2508) for why that is the right tool
- * here and what it can't tell apart from real prose.
+ * here and what it can't tell apart from real prose. A line carrying
+ * {@link MDX_ALLOW_MARKER} is skipped entirely, checked against the raw line
+ * rather than the stripped one since the marker is prose-shaped MDX comment
+ * text, not code.
  *
  * @param filePath - Repo-relative path, used only to label violations.
  * @param text - The raw `.mdx` file contents.
@@ -585,6 +675,7 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
   const violations: Violation[] = [];
 
   stripped.forEach((line, index) => {
+    if (rawLines[index]!.includes(MDX_ALLOW_MARKER)) return;
     for (const m of matchers) {
       m.re.lastIndex = 0;
       let match: RegExpExecArray | null;

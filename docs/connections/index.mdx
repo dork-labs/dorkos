@@ -54,7 +54,7 @@ Read where the service will keep your login access. Add a label such as “work�
 
 ### Choose who can use it
 
-Once you're signed in, the same window asks **Who can use it?** Choose **Only agents I pick** and tick the agents you want, or **Every agent**, which includes agents you add later. Then pick **Read** or **Read and write**, and save. Before you save, the card tells you if an agent you unticked will lose access, or if every agent could send, change or delete things as you. This works the same for apps connected through your DorkOS account.
+Once you're signed in, the same window asks **Who can use it?** Choose **Only agents I pick** and tick the agents you want, or **Every agent**, which includes agents you add later. Then pick **Read**, or **Read and write** where the app offers it (Gmail and Google Calendar today), and save. Before you save, the card tells you if an agent you unticked will lose access, or if every agent could send, change or delete things as you. This works the same for apps connected through your DorkOS account.
 
 You can skip this and come back later: click the app's row in **Yours**, and the same question is at the top of its side panel. For exact actions, open **More** and choose **Exact actions per agent**. To stop sharing with every agent, open **More** and choose **Stop sharing with every agent**. OAuth scopes decide which service actions are available; your choice decides which of those actions an agent may run. Notification access is a separate choice. New or changed actions stay off until you review them, even for **Every agent**.
 
@@ -68,7 +68,7 @@ You can connect several accounts for one service: each account is its own row. T
 
 An agent can ask for a service and explain why it needs access. The request does not reveal your private account list and does not grant anything.
 
-Most of the time you answer right where the agent asked: a card appears in that chat or room, walking you through signing in (if needed) and then "Let this agent use Gmail?" with the reason it gave. The card is always about that one agent; if it also needs to know when something new happens (like a new email), the card sends you to the full review on Connections instead, so you can choose exactly what it hears about. You can also open **Connections** directly, where every pending request waits in a **Needs you** strip at the top.
+Most of the time you answer right where the agent asked: a card appears in that chat or room, walking you through signing in (if needed) and then "Let DorkBot use Gmail?" — named for the agent that asked — with the reason it gave. The card is always about that one agent; if it also needs to know when something new happens (like a new email), the card sends you to the full review on Connections instead, so you can choose exactly what it hears about. You can also open **Connections** directly, where every pending request waits in a **Needs you** strip at the top.
 
 If the request is still attached to a live turn, the agent receives the result there, right on the card. After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
 
@@ -124,7 +124,7 @@ A local DorkOS installation without login has one local owner. Keep it on a trus
 
 Program commands still name an agent and can use only that agent's approved connections. Omitting `--agent` never widens access. Through the supported agent and program paths, a request can ask for access but cannot approve itself.
 
-One choice does not have that protection: sharing an app with **Every agent**. DorkOS cannot tell that write apart from one the app itself made, so with login off, something with a shell on this machine could turn on Every agent for itself. Turning login on closes this, because only your signed-in session can make that choice. Until then, "Every agent" is a choice for a machine you trust.
+One kind of write does not have that protection: changing who can use an app — sharing it, narrowing it, disconnecting it. With login off, DorkOS cannot tell that write apart from one the app itself made, so anything with a shell on this machine can make it, the same as the app could. **Every agent** is just the widest version of that change, not a special case. Turning login on closes the gap for all of them, because only your signed-in session can make those writes from then on. Until then, changing an app's access is a choice for a machine you trust.
 
 These controls are boundaries inside DorkOS. They do not isolate other software running as your operating-system user. That software can reach the same local files and credentials that you can. The [threat model](/docs/self-hosting/threat-model#connections-and-account-access) explains token lifetime, runtime settings, and this same-user limit.
 

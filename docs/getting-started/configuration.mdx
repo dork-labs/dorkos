@@ -9,7 +9,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Configuration
 
-DorkOS works out of the box. Most people never open this page again after their first session: no ports to pick, no files to edit, nothing to tune. This page exists for the day you need to change one specific thing, a port conflict, a tunnel so you can check on an agent from your phone, a different AI provider.
+DorkOS works out of the box. Most people never open this page again after their first session: no ports to pick, no files to edit, nothing to tune. This page exists for the day you need to change one specific thing, a port conflict, a tunnel so you can check on an agent from your phone, a different AI service.
 
 The one setting worth knowing on day one is `ANTHROPIC_API_KEY`, and the [Installation guide](/docs/getting-started/installation) already walks you through setting it. Everything below is reference: skip to the section you need and ignore the rest.
 
@@ -108,7 +108,7 @@ Relay is the messaging layer that lets agents reach you on Telegram, notify each
   type={{
     DORKOS_RELAY_ENABLED: {
       description:
-        'Enable the Relay messaging layer for inter-agent communication. Adapter configuration lives in `~/.dork/config.json` under the `relay` key.',
+        "Enable the Relay messaging layer for inter-agent communication. Relay's own configuration lives in `~/.dork/config.json` under the `relay` key.",
       type: 'boolean',
       default: 'true',
     },
@@ -192,6 +192,7 @@ file lives beside the agent, on this machine, and you can open it in any editor.
 <TypeTable
   type={{
     'memory.provider': {
+      // vocab-allow: the real config field name
       description:
         'Where your agents keep what they remember. "builtin" is the notes file on this machine, which is the only one DorkOS ships today. If you point this at something that is not installed, or at something that stops answering, DorkOS goes back to the notes file and says so once in the log — your agents keep working either way, though while that is happening they read the notes file, so anything kept only in the backend that stopped answering is out of view until you fix it and restart. Changing this takes effect the next time DorkOS starts. Only you can change this.',
       type: 'string',
@@ -502,6 +503,7 @@ On a phone, open DorkOS using your tunnel address (see [Tunnel Setup](/docs/self
 <TypeTable
   type={{
     'connectors.rawMcpServers': {
+      // vocab-allow: the real config field name
       description:
         'Remote MCP servers to offer as connectable services. Each entry names the service (`slug`, `displayName`), where it lives (`url`), and how to talk to it (`transport`: `http` or `sse`). DorkOS reads this list when it starts, so add or remove entries and then restart. Only you can change this.',
       type: 'array of { slug, displayName, url, transport }',
@@ -661,14 +663,15 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
       default: '0',
     },
     'runtimes.opencode.provider': {
+      // vocab-allow: the real config field name
       description:
-        'Selected provider id keying into the `providers` registry (e.g. `openrouter`, `openai`). `null` uses OpenCode host auth.',
+        'Selected AI-service id keying into the `providers` registry (e.g. `openrouter`, `openai`). `null` uses OpenCode host auth.',
       type: 'string | null',
       default: 'null',
     },
     'runtimes.opencode.baseURL': {
       description:
-        'Optional OpenAI-compatible base URL for a Direct provider, injected into the sidecar as `OPENAI_BASE_URL`.',
+        'Optional OpenAI-compatible base URL for Direct mode, injected into the sidecar as `OPENAI_BASE_URL`.',
       type: 'string | null',
       default: 'null',
     },
