@@ -39,6 +39,7 @@ import { ConnectorSubscriptionService } from '../subscription-service.js';
 import { ConnectorEventGrantService } from '../grant-service.js';
 import { ConnectorEventInboxStore } from '../../event-inbox-store.js';
 import { ConnectorEventSessionSourceAdapter } from '../session-source-adapter.js';
+import { readChatSession } from '../subscription-delivery.js';
 import { CanonicalConnectorEventSessionTarget } from '../session-target.js';
 
 const BASE = '2026-09-07T12:00:00.000Z';
@@ -232,6 +233,35 @@ async function fixture() {
     sourceGeneration: String(lease.subscriptionVersion),
     leaseOwner: lease.leaseOwner,
   };
+  /** Receive, lease and reference one more event on the same notification. */
+  const nextEvent = (providerEventId: string, at: string) => {
+    const eventScope = { ...scope, providerEventId };
+    const next = inbox.enqueue({
+      ...eventScope,
+      providerInstanceId: eventScope.providerInstanceId as never,
+      subscriptionVersion: 1,
+      receivedAt: at,
+      normalizedPayload: protector.protect(
+        { version: 1, title: 'Second mail', text: 'second private body' },
+        eventScope
+      ),
+      payloadProtection: 'encrypted',
+      payloadSchemaVersion: 1,
+    });
+    now = at;
+    const claimed = inbox.claimNext(
+      `lease-${providerEventId}`,
+      at,
+      new Date(Date.parse(at) + 60_000).toISOString()
+    )!;
+    expect(claimed.id).toBe(next.id);
+    return {
+      kind: 'connector_event' as const,
+      inboxId: next.id,
+      sourceGeneration: String(claimed.subscriptionVersion),
+      leaseOwner: claimed.leaseOwner,
+    };
+  };
   return {
     db,
     path,
@@ -239,6 +269,7 @@ async function fixture() {
     managed,
     inbox,
     ref,
+    nextEvent,
     subscriptionId,
     runtime,
     compose,
@@ -275,6 +306,46 @@ describe('event source through real durable private acceptance', () => {
       normalizedPayload: '',
     });
     expect(f.db.select().from(sessionMessageQueue).all()).toHaveLength(0);
+  });
+
+  it('posts every event from one notification into the same chat, each naming the notification', async () => {
+    const f = await fixture();
+    const bind = vi.spyOn(f.target, 'bind');
+    await f.adapter.prepareTarget(f.ref);
+    const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    const firstPrepared = await f.acceptance.prepare(first.receipt.id);
+    expect(f.acceptance.claim(first.receipt.id, firstPrepared).content).toMatch(
+      /^New message: Mail arrived\n\nprivate message body$/
+    );
+    f.acceptance.markTurnStarted(first.receipt.id, 1);
+
+    const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
+    await f.adapter.prepareTarget(second);
+    const accepted = f.adapter.acceptPrepared(f.acceptance, second);
+
+    expect(accepted.created).toBe(true);
+    expect(accepted.receipt.sessionId).toBe(first.receipt.sessionId);
+    expect(bind).toHaveBeenCalledTimes(1);
+    expect(readChatSession(f.db, f.subscriptionId)).toBe(first.receipt.sessionId);
+  });
+
+  it('opens a new chat only when the kept one can no longer carry the agent', async () => {
+    const f = await fixture();
+    await f.adapter.prepareTarget(f.ref);
+    const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    f.acceptance.claim(first.receipt.id, await f.acceptance.prepare(first.receipt.id));
+    f.acceptance.markTurnStarted(first.receipt.id, 1);
+    // The chat was deleted: its runtime binding is gone, so it cannot take the event.
+    f.db.$client
+      .prepare('DELETE FROM session_metadata WHERE session_id = ?')
+      .run(first.receipt.sessionId);
+
+    const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
+    await f.adapter.prepareTarget(second);
+    const accepted = f.adapter.acceptPrepared(f.acceptance, second);
+
+    expect(accepted.receipt.sessionId).not.toBe(first.receipt.sessionId);
+    expect(readChatSession(f.db, f.subscriptionId)).toBe(accepted.receipt.sessionId);
   });
 
   it('refuses revoked authority between prepare and the final dispatch transaction', async () => {

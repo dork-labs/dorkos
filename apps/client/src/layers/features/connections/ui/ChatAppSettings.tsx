@@ -1,4 +1,3 @@
-import { Route } from 'lucide-react';
 import {
   useAdapterCatalog,
   useRelayEnabledState,
@@ -7,7 +6,6 @@ import {
 } from '@/layers/entities/relay';
 import {
   BoundedNumberInput,
-  FeatureDisabledState,
   FieldCard,
   FieldCardContent,
   QueryErrorState,
@@ -15,6 +13,7 @@ import {
   Skeleton,
   SwitchSettingRow,
 } from '@/layers/shared/ui';
+import { ChatAppsOff } from './ChatAppsOff';
 
 /** What the numbers are before anyone has changed them. */
 const DEFAULT_MOST_AT_ONCE = 3;
@@ -41,8 +40,8 @@ const MS_PER_SECOND = 1000;
  * The three settings live on the built-in delivery that turns an incoming
  * message into a working agent, so this reads that one entry from the chat app
  * catalog and writes it back. Every state the page used to show is here too:
- * still checking, the check failed, chat apps switched off on this server, and
- * chat apps that failed to start.
+ * still checking, the check failed, and chat apps not running, which
+ * {@link ChatAppsOff} turns into the one step that gets them running.
  */
 export function ChatAppSettings() {
   const relay = useRelayEnabledState();
@@ -60,26 +59,7 @@ export function ChatAppSettings() {
       />
     );
   }
-  if (relay.initError) {
-    return (
-      <QueryErrorState
-        title="Chat apps didn’t start"
-        description="Restart DorkOS, then try again."
-        onRetry={relay.retry}
-        isRetrying={relay.isRetrying}
-      />
-    );
-  }
-  if (!relay.enabled) {
-    return (
-      <FeatureDisabledState
-        icon={Route}
-        name="Chat apps"
-        description="Turn on chat apps so people can reach your agents from Telegram, Slack and other chat apps."
-        command="DORKOS_RELAY_ENABLED=true dorkos"
-      />
-    );
-  }
+  if (!relay.enabled) return <ChatAppsOff relay={relay} variant="block" />;
   return <DeliverySettings />;
 }
 

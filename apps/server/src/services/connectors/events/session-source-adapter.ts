@@ -11,6 +11,7 @@ import {
 import { stableStringify } from '@dorkos/shared/capabilities';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import { readConnectorEventSessionOrigin } from './session-target.js';
+import { keepChatSession, readChatSession } from './subscription-delivery.js';
 import type { ConnectorEventProtectionPort } from './ingress-service.js';
 import type { ManagedEventConsentAuthority } from './grant-port.js';
 import type { ActiveEventSubscription, ConnectorSubscriptionStore } from './subscription-store.js';
@@ -149,7 +150,7 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
   /** Reveal protected content in memory from the exact receipt source, never from a queue row. */
   async prepare(receipt: SessionMessageAcceptanceReceipt): Promise<PreparedPrivateSessionMessage> {
     const row = this.row(receipt.sourceId);
-    this.receiptScope(row, receipt, this.now());
+    const scope = this.receiptScope(row, receipt, this.now());
     const protector = await this.protection.resolve(row.providerInstanceId);
     if (!protector || row.payloadProtection !== 'encrypted')
       this.refuse('event_content_unavailable');
@@ -158,7 +159,9 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
       sourceKind: this.kind,
       sourceId: row.id,
       sourceGeneration: receipt.sourceGeneration,
-      content: `Service notification: ${content.title}\n\n${content.text}`,
+      // Every event lands in the same chat, so each one says which notification
+      // it came from rather than a generic label.
+      content: `${scope.definition.displayName}: ${content.title}\n\n${content.text}`,
     };
     this.prepared.set(prepared, {
       receiptId: receipt.id,
@@ -257,16 +260,24 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
       this.target.current(this.subscriptions.owner(scope), prior.sessionId, prior.origin)
     )
       return ref;
-    const origin = await this.target.resolve(this.subscriptions.owner(scope), scope.agentId);
+    const owner = this.subscriptions.owner(scope);
+    const origin = await this.target.resolve(owner, scope.agentId);
     if (!origin || origin.agentId !== scope.agentId) this.refuse('event_target_unavailable');
-    const sessionId = randomUUID();
-    await this.target.bind(sessionId, origin);
+    // One chat per notification: every event joins the chat the last one went
+    // to. A new chat is opened only for the first event, or when that chat can
+    // no longer carry this agent (its runtime or folder moved, or the chat is
+    // gone), because a session's runtime binding never changes.
+    const kept = readChatSession(this.subscriptions.db, scope.subscriptionId);
+    const reuse = kept !== undefined && this.target.current(owner, kept, origin);
+    const sessionId = reuse ? kept : randomUUID();
+    if (!reuse) await this.target.bind(sessionId, origin);
     const current = this.claimScope(this.row(ref.inboxId), ref, this.now());
     if (
       stableStringify(current) !== stableStringify(scope) ||
-      !this.target.current(this.subscriptions.owner(scope), sessionId, origin)
+      !this.target.current(owner, sessionId, origin)
     )
       this.refuse('event_target_changed');
+    if (!reuse) keepChatSession(this.subscriptions.db, scope.subscriptionId, sessionId);
     this.targets.set(this.key(ref), {
       ref,
       sessionId,

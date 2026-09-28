@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
 } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
-import { getDesktopAdmin, unwrapDesktopAdminResult } from '@/layers/shared/lib';
+import { restartDorkOS } from '@/layers/shared/lib';
 import { toast } from 'sonner';
 
 interface RestartDialogProps {
@@ -27,16 +27,9 @@ export function RestartDialog({ open, onOpenChange, onRestartComplete }: Restart
   async function handleRestart() {
     setIsSubmitting(true);
     try {
-      // In the desktop app the server cannot restart itself — the shell's
-      // supervisor owns its process, and the HTTP route says so with a 409. Ask
-      // the shell instead; it stops and respawns its child and puts this window
-      // on the new port (DOR-542).
-      const desktop = getDesktopAdmin();
-      if (desktop) {
-        unwrapDesktopAdminResult(await desktop.restartServer());
-      } else {
-        await transport.restartServer();
-      }
+      // In the desktop app the shell's supervisor restarts the server, and
+      // puts this window on the new port (DOR-542); restartDorkOS picks.
+      await restartDorkOS(transport);
       onOpenChange(false);
       onRestartComplete();
     } catch (err) {

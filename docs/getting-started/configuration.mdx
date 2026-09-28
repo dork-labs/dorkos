@@ -102,13 +102,13 @@ DorkOS supports ngrok tunnels (a service that gives your local machine a public 
 
 ### Relay Configuration
 
-Relay is the messaging layer that lets agents reach you on Telegram, notify each other, and connect to external platforms. See the [Relay Messaging guide](/docs/guides/relay-messaging) for setup details.
+Relay is the messaging layer that lets agents reach you on Telegram, notify each other, and connect to external platforms. It is on by default. You can turn it on or off without a terminal: switch **Agent messaging** in Settings › Tools, or choose **Turn on chat apps** on the Connections page, then restart DorkOS when it asks. The environment variable below wins over that switch whenever it is set. See the [Relay Messaging guide](/docs/guides/relay-messaging) for setup details.
 
 <TypeTable
   type={{
     DORKOS_RELAY_ENABLED: {
       description:
-        'Enable the Relay messaging layer for inter-agent communication. Adapter configuration lives in `~/.dork/config.json` under the `relay` key.',
+        'Turns Relay (agent messaging and chat apps like Telegram and Slack) on or off. While it is set it overrules the **Agent messaging** switch in Settings › Tools and `relay.enabled` in `~/.dork/config.json`; leave it unset to use the switch. Adapter configuration lives in the same file under the `relay` key.',
       type: 'boolean',
       default: 'true',
     },
