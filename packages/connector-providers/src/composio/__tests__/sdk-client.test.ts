@@ -389,6 +389,7 @@ describe('ComposioSdkClient', () => {
     ['OUTLOOK_SET_AUTO_FORWARDING', ['updateHint'], 'destructive'],
     ['GOOGLEDRIVE_CREATE_ACL_ENTRY', ['createHint'], 'destructive'],
     ['SLACK_CHANNELS_WATCH', ['createHint', 'openWorldHint'], 'destructive'],
+    ['OUTLOOK_SET_AUTO_REPLY', ['updateHint'], 'destructive'],
     // Removes, cancels, revokes, or changes irreversibly: never in a level.
     ['GMAIL_DELETE_MESSAGE', ['destructiveHint'], 'destructive'],
     [
@@ -529,6 +530,7 @@ describe('ComposioSdkClient', () => {
       'GMAIL_UPDATE_POP_SETTINGS',
       'GMAIL_IMPORT_MESSAGE',
       'GMAIL_INSERT_MESSAGE',
+      'GMAIL_UPDATE_VACATION_SETTINGS',
     ];
     for (const slug of accountReach)
       expect([slug, classOf.get(slug)]).toEqual([slug, 'destructive']);
@@ -565,7 +567,6 @@ describe('ComposioSdkClient', () => {
       'GMAIL_UPDATE_DRAFT',
       'GMAIL_UPDATE_LABEL',
       'GMAIL_UPDATE_LANGUAGE_SETTINGS',
-      'GMAIL_UPDATE_VACATION_SETTINGS',
       'GOOGLECALENDAR_CALENDARS_UPDATE',
       'GOOGLECALENDAR_CALENDAR_LIST_INSERT',
       'GOOGLECALENDAR_CALENDAR_LIST_PATCH',

@@ -190,7 +190,8 @@ function classifyComposioTags(tags: readonly string[]): ConnectorOperationClassi
 /**
  * Composio `write` actions DorkOS keeps out of "Read and write": ones that
  * share access, redirect or forward mail, change the sending identity, change
- * how the account delivers mail, or start a subscription. They can hand data
+ * how the account delivers mail (including an automatic reply), or start a
+ * subscription. They can hand data
  * or access to someone else, so they are allowed one action at a time, like a
  * delete. Exact slugs from Composio's Gmail and Google Calendar lists.
  */
@@ -210,6 +211,7 @@ const ACCOUNT_REACH_ACTIONS = new Set([
   'GMAIL_UPDATE_POP_SETTINGS',
   'GMAIL_IMPORT_MESSAGE',
   'GMAIL_INSERT_MESSAGE',
+  'GMAIL_UPDATE_VACATION_SETTINGS',
 ]);
 
 /**
@@ -217,7 +219,8 @@ const ACCOUNT_REACH_ACTIONS = new Set([
  * too. A match only ever moves `write` to `destructive`, never the other way,
  * so a pattern that matches too much costs convenience, not safety.
  */
-const ACCOUNT_REACH_PATTERN = /_ACL_|FORWARD|SEND_AS|_IMAP_|_POP_|FILTER|_WATCH$/;
+const ACCOUNT_REACH_PATTERN =
+  /_ACL_|FORWARD|SEND_AS|_IMAP_|_POP_|FILTER|VACATION|AUTO_REPLY|_WATCH$/;
 
 /**
  * Classify one Composio action: its safety hints ({@link classifyComposioTags}),
