@@ -384,7 +384,7 @@ function LinkedState({
 function UnlinkConfirm({ unlink }: { unlink: () => Promise<void> }) {
   const connections = useConnectorConnections();
   const apps = connections.data ? dorkosAccountApps(connections.data.connections) : [];
-  const { stopping, idle } = splitByImpact(apps, true);
+  const { stopping, idle } = splitByImpact(apps);
   return (
     <AlertDialogContent>
       <AlertDialogHeader>

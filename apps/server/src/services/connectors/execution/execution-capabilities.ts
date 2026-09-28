@@ -203,8 +203,10 @@ const listGrantedConnections = defineCapability({
   title: 'List granted connections',
   description:
     'List only the currently executable connections granted to this authenticated runtime turn. ' +
-    'Accounts granted to you that cannot be used right now are listed under unavailable, each ' +
-    'with a note on why and what the owner does about it.',
+    'Accounts granted to you that cannot be used right now (paused, signed out, waiting on a ' +
+    'review, turned off for this chat, or reached through a way that is down or cannot run ' +
+    'actions) are listed under unavailable, each with a reason and a note on what the person ' +
+    'must do. Do not request access to an account listed there.',
   tier: 'observe',
   area: null,
   areaNote: 'connected accounts have their own grant model',

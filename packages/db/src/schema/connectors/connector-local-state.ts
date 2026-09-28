@@ -22,6 +22,13 @@ export const connectorAuthenticationFlows = sqliteTable(
     label: text('label'),
     /** Stable local connection being reauthenticated, when this is reconnect. */
     reconnectConnectionId: text('reconnect_connection_id').references(() => connections.id),
+    /**
+     * True when the owner had paused the reconnected account before this
+     * sign-in started, so completing it keeps the pause the owner chose.
+     */
+    reconnectWasPaused: integer('reconnect_was_paused', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     /** Private acknowledged cleanup generations captured at owner flow creation. */
     cleanupSnapshotJson: text('cleanup_snapshot_json'),
     /** Owner-only provider consent URL; cleared on every terminal transition. */

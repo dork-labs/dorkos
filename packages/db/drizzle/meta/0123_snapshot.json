@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1c11dc9c-e786-4294-a7d0-fa5987c401e7",
+  "id": "fe254bae-8708-48bb-801e-8113f22a54a9",
   "prevId": "39c3647f-6b2e-4a97-8d31-870bcd3ba52b",
   "tables": {
     "a2a_tasks": {
@@ -4558,14 +4558,6 @@
           ],
           "isUnique": true
         },
-        "connector_event_inbox_subscription_received_idx": {
-          "name": "connector_event_inbox_subscription_received_idx",
-          "columns": [
-            "subscription_id",
-            "received_at"
-          ],
-          "isUnique": false
-        },
         "connector_event_inbox_claim_idx": {
           "name": "connector_event_inbox_claim_idx",
           "columns": [
@@ -4868,20 +4860,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "removed_at": {
-          "name": "removed_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         },
         "created_by": {
           "name": "created_by",
@@ -6262,6 +6240,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "reconnect_was_paused": {
+          "name": "reconnect_was_paused",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "cleanup_snapshot_json": {
           "name": "cleanup_snapshot_json",

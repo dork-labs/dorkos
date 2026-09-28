@@ -176,6 +176,7 @@ describe('ConnectionAccessDialog', () => {
     });
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
+        readiness: { state: 'ready', reason: 'usable' },
         connectionId: PREVIEW.connection.connectionId,
         reconciliationStatus: 'ready',
         authoritySync: { status: 'ready' },
@@ -222,6 +223,7 @@ describe('ConnectionAccessDialog', () => {
     });
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
+        readiness: { state: 'ready', reason: 'usable' },
         connectionId: PREVIEW.connection.connectionId,
         reconciliationStatus: 'ready',
         authoritySync: { status: 'ready' },

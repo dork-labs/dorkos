@@ -60,7 +60,7 @@ When a session's working directory is a managed workspace, the **Git Status** it
 ⎇ DOR-84 · core · ● 3 changes
 ```
 
-That reads as: you're in the `DOR-84` workspace of the `core` project, with 3 uncommitted changes. (Yes, `DOR-84` is a real ticket. We used it while building this feature and never got around to swapping in a placeholder.) Hovering the chip reveals the branch, provider, allocated ports, and pinned state. If the session is in an ordinary folder instead of a managed workspace, the item just shows the normal branch chip, nothing changes.
+That reads as: you're in the `DOR-84` workspace of the `core` project, with 3 uncommitted changes. (Yes, `DOR-84` is a real ticket. We used it while building this feature and never got around to swapping in a placeholder.) Hovering the chip reveals the branch, checkout kind, allocated ports, and pinned state. If the session is in an ordinary folder instead of a managed workspace, the item just shows the normal branch chip, nothing changes.
 
 <Callout type="info">
   The status line stays quiet about git while the working tree is clean and you're on the default
@@ -172,16 +172,16 @@ Removing a workspace deletes its checkout, so it's deliberately conservative:
   delete a checkout, so a mis-click can never take one out from under a running agent.
 </Callout>
 
-### Providers
+### Checkout kinds
 
 A workspace's `provider` determines how its checkout is created:
 
-| Provider     | How it's created                                                  | When to use it                                                        |
-| ------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------- |
-| **worktree** | A `git worktree` off the existing repo (shares the object store). | Default. Fast, space-efficient, ideal for branches of the same repo.  |
-| **clone**    | A full `git clone` into the workspace path.                       | When you need a fully independent copy rather than a linked worktree. |
+| Checkout kind | How it's created                                                  | When to use it                                                        |
+| ------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **worktree**  | A `git worktree` off the existing repo (shares the object store). | Default. Fast, space-efficient, ideal for branches of the same repo.  |
+| **clone**     | A full `git clone` into the workspace path.                       | When you need a fully independent copy rather than a linked worktree. |
 
-The default provider is configurable (`workspace.defaultProvider`); callers can override it per-request with `workspaceProvider`.
+The default checkout kind is configurable (`workspace.defaultProvider`); callers can override it per-request with `workspaceProvider`.
 
 ### Configuration Reference
 
@@ -212,7 +212,7 @@ Workspaces are configured under `workspace` in `~/.dork/config.json`:
     },
     defaultProvider: {
       type: "'worktree' | 'clone'",
-      description: 'Provider used when a caller does not specify one.',
+      description: 'Checkout kind used when a caller does not specify one.',
       default: "'worktree'",
     },
     retentionCap: {

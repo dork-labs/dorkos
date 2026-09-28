@@ -8,16 +8,18 @@
  *
  * The rule (connections-one-list design §6):
  * - Exactly one way works: use it without asking.
- * - More than one works: prefer the person's own key, because adding a key is a
- *   deliberate choice; otherwise the DorkOS account.
+ * - More than one works: prefer a way agents can act through, so a new app
+ *   never goes through a route that can only sign in. Among those, prefer the
+ *   person's own key, because adding a key is a deliberate choice; otherwise
+ *   the DorkOS account.
  * - None works: the one-time step shows, with the reason when something is set
  *   up but not answering (a linked account that cannot connect apps, or a key
  *   that failed its last check).
  *
  * No config field backs this: the answer follows from what is set up.
  *
- * Also here: what an agent reads when no way reaches an app or an account's
- * way is down, and the Activity record for accounts closed because the DorkOS
+ * Also here: what an agent reads when no way reaches an app, why an account's
+ * way is down (read by `connection-readiness.ts`), and the Activity record for accounts closed because the DorkOS
  * account was linked again with a new link.
  *
  * @module services/connectors/app-connection-way
@@ -26,7 +28,6 @@ import type {
   ConnectorAppConnections,
   ConnectorAppSetupReason,
   ConnectorAppWay,
-  ConnectorWayProblem,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ClosedConnection } from './connection-store.js';
 import {
@@ -68,7 +69,12 @@ export function chooseNewAppsWay(
   ways: readonly ConnectorAppWay[]
 ): ConnectorAppConnections['newApps'] {
   const ready = ways.filter((way) => way.status === 'ready');
+  // A way that can only sign in (an account key, a self-hosted server) is used
+  // for new apps only when nothing better works.
+  const acting = ready.filter((way) => way.canRunActions !== false);
   const way =
+    acting.find((candidate) => candidate.kind === 'own_key') ??
+    acting.find((candidate) => candidate.kind === 'dorkos_account') ??
     ready.find((candidate) => candidate.kind === 'own_key') ??
     ready.find((candidate) => candidate.kind === 'dorkos_account');
   if (way) return { status: 'ready', way };
@@ -152,6 +158,19 @@ export function agentAppSetupNote(problem: AppReachProblem, app: string): string
 }
 
 /**
+ * Why a connected account cannot be used although it is still connected: the
+ * way it was connected through is not working.
+ *
+ * - `dorkos_account_unlinked` — a DorkOS account that isn't linked anymore.
+ *   Linking again does not currently restore connections made through the old
+ *   link, so the person connects the app again.
+ * - `dorkos_account_unavailable` — a DorkOS account that can't reach apps now.
+ * - `own_key_unavailable` — the person's own key, not answering or removed.
+ */
+export type ConnectorWayProblem =
+  'dorkos_account_unlinked' | 'dorkos_account_unavailable' | 'own_key_unavailable';
+
+/**
  * Whether the way one connected account goes through is working, and when it
  * is not, which fix brings the account back.
  *
@@ -167,34 +186,6 @@ export function wayProblemFor(input: {
   if (input.registered) return undefined;
   if (!input.managed) return 'own_key_unavailable';
   return input.managedLinked ? 'dorkos_account_unavailable' : 'dorkos_account_unlinked';
-}
-
-/**
- * What an agent reads beside an account it was given but cannot use because
- * the way it was connected through is not working, and what the person does.
- *
- * @param problem - Which way is not working.
- */
-export function agentWayProblemNote(problem: ConnectorWayProblem): string {
-  switch (problem) {
-    case 'dorkos_account_unlinked':
-      return (
-        "It was connected through the person's DorkOS account, which isn't linked anymore. " +
-        'Linking again does not bring it back: the person links the account again (Settings › ' +
-        'Access in the DorkOS app) or uses their own key, and then connects this app again.'
-      );
-    case 'dorkos_account_unavailable':
-      return (
-        "It was connected through the person's DorkOS account, which cannot reach apps right " +
-        'now. Try again later.'
-      );
-    case 'own_key_unavailable':
-      return (
-        "It was connected through the person's own key, which isn't set up or didn't answer " +
-        'when DorkOS last checked it. The person fixes the key in Settings › Connections in the ' +
-        'DorkOS app, or connects this app again another way.'
-      );
-  }
 }
 
 /** Event type for an account closed because a new link does not reach it. */

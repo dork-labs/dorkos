@@ -12,11 +12,11 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 
 A runtime is the coding agent that powers a session. DorkOS ships with three: Claude Code, Codex, and OpenCode. Chat with any of them in one place. Every session lands in the same list, streams through the same chat, and uses the same tool approvals and status bar.
 
-| Runtime         | Ecosystem                        | Why you'd pick it                                                             |
-| --------------- | -------------------------------- | ----------------------------------------------------------------------------- |
-| **Claude Code** | Anthropic                        | The default. Deepest DorkOS integration: plugins, agent tools, cost tracking. |
-| **Codex**       | OpenAI                           | Runs GPT models via the `codex` CLI and your ChatGPT login.                   |
-| **OpenCode**    | Open source (any model provider) | Bring any provider, including local models via Ollama.                        |
+| Runtime         | Ecosystem                       | Why you'd pick it                                                         |
+| --------------- | ------------------------------- | ------------------------------------------------------------------------- |
+| **Claude Code** | Anthropic                       | The default. Deepest DorkOS support: plugins, agent tools, cost tracking. |
+| **Codex**       | OpenAI                          | Runs GPT models via the `codex` CLI and your ChatGPT login.               |
+| **OpenCode**    | Open source (any model service) | Bring any service, including local models via Ollama.                     |
 
 Only using Claude Code? Nothing changes for you, and you can stop reading here. The rest of this page is for anyone who wants to add Codex or OpenCode to the mix.
 
@@ -33,7 +33,7 @@ Each runtime needs two things: its CLI installed somewhere your computer can fin
 npm i -g opencode-ai && opencode auth login
 ```
 
-`opencode auth login` connects a model provider: Anthropic, OpenAI, or any other provider OpenCode supports. Local providers like Ollama need no login at all. See [Local Models](#local-models-with-opencode) below. Full setup docs: [opencode.ai/docs/server](https://opencode.ai/docs/server).
+`opencode auth login` connects a model service: Anthropic, OpenAI, or any other service OpenCode supports. Local services like Ollama need no login at all. See [Local Models](#local-models-with-opencode) below. Full setup docs: [opencode.ai/docs/server](https://opencode.ai/docs/server).
 
 </Tab>
 <Tab value="Codex">
@@ -248,15 +248,15 @@ Every session wears its runtime openly:
 
 ## Local Models with OpenCode
 
-OpenCode reaches Ollama and any OpenAI-compatible endpoint through its own provider configuration. Set it up once with `opencode auth login`, or in OpenCode's config file, and the models appear in DorkOS automatically.
+OpenCode reaches Ollama and any OpenAI-compatible endpoint through its own service configuration. Set it up once with `opencode auth login`, or in OpenCode's config file, and the models appear in DorkOS automatically.
 
 <Steps>
   <Step>
     Install [Ollama](https://ollama.com) and pull a model (e.g. `ollama pull qwen2.5-coder:32b`).
   </Step>
   <Step>
-    Configure the provider in OpenCode. See [opencode.ai/docs](https://opencode.ai/docs) for
-    provider setup.
+    Configure the service in OpenCode. See [opencode.ai/docs](https://opencode.ai/docs) for setup
+    details.
   </Step>
   <Step>In DorkOS, pick the **OpenCode** runtime for your session.</Step>
   <Step>

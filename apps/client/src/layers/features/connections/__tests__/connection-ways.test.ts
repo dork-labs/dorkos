@@ -3,6 +3,7 @@ import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resour
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import { appCount, splitByImpact } from '@/layers/entities/connectors';
 import { groupAppsByWay, keyWayName } from '../lib/connection-ways';
+import { createMockConnectionReadiness } from '@dorkos/test-utils';
 
 function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
   return {
@@ -22,7 +23,7 @@ function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnect
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: createMockConnectionReadiness(),
     ...over,
   };
 }
@@ -62,7 +63,7 @@ describe('groupAppsByWay', () => {
     );
     expect(grouped.dorkosAccount.map((app) => app.connectionId)).toEqual(['a']);
     expect(grouped.byKeyInstance.cpi_composio).toEqual([
-      { connectionId: 'b', name: 'Notion (team)', agentCount: 1, everyAgent: false, active: true },
+      { connectionId: 'b', name: 'Notion (team)', agentCount: 1, everyAgent: false, usable: true },
     ]);
     expect(grouped.byKeyInstance.cpi_nango?.map((app) => app.name)).toEqual(['Linear (work)']);
   });
@@ -70,15 +71,26 @@ describe('groupAppsByWay', () => {
   it('leaves out disconnected apps and connections on no listed key', () => {
     const grouped = groupAppsByWay(
       [
-        connection({ lifecycle: 'disconnected' }),
+        connection({
+          lifecycle: 'disconnected',
+          readiness: createMockConnectionReadiness({ state: 'gone', reason: 'disconnected' }),
+        }),
         connection({ connectionId: 'raw' as never, providerInstanceId: 'cpi_raw' as never }),
-        connection({ connectionId: 'paused' as never, lifecycle: 'paused' }),
+        connection({
+          connectionId: 'paused' as never,
+          lifecycle: 'paused',
+          readiness: createMockConnectionReadiness({
+            state: 'paused',
+            reason: 'paused',
+            fix: { action: 'resume', fixableBy: 'person' },
+          }),
+        }),
       ],
       [composio, nango]
     );
     expect(grouped.dorkosAccount).toEqual([]);
     expect(grouped.byKeyInstance.cpi_composio?.map((app) => app.connectionId)).toEqual(['paused']);
-    expect(grouped.byKeyInstance.cpi_composio?.[0]?.active).toBe(false);
+    expect(grouped.byKeyInstance.cpi_composio?.[0]?.usable).toBe(false);
     expect(grouped.byKeyInstance.cpi_raw).toBeUndefined();
   });
 
@@ -97,20 +109,27 @@ describe('groupAppsByWay', () => {
 
 describe('splitByImpact', () => {
   const apps = [
-    { connectionId: 'a', name: 'Gmail (work)', agentCount: 1, everyAgent: false, active: true },
-    { connectionId: 'b', name: 'Notion (team)', agentCount: 0, everyAgent: false, active: false },
+    { connectionId: 'a', name: 'Gmail (work)', agentCount: 1, everyAgent: false, usable: true },
+    { connectionId: 'b', name: 'Notion (team)', agentCount: 0, everyAgent: false, usable: false },
   ];
 
-  it('counts only working apps as stopping when the way works', () => {
-    const { stopping, idle } = splitByImpact(apps, true);
+  it('counts only apps agents can use now as stopping, from their readiness', () => {
+    const { stopping, idle } = splitByImpact(apps);
     expect(stopping.map((app) => app.connectionId)).toEqual(['a']);
     expect(idle.map((app) => app.connectionId)).toEqual(['b']);
   });
 
-  it('counts nothing as stopping when the way already does not work', () => {
-    const { stopping, idle } = splitByImpact(apps, false);
-    expect(stopping).toEqual([]);
-    expect(idle).toHaveLength(2);
+  it('reads usable from the server’s readiness, not the lifecycle', () => {
+    const cutOff = connection({
+      readiness: createMockConnectionReadiness({
+        state: 'needs_you',
+        reason: 'own_key_unavailable',
+        fix: { action: 'fix_key', fixableBy: 'person' },
+      }),
+    });
+    expect(groupAppsByWay([cutOff], [composio]).byKeyInstance.cpi_composio?.[0]?.usable).toBe(
+      false
+    );
   });
 });
 

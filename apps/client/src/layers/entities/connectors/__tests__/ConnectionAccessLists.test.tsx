@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 
 import {
@@ -16,7 +17,7 @@ afterEach(() => {
 });
 
 describe('AgentConnectionAccessList', () => {
-  it('reads canonical grants and keeps pending authority unavailable', async () => {
+  it('reads canonical grants and shows the server’s readiness for each', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getAgentConnectorConnections).mockResolvedValue({
       agentId: 'agent-1',
@@ -31,6 +32,11 @@ describe('AgentConnectionAccessList', () => {
           operationRevisionIds: ['operation-1'],
           everyAgent: false,
           authoritySync: { status: 'pending' },
+          readiness: createMockConnectionReadiness({
+            state: 'finishing',
+            reason: 'access_updating',
+            fix: { action: 'wait', fixableBy: 'dorkos' },
+          }),
         },
       ],
     });
@@ -46,7 +52,10 @@ describe('AgentConnectionAccessList', () => {
 
     expect(await screen.findByText('Gmail (work)')).toBeInTheDocument();
     expect(screen.getByText('1 approved action')).toBeInTheDocument();
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Unavailable')).toHaveAttribute(
+      'title',
+      CONNECTION_READINESS_COPY.access_updating.owner
+    );
     expect(transport.getAgentConnectorConnections).toHaveBeenCalledWith('agent-1');
   });
 
@@ -65,6 +74,7 @@ describe('AgentConnectionAccessList', () => {
           operationRevisionIds: ['operation-1'],
           everyAgent: false,
           authoritySync: { status: 'ready' },
+          readiness: createMockConnectionReadiness(),
         },
       ],
     });
@@ -86,7 +96,7 @@ describe('AgentConnectionAccessList', () => {
   });
 });
 
-it('explains disabled session access while hosted authority is still updating', async () => {
+it('says a chat can’t use an account yet while its access is still updating', async () => {
   const transport = createMockTransport();
   vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
     sessionId: 'session-1',
@@ -96,9 +106,13 @@ it('explains disabled session access while hosted authority is still updating', 
         connectionId: 'connection-1' as never,
         toolkit: 'gmail',
         label: 'work',
-        access: 'disabled',
+        source: 'agent',
         operationRevisionIds: ['operation-1'],
-        dominatingReason: 'authority_sync_required',
+        readiness: createMockConnectionReadiness({
+          state: 'finishing',
+          reason: 'access_updating',
+          fix: { action: 'wait', fixableBy: 'dorkos' },
+        }),
       },
     ],
   });
@@ -110,7 +124,7 @@ it('explains disabled session access while hosted authority is still updating', 
       </TransportProvider>
     </QueryClientProvider>
   );
-  expect(await screen.findByText('Disabled in this session')).toBeInTheDocument();
-  expect(screen.getByText('Account access has not finished updating.')).toBeInTheDocument();
+  expect(await screen.findByText('Not available')).toBeInTheDocument();
+  expect(screen.getByText(CONNECTION_READINESS_COPY.access_updating.owner)).toBeInTheDocument();
   expect(screen.queryByText(/actions available/)).not.toBeInTheDocument();
 });

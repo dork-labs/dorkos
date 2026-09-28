@@ -12,7 +12,7 @@ import {
 } from '@/layers/entities/connectors';
 import { Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { accountAttention, usableAccounts } from '../../lib/account-readiness';
+import { offerableAccounts } from '../../lib/readiness';
 import { AccessCardFrame } from '../access/AccessCardFrame';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
 import { AccountAttentionStep } from './AccountAttentionStep';
@@ -198,9 +198,9 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   const all = connections.data?.connections ?? [];
   const connected = all.filter(
     (connection) =>
-      connection.toolkit === request.serviceSlug && connection.lifecycle !== 'disconnected'
+      connection.toolkit === request.serviceSlug && connection.readiness.state !== 'gone'
   );
-  const usable = usableAccounts(all, request.serviceSlug);
+  const usable = offerableAccounts(all, request.serviceSlug);
   const showAccess = accessShown || Boolean(signedInId) || usable.length > 0;
 
   if (!showAccess && (connected.length === 0 || connectingAgain)) {
@@ -226,14 +226,11 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
       <div className={cn('space-y-2', frameClass)}>
         <AccountAttentionStep
           account={account}
-          attention={accountAttention(account) ?? { kind: 'needs_review' }}
           serviceName={serviceName}
           logo={serviceLogo(service)}
           agentName={agentName}
           onDecline={decline}
           deciding={resolve.isPending}
-          onRecheck={() => void connections.refetch()}
-          rechecking={connections.isFetching}
           onConnectAgain={() => setConnectingAgain(true)}
         />
         {declineFailure}

@@ -1,14 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
-import type {
-  ConnectorConnectionDetail,
-  ConnectorLifecycleResult,
-} from '@dorkos/shared/connector-resource-schemas';
+import type { ConnectorConnectionDetail } from '@dorkos/shared/connector-resource-schemas';
 import {
   useConnectorCatalog,
   useConnectorConnection,
   useConnectorUsage,
   useDisconnectConnectorConnection,
+  useRecheckConnectorWays,
   usePauseConnectorConnection,
   useReconnectConnectorConnection,
   useRemoveConnectorConnection,
@@ -16,7 +14,7 @@ import {
 } from '@/layers/entities/connectors';
 import { useMeshAgentPaths, useRegisteredAgents } from '@/layers/entities/mesh';
 import { formatRelativeTime, getAgentDisplayName, toSession } from '@/layers/shared/lib';
-import { useSafeNavigate } from '@/layers/shared/model';
+import { useSafeNavigate, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -111,63 +109,26 @@ function AccountPanelBody({
 
   const signInAgain = () =>
     reconnect.mutate({ connectionId }, { onSuccess: (result) => onSignInStarted(result.flowId) });
-  const disconnected = connection.lifecycle === 'disconnected';
-  const signedOut =
-    connection.authenticationStatus === 'expired' ||
-    connection.authenticationStatus === 'revoked' ||
-    connection.authenticationStatus === 'pending';
-  const usable =
-    connection.lifecycle === 'connected' &&
-    connection.authenticationStatus === 'active' &&
-    connection.authoritySync.status !== 'failed';
+  const gone = connection.readiness.state === 'gone';
 
   return (
     <div className="space-y-7">
-      {disconnected ? (
-        <DisconnectedFix
-          detail={detail}
-          appName={appName}
-          onSignInAgain={signInAgain}
-          reconnecting={reconnect.isPending}
-          onRemove={() =>
-            remove.mutate({ connectionId, input: undefined }, { onSuccess: () => onClose() })
-          }
-          removing={remove.isPending}
-          onFinishDisconnecting={() => disconnect.mutate({ connectionId, input: undefined })}
-          finishing={disconnect.isPending}
-          lastTry={disconnect.data}
-        />
-      ) : connection.lifecycle === 'paused' ? (
-        <PanelFix
-          message={`Paused. Agents can’t use ${appName} until you resume it.`}
-          action="Resume"
-          pending={resume.isPending}
-          onAction={() => resume.mutate({ connectionId, input: undefined })}
-        />
-      ) : signedOut ? (
-        <PanelFix
-          message={
-            connection.authenticationStatus === 'pending'
-              ? `Sign-in didn’t finish. Agents can’t use ${appName} yet.`
-              : `Signed out. Agents can’t use ${appName}.`
-          }
-          action="Sign in again"
-          pending={reconnect.isPending}
-          onAction={signInAgain}
-        />
-      ) : connection.authoritySync.status === 'failed' ? (
-        <PanelFix
-          message={`Couldn’t update who can use ${appName}. ${connection.authoritySync.reason}`}
-          action="Check exact actions"
-          onAction={() => onEditExactActions(connectionId)}
-        />
-      ) : connection.reconciliationStatus !== 'ready' ? (
-        <PanelFix
-          message={`Some of ${appName}’s actions changed. Check who can use them.`}
-          action="Review"
-          onAction={() => onEditExactActions(connectionId)}
-        />
-      ) : null}
+      <ReadinessFix
+        detail={detail}
+        appName={appName}
+        onSignInAgain={signInAgain}
+        reconnecting={reconnect.isPending}
+        onResume={() => resume.mutate({ connectionId, input: undefined })}
+        resuming={resume.isPending}
+        onReview={() => onEditExactActions(connectionId)}
+        onConnectNew={() => onAddAnother(connection.toolkit)}
+        onRemove={() =>
+          remove.mutate({ connectionId, input: undefined }, { onSuccess: () => onClose() })
+        }
+        removing={remove.isPending}
+        onRetryDisconnect={() => disconnect.mutate({ connectionId, input: undefined })}
+        retryingDisconnect={disconnect.isPending}
+      />
 
       {mutationError && (
         <p role="alert" className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm">
@@ -175,7 +136,7 @@ function AccountPanelBody({
         </p>
       )}
 
-      {!disconnected && (
+      {!gone && (
         <ConnectionAccessCard
           mode="page"
           variant="embedded"
@@ -191,7 +152,7 @@ function AccountPanelBody({
 
       <Recently detail={detail} />
 
-      {usable && <TryIt detail={detail} />}
+      {connection.readiness.state === 'ready' && <TryIt detail={detail} />}
 
       <AccountPanelMore
         detail={detail}
@@ -206,125 +167,123 @@ function AccountPanelBody({
   );
 }
 
-/** The fix for a disconnected account: connect it again, or take it off the list. */
-function DisconnectedFix({
+/**
+ * The account's one fix on top of the panel, rendered from the server's
+ * readiness: its owner line, and the one button its fix maps to. A ready
+ * account shows nothing. A fix that is DorkOS's own (`wait`), or no fix at
+ * all, is the line alone: there is never a button that can't work.
+ */
+function ReadinessFix({
   detail,
   appName,
   onSignInAgain,
   reconnecting,
+  onResume,
+  resuming,
+  onReview,
+  onConnectNew,
   onRemove,
   removing,
-  onFinishDisconnecting,
-  finishing,
-  lastTry,
+  onRetryDisconnect,
+  retryingDisconnect,
 }: {
   detail: ConnectorConnectionDetail;
   appName: string;
   onSignInAgain: () => void;
   reconnecting: boolean;
+  onResume: () => void;
+  resuming: boolean;
+  onReview: () => void;
+  onConnectNew: () => void;
   onRemove: () => void;
   removing: boolean;
-  onFinishDisconnecting: () => void;
-  finishing: boolean;
-  /** What the last "Finish disconnecting" in this panel came back with, if it ran. */
-  lastTry: ConnectorLifecycleResult | undefined;
+  onRetryDisconnect: () => void;
+  retryingDisconnect: boolean;
 }) {
+  const settings = useSettingsDeepLink();
+  const recheck = useRecheckConnectorWays();
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const stored = detail.connection.authoritySync;
-  const storedKey = JSON.stringify(stored);
-  // The stored state the last "Finish disconnecting" was pressed against.
-  const [triedAgainst, setTriedAgainst] = useState<string | null>(null);
-  const finish = () => {
-    setTriedAgainst(storedKey);
-    onFinishDisconnecting();
-  };
-  const cleanup = detail.connection.externalCleanup;
-  const cleanedUp = cleanup === 'complete' || cleanup === 'not_required';
-  if (!cleanedUp) {
-    // A refusal from the last try outranks the stored state while it is the
-    // newer of the two: some refusals (an unlinked instance) leave nothing
-    // stored at all. Once the stored state moves on (relinked elsewhere, and
-    // DorkOS is retrying again), the stored state is the truth.
-    const sync =
-      lastTry?.authoritySync.status === 'failed' && triedAgainst === storedKey
-        ? lastTry.authoritySync
-        : stored;
-    if (cleanup === 'failed' || sync.status === 'failed') {
-      // Nothing is retrying on its own here, so never say it is.
-      return (
-        <PanelFix
-          message={`Disconnecting didn’t finish. Agents already can’t use ${appName}.`}
-          detail={sync.status === 'failed' ? sync.reason : undefined}
-          action="Try disconnecting again"
-          pending={finishing}
-          onAction={finish}
-        />
-      );
-    }
-    // Pending: DorkOS keeps trying on its own. Say why it is waiting and when
-    // it tries next; the button asks for a try right now. The stored state can
-    // lag the last try (another pass held the request), so either counts.
-    const waiting = [detail.connection.authoritySync, lastTry?.authoritySync].filter(
-      (state) => state?.status === 'pending'
-    );
-    const explained = waiting.find((state) => state?.status === 'pending' && state.reason);
-    const stillFinishing = waiting.length > 0 && lastTry !== undefined;
-    const why =
-      explained?.status === 'pending' && explained.reason && explained.retryAt
-        ? `${explained.reason} ${retryLine(explained.retryAt)}`
-        : stillFinishing
-          ? 'DorkOS keeps trying on its own.'
-          : undefined;
-    return (
-      <PanelFix
-        message={
-          stillFinishing
-            ? `Still finishing disconnecting ${appName}. Agents already can’t use it.`
-            : `Disconnecting didn’t finish. Agents already can’t use ${appName}.`
+  const { readiness } = detail.connection;
+  if (readiness.state === 'ready') return null;
+  const fix = readiness.fix;
+  const retryAt = fix?.retryAt ? retryLine(fix.retryAt) : undefined;
+  const message = readiness.copy.owner;
+  const gone = readiness.state === 'gone';
+
+  const button = ((): { action: string; onAction: () => void; pending?: boolean } | null => {
+    switch (fix?.action) {
+      case 'sign_in_again':
+        return { action: 'Sign in again', onAction: onSignInAgain, pending: reconnecting };
+      case 'connect_again':
+        return { action: 'Connect again', onAction: onSignInAgain, pending: reconnecting };
+      case 'connect_new':
+        return { action: `Connect ${appName} again`, onAction: onConnectNew };
+      case 'resume':
+        return { action: 'Resume', onAction: onResume, pending: resuming };
+      case 'review_access':
+        return { action: 'Check who can use it', onAction: onReview };
+      case 'fix_key':
+        return { action: 'Fix the key', onAction: () => settings.open('connections', 'ways') };
+      case 'retry':
+        if (gone) {
+          return {
+            action: fix.fixableBy === 'dorkos' ? 'Try again now' : 'Try disconnecting again',
+            onAction: onRetryDisconnect,
+            pending: retryingDisconnect,
+          };
         }
-        detail={why}
-        action={stillFinishing ? 'Try again now' : 'Finish disconnecting'}
-        pending={finishing}
-        onAction={finish}
-      />
-    );
-  }
+        return {
+          action: 'Check again',
+          onAction: () => recheck.mutate(),
+          pending: recheck.isPending,
+        };
+      case 'wait':
+      case undefined:
+        return null;
+    }
+  })();
+
+  // Only an account with nothing owed at the service can be removed.
+  const removable = readiness.reason === 'disconnected';
   return (
     <>
       <PanelFix
-        message={`Disconnected. Agents can’t use ${appName}.`}
-        action="Connect again"
-        pending={reconnecting}
-        onAction={onSignInAgain}
+        message={message}
+        detail={retryAt}
+        {...(button ?? {})}
         secondary={
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setConfirmRemove(true)}
-            disabled={removing}
-            data-testid="remove-account"
-          >
-            Remove from your apps
-          </Button>
+          removable && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmRemove(true)}
+              disabled={removing}
+              data-testid="remove-account"
+            >
+              Remove from your apps
+            </Button>
+          )
         }
       />
-      <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {appName} from your apps?</AlertDialogTitle>
-            <AlertDialogDescription>
-              It leaves this list. What agents did with it stays on record. If you connect it again,
-              you choose who can use it again.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction disabled={removing} onClick={onRemove}>
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {removable && (
+        <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove {appName} from your apps?</AlertDialogTitle>
+              <AlertDialogDescription>
+                It leaves this list. What agents did with it stays on record. If you connect it
+                again, you choose who can use it again.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep it</AlertDialogCancel>
+              <AlertDialogAction disabled={removing} onClick={onRemove}>
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }

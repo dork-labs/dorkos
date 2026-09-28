@@ -138,6 +138,7 @@ import {
   ConnectorProviderBootstrapper,
   TEST_CONNECTOR_PROVIDER_TYPE,
 } from './services/connectors/bootstrap.js';
+import { SignInRefresher } from './services/connectors/resources/sign-in-refresh.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
 import { ConnectorAuthorityCleanupService } from './services/connectors/authority-cleanup-service.js';
@@ -770,6 +771,9 @@ let managedUsageMirrorRecoveryInterval: ReturnType<typeof setInterval> | undefin
 // Stops the approval expiry sweep (DOR-1932). A function rather than a timer
 // handle because the sweep owns its own interval and hands back a closer.
 let stopApprovalExpirySweep: (() => void) | undefined;
+// Stops the periodic connector sign-in refresh and every waiting automatic
+// check of a way that stopped answering (DOR-2501).
+let stopConnectorFreshness: (() => void) | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -3134,6 +3138,18 @@ async function start() {
   });
   getCloudLinkManager().setManagedProviderSync(() => connectorBootstrapper.reloadManagedCloud());
   await connectorBootstrapper.registerBootProviders();
+  // Sign-ins can end at the service without DorkOS taking part: list each
+  // way's accounts every 15 minutes (and when the owner opens Connections) so
+  // an expired sign-in stops showing as working.
+  const connectorSignIns = new SignInRefresher({
+    registry: connectorRegistry,
+    ways: connectorBootstrapper,
+  });
+  connectorSignIns.start();
+  stopConnectorFreshness = () => {
+    connectorSignIns.stop();
+    connectorBootstrapper.stop();
+  };
   const connectorAuthenticationFlows = new ConnectorAuthenticationFlowService({
     db,
     registry: connectorRegistry,
@@ -3317,7 +3333,7 @@ async function start() {
     keptLogos: () => catalogLogos.keptServiceIds(),
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
     appConnections: () => connectorBootstrapper.appConnections(),
-    wayProblem: (providerInstanceId) => connectorBootstrapper.wayProblem(providerInstanceId),
+    wayHealth: (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),
@@ -3336,9 +3352,12 @@ async function start() {
       },
     },
   });
-  const connectorAuthorization = new ConnectorExecutionAuthorizationService(db, connectorRegistry, {
-    ownsAgent: connectorOwnsAgent,
-  });
+  const connectorAuthorization = new ConnectorExecutionAuthorizationService(
+    db,
+    connectorRegistry,
+    { ownsAgent: connectorOwnsAgent },
+    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
+  );
   const connectorProgramPrincipals = new ConnectorProgramPrincipalService(db);
   const connectorRuntimePrincipals = meshCore
     ? new ConnectorRuntimePrincipalService({
@@ -3472,7 +3491,7 @@ async function start() {
       revalidatePrincipal: async (principal) =>
         connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
     },
-    (providerInstanceId) => connectorBootstrapper.wayProblem(providerInstanceId)
+    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
   );
   const connectorBroker = new ConnectorExecutionBroker(
     connectorAuthorization,
@@ -3489,7 +3508,8 @@ async function start() {
       },
     },
     undefined,
-    managedExecutionContexts
+    managedExecutionContexts,
+    connectorRegistry
   );
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the
@@ -4030,6 +4050,7 @@ async function start() {
       authentication: connectorAuthenticationFlows,
       lifecycle: connectorLifecycle,
       actions: connectorAppActions,
+      signIns: connectorSignIns,
       resolveOwner: () => connectorOwner,
       loginEnabled: () => configManager.get('auth').enabled,
     })
@@ -5642,6 +5663,8 @@ async function shutdownServices() {
     stopApprovalExpirySweep();
     stopApprovalExpirySweep = undefined;
   }
+  stopConnectorFreshness?.();
+  stopConnectorFreshness = undefined;
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
   // Give back every port an open dev-server preview is holding.

@@ -35,6 +35,7 @@ import {
   SelectValue,
   Skeleton,
 } from '@/layers/shared/ui';
+import { offerableAccounts } from '../lib/readiness';
 import { AgentRequestEventScopes } from './AgentRequestEventScopes';
 
 function requestStateLabel(status: ConnectorAgentRequestItem['status']): string {
@@ -100,14 +101,9 @@ export function AgentRequestDialog({
 
   const matchingConnections = useMemo(
     () =>
-      (connections.data?.connections ?? []).filter(
-        (candidate) =>
-          candidate.toolkit === request.data?.serviceSlug &&
-          candidate.lifecycle === 'connected' &&
-          candidate.authenticationStatus === 'active' &&
-          candidate.reconciliationStatus === 'ready' &&
-          candidate.authoritySync.status === 'ready'
-      ),
+      request.data
+        ? offerableAccounts(connections.data?.connections ?? [], request.data.serviceSlug)
+        : [],
     [connections.data?.connections, request.data?.serviceSlug]
   );
   const catalogService = catalog.data?.pages

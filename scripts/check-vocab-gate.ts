@@ -46,10 +46,44 @@
  * requires it), not something this script enforces. `__tests__/` directories
  * and `*.test.*` files are excluded too, since their fixtures echo arbitrary
  * strings (a mocked HTTP error, a test's own scenario label) that are not
- * this repo's authored copy. `docs/` (Fumadocs MDX) is out of scope for the
- * same reason the DOR-855 payment left it out of the known-sites list: it is
- * prose, not a render path, and gets swept by hand alongside the UI strings
- * it describes.
+ * this repo's authored copy.
+ *
+ * DOCS PROSE, SCANNED DIFFERENTLY (DOR-2508). `docs/**\/*.mdx` used to be
+ * "prose, not a render path, swept by hand" — the connections-health audit
+ * found the sweep had drifted (stale UI steps, a claim the threat model no
+ * longer supported) with nothing to catch the next one. MDX is not
+ * TypeScript, so it gets its own scan, {@link scanMdx}: a line-based pass
+ * over {@link stripNonProse}'s output rather than a parser walk. Fenced code
+ * blocks, inline code spans, markdown link targets (`](...)`) and `href`/`src`
+ * JSX attribute values are blanked before matching, because a route like
+ * `/docs/integrations/mcp-server` in a link target is not prose a reader
+ * reads — only the link text is. Unlike {@link scanSource}, everything left
+ * standing in an `.mdx` file after that strip counts as copy by default:
+ * docs bodies are prose all the way down, the opposite assumption from
+ * component source, where most text is non-copy identifiers. Two carve-outs
+ * apply before the allowlist even runs: `docs/api/**` is generated from
+ * `openapi.json` route descriptions (the same `provider` path parameters and
+ * `connectors` path segments `check-banned-words.sh` already documented as
+ * unswept wire naming), and `docs/changelog.mdx` / `docs/changelog-archive.mdx`
+ * are compiled from `CHANGELOG.md`, which `AGENTS.md` forbids editing by hand
+ * — both record what shipped or what the wire says, not new prose to sweep.
+ * Everything else under `docs/` is scanned, but only against
+ * {@link MDX_SCANNED_WAVES} — wave 4 ("integration"/"connector"/"adapter"/
+ * "provider"), the exact vocabulary the audit swept docs for. Wave 1
+ * ("connection", for network health) is deliberately NOT enforced in docs:
+ * outside the Connections domain, "connection" is ordinary prose everywhere
+ * a protocol or network guide talks about a network connection (the SSE
+ * reference, tunnel setup, the reverse-proxy guide), and sweeping that is a
+ * separate, unscoped effort this ticket did not take on. The same
+ * `scripts/vocab-gate/allowlist.json` mechanism covers the wave-4 words that
+ * survive for a real domain reason (the `/flow` engine's own tracker-adapter
+ * pattern, OpenCode's model-provider picker, a marketplace package's
+ * `adapter` facet, the software-testing sense of "integration test") — see
+ * the allowlist file itself for the full audit trail. Unlike {@link scanSource},
+ * `scanMdx` has NO inline marker for a docs exemption — see
+ * {@link MDX_ALLOW_MARKER_BAN} for why one was tried and banned outright; the
+ * only way to exempt a docs line is a scoped `allowlist.json` entry, narrowed
+ * with {@link AllowlistEntry.contains} to the exact line it covers.
  *
  * A second unclosed gap, measured in DOR-1814: a string handed to an ordinary
  * function call is invisible, even when that call's return value lands in a
@@ -84,7 +118,11 @@
  * run by `scripts-test.yml`'s `harness` job, which is scoped to `scripts/**` and
  * friends and does not run in the merge queue — so a PR touching nothing but
  * `apps/client/src` copy never ran the gate at all. The canary test stays: it
- * pins the mechanism, the workflow step enforces the result.
+ * pins the mechanism, the workflow step enforces the result. The docs scan
+ * (DOR-2508) rides the same step and the same canary — {@link runVocabGate}
+ * runs both scans and returns one merged list, so a docs-only PR is checked by
+ * the one `typecheck` step exactly like a source-only one, with no new
+ * workflow step or job to keep required.
  *
  * DATA, NOT CODE, IS WHAT A NEW WAVE EXTENDS. `vocab-gate/banned-terms.json`
  * holds one wave per retired string (Wave 1: "connection"; Wave 2: "mission
@@ -98,7 +136,7 @@
  * every one of them is a scoped, reasoned entry rather than a term left
  * unbanned, because the word is correct only where the ADR's scoped-word
  * registry says it is. `vocab-gate/allowlist.json` holds
- * every legitimate domain use the parser still flags, each with a path
+ * every legitimate domain use either scan still flags, each with a path
  * substring, an optional term scope, and a written reason. A new wave adds a
  * wave object and whatever allowlist entries its own sweep turns up — this file
  * does not change. Wave 3 is the one exception to date: banning punctuation
@@ -144,6 +182,28 @@ export interface AllowlistEntry {
   path: string;
   /** Terms this entry covers. Absent means "every banned term". */
   terms?: string[];
+  /**
+   * Plain substring the violation's own snippet must ALSO contain, checked
+   * case-sensitively against {@link Violation.snippet}. Absent means every
+   * matching line at `path` is covered — the whole-file behavior every entry
+   * had before this field existed. Present, it narrows a `path` match down to
+   * the exact line(s) that legitimately need it: a real code identifier
+   * (`'connectors.rawMcpServers'`) or a real page title (`title="Building
+   * Relay Adapters"`), so a NEW, unrelated use of the same banned term
+   * anywhere else in that file is still caught (DOR-2508, second review
+   * round). Reserved for narrow, single-purpose entries — a directory or a
+   * whole-page developer guide with dozens of legitimate uses throughout
+   * (`docs/integrations/`, `docs/guides/flow/`) has no one line to name, and
+   * stays path-only on purpose; see each such entry's own reason. For
+   * `docs/**\/*.mdx`, a `contains`-scoped entry here is the ONLY way to exempt
+   * one line — {@link MDX_ALLOW_MARKER_BAN} bans the inline-comment
+   * alternative outright, because it leaks into the rendered page. `snippet`
+   * is truncated to 140 characters (see {@link scanSource} and
+   * {@link scanMdx}), so `contains` must match text within that window — a
+   * substring from later in a long line never matches, silently, since a
+   * missing match just means the violation stays reported rather than erring.
+   */
+  contains?: string;
   /** Why the usage is legitimate — required so the file stays an audit trail. */
   reason: string;
 }
@@ -176,6 +236,25 @@ const EXCLUDED_SEGMENTS = [
 ];
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
+
+/** Docs prose roots scanned for retired vocabulary (DOR-2508). See the module doc. */
+const DEFAULT_MDX_SCAN_ROOTS = ['docs'];
+
+/**
+ * Docs path segments excluded outright, the MDX-scan counterpart to
+ * {@link EXCLUDED_SEGMENTS}. `docs/api/` is generated from `openapi.json`
+ * route descriptions — wire naming, not authored prose (see the module doc).
+ */
+const MDX_EXCLUDED_SEGMENTS = ['/node_modules/', '/docs/api/'];
+
+/**
+ * Exact docs files excluded outright: both are compiled from `CHANGELOG.md`,
+ * which `AGENTS.md` forbids editing by hand, so they keep their historical
+ * wording exactly like the same two files already do for `check-banned-words.sh`.
+ */
+const MDX_EXCLUDED_FILES = new Set(['docs/changelog.mdx', 'docs/changelog-archive.mdx']);
+
+const MDX_EXTENSIONS = new Set(['.mdx']);
 
 /**
  * JSX attribute names whose value the render path treats as user copy. Kept in
@@ -277,20 +356,38 @@ export function loadAllowlist(
  * @param filePath - Repo-relative path the violation was found at.
  * @param term - The banned term that matched.
  * @param allowlist - Entries to check against.
+ * @param snippet - The violation's own snippet ({@link Violation.snippet}).
+ *   Required to satisfy an entry that carries {@link AllowlistEntry.contains}
+ *   — omit it only when every entry that could match `filePath` is path-only,
+ *   e.g. a hermetic test fixture with no `contains` entries in play.
  */
 export function isAllowlisted(
   filePath: string,
   term: string,
-  allowlist: AllowlistEntry[]
+  allowlist: AllowlistEntry[],
+  snippet?: string
 ): boolean {
   return allowlist.some(
     (entry) =>
-      filePath.includes(entry.path) && (entry.terms === undefined || entry.terms.includes(term))
+      filePath.includes(entry.path) &&
+      (entry.terms === undefined || entry.terms.includes(term)) &&
+      (entry.contains === undefined || (snippet !== undefined && snippet.includes(entry.contains)))
   );
 }
 
-/** Recursively collect source files under `roots`, applying {@link EXCLUDED_SEGMENTS}. */
-export function collectFiles(roots: string[], repoRoot: string): string[] {
+/**
+ * Recursively collect files under `roots` whose extension is in `extensions`,
+ * skipping any path containing a segment from `excludedSegments` or an exact
+ * repo-relative path in `excludedFiles`. Shared by {@link collectFiles} and
+ * {@link collectMdxFiles}, which differ only in which of those four sets they pass.
+ */
+function walkFiles(
+  roots: string[],
+  repoRoot: string,
+  excludedSegments: string[],
+  extensions: Set<string>,
+  excludedFiles: Set<string> = new Set()
+): string[] {
   const files: string[] = [];
 
   function walk(dir: string): void {
@@ -302,12 +399,13 @@ export function collectFiles(roots: string[], repoRoot: string): string[] {
     }
     for (const entry of entries) {
       const full = join(dir, entry);
-      const normalized = `/${toPosixRelative(repoRoot, full)}/`;
-      if (EXCLUDED_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
+      const relPath = toPosixRelative(repoRoot, full);
+      const normalized = `/${relPath}/`;
+      if (excludedSegments.some((seg) => normalized.includes(seg))) continue;
       const stat = statSync(full);
       if (stat.isDirectory()) {
         walk(full);
-      } else if (SOURCE_EXTENSIONS.has(full.slice(full.lastIndexOf('.')))) {
+      } else if (extensions.has(full.slice(full.lastIndexOf('.'))) && !excludedFiles.has(relPath)) {
         files.push(full);
       }
     }
@@ -315,6 +413,20 @@ export function collectFiles(roots: string[], repoRoot: string): string[] {
 
   for (const root of roots) walk(join(repoRoot, root));
   return files;
+}
+
+/** Recursively collect source files under `roots`, applying {@link EXCLUDED_SEGMENTS}. */
+export function collectFiles(roots: string[], repoRoot: string): string[] {
+  return walkFiles(roots, repoRoot, EXCLUDED_SEGMENTS, SOURCE_EXTENSIONS);
+}
+
+/**
+ * Recursively collect `.mdx` docs files under `roots`, applying
+ * {@link MDX_EXCLUDED_SEGMENTS} and {@link MDX_EXCLUDED_FILES} — the docs-prose
+ * counterpart to {@link collectFiles}. See the module doc (DOR-2508).
+ */
+export function collectMdxFiles(roots: string[], repoRoot: string): string[] {
+  return walkFiles(roots, repoRoot, MDX_EXCLUDED_SEGMENTS, MDX_EXTENSIONS, MDX_EXCLUDED_FILES);
 }
 
 /**
@@ -439,28 +551,294 @@ export function scanSource(filePath: string, text: string, terms: BannedTerm[]):
 }
 
 /**
- * Run the gate against a repo checkout.
+ * Blank the inline-code spans (`` `...` ``), markdown link targets (the
+ * `(...)` half of `[text](...)`), and `href=`/`src=` JSX attribute values on
+ * one line that is not (or no longer) inside a fenced block. Shared by both
+ * branches of {@link stripNonProse} that reach a real prose line: the whole
+ * line when no fence touches it, and the leftover slices on either side of a
+ * same-line fence pair (see {@link stripNonProse}'s Case A).
+ *
+ * @param segment - A line, or a slice of one, to blank code spans and link/attribute targets in.
+ */
+function stripInlineCodeAndTargets(segment: string): string {
+  return segment
+    .replace(/`[^`]*`/g, (m) => ' '.repeat(m.length))
+    .replace(/\]\(([^)]*)\)/g, (_m, url: string) => `](${' '.repeat(url.length)})`)
+    .replace(
+      /(href|src)=(["'])([^"']*)\2/g,
+      (_m, attr: string, quote: string, value: string) =>
+        `${attr}=${quote}${' '.repeat(value.length)}${quote}`
+    );
+}
+
+/**
+ * Blank out the parts of an `.mdx` file that are not prose a docs reader
+ * reads, line by line so every remaining line keeps its original number.
+ *
+ * FENCES. A fenced code block (` ``` `/`~~~`) is tracked by a small state
+ * machine, because Prettier's MDX formatter routinely collapses a short
+ * fenced block onto one line inside a JSX child (`<Tab value="…">```bash
+ * pnpm test ``` Runs all tests in watch mode.</Tab>`, `docs/contributing/
+ * testing.mdx`). Two rules, checked in this order on every line not already
+ * inside a fence:
+ *
+ *   1. **A fence that opens AND closes on the same line is inline code**, not
+ *      a state change — found by scanning the line for every run of 3+
+ *      backticks or 3+ tildes and pairing the first with the next run of the
+ *      SAME character whose length is at least the first's (CommonMark: a
+ *      fence only closes on its own character, at its own length or longer —
+ *      a 4-backtick opener is not closed by a 3-backtick line inside it, the
+ *      other shape this rule has to get right). Only the matched span is
+ *      blanked; whatever sits before or after it on that line — `<Tab
+ *      value="All tests">`, `Runs all tests in watch mode.` — is real prose
+ *      and is still scanned, via {@link stripInlineCodeAndTargets}.
+ *   2. Otherwise, a line whose first non-whitespace characters are a run of
+ *      3+ backticks or tildes opens a real multi-line fence: record its
+ *      character and length, and blank the rest of the line.
+ *
+ * Once inside a fence, every line is blanked outright, and the fence closes
+ * only on a line that, after leading whitespace, is NOTHING BUT a run of the
+ * SAME character at least as long as the opener — anchored to the start of
+ * the line and required to run to the end of it, per CommonMark. Never a
+ * shorter run of the same character (the nested-fence case above), never the
+ * other character, and never a run that merely ends a line of real content or
+ * sits in the middle of one (a shell script echoing `` ``` `` is content, not
+ * a closer). Verified against the real compiler, not assumed: compiling
+ * `docs/self-hosting/deployment.mdx`'s original closer-trails-content line
+ * through `@mdx-js/mdx` directly confirmed it did NOT close there either — a
+ * real, pre-existing site bug (the "Interactive Setup" tab never rendered; it
+ * was absorbed into the wrong code block), fixed directly in that file
+ * alongside this rule, which anchors the way it does — rather than the looser
+ * "anywhere on the line" check an earlier, unverified version of this file
+ * shipped — precisely so a shape like it is recognized as still
+ * open rather than silently accepted as closed anywhere else in `docs/`.
+ *
+ * EVERYTHING ELSE. Inline code spans (`` `...` ``), markdown link targets
+ * (the `(...)` half of `[text](...)`), and `href=`/`src=` JSX attribute
+ * values are blanked wherever they appear on a non-fenced line or slice — a
+ * route like `/docs/integrations/mcp-server` inside a link target is never
+ * prose a reader reads, only the link text beside it is. Import/export lines
+ * (MDX component imports) are blanked outright, the same reasoning as
+ * {@link isCopySink} ignoring an import specifier in source. Everything left
+ * standing after that counts as copy: unlike component source, a docs body
+ * is prose all the way down, so this strips only what is provably code or a
+ * link/attribute target rather than allow-listing what counts as copy.
+ *
+ * @param text - The raw `.mdx` file contents.
+ */
+export function stripNonProse(text: string): string {
+  const lines = text.split('\n');
+  let inFence = false;
+  let fenceChar = '';
+  let fenceLen = 0;
+
+  return lines
+    .map((line) => {
+      if (/^\s*(import|export)\s/.test(line)) return '';
+
+      if (inFence) {
+        // A closer must be ALONE on its line, per CommonMark: leading
+        // whitespace, then a run of the fence character at least as long as
+        // the opener, then nothing but trailing whitespace. Anchored to
+        // `^\s*`, not searched anywhere in the line — a mid-line ``` inside
+        // real code content (a shell script echoing markdown, say) is
+        // content, never a closer, and neither is a shorter same-character
+        // run (the nested-fence case) even when it does start the line.
+        // Verified against the real MDX compiler, not assumed: compiling
+        // `docs/self-hosting/deployment.mdx`'s ORIGINAL "```content" ending —
+        // a run of the fence character trailing real content, not alone on
+        // its line — confirmed the real compiler treats it as literal code
+        // text too, exactly what this anchored check now also does. That
+        // file had this exact shape and shipped broken because of it (fixed
+        // directly, same change that added this check).
+        if (new RegExp(`^\\s*${fenceChar}{${fenceLen},}\\s*$`).test(line)) inFence = false;
+        return '';
+      }
+
+      // Case 1: every run of 3+ backticks or tildes on this line, in order.
+      const markers: { index: number; char: string; length: number }[] = [];
+      const markerRe = /`{3,}|~{3,}/g;
+      let markerMatch: RegExpExecArray | null;
+      while ((markerMatch = markerRe.exec(line)) !== null) {
+        markers.push({
+          index: markerMatch.index,
+          char: markerMatch[0]!.charAt(0),
+          length: markerMatch[0]!.length,
+        });
+      }
+      if (markers.length >= 2) {
+        const opener = markers[0]!;
+        const closer = markers
+          .slice(1)
+          .find((cand) => cand.char === opener.char && cand.length >= opener.length);
+        if (closer) {
+          const closerEnd = closer.index + closer.length;
+          const before = stripInlineCodeAndTargets(line.slice(0, opener.index));
+          const after = stripInlineCodeAndTargets(line.slice(closerEnd));
+          return before + ' '.repeat(closerEnd - opener.index) + after;
+        }
+      }
+
+      // Case 2: this line opens a real multi-line fence.
+      const openMatch = /^\s*(`{3,}|~{3,})/.exec(line);
+      if (openMatch) {
+        const marker = openMatch[1]!;
+        inFence = true;
+        fenceChar = marker.charAt(0);
+        fenceLen = marker.length;
+        return '';
+      }
+
+      return stripInlineCodeAndTargets(line);
+    })
+    .join('\n');
+}
+
+/**
+ * An inline JSX-comment marker wrapping the text `vocab-allow: reason` — the convention
+ * `check-banned-words.sh` uses for its own, unrelated wave-2 ban — was tried
+ * in `.mdx` prose for wave 4 (DOR-2508) and reverted: Fumadocs' remark
+ * pipeline does not treat a JSX comment as invisible the way a browser does.
+ * `remarkHeading` copies a heading's inline children, comment included, into
+ * the sidebar table-of-contents title AND the anchor slug it generates from
+ * that title; `remarkStructure` does the same into the page's search index
+ * entry for the paragraph it sits in. A marker meant to be read only by this
+ * script and a future editor ends up as visible, malformed text on the live
+ * site instead — confirmed against Fumadocs' own plugins, not assumed, after
+ * the JSX-comment marker had already shipped and been caught doing exactly
+ * that in `docs/concepts/relay.mdx`, `docs/guides/relay-messaging.mdx`,
+ * `docs/guides/workspaces.mdx` and `docs/marketplace/index.mdx`. There is no
+ * position in a docs page a JSX comment is provably safe in: a heading, list
+ * item or paragraph can all be titles, anchors or search text depending on
+ * where Fumadocs' plugins choose to look, and that set is not part of this
+ * script's contract with them. `docs/**\/*.mdx` therefore has no marker
+ * mechanism at all — {@link MDX_ALLOW_MARKER_BAN} makes the string
+ * `vocab-allow` itself a hard violation inside `docs/`, so the convention
+ * cannot quietly return. The scoped exemption a docs violation needs is a
+ * `contains`-scoped `allowlist.json` entry instead (see
+ * {@link AllowlistEntry.contains}), which lives in a file the site never
+ * renders.
+ */
+const MDX_ALLOW_MARKER_BAN = 'vocab-allow';
+
+/**
+ * Scan one already-read `.mdx` docs file for banned-term hits in prose, after
+ * {@link stripNonProse} removes code and link/attribute targets. A line-based
+ * regex scan rather than {@link scanSource}'s parser walk, because MDX is not
+ * TypeScript — see the module doc (DOR-2508) for why that is the right tool
+ * here and what it can't tell apart from real prose. Independently of any
+ * banned term, a line containing the substring {@link MDX_ALLOW_MARKER_BAN}
+ * is ALWAYS reported — see that constant's doc for why an inline marker is
+ * never safe in a docs page, whatever it's exempting.
+ *
+ * @param filePath - Repo-relative path, used only to label violations.
+ * @param text - The raw `.mdx` file contents.
+ * @param terms - Banned terms to match, as loaded by {@link loadBannedTerms}.
+ */
+export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Violation[] {
+  const stripped = stripNonProse(text).split('\n');
+  const rawLines = text.split('\n');
+  const matchers = terms.map((t) => ({ ...t, re: new RegExp(termMatcher(t.term).source, 'gi') }));
+  const violations: Violation[] = [];
+
+  rawLines.forEach((rawLine, index) => {
+    const markerColumn = rawLine.indexOf(MDX_ALLOW_MARKER_BAN);
+    if (markerColumn === -1) return;
+    violations.push({
+      file: filePath,
+      line: index + 1,
+      column: markerColumn + 1,
+      term: MDX_ALLOW_MARKER_BAN,
+      wave: 'docs-marker-ban',
+      issue: 'DOR-2508',
+      snippet: rawLine.trim().slice(0, 140),
+    });
+  });
+
+  stripped.forEach((line, index) => {
+    for (const m of matchers) {
+      m.re.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = m.re.exec(line)) !== null) {
+        violations.push({
+          file: filePath,
+          line: index + 1,
+          column: match.index + 1,
+          term: m.term,
+          wave: m.wave,
+          issue: m.issue,
+          snippet: rawLines[index]!.trim().slice(0, 140),
+        });
+        if (match[0].length === 0) m.re.lastIndex += 1; // guard a zero-length match from looping forever
+      }
+    }
+  });
+
+  return violations;
+}
+
+/**
+ * The waves the docs scan enforces. Wave 4 ("integration"/"connector"/
+ * "adapter"/"provider") is exactly what DOR-2508's connections-health audit
+ * swept docs for and what the ADR retired as user-facing nouns — the wave
+ * this docs scan exists to guard. Waves 1 and 3 ("connection" for network
+ * health, and house typography) are source-only here on purpose: docs prose
+ * outside the Connections domain uses "connection" in its ordinary network
+ * sense constantly (the SSE protocol reference, tunnel and reverse-proxy
+ * guides), a sweep nobody has done and this ticket did not ask for — adding
+ * it would mean re-litigating dozens of lines with no domain reason to flag
+ * them, not extending the guard DOR-2508 was scoped to. Wave 2 (mission
+ * control/cockpit) already has a docs-prose guard, `check-banned-words.sh`,
+ * predating this one. A future ticket can widen `MDX_SCANNED_WAVES`
+ * deliberately, the same way a new wave object is added to
+ * `banned-terms.json` — this is data, not a hardcoded exception.
+ */
+const MDX_SCANNED_WAVES = new Set(['wave-4']);
+
+/**
+ * Run the gate against a repo checkout: TypeScript/TSX source through
+ * {@link scanSource} against every wave, and `.mdx` docs prose through
+ * {@link scanMdx} (DOR-2508) against {@link MDX_SCANNED_WAVES} only, merged
+ * into one violation list so one CI step covers both.
  *
  * @param repoRoot - Repo root to scan from. Defaults to the current working directory.
- * @param scanRoots - Workspace-relative roots to scan. Defaults to {@link DEFAULT_SCAN_ROOTS}.
+ * @param scanRoots - Workspace-relative source roots to scan. Defaults to {@link DEFAULT_SCAN_ROOTS}.
+ * @param docsRoots - Workspace-relative docs roots to scan. Defaults to {@link DEFAULT_MDX_SCAN_ROOTS}.
  */
 export function runVocabGate(
   repoRoot: string = process.cwd(),
-  scanRoots: string[] = DEFAULT_SCAN_ROOTS
+  scanRoots: string[] = DEFAULT_SCAN_ROOTS,
+  docsRoots: string[] = DEFAULT_MDX_SCAN_ROOTS
 ): Violation[] {
   const terms = loadBannedTerms();
+  const docsTerms = terms.filter((t) => MDX_SCANNED_WAVES.has(t.wave));
   const allowlist = loadAllowlist();
-  const files = collectFiles(scanRoots, repoRoot);
   const violations: Violation[] = [];
 
-  for (const file of files) {
+  for (const file of collectFiles(scanRoots, repoRoot)) {
     const relPath = toPosixRelative(repoRoot, file);
     const text = readFileSync(file, 'utf8');
     for (const v of scanSource(relPath, text, terms)) {
-      if (isAllowlisted(v.file, v.term, allowlist)) continue;
+      if (isAllowlisted(v.file, v.term, allowlist, v.snippet)) continue;
       violations.push(v);
     }
   }
+
+  for (const file of collectMdxFiles(docsRoots, repoRoot)) {
+    const relPath = toPosixRelative(repoRoot, file);
+    const text = readFileSync(file, 'utf8');
+    for (const v of scanMdx(relPath, text, docsTerms)) {
+      // The marker ban is deliberately not allowlistable — an `allowlist.json`
+      // entry that omitted `terms` would otherwise cover every term at its
+      // path, this one included, quietly reopening the exact leak the ban
+      // exists to close. See MDX_ALLOW_MARKER_BAN's doc.
+      if (v.wave !== 'docs-marker-ban' && isAllowlisted(v.file, v.term, allowlist, v.snippet)) {
+        continue;
+      }
+      violations.push(v);
+    }
+  }
+
   return violations;
 }
 
@@ -482,8 +860,18 @@ if (isMain) {
         'Connections-domain noun, GitHub\'s own "Mission Control", a code sample — add ' +
         'a scoped entry with a reason to scripts/vocab-gate/allowlist.json.'
     );
+    if (violations.some((v) => v.wave === 'docs-marker-ban')) {
+      console.error(
+        '\nA "vocab-allow" hit above is a docs/**/*.mdx marker, banned outright: it leaks ' +
+          "into the live page's heading titles, anchors and search text through Fumadocs' " +
+          'own remark plugins. Remove the inline comment and add a `contains`-scoped entry ' +
+          'to scripts/vocab-gate/allowlist.json instead — see AllowlistEntry.contains.'
+      );
+    }
     process.exit(1);
   }
 
-  console.log(`check-vocab-gate: clean — 0 hits across ${DEFAULT_SCAN_ROOTS.join(', ')}.`);
+  console.log(
+    `check-vocab-gate: clean — 0 hits across ${[...DEFAULT_SCAN_ROOTS, ...DEFAULT_MDX_SCAN_ROOTS].join(', ')}.`
+  );
 }

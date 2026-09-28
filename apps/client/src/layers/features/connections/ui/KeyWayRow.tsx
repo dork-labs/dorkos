@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
+import type { ConnectorAppWay } from '@dorkos/shared/connector-resource-schemas';
 import {
   appCount,
   ConnectionImpactList,
@@ -31,7 +32,8 @@ function keyKindLine(keyKind: ConnectorProviderStatus['keyKind']): string | null
 }
 
 /** The honest state of one of your own keys, in words. */
-function keyStatus(status: ConnectorProviderStatus): WayStatus {
+function keyStatus(status: ConnectorProviderStatus, canRunActions: boolean): WayStatus {
+  if (status.registered && !canRunActions) return { tone: 'warning', label: 'Can’t run actions' };
   if (status.registered) return { tone: 'success', label: 'Working' };
   // Saved but refused: the server's reason is shown under the row.
   if (status.configured) return { tone: 'error', label: 'Not working' };
@@ -67,6 +69,7 @@ export function KeyWayRow({
   status,
   apps,
   usedForNewApps = false,
+  way,
 }: {
   /** The key's setup status from `GET /api/connectors/providers`. */
   status: ConnectorProviderStatus;
@@ -74,14 +77,17 @@ export function KeyWayRow({
   apps: readonly ImpactApp[];
   /** True when new apps connect through this key (see {@link WayRow}). */
   usedForNewApps?: boolean;
+  /** How the server reads this key as a way to reach apps, when it is set up. */
+  way?: ConnectorAppWay;
 }) {
+  const canRunActions = way?.canRunActions !== false;
   const [changing, setChanging] = useState(false);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const remove = useDeleteConnectorCredential();
   const name = providerName(status.type);
   const kind = status.configured ? keyKindLine(status.keyKind) : null;
   const detail = [`${appCount(apps.length)} connected`, kind].filter(Boolean).join(' · ');
-  const { stopping, idle } = splitByImpact(apps, status.registered);
+  const { stopping, idle } = splitByImpact(apps);
 
   const startChange = () => {
     // Nothing to lose: go straight to the form.
@@ -94,7 +100,7 @@ export function KeyWayRow({
       testId={`connection-way-${status.type}`}
       name={keyWayName(status.type)}
       detail={detail}
-      status={keyStatus(status)}
+      status={keyStatus(status, canRunActions)}
       usedForNewApps={usedForNewApps}
       actions={
         <>
@@ -121,6 +127,13 @@ export function KeyWayRow({
           className="text-destructive border-destructive/30 bg-destructive/5 rounded-md border px-3 py-2 text-xs leading-relaxed"
         >
           {status.error}
+        </p>
+      )}
+      {status.registered && !canRunActions && (
+        <p className="text-muted-foreground text-xs">
+          {way?.keyCanFix
+            ? 'Agents can’t act through an account key. Change it to a project key from your Composio dashboard.'
+            : 'Agents can’t act in apps connected this way yet.'}
         </p>
       )}
       {!status.configured && apps.length > 0 && (

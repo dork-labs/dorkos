@@ -111,7 +111,7 @@ Most settings are preferences, and an agent can change one on your word. A few a
 - Whether **Require login** is on
 - Your public web address, and the ngrok account it runs through
 - Whether the tool endpoint answers, and the key that guards it
-- Your provider credentials, and the addresses they get sent to
+- Your AI service credentials, and the addresses they get sent to
 - The DorkOS account this instance is linked to
 - The folder DorkOS is allowed to touch, and the programs it is allowed to start
 - Which extensions may run their code inside DorkOS, and which outside tool servers your agents may attach to
@@ -167,10 +167,10 @@ One more thing works the same way, though it is not a setting: **where your pack
 <Callout type="warn">
   **Not every one of these settings is guarded everywhere yet, and the unguarded paths are wide
   open.** Three of them have their own separate buttons that write the same setting by another path:
-  connecting a model provider, starting your public web address, and linking this instance to a
-  DorkOS account. Those paths have **no agent check at all**. Not "they accept an API key" — they do
-  not ask who is calling in the first place, so an agent that says plainly who it is can use them,
-  with **Require login** on or off. Reaching them still takes a terminal or the ability to make web
+  connecting an AI service, starting your public web address, and linking this instance to a DorkOS
+  account. Those paths have **no agent check at all**. Not "they accept an API key" — they do not
+  ask who is calling in the first place, so an agent that says plainly who it is can use them, with
+  **Require login** on or off. Reaching them still takes a terminal or the ability to make web
   requests to DorkOS, which is the same access the gap further down describes. So read this as: the
   settings screen is guarded, those three buttons are not yet. We are closing them separately.
 </Callout>

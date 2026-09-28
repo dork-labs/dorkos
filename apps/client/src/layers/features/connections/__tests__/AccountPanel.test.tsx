@@ -8,23 +8,49 @@ import type {
   ConnectorConnectionDetail,
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
-import type { ConnectorUsageItem } from '@dorkos/shared/connector-schemas';
+import type {
+  ConnectionFixAction,
+  ConnectionReadinessReason,
+  ConnectionReadinessState,
+  ConnectorUsageItem,
+} from '@dorkos/shared/connector-schemas';
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { AccountPanel } from '../ui/panel/AccountPanel';
 
 const navigate = vi.hoisted(() => vi.fn());
+const openSettings = vi.hoisted(() => vi.fn());
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useSafeNavigate: () => navigate,
+  useSettingsDeepLink: () => ({ open: openSettings }),
 }));
 
 Element.prototype.hasPointerCapture = () => false;
 Element.prototype.setPointerCapture = () => {};
 Element.prototype.releasePointerCapture = () => {};
 
-beforeEach(() => navigate.mockReset());
+beforeEach(() => {
+  navigate.mockReset();
+  openSettings.mockReset();
+});
+
+/** The server's readiness for an account that is not ready. */
+function notReady(
+  state: ConnectionReadinessState,
+  reason: ConnectionReadinessReason,
+  owner: string,
+  fix?: { action: ConnectionFixAction; fixableBy: 'person' | 'dorkos'; retryAt?: string }
+) {
+  return createMockConnectionReadiness({
+    state,
+    reason,
+    ...(fix && { fix }),
+    copy: { owner, agent: 'Agent line.' },
+  });
+}
 afterEach(cleanup);
 
 function summary(over: Partial<ConnectorConnectionSummary> = {}): ConnectorConnectionSummary {
@@ -45,7 +71,7 @@ function summary(over: Partial<ConnectorConnectionSummary> = {}): ConnectorConne
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 4, attemptCount: 4 },
-    warnings: [],
+    readiness: createMockConnectionReadiness(),
     ...over,
   };
 }
@@ -187,167 +213,248 @@ describe('AccountPanel', () => {
 
   it('puts the one fix on top of a signed-out account and starts its sign-in', async () => {
     const user = userEvent.setup();
-    const transport = transportFor(summary({ authenticationStatus: 'expired' }));
+    const transport = transportFor(
+      summary({
+        authenticationStatus: 'expired',
+        readiness: notReady('needs_you', 'signed_out', 'Signed out. Agents can’t use it.', {
+          action: 'sign_in_again',
+          fixableBy: 'person',
+        }),
+      })
+    );
     vi.mocked(transport.reconnectConnectorConnection).mockResolvedValue({
       flowId: 'flow-9',
     } as never);
     const handlers = renderPanel(transport);
 
     const fix = await screen.findByTestId('app-panel-fix');
-    expect(fix).toHaveTextContent('Signed out. Agents can’t use Gmail.');
+    expect(fix).toHaveTextContent('Signed out. Agents can’t use it.');
     await user.click(within(fix).getByRole('button', { name: 'Sign in again' }));
     await waitFor(() => expect(handlers.onSignInStarted).toHaveBeenCalledWith('flow-9'));
     // A signed-out account offers nothing to try.
     expect(screen.queryByRole('region', { name: 'Try it' })).not.toBeInTheDocument();
   });
 
-  it.each(['pending', 'unknown', 'failed'] as const)(
-    'keeps reconnect and removal closed while disconnecting is %s, and offers to finish',
-    async (externalCleanup) => {
-      renderPanel(transportFor(summary({ lifecycle: 'disconnected', externalCleanup })));
-      const fix = await screen.findByTestId('app-panel-fix');
-      expect(
-        within(fix).getByRole('button', {
-          name: externalCleanup === 'failed' ? 'Try disconnecting again' : 'Finish disconnecting',
-        })
-      ).toBeEnabled();
-      expect(screen.queryByRole('button', { name: 'Connect again' })).not.toBeInTheDocument();
-      expect(screen.queryByTestId('remove-account')).not.toBeInTheDocument();
-    }
-  );
+  it('shows nothing to fix on a ready account', async () => {
+    renderPanel(transportFor(summary()));
+    await screen.findByRole('region', { name: 'Try it' });
+    expect(screen.queryByTestId('app-panel-fix')).not.toBeInTheDocument();
+  });
 
-  it('says why a stalled sign-out is waiting and when it tries again', async () => {
+  it('resumes a paused account from its fix', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({
+        lifecycle: 'paused',
+        readiness: notReady('paused', 'paused', 'Paused.', {
+          action: 'resume',
+          fixableBy: 'person',
+        }),
+      })
+    );
+    renderPanel(transport);
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(transport.resumeConnectorConnection).toHaveBeenCalledWith('c-1'));
+  });
+
+  it('opens who can use it for a review', async () => {
+    const user = userEvent.setup();
+    const handlers = renderPanel(
+      transportFor(
+        summary({
+          readiness: notReady('needs_you', 'needs_review', 'Check who can use it.', {
+            action: 'review_access',
+            fixableBy: 'person',
+          }),
+        })
+      )
+    );
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Check who can use it' }));
+    expect(handlers.onEditExactActions).toHaveBeenCalledWith('c-1');
+  });
+
+  it('sends a key problem to Settings › Connections', async () => {
+    const user = userEvent.setup();
+    renderPanel(
+      transportFor(
+        summary({
+          readiness: notReady('needs_you', 'own_key_unavailable', 'Fix the key to use it.', {
+            action: 'fix_key',
+            fixableBy: 'person',
+          }),
+        })
+      )
+    );
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Fix the key' }));
+    expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
+  });
+
+  it('connects a disconnected account again as the same account', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({
+        lifecycle: 'disconnected',
+        externalCleanup: 'complete',
+        readiness: createMockConnectionReadiness({
+          state: 'gone',
+          reason: 'disconnected',
+          fix: { action: 'connect_again', fixableBy: 'person' },
+        }),
+      })
+    );
+    vi.mocked(transport.reconnectConnectorConnection).mockResolvedValue({
+      flowId: 'flow-again',
+    } as never);
+    const handlers = renderPanel(transport);
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent(CONNECTION_READINESS_COPY.disconnected.owner);
+    await user.click(within(fix).getByRole('button', { name: 'Connect again' }));
+    // The same account, through its own reconnect: never a new connection.
+    await waitFor(() => expect(handlers.onSignInStarted).toHaveBeenCalledWith('flow-again'));
+    expect(transport.reconnectConnectorConnection).toHaveBeenCalledWith(
+      'c-1',
+      expect.objectContaining({ idempotencyKey: expect.any(String) })
+    );
+    expect(handlers.onAddAnother).not.toHaveBeenCalled();
+  });
+
+  it('connects the app again through a way that works when its DorkOS account is unlinked', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({
+        readiness: createMockConnectionReadiness({
+          state: 'needs_you',
+          reason: 'dorkos_account_unlinked',
+          fix: { action: 'connect_new', fixableBy: 'person' },
+        }),
+      })
+    );
+    const handlers = renderPanel(transport);
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Connect Gmail again' }));
+    // A new connection through a way that works, never the dead account's own reconnect.
+    expect(handlers.onAddAnother).toHaveBeenCalledWith('gmail');
+    expect(transport.reconnectConnectorConnection).not.toHaveBeenCalled();
+    expect(screen.queryByRole('region', { name: 'Try it' })).not.toBeInTheDocument();
+  });
+
+  it('checks again when the DorkOS account can’t reach the app right now', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({
+        readiness: notReady('unavailable', 'dorkos_account_unavailable', 'Can’t reach it.', {
+          action: 'retry',
+          fixableBy: 'dorkos',
+        }),
+      })
+    );
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({ services: [], warnings: [] });
+    renderPanel(transport);
+    const fix = await screen.findByTestId('app-panel-fix');
+    const reads = vi.mocked(transport.getConnectorConnection).mock.calls.length;
+    expect(transport.getConnectorCatalog).not.toHaveBeenCalledWith({ limit: 1 });
+    await user.click(within(fix).getByRole('button', { name: 'Check again' }));
+    // The catalog read is what makes the server try the DorkOS account again.
+    await waitFor(() => expect(transport.getConnectorCatalog).toHaveBeenCalledWith({ limit: 1 }));
+    await waitFor(() =>
+      expect(vi.mocked(transport.getConnectorConnection).mock.calls.length).toBeGreaterThan(reads)
+    );
+  });
+
+  it('says a change still applying, with no button: DorkOS is on it', async () => {
+    renderPanel(
+      transportFor(
+        summary({
+          readiness: notReady('finishing', 'access_updating', 'Updating who can use it…', {
+            action: 'wait',
+            fixableBy: 'dorkos',
+          }),
+        })
+      )
+    );
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent('Updating who can use it…');
+    expect(within(fix).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('says when DorkOS tries a stalled sign-out again, and lets the person try now', async () => {
     // Pin the clock to midday: "five minutes from now" read near midnight is
-    // tomorrow, and the panel then (correctly) names the day, which this
-    // same-day wording check would misread as a failure.
+    // tomorrow, and the panel then (correctly) names the day.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 8, 28, 12, 0));
     onTestFinished(() => {
       vi.useRealTimers();
     });
+    const user = userEvent.setup();
     const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
-    renderPanel(
-      transportFor(
-        summary({
-          lifecycle: 'disconnected',
-          externalCleanup: 'pending',
-          authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
-        })
-      )
+    const transport = transportFor(
+      summary({
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        readiness: notReady(
+          'gone',
+          'disconnect_finishing',
+          'Disconnected. DorkOS is still removing its access at the service.',
+          { action: 'retry', fixableBy: 'dorkos', retryAt }
+        ),
+      })
     );
+    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({} as never);
+    renderPanel(transport);
     const fix = await screen.findByTestId('app-panel-fix');
-    expect(fix).toHaveTextContent('Disconnecting didn’t finish. Agents already can’t use Gmail.');
-    expect(fix).toHaveTextContent(/DorkOS’s servers had a problem\. Trying again at .+\./);
+    expect(fix).toHaveTextContent('DorkOS is still removing its access at the service.');
+    expect(fix).toHaveTextContent(/Trying again at .+\./);
+    expect(screen.queryByTestId('remove-account')).not.toBeInTheDocument();
+    await user.click(within(fix).getByRole('button', { name: 'Try again now' }));
+    await waitFor(() => expect(transport.disconnectConnectorConnection).toHaveBeenCalledTimes(1));
   });
 
-  it('says it is still finishing after "Finish disconnecting", and keeps the button usable', async () => {
+  it('offers to try disconnecting again only when trying again can work', async () => {
     const user = userEvent.setup();
     const transport = transportFor(
-      summary({ lifecycle: 'disconnected', externalCleanup: 'pending' })
+      summary({
+        lifecycle: 'disconnected',
+        externalCleanup: 'failed',
+        readiness: notReady('gone', 'disconnect_failed', 'Removing its access didn’t finish.', {
+          action: 'retry',
+          fixableBy: 'person',
+        }),
+      })
     );
-    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({
-      connectionId: 'c-1' as never,
-      lifecycle: 'disconnected',
-      authenticationStatus: 'active',
-      authoritySync: { status: 'pending' },
-      externalCleanup: 'pending',
-    });
+    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({} as never);
     renderPanel(transport);
-
     const fix = await screen.findByTestId('app-panel-fix');
-    await user.click(within(fix).getByRole('button', { name: 'Finish disconnecting' }));
-    await waitFor(() =>
-      expect(fix).toHaveTextContent(
-        'Still finishing disconnecting Gmail. Agents already can’t use it.'
-      )
-    );
-    expect(fix).toHaveTextContent('DorkOS keeps trying on its own.');
-    const again = within(fix).getByRole('button', { name: 'Try again now' });
-    expect(again).toBeEnabled();
-    await user.click(again);
-    await waitFor(() => expect(transport.disconnectConnectorConnection).toHaveBeenCalledTimes(2));
+    await user.click(within(fix).getByRole('button', { name: 'Try disconnecting again' }));
+    await waitFor(() => expect(transport.disconnectConnectorConnection).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('remove-account')).not.toBeInTheDocument();
   });
 
-  it('shows a refused sign-out as refused, with its reason, and never says it keeps trying', async () => {
+  it('never offers a futile retry for a disconnect whose DorkOS account link ended', async () => {
+    const owner =
+      'Disconnected. Agents can’t use it. DorkOS can’t finish removing its access at the service, because your DorkOS account isn’t linked anymore. To be sure its access ended, remove it in that app’s own account settings.';
     renderPanel(
       transportFor(
         summary({
           lifecycle: 'disconnected',
           externalCleanup: 'pending',
           authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+          readiness: notReady('gone', 'disconnect_stuck', owner),
         })
       )
     );
     const fix = await screen.findByTestId('app-panel-fix');
-    expect(fix).toHaveTextContent('Disconnecting didn’t finish. Agents already can’t use Gmail.');
-    expect(fix).toHaveTextContent('This instance is no longer linked.');
-    expect(fix).not.toHaveTextContent(/keeps trying|Still finishing|Trying again/);
-    expect(within(fix).getByRole('button', { name: 'Try disconnecting again' })).toBeEnabled();
-  });
-
-  it('believes a refusal from "Finish disconnecting" even when nothing was stored', async () => {
-    const user = userEvent.setup();
-    const transport = transportFor(
-      summary({ lifecycle: 'disconnected', externalCleanup: 'pending' })
-    );
-    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({
-      connectionId: 'c-1' as never,
-      lifecycle: 'disconnected',
-      authenticationStatus: 'active',
-      authoritySync: {
-        status: 'failed',
-        reason: 'Link this installation before finishing account disconnection.',
-      },
-      externalCleanup: 'pending',
-    });
-    renderPanel(transport);
-
-    const fix = await screen.findByTestId('app-panel-fix');
-    await user.click(within(fix).getByRole('button', { name: 'Finish disconnecting' }));
-    await waitFor(() =>
-      expect(fix).toHaveTextContent(
-        'Link this installation before finishing account disconnection.'
-      )
-    );
-    expect(fix).not.toHaveTextContent(/keeps trying|Still finishing/);
-    expect(within(fix).getByRole('button', { name: 'Try disconnecting again' })).toBeEnabled();
-  });
-
-  it('lets the stored state take over once it moves on after a refused try', async () => {
-    const user = userEvent.setup();
-    const transport = transportFor(
-      summary({ lifecycle: 'disconnected', externalCleanup: 'pending' })
-    );
-    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({
-      connectionId: 'c-1' as never,
-      lifecycle: 'disconnected',
-      authenticationStatus: 'active',
-      authoritySync: {
-        status: 'failed',
-        reason: 'Link this installation before finishing account disconnection.',
-      },
-      externalCleanup: 'pending',
-    });
-    const { client } = renderPanel(transport);
-    const fix = await screen.findByTestId('app-panel-fix');
-    await user.click(within(fix).getByRole('button', { name: 'Finish disconnecting' }));
-    await waitFor(() => expect(fix).toHaveTextContent('Link this installation'));
-
-    // Relinked elsewhere: DorkOS is retrying again, and says so.
-    const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
-    vi.mocked(transport.getConnectorConnection).mockResolvedValue(
-      detail(
-        summary({
-          lifecycle: 'disconnected',
-          externalCleanup: 'pending',
-          authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
-        })
-      )
-    );
-    await client.invalidateQueries();
-    await waitFor(() => expect(fix).toHaveTextContent('DorkOS’s servers had a problem.'));
-    expect(fix).not.toHaveTextContent('Link this installation');
-    expect(fix).toHaveTextContent('Still finishing disconnecting Gmail.');
+    expect(fix).toHaveTextContent(owner);
+    // The raw refusal stays on the server; no button that can't work.
+    expect(fix).not.toHaveTextContent('instance');
+    expect(within(fix).queryByRole('button')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Try disconnecting again|Try again now/ })
+    ).toBeNull();
+    // Removing is refused while something is owed at the service, so it isn't offered.
+    expect(screen.queryByTestId('remove-account')).not.toBeInTheDocument();
   });
 
   it('asks before disconnecting, naming who loses access, then closes', async () => {
@@ -411,11 +518,20 @@ describe('AccountPanel', () => {
   it('asks before removing a disconnected app from the list', async () => {
     const user = userEvent.setup();
     const transport = transportFor(
-      summary({ lifecycle: 'disconnected', externalCleanup: 'complete' })
+      summary({
+        lifecycle: 'disconnected',
+        externalCleanup: 'complete',
+        readiness: notReady('gone', 'disconnected', 'Disconnected. Agents can’t use it.', {
+          action: 'connect_again',
+          fixableBy: 'person',
+        }),
+      })
     );
     vi.mocked(transport.removeConnectorConnection).mockResolvedValue(undefined as never);
     const handlers = renderPanel(transport);
 
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(within(fix).getByRole('button', { name: 'Connect again' })).toBeEnabled();
     await user.click(await screen.findByTestId('remove-account'));
     const confirm = await screen.findByRole('alertdialog', {
       name: 'Remove Gmail from your apps?',
@@ -423,29 +539,6 @@ describe('AccountPanel', () => {
     expect(transport.removeConnectorConnection).not.toHaveBeenCalled();
     await user.click(within(confirm).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(handlers.onClose).toHaveBeenCalled());
-  });
-
-  it('asks for a review whenever the server says access needs one, even when only every agent holds it', async () => {
-    const user = userEvent.setup();
-    const handlers = renderPanel(
-      transportFor(
-        summary({
-          agentCount: 0,
-          reconciliationStatus: 'migration_needs_reconcile',
-          everyAgent: { operationRevisionIds: ['op-1'], classifications: ['read'] },
-        })
-      )
-    );
-    const fix = await screen.findByTestId('app-panel-fix');
-    await user.click(within(fix).getByRole('button', { name: 'Review' }));
-    expect(handlers.onEditExactActions).toHaveBeenCalledWith('c-1');
-  });
-
-  it('says a sign-in that never finished the way its row does', async () => {
-    renderPanel(transportFor(summary({ authenticationStatus: 'pending' })));
-    expect(await screen.findByTestId('app-panel-fix')).toHaveTextContent(
-      'Sign-in didn’t finish. Agents can’t use Gmail yet.'
-    );
   });
 
   it('keeps Sign in again and who pays for usage under More on a healthy account', async () => {
@@ -461,18 +554,5 @@ describe('AccountPanel', () => {
     expect(more).toHaveTextContent('DorkOS covers service usage.');
     await user.click(within(more).getByRole('button', { name: /^Sign in again/ }));
     await waitFor(() => expect(handlers.onSignInStarted).toHaveBeenCalledWith('flow-2'));
-  });
-
-  it('asks for a review when the server says so even with nobody holding access', async () => {
-    const transport = transportFor(
-      summary({ agentCount: 0, reconciliationStatus: 'migration_needs_reconcile' })
-    );
-    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
-      ...detail(summary({ agentCount: 0, reconciliationStatus: 'migration_needs_reconcile' })),
-      agents: [],
-    });
-    renderPanel(transport);
-    const fix = await screen.findByTestId('app-panel-fix');
-    expect(within(fix).getByRole('button', { name: 'Review' })).toBeInTheDocument();
   });
 });

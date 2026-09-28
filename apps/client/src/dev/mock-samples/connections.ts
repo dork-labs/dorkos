@@ -9,11 +9,63 @@ import type {
   ConnectorConnectionDetail,
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
-import type {
-  ConnectorReconciliationPreview,
-  ConnectorUsageItem,
+import {
+  CONNECTION_GONE_AGENT_COPY,
+  CONNECTION_READINESS_COPY,
+  disconnectStuckOwnerLine,
+  type ConnectorReconciliationPreview,
+  type ConnectorUsageItem,
 } from '@dorkos/shared/connector-schemas';
 import type { AdapterBinding, CatalogEntry } from '@dorkos/shared/relay-schemas';
+
+/** A ready account's readiness, as the server words it. */
+export const READY: ConnectorConnectionSummary['readiness'] = {
+  state: 'ready',
+  reason: 'usable',
+  copy: CONNECTION_READINESS_COPY.usable,
+};
+
+/** The server's readiness for the not-ready accounts the showcases draw, in its own words. */
+export const MOCK_READINESS = {
+  signedOut: {
+    state: 'needs_you',
+    reason: 'signed_out',
+    fix: { action: 'sign_in_again', fixableBy: 'person' },
+    copy: CONNECTION_READINESS_COPY.signed_out,
+  },
+  paused: {
+    state: 'paused',
+    reason: 'paused',
+    fix: { action: 'resume', fixableBy: 'person' },
+    copy: CONNECTION_READINESS_COPY.paused,
+  },
+  needsReview: {
+    state: 'needs_you',
+    reason: 'needs_review',
+    fix: { action: 'review_access', fixableBy: 'person' },
+    copy: CONNECTION_READINESS_COPY.needs_review,
+  },
+  unlinked: {
+    state: 'needs_you',
+    reason: 'dorkos_account_unlinked',
+    fix: { action: 'connect_new', fixableBy: 'person' },
+    copy: CONNECTION_READINESS_COPY.dorkos_account_unlinked,
+  },
+  disconnectFinishing: {
+    state: 'gone',
+    reason: 'disconnect_finishing',
+    fix: { action: 'retry', fixableBy: 'dorkos' },
+    copy: CONNECTION_READINESS_COPY.disconnect_finishing,
+  },
+  disconnectStuck: {
+    state: 'gone',
+    reason: 'disconnect_stuck',
+    copy: {
+      owner: disconnectStuckOwnerLine('dorkos_account_unlinked'),
+      agent: CONNECTION_GONE_AGENT_COPY,
+    },
+  },
+} satisfies Record<string, ConnectorConnectionSummary['readiness']>;
 
 /** One connected account, healthy unless overridden. */
 export function mockConnection(
@@ -36,7 +88,7 @@ export function mockConnection(
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 16, attemptCount: 16 },
-    warnings: [],
+    readiness: READY,
     ...over,
   };
 }
@@ -56,12 +108,14 @@ export const MOCK_CONNECTIONS: ConnectorConnectionSummary[] = [
     label: 'Acme workspace',
     identityHint: null,
     authenticationStatus: 'expired',
+    readiness: MOCK_READINESS.signedOut,
   }),
   mockConnection({
     connectionId: 'conn-calendar' as ConnectorConnectionSummary['connectionId'],
     toolkit: 'googlecalendar',
     identityHint: 'you@gmail.com',
     lifecycle: 'paused',
+    readiness: MOCK_READINESS.paused,
   }),
   mockConnection({
     connectionId: 'conn-drive' as ConnectorConnectionSummary['connectionId'],
@@ -76,6 +130,23 @@ export const MOCK_CONNECTIONS: ConnectorConnectionSummary[] = [
     toolkit: 'linear',
     identityHint: 'you@acme.com',
     reconciliationStatus: 'migration_needs_reconcile',
+    readiness: MOCK_READINESS.needsReview,
+  }),
+  mockConnection({
+    connectionId: 'conn-outlook' as ConnectorConnectionSummary['connectionId'],
+    toolkit: 'outlook',
+    label: 'outlook',
+    identityHint: 'you@outlook.com',
+    readiness: MOCK_READINESS.unlinked,
+  }),
+  mockConnection({
+    connectionId: 'conn-slack' as ConnectorConnectionSummary['connectionId'],
+    toolkit: 'slack',
+    label: 'Acme',
+    identityHint: null,
+    lifecycle: 'disconnected',
+    externalCleanup: 'pending',
+    readiness: MOCK_READINESS.disconnectStuck,
   }),
 ];
 

@@ -131,6 +131,23 @@ export const ConnectedAccountStatusSchema = z.enum([
 export type ConnectedAccountStatus = z.infer<typeof ConnectedAccountStatusSchema>;
 
 /**
+ * The execution error codes a provider returns when the service itself says an
+ * account's sign-in has ended, mapped to the sign-in status that fact records.
+ * A provider returns one only on that precise signal (the service reporting
+ * the account expired or turned off), never for a rate limit, an outage or an
+ * operation the service refused for another reason. DorkOS records the status
+ * on the connection at once, so agents stop being offered an account nobody
+ * can use until the owner signs in again.
+ */
+export const CONNECTOR_SIGN_IN_ENDED_CODES = {
+  ACCOUNT_SIGN_IN_EXPIRED: 'expired',
+  ACCOUNT_SIGN_IN_REVOKED: 'revoked',
+} as const satisfies Record<string, Extract<ConnectedAccountStatus, 'expired' | 'revoked'>>;
+
+/** One of {@link CONNECTOR_SIGN_IN_ENDED_CODES}' codes. */
+export type ConnectorSignInEndedCode = keyof typeof CONNECTOR_SIGN_IN_ENDED_CODES;
+
+/**
  * One connected account, provider-neutral.
  *
  * `provider` is SERVER-ONLY (the registry needs it to route management and
@@ -162,8 +179,13 @@ export const ProviderConnectedAccountSchema = ConnectedAccountSchema.omit({
 }).extend({
   /** Private provider account reference; the registry never returns it publicly. */
   externalAccountRef: ConnectorExternalAccountRefSchema,
-  /** Provider-reported authentication state; operator pause is stored separately by DorkOS. */
-  status: z.enum(['active', 'expired', 'revoked', 'pending']),
+  /**
+   * Provider-reported authentication state; operator pause is stored separately
+   * by DorkOS. `unknown` when the service's answer does not say (a listing
+   * without a status, or one DorkOS does not recognize): it is no fact at all,
+   * so DorkOS never records a sign-in status from it.
+   */
+  status: z.enum(['active', 'expired', 'revoked', 'pending', 'unknown']),
 });
 /** Provider-owned account metadata before stable DorkOS reconciliation. */
 export type ProviderConnectedAccount = z.infer<typeof ProviderConnectedAccountSchema>;

@@ -104,6 +104,7 @@ export function ConnectionsPage() {
   const reconnect = useReconnectConnectorConnection();
   const resume = useResumeConnectorConnection();
   const toggle = useToggleAdapter();
+  const settings = useSettingsDeepLink();
   const pendingRowId =
     (reconnect.isPending && reconnect.variables?.connectionId) ||
     (resume.isPending && resume.variables?.connectionId) ||
@@ -156,6 +157,16 @@ export function ConnectionsPage() {
       case 'fix':
         setSearch({ app: row.id });
         return;
+      case 'fix-key':
+        settings.open('connections', 'ways');
+        return;
+      case 'connect-again': {
+        // Through whichever way works now; the one-time step comes first when none does.
+        const service = row.toolkit ? data.services.get(row.toolkit) : undefined;
+        if (service) startAccount(service);
+        else setSearch({ app: row.id });
+        return;
+      }
       case null:
         return;
     }

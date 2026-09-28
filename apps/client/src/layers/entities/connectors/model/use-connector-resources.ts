@@ -62,6 +62,21 @@ export function useConnectorAppActions(toolkit: string, providerInstanceId: stri
   });
 }
 
+/**
+ * Check again whether the DorkOS account can reach apps. Reading the catalog
+ * is what makes the server try the DorkOS account's route again when it isn't
+ * registered, so this reads one page of it first, then every connector read
+ * again, so the accounts show what that check found.
+ */
+export function useRecheckConnectorWays() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => transport.getConnectorCatalog({ limit: 1 }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
+  });
+}
+
 /** Read the operator's canonical stable connection inventory. */
 export function useConnectorConnections() {
   const transport = useTransport();
@@ -86,12 +101,9 @@ export function useConnectorConnection(connectionId: string | null, enabled = tr
     queryFn: () => transport.getConnectorConnection(connectionId ?? ''),
     enabled: enabled && Boolean(connectionId),
     refetchInterval: (query) => {
-      const connection = query.state.data?.connection;
-      // Only while the server is actually retrying: a refused sync waits on the
-      // owner, and re-reading it would change nothing.
-      return connection?.lifecycle === 'disconnected' &&
-        connection.externalCleanup === 'pending' &&
-        connection.authoritySync.status === 'pending'
+      // Only while DorkOS is actually retrying: a refused or stuck disconnect
+      // waits on the owner, and re-reading it would change nothing.
+      return query.state.data?.connection.readiness.reason === 'disconnect_finishing'
         ? CLEANUP_PENDING_REFRESH_MS
         : false;
     },

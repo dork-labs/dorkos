@@ -105,6 +105,11 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
   // with one way set up, it is the only one, and the marker would say nothing.
   const newAppsWay =
     appConnections.data?.newApps.status === 'ready' ? appConnections.data.newApps.way : null;
+  const ways = appConnections.data?.ways ?? [];
+  // Linked is not the same as working: the server says whether the account's
+  // way can reach apps right now.
+  const accountReaches =
+    ways.find((way) => way.kind === 'dorkos_account')?.status !== 'unavailable';
   const markNewApps = (showAccount ? 1 : 0) + keyRows.length > 1;
 
   const addWays = (
@@ -145,6 +150,7 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
         {showAccount && (
           <AccountWayRow
             linked={linked}
+            reachesApps={accountReaches}
             checkFailed={cloud.isError}
             retrying={cloud.isFetching}
             onRetry={() => void cloud.refetch()}
@@ -161,6 +167,7 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
             usedForNewApps={
               markNewApps && newAppsWay?.kind === 'own_key' && newAppsWay.type === status.type
             }
+            way={ways.find((way) => way.kind === 'own_key' && way.type === status.type)}
           />
         ))}
       </ul>
@@ -174,6 +181,7 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
 /** The DorkOS account as a way in: read-only, with a link to where it is managed. */
 function AccountWayRow({
   linked,
+  reachesApps,
   checkFailed,
   retrying,
   onRetry,
@@ -182,6 +190,8 @@ function AccountWayRow({
   onManageAccount,
 }: {
   linked: boolean;
+  /** False when the account is linked but its way can't reach apps right now. */
+  reachesApps: boolean;
   checkFailed: boolean;
   retrying: boolean;
   onRetry: () => void;
@@ -190,7 +200,9 @@ function AccountWayRow({
   onManageAccount: () => void;
 }) {
   const status: WayStatus = linked
-    ? { tone: 'success', label: 'Working' }
+    ? reachesApps
+      ? { tone: 'success', label: 'Working' }
+      : { tone: 'warning', label: 'Can’t reach apps' }
     : checkFailed
       ? { tone: 'neutral', label: 'Couldn’t check' }
       : { tone: 'warning', label: 'Not linked' };
@@ -219,6 +231,12 @@ function AccountWayRow({
         </>
       }
     >
+      {linked && !reachesApps && (
+        <p className="text-muted-foreground text-xs">
+          Your DorkOS account is linked, but it can’t reach apps right now. Agents can’t use the
+          apps connected through it until it can.
+        </p>
+      )}
       {!linked && !checkFailed && apps.length > 0 && (
         <p className="text-muted-foreground text-xs">
           These apps stopped working when the account was no longer linked. To use them again,

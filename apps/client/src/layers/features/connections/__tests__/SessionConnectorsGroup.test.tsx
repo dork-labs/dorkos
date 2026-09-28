@@ -5,7 +5,8 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { registerComposerInsert } from '@/layers/shared/lib';
 import { SessionConnectorsGroup } from '../ui/SessionConnectorsGroup';
@@ -30,9 +31,9 @@ function sessionConnection(over: Record<string, unknown> = {}) {
     connectionId: 'connection-1' as never,
     toolkit: 'gmail',
     label: 'work',
-    access: 'inherited' as const,
+    source: 'agent' as const,
     operationRevisionIds: ['read-v1'],
-    dominatingReason: 'none' as const,
+    readiness: createMockConnectionReadiness(),
     ...over,
   };
 }
@@ -61,7 +62,7 @@ describe('SessionConnectorsGroup', () => {
     unregister();
   });
 
-  it('keeps inherited, session-only, and disabled access distinct with a dominating reason', async () => {
+  it('keeps inherited and chat-only access distinct, and says why an account can’t be used here', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
       sessionId: 'session-1',
@@ -71,21 +72,35 @@ describe('SessionConnectorsGroup', () => {
         sessionConnection({
           connectionId: 'connection-2',
           label: 'personal',
-          access: 'session_only',
+          source: 'this_chat',
         }),
         sessionConnection({
           connectionId: 'connection-3',
           label: 'archive',
-          access: 'disabled',
-          dominatingReason: 'connection_paused',
+          readiness: createMockConnectionReadiness({
+            state: 'paused',
+            reason: 'paused',
+            fix: { action: 'resume', fixableBy: 'person' },
+          }),
+        }),
+        sessionConnection({
+          connectionId: 'connection-4',
+          label: 'chat',
+          source: 'this_chat',
+          readiness: createMockConnectionReadiness({
+            state: 'unavailable',
+            reason: 'off_for_this_chat',
+          }),
         }),
       ],
     });
     renderGroup(transport);
     expect(await screen.findByText('Inherited from agent')).toBeInTheDocument();
     expect(screen.getByText('Allowed only in this session')).toBeInTheDocument();
-    expect(screen.getByText('Disabled in this session')).toBeInTheDocument();
-    expect(screen.getByText('The account is paused.')).toBeInTheDocument();
+    expect(screen.getAllByText('Not available')).toHaveLength(2);
+    // Each unusable account says the server's own line for why.
+    expect(screen.getByText(CONNECTION_READINESS_COPY.paused.owner)).toBeInTheDocument();
+    expect(screen.getByText(CONNECTION_READINESS_COPY.off_for_this_chat.owner)).toBeInTheDocument();
   });
 
   it('opens the canonical owner workspace without attach or detach controls', async () => {

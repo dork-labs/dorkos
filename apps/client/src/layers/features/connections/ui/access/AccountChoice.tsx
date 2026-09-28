@@ -8,7 +8,7 @@ import {
   RadioGroupItem,
   Skeleton,
 } from '@/layers/shared/ui';
-import { usableAccounts } from '../../lib/account-readiness';
+import { offerableAccounts } from '../../lib/readiness';
 import { AccessCardFrame } from './AccessCardFrame';
 import type { AgentAccessCardProps } from './ConnectionAccessCard';
 
@@ -27,7 +27,7 @@ export function AccountChoice({
   const query = useConnectorConnections();
   // Only accounts an agent could use right now: a paused or signed-out account
   // can't be given to one, so offering it would be an Allow that cannot land.
-  const accounts = usableAccounts(query.data?.connections ?? [], props.toolkit);
+  const accounts = offerableAccounts(query.data?.connections ?? [], props.toolkit);
   const [picked, setPicked] = useState<string | null>(null);
 
   // The account the question is about, once there is one. It is held, not

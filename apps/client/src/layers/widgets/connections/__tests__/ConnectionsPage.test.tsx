@@ -6,7 +6,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { connectorKeys } from '@/layers/entities/connectors';
 import { ConnectionsPage } from '../ui/ConnectionsPage';
@@ -58,7 +58,15 @@ function summary(over: Partial<ConnectorConnectionSummary> = {}): ConnectorConne
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: createMockConnectionReadiness({
+      state: 'needs_you',
+      reason: 'signed_out',
+      fix: { action: 'sign_in_again', fixableBy: 'person' },
+      copy: {
+        owner: 'Signed out. Agents can’t use it until you sign in again.',
+        agent: 'Ask the person to sign in again.',
+      },
+    }),
     ...over,
   };
 }
@@ -100,6 +108,7 @@ describe('ConnectionsPage', () => {
         connectionId: 'c-gmail' as never,
         toolkit: 'gmail',
         authenticationStatus: 'active',
+        readiness: createMockConnectionReadiness(),
       }),
       summary(),
     ]);
@@ -153,7 +162,7 @@ describe('ConnectionsPage', () => {
 
     const panel = await screen.findByRole('dialog', { name: /Notion/ });
     expect(await within(panel).findByTestId('app-panel-fix')).toHaveTextContent(
-      'Signed out. Agents can’t use Notion.'
+      'Signed out. Agents can’t use it until you sign in again.'
     );
   });
 
@@ -163,6 +172,7 @@ describe('ConnectionsPage', () => {
       connectionId: 'c-zendesk' as never,
       toolkit: 'zendesk',
       authenticationStatus: 'active',
+      readiness: createMockConnectionReadiness(),
     });
     const transport = transportWith([zendesk]);
     vi.mocked(transport.getConnectorConnection).mockRejectedValue(new Error('not in this test'));

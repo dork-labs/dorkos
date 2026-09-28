@@ -486,7 +486,8 @@ test.describe('Connections — session access status', () => {
         connections: [
           expect.objectContaining({
             connectionId,
-            access: 'session_only',
+            source: 'this_chat',
+            readiness: expect.objectContaining({ state: 'ready' }),
             operationRevisionIds: [read!.operationRevisionId],
           }),
         ],
@@ -498,10 +499,11 @@ test.describe('Connections — session access status', () => {
       await page.reload();
       await rightPanel.open();
       await page.getByRole('tab', { name: 'Session', exact: true }).click();
-      await expect(row.getByText('Disabled in this session')).toBeVisible();
-      await expect(row.getByText('This session is blocked from using the account.')).toBeVisible();
-      // Arrange a pending hosted acknowledgement without a live hosted account.
-      // This is a persistence/status fixture, not a proof of hosted delivery.
+      await expect(row.getByText('Not available')).toBeVisible();
+      await expect(row.getByText('Turned off for this chat.')).toBeVisible();
+      // Arrange a pending hosted acknowledgement of this agent's own access
+      // without a live hosted account. This is a persistence/status fixture,
+      // not a proof of hosted delivery.
       const commandId = crypto.randomUUID();
       db.prepare(
         `INSERT INTO connector_managed_authority_outbox
@@ -509,18 +511,18 @@ test.describe('Connections — session access status', () => {
          owner_kind, owner_id, managed_connection_id, scope_kind, subject_id, scope_version,
          request_hash, request_json, state, next_attempt_at, created_at, updated_at)
         SELECT ?, c.id, p.id, p.execution_config_generation, p.owner_kind, p.owner_id,
-          c.external_account_ref, 'connection_lifecycle', 'connection', 1,
+          c.external_account_ref, 'agent_grants', ?, 1,
           'browser-status-fixture', '{}', 'pending', '2099-01-01T00:00:00.000Z', ?, ?
         FROM connections c JOIN connector_provider_instances p ON p.id = c.provider_instance_id
         WHERE c.id = ?`
-      ).run(commandId, now, now, connectionId);
+      ).run(commandId, agentId, now, now, connectionId);
       db.prepare(
         `INSERT INTO connector_managed_authority_scopes
         (managed_connection_id, scope_kind, subject_id, scope_version, last_command_id,
           last_command_hash, updated_at)
-        SELECT external_account_ref, 'connection_lifecycle', 'connection', 1, ?,
+        SELECT external_account_ref, 'agent_grants', ?, 1, ?,
           'browser-status-fixture', ? FROM connections WHERE id = ?`
-      ).run(commandId, now, connectionId);
+      ).run(agentId, commandId, now, connectionId);
       db.prepare(
         `UPDATE connector_provider_instances SET mode = 'managed'
         WHERE id = (SELECT provider_instance_id FROM connections WHERE id = ?)`
@@ -532,8 +534,8 @@ test.describe('Connections — session access status', () => {
       await page.reload();
       await rightPanel.open();
       await page.getByRole('tab', { name: 'Session', exact: true }).click();
-      await expect(row.getByText('Disabled in this session')).toBeVisible();
-      await expect(row.getByText('Account access has not finished updating.')).toBeVisible();
+      await expect(row.getByText('Not available')).toBeVisible();
+      await expect(row.getByText('Updating who can use it…')).toBeVisible();
       await expect(row.getByText(/actions available/)).toHaveCount(0);
       db.prepare(
         `UPDATE connector_managed_authority_outbox SET state = 'applied'

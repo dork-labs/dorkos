@@ -12,6 +12,8 @@ const ACTION_LABELS: Record<AppRowAction, string> = {
   cancel: 'Cancel',
   review: 'Review',
   fix: 'Fix',
+  'fix-key': 'Fix the key',
+  'connect-again': 'Connect again',
 };
 
 /** The small "Chat" tag that marks a chat app; the only thing that sets one apart. */

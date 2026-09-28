@@ -4,16 +4,20 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type {
-  ConnectorAgentRequestItem,
-  ConnectorReconciliationPreview,
+import {
+  CONNECTION_READINESS_COPY,
+  type ConnectionFixAction,
+  type ConnectionReadinessReason,
+  type ConnectionReadinessState,
+  type ConnectorAgentRequestItem,
+  type ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import type {
   ConnectorCatalogService,
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { AgentRequestCard } from '../ui/agent-request/AgentRequestCard';
 import { ChatAgentRequest } from '../ui/agent-request/ChatAgentRequest';
@@ -98,7 +102,7 @@ function account(connectionId: string): ConnectorConnectionSummary {
     agentCount: 0,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: createMockConnectionReadiness(),
     everyAgent: null,
   };
 }
@@ -494,11 +498,40 @@ describe('ChatAgentRequest', () => {
   });
 });
 
+/** The server's readiness for an account that needs one fix first. */
+function needs(
+  reason: ConnectionReadinessReason,
+  action: ConnectionFixAction | undefined,
+  owner: string,
+  state: ConnectionReadinessState = 'needs_you'
+) {
+  return createMockConnectionReadiness({
+    state,
+    reason,
+    ...(action && {
+      fix: {
+        action,
+        fixableBy:
+          action === 'retry' || action === 'wait' ? ('dorkos' as const) : ('person' as const),
+      },
+    }),
+    copy: { owner, agent: 'Ask the person.' },
+  });
+}
+
 describe('AgentRequestCard — an account that needs attention first', () => {
   it('says the account’s DorkOS account isn’t linked anymore, and offers to connect the app again', async () => {
     const user = userEvent.setup();
     const transport = transportWith([
-      { ...account('connection-1'), mode: 'managed', wayProblem: 'dorkos_account_unlinked' },
+      {
+        ...account('connection-1'),
+        mode: 'managed',
+        readiness: needs(
+          'dorkos_account_unlinked',
+          'connect_new',
+          'It was connected through your DorkOS account, which isn’t linked anymore. Connect it again to use it.'
+        ),
+      },
     ]);
     vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
       services: [{ ...GMAIL, intents: [{ ...GMAIL.intents[0], routes: [] }] }],
@@ -511,9 +544,9 @@ describe('AgentRequestCard — an account that needs attention first', () => {
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     const line = await screen.findByTestId('account-attention');
-    expect(line).toHaveAttribute('data-kind', 'way_down');
+    expect(line).toHaveAttribute('data-reason', 'dorkos_account_unlinked');
     expect(line).toHaveTextContent(
-      'Gmail (work) was connected through your DorkOS account, which isn’t linked anymore'
+      'It was connected through your DorkOS account, which isn’t linked anymore'
     );
     expect(line).not.toHaveTextContent(/come back|bring/);
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
@@ -524,18 +557,26 @@ describe('AgentRequestCard — an account that needs attention first', () => {
     expect(await screen.findByTestId('first-connect-step')).toBeInTheDocument();
   });
 
-  it('names a key that isn’t set up or didn’t answer, with its fix and Connect again', async () => {
+  it('names a key that isn’t set up or didn’t answer, with its one fix', async () => {
     const user = userEvent.setup();
     openSettings.mockClear();
     const transport = transportWith([
-      { ...account('connection-1'), wayProblem: 'own_key_unavailable' },
+      {
+        ...account('connection-1'),
+        readiness: needs(
+          'own_key_unavailable',
+          'fix_key',
+          'The key it was connected through isn’t set up or didn’t answer. Fix the key to use it.'
+        ),
+      },
     ]);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     expect(await screen.findByTestId('account-attention')).toHaveTextContent(
-      'isn’t set up or didn’t answer when DorkOS last checked it'
+      'isn’t set up or didn’t answer'
     );
-    expect(screen.getByRole('button', { name: 'Connect Gmail again' })).toBeInTheDocument();
+    // One problem, one button: connecting again is not a second fix here.
+    expect(screen.queryByRole('button', { name: 'Connect Gmail again' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Fix the key' }));
     expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
   });
@@ -543,15 +584,30 @@ describe('AgentRequestCard — an account that needs attention first', () => {
   it('offers a fresh check when the linked DorkOS account can’t reach the app right now', async () => {
     const user = userEvent.setup();
     const transport = transportWith([
-      { ...account('connection-1'), wayProblem: 'dorkos_account_unavailable' },
+      {
+        ...account('connection-1'),
+        readiness: needs(
+          'dorkos_account_unavailable',
+          'retry',
+          CONNECTION_READINESS_COPY.dorkos_account_unavailable.owner,
+          'unavailable'
+        ),
+      },
     ]);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     expect(await screen.findByTestId('account-attention')).toHaveTextContent(
-      'can’t reach Gmail right now'
+      'can’t reach it right now'
     );
     const reads = vi.mocked(transport.getConnectorConnections).mock.calls.length;
+    const catalogReads = vi.mocked(transport.getConnectorCatalog).mock.calls.length;
     await user.click(screen.getByRole('button', { name: 'Check again' }));
+    // The catalog read is what makes the server try the DorkOS account again.
+    await waitFor(() =>
+      expect(vi.mocked(transport.getConnectorCatalog).mock.calls.length).toBeGreaterThan(
+        catalogReads
+      )
+    );
     await waitFor(() =>
       expect(vi.mocked(transport.getConnectorConnections).mock.calls.length).toBeGreaterThan(reads)
     );
@@ -559,10 +615,21 @@ describe('AgentRequestCard — an account that needs attention first', () => {
 
   it('asks to resume a paused account before any Allow', async () => {
     const user = userEvent.setup();
-    const transport = transportWith([{ ...account('connection-1'), lifecycle: 'paused' }]);
+    const transport = transportWith([
+      {
+        ...account('connection-1'),
+        lifecycle: 'paused',
+        readiness: needs(
+          'paused',
+          'resume',
+          'Paused. Agents can’t use it until you resume it.',
+          'paused'
+        ),
+      },
+    ]);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
-    expect(await screen.findByTestId('account-attention')).toHaveAttribute('data-kind', 'paused');
+    expect(await screen.findByTestId('account-attention')).toHaveAttribute('data-reason', 'paused');
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resume' }));
     expect(transport.resumeConnectorConnection).toHaveBeenCalledWith('connection-1');
@@ -571,7 +638,11 @@ describe('AgentRequestCard — an account that needs attention first', () => {
   it('asks to sign in again when the account is signed out', async () => {
     const user = userEvent.setup();
     const transport = transportWith([
-      { ...account('connection-1'), authenticationStatus: 'expired' },
+      {
+        ...account('connection-1'),
+        authenticationStatus: 'expired',
+        readiness: needs('signed_out', 'sign_in_again', 'Signed out.'),
+      },
     ]);
     vi.mocked(transport.reconnectConnectorConnection).mockResolvedValue({
       flowId: 'flow-r',
@@ -600,9 +671,63 @@ describe('AgentRequestCard — an account that needs attention first', () => {
     );
   });
 
+  it('says a sign-in that failed and offers it again, instead of turning a spinner forever', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([
+      {
+        ...account('connection-1'),
+        authenticationStatus: 'expired',
+        readiness: needs('signed_out', 'sign_in_again', 'Signed out.'),
+      },
+    ]);
+    vi.mocked(transport.reconnectConnectorConnection).mockResolvedValue({
+      flowId: 'flow-f',
+      providerInstanceId: 'composio-1',
+      toolkit: 'gmail',
+      state: 'starting',
+    } as never);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue({
+      flowId: 'flow-f',
+      providerInstanceId: 'composio-1',
+      toolkit: 'gmail',
+      state: 'failed',
+      reason: 'The service could not complete sign-in.',
+    } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Sign in again' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('That didn’t work.');
+    expect(screen.queryByText('Getting the sign-in page ready…')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in again' })).toBeEnabled();
+  });
+
+  it('offers only "Not now" when nothing can be done from here', async () => {
+    const transport = transportWith([
+      {
+        ...account('connection-1'),
+        readiness: needs(
+          'cannot_run_actions',
+          undefined,
+          'Agents can’t use apps connected this way yet.',
+          'unavailable'
+        ),
+      },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+    expect(await screen.findByTestId('account-attention')).toHaveTextContent(
+      'Agents can’t use apps connected this way yet.'
+    );
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Not now']);
+  });
+
   it('skips a paused account when another one is ready', async () => {
     const transport = transportWith([
-      { ...account('connection-2'), label: 'home', lifecycle: 'paused' },
+      {
+        ...account('connection-2'),
+        label: 'home',
+        lifecycle: 'paused',
+        readiness: needs('paused', 'resume', 'Paused.', 'paused'),
+      },
       account('connection-1'),
     ]);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
@@ -618,7 +743,11 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     const ready = { ...account('connection-1'), mode: 'managed' as const };
     // After the save, the summary reads pending for the whole account: another
     // agent's change, or this one still applying. Neither may swap the card out.
-    const pending = { ...ready, authoritySync: { status: 'pending' as const } };
+    const pending = {
+      ...ready,
+      authoritySync: { status: 'pending' as const },
+      readiness: needs('access_updating', 'wait', 'Updating who can use it…', 'finishing'),
+    };
     const transport = transportWith([ready]);
     vi.mocked(transport.getConnectorConnections)
       .mockResolvedValueOnce({ connections: [ready] })
@@ -631,6 +760,7 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     });
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
+        readiness: { state: 'ready', reason: 'usable' },
         connectionId: 'connection-1',
         reconciliationStatus: 'ready',
         authoritySync: { status: 'ready' },
@@ -674,7 +804,11 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
   it('keeps the question once shown even when the account then needs a review', async () => {
     const user = userEvent.setup();
     const ready = account('connection-1');
-    const moved = { ...ready, reconciliationStatus: 'migration_needs_reconcile' as const };
+    const moved = {
+      ...ready,
+      reconciliationStatus: 'migration_needs_reconcile' as const,
+      readiness: needs('needs_review', 'review_access', 'Check who can use it.'),
+    };
     const transport = transportWith([ready]);
     vi.mocked(transport.getConnectorConnections)
       .mockResolvedValueOnce({ connections: [ready] })
@@ -700,11 +834,35 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
 
   it("does not block an account whose only pending sync is another agent's", async () => {
     const transport = transportWith([
-      { ...account('connection-1'), authoritySync: { status: 'failed', reason: 'Other agent.' } },
+      {
+        ...account('connection-1'),
+        authoritySync: { status: 'pending' },
+        readiness: needs('access_updating', 'wait', 'Updating who can use it…', 'finishing'),
+      },
     ]);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
     expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
     expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
+  });
+
+  it('asks for the review, not an Allow, when a change to who can use it was refused', async () => {
+    const transport = transportWith([
+      {
+        ...account('connection-1'),
+        authoritySync: { status: 'failed', reason: 'Refused.' },
+        readiness: needs('access_update_failed', 'review_access', 'A change didn’t go through.'),
+      },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+    expect(await screen.findByTestId('account-attention')).toHaveAttribute(
+      'data-reason',
+      'access_update_failed'
+    );
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open Connections/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('app=connection-1')
+    );
   });
 
   it('never starts below the level the agent already holds', async () => {

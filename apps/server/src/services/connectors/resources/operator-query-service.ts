@@ -31,7 +31,6 @@ import {
   ConnectorSessionConnectionsSchema,
   type ConnectorAgentConnections,
   type ConnectorAppConnections,
-  type ConnectorWayProblem,
   type ConnectorEveryAgentAccess,
   type ConnectorEveryAgentGrants,
   type ConnectorAuthoritySyncState,
@@ -54,6 +53,16 @@ import type {
   ManagedConnectorUsageResponse,
 } from '@dorkos/shared/connector-managed-usage-schemas';
 import { appReachProblem, signInThroughFor, type AppReachProblem } from '../app-connection-way.js';
+import {
+  deriveConnectionReadiness,
+  registryWayHealth,
+  type ConnectionReadinessFacts,
+  type ConnectionWayHealthPort,
+} from '../readiness/connection-readiness.js';
+import {
+  managedAgentAccess,
+  type ManagedGrantSubjects,
+} from '../execution/managed-agent-access.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
@@ -117,8 +126,11 @@ export interface ConnectorOperatorQueryServiceOptions {
   readonly recoverManagedProvider?: () => Promise<void>;
   /** Every way set up to reach apps, and the one new apps use. */
   readonly appConnections?: () => Promise<ConnectorAppConnections>;
-  /** Whether the way one connected account goes through is working, and if not, why. */
-  readonly wayProblem?: (providerInstanceId: string) => ConnectorWayProblem | undefined;
+  /**
+   * The live health of the way one connected account goes through. Without
+   * it, only the registry is read: a way that is down names no fix.
+   */
+  readonly wayHealth?: ConnectionWayHealthPort;
   /**
    * The service ids whose logo this server already keeps. An app whose own
    * list sends no logo (the DorkOS account's) still shows one another service
@@ -244,8 +256,7 @@ export class ConnectorOperatorQueryService {
   private readonly managedUsage: ConnectorManagedUsageQueryPort | undefined;
   private readonly recoverManagedProvider: (() => Promise<void>) | undefined;
   private readonly appConnections: (() => Promise<ConnectorAppConnections>) | undefined;
-  private readonly wayProblem:
-    ((providerInstanceId: string) => ConnectorWayProblem | undefined) | undefined;
+  private readonly wayHealth: ConnectionWayHealthPort;
   private readonly keptLogos: (() => Promise<ReadonlySet<string>>) | undefined;
 
   /** Construct owner projections over canonical connector state. */
@@ -258,7 +269,7 @@ export class ConnectorOperatorQueryService {
     this.managedUsage = options.managedUsage;
     this.recoverManagedProvider = options.recoverManagedProvider;
     this.appConnections = options.appConnections;
-    this.wayProblem = options.wayProblem;
+    this.wayHealth = options.wayHealth ?? registryWayHealth(options.registry);
     this.keptLogos = options.keptLogos;
   }
 
@@ -690,6 +701,60 @@ export class ConnectorOperatorQueryService {
     if (!(await this.agentOwnership.ownsAgent(owner, agentId))) {
       throw new ConnectorOperatorQueryError('agent_not_found', 'Agent not found.');
     }
+    return ConnectorAgentConnectionsSchema.parse({
+      agentId,
+      connections: this.agentGrantedConnections(owner, agentId).map((row) => ({
+        connectionId: row.connectionId,
+        toolkit: row.toolkit,
+        label: row.label,
+        lifecycle: lifecycle(row),
+        authenticationStatus: row.authenticationStatus,
+        reconciliationStatus: row.reconciliationStatus,
+        operationRevisionIds: [...row.operationRevisionIds].sort(),
+        everyAgent: row.everyAgent,
+        authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
+        // This agent's own readiness: its own hosted access, never another's.
+        readiness: this.agentReadiness(row, agentId, row),
+      })),
+    });
+  }
+
+  /** One agent's readiness on one account it was given. */
+  private agentReadiness(
+    row: {
+      lifecycleState: 'connected' | 'disconnected';
+      enabled: boolean;
+      authenticationStatus: 'active' | 'expired' | 'revoked' | 'pending';
+      reconciliationStatus: 'ready' | 'migration_needs_reconcile';
+      externalCleanupState: 'not_required' | 'pending' | 'complete' | 'failed' | 'unknown';
+      externalAccountRef: string;
+      providerInstanceId: string;
+      mode: 'managed' | 'byo';
+    },
+    agentId: string,
+    granted: ManagedGrantSubjects,
+    overrides: Partial<ConnectionReadinessFacts> = {}
+  ) {
+    return deriveConnectionReadiness({
+      lifecycle: lifecycle(row),
+      authenticationStatus: row.authenticationStatus,
+      reconciliationStatus: row.reconciliationStatus,
+      ...(row.mode === 'managed' && {
+        authoritySync: managedAgentAccess(this.db, row.externalAccountRef, agentId, granted).sync,
+      }),
+      externalCleanup: row.externalCleanupState,
+      mode: row.mode,
+      way: this.wayHealth(row.providerInstanceId),
+      ...overrides,
+    });
+  }
+
+  /**
+   * Every live connection one agent holds a grant on, its own or through
+   * "every agent", with the facts readiness needs and which kinds of grant
+   * give it the account.
+   */
+  private agentGrantedConnections(owner: ConnectorOwnerAuthority, agentId: string) {
     const owned = ownerColumns(owner);
     const rows = this.db
       .select({
@@ -702,6 +767,7 @@ export class ConnectorOperatorQueryService {
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         externalAccountRef: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
         mode: connectorProviderInstances.mode,
         revisionId: connectionOperationGrants.operationRevisionId,
       })
@@ -737,6 +803,7 @@ export class ConnectorOperatorQueryService {
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         externalAccountRef: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
         mode: connectorProviderInstances.mode,
         revisionId: connectionOperationGrants.operationRevisionId,
       })
@@ -758,7 +825,11 @@ export class ConnectorOperatorQueryService {
       .all();
     const grouped = new Map<
       string,
-      (typeof rows)[number] & { operationRevisionIds: Set<string>; everyAgent: boolean }
+      (typeof rows)[number] & {
+        operationRevisionIds: Set<string>;
+        everyAgent: boolean;
+        named: boolean;
+      }
     >();
     for (const [row, everyAgent] of [
       ...rows.map((row) => [row, false] as const),
@@ -768,25 +839,14 @@ export class ConnectorOperatorQueryService {
         ...row,
         operationRevisionIds: new Set<string>(),
         everyAgent: false,
+        named: false,
       };
       current.operationRevisionIds.add(row.revisionId);
       current.everyAgent ||= everyAgent;
+      current.named ||= !everyAgent;
       grouped.set(row.connectionId, current);
     }
-    return ConnectorAgentConnectionsSchema.parse({
-      agentId,
-      connections: [...grouped.values()].map((row) => ({
-        connectionId: row.connectionId,
-        toolkit: row.toolkit,
-        label: row.label,
-        lifecycle: lifecycle(row),
-        authenticationStatus: row.authenticationStatus,
-        reconciliationStatus: row.reconciliationStatus,
-        operationRevisionIds: [...row.operationRevisionIds].sort(),
-        everyAgent: row.everyAgent,
-        authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
-      })),
-    });
+    return [...grouped.values()];
   }
 
   /**
@@ -843,7 +903,11 @@ export class ConnectorOperatorQueryService {
     });
   }
 
-  /** Return effective exact grants for one verified canonical session. */
+  /**
+   * Return what one verified canonical session's agent can use, account by
+   * account: where the access comes from (the agent, or this chat alone), the
+   * exact revisions, and readiness for this agent in this chat.
+   */
   async sessionConnections(
     owner: ConnectorOwnerAuthority,
     sessionId: string
@@ -852,54 +916,24 @@ export class ConnectorOperatorQueryService {
     if (!resolved) {
       throw new ConnectorOperatorQueryError('session_not_found', 'Session not found.');
     }
-    const inherited = await this.agentConnections(owner, resolved.agentId);
+    const agentId = resolved.agentId;
+    const owned = ownerColumns(owner);
     const byConnection = new Map<
       string,
-      {
+      Omit<ConnectorSessionConnections['connections'][number], 'connectionId'> & {
         connectionId: string;
-        toolkit: string;
-        label: string;
-        access: 'inherited' | 'session_only' | 'disabled';
-        operationRevisionIds: string[];
-        dominatingReason:
-          | 'none'
-          | 'connection_paused'
-          | 'connection_revoked'
-          | 'authentication_required'
-          | 'session_detached'
-          | 'reconciliation_required'
-          | 'authority_sync_required';
       }
-    >(
-      inherited.connections.map((connection) => [
-        connection.connectionId,
-        {
-          connectionId: connection.connectionId,
-          toolkit: connection.toolkit,
-          label: connection.label,
-          access:
-            connection.lifecycle === 'connected' &&
-            connection.authenticationStatus === 'active' &&
-            connection.reconciliationStatus === 'ready' &&
-            connection.authoritySync.status === 'ready'
-              ? ('inherited' as const)
-              : ('disabled' as const),
-          operationRevisionIds: [...connection.operationRevisionIds],
-          dominatingReason:
-            connection.lifecycle === 'paused'
-              ? ('connection_paused' as const)
-              : connection.lifecycle === 'disconnected'
-                ? ('connection_revoked' as const)
-                : connection.authenticationStatus !== 'active'
-                  ? ('authentication_required' as const)
-                  : connection.reconciliationStatus !== 'ready'
-                    ? ('reconciliation_required' as const)
-                    : connection.authoritySync.status !== 'ready'
-                      ? ('authority_sync_required' as const)
-                      : ('none' as const),
-        },
-      ])
-    );
+    >();
+    for (const row of this.agentGrantedConnections(owner, agentId)) {
+      byConnection.set(row.connectionId, {
+        connectionId: row.connectionId,
+        toolkit: row.toolkit,
+        label: row.label,
+        source: 'agent',
+        operationRevisionIds: [...row.operationRevisionIds].sort(),
+        readiness: this.agentReadiness(row, agentId, row),
+      });
+    }
     const overrides = this.db
       .select({
         connectionId: sessionConnectionOverrides.connectionId,
@@ -915,6 +949,7 @@ export class ConnectorOperatorQueryService {
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
         externalAccountRef: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
       })
       .from(sessionConnectionOverrides)
       .innerJoin(connections, eq(connections.id, sessionConnectionOverrides.connectionId))
@@ -926,70 +961,57 @@ export class ConnectorOperatorQueryService {
         and(
           eq(sessionConnectionOverrides.sessionId, sessionId),
           isNull(connections.removedAt),
-          eq(connectorProviderInstances.ownerKind, ownerColumns(owner).ownerKind),
-          eq(connectorProviderInstances.ownerId, ownerColumns(owner).ownerId)
+          eq(connectorProviderInstances.ownerKind, owned.ownerKind),
+          eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
       )
       .all();
     for (const override of overrides) {
-      const validOwner = override.agentId === resolved.agentId && !override.needsReconciliation;
-      const sessionRevisionRows = this.db
-        .select({ revisionId: connectionOperationGrants.operationRevisionId })
-        .from(connectionOperationGrants)
-        .where(
-          and(
-            eq(connectionOperationGrants.subjectType, 'session'),
-            eq(connectionOperationGrants.subjectId, sessionId),
-            eq(connectionOperationGrants.connectionId, override.connectionId),
-            eq(connectionOperationGrants.agentId, resolved.agentId),
-            isNull(connectionOperationGrants.revokedAt)
-          )
-        )
-        .all();
-      const rowLifecycle = lifecycle(override);
-      const authorityReady =
-        this.authoritySync(override.mode, override.externalAccountRef).status === 'ready';
+      // A chat's own override decides alone (agent-grant-scope.ts): turned
+      // off, handed to another agent, or waiting on a review, nothing else
+      // counts here; turned on, only this chat's own grants do.
+      const ownOverride = override.agentId === agentId;
+      const turnedOff = !ownOverride || override.state === 'detached';
+      const sessionRevisions =
+        ownOverride && override.state === 'attached' && !override.needsReconciliation
+          ? this.db
+              .select({ revisionId: connectionOperationGrants.operationRevisionId })
+              .from(connectionOperationGrants)
+              .where(
+                and(
+                  eq(connectionOperationGrants.subjectType, 'session'),
+                  eq(connectionOperationGrants.subjectId, sessionId),
+                  eq(connectionOperationGrants.connectionId, override.connectionId),
+                  eq(connectionOperationGrants.agentId, agentId),
+                  isNull(connectionOperationGrants.revokedAt)
+                )
+              )
+              .all()
+              .map((row) => row.revisionId)
+              .sort()
+          : [];
+      // Turned on with nothing of its own, or waiting on reconciliation: its
+      // agent can't use the account here, and no screen changes one chat's
+      // access yet (DOR-2448), so it reads as turned off here, with no button.
+      const nothingHere =
+        turnedOff || override.needsReconciliation || sessionRevisions.length === 0;
       byConnection.set(override.connectionId, {
         connectionId: override.connectionId,
         toolkit: override.toolkit,
         label: override.label,
-        access:
-          validOwner &&
-          override.state === 'attached' &&
-          sessionRevisionRows.length > 0 &&
-          rowLifecycle === 'connected' &&
-          override.authenticationStatus === 'active' &&
-          override.reconciliationStatus === 'ready' &&
-          authorityReady
-            ? 'session_only'
-            : 'disabled',
-        operationRevisionIds:
-          validOwner && override.state === 'attached'
-            ? sessionRevisionRows.map((row) => row.revisionId).sort()
-            : [],
-        dominatingReason:
-          rowLifecycle === 'paused'
-            ? 'connection_paused'
-            : rowLifecycle === 'disconnected'
-              ? 'connection_revoked'
-              : override.authenticationStatus !== 'active'
-                ? 'authentication_required'
-                : override.reconciliationStatus !== 'ready'
-                  ? 'reconciliation_required'
-                  : !validOwner
-                    ? 'session_detached'
-                    : override.state === 'detached'
-                      ? 'session_detached'
-                      : sessionRevisionRows.length === 0
-                        ? 'reconciliation_required'
-                        : !authorityReady
-                          ? 'authority_sync_required'
-                          : 'none',
+        source: 'this_chat',
+        operationRevisionIds: sessionRevisions,
+        readiness: this.agentReadiness(
+          override,
+          agentId,
+          { named: true, everyAgent: false },
+          { offForThisChat: nothingHere }
+        ),
       });
     }
     return ConnectorSessionConnectionsSchema.parse({
       sessionId,
-      agentId: resolved.agentId,
+      agentId,
       connections: [...byConnection.values()].sort(
         (left, right) =>
           left.label.localeCompare(right.label) ||
@@ -1055,10 +1077,8 @@ export class ConnectorOperatorQueryService {
       .where(eq(connectorEventSubscriptions.connectionId, row.connectionId))
       .all();
     const usage = await this.usageCounts(row, signal);
-    // A disconnected account needs a sign-in whatever its way's state, so only
-    // a kept one is marked as waiting on its way.
-    const wayProblem =
-      row.lifecycleState === 'disconnected' ? undefined : this.wayProblem?.(row.providerInstanceId);
+    const authoritySync = this.authoritySync(row.mode, row.externalAccountRef);
+    const rowLifecycle = lifecycle(row);
     return ConnectorConnectionSummarySchema.parse({
       connectionId: row.connectionId,
       providerInstanceId: row.providerInstanceId,
@@ -1066,10 +1086,10 @@ export class ConnectorOperatorQueryService {
       label: row.label,
       identityHint: row.identityHint,
       externalCleanup: row.externalCleanupState,
-      lifecycle: lifecycle(row),
+      lifecycle: rowLifecycle,
       authenticationStatus: row.authenticationStatus,
       reconciliationStatus: row.reconciliationStatus,
-      authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
+      authoritySync,
       mode: row.mode,
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
@@ -1077,8 +1097,15 @@ export class ConnectorOperatorQueryService {
       everyAgent: this.everyAgentAccess(row.connectionId),
       subscriptionCount: subscriptions.length,
       usage,
-      warnings: [],
-      ...(wayProblem && { wayProblem }),
+      readiness: deriveConnectionReadiness({
+        lifecycle: rowLifecycle,
+        authenticationStatus: row.authenticationStatus,
+        reconciliationStatus: row.reconciliationStatus,
+        authoritySync,
+        externalCleanup: row.externalCleanupState,
+        mode: row.mode,
+        way: this.wayHealth(row.providerInstanceId),
+      }),
     });
   }
 

@@ -473,6 +473,56 @@ describe('listConnectedAccounts — the plural v3.1 filter params', () => {
   });
 });
 
+describe('listConnectedAccounts — every page', () => {
+  it('follows next_cursor until the last page, so no account is left out', async () => {
+    const { client, calls } = clientWith([
+      {
+        body: {
+          items: [{ id: 'ca_1', status: 'ACTIVE', toolkit: { slug: 'gmail' } }],
+          next_cursor: 'page-2',
+        },
+      },
+      {
+        body: {
+          items: [{ id: 'ca_2', status: 'EXPIRED', toolkit: { slug: 'gmail' } }],
+          next_cursor: null,
+        },
+      },
+    ]);
+
+    const accounts = await client.listConnectedAccounts();
+
+    expect(accounts.map((a) => [a.connectedAccountId, a.status])).toEqual([
+      ['ca_1', 'ACTIVE'],
+      ['ca_2', 'EXPIRED'],
+    ]);
+    expect(calls).toHaveLength(2);
+    expect(new URL(calls[0]!.url).searchParams.get('cursor')).toBeNull();
+    expect(new URL(calls[1]!.url).searchParams.get('cursor')).toBe('page-2');
+    expect(new URL(calls[1]!.url).searchParams.get('user_ids')).toBe('dorkos-operator');
+  });
+
+  it('fails the listing, rather than looping, on a cursor that repeats', async () => {
+    const { client, calls } = clientWith([
+      { body: { items: [], next_cursor: 'same' } },
+      { body: { items: [], next_cursor: 'same' } },
+    ]);
+
+    await expect(client.listConnectedAccounts()).rejects.toBeInstanceOf(ComposioApiError);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('stops at the page limit instead of following a cursor forever', async () => {
+    let n = 0;
+    const { client, calls } = clientWith(() => ({
+      body: { items: [], next_cursor: `cursor-${(n += 1)}` },
+    }));
+
+    await expect(client.listConnectedAccounts()).rejects.toThrow(/page safety limit/);
+    expect(calls).toHaveLength(20);
+  });
+});
+
 describe('deleteConnectedAccount', () => {
   it('treats a 404 as idempotent success and surfaces other failures', async () => {
     const { client } = clientWith([{ status: 404, body: { error: { message: 'gone' } } }]);

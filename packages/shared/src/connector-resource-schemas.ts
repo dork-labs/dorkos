@@ -13,6 +13,7 @@ import { ConnectorProviderStatusSchema } from './connector-provider.js';
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
   ConnectionIdSchema,
+  ConnectionReadinessSchema,
   ConnectorCapabilityAvailabilitySchema,
   ConnectorGrantReconciliationStatusSchema,
   ConnectorOperationClassificationSchema,
@@ -96,6 +97,17 @@ export const ConnectorAppWaySchema = z
     providerInstanceId: ConnectorProviderInstanceIdSchema.optional(),
     /** The connection service this way signs in through, when it names one. */
     signInThrough: z.string().min(1).max(100).optional(),
+    /**
+     * Whether agents can act in apps connected this way. Present only while the
+     * way is ready: some ways sign in to apps but can never run their actions
+     * (an account key where a project key is needed, a self-hosted server).
+     */
+    canRunActions: z.boolean().optional(),
+    /**
+     * Present only when the way can't run actions: true when changing the key
+     * would fix that (an account key, where a project key runs them).
+     */
+    keyCanFix: z.boolean().optional(),
   })
   .strict();
 /** One way DorkOS can reach apps that the person has set up. */
@@ -114,25 +126,6 @@ export const ConnectorAppSetupReasonSchema = z.enum([
 ]);
 /** Why connecting an app has to start with the one-time setup step. */
 export type ConnectorAppSetupReason = z.infer<typeof ConnectorAppSetupReasonSchema>;
-
-/**
- * Why a connected account cannot be used although it is still connected: the
- * way it was connected through is not working.
- */
-export const ConnectorWayProblemSchema = z.enum([
-  /**
-   * It was connected through a DorkOS account that is no longer linked.
-   * Linking again does not currently restore connections made through the
-   * old link, so the person connects the app again.
-   */
-  'dorkos_account_unlinked',
-  /** It was connected through a DorkOS account that cannot reach apps right now. */
-  'dorkos_account_unavailable',
-  /** It was connected through the person's own key, which is not answering or was removed. */
-  'own_key_unavailable',
-]);
-/** Why a connected account cannot be used although it is still connected. */
-export type ConnectorWayProblem = z.infer<typeof ConnectorWayProblemSchema>;
 
 /**
  * How DorkOS reaches apps right now: every way set up, and the one new apps use.
@@ -344,12 +337,11 @@ export const ConnectorConnectionSummarySchema = z
     everyAgent: ConnectorEveryAgentAccessSchema.nullable(),
     subscriptionCount: z.number().int().nonnegative(),
     usage: ConnectorUsageCountsSchema,
-    warnings: z.array(ConnectorPublicWarningSchema).max(50),
     /**
-     * Present while the way this account was connected through is not working,
-     * so no agent can use it until that way is fixed.
+     * Whether agents can use it right now and, if not, the one fix. Every
+     * surface renders this; none decides usability from the fields above.
      */
-    wayProblem: ConnectorWayProblemSchema.optional(),
+    readiness: ConnectionReadinessSchema,
   })
   .strict();
 /** Owner-visible summary of one stable connection. */
@@ -597,6 +589,8 @@ export const ConnectorAgentConnectionSchema = z
     /** True when some of this access comes from the connection's every-agent grant. */
     everyAgent: z.boolean(),
     authoritySync: ConnectorAuthoritySyncStateSchema,
+    /** Whether agents can use it right now and, if not, the one fix. */
+    readiness: ConnectionReadinessSchema,
   })
   .strict();
 /** One exact granted connection in an owner-visible agent profile. */
@@ -642,20 +636,13 @@ export const ConnectorSessionEffectiveAccessSchema = z
     connectionId: ConnectionIdSchema,
     toolkit: z.string().min(1).max(200),
     label: z.string().min(1).max(200),
-    access: z.enum(['inherited', 'session_only', 'disabled']),
+    /** Where this chat's access comes from: the agent's own, or this chat alone. */
+    source: z.enum(['agent', 'this_chat']),
     operationRevisionIds: z
       .array(z.string().min(1).max(200))
       .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
-    dominatingReason: z.enum([
-      'none',
-      'connection_paused',
-      'connection_revoked',
-      'authentication_required',
-      'grant_revoked',
-      'session_detached',
-      'reconciliation_required',
-      'authority_sync_required',
-    ]),
+    /** Whether this chat's agent can use it here right now and, if not, the one fix. */
+    readiness: ConnectionReadinessSchema,
   })
   .strict();
 /** Effective owner-visible connection access for one exact session. */

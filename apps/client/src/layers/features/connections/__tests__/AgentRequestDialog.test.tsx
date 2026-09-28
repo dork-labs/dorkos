@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { gmailFilterSchema } from './event-filter-fixtures';
 import { AgentRequestDialog } from '../ui/AgentRequestDialog';
@@ -47,7 +47,7 @@ const CONNECTION = {
   everyAgent: null,
   subscriptionCount: 0,
   usage: { status: 'available' as const, logicalOperationCount: 0, attemptCount: 0 },
-  warnings: [],
+  readiness: createMockConnectionReadiness(),
 };
 
 function transportFor(request: ConnectorAgentRequestItem = REQUEST): Transport {

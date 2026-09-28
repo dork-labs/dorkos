@@ -15,6 +15,7 @@ import {
   shelvesFor,
   type YourAppsInput,
 } from '../lib/app-list';
+import { createMockConnectionReadiness } from '@dorkos/test-utils';
 
 function connection(over: Partial<ConnectorConnectionSummary> = {}): ConnectorConnectionSummary {
   return {
@@ -34,7 +35,7 @@ function connection(over: Partial<ConnectorConnectionSummary> = {}): ConnectorCo
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: createMockConnectionReadiness(),
     ...over,
   };
 }
@@ -128,64 +129,60 @@ describe('accountRow', () => {
   });
 
   it.each([
-    ['expired', 'sign-in-again'],
-    ['revoked', 'sign-in-again'],
-    ['pending', 'sign-in-again'],
-  ] as const)('reads a %s sign-in as broken with "Sign in again"', (status, action) => {
-    const row = accountRow(connection({ authenticationStatus: status }), SERVICES);
-    expect(row.tone).toBe('broken');
-    expect(row.action).toBe(action);
-  });
+    ['needs_you', 'signed_out', 'sign_in_again', 'broken', 'sign-in-again'],
+    ['needs_you', 'needs_review', 'review_access', 'broken', 'review'],
+    ['needs_you', 'own_key_unavailable', 'fix_key', 'broken', 'fix-key'],
+    ['needs_you', 'dorkos_account_unlinked', 'connect_new', 'broken', 'connect-again'],
+    ['unavailable', 'dorkos_account_unavailable', 'retry', 'broken', null],
+    ['unavailable', 'cannot_run_actions', undefined, 'broken', null],
+    ['paused', 'paused', 'resume', 'off', 'resume'],
+    ['finishing', 'access_updating', 'wait', 'busy', null],
+    ['gone', 'disconnected', 'connect_again', 'off', null],
+    ['gone', 'disconnect_stuck', undefined, 'off', null],
+  ] as const)(
+    'renders %s/%s: fix %s → tone %s, row action %s',
+    (state, reason, action, tone, rowAction) => {
+      const owner = `Owner line for ${reason}.`;
+      const row = accountRow(
+        connection({
+          label: 'work',
+          readiness: createMockConnectionReadiness({
+            state,
+            reason,
+            ...(action && {
+              fix: {
+                action,
+                fixableBy: action === 'retry' || action === 'wait' ? 'dorkos' : 'person',
+              },
+            }),
+            copy: { owner, agent: 'Agent line.' },
+          }),
+        }),
+        SERVICES
+      );
+      expect(row.tone).toBe(tone);
+      expect(row.action).toBe(rowAction);
+      expect(row.toolkit).toBe('gmail');
+      // A broken row says only what is wrong; any other names the account first.
+      expect(row.detail).toBe(tone === 'broken' ? owner : `work · ${owner}`);
+    }
+  );
 
-  it('never reads a signed-out account as merely updating', () => {
+  it('is green only when the server says ready, whatever the other fields say', () => {
     const row = accountRow(
-      connection({ authenticationStatus: 'expired', authoritySync: { status: 'pending' } }),
+      connection({
+        authenticationStatus: 'expired',
+        readiness: createMockConnectionReadiness({
+          state: 'needs_you',
+          reason: 'own_key_cannot_run_actions',
+          fix: { action: 'fix_key', fixableBy: 'person' },
+          copy: { owner: 'Agents can’t use it.', agent: 'x' },
+        }),
+      }),
       SERVICES
     );
-    expect(row.tone).toBe('broken');
-  });
-
-  it('greys a paused account and offers Resume', () => {
-    expect(accountRow(connection({ lifecycle: 'paused' }), SERVICES)).toMatchObject({
-      tone: 'off',
-      action: 'resume',
-    });
-  });
-
-  it('says a disconnected account can’t be used, with no row action', () => {
-    const row = accountRow(connection({ lifecycle: 'disconnected' }), SERVICES);
-    expect(row.tone).toBe('off');
-    expect(row.action).toBeNull();
-    expect(row.detail).toContain('Disconnected');
-  });
-
-  it('asks for a review when actions changed or access failed to update', () => {
-    expect(
-      accountRow(connection({ reconciliationStatus: 'migration_needs_reconcile' }), SERVICES)
-    ).toMatchObject({ tone: 'attention', action: 'review' });
-    // Pinned: whatever the grants, never green until the server says ready.
-    for (const over of [
-      { agentCount: 0 },
-      {
-        agentCount: 0,
-        everyAgent: { operationRevisionIds: ['op-1'], classifications: ['read' as const] },
-      },
-    ]) {
-      expect(
-        accountRow(
-          connection({ reconciliationStatus: 'migration_needs_reconcile', ...over }),
-          SERVICES
-        )
-      ).toMatchObject({ tone: 'attention', action: 'review' });
-    }
-    expect(
-      accountRow(connection({ authoritySync: { status: 'failed', reason: 'x' } }), SERVICES)
-    ).toMatchObject({ tone: 'broken', action: 'review' });
-  });
-
-  it('shows an access update in flight as busy, not ready', () => {
-    const row = accountRow(connection({ authoritySync: { status: 'pending' } }), SERVICES);
-    expect(row.tone).toBe('busy');
+    expect(row.tone).not.toBe('ready');
+    expect(row.action).toBe('fix-key');
   });
 
   it('goes by the name the person gave it, keeping the address for the panel', () => {
@@ -290,12 +287,26 @@ describe('buildYourApps', () => {
     const rows = buildYourApps(
       input({
         connections: [
-          connection({ connectionId: 'paused' as never, lifecycle: 'paused', toolkit: 'aaa' }),
+          connection({
+            connectionId: 'paused' as never,
+            toolkit: 'aaa',
+            readiness: createMockConnectionReadiness({
+              state: 'paused',
+              reason: 'paused',
+              fix: { action: 'resume', fixableBy: 'person' },
+              copy: { owner: 'Paused.', agent: 'x' },
+            }),
+          }),
           connection({ connectionId: 'ok' as never }),
           connection({
             connectionId: 'broken' as never,
             toolkit: 'notion',
-            authenticationStatus: 'expired',
+            readiness: createMockConnectionReadiness({
+              state: 'needs_you',
+              reason: 'signed_out',
+              fix: { action: 'sign_in_again', fixableBy: 'person' },
+              copy: { owner: 'Signed out.', agent: 'x' },
+            }),
           }),
         ],
       })

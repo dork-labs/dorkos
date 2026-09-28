@@ -4,11 +4,15 @@
  * one next thing to do is, and which apps "All apps" still offers.
  *
  * Pure: every function here takes the server's own answers and returns rows,
- * so the page never decides health on its own. A row is only ever `ready` when
- * every server-reported fact about it says an agent can use it now.
+ * so the page never decides health on its own. An account row is `ready` only
+ * when the server's readiness for it is.
  *
  * @module features/connections/lib/app-list
  */
+import type {
+  ConnectionFixAction,
+  ConnectionReadinessState,
+} from '@dorkos/shared/connector-schemas';
 import type {
   ConnectorCatalogCategory,
   ConnectorCatalogService,
@@ -30,7 +34,8 @@ import type { AdapterBinding, CatalogEntry, CatalogInstance } from '@dorkos/shar
 export type AppRowTone = 'ready' | 'broken' | 'attention' | 'busy' | 'off';
 
 /** The one thing a row offers on its right side, if anything. */
-export type AppRowAction = 'sign-in-again' | 'resume' | 'cancel' | 'review' | 'fix';
+export type AppRowAction =
+  'sign-in-again' | 'resume' | 'cancel' | 'review' | 'fix' | 'fix-key' | 'connect-again';
 
 /** One row in "Yours". */
 export interface YourAppRow {
@@ -42,6 +47,8 @@ export interface YourAppRow {
   name: string;
   /** Icon key for the app's `ServiceMark`. */
   iconKey: string;
+  /** The app's service id, for an account row. */
+  toolkit?: string;
   /** What the catalog says about the app's logo (`ServiceLogo`). */
   logo?: ServiceLogo;
   /**
@@ -144,10 +151,32 @@ function logoOf(
   return logo === undefined ? {} : { logo };
 }
 
+/** How each readiness state reads as a row. */
+const TONE_BY_STATE: Record<ConnectionReadinessState, AppRowTone> = {
+  ready: 'ready',
+  needs_you: 'broken',
+  unavailable: 'broken',
+  finishing: 'busy',
+  paused: 'off',
+  gone: 'off',
+};
+
 /**
- * One account's row, decided from the server's own facts about it. Order
- * matters: the first fact that stops agents wins, so a signed-out account
- * never reads as merely "updating".
+ * The row button for each fix a row can make in place. A fix missing here is
+ * made from the side panel (a disconnected account's) or is DorkOS's own.
+ */
+const ROW_ACTION_BY_FIX: Partial<Record<ConnectionFixAction, AppRowAction>> = {
+  sign_in_again: 'sign-in-again',
+  resume: 'resume',
+  review_access: 'review',
+  fix_key: 'fix-key',
+  connect_new: 'connect-again',
+};
+
+/**
+ * One account's row, rendered from the server's readiness: its state sets the
+ * tone, its one fix the button, and its owner line the detail. Nothing here
+ * decides whether agents can use it.
  *
  * @param connection - The connection summary.
  * @param services - Catalog services by id.
@@ -156,72 +185,30 @@ export function accountRow(
   connection: ConnectorConnectionSummary,
   services: ReadonlyMap<string, ConnectorCatalogService>
 ): YourAppRow {
-  const base = {
+  const { readiness } = connection;
+  const names = accountNames(connection);
+  const tone = TONE_BY_STATE[readiness.state];
+  const fix = readiness.fix?.action;
+  // A disconnected account's fix (connect it again, finish removing it) is the
+  // side panel's: the row only says what happened.
+  const action = readiness.state === 'gone' || !fix ? null : (ROW_ACTION_BY_FIX[fix] ?? null);
+  return {
     id: connection.connectionId,
-    kind: 'account' as const,
+    kind: 'account',
     name: accountAppName(connection.toolkit, services),
     iconKey: connection.toolkit,
+    toolkit: connection.toolkit,
     ...logoOf(connection.toolkit, services),
-    ...accountNames(connection),
+    ...names,
     waiting: 0,
-  };
-  const who = base.account;
-  if (connection.lifecycle === 'disconnected') {
-    return {
-      ...base,
-      tone: 'off',
-      action: null,
-      detail: `${who} · Disconnected. Agents can’t use it.`,
-    };
-  }
-  if (connection.lifecycle === 'paused') {
-    return { ...base, tone: 'off', action: 'resume', detail: `${who} · Paused` };
-  }
-  if (
-    connection.authenticationStatus === 'expired' ||
-    connection.authenticationStatus === 'revoked'
-  ) {
-    return {
-      ...base,
-      tone: 'broken',
-      action: 'sign-in-again',
-      detail: 'Signed out. Agents can’t use it until you sign in again.',
-    };
-  }
-  if (connection.authenticationStatus === 'pending') {
-    return {
-      ...base,
-      tone: 'broken',
-      action: 'sign-in-again',
-      detail: 'Sign-in didn’t finish. Agents can’t use it yet.',
-    };
-  }
-  if (connection.authoritySync.status === 'failed') {
-    return {
-      ...base,
-      tone: 'broken',
-      action: 'review',
-      detail: 'Couldn’t update who can use it. Check it again.',
-    };
-  }
-  // The server marks a connection for review only when access someone holds
-  // may have gone stale; until it says ready again, the row never reads green.
-  if (connection.reconciliationStatus !== 'ready') {
-    return {
-      ...base,
-      tone: 'attention',
-      action: 'review',
-      detail: 'Some of its actions changed. Check who can use it.',
-    };
-  }
-  if (connection.authoritySync.status === 'pending') {
-    return { ...base, tone: 'busy', action: null, detail: `${who} · Updating who can use it…` };
-  }
-  return {
-    ...base,
-    tone: 'ready',
-    action: null,
-    detail: `${who} · ${connection.everyAgent ? 'Every agent' : agentCountLine(connection.agentCount)}`,
+    tone,
+    action,
+    detail:
+      readiness.state === 'ready'
+        ? `${names.account} · ${connection.everyAgent ? 'Every agent' : agentCountLine(connection.agentCount)}`
+        : tone === 'broken'
+          ? readiness.copy.owner
+          : `${names.account} · ${readiness.copy.owner}`,
   };
 }
 

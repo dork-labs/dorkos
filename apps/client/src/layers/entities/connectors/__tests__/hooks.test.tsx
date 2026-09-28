@@ -149,23 +149,17 @@ describe('useConnectorConnection', () => {
     vi.useRealTimers();
   });
 
-  function detailWith(
-    externalCleanup: 'pending' | 'complete',
-    authoritySync: { status: 'pending' } | { status: 'failed'; reason: string } = {
-      status: 'pending',
-    }
-  ) {
+  /** A disconnected account's detail, carrying only the readiness reason the hook reads. */
+  function detailWith(reason: 'disconnect_finishing' | 'disconnect_stuck' | 'disconnected') {
     return {
-      connection: { lifecycle: 'disconnected', externalCleanup, authoritySync },
+      connection: { lifecycle: 'disconnected', readiness: { state: 'gone', reason } },
     } as unknown as Awaited<ReturnType<Transport['getConnectorConnection']>>;
   }
 
-  it('does not re-read a sign-out that was refused: nothing is retrying', async () => {
+  it('does not re-read a sign-out DorkOS can’t finish: nothing is retrying', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const transport = createMockTransport();
-    vi.mocked(transport.getConnectorConnection).mockResolvedValue(
-      detailWith('pending', { status: 'failed', reason: 'This instance is no longer linked.' })
-    );
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue(detailWith('disconnect_stuck'));
     const { wrapper } = createWrapper(transport);
     const { result } = renderHook(() => useConnectorConnection('c-1'), { wrapper });
     await waitFor(() => expect(result.current.data).toBeDefined());
@@ -173,13 +167,13 @@ describe('useConnectorConnection', () => {
     expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
   });
 
-  it('re-reads a disconnected account while its sign-out is pending, and stops once it settles', async () => {
+  it('re-reads a disconnected account while DorkOS finishes its sign-out, and stops once it settles', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorConnection)
-      .mockResolvedValueOnce(detailWith('pending'))
-      .mockResolvedValueOnce(detailWith('pending'))
-      .mockResolvedValue(detailWith('complete'));
+      .mockResolvedValueOnce(detailWith('disconnect_finishing'))
+      .mockResolvedValueOnce(detailWith('disconnect_finishing'))
+      .mockResolvedValue(detailWith('disconnected'));
     const { wrapper } = createWrapper(transport);
     const { result } = renderHook(() => useConnectorConnection('c-1'), { wrapper });
     await waitFor(() => expect(result.current.data).toBeDefined());
@@ -190,7 +184,9 @@ describe('useConnectorConnection', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     await waitFor(() => expect(transport.getConnectorConnection).toHaveBeenCalledTimes(2));
     await vi.advanceTimersByTimeAsync(15_000);
-    await waitFor(() => expect(result.current.data?.connection.externalCleanup).toBe('complete'));
+    await waitFor(() =>
+      expect(result.current.data?.connection.readiness.reason).toBe('disconnected')
+    );
     expect(transport.getConnectorConnection).toHaveBeenCalledTimes(3);
 
     // Settled: no more reads, however long the panel stays open.

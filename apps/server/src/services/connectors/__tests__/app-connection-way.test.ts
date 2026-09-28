@@ -4,7 +4,6 @@ import {
   CONNECTION_CLOSED_BY_NEW_LINK_EVENT,
   recordConnectionsClosedByNewLink,
   agentAppSetupNote,
-  agentWayProblemNote,
   appReachProblem,
   chooseNewAppsWay,
   signInThroughFor,
@@ -79,6 +78,14 @@ describe('chooseNewAppsWay', () => {
     });
   });
 
+  it('prefers a way agents can act through over a key that can only sign in', () => {
+    const signInOnly: ConnectorAppWay = { ...ownKey('composio', 'ready'), canRunActions: false };
+    const account: ConnectorAppWay = { ...dorkosAccount('ready'), canRunActions: true };
+    expect(chooseNewAppsWay([signInOnly, account])).toEqual({ status: 'ready', way: account });
+    // With nothing better, the sign-in-only key still connects apps.
+    expect(chooseNewAppsWay([signInOnly])).toEqual({ status: 'ready', way: signInOnly });
+  });
+
   it('uses a working key while the DorkOS account is unlinked', () => {
     expect(
       chooseNewAppsWay([dorkosAccount('unlinked'), ownKey('composio', 'ready')])
@@ -131,17 +138,6 @@ describe('agent notes', () => {
       expect(note).toContain('Gmail');
       expect(note).toContain('still request');
     }
-  });
-
-  it('tells an agent holding an account whose way is down what the person does, honestly', () => {
-    // Linking again does not bring the old connection back, so the note never
-    // promises that and says the app is connected again.
-    const unlinked = agentWayProblemNote('dorkos_account_unlinked');
-    expect(unlinked).toContain("isn't linked anymore");
-    expect(unlinked).toContain('does not bring it back');
-    expect(unlinked).toContain('connects this app again');
-    expect(agentWayProblemNote('own_key_unavailable')).toContain("isn't set up or didn't answer");
-    expect(agentWayProblemNote('dorkos_account_unavailable')).toContain('Try again later');
   });
 });
 

@@ -5,6 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import { toImpactApp } from '../lib/connection-impact';
 import { ConnectionImpactList } from '../ui/ConnectionImpactList';
+import { createMockConnectionReadiness } from '@dorkos/test-utils';
 
 afterEach(cleanup);
 
@@ -26,7 +27,7 @@ function summary(over: Partial<ConnectorConnectionSummary>): ConnectorConnection
     everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-    warnings: [],
+    readiness: createMockConnectionReadiness(),
     ...over,
   };
 }

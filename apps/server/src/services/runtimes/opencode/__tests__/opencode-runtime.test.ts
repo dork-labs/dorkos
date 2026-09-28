@@ -2334,7 +2334,7 @@ describe('OpenCodeRuntime', () => {
 
       const prompt = JSON.stringify(harness.client.session.promptAsync.mock.calls.at(-1));
       expect(prompt).toContain('dorkos_connections_connectors_list_granted_connections');
-      expect(prompt).toContain('Currently granted accounts for this agent session: 1');
+      expect(prompt).toContain('Accounts this agent session can use right now: 1');
       expect(prompt).not.toContain('private-revision');
       const connectorAdd = harness.client.mcp.add.mock.calls.find(
         (call) => call[0]?.body?.name === 'dorkos_connections'

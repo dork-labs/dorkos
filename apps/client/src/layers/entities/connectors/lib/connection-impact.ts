@@ -18,8 +18,11 @@ export interface ImpactApp {
   agentCount: number;
   /** Whether every agent may use it, including agents added later (DOR-2420). */
   everyAgent: boolean;
-  /** Whether the app is switched on. A paused app is not in use either way. */
-  active: boolean;
+  /**
+   * Whether agents can use it right now (the server's readiness). An app that
+   * is paused, signed out or already cut off loses nothing more.
+   */
+  usable: boolean;
 }
 
 /**
@@ -33,7 +36,7 @@ export function toImpactApp(connection: ConnectorConnectionSummary): ImpactApp {
     name: `${serviceName(connection.toolkit)} (${connection.label})`,
     agentCount: connection.agentCount,
     everyAgent: connection.everyAgent !== null,
-    active: connection.lifecycle === 'connected',
+    usable: connection.readiness.state === 'ready',
   };
 }
 
@@ -45,29 +48,25 @@ export function toImpactApp(connection: ConnectorConnectionSummary): ImpactApp {
  */
 export function dorkosAccountApps(connections: readonly ConnectorConnectionSummary[]): ImpactApp[] {
   return connections
-    .filter(
-      (connection) => connection.lifecycle !== 'disconnected' && connection.mode === 'managed'
-    )
+    .filter((connection) => connection.readiness.state !== 'gone' && connection.mode === 'managed')
     .map(toImpactApp);
 }
 
 /**
  * Split a way's apps by what taking the way away would do to them: the ones
- * working now stop; the rest (paused, or on a way that already isn't working)
- * can't be used now either way, so counting them as "will stop" would overstate
- * the loss.
+ * agents can use now stop; the rest (paused, signed out, or on a way that
+ * already isn't working, as the server's readiness says) can't be used now
+ * either way, so counting them as "will stop" would overstate the loss.
  *
  * @param apps - The way's apps.
- * @param wayWorking - Whether the way itself works right now.
  */
-export function splitByImpact(
-  apps: readonly ImpactApp[],
-  wayWorking: boolean
-): { stopping: ImpactApp[]; idle: ImpactApp[] } {
-  if (!wayWorking) return { stopping: [], idle: [...apps] };
+export function splitByImpact(apps: readonly ImpactApp[]): {
+  stopping: ImpactApp[];
+  idle: ImpactApp[];
+} {
   return {
-    stopping: apps.filter((app) => app.active),
-    idle: apps.filter((app) => !app.active),
+    stopping: apps.filter((app) => app.usable),
+    idle: apps.filter((app) => !app.usable),
   };
 }
 

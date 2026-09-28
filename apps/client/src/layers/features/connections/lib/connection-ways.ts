@@ -37,7 +37,7 @@ export function groupAppsByWay(
   const keyInstances = new Set<string>(providers.map((provider) => provider.providerInstanceId));
   const grouped: AppsByWay = { dorkosAccount: dorkosAccountApps(connections), byKeyInstance: {} };
   for (const connection of connections) {
-    if (connection.lifecycle === 'disconnected' || connection.mode === 'managed') continue;
+    if (connection.readiness.state === 'gone' || connection.mode === 'managed') continue;
     if (!keyInstances.has(connection.providerInstanceId)) continue;
     (grouped.byKeyInstance[connection.providerInstanceId] ??= []).push(toImpactApp(connection));
   }

@@ -8,21 +8,10 @@ import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { serviceName } from '../lib/access-copy';
 import { ServiceMark } from './ServiceMark';
 
-const SESSION_ACCESS_COPY = {
-  inherited: 'Inherited from agent',
-  session_only: 'Allowed only in this session',
-  disabled: 'Disabled in this session',
-} as const;
-
-const DOMINATING_REASON_COPY = {
-  none: null,
-  connection_paused: 'The account is paused.',
-  connection_revoked: 'The account was disconnected.',
-  authentication_required: 'The account needs to be signed in again.',
-  grant_revoked: 'This access was removed.',
-  session_detached: 'This session is blocked from using the account.',
-  reconciliation_required: 'The account access needs review.',
-  authority_sync_required: 'Account access has not finished updating.',
+/** Where a chat's usable access comes from, as its badge says it. */
+const SESSION_SOURCE_COPY = {
+  agent: 'Inherited from agent',
+  this_chat: 'Allowed only in this session',
 } as const;
 
 /** Canonical account grants shown from one agent profile. */
@@ -78,11 +67,7 @@ export function AgentConnectionAccessList({
       ) : (
         <ul className="space-y-1.5">
           {connections.map((connection) => {
-            const usable =
-              connection.lifecycle === 'connected' &&
-              connection.authenticationStatus === 'active' &&
-              connection.reconciliationStatus === 'ready' &&
-              connection.authoritySync.status === 'ready';
+            const usable = connection.readiness.state === 'ready';
             return (
               <li
                 key={connection.connectionId}
@@ -104,7 +89,11 @@ export function AgentConnectionAccessList({
                     {connection.everyAgent && ' · given to every agent'}
                   </p>
                 </div>
-                <Badge size="xs" variant={usable ? 'secondary' : 'outline'}>
+                <Badge
+                  size="xs"
+                  variant={usable ? 'secondary' : 'outline'}
+                  title={usable ? undefined : connection.readiness.copy.owner}
+                >
                   {usable ? 'Available' : 'Unavailable'}
                 </Badge>
               </li>
@@ -182,31 +171,32 @@ export function SessionConnectionAccessList({
         </div>
       ) : (
         connections.map((connection) => {
-          const reason = DOMINATING_REASON_COPY[connection.dominatingReason];
+          const ready = connection.readiness.state === 'ready';
           return (
             <div
               key={connection.connectionId}
               data-testid={`session-connection-${connection.connectionId}`}
+              data-reason={connection.readiness.reason}
               className="bg-muted/40 rounded-md px-2.5 py-2"
             >
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-sm font-medium">
                   {serviceName(connection.toolkit)} ({connection.label})
                 </span>
-                <Badge
-                  size="xs"
-                  variant={connection.access === 'disabled' ? 'outline' : 'secondary'}
-                >
-                  {SESSION_ACCESS_COPY[connection.access]}
+                <Badge size="xs" variant={ready ? 'secondary' : 'outline'}>
+                  {ready ? SESSION_SOURCE_COPY[connection.source] : 'Not available'}
                 </Badge>
               </div>
               <p
                 className={
-                  reason ? 'text-destructive mt-1 text-xs' : 'text-muted-foreground mt-1 text-xs'
+                  ready
+                    ? 'text-muted-foreground mt-1 text-xs'
+                    : 'text-status-warning-fg mt-1 text-xs'
                 }
               >
-                {reason ??
-                  `${connection.operationRevisionIds.length} actions available in this session.`}
+                {ready
+                  ? `${connection.operationRevisionIds.length} actions available in this session.`
+                  : connection.readiness.copy.owner}
               </p>
             </div>
           );

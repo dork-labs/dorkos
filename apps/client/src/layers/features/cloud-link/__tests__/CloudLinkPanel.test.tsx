@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { connectorKeys } from '@/layers/entities/connectors';
@@ -157,7 +157,7 @@ describe('CloudLinkPanel', () => {
       payer: 'dorkos_managed',
       subscriptionCount: 0,
       usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
-      warnings: [],
+      readiness: createMockConnectionReadiness(),
     } as const;
     const transport = createMockTransport({
       getCloudStatus: vi.fn().mockResolvedValue({
@@ -193,6 +193,11 @@ describe('CloudLinkPanel', () => {
             lifecycle: 'paused',
             agentCount: 0,
             everyAgent: null,
+            readiness: createMockConnectionReadiness({
+              state: 'paused',
+              reason: 'paused',
+              fix: { action: 'resume', fixableBy: 'person' },
+            }),
           },
           // Through the person's own key, so unlinking does not touch it.
           {

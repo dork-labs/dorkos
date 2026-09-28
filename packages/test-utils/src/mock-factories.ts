@@ -14,6 +14,13 @@ import type {
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
+import {
+  CONNECTION_GONE_AGENT_COPY,
+  CONNECTION_READINESS_COPY,
+  ConnectionReadinessSchema,
+  disconnectStuckOwnerLine,
+  type ConnectionReadiness,
+} from '@dorkos/shared/connector-schemas';
 import type { LimitPlan, SessionLimit } from '@dorkos/shared/session-stream';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type {
@@ -1596,4 +1603,26 @@ export function mockInterruptReceipt(
     ...(reason ? { reason } : {}),
     runtime: overrides.runtime ?? 'fake',
   };
+}
+
+/**
+ * A connected account's server readiness for client fixtures: ready unless
+ * overridden. Client code renders readiness and never derives it, so a fixture
+ * names the state it wants the surface to show; the server's own table
+ * (`deriveConnectionReadiness`) is tested on its own. Words come from the one
+ * copy table unless given, and the result is checked against the schema, so a
+ * fixture can never hold a readiness the server could not send.
+ *
+ * @param overrides - The state, reason, fix or copy to use instead.
+ */
+export function createMockConnectionReadiness(
+  overrides: Partial<ConnectionReadiness> = {}
+): ConnectionReadiness {
+  const reason = overrides.reason ?? 'usable';
+  const copy =
+    overrides.copy ??
+    (reason === 'disconnect_stuck'
+      ? { owner: disconnectStuckOwnerLine('unconfirmed'), agent: CONNECTION_GONE_AGENT_COPY }
+      : CONNECTION_READINESS_COPY[reason]);
+  return ConnectionReadinessSchema.parse({ state: 'ready', ...overrides, reason, copy });
 }

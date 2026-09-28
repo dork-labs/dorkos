@@ -4,12 +4,9 @@ import { z } from 'zod';
 import {
   connectionOperationGrants,
   connections,
-  connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connectorProviderInstances,
   and,
-  desc,
-  EVERY_AGENT_GRANT_SUBJECT_ID,
   eq,
   isNull,
   type Db,
@@ -22,9 +19,9 @@ import {
   type ConnectorOperationClassification,
   type ConnectorOperationRevision,
 } from '@dorkos/shared/connector-schemas';
-import type {
-  ConnectorExternalAccountRef,
-  ConnectorProvider,
+import {
+  type ConnectorExternalAccountRef,
+  type ConnectorProvider,
 } from '@dorkos/shared/connector-provider';
 import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import type { CapabilityPreflightResult } from '../../core/capabilities/index.js';
@@ -40,8 +37,15 @@ import {
   type ServerPrincipalProof,
 } from '../principal/server-principal.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
-import { agentGrantScope } from './agent-grant-scope.js';
+import {
+  deriveConnectionReadiness,
+  registryWayHealth,
+  type ConnectionReadinessFacts,
+  type ConnectionWayHealthPort,
+} from '../readiness/connection-readiness.js';
+import { agentGrantScope, type AgentGrantDenial } from './agent-grant-scope.js';
 import { describeServiceAction } from './approval-service-action.js';
+import { managedAgentAccess } from './managed-agent-access.js';
 
 const CLASSIFICATION_BY_CAPABILITY = {
   'connectors.execute_read': 'read',
@@ -176,16 +180,59 @@ function authorityDigest(value: unknown): string {
   return createHash('sha256').update(stableStringify(value)).digest('hex');
 }
 
+/** What an agent reads when an account isn't ready but readiness can't name why. */
+const NOT_READY_FALLBACK =
+  'This account isn’t ready to use right now. Try again in a few minutes, and tell the person if it keeps happening.';
+
 /** SQLite-backed live connector authorization. */
 export class ConnectorExecutionAuthorizationService {
   private readonly preparedExecutions = new WeakSet<object>();
+  private readonly wayHealth: ConnectionWayHealthPort;
 
-  /** Construct the authorization service over canonical stores and live providers. */
+  /**
+   * Construct the authorization service over canonical stores and live providers.
+   *
+   * @param wayHealth - The live health of the way behind an account, for
+   *   refusals that say why it can't be used. Without it, only the registry is read.
+   */
   constructor(
     private readonly db: Db,
     private readonly registry: ConnectorRegistry,
-    private readonly agentOwnership: ConnectorAgentOwnershipPort
-  ) {}
+    private readonly agentOwnership: ConnectorAgentOwnershipPort,
+    wayHealth?: ConnectionWayHealthPort
+  ) {
+    this.wayHealth = wayHealth ?? registryWayHealth(registry);
+  }
+
+  /**
+   * Refuse a call on an account that isn't ready, with the readiness words for
+   * the agent: why, and what the person must do (DOR-2500).
+   */
+  private refuseNotReady(
+    code: string,
+    row: ExecutionRow,
+    extra: Partial<ConnectionReadinessFacts> = {}
+  ): never {
+    const readiness = deriveConnectionReadiness({
+      lifecycle:
+        row.lifecycleState === 'disconnected'
+          ? 'disconnected'
+          : row.enabled
+            ? 'connected'
+            : 'paused',
+      authenticationStatus: row.connectionStatus,
+      reconciliationStatus: row.reconciliationStatus,
+      mode: row.providerMode,
+      way: this.wayHealth(row.providerInstanceId),
+      ...extra,
+    });
+    if (readiness.state === 'ready') return refuse(code, NOT_READY_FALLBACK);
+    throw new CapabilityToolError({
+      error: readiness.copy.agent,
+      code,
+      reason: readiness.reason,
+    });
+  }
 
   /** Produce the authenticated preflight result consumed by the registry tier gate. */
   async preflight(input: PrepareConnectorExecutionInput): Promise<CapabilityPreflightResult> {
@@ -306,6 +353,14 @@ export class ConnectorExecutionAuthorizationService {
       );
     }
     if (
+      row.lifecycleState === 'connected' &&
+      row.enabled &&
+      (row.connectionStatus === 'expired' || row.connectionStatus === 'revoked')
+    ) {
+      // The service said this sign-in ended; readiness names the one fix.
+      return this.refuseNotReady('CONNECTOR_SIGN_IN_ENDED', row);
+    }
+    if (
       row.lifecycleState !== 'connected' ||
       !row.enabled ||
       row.connectionStatus !== 'active' ||
@@ -314,10 +369,7 @@ export class ConnectorExecutionAuthorizationService {
       !row.executionConfigDigest ||
       row.executionConfigGeneration < 1
     ) {
-      return refuse(
-        'CONNECTOR_NOT_EXECUTABLE',
-        'The selected connection is not ready for execution.'
-      );
+      return this.refuseNotReady('CONNECTOR_NOT_EXECUTABLE', row);
     }
     const expectedClassification = CLASSIFICATION_BY_CAPABILITY[input.capabilityId];
     if (row.classification !== expectedClassification) {
@@ -333,6 +385,9 @@ export class ConnectorExecutionAuthorizationService {
       );
     }
     const granted = this.matchingGrants(actor.agentId, actor.sessionId, input.target);
+    if (granted.denied === 'detached') {
+      return this.refuseNotReady('CONNECTOR_GRANT_REQUIRED', row, { offForThisChat: true });
+    }
     if (!granted.named && !granted.everyAgent) {
       return refuse(
         'CONNECTOR_GRANT_REQUIRED',
@@ -343,16 +398,10 @@ export class ConnectorExecutionAuthorizationService {
       ConnectorOperationRevisionSchema.shape.providerInstanceId.parse(row.providerInstanceId)
     );
     if (!provider || provider.type !== row.providerType) {
-      return refuse(
-        'CONNECTOR_PROVIDER_UNAVAILABLE',
-        'The selected connection provider is unavailable.'
-      );
+      return this.refuseNotReady('CONNECTOR_PROVIDER_UNAVAILABLE', row);
     }
     if (provider.getCapabilities().capabilities.execution.status !== 'available') {
-      return refuse(
-        'CONNECTOR_EXECUTION_UNSUPPORTED',
-        'This provider does not support operation execution.'
-      );
+      return this.refuseNotReady('CONNECTOR_EXECUTION_UNSUPPORTED', row);
     }
     const managedHostedRevisionId =
       row.providerMode === 'managed'
@@ -365,17 +414,16 @@ export class ConnectorExecutionAuthorizationService {
       );
     }
     const argumentsValue = this.validateArguments(row.inputSchemaJson, input.target.arguments);
-    const managedGrant =
+    const managedAccess =
       row.providerMode === 'managed'
-        ? this.appliedManagedGrant(row.externalAccountRef, actor.agentId, granted)
+        ? managedAgentAccess(this.db, row.externalAccountRef, actor.agentId, granted)
         : undefined;
-    const managedGrantScopeVersion = managedGrant?.scopeVersion;
-    const managedGrantSubject = managedGrant?.subject;
-    if (row.providerMode === 'managed' && managedGrantScopeVersion === undefined) {
-      return refuse(
-        'CONNECTOR_MANAGED_AUTHORITY_PENDING',
-        'Managed connector access is still synchronizing.'
-      );
+    const managedGrantScopeVersion = managedAccess?.applied?.scopeVersion;
+    const managedGrantSubject = managedAccess?.applied?.subject;
+    if (managedAccess && managedGrantScopeVersion === undefined) {
+      return this.refuseNotReady('CONNECTOR_MANAGED_AUTHORITY_PENDING', row, {
+        authoritySync: managedAccess.sync,
+      });
     }
     const operation = ConnectorOperationRevisionSchema.parse({
       id: row.operationRevisionId,
@@ -440,53 +488,6 @@ export class ConnectorExecutionAuthorizationService {
     });
     this.preparedExecutions.add(authorized);
     return authorized;
-  }
-
-  /**
-   * The hosted scope that authorizes this managed call: the agent's own grant
-   * when it has one hosted authority has applied, otherwise "every agent"
-   * (DOR-2439) when that is what grants it and hosted authority has applied it.
-   */
-  private appliedManagedGrant(
-    managedConnectionId: string,
-    agentId: string,
-    granted: { readonly named: boolean; readonly everyAgent: boolean }
-  ): { subject: 'agent' | 'every_agent'; scopeVersion: number } | undefined {
-    const named = granted.named
-      ? this.readAppliedManagedGrantScopeVersion(managedConnectionId, 'agent_grants', agentId)
-      : undefined;
-    if (named !== undefined) return { subject: 'agent', scopeVersion: named };
-    const everyAgent = granted.everyAgent
-      ? this.readAppliedManagedGrantScopeVersion(
-          managedConnectionId,
-          'every_agent_grants',
-          EVERY_AGENT_GRANT_SUBJECT_ID
-        )
-      : undefined;
-    return everyAgent === undefined
-      ? undefined
-      : { subject: 'every_agent', scopeVersion: everyAgent };
-  }
-
-  private readAppliedManagedGrantScopeVersion(
-    managedConnectionId: string,
-    scopeKind: 'agent_grants' | 'every_agent_grants',
-    subjectId: string
-  ): number | undefined {
-    return this.db
-      .select({ scopeVersion: connectorManagedAuthorityOutbox.scopeVersion })
-      .from(connectorManagedAuthorityOutbox)
-      .where(
-        and(
-          eq(connectorManagedAuthorityOutbox.managedConnectionId, managedConnectionId),
-          eq(connectorManagedAuthorityOutbox.scopeKind, scopeKind),
-          eq(connectorManagedAuthorityOutbox.subjectId, subjectId),
-          eq(connectorManagedAuthorityOutbox.state, 'applied')
-        )
-      )
-      .orderBy(desc(connectorManagedAuthorityOutbox.scopeVersion))
-      .limit(1)
-      .get()?.scopeVersion;
   }
 
   private async resolveActor(
@@ -608,13 +609,13 @@ export class ConnectorExecutionAuthorizationService {
     agentId: string,
     sessionId: string | undefined,
     target: ConnectorExecutionTarget
-  ): { named: boolean; everyAgent: boolean } {
+  ): { named: boolean; everyAgent: boolean; denied?: AgentGrantDenial } {
     const scope = agentGrantScope(this.db, {
       agentId,
       sessionId,
       connectionId: target.connectionId,
     });
-    if (scope.kind === 'denied') return { named: false, everyAgent: false };
+    if (scope.kind === 'denied') return { named: false, everyAgent: false, denied: scope.reason };
     const subjects = this.db
       .select({ subjectType: connectionOperationGrants.subjectType })
       .from(connectionOperationGrants)
