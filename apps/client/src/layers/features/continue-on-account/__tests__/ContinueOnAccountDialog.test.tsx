@@ -164,8 +164,9 @@ function renderDialog({
     ...overrides,
   });
   const onOpenChange = vi.fn();
+  const queryClient = createTestQueryClient();
   render(
-    <QueryClientProvider client={createTestQueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
         <TooltipProvider>
           <ContinueOnAccountDialog
@@ -187,7 +188,7 @@ function renderDialog({
       </TransportProvider>
     </QueryClientProvider>
   );
-  return { transport, onOpenChange };
+  return { transport, onOpenChange, queryClient };
 }
 
 const dialog = () => screen.getByRole('dialog');
@@ -451,6 +452,26 @@ describe('with or without an advisor', () => {
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
     await user().click(screen.getByRole('button', { name: 'Continue' }));
+    expect(transport.continueSession).not.toHaveBeenCalled();
+  });
+
+  it('will not post an account that ran out after it was picked', async () => {
+    const { transport, queryClient } = renderDialog({
+      answer,
+      overrides: {
+        getContinueOptions: vi
+          .fn()
+          .mockResolvedValueOnce(answer)
+          .mockResolvedValue(options([outRow(3), row(2, 72)])),
+      },
+    });
+    await radios();
+    await user().click(screen.getByRole('radio', { name: /Acct 3/ }));
+    await queryClient.invalidateQueries();
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Acct 3/ })).toBeDisabled());
+    const primary = screen.getByRole('button', { name: /^Continue/ });
+    expect(primary).toBeDisabled();
+    await user().click(primary);
     expect(transport.continueSession).not.toHaveBeenCalled();
   });
 

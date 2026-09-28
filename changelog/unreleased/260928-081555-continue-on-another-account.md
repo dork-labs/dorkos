@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): continue a chat that ran out of usage on another account (DOR-2388)'
+  - 'fix(client): tighten the continue picker after review (DOR-2388)'
 ---
 
 ### Added

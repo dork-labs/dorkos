@@ -195,6 +195,8 @@ export function ContinueOnAccountDialog({
   const anySelectable = rows.some(isSelectable);
   const selectedKey = choice ?? (list ? initialChoice(list, sessionRuntime) : null);
   const selectedRow = rows.find((row) => choiceKey(row, sessionRuntime) === selectedKey) ?? null;
+  // A refetch can turn the picked account out while the picker is open.
+  const canSubmit = selectedRow !== null && isSelectable(selectedRow);
   const nameOf = (row: ContinueOptionAccount) => rowName(row, sessionRuntime, nameFor);
   const { same, other } = splitByRuntime(rows, sessionRuntime);
   const copy = carryOverCopy(data?.advised === true, account.trackerItem !== null);
@@ -215,7 +217,7 @@ export function ContinueOnAccountDialog({
       : null;
 
   const submit = () => {
-    if (!selectedRow) return;
+    if (!selectedRow || !isSelectable(selectedRow)) return;
     move.mutate(
       isOtherRuntime(selectedRow, sessionRuntime)
         ? { account: selectedRow.id, runtime: selectedRow.runtime }
@@ -324,7 +326,7 @@ export function ContinueOnAccountDialog({
           </Button>
           <Button
             onClick={submit}
-            disabled={!showList || !anySelectable || !selectedRow || move.isPending}
+            disabled={!showList || !anySelectable || !canSubmit || move.isPending}
             aria-busy={move.isPending || undefined}
           >
             {move.isPending && <Spinner />}
