@@ -1,2 +1,0 @@
-ALTER TABLE `connector_agent_requests` ADD `requested_access` text DEFAULT 'read' NOT NULL;--> statement-breakpoint
-UPDATE `connector_agent_requests` SET `requested_access` = 'read-write' WHERE EXISTS (SELECT 1 FROM json_each(`connector_agent_requests`.`requested_operations_json`) AS `asked` JOIN `connector_operation_revisions` AS `revision` ON `revision`.`operation_slug` = `asked`.`value` AND `revision`.`toolkit` = `connector_agent_requests`.`service_slug` WHERE `revision`.`capability_classification` IN ('write', 'destructive'));
