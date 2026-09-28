@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { createMockAccountUsage, createMockSessionLimit } from '@dorkos/test-utils';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import {
+  accountIdentity,
   accountWindow,
   barTone,
   chipState,
@@ -467,5 +468,47 @@ describe('limitSubject', () => {
     expect(limitSubject({ runtime: 'opencode', accountLabel: null, identityGate: false })).toBe(
       'OpenCode'
     );
+  });
+});
+
+describe('accountIdentity', () => {
+  const accounts = [
+    { id: 'acct-1', path: '/u/.claude-1', label: 'Acct 1' },
+    { id: 'acct-2', path: '/u/.claude-2', label: null },
+  ];
+  const nameFor = (path: string) => claudeAccountName(path, accounts);
+  const colors: Record<string, string> = { 'acct-1': '#2f7be0', '/u/.claude-2': '#1d8a4a' };
+  const colorFor = (key: string) => colors[key] ?? null;
+
+  it('names and colors a registered account by its id alone', () => {
+    expect(
+      accountIdentity({ accountId: 'acct-1', path: null, accounts, usage: null, nameFor, colorFor })
+    ).toEqual({ path: '/u/.claude-1', name: 'Acct 1', color: '#2f7be0' });
+  });
+
+  it('falls back to the folder name and the folder’s color', () => {
+    expect(
+      accountIdentity({
+        accountId: null,
+        path: '/u/.claude-2',
+        accounts,
+        usage: null,
+        nameFor,
+        colorFor,
+      })
+    ).toEqual({ path: '/u/.claude-2', name: '.claude-2', color: '#1d8a4a' });
+  });
+
+  it('takes the usage reading’s folder and color for an account nothing else knows', () => {
+    const usage = { path: '/u/.claude-9', label: 'Main', color: '#78716c' };
+    expect(
+      accountIdentity({ accountId: 'default', path: null, accounts, usage, nameFor, colorFor })
+    ).toEqual({ path: '/u/.claude-9', name: '.claude-9', color: '#78716c' });
+  });
+
+  it('knows nothing of an account with no id, folder or reading', () => {
+    expect(
+      accountIdentity({ accountId: null, path: null, accounts, usage: null, nameFor, colorFor })
+    ).toEqual({ path: null, name: null, color: null });
   });
 });

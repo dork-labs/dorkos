@@ -100,6 +100,51 @@ export function claudeAccountOptions(
   return options;
 }
 
+/** Which account a session spends, as {@link accountIdentity} names it. */
+export interface AccountIdentity {
+  /** The account's config directory, or `null` when unknown. */
+  path: string | null;
+  /** The account's shortest honest name (label, else folder name), or `null` when unknown. */
+  name: string | null;
+  /** The account's color, `#rrggbb`, or `null` when unknown. */
+  color: string | null;
+}
+
+/**
+ * Name and color the account a session spends, from what the client knows of
+ * it: its registry id, its folder, the registered accounts, and the account's
+ * usage reading. The status-bar chip (`useSessionAccount`) and the sidebar row
+ * both read it, so a session's dot and its chip can never disagree.
+ *
+ * The folder names the account when known (a registered row's, else the usage
+ * reading's), else the reading's label, else the id; the color is the id's,
+ * else the folder's, else the reading's.
+ *
+ * @param input - The session's account id and folder, the registered accounts,
+ *   the account's usage (or `null`), and the `useClaudeAccounts` lookups.
+ */
+export function accountIdentity(input: {
+  accountId: string | null;
+  path: string | null;
+  accounts: readonly ClaudeAccountRef[];
+  usage: Pick<AccountUsage, 'path' | 'label' | 'color'> | null;
+  nameFor: (path: string) => string;
+  colorFor: (pathOrId: string) => string | null;
+}): AccountIdentity {
+  const { accountId, path, accounts, usage, nameFor, colorFor } = input;
+  const registered =
+    (accountId !== null ? accounts.find((account) => account.id === accountId) : undefined) ??
+    (path !== null ? accounts.find((account) => account.path === path) : undefined);
+  const knownPath = path ?? registered?.path ?? usage?.path ?? null;
+  const name = knownPath ? nameFor(knownPath) : (usage?.label ?? accountId);
+  const color =
+    (accountId !== null ? colorFor(accountId) : null) ??
+    (knownPath ? colorFor(knownPath) : null) ??
+    usage?.color ??
+    null;
+  return { path: knownPath, name, color };
+}
+
 /**
  * Whether a path names a folder on the machine the SERVER runs on, which is the
  * only place a Claude account exists.

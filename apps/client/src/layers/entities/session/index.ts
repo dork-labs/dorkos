@@ -32,6 +32,8 @@ export { deriveStatusBarValues } from './lib/derive-status-bar';
 export { selectRenderedStatus } from './lib/select-rendered-status';
 export { useSessionRenderedStatus } from './model/status/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
+export { sessionLimitDisplay, sessionLimitText } from './lib/session-limit-text';
+export type { SessionLimitDisplay } from './lib/session-limit-text';
 export { useSessionRuntime } from './model/query/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/navigation/use-session-id';
 export type { SetSessionIdOptions } from './model/navigation/use-session-id';
@@ -159,6 +161,11 @@ export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
 export { SessionOriginMark } from './ui/SessionOriginMark';
+// The sidebar's account dot, and the row's view of its account (spec
+// `claude-account-ui` §6.2), for the Dev Playground.
+export { AccountMark } from './ui/AccountMark';
+export { useSessionRowAccount } from './model/status/use-session-row-account';
+export type { SessionRowAccount } from './model/status/use-session-row-account';
 export {
   humanOriginSessionIds,
   partitionSessionsByOrigin,

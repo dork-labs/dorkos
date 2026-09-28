@@ -2,13 +2,14 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { createMockSessionLimit } from '@dorkos/test-utils';
 import { renderHook } from '@testing-library/react';
 import type { SessionStatus, SessionLifecycle } from '@dorkos/shared/session-stream';
 import { setPrefersReducedMotion } from '@/test-setup';
 import { useSessionChatStore, type SessionState } from '../../stream/session-chat-store';
 import { useSessionStreamStore } from '../../stream/session-stream-store';
 import { useSessionListStore } from '../../stream/session-list-store';
-import { useSessionBorderState } from '../use-session-border-state';
+import { BORDER_COLORS, useSessionBorderState } from '../use-session-border-state';
 
 const SESSION_ID = 's1';
 
@@ -238,6 +239,66 @@ describe('useSessionBorderState', () => {
       store.applyListEvent({ type: 'session_removed', sessionId: SESSION_ID });
       const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
       expect(result.current.kind).toBe('idle');
+    });
+  });
+
+  describe('out of usage (spec claude-account-ui §6.2)', () => {
+    it('reads a limited session as `limited`, labelled "Out of usage", in the error tone', () => {
+      const limit = createMockSessionLimit('ask');
+      const { result } = renderHook(() =>
+        useSessionBorderState(SESSION_ID, { lifecycle: 'idle', limit })
+      );
+      expect(result.current.kind).toBe('limited');
+      expect(result.current.label).toBe('Out of usage');
+      expect(result.current.color).toBe(BORDER_COLORS.destructive);
+      expect(result.current.pulse).toBe(false);
+    });
+
+    it('draws a waiting session in the neutral tone, not red (Q13)', () => {
+      const limit = createMockSessionLimit('waiting');
+      const { result } = renderHook(() =>
+        useSessionBorderState(SESSION_ID, { lifecycle: 'idle', limit })
+      );
+      expect(result.current.kind).toBe('limited');
+      expect(result.current.color).toBe(BORDER_COLORS.neutral);
+    });
+
+    it('never reads a moved session as limited (Q14)', () => {
+      const limit = createMockSessionLimit('continued');
+      const { result } = renderHook(() =>
+        useSessionBorderState(SESSION_ID, { lifecycle: 'idle', limit })
+      );
+      expect(result.current.kind).toBe('idle');
+    });
+
+    it('never reads a model-scope limit as limited, in any state', () => {
+      for (const limit of [
+        createMockSessionLimit('ask', { scope: 'model', state: 'model-limited' }),
+        createMockSessionLimit('waiting', { scope: 'model' }),
+      ]) {
+        const { result, unmount } = renderHook(() =>
+          useSessionBorderState(SESSION_ID, { lifecycle: 'idle', limit })
+        );
+        expect(result.current.kind).toBe('idle');
+        unmount();
+      }
+    });
+
+    it('draws nothing for a limit when the caller passes no status (the gate is closed)', () => {
+      const { result } = renderHook(() => useSessionBorderState(SESSION_ID, null));
+      expect(result.current.kind).toBe('idle');
+    });
+
+    it('lets a working session outrank its limit, and a limit outrank an error', () => {
+      const limit = createMockSessionLimit('ask');
+      setSession({ status: 'error' });
+      const { result, rerender } = renderHook(() =>
+        useSessionBorderState(SESSION_ID, { lifecycle: 'idle', limit })
+      );
+      expect(result.current.kind).toBe('limited');
+      setSession({ status: 'streaming' });
+      rerender();
+      expect(result.current.kind).toBe('streaming');
     });
   });
 });

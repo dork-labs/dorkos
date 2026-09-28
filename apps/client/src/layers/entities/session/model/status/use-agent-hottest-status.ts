@@ -8,26 +8,24 @@ import { useSessionListStore } from '../stream/session-list-store';
 import { humanOriginSessionIds } from '../../lib/partition-sessions-by-origin';
 import {
   BORDER_COLORS,
+  BORDER_LABELS as LABELS,
   borderKindFromLifecycle,
   type SessionBorderKind,
   type SessionBorderState,
 } from './use-session-border-state';
 
-const LABELS: Record<SessionBorderKind, string> = {
-  idle: 'Idle',
-  pendingApproval: 'Awaiting your approval',
-  streaming: 'Working',
-  error: 'Error: check session',
-  unseen: 'New activity',
-};
-
-/** Priority ranking for border states (higher = hotter). */
+/**
+ * Priority ranking for border states (higher = hotter). No source here ever
+ * yields `limited` (only a session row, which knows its limit and the account
+ * gate, draws it); it is ranked as the row ranks it.
+ */
 const PRIORITY: Record<SessionBorderKind, number> = {
   idle: 0,
   unseen: 1,
   error: 2,
-  streaming: 3,
-  pendingApproval: 4,
+  limited: 3,
+  streaming: 4,
+  pendingApproval: 5,
 };
 
 /** Fold a candidate kind into the running hottest result. */

@@ -18,7 +18,9 @@ import {
   type OneBarRouteState,
 } from '@/layers/widgets/one-bar';
 import type { TeamViewMode } from '@/layers/shared/lib';
+import { AccountBadgeView, type SessionAccount } from '@/layers/features/status';
 import { ARCHIVED_ROOM, BRIDGED_CHANNEL_ROOM, CHANNEL_ROOM, DM_ROOM } from './rooms-showcase-data';
+import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -702,6 +704,53 @@ export function OneBarShowcases() {
           </BarFrame>
         </ShowcaseDemo>
       </PlaygroundSection>
+
+      <PlaygroundSection
+        title="AccountBadge"
+        description="The session header names the account the session spends, after the origin chip, once two or more Claude accounts are set up. It turns red and says “out” when that account ran out; a limit on one model only keeps the normal pill."
+      >
+        <ShowcaseLabel>Normal</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            <OneBar
+              identity={<BarTitle>DOR-2353 memory stamps</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(2)} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Out of usage</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame>
+            <OneBar
+              identity={<BarTitle>DOR-2361 issuer column</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(4, 'out')} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+      </PlaygroundSection>
     </OneBarProvider>
   );
+}
+
+/**
+ * A started Claude session on the playground's account `n`, as
+ * `useSessionAccount` reads it with the identity gate open.
+ */
+function badgeAccount(n: number, chipState: SessionAccount['chipState'] = 'ok'): SessionAccount {
+  const usage = MOCK_ACCOUNT_USAGE[n - 1]!;
+  return {
+    visible: true,
+    runtime: 'claude-code',
+    accountId: usage.accountId,
+    path: usage.path,
+    name: usage.label,
+    color: usage.color,
+    usage,
+    limit: null,
+    chipState,
+    trackerItem: null,
+    lifecycle: 'idle',
+    pending: false,
+  };
 }
