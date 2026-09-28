@@ -299,6 +299,67 @@ export function ApprovalCardShowcase() {
         />
       </ShowcaseDemo>
 
+      <ShowcaseLabel>An agent deleting something in a connected app</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            sample({
+              approvalId: '01JZ0000000000000000000061',
+              capabilityId: 'connectors.execute_destructive',
+              capabilityTitle: "Make a change that can't be undone in a connected app",
+              requestedBy: 'DorkBot',
+              area: null,
+              alwaysOffered: false,
+              summary:
+                '"DorkBot" wants to run "Delete message" in Gmail on "Work (work@acme.com)" with Message ID: "18c2f0a9d1b7e4c3", Permanent: "Yes"',
+              serviceAction: {
+                serviceId: 'gmail',
+                serviceName: 'Gmail',
+                accountLabel: 'Work (work@acme.com)',
+                actionName: 'Delete message',
+                details: [
+                  { label: 'Message ID', value: '18c2f0a9d1b7e4c3' },
+                  { label: 'Permanent', value: 'Yes' },
+                ],
+              },
+            }),
+            // Six lines is the most a card lists; long values are already
+            // shortened by the server and wrap rather than widen the card.
+            sample({
+              approvalId: '01JZ0000000000000000000062',
+              capabilityId: 'connectors.execute_destructive',
+              capabilityTitle: "Make a change that can't be undone in a connected app",
+              requestedBy: 'DorkBot',
+              area: null,
+              alwaysOffered: false,
+              summary: '"DorkBot" wants to run "Delete event" in Google Calendar',
+              serviceAction: {
+                serviceId: 'googlecalendar',
+                serviceName: 'Google Calendar',
+                accountLabel: 'you@gmail.com',
+                actionName: 'Delete event',
+                details: [
+                  { label: 'Event ID', value: 'k3j2h1g0f9e8d7c6b5a4' },
+                  { label: 'Calendar ID', value: 'primary' },
+                  {
+                    label: 'Summary',
+                    value:
+                      'Quarterly planning with the whole team, the board observers, and the two new hires who start on Monday morning…',
+                  },
+                  {
+                    label: 'Attendees',
+                    value: 'ana@acme.com, bo@acme.com, cy@acme.com and 9 more',
+                  },
+                  { label: 'Access token', value: '(hidden)' },
+                  { label: 'Send updates', value: 'No' },
+                ],
+                moreDetails: 2,
+              },
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
       <ShowcaseLabel>A summary at the 500-character cap</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <ApprovalList

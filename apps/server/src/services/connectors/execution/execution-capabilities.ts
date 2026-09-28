@@ -129,6 +129,18 @@ const ConnectorGrantedOperationsInputSchema = z
   .object({ connectionId: ConnectionIdSchema })
   .strict();
 
+/**
+ * Each classification's title in plain words, as the approval card, Activity
+ * and notifications show it. The card names the exact action, app and account
+ * on top of this (DOR-2504); the title is what surfaces with no room for that
+ * still say.
+ */
+const EXECUTION_TITLES = {
+  read: 'Read from a connected app',
+  write: 'Change something in a connected app',
+  destructive: "Make a change that can't be undone in a connected app",
+} as const;
+
 function executionCapability(
   id: ConnectorRuntimeExecutionCapabilityId,
   classification: 'read' | 'write' | 'destructive'
@@ -141,7 +153,7 @@ function executionCapability(
         : ('destructive' as const);
   return defineCapability({
     id,
-    title: `Execute a ${classification} account operation`,
+    title: EXECUTION_TITLES[classification],
     description:
       `Execute one exact ${classification} operation revision against one already granted ` +
       'connected account. Use only the account and revision ids listed for this agent.',
@@ -150,6 +162,9 @@ function executionCapability(
     areaNote: 'connected accounts have their own grant model',
     input: ConnectorExecutionTargetSchema,
     output: ConnectorExecutionResponseSchema,
+    // The card and summary name the app, account, action and arguments from
+    // the preflight's `approvalServiceAction`; these ids are what a card would
+    // show only if that were ever missing.
     ...(classification === 'destructive'
       ? { approvalDisplayFields: ['connectionId', 'operationRevisionId'] }
       : {}),

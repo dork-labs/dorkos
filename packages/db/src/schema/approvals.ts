@@ -139,6 +139,16 @@ export const approvals = sqliteTable(
      */
     otherArguments: text('other_arguments'),
 
+    /**
+     * What a connected-app action would do, as JSON matching the wire
+     * schema's `ApprovalServiceAction`, or null (DOR-2504).
+     *
+     * Written only for a connected-app action, from the stored connection and
+     * action the call names. Read back through that schema, so a row that no
+     * longer parses renders as a card with the summary instead of failing.
+     */
+    serviceAction: text('service_action'),
+
     /** Opaque label for who asked — an agent path, a display name, or null. */
     requestedBy: text('requested_by'),
 

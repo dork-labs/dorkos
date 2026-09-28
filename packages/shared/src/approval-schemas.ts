@@ -57,8 +57,9 @@ export const APPROVAL_SUBJECT_LABEL_MAX_LENGTH = 60;
  * an id, which is the exact defect this field exists to fix.
  *
  * So adding one is two edits, not one: the name here AND its resolver at boot.
- * Rooms are wired (spec `agent-permissions`). Connections are the obvious next — `connectors.execute_destructive`
- * shows a person two opaque ids today — and it is not listed until it is wired.
+ * Rooms are wired (spec `agent-permissions`). A connected app's action is not a
+ * subject kind: it needs the app, the account, the action and its arguments,
+ * which {@link ApprovalServiceActionSchema} carries instead.
  */
 export const APPROVAL_SUBJECT_KINDS = ['agent', 'task', 'room'] as const;
 
@@ -94,6 +95,90 @@ export const ApprovalSubjectSchema = z
 
 /** The thing an approval would act on, named. */
 export type ApprovalSubject = z.infer<typeof ApprovalSubjectSchema>;
+
+/** Most argument lines an approval card shows for one connected-app action. */
+export const APPROVAL_SERVICE_ACTION_MAX_DETAILS = 6;
+
+/**
+ * Longest one argument's rendered value may be on the card.
+ *
+ * Long enough to recognize an email subject or a message id, short enough that
+ * one padded argument cannot push the others off a phone screen. The server
+ * shortens to this, marking the cut with an ellipsis.
+ */
+export const APPROVAL_SERVICE_DETAIL_VALUE_MAX_LENGTH = 120;
+
+/** Longest an argument's label may be on the card. */
+export const APPROVAL_SERVICE_DETAIL_LABEL_MAX_LENGTH = 60;
+
+/** Longest the app, account or action name may be on the card. */
+export const APPROVAL_SERVICE_NAME_MAX_LENGTH = 120;
+
+/**
+ * One argument of a connected-app action, as a person reads it: a plain label
+ * and a plain value, never JSON. A value whose name reads as a secret arrives
+ * as `(hidden)`.
+ */
+export const ApprovalServiceActionDetailSchema = z
+  .object({
+    /** The argument's name in words, e.g. "Message id". */
+    label: z.string().min(1).max(APPROVAL_SERVICE_DETAIL_LABEL_MAX_LENGTH),
+    /** The value in words: text shortened, a list counted, a secret hidden. */
+    value: z.string().max(APPROVAL_SERVICE_DETAIL_VALUE_MAX_LENGTH),
+  })
+  .strict()
+  .openapi('ApprovalServiceActionDetail');
+
+/** One argument of a connected-app action, as a person reads it. */
+export type ApprovalServiceActionDetail = z.infer<typeof ApprovalServiceActionDetailSchema>;
+
+/**
+ * What a connected-app action would do, in words a person can decide on
+ * (DOR-2504): which app, which account, which action, and its arguments.
+ *
+ * ## Nothing here is the agent's to choose
+ *
+ * The app, the account and the action are read by the server from the stored
+ * connection and the stored action the call names by id, after the call has
+ * passed every access check — never from anything the agent wrote. The worst
+ * an agent can do is name a different connection or action it is allowed to
+ * use, and then the card names that one. Only the argument VALUES are the
+ * agent's, because they are what would be sent; they are shown as values,
+ * shortened and swept for secrets, in their own list below the header.
+ */
+export const ApprovalServiceActionSchema = z
+  .object({
+    /** The app's service id, e.g. `gmail`, for its logo. */
+    serviceId: z.string().min(1).max(APPROVAL_SERVICE_NAME_MAX_LENGTH),
+    /** The app's name, e.g. "Gmail". */
+    serviceName: z.string().min(1).max(APPROVAL_SERVICE_NAME_MAX_LENGTH),
+    /** The account, as the Connections list names it, e.g. `work@acme.com`. */
+    accountLabel: z.string().min(1).max(APPROVAL_SERVICE_NAME_MAX_LENGTH),
+    /** The action in plain words, e.g. "Delete message". */
+    actionName: z.string().min(1).max(APPROVAL_SERVICE_NAME_MAX_LENGTH),
+    /** The arguments, most important first: the action's own fields, then any others. */
+    details: z.array(ApprovalServiceActionDetailSchema).max(APPROVAL_SERVICE_ACTION_MAX_DETAILS),
+    /** How many more arguments there are than the card lists. */
+    moreDetails: z.number().int().min(1).optional(),
+  })
+  .strict()
+  .openapi('ApprovalServiceAction');
+
+/** What a connected-app action would do, in words a person can decide on. */
+export type ApprovalServiceAction = z.infer<typeof ApprovalServiceActionSchema>;
+
+/**
+ * The heading a card, row or note gives an approval: the connected-app action
+ * ("Delete message in Gmail") when there is one, the action's title otherwise.
+ *
+ * @param approval - The approval, or the two fields of it this reads.
+ */
+export function approvalHeading(
+  approval: Pick<PendingApproval, 'capabilityTitle' | 'serviceAction'>
+): string {
+  const action = approval.serviceAction;
+  return action ? `${action.actionName} in ${action.serviceName}` : approval.capabilityTitle;
+}
 
 /**
  * Where a request arrived from, when DorkOS could not tell WHO sent it.
@@ -252,6 +337,15 @@ export const PendingApprovalSchema = z
      * renderer, from the same allowlist, with the same per-value caps.
      */
     otherArguments: z.string().max(APPROVAL_SUMMARY_MAX_LENGTH).optional(),
+    /**
+     * What a connected-app action would do: the app, the account, the action
+     * and its arguments (DOR-2504). Present only on an approval for a
+     * connected-app action, where it replaces the summary on a card; the
+     * summary still says the same thing in one sentence for surfaces with no
+     * card around them. Built by the server from stored records, never from the
+     * agent's own words (see {@link ApprovalServiceActionSchema}).
+     */
+    serviceAction: ApprovalServiceActionSchema.optional(),
   })
   .openapi('PendingApproval');
 

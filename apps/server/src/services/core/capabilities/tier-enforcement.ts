@@ -104,7 +104,11 @@
  * @module services/core/capabilities/tier-enforcement
  */
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
-import type { ApprovalOrigin, ApprovalSubject } from '@dorkos/shared/approval-schemas';
+import type {
+  ApprovalOrigin,
+  ApprovalServiceAction,
+  ApprovalSubject,
+} from '@dorkos/shared/approval-schemas';
 import {
   getPermissionArea,
   type PermissionAreaId,
@@ -510,6 +514,14 @@ export interface TierEnforcementRequest {
    */
   subject?: ApprovalSubject;
   /**
+   * What a connected-app action would do — its app, account, action and
+   * arguments in words (DOR-2504). Built by the connector preflight from the
+   * stored records it checked, so nothing in it is the caller's to choose
+   * except the argument values. With it, the card and the summary name the
+   * action instead of two ids.
+   */
+  serviceAction?: ApprovalServiceAction;
+  /**
    * Which surface this request arrived over, recorded only so an UNATTRIBUTED
    * card can say the true thing DorkOS knows about it.
    *
@@ -624,21 +636,40 @@ export function resetCapabilityTierGate(): void {
  * always did. That is the whole fail-closed story — a card can lose the name,
  * never the argument.
  *
+ * ## A connected-app action is described by what it does
+ *
+ * With a {@link ApprovalServiceAction}, the sentence names the action, the app
+ * and the account instead of the two ids the action's input carries, and lists
+ * the argument lines the card shows. Every value is quoted, and every label was
+ * reduced to letters and digits where it was built, so a value still cannot
+ * forge a second field.
+ *
  * @param action - The capability or tool being requested.
  * @param input - The parsed input the approval is bound to.
  * @param identity - The agent asking, when it identified itself.
  * @param subject - The named target, when the caller could resolve one.
+ * @param serviceAction - The connected-app action in words, when this is one.
  * @returns The card summary.
  */
 export function describeGatedAttempt(
   action: GatedAction,
   input: unknown,
   identity?: AgentIdentity,
-  subject?: ApprovalSubject
+  subject?: ApprovalSubject,
+  serviceAction?: ApprovalServiceAction
 ): string {
   const who = identity
     ? `${JSON.stringify(renderRequesterLabel(identity.displayName || identity.agentPath))} `
     : 'An unidentified caller ';
+  if (serviceAction) {
+    const lines = serviceAction.details
+      .map(({ label, value }) => `${label}: ${JSON.stringify(value)}`)
+      .join(', ');
+    return redactSecretsInText(
+      `${who}wants to run "${serviceAction.actionName}" in ${serviceAction.serviceName} on ` +
+        `${JSON.stringify(serviceAction.accountLabel)}${lines ? ` with ${lines}` : ''}`
+    );
+  }
   const clause = joinSummaryFields(
     summaryFieldsNamingSubject(
       action.approvalView ? action.approvalView(input) : input,
@@ -879,6 +910,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     change,
     blockedRequest,
     subject,
+    serviceAction,
     origin,
     requestingSession,
     permission,
@@ -1071,11 +1103,12 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       const remaining = subject ? describeRemainingArguments(action, input) : undefined;
       ticket = gate!.approvals.request({
         ...binding,
-        summary: describeGatedAttempt(action, input, identity, subject),
+        summary: describeGatedAttempt(action, input, identity, subject, serviceAction),
         ...(detail !== undefined ? { detail } : {}),
         ...(requestedBy ? { requestedBy } : {}),
         ...(subject ? { subject } : {}),
         ...(remaining !== undefined ? { otherArguments: remaining } : {}),
+        ...(serviceAction ? { serviceAction } : {}),
         // Recorded only when nothing named the caller, because that is the only
         // case it says anything a person does not already have.
         ...(!requestedBy && origin ? { origin } : {}),

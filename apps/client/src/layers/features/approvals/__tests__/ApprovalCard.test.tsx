@@ -17,6 +17,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { APP_LOGO_MAP } from '@dorkos/icons/app-logos';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import {
@@ -447,5 +448,82 @@ describe('naming what would be destroyed (DOR-1929)', () => {
 
     expect(screen.getByText('Asked from a session on this computer')).toBeInTheDocument();
     expect(screen.queryByText(/doesn’t know who asked/)).toBeNull();
+  });
+});
+
+describe('a connected-app action says what it does (DOR-2504)', () => {
+  const GMAIL_DELETE = {
+    serviceId: 'gmail',
+    serviceName: 'Gmail',
+    accountLabel: 'Work (work@acme.com)',
+    actionName: 'Delete message',
+    details: [
+      { label: 'Message ID', value: '18c2f0a9d1' },
+      { label: 'Access token', value: '(hidden)' },
+    ],
+  };
+  const connectorApproval = (serviceAction: PendingApproval['serviceAction']) =>
+    buildApproval({
+      capabilityId: 'connectors.execute_destructive',
+      capabilityTitle: "Make a change that can't be undone in a connected app",
+      summary:
+        '"DorkBot" wants to run "Delete message" in Gmail on "Work (work@acme.com)" with Message ID: "18c2f0a9d1"',
+      serviceAction,
+    });
+
+  it('names the action, the app with its logo, the account and each argument', () => {
+    const { container } = renderCard(connectorApproval(GMAIL_DELETE));
+
+    expect(screen.getByText('Delete message')).toBeInTheDocument();
+    expect(screen.getByText('Gmail')).toBeInTheDocument();
+    expect(screen.getByText('Work (work@acme.com)')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="service-logo"] img')).toHaveAttribute(
+      'src',
+      APP_LOGO_MAP.gmail
+    );
+    const details = container.querySelector('[data-slot="approval-service-details"]')!;
+    expect(details.querySelectorAll('dt')).toHaveLength(2);
+    expect(details).toHaveTextContent('Message ID18c2f0a9d1');
+    expect(details).toHaveTextContent('Access token(hidden)');
+  });
+
+  it('says plainly that it cannot be undone', () => {
+    renderCard(connectorApproval(GMAIL_DELETE));
+    expect(screen.getByText("Once this runs, it can't be undone in Gmail.")).toBeInTheDocument();
+  });
+
+  it('never shows the jargon title, the ids, or the summary sentence on top of it', () => {
+    const { container } = renderCard(connectorApproval(GMAIL_DELETE));
+    const text = container.textContent ?? '';
+    expect(text).not.toContain('connected app');
+    expect(text).not.toContain('wants to run');
+    expect(text).not.toMatch(/[{}"]/u);
+  });
+
+  it('counts the arguments the server left off the card', () => {
+    renderCard(connectorApproval({ ...GMAIL_DELETE, moreDetails: 3 }));
+    expect(screen.getByText('3 more details')).toBeInTheDocument();
+  });
+
+  it('keeps a long value inside the card instead of widening it', () => {
+    const long = 'x'.repeat(119) + '…';
+    const { container } = renderCard(
+      connectorApproval({ ...GMAIL_DELETE, details: [{ label: 'Subject', value: long }] })
+    );
+    const value = container.querySelector('[data-slot="approval-service-details"] dd')!;
+    expect(value).toHaveTextContent(long);
+    expect(value).toHaveClass('break-words', 'min-w-0');
+  });
+
+  it('does not claim a change is permanent when the tier says otherwise', () => {
+    renderCard({ ...connectorApproval(GMAIL_DELETE), tier: 'act' });
+    expect(screen.queryByText(/can't be undone in Gmail/u)).not.toBeInTheDocument();
+  });
+
+  it('renders exactly as before for an approval with no connected-app action', () => {
+    const { container } = renderCard(buildApproval());
+    expect(screen.getByText('Uninstall a marketplace package')).toBeInTheDocument();
+    expect(screen.getByText('Uninstall "sentry-monitor"')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="approval-service-action"]')).toBeNull();
   });
 });

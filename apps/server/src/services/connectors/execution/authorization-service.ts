@@ -26,6 +26,7 @@ import type {
   ConnectorExternalAccountRef,
   ConnectorProvider,
 } from '@dorkos/shared/connector-provider';
+import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import type { CapabilityPreflightResult } from '../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import type { ConnectorRegistry } from '../registry.js';
@@ -40,6 +41,7 @@ import {
 } from '../principal/server-principal.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
 import { agentGrantScope } from './agent-grant-scope.js';
+import { describeServiceAction } from './approval-service-action.js';
 
 const CLASSIFICATION_BY_CAPABILITY = {
   'connectors.execute_read': 'read',
@@ -94,6 +96,11 @@ export interface AuthorizedConnectorExecution {
   readonly executionConfigGeneration: number;
   /** Usage payer derived from server-owned provider configuration. */
   readonly payer: 'operator_byo' | 'dorkos_managed';
+  /**
+   * The app, account, action and arguments in words, for an approval card.
+   * Read from the stored connection and action, never from the caller.
+   */
+  readonly serviceAction: ApprovalServiceAction;
   /** Latest applied hosted grant scope, present only for managed execution. */
   readonly managedGrantScopeVersion?: number;
   /**
@@ -109,6 +116,8 @@ interface ExecutionRow {
   connectionId: string;
   externalAccountRef: string;
   toolkit: string;
+  connectionLabel: string;
+  identityHint: string | null;
   connectionStatus: 'active' | 'expired' | 'revoked' | 'pending';
   lifecycleState: 'connected' | 'disconnected';
   enabled: boolean;
@@ -181,7 +190,10 @@ export class ConnectorExecutionAuthorizationService {
   /** Produce the authenticated preflight result consumed by the registry tier gate. */
   async preflight(input: PrepareConnectorExecutionInput): Promise<CapabilityPreflightResult> {
     const authorized = await this.prepare(input);
-    return { authorityBinding: authorized.authorityBinding };
+    return {
+      authorityBinding: authorized.authorityBinding,
+      approvalServiceAction: authorized.serviceAction,
+    };
   }
 
   /** Resolve the immutable capability id for a program target without accepting a caller override. */
@@ -410,6 +422,14 @@ export class ConnectorExecutionAuthorizationService {
         row.externalAccountRef as AuthorizedConnectorExecution['externalAccountRef'],
       operation,
       arguments: Object.freeze({ ...argumentsValue }),
+      serviceAction: describeServiceAction({
+        toolkit: row.toolkit,
+        connectionLabel: row.connectionLabel,
+        identityHint: row.identityHint,
+        operationSlug: row.operationSlug,
+        inputSchema: operation.inputSchema,
+        arguments: argumentsValue,
+      }),
       executionConfigGeneration: row.executionConfigGeneration,
       payer: row.providerMode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       ...(managedGrantScopeVersion === undefined ? {} : { managedGrantScopeVersion }),
@@ -529,6 +549,8 @@ export class ConnectorExecutionAuthorizationService {
         connectionId: connections.id,
         externalAccountRef: connections.externalAccountRef,
         toolkit: connections.toolkit,
+        connectionLabel: connections.label,
+        identityHint: connections.identityHint,
         connectionStatus: connections.status,
         lifecycleState: connections.lifecycleState,
         enabled: connections.enabled,

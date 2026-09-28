@@ -13,6 +13,7 @@ import {
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReviewActionSchema,
   ConnectorUsageItemSchema,
+  actionNameFromSlug,
   serviceNameFromToolkit,
   decodeConnectorReviewAction,
   encodeConnectorReviewAction,
@@ -496,6 +497,25 @@ describe('agent event review bounds', () => {
         ],
       }).success
     ).toBe(false);
+  });
+});
+
+describe('actionNameFromSlug', () => {
+  it('turns an action id into plain words, dropping the app’s own prefix', () => {
+    expect(actionNameFromSlug('GMAIL_SEND_EMAIL', 'gmail')).toBe('Send email');
+    expect(actionNameFromSlug('gmail.messages.list', 'gmail')).toBe('List');
+    expect(actionNameFromSlug('LINEAR_CREATE_ISSUE', 'linear')).toBe('Create issue');
+    expect(actionNameFromSlug('GOOGLECALENDAR_DELETE_EVENT', 'googlecalendar')).toBe(
+      'Delete event'
+    );
+  });
+
+  it('treats the service id as plain text, never as a pattern', () => {
+    expect(actionNameFromSlug('XX_DELETE_ROW', '.*')).toBe('Xx delete row');
+  });
+
+  it('falls back to the id when nothing readable is left', () => {
+    expect(actionNameFromSlug('GMAIL_', 'gmail')).toBe('GMAIL_');
   });
 });
 
