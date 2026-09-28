@@ -401,13 +401,20 @@ explicitly and also stamped on `session.impersonatedBy`.
 
 ### Cleanup jobs (DOR-194)
 
-A Vercel Cron (`crons` in `apps/site/vercel.json`) hits
-`GET /api/cron/instance-expiry`, which runs `runCleanup`
-(`lib/cleanup-service.ts`) over the account tables through the Better Auth
-adapter. It is one of the two routes the old combined `/api/cron/cleanup` split
-into; the other, `/api/cron/event-retention`, sweeps managed-connector event
-rows and shares nothing with this one but the `CRON_SECRET` check in
-`lib/cron/auth.ts`. One idempotent pass:
+`GET /api/cron/instance-expiry` runs `runCleanup` (`lib/cleanup-service.ts`)
+over the account tables through the Better Auth adapter. A Vercel Cron entry in
+`apps/site/vercel.json` used to hit it hourly; that entry is gone now that
+`DORKOS_CLOUD_ACCOUNTS_ORIGIN` is permanently set in production, so this route
+already answered `200 { skipped: 'accounts-service' }` and touched nothing (see
+above) — DorkOS Cloud's own scheduler runs the equivalent sweep on its side. The
+route and its `CRON_SECRET` gate are otherwise unchanged; deleting the route
+itself is a separate, later change (DOR-2442). It is one of the two routes the
+old combined `/api/cron/cleanup` split into; the other,
+`/api/cron/event-retention`, sweeps managed-connector event rows and, for the
+same reason, is currently also a no-op in production. Its cron entry stays in
+`apps/site/vercel.json` for now regardless: it belongs to managed connections,
+which move separately, and that migration owns its retirement. The two share
+nothing but the `CRON_SECRET` check in `lib/cron/auth.ts`. One idempotent pass:
 
 - **Purges never-verified accounts** — `user` rows still `emailVerified = false`
   after 7 days (`UNVERIFIED_USER_TTL_MS`). The `user` delete cascades its
@@ -439,19 +446,19 @@ anything — before running it against production data by hand.
 
 ### Key files (cloud account management)
 
-| Concept                           | Location                                                                         |
-| --------------------------------- | -------------------------------------------------------------------------------- |
-| Admin plugin + delete/link config | `apps/site/src/lib/auth.ts`                                                      |
-| Admin-action audit + ban hook     | `apps/site/src/lib/admin-audit-hook.ts`                                          |
-| Audit log service                 | `apps/site/src/lib/audit-service.ts`                                             |
-| Scheduled cleanup service         | `apps/site/src/lib/cleanup-service.ts`                                           |
-| Cleanup cron route + schedule     | `apps/site/src/app/api/cron/instance-expiry/route.ts`, `apps/site/vercel.json`   |
-| Audit table + registry plugin     | `apps/site/src/db/audit-schema.ts`, `apps/site/src/lib/audit-registry-plugin.ts` |
-| Data export service               | `apps/site/src/lib/account-service.ts`                                           |
-| Export route                      | `apps/site/src/app/api/account/export/route.ts`                                  |
-| Client admin + delete wrapper     | `apps/site/src/lib/auth-client.ts`                                               |
-| `/account` Danger Zone UI         | `apps/site/src/layers/features/account/ui/DangerZone.tsx`                        |
-| Admin columns + `impersonatedBy`  | `apps/site/src/db/auth-schema.ts`                                                |
+| Concept                                      | Location                                                                         |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| Admin plugin + delete/link config            | `apps/site/src/lib/auth.ts`                                                      |
+| Admin-action audit + ban hook                | `apps/site/src/lib/admin-audit-hook.ts`                                          |
+| Audit log service                            | `apps/site/src/lib/audit-service.ts`                                             |
+| Scheduled cleanup service                    | `apps/site/src/lib/cleanup-service.ts`                                           |
+| Cleanup cron route (unscheduled — see above) | `apps/site/src/app/api/cron/instance-expiry/route.ts`                            |
+| Audit table + registry plugin                | `apps/site/src/db/audit-schema.ts`, `apps/site/src/lib/audit-registry-plugin.ts` |
+| Data export service                          | `apps/site/src/lib/account-service.ts`                                           |
+| Export route                                 | `apps/site/src/app/api/account/export/route.ts`                                  |
+| Client admin + delete wrapper                | `apps/site/src/lib/auth-client.ts`                                               |
+| `/account` Danger Zone UI                    | `apps/site/src/layers/features/account/ui/DangerZone.tsx`                        |
+| Admin columns + `impersonatedBy`             | `apps/site/src/db/auth-schema.ts`                                                |
 
 ### Runbook: destructive ops
 
