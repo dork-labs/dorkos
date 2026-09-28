@@ -238,6 +238,24 @@ describe('the long-press sheet (P4 AC-3)', () => {
     expect(sheet()).not.toBeNull();
   });
 
+  it('paints a red row red at rest and in the foreground colour while pressed (DOR-2493)', () => {
+    // No red clears AA on the pressed ground (`bg-sidebar-accent`) in both
+    // themes, so the label drops to the foreground for the press and the icon
+    // carries the meaning. jsdom has no `:active`, so this pins the classes.
+    renderSurface();
+    press({ holdMs: TIMING.LONG_PRESS_MS + 50 });
+    const row = within(sheet()!).getByRole('menuitem', { name: /^Delete group/ });
+    expect(row).toHaveClass(
+      'text-destructive',
+      'active:text-foreground',
+      'active:bg-sidebar-accent'
+    );
+    expect(row).not.toHaveClass('text-status-error-fg');
+    // The icon keeps the red while the label goes to the foreground.
+    expect(row).toHaveClass('[&>svg]:text-destructive');
+    expect(row.querySelector(':scope > svg')).not.toBeNull();
+  });
+
   it('does not open for a tap — and the identical gesture held longer does', () => {
     renderSurface();
     // The negative. Everything about this is the long press except the clock.
