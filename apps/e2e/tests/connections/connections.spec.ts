@@ -7,7 +7,10 @@ import { RightPanelPage } from '../../pages/RightPanelPage.js';
 import { describeViolation, runAxe, settleAnimations } from '../../axe.js';
 import { registerOwnerManagementTests } from './owner-management.js';
 import { registerEventNotificationTests } from './event-notifications.js';
-import { registerChatConnectCardTests } from './chat-connect-card.js';
+import {
+  registerChatConnectCardTests,
+  registerChatConnectFirstStepTests,
+} from './chat-connect-card.js';
 
 /**
  * Browser proof of canonical Connections resources, driven against the
@@ -384,13 +387,15 @@ test.describe('Connections — save key, connect, multi-account', () => {
 
 registerOwnerManagementTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoConnections });
 registerEventNotificationTests({ apiUrl: API_URL, gotoConnections });
-registerChatConnectCardTests({
+const chatConnectHarness = {
   apiUrl: API_URL,
-  enableTestConnector: async (request) => {
+  enableTestConnector: async (request: APIRequestContext) => {
     const put = await request.put(CREDENTIAL_URL, { data: { secret: 'e2e-test-key' } });
     expect(put.ok()).toBe(true);
   },
-});
+};
+registerChatConnectCardTests(chatConnectHarness);
+registerChatConnectFirstStepTests(chatConnectHarness);
 
 test.describe('Connections — session access status', () => {
   test('shows canonical agent access read-only and links to the exact access editor', async ({

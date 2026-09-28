@@ -283,5 +283,7 @@ function emptySearchHint(newApps: ConnectorAppConnections['newApps'] | undefined
       return 'Only popular apps are listed while your saved key isn’t working.';
     case 'dorkos_account_unavailable':
       return 'Only popular apps are listed while your DorkOS account can’t connect apps.';
+    case 'dorkos_account_unlinked':
+      return 'Only popular apps are listed while your DorkOS account isn’t linked.';
   }
 }

@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ConnectorAppWay } from '@dorkos/shared/connector-resource-schemas';
-import { chooseNewAppsWay, signInThroughFor } from '../app-connection-way.js';
+import {
+  CONNECTION_CLOSED_BY_NEW_LINK_EVENT,
+  recordConnectionsClosedByNewLink,
+  agentAppSetupNote,
+  agentWayProblemNote,
+  appReachProblem,
+  chooseNewAppsWay,
+  signInThroughFor,
+  wayProblemFor,
+} from '../app-connection-way.js';
 
 const dorkosAccount = (status: ConnectorAppWay['status']): ConnectorAppWay => ({
   kind: 'dorkos_account',
@@ -64,6 +73,75 @@ describe('chooseNewAppsWay', () => {
       status: 'setup_needed',
       reason: 'own_key_unavailable',
     });
+    expect(chooseNewAppsWay([dorkosAccount('unlinked'), ownKey('nango', 'unavailable')])).toEqual({
+      status: 'setup_needed',
+      reason: 'dorkos_account_unlinked',
+    });
+  });
+
+  it('uses a working key while the DorkOS account is unlinked', () => {
+    expect(
+      chooseNewAppsWay([dorkosAccount('unlinked'), ownKey('composio', 'ready')])
+    ).toMatchObject({ status: 'ready', way: { kind: 'own_key' } });
+  });
+});
+
+describe('appReachProblem', () => {
+  it('passes a setup reason through, and splits a working way into outage or miss', () => {
+    expect(appReachProblem({ status: 'setup_needed', reason: 'own_key_unavailable' }, true)).toBe(
+      'own_key_unavailable'
+    );
+    const way = ownKey('composio', 'ready');
+    expect(appReachProblem({ status: 'ready', way }, true)).toBe('way_not_answering');
+    expect(appReachProblem({ status: 'ready', way }, false)).toBe('app_not_reached');
+  });
+});
+
+describe('wayProblemFor', () => {
+  it('is nothing while the route is registered, whatever the account link says', () => {
+    expect(
+      wayProblemFor({ registered: true, managed: true, managedLinked: false })
+    ).toBeUndefined();
+  });
+
+  it('tells an unlinked DorkOS account from one that cannot reach apps, and from a key', () => {
+    expect(wayProblemFor({ registered: false, managed: true, managedLinked: false })).toBe(
+      'dorkos_account_unlinked'
+    );
+    expect(wayProblemFor({ registered: false, managed: true, managedLinked: true })).toBe(
+      'dorkos_account_unavailable'
+    );
+    expect(wayProblemFor({ registered: false, managed: false, managedLinked: true })).toBe(
+      'own_key_unavailable'
+    );
+  });
+});
+
+describe('agent notes', () => {
+  it('names the app and says it can still be asked for, for every reason', () => {
+    for (const problem of [
+      'nothing_set_up',
+      'dorkos_account_unlinked',
+      'dorkos_account_unavailable',
+      'own_key_unavailable',
+      'way_not_answering',
+      'app_not_reached',
+    ] as const) {
+      const note = agentAppSetupNote(problem, 'Gmail');
+      expect(note).toContain('Gmail');
+      expect(note).toContain('still request');
+    }
+  });
+
+  it('tells an agent holding an account whose way is down what the person does, honestly', () => {
+    // Linking again does not bring the old connection back, so the note never
+    // promises that and says the app is connected again.
+    const unlinked = agentWayProblemNote('dorkos_account_unlinked');
+    expect(unlinked).toContain("isn't linked anymore");
+    expect(unlinked).toContain('does not bring it back');
+    expect(unlinked).toContain('connects this app again');
+    expect(agentWayProblemNote('own_key_unavailable')).toContain("isn't set up or didn't answer");
+    expect(agentWayProblemNote('dorkos_account_unavailable')).toContain('Try again later');
   });
 });
 
@@ -78,5 +156,36 @@ describe('signInThroughFor', () => {
     expect(signInThroughFor('nango')).toBeUndefined();
     expect(signInThroughFor('mcp')).toBeUndefined();
     expect(signInThroughFor('test-connector')).toBeUndefined();
+  });
+});
+
+describe('recordConnectionsClosedByNewLink', () => {
+  it('writes one plain entry per closed account, linking to that app', async () => {
+    const emit = vi.fn();
+    await recordConnectionsClosedByNewLink({ emit }, [
+      { connectionId: 'connection-1' as never, toolkit: 'gmail', label: 'work' },
+      { connectionId: 'connection-2' as never, toolkit: 'notion', label: 'team' },
+    ]);
+
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        actorType: 'system',
+        eventType: CONNECTION_CLOSED_BY_NEW_LINK_EVENT,
+        resourceId: 'connection-1',
+        resourceLabel: 'Gmail (work)',
+        summary:
+          "Gmail (work) was closed: it was connected through your DorkOS account's earlier link, which the new link can't reach. Connect it again to use it.",
+        linkPath: '/connections?app=connection-1',
+      })
+    );
+    expect(emit.mock.calls[1]![0].summary).toMatch(/^Notion \(team\) was closed/);
+  });
+
+  it('writes nothing when nothing was closed', async () => {
+    const emit = vi.fn();
+    await recordConnectionsClosedByNewLink({ emit }, []);
+    expect(emit).not.toHaveBeenCalled();
   });
 });

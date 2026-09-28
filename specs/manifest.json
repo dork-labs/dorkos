@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260928-155529",
+      "slug": "connections-health",
+      "title": "Connections that never leave you stuck",
+      "created": "2026-09-28",
+      "status": "ideation",
+      "project": "DorkOS Connections"
+    },
+    {
       "id": "260928-130908",
       "slug": "terminal-request-admission",
       "title": "Terminal request admission and exclusive reset/restart ownership",

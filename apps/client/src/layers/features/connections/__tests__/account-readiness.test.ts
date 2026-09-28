@@ -42,6 +42,19 @@ describe('account readiness', () => {
     ).toEqual({ kind: 'needs_review' });
   });
 
+  it('puts a down way before any other fix, and never offers such an account', () => {
+    const unlinked = {
+      ...READY,
+      lifecycle: 'paused' as const,
+      wayProblem: 'dorkos_account_unlinked' as const,
+    };
+    expect(accountAttention(unlinked)).toEqual({
+      kind: 'way_down',
+      problem: 'dorkos_account_unlinked',
+    });
+    expect(usableAccounts([{ ...READY, wayProblem: 'own_key_unavailable' }], 'gmail')).toEqual([]);
+  });
+
   it("ignores the account-wide sync state, which spans every agent's access", () => {
     expect(accountAttention({ ...READY, authoritySync: { status: 'pending' } })).toBeNull();
     expect(

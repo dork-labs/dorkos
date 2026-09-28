@@ -324,6 +324,61 @@ describe('bare red status text (DOR-2493)', () => {
   });
 });
 
+describe('bare amber status text on the session row (claude-account-ui 04 §13)', () => {
+  // `STATUS_TONE_TEXT.warning` is amber painted straight on grey: the session
+  // row's context gauge at 80% and over, in the sidebar, in the Heads up zone's
+  // tint, hovered and selected. At 30% lightness the light token measured
+  // 4.41:1 on the sidebar and 4.21:1 on the zone tint; this fails if it goes
+  // back. Dark mode clears every ground by a wide margin.
+  const css = readFileSync(INDEX_CSS, 'utf8');
+  const tokens = readFileSync(join(UI_ROOT, 'tokens.css'), 'utf8');
+  const themes = {
+    light: resolveSharedTokens(
+      section(css, ':root,', '.dark {'),
+      section(tokens, ':root,', '@media')
+    ),
+    dark: resolveSharedTokens(
+      section(css, '.dark {', '@layer border-defaults'),
+      section(tokens, '\n.dark {', '\n}')
+    ),
+  };
+
+  /** Every ground the session row's gauge sits on, in one theme. */
+  function rowGrounds(theme: string): Record<string, Rgb> {
+    const sidebar = hsl(theme, '--sidebar');
+    const zone = over(hsl(theme, '--sidebar-accent'), 0.4, sidebar);
+    const secondary = hsl(theme, '--secondary');
+    return {
+      sidebar,
+      'Heads up zone tint (bg-sidebar-accent/40)': zone,
+      'row hover over the sidebar (bg-secondary/60)': over(secondary, 0.6, sidebar),
+      'row hover over the zone tint': over(secondary, 0.6, zone),
+      'selected row (bg-secondary)': secondary,
+      'out-of-usage row (bg-status-error-bg)': hsl(theme, '--status-error-bg'),
+    };
+  }
+
+  function ratios(theme: string, amber: Rgb): Record<string, number> {
+    return Object.fromEntries(
+      Object.entries(rowGrounds(theme)).map(([name, ground]) => [name, contrast(amber, ground)])
+    );
+  }
+
+  it('discriminates: the 30% amber it replaced fails the zone tint in light mode', () => {
+    expect(
+      ratios(themes.light, hslToRgb(38, 92, 30))['Heads up zone tint (bg-sidebar-accent/40)']
+    ).toBeLessThan(AA);
+  });
+
+  it('light: clears AA on every row ground', () => {
+    expectAll(ratios(themes.light, hsl(themes.light, textToken(STATUS_TONE_TEXT.warning))));
+  });
+
+  it('dark: clears AA on every row ground', () => {
+    expectAll(ratios(themes.dark, hsl(themes.dark, textToken(STATUS_TONE_TEXT.warning))));
+  });
+});
+
 /** Every `.ts`/`.tsx` source file under `dir`, tests excluded. */
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];

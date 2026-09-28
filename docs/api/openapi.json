@@ -27515,7 +27515,8 @@
                                 "type": "string",
                                 "enum": [
                                   "ready",
-                                  "unavailable"
+                                  "unavailable",
+                                  "unlinked"
                                 ]
                               },
                               "providerInstanceId": {
@@ -27567,7 +27568,8 @@
                                       "type": "string",
                                       "enum": [
                                         "ready",
-                                        "unavailable"
+                                        "unavailable",
+                                        "unlinked"
                                       ]
                                     },
                                     "providerInstanceId": {
@@ -27608,6 +27610,7 @@
                                   "enum": [
                                     "nothing_set_up",
                                     "dorkos_account_unavailable",
+                                    "dorkos_account_unlinked",
                                     "own_key_unavailable"
                                   ]
                                 }
@@ -28389,7 +28392,8 @@
                                 "type": "string",
                                 "enum": [
                                   "ready",
-                                  "unavailable"
+                                  "unavailable",
+                                  "unlinked"
                                 ]
                               },
                               "providerInstanceId": {
@@ -28441,7 +28445,8 @@
                                       "type": "string",
                                       "enum": [
                                         "ready",
-                                        "unavailable"
+                                        "unavailable",
+                                        "unlinked"
                                       ]
                                     },
                                     "providerInstanceId": {
@@ -28482,6 +28487,7 @@
                                   "enum": [
                                     "nothing_set_up",
                                     "dorkos_account_unavailable",
+                                    "dorkos_account_unlinked",
                                     "own_key_unavailable"
                                   ]
                                 }
@@ -28873,6 +28879,14 @@
                               "additionalProperties": false
                             },
                             "maxItems": 50
+                          },
+                          "wayProblem": {
+                            "type": "string",
+                            "enum": [
+                              "dorkos_account_unlinked",
+                              "dorkos_account_unavailable",
+                              "own_key_unavailable"
+                            ]
                           }
                         },
                         "required": [
@@ -29925,6 +29939,14 @@
                             "additionalProperties": false
                           },
                           "maxItems": 50
+                        },
+                        "wayProblem": {
+                          "type": "string",
+                          "enum": [
+                            "dorkos_account_unlinked",
+                            "dorkos_account_unavailable",
+                            "own_key_unavailable"
+                          ]
                         }
                       },
                       "required": [
@@ -57334,6 +57356,32 @@
                           "status",
                           "custody",
                           "reconciliationStatus"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "unavailable": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "toolkit": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "note": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "toolkit",
+                          "label",
+                          "note"
                         ],
                         "additionalProperties": false
                       }

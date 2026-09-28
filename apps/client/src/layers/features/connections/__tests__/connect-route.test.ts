@@ -162,6 +162,15 @@ describe('firstConnectReason', () => {
     ).toBe('Your saved key didn’t work the last time DorkOS checked it.');
     expect(
       firstConnectReason(
+        {
+          ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
+          newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+        },
+        notion
+      )
+    ).toBe('Your DorkOS account isn’t linked anymore.');
+    expect(
+      firstConnectReason(
         { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
         notion
       )

@@ -39,9 +39,11 @@ import {
   useMakeDefaultStop,
   MakeDefaultStopLine,
   type StatusPromotionContext,
+  showsStaleMark,
 } from '@/layers/features/status';
 import { findWorkingMode, needsConsentRitual } from '@/layers/shared/lib';
 import { useAutonomyAcknowledgement } from '@/layers/entities/config';
+import { useNow } from '@/layers/shared/model';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
@@ -118,6 +120,11 @@ export function ChatStatusSection({
   // is newer.
   const statusUsage = useStatusUsage(sessionId, account, diagnostics.usage);
   const usage = statusUsage.usage;
+  // The same clock and rule the usage item reads, so the budget pays for the
+  // "· old" the item is drawing, from the same tick (04 §13).
+  const nowTick = useNow();
+  const now = new Date(nowTick);
+  const usageStale = showsStaleMark(usage, statusUsage.observedAt, now);
   const contextUsage = diagnostics.contextUsage;
   // The session's own context reading, which a reopened session has before any
   // turn, with the time it was measured.
@@ -449,6 +456,7 @@ export function ChatStatusSection({
     // item show (`isUsageAbsorbed`).
     account: accountChipPromotion(account),
     usage,
+    usageStale,
     subagentsInFlight: liveSubagentCount,
   };
 
@@ -488,6 +496,7 @@ export function ChatStatusSection({
     usage,
     usageSource: statusUsage.source,
     usageObservedAt: statusUsage.observedAt,
+    now,
     supportsCostTracking: activeCaps?.supportsCostTracking ?? true,
     runningSubagents,
     liveSubagentCount,

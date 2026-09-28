@@ -20,7 +20,15 @@ function item(
   severity = 0,
   rigid = false
 ): PromotedStatusItem {
-  return { key, cluster, severity, pinned: false, rigid, node: <span>{key} content</span> };
+  return {
+    key,
+    cluster,
+    severity,
+    pinned: false,
+    rigid,
+    wide: false,
+    node: <span>{key} content</span>,
+  };
 }
 
 /** The wrapper the row draws around one item — where the shrink decision lands. */

@@ -221,7 +221,10 @@ export function ConnectDialog({
                 isRetrying={lookup.isFetching}
               />
             ) : firstConnect ? (
-              <FirstConnectStep reason={firstConnectReason(appConnections, resolvedService)} />
+              <FirstConnectStep
+                reason={firstConnectReason(appConnections, resolvedService)}
+                onLeave={close}
+              />
             ) : !activeFlow ? (
               <>
                 <div className="space-y-1.5">

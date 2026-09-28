@@ -187,7 +187,9 @@ const listGrantedConnections = defineCapability({
   id: 'connectors.list_granted_connections',
   title: 'List granted connections',
   description:
-    'List only the currently executable connections granted to this authenticated runtime turn.',
+    'List only the currently executable connections granted to this authenticated runtime turn. ' +
+    'Accounts granted to you that cannot be used right now are listed under unavailable, each ' +
+    'with a note on why and what the owner does about it.',
   tier: 'observe',
   area: null,
   areaNote: 'connected accounts have their own grant model',
@@ -237,7 +239,8 @@ const requestConnection = defineCapability({
   description:
     'Ask the owner for access to one service when the granted connections do not cover the work. ' +
     `serviceSlug is an exact service id; find it with ${SERVICE_CATALOG_TOOL_NAME} instead of ` +
-    'guessing. Name only the service actions and events needed and explain why. The owner chooses ' +
+    'guessing. An app listed with a setupNote can still be requested; the note says what the ' +
+    'owner fixes first. Name only the service actions and events needed and explain why. The owner chooses ' +
     'the account and exact access; this call never lists accounts or grants access by itself. A ' +
     'command-line login in a shell does not grant access; only the owner connects services.',
   tier: 'observe',

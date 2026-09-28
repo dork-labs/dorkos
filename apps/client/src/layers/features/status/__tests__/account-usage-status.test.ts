@@ -14,6 +14,7 @@ import {
   pickUsage,
   readableWindows,
   staleNumberClass,
+  showsStaleMark,
   withExpiredWindows,
 } from '../lib/account-usage-status';
 
@@ -292,10 +293,25 @@ describe('pickUsage — which usage wins', () => {
 });
 
 describe('staleNumberClass', () => {
-  it('mutes a stale number and leaves a fresh one alone', () => {
-    expect(staleNumberClass(true)).toBe('text-muted-foreground/70');
-    expect(staleNumberClass(true, true)).toBe('text-muted-foreground');
+  it('mutes a stale number in the full muted color and leaves a fresh one alone', () => {
+    expect(staleNumberClass(true)).toBe('text-muted-foreground');
     expect(staleNumberClass(false)).toBe('');
-    expect(staleNumberClass(false, true)).toBe('');
+  });
+});
+
+describe('showsStaleMark', () => {
+  const NOW = new Date('2026-09-28T12:00:00.000Z');
+  const ago = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
+  const sub = { kind: 'subscription', utilization: 0.4 } as const;
+
+  it('is true for a utilization number older than an hour', () => {
+    expect(showsStaleMark(sub, ago(61), NOW)).toBe(true);
+  });
+
+  it('is false when fresh, when the time is unknown, or when no percent is drawn', () => {
+    expect(showsStaleMark(sub, ago(59), NOW)).toBe(false);
+    expect(showsStaleMark(sub, null, NOW)).toBe(false);
+    expect(showsStaleMark({ kind: 'pay-as-you-go', costUsd: 1 }, ago(120), NOW)).toBe(false);
+    expect(showsStaleMark(null, ago(120), NOW)).toBe(false);
   });
 });

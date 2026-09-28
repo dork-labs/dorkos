@@ -1,5 +1,6 @@
 import { Users } from 'lucide-react';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import { TOOLTIP_MUTED_TEXT, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import type { ActiveSubagent } from '../model/session-diagnostics';
 
 interface SubagentsItemProps {
@@ -96,7 +97,7 @@ export function SubagentsItem({ count, running, waiting }: SubagentsItemProps) {
               {/* Never the raw `taskId` — a runtime that sends no description should
                   cost the reader a vague line, not a piece of DorkOS's plumbing. */}
               <span className="font-medium">{subagent.description ?? 'Working…'}</span>
-              <p className="text-muted-foreground text-3xs leading-tight">
+              <p className={cn(TOOLTIP_MUTED_TEXT, 'text-3xs leading-tight')}>
                 {subagent.toolUses ?? 0} tool{subagent.toolUses === 1 ? '' : 's'}
                 {subagent.lastToolName ? ` · last ${subagent.lastToolName}` : ''}
               </p>
@@ -106,7 +107,7 @@ export function SubagentsItem({ count, running, waiting }: SubagentsItemProps) {
         {/* Says "there are more than I can name" rather than pretending the list
             is the whole story — the rows are per-turn, the count is not. */}
         {unnamed > 0 && (
-          <p className="text-muted-foreground text-3xs leading-tight">
+          <p className={cn(TOOLTIP_MUTED_TEXT, 'text-3xs leading-tight')}>
             {running.length > 0 ? `and ${unnamed} more` : `${unnamed} task${plural} from earlier`}
           </p>
         )}

@@ -129,7 +129,7 @@ describe('ClaudeAccountsSection', () => {
     // The section lives INSIDE the Claude Code runtime card now, so its own
     // heading is what tells an operator which part of the card they are in.
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Billing account' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Billing account', level: 3 })).toBeInTheDocument()
     );
     // No card chrome of its own: the runtime card supplies that.
     expect(screen.getByTestId('claude-accounts-section')).toBeInTheDocument();

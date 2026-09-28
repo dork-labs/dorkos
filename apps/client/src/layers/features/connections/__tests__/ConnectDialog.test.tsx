@@ -19,6 +19,12 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectDialog } from '../ui/ConnectDialog';
 
+const openSettings = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSettingsDeepLink: () => ({ open: openSettings }),
+}));
+
 /** The providers read's answer: these statuses, and (unless given) nothing set up for new apps. */
 function providersFrom(
   // Loose on purpose: these fixtures carry only the fields the dialog reads.
@@ -625,6 +631,52 @@ describe('ConnectDialog', () => {
         'Your DorkOS account is linked, but it can’t connect apps right now.'
       );
       expect(screen.getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
+    });
+
+    it('closes itself before Settings opens to link the DorkOS account again', async () => {
+      const user = userEvent.setup();
+      const unlinked: ConnectorAppConnections = {
+        ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
+        newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+      };
+      const transport = createMockTransport({
+        getConnectorProviders: providersFrom(statuses, unlinked),
+      });
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+        services: [builtInGmail],
+        warnings: [],
+        appConnections: unlinked,
+      });
+      const order: string[] = [];
+      const onClose = vi.fn(() => order.push('closed'));
+      openSettings.mockReset().mockImplementation(() => order.push('settings'));
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      render(
+        <QueryClientProvider client={client}>
+          <TransportProvider transport={transport}>
+            <ConnectDialog
+              service={builtInGmail}
+              flowId={null}
+              onFlowIdChange={() => undefined}
+              onClose={onClose}
+              onChooseAccess={() => undefined}
+            />
+          </TransportProvider>
+        </QueryClientProvider>
+      );
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Your DorkOS account isn’t linked anymore.'
+      );
+      await user.click(screen.getByRole('button', { name: 'Link my DorkOS account again' }));
+      // No stacked dialogs: the Connect dialog is gone before Settings opens.
+      expect(order).toEqual(['closed', 'settings']);
+      expect(openSettings).toHaveBeenCalledWith('access', 'account');
+      await waitFor(() =>
+        expect(screen.queryByTestId('connect-auth-dialog')).not.toBeInTheDocument()
+      );
     });
 
     it('says to try again, not to set up, when a working way could not be reached', async () => {
