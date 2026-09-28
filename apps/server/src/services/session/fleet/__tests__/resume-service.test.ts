@@ -60,6 +60,7 @@ import {
   UNPROBED_RESET_GRACE_MS,
   confirmsReset,
   installResumeService,
+  resumeConfirmedWait,
   type ResetProbe,
 } from '../resume-service.js';
 
@@ -512,27 +513,61 @@ describe('resuming', () => {
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
   });
 
-  it('never arms or resumes a limit that is not Claude Code’s', async () => {
+  it('gives a Codex wait only the unconfirmed fallback: no Claude reading, probe, notice or resume', async () => {
     await limitedSession('s-codex', { runtime: 'codex' });
     // A person's wait promises no resume core would not run.
     expect(await waitForReset('s-codex', { autoResume: true })).toMatchObject({
       autoResume: false,
     });
-    // Even a plan that asks for one arms nothing.
+    // Even a plan that asks for one gets none.
     await writePlan(store.get('s-codex')!, {
       mode: 'waiting',
       resumeAt: RESETS,
       autoResume: true,
     });
+    // A Claude account under the same id has moved on: it must not count.
     readings.set('main', MOVED_ON);
+    await vi.advanceTimersByTimeAsync(TO_RESET);
+    // Nor a reading that arrives while the wait is past its time.
+    recordReading('main', MOVED_ON);
+    await vi.advanceTimersByTimeAsync(UNPROBED_RESET_GRACE_MS - 1_000);
+    expect(store.get('s-codex')?.limit.state).toBe('waiting-reset');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(plan('s-codex')).toMatchObject({ mode: 'waiting', unconfirmed: true });
+    expect(plan('s-codex')).not.toHaveProperty('resetConfirmedAt');
+    expect(store.get('s-codex')?.limit.state).toBe('reset-ready');
+    expect(probe).not.toHaveBeenCalled();
+    expect(resetNotices()).toHaveLength(0);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('at boot, gives a Codex wait from before this change only the fallback', async () => {
+    await limitedSession('s-codex', { runtime: 'codex' });
+    // Written by a build that armed any runtime's wait for a resume.
+    store.update('s-codex', SINCE, {
+      plan: { mode: 'waiting', resumeAt: RESETS, autoResume: true },
+      state: 'waiting-reset',
+    });
+    readings.set('main', MOVED_ON);
+    restart();
     await vi.advanceTimersByTimeAsync(TO_RESET + UNPROBED_RESET_GRACE_MS);
     expect(probe).not.toHaveBeenCalled();
+    expect(resetNotices()).toHaveLength(0);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    expect(store.get('s-codex')?.limit.state).toBe('waiting-reset');
-    // Nor after a restart.
+    expect(plan('s-codex')).toMatchObject({ unconfirmed: true });
+  });
+
+  it('never resumes a confirmed Codex wait, at boot or asked directly', async () => {
+    await limitedSession('s-codex', { runtime: 'codex' });
+    store.update('s-codex', SINCE, {
+      plan: { mode: 'waiting', resumeAt: RESETS, autoResume: true, resetConfirmedAt: RESETS },
+      state: 'reset-ready',
+    });
+    await resumeConfirmedWait('s-codex');
     restart();
-    await vi.advanceTimersByTimeAsync(RESET_RECHECK_MS);
+    await vi.advanceTimersByTimeAsync(RESUME_CAP_RETRY_MS);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(runtimeRegistry.getLastAutoResumeFor('s-codex')).toBeNull();
   });
 
   it('never resumes the same window twice: a resumed turn that runs out again only gets reset-ready', async () => {

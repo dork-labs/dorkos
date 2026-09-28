@@ -30,9 +30,10 @@
  *   past is checked at once.
  *
  * A CLAIMED session (a flow run) gets no timer and no resume here, whether or
- * not its advisor is registered: flow resumes it (spec §X "One writer"). Nor
- * does a session bound to another runtime than Claude Code: core confirms and
- * resumes only Claude Code limits today.
+ * not its advisor is registered: flow resumes it (spec §X "One writer"). A
+ * session bound to another runtime than Claude Code is never confirmed from
+ * the store, probed or resumed today: its wait only reaches the unconfirmed
+ * `reset-ready` fallback, 15 minutes after its time.
  *
  * @module services/session/fleet/resume-service
  */
@@ -236,14 +237,8 @@ function logCheckFailure(sessionId: string, err: unknown): void {
 function syncWatch(stored: StoredSessionLimit): void {
   const plan = stored.limit.plan;
   // `claimedBy` here is a backup: the fire-time recheck (`currentWait`) also refuses a claimed row.
-  // Only a Claude Code limit is core's to confirm and resume: its readings are
-  // the ones the usage store keys by this account id.
-  if (
-    plan.mode !== 'waiting' ||
-    stored.claimedBy ||
-    plan.resumeAt === null ||
-    !isClaudeCodeLimitNow(stored)
-  ) {
+  // Another runtime's wait is armed too, but only for the unconfirmed fallback.
+  if (plan.mode !== 'waiting' || stored.claimedBy || plan.resumeAt === null) {
     clearWatch(stored.sessionId);
     return;
   }
@@ -263,15 +258,29 @@ function readingOf(stored: StoredSessionLimit): ResetReading | undefined {
   }
 }
 
+/**
+ * Whether a store reading confirms the reset. Only a Claude Code limit's: the
+ * store is read by this account id among Claude Code accounts, so another
+ * runtime's limit (a Codex `default`) would be confirmed by the wrong account.
+ */
 function storeConfirms(stored: StoredSessionLimit): boolean {
+  if (!isClaudeCodeLimitNow(stored)) return false;
   const reading = readingOf(stored);
   return reading !== undefined && confirmsReset(reading, stored.limit);
 }
 
-/** Whether the account can be probed: a probe is wired and it has a ledger id. */
+/**
+ * Whether the account can be probed: a probe is wired, it has a ledger id, and
+ * the limit is Claude Code's (the probe asks a Claude Code account).
+ */
 function canProbe(stored: StoredSessionLimit): boolean {
   const accountId = stored.limit.accountId;
-  return deps?.probe !== undefined && accountId !== null && isRegisteredAccount(accountId);
+  return (
+    deps?.probe !== undefined &&
+    accountId !== null &&
+    isClaudeCodeLimitNow(stored) &&
+    isRegisteredAccount(accountId)
+  );
 }
 
 /**
@@ -514,22 +523,38 @@ function rearmAtBoot(): void {
   for (const stored of store.listWaiting()) {
     const plan = stored.limit.plan;
     if (plan.mode !== 'waiting' || stored.claimedBy || plan.resumeAt === null) continue;
-    if (plan.unconfirmed || !isClaudeCodeLimitNow(stored)) continue;
+    if (plan.unconfirmed) continue;
     if (plan.resetConfirmedAt === undefined) {
       arm(stored, plan.resumeAt, now);
       continue;
     }
-    const watch: Watch = {
-      since: stored.limit.since,
-      resumeAt: plan.resumeAt,
-      dueAt: now,
-      confirming: false,
-      settled: true,
-      rechecks: 0,
-    };
-    watches.set(stored.sessionId, watch);
-    void resume(stored, watch).catch((err) => logCheckFailure(stored.sessionId, err));
+    void resumeConfirmedWait(stored.sessionId).catch((err) =>
+      logCheckFailure(stored.sessionId, err)
+    );
   }
+}
+
+/**
+ * Send the automatic resume for a wait already confirmed, as the boot re-arm
+ * does, with every gate of the normal path.
+ *
+ * @param sessionId - The waiting session.
+ * @internal Exported for tests.
+ */
+export async function resumeConfirmedWait(sessionId: string): Promise<void> {
+  const stored = readStoredLimit(sessionId);
+  const plan = stored?.limit.plan;
+  if (!stored || plan?.mode !== 'waiting' || plan.resumeAt === null) return;
+  const watch: Watch = {
+    since: stored.limit.since,
+    resumeAt: plan.resumeAt,
+    dueAt: limitClock().getTime(),
+    confirming: false,
+    settled: true,
+    rechecks: 0,
+  };
+  watches.set(stored.sessionId, watch);
+  await resume(stored, watch);
 }
 
 /**
