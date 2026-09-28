@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import type {
   ConnectorAuthenticationFlowCreateRequest,
   ConnectorAuthenticationFlowState,
+  ConnectorLifecycleResult,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { useTransport } from '@/layers/shared/model';
@@ -40,6 +41,27 @@ export function useConnectorCatalog(query: string, enabled = true) {
   });
 }
 
+/** How long the browser treats an app's action list as current; the server keeps it for a day. */
+const APP_ACTIONS_STALE_MS = 5 * 60_000;
+
+/**
+ * Read what one app lets agents do through one configured way. Nothing is
+ * asked for until both are known, and a reopened panel shows the kept list
+ * at once.
+ *
+ * @param toolkit - The app's service id, e.g. `gmail`.
+ * @param providerInstanceId - The way that reaches it, or `null` when none is set up.
+ */
+export function useConnectorAppActions(toolkit: string, providerInstanceId: string | null) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: connectorKeys.appActions(providerInstanceId ?? '', toolkit),
+    queryFn: () => transport.getConnectorAppActions(toolkit, providerInstanceId ?? ''),
+    enabled: Boolean(providerInstanceId) && toolkit !== '',
+    staleTime: APP_ACTIONS_STALE_MS,
+  });
+}
+
 /** Read the operator's canonical stable connection inventory. */
 export function useConnectorConnections() {
   const transport = useTransport();
@@ -49,6 +71,13 @@ export function useConnectorConnections() {
   });
 }
 
+/**
+ * How often a disconnected account whose sign-out is still finishing re-reads
+ * its detail. The server keeps retrying on its own; this only keeps the panel
+ * honest about it, and stops the moment the sign-out settles or is refused.
+ */
+const CLEANUP_PENDING_REFRESH_MS = 15_000;
+
 /** Read owner-visible detail for one stable connection. */
 export function useConnectorConnection(connectionId: string | null, enabled = true) {
   const transport = useTransport();
@@ -56,6 +85,16 @@ export function useConnectorConnection(connectionId: string | null, enabled = tr
     queryKey: connectorKeys.connection(connectionId ?? ''),
     queryFn: () => transport.getConnectorConnection(connectionId ?? ''),
     enabled: enabled && Boolean(connectionId),
+    refetchInterval: (query) => {
+      const connection = query.state.data?.connection;
+      // Only while the server is actually retrying: a refused sync waits on the
+      // owner, and re-reading it would change nothing.
+      return connection?.lifecycle === 'disconnected' &&
+        connection.externalCleanup === 'pending' &&
+        connection.authoritySync.status === 'pending'
+        ? CLEANUP_PENDING_REFRESH_MS
+        : false;
+    },
   });
 }
 
@@ -210,7 +249,7 @@ export function useResumeConnectorConnection() {
 /** Disconnect a connection after the operator reviews its impact. */
 export function useDisconnectConnectorConnection() {
   const transport = useTransport();
-  return useConnectionMutation<void>((connectionId) =>
+  return useConnectionMutation<void, ConnectorLifecycleResult>((connectionId) =>
     transport.disconnectConnectorConnection(connectionId)
   );
 }

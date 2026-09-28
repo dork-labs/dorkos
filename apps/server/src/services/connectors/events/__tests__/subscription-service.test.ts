@@ -25,10 +25,17 @@ const definition: ConnectorEventDefinition = {
   toolkit: 'gmail',
   toolkitVersion: '20260901',
   definitionHash: `sha256:${'a'.repeat(64)}`,
+  // Shaped like a real provider's trigger config: optional fields carry a
+  // `default`, and nothing says `additionalProperties`. A filter check that
+  // fills defaults in refuses every filter that leaves one out.
   filterSchema: {
     type: 'object',
-    properties: { label: { type: 'string' } },
-    additionalProperties: false,
+    title: 'NewMessageConfig',
+    properties: {
+      label: { type: 'string', title: 'Label', examples: ['work'] },
+      userId: { type: 'string', title: 'User Id', default: 'me' },
+      interval: { type: 'number', title: 'Interval', default: 1 },
+    },
   },
   payloadSchema: { type: 'object' },
   deliveryMode: 'polling',
@@ -223,6 +230,20 @@ describe('explicit event receive authority', () => {
       expect(row(f.db, a.id)).toMatchObject({ enabled: 0, revoked_at: now, scope_version: 2 });
     }
   );
+  it('stores the filter as sent and refuses one naming a field the event does not have', async () => {
+    const f = fixture();
+    const created = await f.service.create(owner, f.request, new AbortController().signal);
+    expect(JSON.parse(String(row(f.db, created.id).filter_json))).toEqual({ label: 'work' });
+
+    await expect(
+      f.service.create(
+        owner,
+        { ...f.request, filter: { labels: 'work' } },
+        new AbortController().signal
+      )
+    ).rejects.toMatchObject({ code: 'invalid_filter' });
+  });
+
   it('rejects cross-owner requests before modifying any subscription', async () => {
     const f = fixture();
     const a = await f.service.create(owner, f.request, new AbortController().signal);

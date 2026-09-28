@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -11,6 +11,7 @@ import type { ConnectorAppConnections } from '@dorkos/shared/connector-resource-
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import {
+  useConnectorConnection,
   useConnectorAppConnections,
   useConnectorCatalog,
   useConnectorProviders,
@@ -140,6 +141,61 @@ describe('useDeleteConnectorCredential', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.deleteConnectorCredential).toHaveBeenCalledWith('composio');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors'] });
+  });
+});
+
+describe('useConnectorConnection', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function detailWith(
+    externalCleanup: 'pending' | 'complete',
+    authoritySync: { status: 'pending' } | { status: 'failed'; reason: string } = {
+      status: 'pending',
+    }
+  ) {
+    return {
+      connection: { lifecycle: 'disconnected', externalCleanup, authoritySync },
+    } as unknown as Awaited<ReturnType<Transport['getConnectorConnection']>>;
+  }
+
+  it('does not re-read a sign-out that was refused: nothing is retrying', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue(
+      detailWith('pending', { status: 'failed', reason: 'This instance is no longer linked.' })
+    );
+    const { wrapper } = createWrapper(transport);
+    const { result } = renderHook(() => useConnectorConnection('c-1'), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads a disconnected account while its sign-out is pending, and stops once it settles', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorConnection)
+      .mockResolvedValueOnce(detailWith('pending'))
+      .mockResolvedValueOnce(detailWith('pending'))
+      .mockResolvedValue(detailWith('complete'));
+    const { wrapper } = createWrapper(transport);
+    const { result } = renderHook(() => useConnectorConnection('c-1'), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await waitFor(() => expect(transport.getConnectorConnection).toHaveBeenCalledTimes(2));
+    await vi.advanceTimersByTimeAsync(15_000);
+    await waitFor(() => expect(result.current.data?.connection.externalCleanup).toBe('complete'));
+    expect(transport.getConnectorConnection).toHaveBeenCalledTimes(3);
+
+    // Settled: no more reads, however long the panel stays open.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(transport.getConnectorConnection).toHaveBeenCalledTimes(3);
   });
 });
 

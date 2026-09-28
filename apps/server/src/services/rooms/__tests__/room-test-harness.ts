@@ -754,6 +754,8 @@ export function createRoomHarness(opts: {
    */
   roomRepoPath?: (roomId: string) => string | null;
   ownerUserId?: string;
+  /** The operator's profile name, as `config.profile.displayName` supplies it. */
+  operatorName?: () => string | null;
   budgetNow?: () => number;
   /**
    * Which rooms the operator has muted, as a live predicate (spec
@@ -947,6 +949,7 @@ export function createRoomHarness(opts: {
     roomRepoPath: opts.roomRepoPath ?? (() => null),
     ...(opts.canvasNow ? { canvasNow: opts.canvasNow } : {}),
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
+    ...(opts.operatorName ? { operatorName: opts.operatorName } : {}),
     isOwnerRecord: (record) => isOwnerRecord(record, ownerUserId),
     isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, ownerUserId),
     readCursors,

@@ -15,17 +15,21 @@ The current contract is defined by the [Connections specification](../specs/whit
 
 ## Key files
 
-| Concept                                               | Location                                                                                                     |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Provider port                                         | `packages/shared/src/connector-provider.ts`                                                                  |
-| Stable IDs, operation, capability, and review schemas | `packages/shared/src/connector-schemas.ts`                                                                   |
-| Conformance suite and fake                            | `packages/test-utils/src/connector-conformance.ts`, `packages/test-utils/src/fake-connector-provider.ts`     |
-| Confined vendor SDK adapters                          | `packages/connector-providers/src/`                                                                          |
-| Provider implementations                              | `apps/server/src/services/connectors/providers/`                                                             |
-| Instance registry and stable connection store         | `apps/server/src/services/connectors/registry.ts`, `apps/server/src/services/connectors/connection-store.ts` |
-| Durable database schema                               | `packages/db/src/schema/connectors/connections.ts`, `packages/db/src/schema/connectors/connector-events.ts`  |
-| SDK import guard                                      | `scripts/__tests__/composio-sdk-import-boundary.test.ts`                                                     |
-| Broker and authorization                              | `apps/server/src/services/connectors/execution/`                                                             |
+| Concept                                               | Location                                                                                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider port                                         | `packages/shared/src/connector-provider.ts`                                                                                              |
+| Stable IDs, operation, capability, and review schemas | `packages/shared/src/connector-schemas.ts`                                                                                               |
+| Conformance suite and fake                            | `packages/test-utils/src/connector-conformance.ts`, `packages/test-utils/src/fake-connector-provider.ts`                                 |
+| Confined vendor SDK adapters                          | `packages/connector-providers/src/`                                                                                                      |
+| Provider implementations                              | `apps/server/src/services/connectors/providers/`                                                                                         |
+| Instance registry and stable connection store         | `apps/server/src/services/connectors/registry.ts`, `apps/server/src/services/connectors/connection-store.ts`                             |
+| Durable database schema                               | `packages/db/src/schema/connectors/connections.ts`, `packages/db/src/schema/connectors/connector-events.ts`                              |
+| SDK import guard                                      | `scripts/__tests__/composio-sdk-import-boundary.test.ts`                                                                                 |
+| Broker and authorization                              | `apps/server/src/services/connectors/execution/`                                                                                         |
+| Agent grant precedence (session, agent, every agent)  | `apps/server/src/services/connectors/execution/agent-grant-scope.ts`                                                                     |
+| Agent requests for an app                             | `apps/server/src/services/connectors/agent-request-service.ts`, `packages/shared/src/connector-agent-request-schemas.ts`                 |
+| Agent request routes                                  | `apps/server/src/routes/connector-management.ts` (`/api/connectors/agent-requests*`)                                                     |
+| Agent request card (chat, room, Connections page)     | `apps/client/src/layers/features/connections/ui/agent-request/`, `apps/client/src/layers/features/connections/lib/agent-request-call.ts` |
 
 ## The provider contract
 
@@ -91,7 +95,7 @@ Map the vendor's account handle to `ConnectorExternalAccountRef` in one adapter 
 
 Provider account responses must not contain credentials, authorization headers, connect URLs, or session URLs. Public REST and Transport DTOs use `ConnectionId` and omit provider instance IDs and external references.
 
-An authenticated runtime receives five private DorkOS tools. Two read-only tools list only its currently executable connections and the exact immutable schemas already granted to its agent or session. Three classified tools execute read, write, or destructive revisions from that list. The runtime never supplies an owner, agent, session, provider instance, or external account selector; DorkOS derives those facts from its turn-bound principal and rechecks them before returning discovery data or dispatching work. The ordinary and external MCP projections do not expose these private tools.
+An authenticated runtime receives seven private DorkOS tools (`CONNECTOR_RUNTIME_CAPABILITY_IDS` in `services/connectors/runtime-capability-scope.ts`). Two read-only tools list only its currently executable connections and the exact immutable schemas granted to it, whether through its session, its own agent grant, or an every-agent grant (`agent-grant-scope.ts` holds the precedence). Two request tools ask the owner for an app and check that request; see [Agent requests for an app](#agent-requests-for-an-app). Three classified tools execute read, write, or destructive revisions from the granted list. The runtime never supplies an owner, agent, session, provider instance, or external account selector; DorkOS derives those facts from its turn-bound principal and rechecks them before returning discovery data or dispatching work. The ordinary and external MCP projections do not expose these private tools.
 
 ### 4. Declare capabilities honestly
 
@@ -175,6 +179,32 @@ pnpm --use-node-version=24.14.1 --filter @dorkos/server lint
 
 No CI test may require a live vendor account. Put any real-provider smoke behind its own explicit spending or credential flag.
 
+## Agent requests for an app
+
+When no granted connection covers the work, an agent calls `connectors.request_connection` with an exact `serviceSlug` (from `connector_list_toolkits`), a reason, and the actions and events it needs. It never names an account and never grants itself anything. A service is requestable when `serviceDirectory` (in `resources/operator-query-service.ts`, the same read the agent's lookup tool uses) finds at least one account route a person can sign in through. So a provider only needs to list the toolkit with an account route; the rest of the flow does not depend on the provider.
+
+| Step     | Where                                                  | What happens                                                                                                                                                                                                                                                                                                                                                                              |
+| -------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create   | `ConnectorAgentRequestService.create`                  | Rechecks the live runtime principal, refuses a slug that is not requestable, and reuses one open request per agent, session and intent hash. Requests expire after two hours.                                                                                                                                                                                                             |
+| Hold     | `waitForResolution`                                    | The tool call stays open for up to ten minutes waiting for the owner. A request answered later resumes the session through the private-message source adapter (`ConnectorAgentRequestSourceAdapter`) and `reconcile()`, which also runs at startup.                                                                                                                                       |
+| Announce | `onChanged` → `connectorAgentRequestsChangedAnnouncer` | Broadcasts a content-free `connector_agent_requests_changed` event to the operator on `/api/events`. `useConnectorAgentRequestsSync` (mounted in `AppShell`) invalidates every request query.                                                                                                                                                                                             |
+| Show     | Client                                                 | In a chat, `AssistantMessageContent` draws `ChatAgentRequest` in place of the `request_connection` tool call, matched by `findCallRequest` against the owner's session list. In a room, `RoomAgentRequests` shows pending requests whose `roomId` matches. The Connections page lists them in `NeedsYou`. Non-owners cannot read requests, so they see the ordinary tool card or nothing. |
+| Connect  | `POST /agent-requests/:id/authentication-flows`        | Starts sign-in bound to that request. Finishing sign-in never answers the request by itself.                                                                                                                                                                                                                                                                                              |
+| Answer   | `POST /agent-requests/:id/decision`                    | `denied`, `approved` (exact operation revisions and event scopes on one account, replacing the agent's access there), or `current_access` (see below).                                                                                                                                                                                                                                    |
+
+All routes are owner-only under `/api/connectors/agent-requests`. `GET /agent-requests` takes optional `state` (`pending` or `resolved`) and `sessionId`.
+
+The chat and room card is `AgentRequestCard`. It connects the app if needed, asks for a fix if the account is paused, signed out or waiting on review (`lib/account-readiness.ts`), then shows the shared `ConnectionAccessCard` in one-agent mode, starting at the level the agent asked for. Allow is two writes: the access card saves that one agent's access, then the card answers with `current_access`. The server writes no grant for `current_access`. It answers with the access the agent already holds on that account, so this path can never lower access or touch another agent. It refuses with `session_access_off` when a session override shuts the agent out, `selection_invalid` when the agent holds nothing live, and `authority_sync_failed` while a managed grant (the agent's own or every-agent) has not been applied yet.
+
+Invariants:
+
+- The agent-facing status (`ConnectorAgentRequestStatusSchema`) never includes the owner's account list. Only `granted` carries a `ConnectionId`, plus `notGrantedOperations` for anything the owner left out.
+- A request read by a different agent, session, runtime or agent path returns the same `request_not_found` as a missing one.
+- Only an explicit owner decision resolves a request. A request whose origin no longer passes `revalidateOrigin` resolves as `target_deleted`.
+- Error codes are the `ConnectorAgentRequestError` union; the card maps each one to plain copy, so add a case there when you add a code.
+
+Tests: `services/connectors/__tests__/agent-request-service.test.ts`, the test-mode scenario `services/runtimes/test-mode/connection-request-scenarios.ts`, the browser module `apps/e2e/tests/connections/chat-connect-card.ts`, and the credentialed eval `packages/evals/src/suite/connection-request.ts`.
+
 ## Common mistakes
 
 - Using provider `type` as the configured instance key.
@@ -186,6 +216,8 @@ No CI test may require a live vendor account. Put any real-provider smoke behind
 - Exposing a provider MCP endpoint or arbitrary credentialed method/path proxy to a runtime.
 - Storing upstream OAuth tokens while declaring managed custody.
 - Returning a default provider subset as a complete catalog.
+- Resolving an agent request when sign-in finishes, or letting the chat card write a grant for anyone but the agent that asked.
+- Sending the owner's account list, or a request's existence, to an agent that did not create it.
 
 ## Related guides
 

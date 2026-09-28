@@ -1,6 +1,5 @@
 /** Durable owner-scoped event consent and private shared-trigger bindings. */
 import { createHash, randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import {
   and,
   connections,
@@ -11,6 +10,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { stableStringify } from '@dorkos/shared/capabilities';
+import { checkConnectorArguments } from '@dorkos/shared/connector-arguments';
 import {
   ConnectionEventSubscriptionSchema,
   type ConnectionEventSubscription,
@@ -506,8 +506,7 @@ export class ConnectorSubscriptionStore {
     try {
       const serialized = stableStringify(filter);
       if (Buffer.byteLength(serialized) > 32_768) throw new Error();
-      const parsed = z.fromJSONSchema(definition.filterSchema).parse(filter);
-      if (stableStringify(parsed) !== serialized) throw new Error();
+      if (!checkConnectorArguments(definition.filterSchema, filter).ok) throw new Error();
       return serialized;
     } catch {
       throw new ConnectorSubscriptionError('invalid_filter');

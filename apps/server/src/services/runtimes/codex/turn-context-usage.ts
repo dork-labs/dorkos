@@ -1,5 +1,10 @@
 /**
- * Bounded current-context reads from Codex's native rollout tail.
+ * Bounded current-context and rate-limit reads from Codex's native rollout tail.
+ *
+ * The one `token_count` record family Codex writes per model call carries two
+ * things DorkOS shows: the active context size (`info`) and the account's
+ * rate limits (`rate_limits`, spec `claude-account-fleet` §6 R). Both come
+ * from the same bounded tail read, so recording usage costs no new file access.
  *
  * @module services/runtimes/codex/turn-context-usage
  */
@@ -37,6 +42,23 @@ export interface CodexTurnContextUsage {
   contextTokens: number;
   /** Effective model context window recorded by Codex for that turn. */
   contextMaxTokens: number;
+}
+
+/**
+ * Everything one completed (or failed) Codex turn left in its rollout tail.
+ */
+export interface CodexTurnReading {
+  /** Current context usage, or `null` when the latest record could not be verified. */
+  context: CodexTurnContextUsage | null;
+  /**
+   * The newest `rate_limits` payload of each limit (`limit_id`) recorded during
+   * this turn, oldest first, as raw JSON for `codexObservations`. Codex
+   * alternates records for the main limit and model-specific ones, so the
+   * newest record alone can hide the main limit. A window's `resets_in_seconds`
+   * (older Codex builds) is turned into `resets_at` from the record's own
+   * timestamp. Empty when the turn recorded none.
+   */
+  rateLimits: Record<string, unknown>[];
 }
 
 /** Options for one bounded native rollout read. */
@@ -212,10 +234,73 @@ function parseLatestUsage(
   return null;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** One window with `resets_in_seconds` turned into `resets_at`, seen at `recordedAtMs`. */
+function withAbsoluteReset(window: unknown, recordedAtMs: number): unknown {
+  if (!isPlainObject(window) || window.resets_at !== undefined) return window;
+  const seconds = window.resets_in_seconds;
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return window;
+  return { ...window, resets_at: Math.round(recordedAtMs / 1000 + seconds) };
+}
+
+/**
+ * The newest `rate_limits` payload per limit written during this turn. Uses the
+ * same freshness bounds as the context reading when `turnStartedAtMs` is given.
+ * Tolerant: a line that is not JSON or not a `token_count`, or a record without
+ * `rate_limits`, is skipped, never thrown on.
+ */
+function parseTurnRateLimits(
+  tail: string,
+  truncatedAtStart: boolean,
+  turnStartedAtMs: number | undefined,
+  now: number
+): Record<string, unknown>[] {
+  const lines = tail.split('\n');
+  if (truncatedAtStart) lines.shift();
+  if (!tail.endsWith('\n')) lines.pop();
+
+  const newestByLimit = new Map<string, Record<string, unknown>>();
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line) continue;
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isPlainObject(decoded) || decoded.type !== 'event_msg') continue;
+    const payload = decoded.payload;
+    if (!isPlainObject(payload) || payload.type !== 'token_count') continue;
+    const recordedAt = typeof decoded.timestamp === 'string' ? Date.parse(decoded.timestamp) : NaN;
+    if (!Number.isFinite(recordedAt)) continue;
+    if (recordedAt > now + MAX_FUTURE_CLOCK_SKEW_MS) continue;
+    // Older than this turn: every earlier record is older still.
+    if (turnStartedAtMs !== undefined && recordedAt < turnStartedAtMs) break;
+    const rateLimits = payload.rate_limits;
+    if (!isPlainObject(rateLimits)) continue;
+    // No `limit_id` IS the main limit (contract §1.2), so it shares `codex`'s key.
+    const limitKey =
+      typeof rateLimits.limit_id === 'string' && rateLimits.limit_id !== ''
+        ? rateLimits.limit_id
+        : 'codex';
+    if (newestByLimit.has(limitKey)) continue;
+    newestByLimit.set(limitKey, {
+      ...rateLimits,
+      primary: withAbsoluteReset(rateLimits.primary, recordedAt),
+      secondary: withAbsoluteReset(rateLimits.secondary, recordedAt),
+    });
+  }
+  return [...newestByLimit.values()].reverse();
+}
+
 async function readWithinDeadline(
   options: ReadCodexTurnContextUsageOptions,
   signal: AbortSignal
-): Promise<CodexTurnContextUsage | null> {
+): Promise<CodexTurnReading | null> {
   const match = UUID_V7.exec(options.threadId);
   if (match === null) return null;
   const timestampMs = Number.parseInt(`${match[1]}${match[2]}`, 16);
@@ -240,12 +325,11 @@ async function readWithinDeadline(
   if (filePath == null) return null;
   const tail = await readTail(filePath, options.maxTailBytes ?? DEFAULT_MAX_TAIL_BYTES, signal);
   if (tail === null) return null;
-  return parseLatestUsage(
-    tail.text,
-    tail.truncatedAtStart,
-    options.turnStartedAtMs,
-    options.now ?? Date.now()
-  );
+  const now = options.now ?? Date.now();
+  return {
+    context: parseLatestUsage(tail.text, tail.truncatedAtStart, options.turnStartedAtMs, now),
+    rateLimits: parseTurnRateLimits(tail.text, tail.truncatedAtStart, options.turnStartedAtMs, now),
+  };
 }
 
 /**
@@ -268,6 +352,20 @@ async function readWithinDeadline(
 export async function readCodexTurnContextUsage(
   options: ReadCodexTurnContextUsageOptions
 ): Promise<CodexTurnContextUsage | null> {
+  return (await readCodexTurnReading(options))?.context ?? null;
+}
+
+/**
+ * Read what this turn left in its rollout tail: the current-context measurement
+ * ({@link readCodexTurnContextUsage}) and the account's rate limits, from ONE
+ * bounded read under the same limits and deadline.
+ *
+ * @param options - Thread identity, current-turn boundary, and read limits.
+ * @returns The reading, or `null` when the rollout could not be found or read in time.
+ */
+export async function readCodexTurnReading(
+  options: ReadCodexTurnContextUsageOptions
+): Promise<CodexTurnReading | null> {
   const controller = new AbortController();
   const abort = (): void => controller.abort();
   if (options.signal?.aborted) abort();

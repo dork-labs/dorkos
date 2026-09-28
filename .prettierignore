@@ -124,3 +124,8 @@ apps/e2e/playwright-report/
 # files under prettier --check's path (DOR-575).
 apps/site/.next/
 apps/site/next-env.d.ts
+
+# flow's fleet conformance fixture, vendored byte for byte from
+# dork-labs/marketplace by scripts/sync-flow-conformance.ts. Reformatting it
+# would make the copy differ from the pinned commit SOURCE.json names.
+packages/shared/src/__fixtures__/flow-fleet-conformance/

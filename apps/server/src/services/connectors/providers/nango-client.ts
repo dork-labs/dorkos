@@ -27,6 +27,7 @@
  * @module services/connectors/providers/nango-client
  */
 import { randomUUID } from 'node:crypto';
+import { trustedLogoUrl } from './app-presentation.js';
 
 /** Per-request deadline so a hung Nango call can never block an aggregation. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -44,6 +45,8 @@ export interface NangoIntegration {
   displayName?: string;
   /** Nango auth mode, e.g. `'OAUTH2'` | `'API_KEY'` | `'NONE'`. */
   authMode?: string;
+  /** The integration's logo on this Nango server or Nango's hosted app; absent otherwise. */
+  logoUrl?: string;
 }
 
 /** The reference-not-secret result of initiating a Nango connect flow. */
@@ -159,6 +162,9 @@ export class NangoApiError extends Error {
 /** Nango's hosted Connect UI origin. `ASSUMPTION (live-unverified)`. */
 const DEFAULT_NANGO_CONNECT_URL = 'https://connect.nango.dev';
 
+/** Nango Cloud's hosted app, which serves the same template logos as a Nango server. */
+const NANGO_HOSTED_LOGO_HOST = 'app.nango.dev';
+
 /**
  * Default {@link NangoHttpClient} over a self-hosted Nango's REST API. The
  * secret key rides every request as a bearer token and is never logged. Every
@@ -188,13 +194,24 @@ export class FetchNangoHttpClient implements NangoHttpClient {
 
   async listIntegrations(): Promise<NangoIntegration[]> {
     // ASSUMPTION (live-unverified): GET /integrations → { data: [...] }.
+    // VERIFIED-DOCS (2026-09-27, nango.dev/docs/reference/api/integration/list):
+    // each item is { unique_key, display_name, provider, logo, created_at,
+    // updated_at } — `logo` is on the Nango server's own origin
+    // (`<origin>/images/template-logos/<provider>.svg`); Nango Cloud also
+    // serves the same files from `app.nango.dev` (both answer 200 image/svg+xml).
+    // There is no description field.
     const body = await this._request<{ data?: RawIntegration[] }>('GET', '/integrations');
-    return (body.data ?? []).map((it) => ({
-      uniqueKey: it.unique_key,
-      provider: it.provider ?? it.unique_key,
-      ...(it.display_name && { displayName: it.display_name }),
-      ...(it.auth_mode && { authMode: it.auth_mode }),
-    }));
+    const logoHosts = [new URL(this._baseUrl).hostname.toLowerCase(), NANGO_HOSTED_LOGO_HOST];
+    return (body.data ?? []).map((it) => {
+      const logoUrl = trustedLogoUrl(it.logo, logoHosts);
+      return {
+        uniqueKey: it.unique_key,
+        provider: it.provider ?? it.unique_key,
+        ...(it.display_name && { displayName: it.display_name }),
+        ...(it.auth_mode && { authMode: it.auth_mode }),
+        ...(logoUrl && { logoUrl }),
+      };
+    });
   }
 
   async initiateConnection(input: {
@@ -300,6 +317,7 @@ interface RawIntegration {
   provider?: string;
   display_name?: string;
   auth_mode?: string;
+  logo?: string;
 }
 
 /** Raw Nango connect-session JSON. */

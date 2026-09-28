@@ -20,12 +20,17 @@ import {
   formatResetTime,
   isAbsoluteAccountPath,
   isStale,
+  limitScopeOf,
+  limitStateOf,
   limitSubject,
   limitText,
+  modelBucketName,
   nearestWindow,
   planName,
   windowShortName,
   type AccountWindow,
+  type LimitState,
+  type SessionLimitView,
 } from '../claude-accounts';
 
 describe('claudeAccountName', () => {
@@ -201,6 +206,76 @@ describe('chipState', () => {
     expect(chipState(createMockAccountUsage({ state: 'unknown' }), null)).toBe('unknown');
     expect(chipState(undefined, undefined)).toBe('unknown');
     expect(chipState(createMockAccountUsage(), null)).toBe('ok');
+  });
+});
+
+/** A limit whose server sends `state` and `scope` (S4 5.1). */
+function limitIn(state: LimitState, scope: 'account' | 'model' = 'account'): SessionLimitView {
+  return { ...createMockSessionLimit('ask'), state, scope };
+}
+
+describe('chipState, model scope', () => {
+  it.each(['model-limited', 'waiting-reset', 'reset-ready', 'limited'] as const)(
+    'a model-scope limit in %s reads model-out, whatever the account reads',
+    (state) => {
+      expect(chipState(createMockAccountUsage(), limitIn(state, 'model'))).toBe('model-out');
+      // A rejected Opus window makes the ACCOUNT read limited; the chip still says model-out.
+      expect(chipState(createMockAccountUsage({ state: 'limited' }), limitIn(state, 'model'))).toBe(
+        'model-out'
+      );
+    }
+  );
+
+  it('a moved limit reads as the account does, in either scope', () => {
+    expect(chipState(createMockAccountUsage(), limitIn('moved', 'model'))).toBe('ok');
+    expect(chipState(createMockAccountUsage(), limitIn('moved'))).toBe('ok');
+  });
+
+  it('an account-scope limit in any other state reads out', () => {
+    expect(chipState(createMockAccountUsage(), limitIn('wait-only'))).toBe('out');
+    expect(chipState(createMockAccountUsage(), limitIn('all-accounts-out'))).toBe('out');
+  });
+});
+
+describe('limitStateOf and limitScopeOf', () => {
+  it('reads the server state when it sends one', () => {
+    expect(limitStateOf(limitIn('reset-ready'))).toBe('reset-ready');
+  });
+
+  it.each([
+    ['ask', 'limited'],
+    ['auto', 'handing-off'],
+    ['waiting', 'waiting-reset'],
+    ['continued', 'moved'],
+  ] as const)('derives %s from the plan as %s on an older server', (mode, state) => {
+    expect(limitStateOf(createMockSessionLimit(mode))).toBe(state);
+  });
+
+  it('reads an absent scope as the whole account', () => {
+    expect(limitScopeOf(createMockSessionLimit('ask'))).toBe('account');
+    expect(limitScopeOf(limitIn('model-limited', 'model'))).toBe('model');
+  });
+});
+
+describe('modelBucketName', () => {
+  const models = [
+    { value: 'claude-opus-4-8', displayName: 'Opus 4.8' },
+    { value: 'claude-sonnet-4-6', displayName: 'Sonnet 4.6' },
+    { value: 'gpt-5-codex', displayName: 'GPT-5 Codex' },
+  ];
+
+  it('names the weekly model buckets by family', () => {
+    expect(modelBucketName('seven_day_opus', models)).toBe('Opus');
+    expect(modelBucketName('seven_day_sonnet', models)).toBe('Sonnet');
+  });
+
+  it('names a model:<slug> bucket by that model’s display name', () => {
+    expect(modelBucketName('model:gpt-5-codex', models)).toBe('GPT-5 Codex');
+  });
+
+  it('capitalizes the family or slug when the model list does not name it', () => {
+    expect(modelBucketName('seven_day_opus')).toBe('Opus');
+    expect(modelBucketName('model:haiku')).toBe('Haiku');
   });
 });
 

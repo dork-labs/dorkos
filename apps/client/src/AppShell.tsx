@@ -6,6 +6,7 @@ import {
   useDocumentTitle,
   useIsMobile,
   useSlotContributions,
+  useAccountUsageSync,
 } from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
 import { useElectronCloseTab } from './app/use-electron-close-tab';
@@ -331,6 +332,7 @@ export function AppShell() {
   // staying in one window meant the list quietly lied.
   useAgentsSync();
   useConfigSync();
+  useAccountUsageSync();
   // Live agent requests for apps (DOR-2415): a request answered in one window,
   // on the Connections page or in a room retires its chat card everywhere.
   useConnectorAgentRequestsSync();

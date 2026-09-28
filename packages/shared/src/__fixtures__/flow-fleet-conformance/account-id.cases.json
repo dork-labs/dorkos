@@ -1,0 +1,71 @@
+{
+  "contract": "fleet",
+  "about": "Minting an account id (spec flow-cli-core 1.1a). Call mint(label, path, taken). Slugify = lowercase, every run of characters outside [a-z0-9] becomes one '-', trim '-' from both ends. Base = slug(label), else slug(last segment of path, / or \\ separated, trailing separators ignored), else 'account'. If the base is in taken, append -2, -3, ... until free. Compare expected.id exactly. The id 'default' is reserved for a runtime's implicit account: a base of 'default' counts as taken, so it becomes 'default-2' (then -3, ...).",
+  "cases": [
+    {
+      "name": "label wins over the path",
+      "input": {"label": "Work Account", "path": "/Users/me/.claude-work", "taken": []},
+      "expected": {"id": "work-account"}
+    },
+    {
+      "name": "no label falls back to the path's last segment",
+      "input": {"label": null, "path": "/Users/me/.claude-work", "taken": []},
+      "expected": {"id": "claude-work"}
+    },
+    {
+      "name": "an empty label falls back to the path",
+      "input": {"label": "", "path": "/Users/me/Personal", "taken": []},
+      "expected": {"id": "personal"}
+    },
+    {
+      "name": "a label that slugifies to nothing falls back to the path",
+      "input": {"label": "!!!", "path": "/Users/me/.claude", "taken": []},
+      "expected": {"id": "claude"}
+    },
+    {
+      "name": "nothing usable at all gives 'account'",
+      "input": {"label": null, "path": "/", "taken": []},
+      "expected": {"id": "account"}
+    },
+    {
+      "name": "trailing separators are ignored",
+      "input": {"label": null, "path": "/Users/me/Claude Max/", "taken": []},
+      "expected": {"id": "claude-max"}
+    },
+    {
+      "name": "a Windows path splits on backslashes",
+      "input": {"label": null, "path": "C:\\Users\\me\\.claude-alt", "taken": []},
+      "expected": {"id": "claude-alt"}
+    },
+    {
+      "name": "runs of separators collapse to one hyphen",
+      "input": {"label": "ACME--Org__Seat", "path": "/x", "taken": []},
+      "expected": {"id": "acme-org-seat"}
+    },
+    {
+      "name": "letters outside a-z are separators, not transliterated",
+      "input": {"label": "  Ünïcode—Name  ", "path": "/x", "taken": []},
+      "expected": {"id": "n-code-name"}
+    },
+    {
+      "name": "a taken base gets -2",
+      "input": {"label": "main", "path": "/x", "taken": ["main"]},
+      "expected": {"id": "main-2"}
+    },
+    {
+      "name": "the first free suffix wins",
+      "input": {"label": "Claude 3", "path": "/x", "taken": ["claude-3", "claude-3-2"]},
+      "expected": {"id": "claude-3-3"}
+    },
+    {
+      "name": "a label that slugifies to default is reserved: it becomes default-2",
+      "input": {"label": "Default", "path": "/Users/me/.claude-x", "taken": []},
+      "expected": {"id": "default-2"}
+    },
+    {
+      "name": "a folder named default is reserved too",
+      "input": {"label": null, "path": "/Users/me/default", "taken": ["default-2"]},
+      "expected": {"id": "default-3"}
+    }
+  ]
+}

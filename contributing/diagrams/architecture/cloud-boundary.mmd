@@ -12,7 +12,9 @@ flowchart TB
     local --> runtime
     local --> tunnel
   end
-  control["Optional Cloud control plane<br/>Public hosted-service boundary"]
+  control["Configured service origin<br/>DORKOS_CLOUD_URL; defaults to website<br/>Account handover is route-specific"]
+  remote["Managed remote command consumer<br/>App wiring remains a follow-up"]
+  remote -.->|"Unwired command SSE + lease/ack"| control
   inference["Inference endpoint<br/>URL + scoped token returned at runtime"]
   contract["Public contract: packages/cloud-api<br/>Schemas + route table + fixtures<br/>Accounts · instances · managed services<br/>entitlements · seats · remote access · inference<br/>Hosted-community start / claim / moves"]
   edge["Tunnel service"]
@@ -25,4 +27,4 @@ flowchart TB
   browser -->|"HTTPS / WSS"| edge
   edge -->|"Forward app traffic through tunnel"| local
   community["Community host API · implemented<br/>Scoped keys · limits · usage<br/>Community owns content and storage"]
-  control -.->|"Planned hosting orchestration<br/>HTTPS host API; no database access"| community
+  control -.->|"Hosting contract · availability-dependent<br/>HTTPS host API; no database access"| community

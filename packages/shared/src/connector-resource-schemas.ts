@@ -165,6 +165,40 @@ export const ConnectorCatalogIntentSchema = z.discriminatedUnion('kind', [
 /** One service intent in the unified catalog. */
 export type ConnectorCatalogIntent = z.infer<typeof ConnectorCatalogIntentSchema>;
 
+/** The same-origin path prefix every catalog logo is served under. */
+export const CONNECTOR_CATALOG_LOGO_PATH_PREFIX = '/api/connectors/catalog/logos/';
+
+/**
+ * The service ids a logo can be kept and served for: lower-case letters,
+ * digits, `_` and `-`, at most 100 characters. Such an id is a safe file name
+ * on every platform and a single URL path segment; every Composio slug and
+ * Nango template key fits.
+ */
+export const CONNECTOR_LOGO_SERVICE_ID = /^[a-z0-9][a-z0-9_-]{0,99}$/;
+
+/**
+ * The same-origin path an app's logo is served from, or `undefined` for an id
+ * no logo can be kept for. The client can name it for any app without a
+ * catalog entry; the server answers 404 when it has no logo.
+ *
+ * @param serviceSlug - The catalog's service id.
+ */
+export function connectorCatalogLogoPath(serviceSlug: string): string | undefined {
+  return CONNECTOR_LOGO_SERVICE_ID.test(serviceSlug)
+    ? `${CONNECTOR_CATALOG_LOGO_PATH_PREFIX}${serviceSlug}`
+    : undefined;
+}
+
+/**
+ * A catalog logo reference: this server's own logo route for one app, with the
+ * service id as one lower-case path segment. The pattern refuses any other
+ * origin, scheme, query or extra path segment.
+ */
+export const ConnectorCatalogLogoPathSchema = z
+  .string()
+  .max(300)
+  .regex(/^\/api\/connectors\/catalog\/logos\/[a-z0-9][a-z0-9_-]{0,99}$/);
+
 /** One account-free service in the unified catalog. */
 export const ConnectorCatalogServiceSchema = z
   .object({
@@ -172,8 +206,18 @@ export const ConnectorCatalogServiceSchema = z
     displayName: z.string().min(1).max(200),
     iconKey: z.string().min(1).max(200),
     intents: z.array(ConnectorCatalogIntentSchema).min(1).max(20),
-    /** One plain line saying what agents can do with the app. Built-in apps only. */
+    /**
+     * One plain line about the app: DorkOS's own line for the built-in apps,
+     * otherwise the connection service's description cut to one short sentence.
+     */
     description: z.string().min(1).max(300).optional(),
+    /**
+     * Same-origin path to the app's logo, served by this server from its own
+     * cache (`GET /api/connectors/catalog/logos/:serviceSlug`). Never a
+     * third-party URL: the browser never asks another site for a logo. Absent
+     * when no connection service offers one.
+     */
+    logo: ConnectorCatalogLogoPathSchema.optional(),
     /** The shelf the app sits on in the list. Built-in apps only. */
     category: ConnectorCatalogCategorySchema.optional(),
     /** True for the hand-picked popular apps DorkOS always lists. */
@@ -204,7 +248,18 @@ export type ConnectorCatalogResourcePage = z.infer<typeof ConnectorCatalogResour
 /** Durable local-to-managed synchronization state shown to an owner. */
 export const ConnectorAuthoritySyncStateSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('ready') }).strict(),
-  z.object({ status: z.literal('pending') }).strict(),
+  z
+    .object({
+      status: z.literal('pending'),
+      /** Why the last try didn't settle, in plain words; absent while nothing went wrong. */
+      reason: z.string().min(1).max(1_000).optional(),
+      /** When DorkOS tries again; present exactly when `reason` is. */
+      retryAt: z.string().datetime().optional(),
+    })
+    .strict()
+    .refine((state) => (state.reason === undefined) === (state.retryAt === undefined), {
+      message: 'A pending reason and its retry time come together or not at all.',
+    }),
   z.object({ status: z.literal('failed'), reason: z.string().min(1).max(1_000) }).strict(),
 ]);
 /** Durable local-to-managed synchronization state shown to an owner. */
@@ -428,6 +483,74 @@ export const ConnectorDisconnectImpactSchema = z
   .strict();
 /** Owner-visible authority affected by disconnecting one connection. */
 export type ConnectorDisconnectImpact = z.infer<typeof ConnectorDisconnectImpactSchema>;
+
+/**
+ * The most actions one app's list carries. Matches the page bound the grant
+ * review reads (20 pages of 100), so a complete list here is one the review
+ * could read too.
+ */
+export const CONNECTOR_APP_ACTIONS_LIMIT = 2_000;
+
+/** Which app's actions to list, and through which configured way. */
+export const ConnectorAppActionsQuerySchema = z
+  .object({ providerInstanceId: ConnectorProviderInstanceIdSchema })
+  .strict();
+/** Which app's actions to list, and through which configured way. */
+export type ConnectorAppActionsQuery = z.infer<typeof ConnectorAppActionsQuerySchema>;
+
+/** One action an app offers agents, as the owner's side panel shows it. */
+export const ConnectorAppActionSchema = z
+  .object({
+    /** The service's action id, e.g. `GMAIL_SEND_EMAIL`. */
+    operationSlug: z.string().min(1).max(200),
+    /** The service's own display name for the action, when it gives one. */
+    displayName: z.string().min(1).max(200).optional(),
+    /**
+     * The safety classification the grant review stores and execution
+     * enforces: the exact value the service's discovery produced, never a
+     * reinterpretation. `read` is the only one that does not change anything.
+     */
+    capabilityClassification: ConnectorOperationClassificationSchema,
+    /** True when the service marks the action as one of its main ones. */
+    important: z.boolean(),
+  })
+  .strict();
+/** One action an app offers agents, as the owner's side panel shows it. */
+export type ConnectorAppAction = z.infer<typeof ConnectorAppActionSchema>;
+
+/**
+ * What one app lets agents do through one configured way: its action list at
+ * one exact service version, or an honest "this service can't list them".
+ */
+export const ConnectorAppActionsSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('listed'),
+      toolkit: z.string().min(1).max(200),
+      toolkitVersion: z.string().min(1).max(200),
+      actions: z.array(ConnectorAppActionSchema).max(CONNECTOR_APP_ACTIONS_LIMIT),
+      /**
+       * Whether this is the whole list. `too_large` means the app has more
+       * actions than DorkOS reads; `interrupted` means the listing stopped part
+       * way. Either way the list is the first ones only, never the whole.
+       */
+      completeness: z.enum(['complete', 'too_large', 'interrupted']),
+      /** When the list was last read from the service. */
+      fetchedAt: z.string().datetime(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('unlisted'),
+      toolkit: z.string().min(1).max(200),
+    })
+    .strict(),
+]);
+/**
+ * What one app lets agents do through one configured way: its action list at
+ * one exact service version, or an honest "this service can't list them".
+ */
+export type ConnectorAppActions = z.infer<typeof ConnectorAppActionsSchema>;
 
 /** One exact granted connection in an owner-visible agent profile. */
 export const ConnectorAgentConnectionSchema = z

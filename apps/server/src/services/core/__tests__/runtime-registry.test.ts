@@ -493,6 +493,23 @@ describe('RuntimeRegistry', () => {
       registry.register(createMockRuntime('test-mode'));
     });
 
+    describe('forgetUnstartedSession', () => {
+      it('removes the binding a launch wrote, and only that session`s (DOR-2447)', async () => {
+        await registry.persistSessionRuntime('launched-never-ran', 'codex', A_PERSON);
+        await registry.persistSessionRuntime('a-real-one', 'codex', A_PERSON);
+
+        await registry.forgetUnstartedSession('launched-never-ran');
+
+        const ids = db
+          .select({ id: sessionMetadata.sessionId })
+          .from(sessionMetadata)
+          .all()
+          .map((row) => row.id);
+        expect(ids).not.toContain('launched-never-ran');
+        expect(ids).toContain('a-real-one');
+      });
+    });
+
     describe('persistSessionRuntime', () => {
       it('inserts a new row for a new session', async () => {
         await registry.persistSessionRuntime('session-1', 'claude-code', A_PERSON);

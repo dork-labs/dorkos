@@ -7,6 +7,7 @@ import {
   type ConnectorResourcesRouterDeps,
 } from '../connector-resources.js';
 import { ConnectorAuthenticationFlowError } from '../../services/connectors/resources/authentication-flow-service.js';
+import { ConnectorAppActionsError } from '../../services/connectors/resources/app-actions-service.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -29,6 +30,7 @@ describe('connector resource routes', () => {
           .fn()
           .mockResolvedValue({ sessionId: 'session-a', agentId: 'agent-a', connections: [] }),
       },
+      logos: { get: vi.fn().mockResolvedValue(undefined) },
       authentication: {
         start: vi.fn().mockResolvedValue({ flowId: 'flow-a', state: 'pending' }),
         reconnect: vi.fn().mockResolvedValue({ flowId: 'flow-b', state: 'pending' }),
@@ -43,6 +45,9 @@ describe('connector resource routes', () => {
           .fn()
           .mockResolvedValue({ connectionId: 'connection-a', lifecycle: 'disconnected' }),
       },
+      actions: {
+        list: vi.fn().mockResolvedValue({ status: 'unlisted', toolkit: 'gmail' }),
+      },
     } as unknown as ConnectorResourcesRouterDeps;
     app = express();
     app.use(express.json());
@@ -52,6 +57,37 @@ describe('connector resource routes', () => {
   function api() {
     return request(fixtureTarget.mount(app));
   }
+
+  it('serves a kept logo as an inert image a browser will not sniff or script', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>x()</script></svg>');
+    vi.mocked(deps.logos.get).mockResolvedValue({ bytes: svg, contentType: 'image/svg+xml' });
+
+    const response = await api().get('/api/connectors/catalog/logos/notion').expect(200);
+
+    expect(deps.logos.get).toHaveBeenCalledWith('notion');
+    expect(response.headers['content-type']).toBe('image/svg+xml');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    );
+    expect(response.headers['cache-control']).toBe('private, max-age=86400');
+    expect(Buffer.from(response.body as Buffer).equals(svg)).toBe(true);
+  });
+
+  it('answers 404 for an app with no logo, without asking an owner', async () => {
+    const resolveOwner = vi.fn(() => OWNER);
+    const ownerless = express();
+    ownerless.use('/api/connectors', createConnectorResourcesRouter({ ...deps, resolveOwner }));
+
+    const response = await request(fixtureTarget.mount(ownerless))
+      .get('/api/connectors/catalog/logos/unknown-app')
+      .expect(404);
+
+    expect(resolveOwner).not.toHaveBeenCalled();
+
+    expect(response.body).toEqual({ error: 'This app has no logo.' });
+    expect(response.headers['cache-control']).toBe('private, max-age=300');
+  });
 
   it('keeps catalog account-free and validates its bounded query', async () => {
     await api().get('/api/connectors/catalog?q=gmail&limit=20').expect(200, {
@@ -102,6 +138,40 @@ describe('connector resource routes', () => {
       .send({})
       .expect(403);
     expect(deps.lifecycle.remove).not.toHaveBeenCalled();
+  });
+
+  it('lists an app’s actions for the owner only, through one named way', async () => {
+    await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
+      .expect(200, { status: 'unlisted', toolkit: 'gmail' });
+    expect(deps.actions.list).toHaveBeenCalledWith(OWNER, {
+      providerInstanceId: 'provider-a',
+      toolkit: 'gmail',
+    });
+
+    vi.mocked(deps.actions.list).mockClear();
+    await api().get('/api/connectors/apps/gmail/actions').expect(400);
+    await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a&extra=1')
+      .expect(400);
+    const refused = await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
+      .set('X-DorkOS-Agent', 'agent-a')
+      .expect(403);
+    expect(refused.body).toMatchObject({ code: 'connector_owner_required' });
+    expect(deps.actions.list).not.toHaveBeenCalled();
+  });
+
+  it('maps an unknown way to 404 and a failed listing to 502', async () => {
+    vi.mocked(deps.actions.list)
+      .mockRejectedValueOnce(new ConnectorAppActionsError('provider_not_found', 'Not set up.'))
+      .mockRejectedValueOnce(new ConnectorAppActionsError('actions_unavailable', 'Try again.'));
+    await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
+      .expect(404, { error: 'Not set up.', code: 'provider_not_found' });
+    await api()
+      .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
+      .expect(502, { error: 'Try again.', code: 'actions_unavailable' });
   });
 
   it('returns a useful generic error without exposing an internal failure', async () => {

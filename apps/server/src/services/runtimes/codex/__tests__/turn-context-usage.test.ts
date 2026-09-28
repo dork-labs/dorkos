@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readCodexTurnContextUsage } from '../turn-context-usage.js';
+import { readCodexTurnContextUsage, readCodexTurnReading } from '../turn-context-usage.js';
 
 const THREAD_ID = '01a082ce-2b72-71d2-be38-aa8425f13650';
 const THREAD_CREATED_AT = 1_788_900_944_754;
@@ -295,5 +295,125 @@ describe('readCodexTurnContextUsage', () => {
 
     await expect(reading).resolves.toBeNull();
     expect(fileWasClosed).toBe(true);
+  });
+});
+
+/** A `rate_limits` payload as a real rollout line carries it (redacted, 2026-09-10). */
+function rateLimits(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    limit_id: 'codex',
+    limit_name: null,
+    primary: { used_percent: 25.0, window_minutes: 10080, resets_at: 1789663865 },
+    secondary: null,
+    credits: { has_credits: false, unlimited: false, balance: '0' },
+    individual_limit: null,
+    spend_control_reached: null,
+    plan_type: 'pro',
+    rate_limit_reached_type: null,
+    ...overrides,
+  };
+}
+
+function tokenCountWithLimits(
+  limits: Record<string, unknown> | null,
+  timestamp = '2026-09-08T22:58:05.960Z'
+): unknown {
+  const record = tokenCount({ timestamp }) as { payload: Record<string, unknown> };
+  return {
+    ...record,
+    payload: { ...record.payload, ...(limits ? { rate_limits: limits } : {}) },
+  };
+}
+
+describe('readCodexTurnReading', () => {
+  const read = (codexHome: string) =>
+    readCodexTurnReading({
+      threadId: THREAD_ID,
+      turnStartedAtMs: TURN_STARTED_AT,
+      codexHome,
+      now: NOW,
+    });
+
+  it('reads the rate limits from the same token_count record as the context', async () => {
+    const codexHome = await createHome();
+    await writeRollout(codexHome, [tokenCountWithLimits(rateLimits())]);
+
+    const reading = await read(codexHome);
+    expect(reading?.context).toEqual({ contextTokens: 54_999, contextMaxTokens: 258_400 });
+    expect(reading?.rateLimits).toEqual([rateLimits()]);
+  });
+
+  it('keeps the newest record of each limit, so a model limit written last never hides the main one', async () => {
+    const codexHome = await createHome();
+    const older = rateLimits({
+      primary: { used_percent: 20, window_minutes: 10080, resets_at: 1789663865 },
+    });
+    const spark = rateLimits({ limit_id: 'codex_bengalfox', limit_name: 'GPT-5.3-Codex-Spark' });
+    await writeRollout(codexHome, [
+      tokenCountWithLimits(older, '2026-09-08T22:58:01.000Z'),
+      tokenCountWithLimits(rateLimits(), '2026-09-08T22:58:03.000Z'),
+      tokenCountWithLimits(spark, '2026-09-08T22:58:05.960Z'),
+    ]);
+
+    const reading = await read(codexHome);
+    expect(reading?.rateLimits).toEqual([rateLimits(), spark]);
+  });
+
+  it('treats a record with no limit_id as the main limit, the same one as "codex"', async () => {
+    const codexHome = await createHome();
+    const unnamed = rateLimits({ limit_id: undefined });
+    delete unnamed.limit_id;
+    await writeRollout(codexHome, [
+      tokenCountWithLimits(unnamed, '2026-09-08T22:58:01.000Z'),
+      tokenCountWithLimits(rateLimits(), '2026-09-08T22:58:05.960Z'),
+    ]);
+    expect((await read(codexHome))?.rateLimits).toEqual([rateLimits()]);
+  });
+
+  it('ignores a record written before this turn started', async () => {
+    const codexHome = await createHome();
+    await writeRollout(codexHome, [
+      tokenCountWithLimits(rateLimits(), '2026-09-08T22:57:00.000Z'),
+      tokenCountWithLimits(null),
+    ]);
+    expect((await read(codexHome))?.rateLimits).toEqual([]);
+  });
+
+  it("turns an older build's resets_in_seconds into resets_at from the record's own time", async () => {
+    const codexHome = await createHome();
+    await writeRollout(codexHome, [
+      tokenCountWithLimits({
+        primary: { used_percent: 12, window_minutes: 300, resets_in_seconds: 600 },
+        secondary: { used_percent: 30, window_minutes: 10080, resets_in_seconds: 3600 },
+      }),
+    ]);
+    const recordedAtSeconds = Date.parse('2026-09-08T22:58:05.960Z') / 1000;
+    const [limits] = (await read(codexHome))!.rateLimits;
+    expect(limits).toMatchObject({
+      primary: { resets_at: Math.round(recordedAtSeconds + 600) },
+      secondary: { resets_at: Math.round(recordedAtSeconds + 3600) },
+    });
+  });
+
+  it('reads no rate limits from a record without them, and the context as before', async () => {
+    const codexHome = await createHome();
+    await writeRollout(codexHome, [tokenCount()]);
+    const reading = await read(codexHome);
+    expect(reading).toEqual({
+      context: { contextTokens: 54_999, contextMaxTokens: 258_400 },
+      rateLimits: [],
+    });
+  });
+
+  it('keeps the rate limits when the context part of the record does not verify', async () => {
+    const codexHome = await createHome();
+    await writeRollout(codexHome, [
+      {
+        ...(tokenCountWithLimits(rateLimits()) as object),
+        payload: { type: 'token_count', info: null, rate_limits: rateLimits() },
+      },
+    ]);
+    const reading = await read(codexHome);
+    expect(reading).toEqual({ context: null, rateLimits: [rateLimits()] });
   });
 });

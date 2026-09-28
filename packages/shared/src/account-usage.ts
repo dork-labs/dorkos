@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ledgerSlug } from './ledger-slug.js';
 import { ACCOUNT_ID_PATTERN } from './account-identity.js';
+import type { LimitPlan } from './schemas.js';
 
 export { ledgerSlug } from './ledger-slug.js';
 export { codexObservations } from './account-usage-codex.js';
@@ -40,7 +41,7 @@ export {
  */
 export const FLOW_FLEET_SETTINGS_TAB_ID = 'flow:fleet';
 
-// === The usage ledger (contract §1.2, revision 6) ===
+// === The usage ledger (contract §1.2, revision 6e, fixtures 4.0.0) ===
 
 /**
  * The runtimes that keep a usage ledger, as the slugs of their ledger folders
@@ -104,14 +105,14 @@ const LedgerSourceSchema = z.enum(LEDGER_SOURCES);
  */
 export const LedgerEntrySchema = z
   .object({
-    /** Share of the window used, 0 to 100, or `null` when the source gave none. */
-    usedPct: z.number().min(0).max(100).nullable(),
-    /** When the window resets, ISO-8601, or `null` when unknown. */
-    resetsAt: IsoTimeSchema.nullable(),
+    /** Share of the window used, 0 to 100, or `null` when the source gave none (omitted reads as `null`). */
+    usedPct: z.number().min(0).max(100).nullable().default(null),
+    /** When the window resets, ISO-8601, or `null` when unknown (omitted reads as `null`). */
+    resetsAt: IsoTimeSchema.nullable().default(null),
     /** The window's length in minutes, when the source names it: an integer of 1 or more. */
     windowMinutes: z.number().int().min(1).optional(),
-    /** The status the source reported, or `null` when it reported none. */
-    status: RateLimitStatusSchema.nullable(),
+    /** The status the source reported, or `null` when it reported none (omitted reads as `null`). */
+    status: RateLimitStatusSchema.nullable().default(null),
     /** When the source observed this reading, ISO-8601 with an explicit zone. */
     observedAt: IsoTimeSchema,
     /** Which source produced the reading. */
@@ -356,11 +357,51 @@ function storedTime(stored: unknown): number {
   return ISO_TIME_PATTERN.test(stored.observedAt) ? Date.parse(stored.observedAt) : Number.NaN;
 }
 
-/** Whether an observation at `observedMs` replaces `stored`: strictly later, or stored unreadable. */
+/**
+ * Whether a fact observed at `observedMs` replaces the stored fact: strictly
+ * later, or stored unreadable. An equal time keeps the stored fact (contract
+ * 4.0.0 breaks ties for windows only).
+ */
 function replaces(observedMs: number, stored: unknown): boolean {
   if (stored === undefined) return true;
   const storedMs = storedTime(stored);
   return Number.isNaN(storedMs) || observedMs > storedMs;
+}
+
+/** How severe a window status is, for breaking a tie: higher wins, no status lowest. */
+const STATUS_RANK: Readonly<Record<RateLimitStatus, number>> = {
+  allowed: 1,
+  allowed_warning: 2,
+  rejected: 3,
+};
+
+/**
+ * Whether a window reading replaces the stored one (contract §1.2 "Merging",
+ * revision 6e, fixtures 4.0.0). Both are normalized entries ({@link parseEntry}:
+ * UTC times, clamped `usedPct`).
+ *
+ * A strictly later `observedAt` wins. On an equal one (two sessions on one
+ * account can see a limit in the same millisecond) the more severe reading
+ * wins: status `rejected` > `allowed_warning` > `allowed` > none, then the
+ * higher `usedPct`, then the later `resetsAt`, then the greater `source`
+ * (code-unit order), then the longer `windowMinutes` (a missing value lowest
+ * in each). A reading equal on all of these keeps the stored one. It is a
+ * strict total order, so the merge is deterministic whatever order readings
+ * arrive in, a replay changes nothing, and a same-millisecond `rejected` is
+ * never lost.
+ */
+function replacesWindow(next: LedgerEntry, stored: LedgerEntry): boolean {
+  const nextAt = Date.parse(next.observedAt);
+  const storedAt = Date.parse(stored.observedAt);
+  if (nextAt !== storedAt) return nextAt > storedAt;
+  const rank = (e: LedgerEntry) => (e.status === null ? 0 : STATUS_RANK[e.status]);
+  if (rank(next) !== rank(stored)) return rank(next) > rank(stored);
+  const used = (e: LedgerEntry) => e.usedPct ?? -1;
+  if (used(next) !== used(stored)) return used(next) > used(stored);
+  const resets = (e: LedgerEntry) => (e.resetsAt === null ? -Infinity : Date.parse(e.resetsAt));
+  if (resets(next) !== resets(stored)) return resets(next) > resets(stored);
+  if (next.source !== stored.source) return next.source > stored.source;
+  return (next.windowMinutes ?? -1) > (stored.windowMinutes ?? -1);
 }
 
 /** Validate a fact observation (without its `kind`) and normalize its times. */
@@ -387,10 +428,11 @@ function parseFact(kind: LedgerFactKind, value: Record<string, unknown>) {
  * Merge observations into a ledger (contract "Merging").
  *
  * An observation is a window reading (it has a `key`) or a fact (it has a
- * `kind`: `plan`, `credits` or `spend`). Per window key and per fact, an
- * observation replaces the stored one only when its `observedAt` is strictly
- * later; an equal one keeps the stored one, so a replay is a no-op. A newer
- * observation always wins, even with a lower `usedPct` (the window reset). An
+ * `kind`: `plan`, `credits` or `spend`). Per fact, an observation replaces the
+ * stored one only when its `observedAt` is strictly later; an equal one keeps
+ * the stored one, so a replay is a no-op. Per window key, a later observation
+ * always wins, even with a lower `usedPct` (the window reset), and a tie on
+ * `observedAt` goes to the more severe reading ({@link replacesWindow}). An
  * observation more than 5 minutes after `now` is dropped, so one bad clock
  * cannot pin a window; an invalid one is dropped while the rest merge. A
  * stored entry that is not valid loses to any valid observation. `usedPct` is
@@ -484,7 +526,9 @@ export function mergeLedger(
       warnings.push({ code: 'observation-future', key });
       continue;
     }
-    if (!replaces(observedMs, windows[key])) continue;
+    // A stored entry that is not valid loses to any valid reading.
+    const stored = windows[key] === undefined ? null : parseEntry(windows[key]);
+    if (stored !== null && !replacesWindow(entry, stored)) continue;
     windows[key] = entry;
     changed = true;
   }
@@ -726,3 +770,93 @@ export function toAccountUsage(
     updatedAt: ledger?.updatedAt ?? null,
   };
 }
+
+// === Carrying a limited session over (spec `claude-account-fleet` D9) ===
+
+/**
+ * One account a limited session can carry over to, as
+ * `GET /api/sessions/:id/continue-options` ranks it. The server decides
+ * eligibility and order; a client only displays them.
+ */
+export interface ContinueOptionAccount {
+  /** The account's registry id, which `POST …/continue` names. */
+  id: string;
+  /** What the operator calls the account, or `null` when unnamed. */
+  label: string | null;
+  /** The resolved display color. */
+  color: string;
+  /** The account's usage now. */
+  usage: AccountUsage;
+  /** Whether the session may move to this account. */
+  eligible: boolean;
+  /** Why the account is or is not offered, in the server's words. */
+  reason: string;
+  /** A marker the ranking attaches to the account. */
+  badge?: 'recommended' | 'reserved';
+  /** The account's runtime, when the server ranks other runtimes too (feature-detected). */
+  runtime?: string;
+}
+
+/** What `GET /api/sessions/:id/continue-options` answers. */
+export interface ContinueOptionsResponse {
+  /** The session limit's plan right now. */
+  plan: LimitPlan;
+  /** The accounts the session can carry over to, best first, the session's own account excluded. */
+  ranking: {
+    /** Every candidate account, eligible or not. */
+    accounts: ContinueOptionAccount[];
+    /** The account the server recommends, or `null` when none is. */
+    recommendedId: string | null;
+  };
+  /** Whether an advisor (such as flow) answered the ranking; absent on an older server. */
+  advised?: boolean;
+}
+
+/** How a session limit episode ended (spec `claude-account-ui` §7.1). */
+export const LimitResolutionSchema = z
+  .enum(['moved', 'resumed-reset', 'resumed-model', 'resumed-early'])
+  .openapi('LimitResolution');
+
+/** Inferred type for {@link LimitResolutionSchema}. */
+export type LimitResolution = z.infer<typeof LimitResolutionSchema>;
+
+/**
+ * One resolved usage-limit episode of a session, as
+ * `GET /api/sessions/:id/limit-history` serves it (spec `claude-account-ui`
+ * §7.1): what ran out, when, and how the session got going again.
+ */
+export const LimitHistoryEntrySchema = z
+  .object({
+    /** Row id (a uuid). */
+    id: z.string(),
+    /** The session the limit hit. */
+    sessionId: z.string(),
+    /** When the limit was hit, ISO-8601. */
+    since: z.string(),
+    /** The runtime the session ran on. */
+    runtime: z.string(),
+    /** The registry id of the account that ran out, or `null` when unregistered. */
+    accountId: z.string().nullable(),
+    /** The ledger window key that rejected work, such as `five_hour`. */
+    window: z.string(),
+    /** Whether the whole account ran out or only one model on it. */
+    scope: z.string(),
+    /** When that window resets, ISO-8601, or `null` when unknown. */
+    resetsAt: z.string().nullable(),
+    /** How the episode ended. */
+    resolution: LimitResolutionSchema,
+    /** When it ended, ISO-8601. */
+    resolvedAt: z.string(),
+    /** The session the work carried over to (`moved` only), else `null`. */
+    toSessionId: z.string().nullable(),
+    /** The account the work carried over to (`moved` only), else `null`. */
+    toAccountId: z.string().nullable(),
+    /** The model before a `resumed-model` switch, else `null`. */
+    modelFrom: z.string().nullable(),
+    /** The model after a `resumed-model` switch, else `null`. */
+    modelTo: z.string().nullable(),
+  })
+  .openapi('LimitHistoryEntry');
+
+/** Inferred type for {@link LimitHistoryEntrySchema}. */
+export type LimitHistoryEntry = z.infer<typeof LimitHistoryEntrySchema>;

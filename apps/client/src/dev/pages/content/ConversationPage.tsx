@@ -15,6 +15,10 @@ import {
 import { StatusShowcases } from '../../showcases/StatusShowcases';
 import { LiveLaneShowcase, LivePeekShowcase } from '../../showcases/LiveLaneShowcases';
 import { StatusLineShowcases } from '../../showcases/StatusLineShowcases';
+import {
+  AccountItemShowcases,
+  AccountPopoverShowcases,
+} from '../../showcases/AccountChipShowcases';
 import { ModelPickerShowcases } from '../../showcases/ModelPickerShowcases';
 import { TrustDialShowcases } from '../../showcases/TrustDialShowcases';
 import { SessionInspectorShowcases } from '../../showcases/SessionInspectorShowcases';
@@ -41,6 +45,8 @@ export function ConversationPage() {
       <LiveLaneShowcase />
       <LivePeekShowcase />
       <StatusLineShowcases />
+      <AccountItemShowcases />
+      <AccountPopoverShowcases />
       <ModelPickerShowcases />
       <TrustDialShowcases />
       <SessionInspectorShowcases />

@@ -282,6 +282,35 @@ describe('ConnectorRegistry', () => {
       }
     });
 
+    it('finds an app’s logo address in the kept lists only, never listing upstream', async () => {
+      const provider = new FakeConnectorProvider({
+        type: 'composio',
+        toolkits: [
+          {
+            slug: 'zendesk',
+            displayName: 'Zendesk',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/zendesk',
+          },
+          { slug: 'bare', displayName: 'Bare', authKind: 'oauth2' },
+        ],
+      });
+      const pages = vi.spyOn(provider, 'listToolkitPage');
+      registry.register(provider, 'material-a');
+
+      // Nothing kept yet: no logo, and no listing to find one.
+      await expect(registry.keptLogoUrl('zendesk')).resolves.toBeUndefined();
+      expect(pages).not.toHaveBeenCalled();
+
+      await registry.readCatalog(provider, signal());
+      await expect(registry.keptLogoUrl('zendesk')).resolves.toBe(
+        'https://logos.composio.dev/api/zendesk'
+      );
+      await expect(registry.keptLogoUrl('bare')).resolves.toBeUndefined();
+      await expect(registry.keptLogoUrl('notion')).resolves.toBeUndefined();
+      expect(pages).toHaveBeenCalledTimes(1);
+    });
+
     it('drops the kept list when the provider is removed or replaced', async () => {
       const provider = new FakeConnectorProvider({ type: 'composio' });
       const pages = vi.spyOn(provider, 'listToolkitPage');
@@ -305,6 +334,26 @@ describe('ConnectorRegistry', () => {
       registry.register(replacement, 'material-a');
       await registry.readCatalog(replacement, signal());
       expect(replacementPages).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops every kept copy through one notice, even when the same object registers again', async () => {
+      const provider = new FakeConnectorProvider({ type: 'composio' });
+      const pages = vi.spyOn(provider, 'listToolkitPage');
+      const removed = vi.fn();
+      registry.onProviderInstanceRemoved(removed);
+      registry.register(provider, 'material-a');
+      expect(removed).not.toHaveBeenCalled();
+      await registry.readCatalog(provider, signal());
+
+      // A key saved again re-registers the live instance: the app list and
+      // everything else kept for the way are dropped together.
+      registry.register(provider, 'material-a');
+      expect(removed).toHaveBeenCalledWith(provider.instanceId);
+      await registry.readCatalog(provider, signal());
+      expect(pages).toHaveBeenCalledTimes(2);
+
+      registry.unregisterProviderInstance(provider.instanceId);
+      expect(removed).toHaveBeenCalledTimes(2);
     });
 
     it('finds the providers for a service from the kept list', async () => {

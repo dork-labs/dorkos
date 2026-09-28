@@ -716,6 +716,34 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'controls',
     ],
   },
+  // AccountChipShowcases (spec claude-account-ui §13)
+  {
+    id: 'accountitem',
+    title: 'AccountItem',
+    page: 'conversation',
+    category: 'Status',
+    keywords: [
+      'account',
+      'chip',
+      'claude',
+      'usage',
+      'limit',
+      'near',
+      'out',
+      'model',
+      'opus',
+      'picker',
+      'pre-launch',
+      'bars',
+    ],
+  },
+  {
+    id: 'accountpopover',
+    title: 'AccountPopover',
+    page: 'conversation',
+    category: 'Status',
+    keywords: ['account', 'popover', 'usage', 'window', 'reset', 'plan', 'flow', 'continue'],
+  },
   // ModelPickerShowcases — the panel behind the status line's model name, and
   // the widths a stranger's catalog forces on it (DOR-1673).
   {

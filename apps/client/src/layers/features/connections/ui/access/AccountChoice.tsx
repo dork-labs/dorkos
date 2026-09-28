@@ -48,6 +48,8 @@ export function AccountChoice({
     <AccessCardFrame
       titleId={titleId}
       toolkit={props.toolkit}
+      serviceName={props.serviceName}
+      logo={props.logo}
       title={title}
       className={props.className}
     >

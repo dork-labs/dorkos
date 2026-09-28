@@ -17,6 +17,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     permissionDescriptor: null,
     plan: null,
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
     subagentsInFlight: 0,
     ...overrides,

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
+import { ServiceMark, type ServiceLogo } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
-import { FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../../lib/presentation';
 
 /**
  * How the card sits on its surface: a framed `card` of its own (the connect
@@ -9,10 +9,12 @@ import { FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../../lib/presentation';
  */
 export type AccessCardVariant = 'card' | 'embedded';
 
-/** The access card's outer frame: the app's icon, the question, and an optional account line. */
+/** The access card's outer frame: the app's mark, the question, and an optional account line. */
 export function AccessCardFrame({
   titleId,
   toolkit,
+  serviceName,
+  logo,
   title,
   subtitle,
   variant = 'card',
@@ -21,13 +23,16 @@ export function AccessCardFrame({
 }: {
   titleId: string;
   toolkit: string | undefined;
+  /** The app's name; its first letter is the mark when the app has no logo. */
+  serviceName: string;
+  /** What the catalog says about the app's logo, when the caller has its entry. */
+  logo?: ServiceLogo;
   title: string;
   subtitle?: ReactNode;
   variant?: AccessCardVariant;
   className?: string;
   children: ReactNode;
 }) {
-  const Icon = (toolkit ? SERVICE_ICONS[toolkit] : undefined) ?? FALLBACK_SERVICE_ICON;
   const embedded = variant === 'embedded';
   return (
     <section
@@ -37,9 +42,12 @@ export function AccessCardFrame({
     >
       <header className="flex items-start gap-3">
         {!embedded && (
-          <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg">
-            <Icon className="text-muted-foreground size-4" aria-hidden />
-          </span>
+          <ServiceMark
+            iconKey={toolkit ?? ''}
+            displayName={serviceName}
+            logo={logo}
+            className="size-9 rounded-lg"
+          />
         )}
         <div className="min-w-0">
           <h3 id={titleId} className="text-sm font-semibold">

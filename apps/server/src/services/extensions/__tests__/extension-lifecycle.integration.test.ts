@@ -478,7 +478,9 @@ describe('Extension Lifecycle Integration', () => {
       minHostVersion: '99.0.0',
     });
 
-    const records = await discovery.discover(
+    // A released build: a development build accepts any minHostVersion.
+    const released = new ExtensionDiscovery(dorkHome, { version: '0.88.0', isDevBuild: false });
+    const records = await released.discover(
       null,
       { enabled: ['future-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE

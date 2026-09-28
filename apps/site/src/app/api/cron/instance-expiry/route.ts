@@ -10,8 +10,10 @@
  * account cleanup first and then returned 500 for the whole invocation when the
  * event sweep threw, which read as "cleanup failed" in the cron log.
  *
- * Invoked by Vercel Cron on the schedule in `apps/site/vercel.json` and
- * authorized by the `CRON_SECRET` Bearer token (see `@/lib/cron/auth`).
+ * No longer on a Vercel Cron schedule (removed from `apps/site/vercel.json`
+ * once DorkOS Cloud's own scheduler took over this sweep) — reachable only by
+ * a direct, authorized call until DOR-2442 deletes the route. Authorized by
+ * the `CRON_SECRET` Bearer token either way (see `@/lib/cron/auth`).
  *
  * @module app/api/cron/instance-expiry
  */

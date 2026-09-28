@@ -24,6 +24,7 @@ import {
   useGitStatus,
   isGitStatusOk,
   useRuntimeChip,
+  useSessionAccount,
   useSessionDiagnostics,
   useStatusBarPins,
   useSessionPopoverShortcut,
@@ -97,6 +98,9 @@ export function ChatStatusSection({
   // server-side row to resolve `sessionId` against.
   const runtimeChip = useRuntimeChip(sessionId);
   const status = useSessionStatus(sessionId, sessionStatus, isStreaming, runtimeChip.runtime);
+  // Which account this session spends, and how it is doing: the one source the
+  // chip and its promotion rule both read.
+  const account = useSessionAccount(sessionId || null);
 
   const { pins } = useStatusBarPins();
 
@@ -431,6 +435,7 @@ export function ChatStatusSection({
             isDefault: runtimeChip.runtime === runtimeCaps.defaultRuntime,
             canSelect: runtimeChip.canSelect,
           },
+    account: account.visible ? { chipState: account.chipState } : null,
     usage,
     subagentsInFlight: liveSubagentCount,
   };
@@ -461,6 +466,7 @@ export function ChatStatusSection({
     gitStatus,
     workspace,
     runtimeChip,
+    account,
     contextPercent: displayContextPercent,
     contextUsage,
     compact: inlineCompact

@@ -137,10 +137,10 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
-  // Effort is reported per model by app-server model discovery. No bespoke
-  // section: Codex's settings card is the common execution defaults and
-  // nothing else.
-  settings: { configSection: 'codex', supportsEffort: true, sections: [] },
+  // Effort is reported per model by app-server model discovery. The one bespoke
+  // section is `runtime-usage`: the account's usage windows, drawn from its
+  // usage ledger (spec `claude-account-ui` §6.5).
+  settings: { configSection: 'codex', supportsEffort: true, sections: [{ kind: 'runtime-usage' }] },
   // Codex has no compaction/summarize API (`Thread.run` only, verified at the
   // 0.154.0 pin), so this stays honestly `false` (DOR-109 task 2.3).
   commandIntents: { compact: { supported: false } },

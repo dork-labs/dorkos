@@ -1,9 +1,9 @@
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
+import { ServiceMark, serviceLogo, type ServiceLogo } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
 import { Badge, Button, Spinner, STATUS_TONE_DOT } from '@/layers/shared/ui';
 import type { AppRowAction, YourAppRow } from '../../lib/app-list';
-import { ServiceMark } from '../ServiceMark';
 
 /** What each row action is called on its button. */
 const ACTION_LABELS: Record<AppRowAction, string> = {
@@ -30,6 +30,7 @@ function ChatTag() {
 function RowBody({
   name,
   iconKey,
+  logo,
   detail,
   chat,
   deprecated = false,
@@ -38,6 +39,8 @@ function RowBody({
 }: {
   name: string;
   iconKey: string;
+  /** What the catalog says about the app's logo. */
+  logo?: ServiceLogo;
   detail: string;
   chat: boolean;
   /** Marks a chat app DorkOS no longer offers. */
@@ -48,7 +51,7 @@ function RowBody({
 }) {
   return (
     <>
-      <ServiceMark iconKey={iconKey} displayName={name} />
+      <ServiceMark iconKey={iconKey} displayName={name} logo={logo} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{name}</span>
@@ -121,6 +124,7 @@ export function YourAppRowView({
           <RowBody
             name={row.name}
             iconKey={row.iconKey}
+            logo={row.logo}
             detail={row.detail}
             chat={row.kind === 'chat'}
             deprecated={row.deprecated}
@@ -206,6 +210,7 @@ export function CatalogAppRowView({
     <RowBody
       name={service.displayName}
       iconKey={service.iconKey}
+      logo={serviceLogo(service)}
       detail={detail}
       chat={chat}
       wrapDetail

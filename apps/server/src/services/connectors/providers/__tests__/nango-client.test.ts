@@ -19,6 +19,56 @@ function clientWith(responses: Array<{ status?: number; body?: string }>) {
   return { client, calls };
 }
 
+describe('FetchNangoHttpClient — integration logos', () => {
+  it('keeps a logo on the Nango server itself or on Nango’s hosted app, and nothing else', async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: unknown) => {
+      calls.push(String(url));
+      // The documented GET /integrations item shape, with logos on four hosts.
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              unique_key: 'slack-work',
+              display_name: 'Slack',
+              provider: 'slack',
+              logo: 'https://nango.example.com/images/template-logos/slack.svg',
+              created_at: '2023-10-16T08:45:26.241Z',
+              updated_at: '2023-10-16T08:45:26.241Z',
+            },
+            {
+              unique_key: 'github',
+              provider: 'github',
+              logo: 'https://app.nango.dev/images/template-logos/github.svg',
+            },
+            {
+              unique_key: 'notion',
+              provider: 'notion',
+              logo: 'https://cdn.example.net/notion.svg',
+            },
+            { unique_key: 'hubspot', provider: 'hubspot' },
+          ],
+        })
+      );
+    });
+    const client = new FetchNangoHttpClient({
+      secretKey: 'sk-nango-secret',
+      baseUrl: 'https://nango.example.com',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const integrations = await client.listIntegrations();
+
+    expect(calls).toEqual(['https://nango.example.com/integrations']);
+    expect(integrations.map((it) => [it.uniqueKey, it.logoUrl])).toEqual([
+      ['slack-work', 'https://nango.example.com/images/template-logos/slack.svg'],
+      ['github', 'https://app.nango.dev/images/template-logos/github.svg'],
+      ['notion', undefined],
+      ['hubspot', undefined],
+    ]);
+  });
+});
+
 describe('FetchNangoHttpClient — status normalization (DOR-415 nit)', () => {
   /** Drive getConnectionState with a raw status and read the normalized one. */
   async function stateFor(rawStatus: string | undefined): Promise<string> {

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectorUsageItem } from '@dorkos/shared/connector-schemas';
-import { actionName, eventNoticeLabel, tryItPrompts, usageLine } from '../lib/app-panel-copy';
+import {
+  actionName,
+  eventNoticeLabel,
+  retryLine,
+  tryItPrompts,
+  usageLine,
+} from '../lib/app-panel-copy';
 import { disconnectImpactLine } from '../ui/panel/AccountPanelMore';
 
 function usage(over: Partial<ConnectorUsageItem> = {}): ConnectorUsageItem {
@@ -101,5 +107,26 @@ describe('disconnectImpactLine', () => {
 
   it('says plainly when no agent uses it', () => {
     expect(disconnectImpactLine([], zero)).toBe('No agent uses it right now.');
+  });
+});
+
+describe('retryLine', () => {
+  const now = new Date(2026, 8, 27, 12, 30);
+  const time = (at: Date) => at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  it('names the clock time for a retry later today', () => {
+    const at = new Date(2026, 8, 27, 12, 48);
+    expect(retryLine(at.toISOString(), now)).toBe(`Trying again at ${time(at)}.`);
+  });
+
+  it('names the day for a retry that falls on another day', () => {
+    const at = new Date(2026, 8, 28, 0, 30);
+    expect(retryLine(at.toISOString(), now)).toBe(
+      `Trying again ${at.toLocaleDateString([], { weekday: 'long' })} at ${time(at)}.`
+    );
+  });
+
+  it('says now once the retry time has passed', () => {
+    expect(retryLine(new Date(2026, 8, 27, 12, 29).toISOString(), now)).toBe('Trying again now.');
   });
 });

@@ -1,0 +1,1413 @@
+{
+  "contract": "fleet",
+  "about": "Every account of every runtime (spec flow-cli-core 1.1a, rev 6d). Call readAccounts(config, { env, home, realpath }). input.config is the parsed config.json, or null when the file is missing; input.env is a process environment the result must NOT depend on; input.home is the OS home folder; input.realpath maps a folder to its real path, and a folder not in the map does not exist (so it is compared as normalized, not resolved). Paths are POSIX. Each runtime's rows are read with the identity rules (identity.cases.json). ACCOUNT IDENTITY IS THE FOLDER, NOT THE ID. Comparing two folders: expand a leading '~' with home, resolve, drop trailing '/', then take realpath[folder] when present. For claude-code and codex, '<runtime>:default' ALWAYS exists and names the default folder, MACHINE-WIDE: claude-code = config runtimes.claudeCode.defaultAccount when it is a non-empty string that is absolute or starts with '~' (else runtimes.claudeCode.activeAccount, its name before DorkOS 0.65.0, when defaultAccount is null or absent), else '<home>/.claude'; codex = '<home>/.codex'. The process environment is NEVER an input to this: input.env holds variables such as CLAUDE_CONFIG_DIR and CODEX_HOME only to prove they are ignored (a session's own variable must not change which account default names); a runner must not pass it to the resolver. A defaultAccount that is a string but not a path is ignored with 'default-account-invalid'. When a ROUTABLE registered row of that runtime has the same folder, default is an ALIAS of that row: the row has isDefault true and there is no separate default account (ledger file, fleet.json entry and readings are the row's). Otherwise default is its own account, listed AFTER the registered rows: id 'default', implicit true, path = the default folder with '~' expanded and trailing '/' dropped (not realpath'd), canonicalPath = its comparable form, label \"Main (this computer's sign-in)\", ledgerId 'default'. opencode keeps its ambient default: one implicit account with path null, canonicalPath null and label null, only while it has no registered row left. expected.accounts lists runtimes in the order claude-code, codex, opencode, and rows in registry order within one, each as { runtime, id, key, implicit, isDefault, path, canonicalPath, label, color, routable, ledgerId } where key is '<runtime>:<id>', canonicalPath is the comparable folder, isDefault says '<runtime>:default' names the account, and ledgerId is the ledger file's id (<ledgerId>.json), null for a row that is not routable. expected.warnings is a multiset of codes (compare sorted).",
+  "cases": [
+    {
+      "name": "no config file: every runtime has its default; Claude Code and Codex name their default folders",
+      "input": {
+        "config": null,
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "registered Claude Code accounts in other folders: default stands alone beside them",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/Users/me/.claude-work",
+                  "label": "Work"
+                },
+                {
+                  "id": "claude3",
+                  "path": "/Users/me/.claude3"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "work",
+            "key": "claude-code:work",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/Users/me/.claude-work",
+            "canonicalPath": "/Users/me/.claude-work",
+            "label": "Work",
+            "color": null,
+            "routable": true,
+            "ledgerId": "work"
+          },
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/Users/me/.claude3",
+            "canonicalPath": "/Users/me/.claude3",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "claude3"
+          },
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a registry whose every row is skipped still has its default",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "bad",
+                  "path": "relative/dir"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": [
+          "path-invalid"
+        ]
+      }
+    },
+    {
+      "name": "a hand-edited id that fails the pattern is listed but not routable; default stands alone",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "Bad_ID",
+                  "path": "/b"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "Bad_ID",
+            "key": "claude-code:Bad_ID",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/b",
+            "canonicalPath": "/b",
+            "label": null,
+            "color": null,
+            "routable": false,
+            "ledgerId": null
+          },
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": [
+          "id-invalid"
+        ]
+      }
+    },
+    {
+      "name": "a Codex registry is read like Claude Code's; OpenCode keeps its ambient default",
+      "input": {
+        "config": {
+          "runtimes": {
+            "codex": {
+              "accounts": [
+                {
+                  "id": "team",
+                  "path": "/Users/me/.codex-team"
+                }
+              ]
+            },
+            "opencode": {
+              "accounts": "not a list"
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "team",
+            "key": "codex:team",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/Users/me/.codex-team",
+            "canonicalPath": "/Users/me/.codex-team",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "team"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": [
+          "accounts-invalid"
+        ]
+      }
+    },
+    {
+      "name": "a registered row with the reserved id default is not the default account",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "default",
+                  "path": "/b"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/b",
+            "canonicalPath": "/b",
+            "label": null,
+            "color": null,
+            "routable": false,
+            "ledgerId": null
+          },
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": [
+          "id-reserved"
+        ]
+      }
+    },
+    {
+      "name": "the operator's case: defaultAccount null, one registered row elsewhere, default stands alone as this computer's sign-in",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "defaultAccount": null,
+              "accounts": [
+                {
+                  "id": "claude3",
+                  "path": "/home/op/.claude3",
+                  "label": "Claude3"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/home/op/.claude3",
+            "canonicalPath": "/home/op/.claude3",
+            "label": "Claude3",
+            "color": null,
+            "routable": true,
+            "ledgerId": "claude3"
+          },
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "alias: a registered row in the default folder IS default, written with a trailing slash",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "mine",
+                  "path": "/home/op/.claude/",
+                  "label": "Mine"
+                },
+                {
+                  "id": "claude3",
+                  "path": "/home/op/.claude3"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "mine",
+            "key": "claude-code:mine",
+            "implicit": false,
+            "isDefault": true,
+            "path": "/home/op/.claude/",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Mine",
+            "color": null,
+            "routable": true,
+            "ledgerId": "mine"
+          },
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/home/op/.claude3",
+            "canonicalPath": "/home/op/.claude3",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "claude3"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "defaultAccount set to a registered row's folder with ~: default is an alias of that row",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "defaultAccount": "~/.claude3",
+              "accounts": [
+                {
+                  "id": "claude3",
+                  "path": "/home/op/.claude3",
+                  "label": "Claude3"
+                }
+              ]
+            }
+          }
+        },
+        "env": {
+          "CLAUDE_CONFIG_DIR": "/home/op/.claude-other"
+        },
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "implicit": false,
+            "isDefault": true,
+            "path": "/home/op/.claude3",
+            "canonicalPath": "/home/op/.claude3",
+            "label": "Claude3",
+            "color": null,
+            "routable": true,
+            "ledgerId": "claude3"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "defaultAccount set to a folder no row names: default stands alone in that folder",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "defaultAccount": "/work/client/.claude",
+              "accounts": [
+                {
+                  "id": "claude3",
+                  "path": "/home/op/.claude3"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/home/op/.claude3",
+            "canonicalPath": "/home/op/.claude3",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "claude3"
+          },
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/work/client/.claude",
+            "canonicalPath": "/work/client/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "activeAccount, the name before DorkOS 0.65.0, is read when defaultAccount is null",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "defaultAccount": null,
+              "activeAccount": "/home/op/.claude3",
+              "accounts": [
+                {
+                  "id": "claude3",
+                  "path": "/home/op/.claude3"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "implicit": false,
+            "isDefault": true,
+            "path": "/home/op/.claude3",
+            "canonicalPath": "/home/op/.claude3",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "claude3"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a defaultAccount that is not a path is ignored: <home>/.claude decides, never CLAUDE_CONFIG_DIR",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "defaultAccount": "claude3",
+              "accounts": [
+                {
+                  "id": "claude3",
+                  "path": "/home/op/.claude3"
+                }
+              ]
+            }
+          }
+        },
+        "env": {
+          "CLAUDE_CONFIG_DIR": "/home/op/.claude3/"
+        },
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/home/op/.claude3",
+            "canonicalPath": "/home/op/.claude3",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "claude3"
+          },
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": [
+          "default-account-invalid"
+        ]
+      }
+    },
+    {
+      "name": "CLAUDE_CONFIG_DIR set to a registered folder does not change default: it stays machine-wide",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "defaultAccount": null,
+              "accounts": [
+                {
+                  "id": "claude3",
+                  "path": "/home/op/.claude3",
+                  "label": "Claude3"
+                }
+              ]
+            }
+          }
+        },
+        "env": {
+          "CLAUDE_CONFIG_DIR": "/home/op/.claude3"
+        },
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/home/op/.claude3",
+            "canonicalPath": "/home/op/.claude3",
+            "label": "Claude3",
+            "color": null,
+            "routable": true,
+            "ledgerId": "claude3"
+          },
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a symlinked row matches the default folder it points at",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "linked",
+                  "path": "/home/op/link-to-claude"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {
+          "/home/op/link-to-claude": "/Volumes/data/claude",
+          "/home/op/.claude": "/Volumes/data/claude"
+        }
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "linked",
+            "key": "claude-code:linked",
+            "implicit": false,
+            "isDefault": true,
+            "path": "/home/op/link-to-claude",
+            "canonicalPath": "/Volumes/data/claude",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "linked"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "folders that do not exist are compared by their normalized paths",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "fresh",
+                  "path": "/home/op/tmp/../.claude//"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "fresh",
+            "key": "claude-code:fresh",
+            "implicit": false,
+            "isDefault": true,
+            "path": "/home/op/tmp/../.claude//",
+            "canonicalPath": "/home/op/.claude",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "fresh"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a row in the default folder that is not routable is not an alias: default stands alone",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "Main_Dir",
+                  "path": "/home/op/.claude"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "Main_Dir",
+            "key": "claude-code:Main_Dir",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": null,
+            "color": null,
+            "routable": false,
+            "ledgerId": null
+          },
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": [
+          "id-invalid"
+        ]
+      }
+    },
+    {
+      "name": "Codex: CODEX_HOME naming a registered row does not change codex:default",
+      "input": {
+        "config": {
+          "runtimes": {
+            "codex": {
+              "accounts": [
+                {
+                  "id": "team",
+                  "path": "/Users/me/.codex-team"
+                }
+              ]
+            }
+          }
+        },
+        "env": {
+          "CODEX_HOME": "/Users/me/.codex-team"
+        },
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "team",
+            "key": "codex:team",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/Users/me/.codex-team",
+            "canonicalPath": "/Users/me/.codex-team",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "team"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "OpenCode: a registered row replaces the ambient default, which has no folder to compare",
+      "input": {
+        "config": {
+          "runtimes": {
+            "opencode": {
+              "accounts": [
+                {
+                  "id": "router",
+                  "path": "/home/op/.local/share/opencode"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.codex",
+            "canonicalPath": "/home/op/.codex",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "opencode",
+            "id": "router",
+            "key": "opencode:router",
+            "implicit": false,
+            "isDefault": false,
+            "path": "/home/op/.local/share/opencode",
+            "canonicalPath": "/home/op/.local/share/opencode",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "router"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "Codex: a registered row in <home>/.codex is codex:default's alias",
+      "input": {
+        "config": {
+          "runtimes": {
+            "codex": {
+              "accounts": [
+                {
+                  "id": "mine",
+                  "path": "/home/op/.codex/"
+                }
+              ]
+            }
+          }
+        },
+        "env": {},
+        "home": "/home/op",
+        "realpath": {}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": "/home/op/.claude",
+            "canonicalPath": "/home/op/.claude",
+            "label": "Main (this computer's sign-in)",
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          },
+          {
+            "runtime": "codex",
+            "id": "mine",
+            "key": "codex:mine",
+            "implicit": false,
+            "isDefault": true,
+            "path": "/home/op/.codex/",
+            "canonicalPath": "/home/op/.codex",
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "mine"
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "implicit": true,
+            "isDefault": true,
+            "path": null,
+            "canonicalPath": null,
+            "label": null,
+            "color": null,
+            "routable": true,
+            "ledgerId": "default"
+          }
+        ],
+        "warnings": []
+      }
+    }
+  ]
+}

@@ -276,8 +276,8 @@ describe('a room gathers a burst into one turn', () => {
       expect(input).not.toContain('The message you are answering is outside this block.');
       // Each one is attributed and clock-stamped, so a burst from two people is
       // not one voice.
-      expect(input).toMatch(/\(1 of 2 · aaaa1111\) \[\d\d:\d\d\] You \(person/);
-      expect(input).toMatch(/\(2 of 2 · aaaa1111\) \[\d\d:\d\d\] You \(person/);
+      expect(input).toMatch(/\(1 of 2 · aaaa1111\) \[\d\d:\d\d\] the operator \(person/);
+      expect(input).toMatch(/\(2 of 2 · aaaa1111\) \[\d\d:\d\d\] the operator \(person/);
     });
 
     it('keeps a gathered question the ambient cap would have dropped', async () => {

@@ -22,6 +22,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     permissionDescriptor: null,
     plan: null,
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
     subagentsInFlight: 0,
     ...overrides,
@@ -60,6 +61,49 @@ describe('STATUS_BAR_REGISTRY — quiet by default', () => {
   it('puts identity, directory, and git in the left cluster and everything else right', () => {
     const left = STATUS_BAR_REGISTRY.filter((i) => i.cluster === 'left').map((i) => i.key);
     expect(left).toEqual(['agent', 'cwd', 'git']);
+  });
+});
+
+describe('STATUS_BAR_REGISTRY — the account chip', () => {
+  it('sits directly after runtime, in the same cluster, and cannot be pinned', () => {
+    const keys = STATUS_BAR_REGISTRY.map((item) => item.key);
+    expect(keys[keys.indexOf('runtime') + 1]).toBe('account');
+    const runtime = getStatusBarItem('runtime')!;
+    const account = getStatusBarItem('account')!;
+    expect(account.cluster).toBe(runtime.cluster);
+    // Visibility follows the identity gate alone; no pin can force it.
+    expect(account.group).toBeNull();
+    expect(isPinnable(account)).toBe(false);
+    expect(account.label).toBe('Account');
+    expect(account.description).toBe(
+      'Which Claude account this session spends, and how much is left.'
+    );
+  });
+
+  it('promotes exactly while the identity gate is open', () => {
+    // `account` is null while the gate is closed: one account, or a runtime
+    // that does not tell accounts apart.
+    expect(promotedKeys(restingContext())).not.toContain('account');
+    expect(promotedKeys(restingContext({ account: { chipState: 'ok' } }))).toContain('account');
+  });
+
+  it.each(['near', 'model-out', 'out'] as const)('ranks above usage when it is %s', (chipState) => {
+    const account = severityOf('account', restingContext({ account: { chipState } }));
+    const exhausted = severityOf(
+      'usage',
+      restingContext({ usage: { kind: 'subscription', utilization: 1, state: 'exhausted' } })
+    );
+    expect(account).toBeGreaterThan(exhausted);
+  });
+
+  it.each(['ok', 'unknown'] as const)('ranks with runtime when it is %s', (chipState) => {
+    for (const runtime of [
+      { isDefault: true, canSelect: false },
+      { isDefault: false, canSelect: false },
+    ]) {
+      const ctx = restingContext({ runtime, account: { chipState } });
+      expect(severityOf('account', ctx)).toBe(severityOf('runtime', ctx));
+    }
   });
 });
 

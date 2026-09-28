@@ -46,8 +46,12 @@
  * @module services/relay/turn-execution-settings
  */
 import type { ExecutionSettingsResolver, TurnExecutionSettings } from '@dorkos/relay';
+import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 import { logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { checkAccountLaunch } from '../core/usage/account-ranking.js';
+import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
+import { resolveAccountRef } from '../core/usage/runtime-accounts.js';
 import { resolveUnattendedSessionDefaults } from '../session/index.js';
 
 /**
@@ -67,11 +71,15 @@ import { resolveUnattendedSessionDefaults } from '../session/index.js';
  * rather than handed to another provider's namespace (see
  * `resolveSessionDefaults`).
  *
+ * A `requestedAccount` (the payload's `account`, asked only for a new
+ * conversation) comes back as `accountHint` only when the account advisor
+ * allows it; see {@link allowedRelayAccount}.
+ *
  * @returns A resolver that never throws — a settings problem is a reason to run
  *   the turn on the runtime's own default, never a reason to drop a message.
  */
 export function createTurnExecutionSettingsResolver(): ExecutionSettingsResolver {
-  return async ({ sessionId, runtimeType, agentDirectory }) => {
+  return async ({ sessionId, runtimeType, agentDirectory, requestedAccount }) => {
     const stored = await readStoredSettings(sessionId);
     // `has` first, because `get` THROWS on an unregistered type and this
     // resolver promises never to. It could not happen while the runtime was
@@ -92,12 +100,76 @@ export function createTurnExecutionSettingsResolver(): ExecutionSettingsResolver
     // server default name it — so the row is the only place it can come from.
     const model = stored.model ?? ladder.model;
     const effort = stored.effort ?? ladder.effort;
+    const accountHint =
+      requestedAccount === undefined
+        ? undefined
+        : await allowedRelayAccount(requestedAccount, runtimeType, agentDirectory, sessionId);
     return {
       ...(model !== undefined && { model }),
       ...(effort !== undefined && { effort }),
       ...(stored.fastMode !== undefined && { fastMode: stored.fastMode }),
+      ...(accountHint !== undefined && { accountHint }),
     };
   };
+}
+
+/**
+ * The account a relay message may launch its new conversation on: the id it
+ * named, when that id is registered for the turn's runtime AND the account
+ * advisor allows the pick (spec `claude-account-fleet` D6, DOR-2384).
+ *
+ * **Who may set it.** Any sender can put `account` in a payload: an agent's
+ * `relay_send`, an external MCP caller, a chat bridge. None of them is trusted
+ * to spend on an account by saying so. Every request is checked as a `relay`
+ * caller, which needs a registered advisor, so with no advisor (Flow not set
+ * up) no relay message can move a conversation off the default ladder at all.
+ * A schedule's own account travels as `accountHint` directly and never comes
+ * through here: it is the operator's approved choice.
+ *
+ * Every refusal is logged at info and answers `undefined`, so the turn still
+ * runs on the account it would have used anyway. It never throws.
+ *
+ * @param requested - The id the payload named.
+ * @param runtimeType - The runtime the turn runs on.
+ * @param agentDirectory - The addressed agent's directory, the launch's `cwd`.
+ * @param sessionId - The session key, for the log line.
+ */
+async function allowedRelayAccount(
+  requested: string,
+  runtimeType: string,
+  agentDirectory: string | undefined,
+  sessionId: string
+): Promise<string | undefined> {
+  const refuse = (reason: string): undefined => {
+    logger.info('[relay] running without the account the message named', {
+      sessionId,
+      account: requested,
+      runtime: runtimeType,
+      reason,
+    });
+    return undefined;
+  };
+  const store = getAccountUsageStore();
+  const registered =
+    store && isLedgerRuntime(runtimeType)
+      ? resolveAccountRef(store.listAccounts(runtimeType), runtimeType, requested)
+      : null;
+  if (!registered) return refuse('not a registered account for this runtime');
+  try {
+    const decision = await checkAccountLaunch({
+      accountId: registered.id,
+      cwd: agentDirectory ?? '',
+      runtime: runtimeType,
+      caller: 'relay',
+    });
+    return decision.allowed ? registered.id : refuse(decision.reason);
+  } catch (err) {
+    return refuse(`the account check failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function isLedgerRuntime(runtime: string): runtime is LedgerRuntime {
+  return (LEDGER_RUNTIMES as readonly string[]).includes(runtime);
 }
 
 /**

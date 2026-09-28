@@ -24,6 +24,7 @@ import {
   Wifi,
   Users,
   UserRound,
+  CircleUserRound,
 } from 'lucide-react';
 import { useCallback } from 'react';
 import type { ConnectionState, UsageStatus } from '@dorkos/shared/types';
@@ -31,7 +32,7 @@ import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
 import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { isBypassPermissionMode, isBypassSemantics } from '@/layers/shared/lib';
+import { isBypassPermissionMode, isBypassSemantics, type ChipState } from '@/layers/shared/lib';
 import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
 
 /** Union of every status line item key. */
@@ -40,6 +41,7 @@ export type StatusBarItemKey =
   | 'cwd'
   | 'git'
   | 'runtime'
+  | 'account'
   | 'model'
   | 'cache'
   | 'context'
@@ -100,6 +102,12 @@ export interface StatusPromotionContext {
   plan: PlanPromotionState | null;
   /** Runtime identity, or `null` while it is still resolving. */
   runtime: RuntimePromotionState | null;
+  /**
+   * Which account the session spends and how it is doing, or `null` when the
+   * account identity gate is closed (`useAccountIdentityGate`): one account, or
+   * a runtime that does not tell accounts apart. Nothing to say, no slot.
+   */
+  account: AccountPromotionState | null;
   /** Runtime-neutral usage descriptor, or `null` when the session has none. */
   usage: UsageStatus | null;
   /**
@@ -132,6 +140,12 @@ export interface GitPromotionState {
 interface PlanPromotionState {
   /** Whether the session is planning right now. */
   active: boolean;
+}
+
+/** What the account chip needs in order to rank itself. */
+export interface AccountPromotionState {
+  /** How the session's account is doing (see `chipState`). */
+  chipState: ChipState;
 }
 
 /** The two things about a runtime that can make it news. */
@@ -181,6 +195,12 @@ const SEVERITY = {
   AGENT_ANCHOR: 1000,
   CONNECTION_LOST: 100,
   CONTEXT_CRITICAL: 90,
+  /**
+   * The session's account is out, near its limit, or out of one model. Above
+   * both usage ranks: the account chip names WHICH account and what happened in
+   * words, so when slots are contested it is the one that must survive.
+   */
+  ACCOUNT_ATTENTION: 85,
   USAGE_EXHAUSTED: 80,
   PERMISSION_BYPASS: 70,
   CONTEXT_WARNING: 50,
@@ -277,6 +297,17 @@ const GROUP_LABELS: Record<StatusBarItemGroup, string> = {
 };
 
 /**
+ * The runtime item's rank, which the account item shares while its account is
+ * fine: the two sit side by side and say the same kind of fact (who runs this).
+ */
+function runtimeSeverity(ctx: StatusPromotionContext): number {
+  return ctx.runtime && !ctx.runtime.isDefault ? SEVERITY.RUNTIME_NON_DEFAULT : SEVERITY.QUIET;
+}
+
+/** The account chip states that are news: out, near, or one model out. */
+const ACCOUNT_ATTENTION_STATES: ReadonlySet<ChipState> = new Set(['near', 'model-out', 'out']);
+
+/**
  * Whether a permission mode sits off the dial's safest stop ('ask', which
  * always asks first) — the one fact both the Permissions item's `promote`
  * and `severity` need to agree on (DOR-820). Reads the descriptor when one
@@ -343,8 +374,25 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     group: 'session',
     icon: Cpu,
     promote: (ctx) => ctx.runtime !== null && (!ctx.runtime.isDefault || ctx.runtime.canSelect),
+    severity: runtimeSeverity,
+  },
+  {
+    key: 'account',
+    label: 'Account',
+    description: 'Which Claude account this session spends, and how much is left.',
+    cluster: 'right',
+    // No popover row, so it cannot be pinned: a new pin value would make an
+    // older build discard the whole config file (`widened-leaves.ts`), and the
+    // chip has nothing to show outside the identity gate anyway.
+    group: null,
+    icon: CircleUserRound,
+    // `account` is non-null only while the identity gate is open (two or more
+    // accounts on a runtime that tells them apart), so the gate IS the rule.
+    promote: (ctx) => ctx.account !== null,
     severity: (ctx) =>
-      ctx.runtime && !ctx.runtime.isDefault ? SEVERITY.RUNTIME_NON_DEFAULT : SEVERITY.QUIET,
+      ctx.account && ACCOUNT_ATTENTION_STATES.has(ctx.account.chipState)
+        ? SEVERITY.ACCOUNT_ATTENTION
+        : runtimeSeverity(ctx),
   },
   {
     key: 'model',

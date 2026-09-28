@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { legacyDefaultProviderInstanceId } from '../../legacy-connection-migration.js';
 import {
+  COMPOSIO_FIXTURE_DESCRIPTION,
+  COMPOSIO_FIXTURE_LOGO,
   COMPOSIO_FIXTURE_KEY,
   COMPOSIO_FIXTURE_USER,
   COMPOSIO_FIXTURE_VERSION,
@@ -139,7 +141,11 @@ export async function startTestComposioFixture(options: {
     name: 'Gmail',
     auth_schemes: ['OAUTH2'],
     no_auth: false,
-    meta: { version: COMPOSIO_FIXTURE_VERSION },
+    meta: {
+      version: COMPOSIO_FIXTURE_VERSION,
+      description: COMPOSIO_FIXTURE_DESCRIPTION,
+      logo: COMPOSIO_FIXTURE_LOGO,
+    },
   };
   app.get('/api/v3.1/toolkits', (_req, res) => res.json(page([toolkit])));
   app.get('/api/v3.1/toolkits/gmail', (_req, res) => res.json(toolkit));

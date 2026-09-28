@@ -14,8 +14,12 @@ import {
   type Db,
 } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
+import type {
+  ConnectedAccount,
+  ConnectorProviderInstanceId,
+} from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../registry.js';
+import { TEST_CONNECTOR_PROVIDER_TYPE } from '../connection-store.js';
 
 const NOW = '2026-09-05T12:00:00.000Z';
 
@@ -404,6 +408,126 @@ describe('ConnectionStore lifecycle and cleanup', () => {
         .where(eq(connectorEventSubscriptions.agentId, 'agent-b'))
         .get()?.enabled
     ).toBe(true);
+  });
+
+  it('purgeTestConnectorConnections tombstones a test-connector instance’s connections and revokes or drops everything that hangs off them, leaving a sibling instance fully alone (DOR-2451)', async () => {
+    // The instance under purge must actually be typed `test-connector` — the
+    // shared `provider` fixture is `fake-connector`, which the guard refuses.
+    const testConnector = new FakeConnectorProvider({
+      instanceId: 'test-connector-instance' as ConnectorProviderInstanceId,
+      type: TEST_CONNECTOR_PROVIDER_TYPE,
+    });
+    registry.register(testConnector);
+    const { flowId } = await testConnector.startConnect('gmail', { label: 'work' });
+    const account = (await testConnector.pollConnect(flowId)).account!;
+    const purgedConnection = registry.recordConnect(testConnector, account);
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-purged',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: purgedConnection.id,
+        operationRevisionId: 'revision-1',
+        createdBy: 'operator',
+        createdAt: NOW,
+      })
+      .run();
+    db.insert(agentConnectionAttachments)
+      .values({ agentId: 'agent-a', connectionId: purgedConnection.id, attachedAt: NOW })
+      .run();
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'session-a',
+        connectionId: purgedConnection.id,
+        state: 'attached',
+        updatedAt: NOW,
+      })
+      .run();
+    db.insert(connectorEventSubscriptions)
+      .values({
+        id: 'subscription-a',
+        connectionId: purgedConnection.id,
+        agentId: 'agent-a',
+        destinationKind: 'agent',
+        destinationId: 'agent-a',
+        eventType: 'message.received',
+        filterJson: '{}',
+        filterHash: 'none',
+        deliveryMode: 'direct',
+        createdBy: 'operator',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    // A sibling instance's connection AND its grant are untouched — the purge
+    // is scoped to the one instance a test-mode credential save reloads.
+    grantRead(db, connection.id);
+
+    registry.purgeTestConnectorConnections(testConnector.instanceId);
+
+    // `connections` rows can only be tombstoned, never hard-deleted (a DB
+    // trigger enforces it) — so the row survives, but removed, disconnected,
+    // and paused, which is what every owner and agent read filters out.
+    expect(
+      db.select().from(connections).where(eq(connections.id, purgedConnection.id)).get()
+    ).toMatchObject({
+      removedAt: expect.any(String),
+      lifecycleState: 'disconnected',
+      enabled: false,
+    });
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .where(eq(connectionOperationGrants.connectionId, purgedConnection.id))
+        .get()
+    ).toMatchObject({ revokedAt: expect.any(String) });
+    expect(
+      db
+        .select()
+        .from(connectorEventSubscriptions)
+        .where(eq(connectorEventSubscriptions.connectionId, purgedConnection.id))
+        .get()
+    ).toMatchObject({ enabled: false, revokedAt: expect.any(String) });
+    expect(
+      db
+        .select()
+        .from(agentConnectionAttachments)
+        .where(eq(agentConnectionAttachments.connectionId, purgedConnection.id))
+        .all()
+    ).toEqual([]);
+    expect(
+      db
+        .select()
+        .from(sessionConnectionOverrides)
+        .where(eq(sessionConnectionOverrides.connectionId, purgedConnection.id))
+        .all()
+    ).toEqual([]);
+    // The sibling instance's connection survives fully untouched...
+    expect(
+      db.select().from(connections).where(eq(connections.id, connection.id)).get()
+    ).toMatchObject({ removedAt: null });
+    // ...and so does its grant — purging one instance never reaches another's.
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .where(eq(connectionOperationGrants.connectionId, connection.id))
+        .get()
+    ).toMatchObject({ revokedAt: null });
+  });
+
+  it('purgeTestConnectorConnections refuses an instance whose persisted type isn’t test-connector (DOR-2451)', () => {
+    // `provider` (the shared fixture) is `fake-connector` — a real backend's
+    // connections must never be reachable through this test-only reset.
+    expect(() => registry.purgeTestConnectorConnections(provider.instanceId)).toThrow(
+      /refuses provider type 'fake-connector'/
+    );
+    // Refused, not silently skipped: the connection is exactly as it was.
+    expect(
+      db.select().from(connections).where(eq(connections.id, connection.id)).get()
+    ).toMatchObject({ removedAt: null, lifecycleState: 'connected', enabled: true });
   });
 });
 

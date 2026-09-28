@@ -40,14 +40,23 @@
  * {@link proxiedRequestHeaders}). A caller's own copy of either header is
  * always removed. Redirects never carry either.
  *
- * ## What is NOT sent on, and what switches off instead
+ * ## Managed connections: forwarded behind a second variable
  *
- * Managed connections (`/api/instances/connectors/**`, `/api/connectors/**`,
- * `/connectors/**`) are not forwarded: the accounts service does not serve them
- * yet, and they move separately, later. They cannot keep working here either,
- * because they authenticate against the accounts this site no longer holds, so
- * while forwarding is on they report themselves not enabled
- * (`lib/connectors/managed/config.ts`) and their retention cron stands down.
+ * Managed connections (`/api/instances/connectors/**`,
+ * `/api/connectors/managed/**`, `/connectors/managed/**`) authenticate against
+ * the accounts this site no longer holds once forwarding is on, so they cannot
+ * work here. The accounts service serves them too, and they are sent there by
+ * the same two rules — **only when `DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD`
+ * is also exactly `1`.** A separate switch because the service starts serving
+ * them in its own release: forwarding before that would turn this site's
+ * honest "not available" into the service's "not found", which a linked
+ * instance reads as a missing command rather than an outage. So the order is
+ * the service first, then this variable.
+ *
+ * With the accounts variable set and this one not, managed connections stay
+ * here and report themselves not enabled (`lib/connectors/managed/config.ts`),
+ * exactly as before. Either way this site's event-retention cron stands down:
+ * the rows it swept are the service's, and so is the sweep.
  *
  * The site's session-to-analytics identity bridge is not mounted while
  * forwarding is on (`app/layout.tsx`): the session lives on the service's host,
@@ -98,6 +107,23 @@ export const CLOUD_ACCOUNT_API_EXACT = [
   '/api/instances/heartbeat',
   '/api/instances/pending',
   '/api/instances/revoke',
+] as const;
+
+/**
+ * Managed-connection pages, redirected like the account pages: the browser
+ * hand-off to a provider's sign-in and the account-details form, which need the
+ * session the service holds.
+ */
+export const CLOUD_MANAGED_PAGE_PREFIXES = ['/connectors/managed'] as const;
+
+/**
+ * Managed-connection API families: the linked instance's routes (a bearer key,
+ * so proxied) and the provider's callback and webhook (a browser navigation is
+ * redirected to its cookie; the signed webhook is proxied with its body).
+ */
+export const CLOUD_MANAGED_API_PREFIXES = [
+  '/api/instances/connectors',
+  '/api/connectors/managed',
 ] as const;
 
 /** The query parameter Next.js adds to a client-side navigation fetch. */
@@ -204,6 +230,37 @@ function isCloudAccountApi(pathname: string): boolean {
 }
 
 /**
+ * Whether a path belongs to managed connections, which forwarding sends on only
+ * with `DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD` set.
+ *
+ * @param pathname - The request path, without the query string.
+ */
+export function isManagedConnectionsPath(pathname: string): boolean {
+  return isManagedConnectionsPage(pathname) || isManagedConnectionsApi(pathname);
+}
+
+/** Whether a path is one of the managed-connection pages. */
+function isManagedConnectionsPage(pathname: string): boolean {
+  return CLOUD_MANAGED_PAGE_PREFIXES.some((prefix) => underPrefix(pathname, prefix));
+}
+
+/** Whether a path is one of the managed-connection API paths. */
+function isManagedConnectionsApi(pathname: string): boolean {
+  return CLOUD_MANAGED_API_PREFIXES.some((prefix) => underPrefix(pathname, prefix));
+}
+
+/**
+ * Whether managed connections are forwarded too: exactly `1`, and only while
+ * {@link CLOUD_ACCOUNTS_ORIGIN_VARIABLE} is set.
+ *
+ * @param raw - `DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD`'s value.
+ * @returns `true` only for exactly `1`.
+ */
+export function managedConnectionsForwarding(raw: string | undefined): boolean {
+  return raw === '1';
+}
+
+/**
  * Whether a request is a browser navigation that should follow its cookie.
  *
  * A safe method with no bearer token, sent either as a navigation or by a
@@ -225,21 +282,29 @@ function isNavigation(request: ForwardableRequest): boolean {
  * @param request - The incoming request.
  * @param origin - The parsed origin from {@link parseCloudAccountsOrigin}, or
  *   `null` when forwarding is off.
+ * @param options.managedConnections - Whether managed connections are sent on
+ *   too ({@link managedConnectionsForwarding}). Off by default.
  * @returns How to send it on, or `null` to serve it here.
  */
 export function decideCloudAccountsForward(
   request: ForwardableRequest,
-  origin: string | null
+  origin: string | null,
+  options: { readonly managedConnections?: boolean } = {}
 ): CloudAccountsForward | null {
   if (!origin) return null;
   const incoming = new URL(request.url);
-  if (!isCloudAccountPath(incoming.pathname)) return null;
+  const managed =
+    options.managedConnections === true && isManagedConnectionsPath(incoming.pathname);
+  if (!managed && !isCloudAccountPath(incoming.pathname)) return null;
   // Never send a request to the origin it arrived on: a variable pointed at
   // this site would otherwise redirect every account page to itself forever.
   if (incoming.origin === origin) return null;
 
   const target = new URL(`${incoming.pathname}${incoming.search}`, origin);
-  if (isCloudAccountPage(incoming.pathname)) {
+  if (
+    isCloudAccountPage(incoming.pathname) ||
+    (managed && isManagedConnectionsPage(incoming.pathname))
+  ) {
     // A client-side navigation's cache-busting parameter means nothing to the
     // other service; the browser falls back to a full navigation either way.
     target.searchParams.delete(NEXT_RSC_PARAM);

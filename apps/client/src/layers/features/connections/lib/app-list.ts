@@ -15,6 +15,7 @@ import type {
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import { serviceNameFromToolkit } from '@dorkos/shared/connector-schemas';
+import { serviceLogo, type ServiceLogo } from '@/layers/entities/connectors';
 import type { AdapterBinding, CatalogEntry, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
 /**
@@ -39,8 +40,10 @@ export interface YourAppRow {
   kind: 'account' | 'chat' | 'connecting';
   /** The app's name, e.g. "Gmail". A second account is a second row with the same name. */
   name: string;
-  /** Icon key for {@link ServiceMark}. */
+  /** Icon key for the app's `ServiceMark`. */
   iconKey: string;
+  /** What the catalog says about the app's logo (`ServiceLogo`). */
+  logo?: ServiceLogo;
   /**
    * Which account or bot it is: the name the person gave it ("work"), else its
    * address ("you@gmail.com"), else the bot's name ("@lifeos_bot").
@@ -132,6 +135,15 @@ export function accountNames(connection: ConnectorConnectionSummary): {
   return { account: connection.label, identity };
 }
 
+/** What the catalog says about the app's logo, as a row field. */
+function logoOf(
+  toolkit: string,
+  services: ReadonlyMap<string, ConnectorCatalogService>
+): { logo?: ServiceLogo } {
+  const logo = serviceLogo(services.get(toolkit));
+  return logo === undefined ? {} : { logo };
+}
+
 /**
  * One account's row, decided from the server's own facts about it. Order
  * matters: the first fact that stops agents wins, so a signed-out account
@@ -149,6 +161,7 @@ export function accountRow(
     kind: 'account' as const,
     name: accountAppName(connection.toolkit, services),
     iconKey: connection.toolkit,
+    ...logoOf(connection.toolkit, services),
     ...accountNames(connection),
     waiting: 0,
   };
@@ -343,6 +356,7 @@ export function buildYourApps(input: YourAppsInput): YourAppRow[] {
       kind: 'connecting',
       name,
       iconKey: pending.toolkit,
+      ...logoOf(pending.toolkit, input.services),
       account: null,
       identity: null,
       detail: `Waiting for you to finish signing in on ${service?.signInName ?? name}…`,

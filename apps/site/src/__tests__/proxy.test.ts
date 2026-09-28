@@ -5,6 +5,8 @@ import { env } from '@/env';
 import {
   CLOUD_ACCOUNT_API_EXACT,
   CLOUD_ACCOUNT_API_PREFIXES,
+  CLOUD_MANAGED_API_PREFIXES,
+  CLOUD_MANAGED_PAGE_PREFIXES,
   CLOUD_ACCOUNT_PAGE_PREFIXES,
 } from '@/lib/cloud-accounts/forward';
 import { config, proxy } from '../proxy';
@@ -293,6 +295,91 @@ describe('proxy accounts hand-over', () => {
       }
     });
 
+    it('sends managed connections on only with their own switch as well (DOR-2485)', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      env.DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD = '1';
+      try {
+        const pull = proxy(
+          request('/api/instances/connectors/events/pull', { authorization: 'Bearer t' }, 'POST')
+        );
+        expect(rewriteTarget(pull)).toBe(`${SERVICE}/api/instances/connectors/events/pull`);
+        const page = proxy(request('/connectors/managed/authorize?flow=f&nonce=n'));
+        expect(page.status).toBe(307);
+        expect(page.headers.get('location')).toBe(
+          `${SERVICE}/connectors/managed/authorize?flow=f&nonce=n`
+        );
+        // The rest of the site is untouched by it.
+        expect(rewriteTarget(proxy(request('/blog')))).toBeNull();
+      } finally {
+        env.DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD = undefined;
+      }
+    });
+
+    it('proxies the provider webhook with its signature headers, and vouches for the caller', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      env.DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD = '1';
+      env.DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET = 'k'.repeat(40);
+      env.VERCEL_ENV = 'production';
+      env.VERCEL = '1';
+      try {
+        const response = proxy(
+          request(
+            '/api/connectors/managed/events',
+            {
+              'content-type': 'application/json',
+              'webhook-id': 'msg_1',
+              'webhook-timestamp': '1700000000',
+              'webhook-signature': 'v1,sig',
+              'x-real-ip': '198.51.100.7',
+            },
+            'POST'
+          )
+        );
+        // Rewritten, never redirected: a redirect would drop the body.
+        expect(response.headers.get('location')).toBeNull();
+        expect(rewriteTarget(response)).toBe(`${SERVICE}/api/connectors/managed/events`);
+        for (const name of ['webhook-id', 'webhook-timestamp', 'webhook-signature']) {
+          expect(response.headers.get(`x-middleware-request-${name}`), name).not.toBeNull();
+        }
+        expect(response.headers.get('x-middleware-request-x-dorkos-client-address')).toBe(
+          '198.51.100.7'
+        );
+      } finally {
+        env.DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD = undefined;
+      }
+    });
+
+    it('redirects the provider callback navigation without the secret, and proxies it as a fetch', () => {
+      env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
+      env.DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD = '1';
+      env.DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET = 'k'.repeat(40);
+      env.VERCEL_ENV = 'production';
+      env.VERCEL = '1';
+      try {
+        const navigation = proxy(
+          request('/api/connectors/managed/callback?session_uri=s', {
+            'x-real-ip': '198.51.100.7',
+            'sec-fetch-mode': 'navigate',
+          })
+        );
+        expect(navigation.status).toBe(307);
+        expect(navigation.headers.get('location')).toBe(
+          `${SERVICE}/api/connectors/managed/callback?session_uri=s`
+        );
+        for (const [name, value] of navigation.headers) {
+          expect(value, name).not.toContain('k'.repeat(40));
+        }
+        const fetched = proxy(
+          request('/api/connectors/managed/callback?session_uri=s', { 'sec-fetch-mode': 'cors' })
+        );
+        expect(rewriteTarget(fetched)).toBe(
+          `${SERVICE}/api/connectors/managed/callback?session_uri=s`
+        );
+      } finally {
+        env.DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD = undefined;
+      }
+    });
+
     it('leaves managed connections and the rest of the site alone', () => {
       env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = SERVICE;
       for (const response of [
@@ -329,6 +416,8 @@ describe('proxy accounts hand-over', () => {
         ...CLOUD_ACCOUNT_PAGE_PREFIXES.flatMap((p) => [p, `${p}/child`]),
         ...CLOUD_ACCOUNT_API_PREFIXES.flatMap((p) => [p, `${p}/`, `${p}/child`]),
         ...CLOUD_ACCOUNT_API_EXACT.flatMap((p) => [p, `${p}/`]),
+        ...CLOUD_MANAGED_API_PREFIXES.flatMap((p) => [p, `${p}/`, `${p}/child`]),
+        ...CLOUD_MANAGED_PAGE_PREFIXES.flatMap((p) => [p, `${p}/child`]),
       ];
       for (const path of paths) expect(matched(path), path).toBe(true);
     });
@@ -337,7 +426,6 @@ describe('proxy accounts hand-over', () => {
       for (const path of [
         '/api/feedback',
         '/api/cron/instance-expiry',
-        '/api/instances/connectors/catalog',
         '/api/telemetry/heartbeat',
         '/api/accounts',
         '/api/authx',

@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
+import type { ServiceLogo } from '@/layers/entities/connectors';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import {
   Button,
@@ -28,6 +29,7 @@ import {
   selectionsFromPreview,
 } from '../../lib/reconciliation-selection';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
+import { AppActions } from '../AppActions';
 import { AccessCardFrame, type AccessCardVariant } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
@@ -42,6 +44,8 @@ import { WhoCanUseChoice } from './WhoCanUseChoice';
 interface SharedCardProps {
   /** The app's display name, e.g. "Gmail". */
   serviceName: string;
+  /** What the catalog says about the app's logo, when the caller has its entry. */
+  logo?: ServiceLogo;
   /** Leave without changing anything. Labelled "Skip" on the page and "Not now" for one agent. */
   onSkip?: () => void;
   /** Leave after a save has an outcome. Labelled "Done" once confirmed, "Close" otherwise. */
@@ -68,6 +72,11 @@ export interface PageAccessCardProps extends SharedCardProps {
   connectionId: string;
   /** Agents the caller knows are relevant right now; listed first after agents with access. */
   preferredAgentIds?: string[];
+  /**
+   * Show what the picked level lets agents do in this app, right under the
+   * level switch (the app's side panel). Hidden when omitted.
+   */
+  appActions?: { toolkit: string; providerInstanceId: string };
 }
 
 /** The chat's question: may this one agent use the app? It never offers "every agent". */
@@ -262,6 +271,8 @@ function AccessStep(
     <AccessCardFrame
       titleId={titleId}
       toolkit={connection?.toolkit ?? (props.mode === 'agent' ? props.toolkit : undefined)}
+      serviceName={props.serviceName}
+      logo={props.logo}
       title={title}
       // Embedded in a panel that already names the account, the line would repeat it.
       subtitle={props.variant === 'embedded' ? undefined : subtitle}
@@ -549,6 +560,17 @@ function AccessEditor({
             )}
           </div>
         )
+      )}
+      {props.mode === 'page' && props.appActions && (
+        <AppActions
+          toolkit={props.appActions.toolkit}
+          appName={props.serviceName}
+          providerInstanceId={props.appActions.providerInstanceId}
+          // The buckets come from this account's own snapshot, so they are
+          // exactly what the picked level grants. With no level on offer
+          // there is nothing to tie them to.
+          grant={{ candidates: preview.candidates, level: nothingToGrant ? null : level }}
+        />
       )}
       {(props.mode === 'page' || exactActionsLink) && (
         <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">

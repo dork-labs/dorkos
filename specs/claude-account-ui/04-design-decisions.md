@@ -152,3 +152,45 @@ Spec: §6.9, §7.4.
 - A window with no reading shows the word "unknown" in the compact usage bar too (with the dashed empty track, Q6).
 
 Spec: §6.0, §8.3, §14.
+
+## 10. The Flow panel (D11, orchestrator's option A, 2026-09-27; the operator deferred)
+
+Mockup: [`design/flow-panel.html`](design/flow-panel.html). **Option A:** a "Flow" tab in the right-side panel, contributed by the Flow extension, shown only when flow is installed (option B, a section on the Activity page, was not chosen).
+
+- **Accounts:** a dot, the name, two mini bars (5-hour and week), and state text ("out · resets Tue", "reserved").
+- **Running:** flow runs with their item id and title, the account dot, and a state pill (building, in review, waiting on you, handing off, parked).
+- **Footer:** "Pause flow" and "2 of 3 slots busy".
+- Clicking a run opens its session; clicking an account opens its details.
+- Q24-Q28 and the details the mockup does not show are decided in §11.
+
+Spec: §8.5.
+
+## 11. The Flow panel's open questions and details (orchestrator, 2026-09-28)
+
+The operator left the panel to the orchestrator's judgement. Each call follows the host design system (its tokens, popover, focus ring and bar rule), so none needed a new operator review; the orchestrator shows the operator the final-state screenshots after the panel ships.
+
+Copy and behaviour:
+
+1. **Q24, nothing running:** one muted line, "Nothing is running."
+2. **Q25, paused:** when every project is paused the button reads "Resume flow" and the slots text reads "paused"; when only some are, it reads "Pause flow" and pauses the rest.
+3. **Q27, a run with no title:** the item id alone.
+4. **Q28, resuming after `/flow:pause` switched schedules off:** a muted footer line, "Turn flow's schedules back on in Tasks."
+5. **Load failure:** "Couldn't load Flow's status. Try again in a moment." with a Retry chip styled like the Flow tab's.
+6. **Pause or Resume fails:** the fixed text "Flow didn't respond, so nothing was changed. Try again." (the Flow tab's save-failure line), never flow's raw error; the raw error goes to the browser console for debugging.
+7. **The account chip can't be pinned** in the status bar (2.1): since a new pin value would be rejected by older builds' config (the lead's reason, accepted).
+8. **The pre-launch account picker always shows** once the gate is open (Claude Code with 2+ accounts), even when the agent's default account can't be looked up (2.1).
+9. **A "live" turn** (which blocks switching accounts) is one that is streaming or waiting on an approval (2.1).
+10. **A DorkOS-hosted drain run (pid -1) can't be detected as stale**, so a dead one shows as running until flow releases its claim. Accepted; the follow-up is DOR-2490.
+
+Visuals, each matching an existing host pattern:
+
+11. **Q26, the account popover:** drawn by the extension with the decided content (name and plan, one bar per window with its reset time), styled like the host popover (its surface, border, radius and shadow), spanning the panel with a 12px inset (the size proposed with it and accepted).
+12. **Row hover:** the host muted colour at 50%.
+13. **Focus ring:** the host ring, 2px with a 1px offset.
+14. **Disabled Pause** (nothing to pause): 50% opacity.
+15. **Tab icon:** lucide `workflow`, drawn inline.
+16. **State pills:** neutral, 10px foreground text in a border, fully rounded, no colour per state.
+17. **Bars:** the host border colour for the track; the fill follows the host rule, green below 70%, amber from 70%, red at 100% or when the window rejected work.
+18. **A window at 91% is amber**, not the mockup's red: the mockup's colour was illustrative, and the panel matches the status bar and Settings.
+
+Spec: §8.5, §14.

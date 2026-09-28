@@ -51,6 +51,11 @@ import {
 } from '../services/runtimes/opencode/providers/ollama-catalog.js';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
+import {
+  AccountUsageUnavailableError,
+  probeAccount,
+  UnknownAccountError,
+} from '../services/runtimes/claude-code/accounts/account-probe.js';
 import { logger } from '../lib/logger.js';
 import { isLocalCaller } from '../lib/caller-authority.js';
 
@@ -483,6 +488,26 @@ router.get('/:runtime/accounts/usage', (req, res) => {
   const store = getAccountUsageStore();
   if (!store) return res.status(503).json({ error: 'Account usage is not available yet.' });
   res.json({ accounts: store.list(runtime as LedgerRuntime) });
+});
+
+/**
+ * POST /api/runtimes/claude-code/accounts/:id/probe — read an idle Claude
+ * account's usage without running a turn (spec `claude-account-fleet` D3). The
+ * id is a registry id or `default`. Always 200 once the account is known: a
+ * probe that could not read anything says so in `probe` and records nothing.
+ */
+router.post('/claude-code/accounts/:id/probe', async (req, res) => {
+  try {
+    res.json(await probeAccount(req.params.id));
+  } catch (err) {
+    if (err instanceof UnknownAccountError) {
+      return res.status(404).json({ error: err.message, code: err.code });
+    }
+    if (err instanceof AccountUsageUnavailableError) {
+      return res.status(503).json({ error: err.message });
+    }
+    throw err;
+  }
 });
 
 /**

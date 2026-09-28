@@ -60,8 +60,12 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await expect(alphaRow.getByLabel('1 mention', { exact: true })).toHaveText('@1');
     await expect(alphaRow.getByLabel('1 other unread', { exact: true })).toHaveText('1');
 
-    // Reduced motion stops the theme's colour transition, so axe measures
-    // the settled colours rather than a frame halfway between two themes.
+    // Reduced motion narrows the theme's colour transition to the CSS
+    // reset's 0.01ms floor, but that's still a real, non-zero window — under
+    // load, a scan could still land mid-transition (DOR-2450). `runAxe`
+    // itself now waits for every animation to finish before it scans, so
+    // this reduced-motion request is belt-and-suspenders, not what makes the
+    // read settled.
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       const axe = await runAxe(page, '[role="menu"]');

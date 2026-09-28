@@ -4,7 +4,6 @@ import path from 'path';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { ExtensionRecord, ExtensionManifest } from '@dorkos/extension-api';
-import { gte } from 'semver';
 import {
   isEnabled,
   type ExtensionsConfig,
@@ -12,9 +11,11 @@ import {
 } from './extension-enable-resolution.js';
 import { isApprovedCopy } from './extension-load-policy.js';
 import { logger } from '../../lib/logger.js';
-
-/** Host version for compatibility checking. */
-const HOST_VERSION = '0.1.0';
+import {
+  satisfiesMinHostVersion,
+  RUNNING_HOST_VERSION,
+  type HostVersion,
+} from './extension-host-version.js';
 
 type DiscoveredRecord = Omit<ExtensionRecord, 'origin'>;
 
@@ -41,9 +42,18 @@ type DiscoveredRecord = Omit<ExtensionRecord, 'origin'>;
  */
 export class ExtensionDiscovery {
   private dorkHome: string;
+  private host: HostVersion;
 
-  constructor(dorkHome: string) {
+  /**
+   * Create a scanner rooted at one DorkOS data directory.
+   *
+   * @param dorkHome - The DorkOS data directory.
+   * @param host - The build `minHostVersion` is checked against; defaults to
+   *   the running server. Tests pass a fixed one.
+   */
+  constructor(dorkHome: string, host: HostVersion = RUNNING_HOST_VERSION) {
     this.dorkHome = dorkHome;
+    this.host = host;
   }
 
   /**
@@ -489,7 +499,6 @@ export class ExtensionDiscovery {
    * Check if the host version satisfies the extension's minimum requirement.
    */
   private checkCompatibility(manifest: ExtensionManifest): boolean {
-    if (!manifest.minHostVersion) return true;
-    return gte(HOST_VERSION, manifest.minHostVersion);
+    return satisfiesMinHostVersion(manifest.minHostVersion, this.host);
   }
 }

@@ -265,9 +265,7 @@ export class ComposioConnectorProvider implements ConnectorProvider {
 
   async listToolkitPage(request: ConnectorCatalogPageRequest) {
     request.signal.throwIfAborted();
-    const all = (await this._toolkitsForRead(request.signal)).filter((toolkit) =>
-      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
-    );
+    const all = await this._toolkitsForRead(request.signal);
     const offset = request.cursor ? Number(request.cursor) : 0;
     const toolkits = all.slice(offset, offset + request.limit);
     const next = offset + toolkits.length;
@@ -384,6 +382,8 @@ export class ComposioConnectorProvider implements ConnectorProvider {
       slug: tk.slug,
       displayName: tk.name,
       authKind: toAuthKind(tk.authScheme),
+      ...(tk.logoUrl && { logoUrl: tk.logoUrl }),
+      ...(tk.description && { description: tk.description }),
     }));
   }
 

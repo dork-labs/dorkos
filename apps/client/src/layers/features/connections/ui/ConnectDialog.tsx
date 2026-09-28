@@ -12,6 +12,7 @@ import {
   useStartConnectorAuthentication,
   useStartConnectorAgentRequestAuthentication,
   serviceName as toolkitServiceName,
+  serviceLogo,
 } from '@/layers/entities/connectors';
 import {
   Button,
@@ -37,6 +38,7 @@ import {
   signInLine,
   wayName,
 } from '../lib/connect-route';
+import { AppActions } from './AppActions';
 import { FirstConnectStep } from './FirstConnectStep';
 import { ConnectionAccessCard } from './access/ConnectionAccessCard';
 
@@ -275,6 +277,12 @@ export function ConnectDialog({
                   </div>
                 ) : null}
 
+                <AppActions
+                  toolkit={serviceSlug}
+                  appName={serviceName}
+                  providerInstanceId={route?.providerInstanceId ?? null}
+                />
+
                 {showProviders && (
                   <fieldset className="space-y-2">
                     <legend className="text-xs font-medium">Available setups</legend>
@@ -387,6 +395,7 @@ export function ConnectDialog({
                   mode="page"
                   connectionId={activeFlow.connectionId}
                   serviceName={serviceName}
+                  logo={serviceLogo(resolvedService)}
                   onSkip={() => {
                     finish();
                     onConnected?.(activeFlow.connectionId);

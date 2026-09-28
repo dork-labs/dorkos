@@ -1,0 +1,34 @@
+{
+  "contract": "fleet",
+  "about": "Which ledger files to delete because their account is no longer registered (spec flow-cli-core 1.2 'Removing an account'; flow usage prune, and DorkOS when an account is removed). Call pruneTargets(registered, onDisk). input.registered maps each runtime to its accounts' LEDGER ids (accounts.cases.json ledgerId, rev 6d): a routable row's id, and 'default' only while default stands alone (for Claude Code and Codex: no routable row has the default folder; for OpenCode: no registered row). An aliased default adds no id: its readings live in its row's file. input.onDisk maps each runtime to the ids that have a <id>.json ledger file. A missing runtime reads as []. expected.remove maps every runtime (claude-code, codex, opencode) to the ids to delete, in onDisk order: every id on disk that is not in registered for that runtime. So default.json stays while default stands alone, and goes once default is an alias (it would be a second reading of the row's account) or, for OpenCode, once the runtime has registered accounts. A file is deleted under its lock; a missing file is not an error.",
+  "cases": [
+    {
+      "name": "an unregistered account's file goes; registered ones stay",
+      "input": {
+        "registered": {"claude-code": ["work", "claude3"]},
+        "onDisk": {"claude-code": ["claude2", "claude3", "work"]}
+      },
+      "expected": {"remove": {"claude-code": ["claude2"], "codex": [], "opencode": []}}
+    },
+    {
+      "name": "default.json goes once the runtime has registered accounts",
+      "input": {"registered": {"codex": ["team"]}, "onDisk": {"codex": ["default", "old", "team"]}},
+      "expected": {"remove": {"claude-code": [], "codex": ["default", "old"], "opencode": []}}
+    },
+    {
+      "name": "the same id is judged per runtime",
+      "input": {
+        "registered": {"claude-code": ["team"], "opencode": ["default"]},
+        "onDisk": {"claude-code": ["team"], "opencode": ["team", "default"]}
+      },
+      "expected": {"remove": {"claude-code": [], "codex": [], "opencode": ["team"]}}
+    },
+    {
+      "name": "default.json stays while the runtime runs on its implicit account",
+      "input": {"registered": {"claude-code": ["default"]}, "onDisk": {"claude-code": ["default", "old"]}},
+      "expected": {"remove": {"claude-code": ["old"], "codex": [], "opencode": []}}
+    },
+    {"name": "rev 6d: an aliased default is its row's id, so a leftover default.json goes and the row's file stays", "input": {"registered": {"claude-code": ["claude3"]}, "onDisk": {"claude-code": ["claude3", "default"]}}, "expected": {"remove": {"claude-code": ["default"], "codex": [], "opencode": []}}},
+    {"name": "rev 6d: a default that stands alone beside registered accounts keeps default.json", "input": {"registered": {"claude-code": ["claude3", "default"]}, "onDisk": {"claude-code": ["claude3", "default"]}}, "expected": {"remove": {"claude-code": [], "codex": [], "opencode": []}}}
+  ]
+}

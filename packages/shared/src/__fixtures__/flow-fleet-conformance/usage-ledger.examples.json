@@ -1,0 +1,237 @@
+{
+  "about": "Examples for usage-ledger.schema.json. Every 'valid' value must pass the schema and every 'invalid' one must fail it.",
+  "valid": [
+    {
+      "name": "the spec's example ledger",
+      "value": {
+        "v": 1,
+        "runtime": "claude-code",
+        "accountId": "claude3",
+        "updatedAt": "2026-09-26T16:04:11.000Z",
+        "windows": {
+          "five_hour": {
+            "usedPct": 41.5,
+            "resetsAt": "2026-09-26T19:00:00.000Z",
+            "status": "allowed",
+            "observedAt": "2026-09-26T16:04:10.000Z",
+            "source": "statusline"
+          },
+          "seven_day": {
+            "usedPct": 12,
+            "resetsAt": null,
+            "status": null,
+            "observedAt": "2026-09-26T16:04:10.000Z",
+            "source": "sdk_usage"
+          },
+          "model:opus": {
+            "usedPct": null,
+            "resetsAt": null,
+            "status": "rejected",
+            "observedAt": "2026-09-26T16:04:10.000Z",
+            "source": "transcript"
+          },
+          "some_new_window": {"usedPct": 3, "observedAt": "2026-09-26T16:04:10+02:00", "source": "sdk_event"}
+        }
+      }
+    },
+    {
+      "name": "an empty ledger with an unknown top-level field",
+      "value": {
+        "v": 1,
+        "runtime": "claude-code",
+        "accountId": "work-2",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {},
+        "writer": "future"
+      }
+    },
+    {
+      "name": "a Codex account: length-keyed windows, a model bucket, plan and credits",
+      "value": {
+        "v": 1,
+        "runtime": "codex",
+        "accountId": "default",
+        "updatedAt": "2026-09-26T16:00:01.000Z",
+        "windows": {
+          "five_hour": {
+            "usedPct": 41.5,
+            "resetsAt": "2026-09-26T19:00:00.000Z",
+            "windowMinutes": 300,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          },
+          "window:60": {
+            "usedPct": 7,
+            "resetsAt": null,
+            "windowMinutes": 60,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          },
+          "model:gpt-5.3-codex-spark": {
+            "usedPct": 64,
+            "resetsAt": null,
+            "windowMinutes": 10080,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        },
+        "plan": {"name": "pro", "observedAt": "2026-09-26T16:00:00.000Z", "source": "rollout"},
+        "credits": {
+          "hasCredits": true,
+          "unlimited": false,
+          "balance": "12.50",
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "rollout"
+        }
+      }
+    },
+    {
+      "name": "a metered OpenCode account: spend and an error signal",
+      "value": {
+        "v": 1,
+        "runtime": "opencode",
+        "accountId": "default",
+        "updatedAt": "2026-09-26T16:00:01.000Z",
+        "windows": {
+          "credits:openrouter": {
+            "usedPct": null,
+            "resetsAt": null,
+            "status": "rejected",
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "error"
+          }
+        },
+        "spend": {
+          "periodStart": "2026-09-01T00:00:00.000Z",
+          "costUsd": 20,
+          "limitUsd": 25,
+          "observedAt": "2026-09-26T16:00:00.000Z",
+          "source": "provider_api"
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong version",
+      "value": {"v": 2, "accountId": "a", "updatedAt": "2026-09-26T16:04:11Z", "windows": {}}
+    },
+    {
+      "name": "account id with a path separator",
+      "value": {
+        "v": 1,
+        "runtime": "claude-code",
+        "accountId": "../etc",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {}
+      }
+    },
+    {
+      "name": "timestamp without a zone",
+      "value": {"v": 1, "runtime": "claude-code", "accountId": "a", "updatedAt": "2026-09-26T16:04:11", "windows": {}}
+    },
+    {
+      "name": "usedPct over 100",
+      "value": {
+        "v": 1,
+        "runtime": "claude-code",
+        "accountId": "a",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {"five_hour": {"usedPct": 101, "observedAt": "2026-09-26T16:04:11Z", "source": "statusline"}}
+      }
+    },
+    {
+      "name": "neither usedPct nor status",
+      "value": {
+        "v": 1,
+        "runtime": "claude-code",
+        "accountId": "a",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {
+          "five_hour": {"usedPct": null, "status": null, "observedAt": "2026-09-26T16:04:11Z", "source": "statusline"}
+        }
+      }
+    },
+    {
+      "name": "unknown source",
+      "value": {
+        "v": 1,
+        "runtime": "claude-code",
+        "accountId": "a",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {"five_hour": {"usedPct": 1, "observedAt": "2026-09-26T16:04:11Z", "source": "screen"}}
+      }
+    },
+    {
+      "name": "window key that is not allowed",
+      "value": {
+        "v": 1,
+        "runtime": "claude-code",
+        "accountId": "a",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {"Five-Hour": {"usedPct": 1, "observedAt": "2026-09-26T16:04:11Z", "source": "statusline"}}
+      }
+    },
+    {
+      "name": "missing observedAt",
+      "value": {
+        "v": 1,
+        "runtime": "claude-code",
+        "accountId": "a",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {"five_hour": {"usedPct": 1, "source": "statusline"}}
+      }
+    },
+    {
+      "name": "no runtime",
+      "value": {"v": 1, "accountId": "a", "updatedAt": "2026-09-26T16:04:11Z", "windows": {}}
+    },
+    {
+      "name": "a runtime flow does not know",
+      "value": {"v": 1, "runtime": "gemini", "accountId": "a", "updatedAt": "2026-09-26T16:04:11Z", "windows": {}}
+    },
+    {
+      "name": "windowMinutes of 0",
+      "value": {
+        "v": 1,
+        "runtime": "codex",
+        "accountId": "a",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {
+          "window:60": {"usedPct": 1, "windowMinutes": 0, "observedAt": "2026-09-26T16:04:11Z", "source": "rollout"}
+        }
+      }
+    },
+    {
+      "name": "negative spend",
+      "value": {
+        "v": 1,
+        "runtime": "opencode",
+        "accountId": "a",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {},
+        "spend": {
+          "periodStart": "2026-09-01T00:00:00Z",
+          "costUsd": -1,
+          "observedAt": "2026-09-26T16:04:11Z",
+          "source": "sidecar"
+        }
+      }
+    },
+    {
+      "name": "a credits key with an uppercase slug",
+      "value": {
+        "v": 1,
+        "runtime": "opencode",
+        "accountId": "a",
+        "updatedAt": "2026-09-26T16:04:11Z",
+        "windows": {
+          "credits:OpenRouter": {"status": "rejected", "observedAt": "2026-09-26T16:04:11Z", "source": "error"}
+        }
+      }
+    }
+  ]
+}

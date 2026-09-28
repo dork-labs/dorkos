@@ -129,6 +129,10 @@ const webEnvSchema = z.object({
   // sent exactly as before. Server-only, never logged. See
   // `lib/cloud-accounts/forward.ts`.
   DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET: z.string().optional(),
+  // Exactly `1`, beside DORKOS_CLOUD_ACCOUNTS_ORIGIN, also sends managed
+  // connections to the accounts service (`lib/cloud-accounts/forward.ts`). Set
+  // it only after the service serves them; unset, they stay here, unavailable.
+  DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD: z.string().optional(),
 
   // Shared secret gating the scheduled-cleanup cron (DOR-194). Vercel Cron sends
   // it as `Authorization: Bearer <CRON_SECRET>` when this env var is set. Optional

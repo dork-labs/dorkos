@@ -9,6 +9,7 @@ import {
   createRelayDispatchHandler,
   type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { getRelayTools } from '../../runtimes/claude-code/mcp-tools/relay-tools.js';
 import {
   resolveSenderIdentity,
   EXTERNAL_MCP_SENDER,
@@ -1454,5 +1455,133 @@ describe('server-owned destinations are refused before anything is sent (DOR-243
       expect(result.isError).toBeUndefined();
     }
     expect(deps.relayCore!.publish).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `account` names the Claude account a NEW conversation launches on (spec
+// `claude-account-fleet` D6, DOR-2384). The tools only write it into the
+// payload: whether it is honored is the receiving host's call, made by the
+// account advisor, so nothing here can spend on an account by itself.
+// ---------------------------------------------------------------------------
+describe('relay send tools carry an optional account', () => {
+  /** Deps whose subscribe answers every query at once. */
+  function answeringDeps(): McpToolDeps {
+    return makeMockDeps({
+      subscribe: vi.fn().mockImplementation((_s: string, handler: (env: unknown) => void) => {
+        setTimeout(
+          () => handler({ payload: { type: 'agent_result', text: 'ok', done: true }, from: 'b' }),
+          5
+        );
+        return vi.fn();
+      }),
+    });
+  }
+
+  it('relay_send writes the account into an object payload', async () => {
+    const deps = makeMockDeps({});
+    await createRelaySendHandler(
+      deps,
+      SENDER
+    )({
+      subject: 'relay.agent.other',
+      payload: { content: 'hi' },
+      account: 'work',
+    });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+      'relay.agent.other',
+      { content: 'hi', account: 'work' },
+      expect.anything()
+    );
+  });
+
+  it('relay_send turns a text payload into content beside the account', async () => {
+    const deps = makeMockDeps({});
+    await createRelaySendHandler(
+      deps,
+      SENDER
+    )({
+      subject: 'relay.agent.other',
+      payload: 'hi',
+      account: 'work',
+    });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+      'relay.agent.other',
+      { content: 'hi', account: 'work' },
+      expect.anything()
+    );
+  });
+
+  it('relay_send refuses an account on a payload that is neither text nor an object', async () => {
+    const deps = makeMockDeps({});
+    const result = await createRelaySendHandler(
+      deps,
+      SENDER
+    )({
+      subject: 'relay.agent.other',
+      payload: [1, 2],
+      account: 'work',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text)).toEqual(
+      expect.objectContaining({ code: 'INVALID_PAYLOAD' })
+    );
+    expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+  });
+
+  it('relay_send_async writes the account into the payload', async () => {
+    const deps = makeMockDeps({});
+    await createRelayDispatchHandler(
+      deps,
+      SENDER
+    )({
+      to_subject: 'relay.agent.other',
+      payload: { content: 'hi' },
+      account: 'work',
+    });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+      'relay.agent.other',
+      { content: 'hi', account: 'work' },
+      expect.anything()
+    );
+  });
+
+  it('relay_send_and_wait writes the account into the payload', async () => {
+    const deps = answeringDeps();
+    await createRelayQueryHandler(
+      deps,
+      SENDER
+    )({
+      to_subject: 'relay.agent.other',
+      payload: { content: 'hi' },
+      account: 'work',
+      timeout_ms: 2000,
+    });
+
+    expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+      'relay.agent.other',
+      { content: 'hi', account: 'work' },
+      expect.anything()
+    );
+  });
+
+  it('offers account on all three send tools, in-session and external alike', () => {
+    // The external `/mcp` server registers these same definitions
+    // (`external-mcp/relay-tools.ts`), so one schema covers both surfaces.
+    const tools = getRelayTools(makeMockDeps({}), SENDER) as unknown as {
+      name: string;
+      description: string;
+      inputSchema: Record<string, { description?: string; isOptional?: () => boolean }>;
+    }[];
+    for (const name of ['relay_send', 'relay_send_async', 'relay_send_and_wait']) {
+      const account = tools.find((t) => t.name === name)?.inputSchema.account;
+      expect(account, name).toBeDefined();
+      expect(account?.isOptional?.(), name).toBe(true);
+      expect(account?.description, name).toMatch(/new conversation/);
+    }
   });
 });

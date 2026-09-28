@@ -9,10 +9,6 @@
   },
   "crons": [
     {
-      "path": "/api/cron/instance-expiry",
-      "schedule": "0 * * * *"
-    },
-    {
       "path": "/api/cron/event-retention",
       "schedule": "0 * * * *"
     }

@@ -192,6 +192,8 @@ There is no separate sync mechanism: the durable `GET /api/sessions/:id/events` 
 
 **Queued-message recovery is snapshot-based too.** The `snapshot` frame also carries `queuedMessages` — messages a caller sent while the session was already busy, waiting their turn in dispatch order (spec `persistent-session-runtime`). This is hydration, not a separate fetch: a window that reconnects mid-turn needs to show what's already queued without waiting for the next `queue_update` event to reveal it.
 
+**A usage limit rides `status.limit`, and it is not a lifecycle phase.** When a turn stops because the session's account ran out of usage, the server folds a `SessionLimit` (`accountId`, `window`, `resetsAt`, `since`, `plan`; `@dorkos/shared/schemas`) onto the session status through a `status_change`, and the `snapshot` carries it too. The lifecycle still reads `error`; "limited" is a display state, so decide what to show with `sessionDisplayState(status)` from `@dorkos/shared/session-stream` rather than testing `limit` yourself. The server keeps the limit in the `session_limits` table, so a reconnect after a restart still sees it. Both sides clear it at the next `turn_start`: `SessionStateProjector` on the server and `projectEvent` in `session-stream-store.ts` on the client. Any new status field that outlives its turn needs the same clear in both places, pinned by a parity test like the one in `session-stream-store.test.ts`. The person also gets one `account.limited` notification per account episode instead of `session.error`.
+
 ### Real-Time System Events (Unified SSE Stream)
 
 System-wide events (tunnel status changes, extension reloads, relay activity) are delivered through a single multiplexed SSE connection rather than per-resource streams.

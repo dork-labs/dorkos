@@ -37,6 +37,7 @@ import {
   selectPromotedItems,
   applyStatusBudget,
   resolveStatusBudget,
+  type SessionAccount,
   type StatusPromotionContext,
 } from '@/layers/features/status';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -66,22 +67,6 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => {
     useRuntimeRequirements: () => ({ data: undefined }),
   };
 });
-
-// `RuntimeItem` also calls these even when read-only (`canSelect: false`) —
-// both are unconditional in the component, not gated on the branch. Stubbed
-// here rather than wired through a real Transport so the DOR-1971 test needs no
-// provider tree: neither the account switcher nor the account roster is what
-// that test is about.
-vi.mock('@/layers/features/status/model/use-account-switch', () => ({
-  DEFAULT_ACCOUNT_VALUE: '__default__',
-  useAccountSwitch: () => ({
-    accounts: [],
-    selectedValue: '__default__',
-    isMultiAccount: false,
-    defaultLabel: undefined,
-    choose: vi.fn(),
-  }),
-}));
 
 // The roster read behind the chip's account tooltip (DOR-1970). It reaches for
 // the Transport, which this file deliberately does not stand up; `nameFor` is
@@ -136,6 +121,22 @@ vi.mock('@/layers/entities/session', async (importOriginal) => {
  */
 const RENDERABLE_USAGE: UsageStatus = { kind: 'pay-as-you-go', costUsd: 0.42 };
 
+/** A session whose account the identity gate hides (one account on this machine). */
+const HIDDEN_ACCOUNT: SessionAccount = {
+  visible: false,
+  runtime: 'claude-code',
+  accountId: 'acct-2',
+  path: '/Users/test/.claude-acct-2',
+  name: 'Acct 2',
+  color: '#1d8a4a',
+  usage: null,
+  limit: null,
+  chipState: 'unknown',
+  trackerItem: null,
+  lifecycle: 'idle',
+  pending: false,
+};
+
 /**
  * Everything the builder needs, with the two fields each test varies left to the
  * caller.
@@ -177,6 +178,7 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
       canSelect: false,
       onChangeRuntime: vi.fn(),
     },
+    account: HIDDEN_ACCOUNT,
     contextPercent: null,
     contextUsage: null,
     compact: null,
@@ -229,6 +231,17 @@ describe('buildStatusItemNodes — the cost gate', () => {
         usage: { kind: 'subscription' },
       }).usage
     ).toBeUndefined();
+  });
+});
+
+describe('buildStatusItemNodes — the account chip', () => {
+  it('builds the account item only while the identity gate is open', () => {
+    // The gate is the whole rule: with one account (or a runtime that does not
+    // tell accounts apart) the chip would name a fact that never varies.
+    expect(buildStatusItemNodes(inputWith({})).account).toBeUndefined();
+    expect(
+      buildStatusItemNodes(inputWith({ account: { ...HIDDEN_ACCOUNT, visible: true } })).account
+    ).toBeDefined();
   });
 });
 
@@ -416,6 +429,7 @@ function buildLine(
       : (CLAUDE_CAPABILITIES.permissionModes.values.find((d) => d.id === permissionMode) ?? null),
     plan: { active: planActive },
     runtime: null,
+    account: null,
     usage: null,
     subagentsInFlight: 0,
   };

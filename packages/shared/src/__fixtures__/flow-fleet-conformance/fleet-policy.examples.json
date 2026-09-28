@@ -1,0 +1,62 @@
+{
+  "about": "Examples for fleet-policy.schema.json. Every 'valid' value must pass the schema and every 'invalid' one must fail it.",
+  "valid": [
+    {"name": "a new file: only the version", "value": {"v": 1}},
+    {
+      "name": "the spec's example policy",
+      "value": {
+        "v": 1,
+        "handoff": "auto",
+        "accounts": {
+          "claude-code:claude3": {"role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": ["acme/app"]}},
+          "claude-code:personal": {"role": "main"},
+          "claude-code:org": {
+            "role": "kept-out",
+            "scope": {"repos": ["Acme/App", "acme/site.v2"]},
+            "note": "unknown fields are kept"
+          }
+        }
+      }
+    },
+    {
+      "name": "every runtime, with preference and fallback",
+      "value": {
+        "v": 1,
+        "runtimes": ["claude-code", "codex"],
+        "crossRuntimeFallback": "on",
+        "accounts": {
+          "codex:default": {"role": "main"},
+          "opencode:default": {"role": "kept-out", "scope": {"repos": ["acme/app"]}}
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {"name": "no version", "value": {"accounts": {}}},
+    {"name": "unknown handoff", "value": {"v": 1, "handoff": "sometimes"}},
+    {"name": "unknown role", "value": {"v": 1, "accounts": {"claude-code:a": {"role": "reserve"}}}},
+    {"name": "reserve over 100", "value": {"v": 1, "accounts": {"claude-code:a": {"reservePct": 150}}}},
+    {
+      "name": "negative spend-down window",
+      "value": {"v": 1, "accounts": {"claude-code:a": {"spendDownWindowHours": -1}}}
+    },
+    {
+      "name": "repo that is not owner/name",
+      "value": {"v": 1, "accounts": {"claude-code:a": {"scope": {"repos": ["acme"]}}}}
+    },
+    {
+      "name": "account key that is not an id",
+      "value": {"v": 1, "accounts": {"claude-code:Bad_ID": {"role": "rotation"}}}
+    },
+    {
+      "name": "a bare key (readers migrate it; writers never write it)",
+      "value": {"v": 1, "accounts": {"claude3": {"role": "rotation"}}}
+    },
+    {
+      "name": "a key with an unknown runtime",
+      "value": {"v": 1, "accounts": {"gemini:a": {"role": "rotation"}}}
+    },
+    {"name": "a runtime listed twice", "value": {"v": 1, "runtimes": ["codex", "codex"]}},
+    {"name": "an unknown fallback", "value": {"v": 1, "crossRuntimeFallback": "yes"}}
+  ]
+}

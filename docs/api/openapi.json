@@ -17241,6 +17241,66 @@
         }
       }
     },
+    "/api/runtimes/claude-code/accounts/{id}/probe": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Check a Claude account's usage without running a turn",
+        "description": "Starts Claude Code in the account's own folder on a prompt that never sends a message, asks it for the account usage, and closes it: no turn runs, nothing is billed, and no transcript is kept. On demand only, one probe per account at a time and at most one a minute. `probe` says how it went: `ok` recorded new readings; `unavailable` (the account has no plan limits), `failed` (with a `reason`) and `throttled` recorded nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A registry id, or `default` for this computer's own sign-in."
+            },
+            "required": true,
+            "description": "A registry id, or `default` for this computer's own sign-in.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's usage after the probe, and how the probe went",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "$ref": "#/components/schemas/AccountUsage"
+                    },
+                    "probe": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "unavailable",
+                        "failed",
+                        "throttled"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "account",
+                    "probe"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Claude Code account has that id (`code: \"UNKNOWN_ACCOUNT\"`)"
+          },
+          "503": {
+            "description": "The usage store is not running yet"
+          }
+        }
+      }
+    },
     "/api/capabilities": {
       "get": {
         "tags": [
@@ -27435,6 +27495,11 @@
                             "minLength": 1,
                             "maxLength": 300
                           },
+                          "logo": {
+                            "type": "string",
+                            "maxLength": 300,
+                            "pattern": "^\\/api\\/connectors\\/catalog\\/logos\\/[a-z0-9][a-z0-9_-]{0,99}$"
+                          },
                           "category": {
                             "type": "string",
                             "enum": [
@@ -27656,6 +27721,73 @@
         }
       }
     },
+    "/api/connectors/catalog/logos/{serviceSlug}": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Get one catalog app’s logo",
+        "description": "Serves the logo a catalog entry’s `logo` path points at. The server fetches it once, from the URL its own app list recorded for that service on the connection service’s own logo host, keeps it under the DorkOS data directory, and serves it with `nosniff` and a sandboxing Content-Security-Policy. The browser never loads a third-party URL.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,99}$"
+            },
+            "required": true,
+            "name": "serviceSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The logo image",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The app has no logo, or its logo could not be fetched just now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/connections": {
       "get": {
         "tags": [
@@ -27760,6 +27892,15 @@
                                     "enum": [
                                       "pending"
                                     ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
                                   }
                                 },
                                 "required": [
@@ -28803,6 +28944,15 @@
                                   "enum": [
                                     "pending"
                                   ]
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 1000
+                                },
+                                "retryAt": {
+                                  "type": "string",
+                                  "format": "date-time"
                                 }
                               },
                               "required": [
@@ -29349,6 +29499,15 @@
                                     "enum": [
                                       "pending"
                                     ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
                                   }
                                 },
                                 "required": [
@@ -29576,6 +29735,15 @@
                               "enum": [
                                 "pending"
                               ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": [
@@ -29731,6 +29899,15 @@
                               "enum": [
                                 "pending"
                               ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": [
@@ -29805,6 +29982,188 @@
           },
           "404": {
             "description": "Connection absent or owned by someone else",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/apps/{toolkit}/actions": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "List what an app lets agents do through one configured way",
+        "description": "Owner only. Returns every action the app offers at one exact service version, each with the safety classification the grant review stores and execution enforces. The list is kept for 24 hours and served at once while it refreshes. A way that cannot list trusted actions answers `unlisted`; a list that stopped part way says `complete: false`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "toolkit",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "providerInstanceId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The app’s actions, or an honest unlisted answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "listed"
+                          ]
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "toolkitVersion": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "actions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "operationSlug": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "displayName": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "capabilityClassification": {
+                                "type": "string",
+                                "enum": [
+                                  "read",
+                                  "write",
+                                  "destructive"
+                                ]
+                              },
+                              "important": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "operationSlug",
+                              "capabilityClassification",
+                              "important"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 2000
+                        },
+                        "completeness": {
+                          "type": "string",
+                          "enum": [
+                            "complete",
+                            "too_large",
+                            "interrupted"
+                          ]
+                        },
+                        "fetchedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "toolkit",
+                        "toolkitVersion",
+                        "actions",
+                        "completeness",
+                        "fetchedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unlisted"
+                          ]
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "toolkit"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid app id or query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the owner can read this, from the DorkOS app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The named way of reaching apps is not set up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The service could not list the app’s actions just now",
             "content": {
               "application/json": {
                 "schema": {
@@ -30371,6 +30730,15 @@
                               "enum": [
                                 "pending"
                               ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": [
@@ -30527,6 +30895,15 @@
                               "enum": [
                                 "pending"
                               ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
                             }
                           },
                           "required": [
@@ -30722,6 +31099,15 @@
                                     "enum": [
                                       "pending"
                                     ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
                                   }
                                 },
                                 "required": [

@@ -70,7 +70,7 @@ import { RAW_MCP_PROVIDER_TYPE } from '../providers/raw-mcp.js';
  * `catalog-cache.test.ts` pins the schema's field list to this number and
  * fails when one moves without the other.
  */
-export const CONNECTOR_TOOLKIT_SHAPE_VERSION = 1;
+export const CONNECTOR_TOOLKIT_SHAPE_VERSION = 2;
 
 /** How one service's app list is kept. */
 export type CatalogKeeping =
@@ -310,6 +310,29 @@ export class ConnectorCatalogCache {
       return { status: 'ok', toolkits: kept.toolkits, truncated: kept.truncated };
     }
     return untilAborted(this.#refresh(provider, setupKey, keeping.onDisk), signal);
+  }
+
+  /**
+   * The kept copy of one service's app list, fresh or stale, without ever
+   * listing it upstream: `undefined` when nothing is kept for this setup (or
+   * the service type keeps nothing). For lookups that must stay cheap, like
+   * finding one app's logo address.
+   *
+   * @param provider - The registered provider instance to look in.
+   * @param configDigest - Its current setup fingerprint; a copy made under another is never returned.
+   */
+  async peek(
+    provider: ConnectorProvider,
+    configDigest: string
+  ): Promise<readonly ConnectorToolkit[] | undefined> {
+    const keeping = this.#keepingFor(provider.type);
+    if (keeping.kind === 'none') return undefined;
+    const kept = await this.#keptCopy(
+      provider.instanceId,
+      setupKeyFor(configDigest),
+      keeping.onDisk
+    );
+    return kept?.toolkits;
   }
 
   /**

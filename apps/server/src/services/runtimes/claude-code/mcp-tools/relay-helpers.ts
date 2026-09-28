@@ -284,6 +284,41 @@ export function inferEndpointType(
   return 'unknown';
 }
 
+/**
+ * The payload a `relay_send*` call publishes, with its optional `account`
+ * written in (spec `claude-account-fleet` D6, DOR-2384).
+ *
+ * An object payload gains the field; a text payload becomes `{ content, account }`,
+ * which the receiving agent reads the same way. Any other payload cannot carry
+ * a field, so an `account` on it is refused rather than silently dropped.
+ *
+ * Writing the field grants nothing: the receiving host honors it only for a
+ * new conversation and only when the account advisor allows the pick.
+ *
+ * @param payload - The payload the caller passed.
+ * @param account - The Claude account (registry id) the caller named, if any.
+ * @returns `{ payload }` to publish, or `{ error }` holding the tool's error response.
+ */
+export function payloadWithAccount(
+  payload: unknown,
+  account: string | undefined
+): { payload: unknown } | { error: ReturnType<typeof jsonContent> } {
+  if (account === undefined) return { payload };
+  if (typeof payload === 'string') return { payload: { content: payload, account } };
+  if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+    return { payload: { ...(payload as Record<string, unknown>), account } };
+  }
+  return {
+    error: jsonContent(
+      {
+        error: 'An account can only ride on a text or object payload.',
+        code: 'INVALID_PAYLOAD',
+      },
+      true
+    ),
+  };
+}
+
 /** Guard that returns an error response when Relay is disabled. */
 export function requireRelay(deps: McpToolDeps) {
   if (!deps.relayCore) {

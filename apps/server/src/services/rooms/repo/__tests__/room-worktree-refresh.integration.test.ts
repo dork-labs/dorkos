@@ -93,6 +93,8 @@ describe('an agent’s copy of the room’s files is brought up to date at turn 
       }),
       runner: launchingRunner(scriptedRunner(() => null)),
       worktrees: () => manager,
+      // What the operator likes to be called, as their profile says (DOR-2458).
+      operatorName: () => 'Dorian',
     });
     repoStore = new RoomRepoStore(harness.db, dorkHome);
     repos = new RoomRepoService({
@@ -266,7 +268,8 @@ describe('an agent’s copy of the room’s files is brought up to date at turn 
     // Bo's next turn names the person, from the room's own record of them.
     await ask(room.id, '@bo anything else?');
     const named = lastFor(boPath);
-    const person = harness.authors.getById(harness.human)!.displayName;
+    // The operator by their profile name, never the registry's 'You' (DOR-2458).
+    const person = 'Dorian';
     expect(named.files?.refresh).toMatchObject({ kind: 'held', reason: 'changes' });
     const moved = named.files?.refresh?.kind === 'held' ? named.files.refresh.moved : null;
     // Newest first: the person's edit, then Ana's merge still waiting for Bo.

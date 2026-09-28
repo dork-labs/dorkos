@@ -106,6 +106,15 @@ export const ConnectorToolkitSchema = z.object({
   authentication: ConnectorCapabilityAvailabilitySchema.optional(),
   /** Composio's `max_accounts_per_toolkit`; `undefined` = unbounded/one. */
   maxAccountsPerUser: z.number().int().positive().optional(),
+  /**
+   * Where the connection service hosts the app's logo: an https URL on one of
+   * that service's own logo hosts, already checked by the provider. Server-side
+   * only: the catalog never sends it to a browser, which gets a same-origin
+   * logo path instead, and the server's logo route fetches this URL.
+   */
+  logoUrl: z.string().url().max(2_000).optional(),
+  /** The service's own one-line description of the app, already cut to one short sentence. */
+  description: z.string().min(1).max(300).optional(),
 });
 /** A connectable service. See {@link ConnectorToolkitSchema}. */
 export type ConnectorToolkit = z.infer<typeof ConnectorToolkitSchema>;

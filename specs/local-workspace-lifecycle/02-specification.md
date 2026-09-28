@@ -2,18 +2,18 @@
 slug: local-workspace-lifecycle
 number: 260926-193136
 created: 2026-09-26
-status: specified
+status: implemented
 ---
 
 # Local workspace reconciler lifecycle pilot
 
-**Status:** Specified; implementation not selected.
-**Delivery:** [DOR-2347](https://linear.app/dorkspace/issue/DOR-2347) - Shape a bounded server lifecycle ownership pilot.
+**Status:** Class-local pilot implemented under DOR-2428 on 2026-09-27 after design review. Central adoption remains deferred.
+**Design delivery:** [DOR-2347](https://linear.app/dorkspace/issue/DOR-2347) - Shape a bounded server lifecycle ownership pilot.
 **Audit baseline:** `7168a5b7c69def16bb2cb48319b24285c9894a3f`, 2026-09-26. Paths and line numbers below refer to this revision.
 
 ## Overview
 
-Make one local resource owner capable of stopping admission, tracking work and reporting bounded disposal. Prove the class contract before considering wider server adoption. This document and its ownership map complete a shaping deliverable; no lifecycle behavior changes with them.
+Make one local resource owner capable of stopping admission, tracking work and reporting bounded disposal. Prove the class contract before considering wider server adoption. The original document and ownership map completed the DOR-2347 shaping deliverable. DOR-2428 now implements the bounded class contract, with evidence recorded separately below the historical audit receipt.
 
 ## Background / Problem Statement
 
@@ -25,7 +25,7 @@ These are source-backed gaps, not a reproduced production data-loss incident. Ex
 
 - Document construction, start and stop owners, including the limits of current proof.
 - Specify one class-local pilot with passive construction, serialized work, restartable timer stop and terminal bounded disposal.
-- Make partial-start failure, late completion and concurrent disposal observable in focused future tests.
+- Make partial-start failure, late completion and concurrent disposal observable in focused lifecycle tests.
 - Keep adoption into the central shutdown sequence separate and explicit.
 
 ## Non-Goals
@@ -69,7 +69,7 @@ Use the existing `WorkspaceStore`, `WorkspaceService`, logger, Node timers and V
 
 ## Detailed Design
 
-Future implementation is confined to `apps/server/src/services/workspace/workspace-reconciler.ts` and a dedicated adjacent lifecycle test. Preserve the existing constructor call shape and `WorkspaceReconcileResult` counts. An optional internal options argument can supply the disposal timeout and testable timer boundary without a new user setting.
+Implementation is confined to `apps/server/src/services/workspace/workspace-reconciler.ts` and a dedicated adjacent lifecycle test. Preserve the existing constructor call shape and `WorkspaceReconcileResult` counts. An optional internal options argument can supply the disposal timeout and testable timer boundary without a new user setting.
 
 ### State and admission
 
@@ -102,7 +102,7 @@ This design adds no UI or user-facing command. Future root adoption can make res
 
 Credit existing tests before adding any: session-list broadcaster startup retry/iterator return/stop-start tests; search-indexer timer stop and `sweep-guard` overlap tests; scheduler started/stopped, relay-stop and pruning tests; skills-watcher turn-end unsubscription; marketplace cache-retention trigger tests. Admin route tests mock shutdown and do not prove the real root sequence. No dedicated workspace reconciler lifecycle suite was found at this baseline.
 
-Future tests belong beside workspace tests and use fake timers, deferred reads and a real or narrowly faked store boundary. No arbitrary sleeps, server boot, SDK turn or shared harness change.
+Tests belong beside workspace tests and use fake timers, deferred reads and a real or narrowly faked store boundary. No arbitrary sleeps, server boot, SDK turn or shared harness change.
 
 | Injected condition                                          | Required assertion / positive control                                                                                        |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -130,8 +130,8 @@ Keep the ownership map and validation receipt with this spec. Future implementat
 
 ## Implementation Phases and Dispositions
 
-1. **This delivery:** audit, ideation, specification, independent review and merged documentation. Complete DOR-2347 as shaping only; manifest remains `specified`.
-2. **Local pilot, deferred ([DOR-2428](https://linear.app/dorkspace/issue/DOR-2428)):** separately select and decompose the class/test changes above. The workspace/server maintenance owner revisits after this design is reviewed. No agent-ready implementation is created by merging it.
+1. **Design delivery, completed 2026-09-26:** audit, ideation, specification, independent review and merged documentation in PR #2160. DOR-2347 completed as shaping only; the manifest remained `specified` at that point.
+2. **Local pilot, implemented ([DOR-2428](https://linear.app/dorkspace/issue/DOR-2428)):** explicitly selected by the operator on 2026-09-27 after the design merged. The [task plan](03-tasks.md) covers only the class, focused tests and delivery artifacts. [Implementation evidence](04-verification.md#class-local-pilot-verification) does not establish root adoption.
 3. **Central adoption, deferred ([DOR-2429](https://linear.app/dorkspace/issue/DOR-2429)):** coordinate after overlapping root changes (open PRs #2117, #2118 and #2158 at audit) settle. Retain the reconciler at the root and design stop/admission/error/deadline/lock-release ordering together; this cannot be slipped into the class pilot.
 4. **Other ownership gaps, deferred:** marketplace retention listener disposal and root-wide partial-start rollback remain in the DOR-2429 design inventory. Revisit individually with owning domains, without expanding into protected services.
 

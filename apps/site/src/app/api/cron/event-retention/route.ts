@@ -30,9 +30,9 @@ export async function GET(request: Request): Promise<Response> {
 
   // Once accounts are handed to the accounts service (DOR-2441), the site's
   // database holds only its own public tables. The managed-connector event
-  // rows this sweeps are not among them, so there is nothing here to sweep.
-  // Retention for those rows moves to the service with managed connections
-  // itself; until then, hand accounts over only with managed connections off.
+  // rows this sweeps are not among them, so there is nothing here to sweep:
+  // the service holds them and runs this sweep itself, on its own schedule,
+  // since managed connections moved there (DOR-2485).
   // Answer 200 so the scheduler sees a healthy job, and touch nothing.
   if (cloudAccountsForwarding(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN)) {
     return Response.json({ ok: true, skipped: 'accounts-service' }, { status: 200 });

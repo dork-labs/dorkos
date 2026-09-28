@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { useExtensionRegistry } from '@/layers/shared/model';
 import { Palette, Settings2, Server } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -38,6 +40,8 @@ import { DangerZoneTab } from '@/layers/features/settings/ui/DangerZoneTab';
 import { RemoteAccessTab } from '@/layers/features/settings/ui/RemoteAccessTab';
 import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
 import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
+import { AccountColorControl } from '@/layers/features/settings/ui/runtimes/sections/AccountColorControl';
+import { RuntimeUsageSection } from '@/layers/features/settings/ui/runtimes/sections/RuntimeUsageSection';
 import { ControlCenterBody } from '@/layers/widgets/control-center';
 import {
   LiveRuntimeCard,
@@ -46,6 +50,7 @@ import {
   TabShell,
 } from './settings-showcase-helpers';
 import {
+  MOCK_ACCOUNT_USAGE,
   MOCK_EXECUTION_DEVIATIONS,
   MOCK_EXECUTION_EXCEPTIONS,
   MOCK_SERVER_CONFIG_EXPERIMENT_LOCKED,
@@ -60,6 +65,7 @@ export function SettingsShowcases() {
       <FullSettingsDialogSection />
       <IndividualTabsSection />
       <ClaudeAccountsShowcaseSection />
+      <RuntimeUsageShowcaseSection />
       <ExecutionExceptionsSection />
       <BackgroundSystemsSection />
       <MobileDrillInSection />
@@ -129,6 +135,41 @@ function ClaudeAccountsShowcaseSection() {
         </MockedQueryProvider>
       </ShowcaseDemo>
 
+      <ShowcaseLabel>One account: its usage under Billing account</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider config={SINGLE_ACCOUNT_CONFIG} usage={CLAUDE_USAGE}>
+          <LiveRuntimeCard type="claude-code" expanded renderSection={accountsSection} />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Several accounts with usage: colors, compact bars, one account unknown
+      </ShowcaseLabel>
+      <FlowTabToggle />
+      <ShowcaseDemo>
+        <MockedQueryProvider config={MOCK_SERVER_CONFIG_MULTI_ACCOUNT} usage={CLAUDE_USAGE}>
+          <LiveRuntimeCard
+            type="claude-code"
+            expanded
+            renderSection={accountsSection}
+            sectionValues={{ 'claude-accounts': 'Acme Corp' }}
+          />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>An account’s color picker, open</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="h-24">
+          <AccountColorControl
+            name="Acme Corp"
+            color="#1d8a4a"
+            colorIsDefault
+            onChoose={() => {}}
+            defaultOpen
+          />
+        </div>
+      </ShowcaseDemo>
+
       <ShowcaseLabel>Write refused: pick an account to see the message</ShowcaseLabel>
       <ShowcaseDemo>
         <RefusedConfigWriteProvider>
@@ -141,6 +182,83 @@ function ClaudeAccountsShowcaseSection() {
             />
           </MockedQueryProvider>
         </RefusedConfigWriteProvider>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * The playground's Claude usage fixtures, re-keyed onto the multi-account
+ * config's rows (ok, near, out, unknown), so each row finds its reading.
+ */
+const CLAUDE_USAGE: AccountUsage[] = (
+  MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode?.accounts ?? []
+).map((account, i) => ({
+  ...MOCK_ACCOUNT_USAGE[i]!,
+  accountId: account.id ?? null,
+  path: account.path,
+  label: account.label,
+  color: account.color,
+}));
+
+/** The multi-account config cut to its one Acme Corp row. */
+const SINGLE_ACCOUNT_CONFIG = {
+  ...MOCK_SERVER_CONFIG_MULTI_ACCOUNT,
+  claudeCode: {
+    ...MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode!,
+    accounts: MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode!.accounts.slice(1, 2),
+  },
+};
+
+/**
+ * Registers a stand-in Flow settings tab while checked, so the Flow note under
+ * the accounts list can be seen with and without it. Unregisters on unmount.
+ */
+function FlowTabToggle() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!on) return;
+    return useExtensionRegistry.getState().register('settings.tabs', {
+      id: 'flow:fleet',
+      label: 'Flow',
+      icon: Settings2,
+      component: () => null,
+    });
+  }, [on]);
+  return (
+    <div className="text-muted-foreground mb-2 flex items-center gap-2 text-xs">
+      <Switch checked={on} onCheckedChange={setOn} aria-label="Flow installed" />
+      Flow installed (shows the note under the list)
+    </div>
+  );
+}
+
+/**
+ * The Usage row of the Codex and OpenCode cards (spec `claude-account-ui`
+ * §6.5): Codex's windows as bars, and OpenCode's spend as one line.
+ */
+function RuntimeUsageShowcaseSection() {
+  return (
+    <PlaygroundSection
+      title="Runtime Usage"
+      description="How much of each limit a runtime has used, shown on its card even with one account. A runtime billed per turn shows what it spent this month instead."
+    >
+      <ShowcaseLabel>Codex: its weekly window, 5-hour unknown</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider usage={MOCK_ACCOUNT_USAGE}>
+          <div className="max-w-md">
+            <RuntimeUsageSection type="codex" />
+          </div>
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>OpenCode: spend this month</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider usage={MOCK_ACCOUNT_USAGE}>
+          <div className="max-w-md">
+            <RuntimeUsageSection type="opencode" />
+          </div>
+        </MockedQueryProvider>
       </ShowcaseDemo>
     </PlaygroundSection>
   );

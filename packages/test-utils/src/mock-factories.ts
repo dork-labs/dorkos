@@ -835,8 +835,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
               },
             ],
           },
-          // Effort is real; no bespoke section — Codex's card is the common rows.
-          settings: { configSection: 'codex', supportsEffort: true, sections: [] },
+          // Effort is real; the one bespoke section is the account's usage.
+          settings: {
+            configSection: 'codex',
+            supportsEffort: true,
+            sections: [{ kind: 'runtime-usage' }],
+          },
           features: {},
         },
         opencode: {
@@ -879,11 +883,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
             ],
           },
           // No effort leaf at OpenCode's API, and its bespoke section is the
-          // power-source picker — both load-bearing absences for the cards.
+          // power-source picker, then the account's usage.
           settings: {
             configSection: 'opencode',
             supportsEffort: false,
-            sections: [{ kind: 'opencode-power-source' }],
+            sections: [{ kind: 'opencode-power-source' }, { kind: 'runtime-usage' }],
           },
           features: {},
         },
@@ -1219,6 +1223,18 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // default that omitted it would let a component read `undefined` in every
     // test and crash only in production.
     search: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+    // Account usage and carrying a limited session over (spec `claude-account-ui`
+    // §6.0). Empty answers, so a component under test shows no account data
+    // unless a test supplies some, and the writes succeed without effect.
+    getAccountUsage: vi.fn().mockResolvedValue({ accounts: [] }),
+    getContinueOptions: vi.fn().mockResolvedValue({
+      plan: { mode: 'ask' },
+      ranking: { accounts: [], recommendedId: null },
+    }),
+    continueSession: vi.fn().mockResolvedValue({ sessionId: 'session-continued' }),
+    waitForReset: vi.fn().mockResolvedValue(undefined),
+    cancelAutoContinue: vi.fn().mockResolvedValue(undefined),
+    getLimitHistory: vi.fn().mockResolvedValue({ entries: [] }),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
     // takes its success path unless a test deliberately makes one reject.
@@ -1367,6 +1383,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     pauseConnectorConnection: vi.fn(),
     resumeConnectorConnection: vi.fn(),
     getConnectorDisconnectImpact: vi.fn(),
+    getConnectorAppActions: vi.fn(),
     disconnectConnectorConnection: vi.fn(),
     removeConnectorConnection: vi.fn(),
     getAgentConnectorConnections: vi

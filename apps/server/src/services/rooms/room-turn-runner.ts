@@ -350,11 +350,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * while it stands (DOR-1721).
    *
    * **`session_metadata` cannot answer this for a first turn, and that is the
-   * whole bug.** The binding is written after the turn is accepted (see
-   * `persistSessionRuntime` below, deliberately late so a runtime that throws
-   * leaves no orphan row) — and for claude-code it is written under the
-   * CANONICAL id, while a halt mid-turn asks about the placeholder the room
-   * bound before it. So for the length of a first turn `resolveTurnRuntimeType`
+   * whole bug.** The binding is written only once the turn LAUNCHES (see
+   * `recordSessionOwner` below, taken back if no turn runs) — and for
+   * claude-code the runtime then moves it to the CANONICAL id, while a halt
+   * mid-turn asks about the placeholder the room bound before it. So for the length of a first turn `resolveTurnRuntimeType`
    * finds nothing bound and falls through to the agent's manifest. A manifest
    * edit landing inside that window aimed `interrupt` at a runtime holding no
    * such turn: `interruptQuery` answered `not-running`, the DOR-1424 latch below
@@ -491,7 +490,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // runtime that reliably throws left one orphan `session_metadata` row (and
       // one projector) per room message: `bindRoomSession` is never reached, the
       // next trigger mints a fresh UUID, and the dead row stays forever. The
-      // registry's own docs warn about exactly this ghost-row shape.
+      // registry's own docs warn about exactly this ghost-row shape. It is now
+      // written at LAUNCH and taken back when no turn runs (DOR-2447).
       //
       // **A session bound to a runtime this build does not have refuses, every
       // turn.** Refusing is the right answer — the alternative is resuming
@@ -878,6 +878,46 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // out of bookkeeping would be a process-level event for a turn that ended.
       void collecting.afterDeadline.finally(forgetTurnRuntime).catch(() => undefined);
 
+      // Who owns this session, written where a failure is LOGGED rather than
+      // thrown: a `SQLITE_BUSY` on this one bookkeeping row must never fail a
+      // turn or escape `run` (see the late write below for why).
+      let mintedRowAtLaunch = false;
+      const recordSessionOwner = async (ownedId: string): Promise<boolean> => {
+        try {
+          return await runtimeRegistry.persistSessionRuntime(
+            ownedId,
+            runtimeType,
+            { kind: 'room', externalAuthor: request.externalAuthor },
+            request.agentPath
+          );
+        } catch (err) {
+          logger.warn('[rooms] could not record which runtime owns this session', {
+            sessionId: ownedId,
+            roomId: request.room.id,
+            runtimeType,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return false;
+        }
+      };
+
+      // Taken back only for an id this run minted, and only while this process
+      // lives: a server that dies between the launch-time write and the turn
+      // starting leaves one unused row for an id nothing will ever bind — the
+      // same exposure a person's first message has, and harmless (no room
+      // points at it).
+      const forgetLaunchRow = async (): Promise<void> => {
+        if (!mintedRowAtLaunch) return;
+        mintedRowAtLaunch = false;
+        await runtimeRegistry.forgetUnstartedSession(sessionId).catch((err: unknown) => {
+          logger.warn('[rooms] could not take back the binding of a turn that never ran', {
+            sessionId,
+            roomId: request.room.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      };
+
       const result = await dispatchMessage({
         sessionId,
         clientId: ROOM_CLIENT_ID,
@@ -894,19 +934,33 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           : {}),
         // Run at LAUNCH — immediately, or when a turn queued behind this
         // session's running one is released — never at placement (§5.9, §6.1).
-        // Its files section, which carries the turn-start refresh's outcome and
-        // the counts measured after it, replaces the one placement measured, so
-        // the model is told about the files as they are when it starts (I8).
-        ...(request.prepareLaunch !== undefined
-          ? {
-              prepareLaunch: async () => {
-                const launched = await request.prepareLaunch!(sessionId);
-                return launched.files
-                  ? { roomContext: { ...roomContext, files: launched.files } }
-                  : {};
-              },
-            }
-          : {}),
+        //
+        // **The session's owner is recorded here first** (DOR-2447). A runtime
+        // may ask the server for authority the moment its turn starts — codex
+        // and opencode open the agent's connections before the model runs — and
+        // the server grants that only for a session whose runtime and agent are
+        // on record (`CanonicalConnectorRuntimeAuthorityResolver`). Written after
+        // acceptance only, every codex agent's FIRST room turn was refused. At
+        // launch, under this turn's lock, it is written exactly when a turn
+        // starts: a dispatch refused before launching writes nothing, so the
+        // ghost-row case the late write below was moved for stays closed. The
+        // late write stays too, for the id a runtime renames the session to.
+        //
+        // BEFORE the room's own launch step (the turn-start refresh), so a
+        // refresh that fails — which the dispatcher logs and launches past —
+        // can never leave the turn starting without its owner on record.
+        //
+        // Then the room's step: its files section, which carries the
+        // turn-start refresh's outcome and the counts measured after it,
+        // replaces the one placement measured, so the model is told about the
+        // files as they are when it starts (I8).
+        prepareLaunch: async () => {
+          // Only a row for an id this run MINTED is ever taken back below.
+          mintedRowAtLaunch = (await recordSessionOwner(sessionId)) && boundSessionId === null;
+          if (request.prepareLaunch === undefined) return {};
+          const launched = await request.prepareLaunch(sessionId);
+          return launched.files ? { roomContext: { ...roomContext, files: launched.files } } : {};
+        },
         roomContext,
         // Routing metadata, never prompt context: the room, the acting member and
         // this turn's id, so a `control_ui` the turn takes lands on the ROOM's
@@ -996,9 +1050,21 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
             error: err instanceof Error ? err.message : String(err),
           });
         },
+      }).catch(async (err: unknown) => {
+        // A launch that recorded this minted id and then produced no turn:
+        // nothing will ever bind that id, so its row is taken back rather than
+        // left as a ghost (the case the late write was once moved for).
+        await forgetLaunchRow();
+        throw err;
       });
 
       if (!result.accepted) {
+        // Defensive, and most likely unreachable: the dispatcher answers
+        // `accepted: false` only when the session's lock is held by somebody
+        // else, which is decided BEFORE the launch step runs — so no row was
+        // written for this dispatch. Kept so that if that ordering ever
+        // changes, a refused launch still leaves nothing behind.
+        await forgetLaunchRow();
         // Somebody else is writing to this session — the operator, most likely,
         // typing into the very agent the room just addressed. It is the ONLY way
         // to reach here now that the room waits out its own tail above, which is
@@ -1072,21 +1138,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // throw out of `run` must mean NOTHING RAN. Nothing that happens after the
       // model has spoken may throw past here. What is lost when this fails is one
       // runtime-attribution row, which the next turn on this session rewrites.
-      try {
-        await runtimeRegistry.persistSessionRuntime(
-          canonicalId,
-          runtimeType,
-          { kind: 'room', externalAuthor: request.externalAuthor },
-          request.agentPath
-        );
-      } catch (err) {
-        logger.warn('[rooms] could not record which runtime owns this session', {
-          sessionId: canonicalId,
-          roomId: request.room.id,
-          runtimeType,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      await recordSessionOwner(canonicalId);
 
       const reply = await collecting.beforeDeadline;
       if (!reply) {

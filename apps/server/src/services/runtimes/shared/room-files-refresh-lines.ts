@@ -160,7 +160,7 @@ export function refreshLines(files: RoomContextFiles, worktree: string): string[
     const k = moved.overlap.length;
     lines.push(
       `You have also changed ${k === 1 ? 'one of those files' : `${k} of those files`} ` +
-        `(listed there). Sync before you merge: \`git -C ${worktree} merge main\`.`
+        `(listed there). Sync before you merge: \`git -C "${worktree}" merge main\`.`
     );
   }
   return lines;

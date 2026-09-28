@@ -49,6 +49,41 @@ describe('AgentConnectionAccessList', () => {
     expect(screen.getByText('Unavailable')).toBeInTheDocument();
     expect(transport.getAgentConnectorConnections).toHaveBeenCalledWith('agent-1');
   });
+
+  it('shows each app’s logo, asking the server for one the app has no bundled mark for', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getAgentConnectorConnections).mockResolvedValue({
+      agentId: 'agent-1',
+      connections: [
+        {
+          connectionId: 'connection-2' as never,
+          toolkit: 'zendesk',
+          label: 'support',
+          lifecycle: 'connected',
+          authenticationStatus: 'active',
+          reconciliationStatus: 'ready',
+          operationRevisionIds: ['operation-1'],
+          everyAgent: false,
+          authoritySync: { status: 'ready' },
+        },
+      ],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <AgentConnectionAccessList agentId="agent-1" />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    await screen.findByText('Zendesk (support)');
+    expect(container.querySelector('img')).toHaveAttribute(
+      'src',
+      '/api/connectors/catalog/logos/zendesk'
+    );
+  });
 });
 
 it('explains disabled session access while hosted authority is still updating', async () => {

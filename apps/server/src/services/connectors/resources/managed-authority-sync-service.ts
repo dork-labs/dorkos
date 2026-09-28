@@ -37,7 +37,11 @@ import {
   type ConnectionId,
   type ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-schemas';
-import type { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
+import type {
+  ManagedConnectorCloudError,
+  ManagedConnectorCloudErrorCode,
+} from '../../core/auth/cloud-link-client.js';
+import { logger } from '../../../lib/logger.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type {
@@ -50,6 +54,30 @@ const MAX_RETRY_MS = 5 * 60_000;
 const STALLED_RETRY_MS = 60 * 60_000;
 const STALLED_AFTER_MS = 24 * 60 * 60_000;
 const LEASE_MS = 60_000;
+/** One delivery (read, then maybe a repeat) must finish well inside its lease. */
+const REQUEST_TIMEOUT_MS = 30_000;
+/** A command that keeps failing the same way is logged again at most this often. */
+const FAILURE_LOG_INTERVAL_MS = 15 * 60_000;
+
+/** Plain reason stored while the hosted side has not finished signing an account out. */
+const CLEANUP_PENDING_REASON = 'DorkOS’s servers haven’t finished disconnecting this account.';
+/** Plain reason stored while the hosted side holds any other change as still pending. */
+const HOSTED_PENDING_REASON = 'DorkOS’s servers haven’t finished this change yet.';
+/**
+ * The generic text an earlier version stored for every retryable failure. It
+ * says nothing a person can use, so a reader treats a row carrying it as having
+ * no reason at all.
+ */
+export const LEGACY_PENDING_REASON = 'Managed connection synchronization is pending.';
+
+/** Why one delivery attempt did not settle, in terms a log line and a reason can use. */
+interface DeliveryFailure {
+  readonly code: ManagedConnectorCloudErrorCode | 'timeout' | 'interrupted' | 'local_error';
+  /** HTTP status of the hosted response, when there was one. */
+  readonly status?: number;
+  /** The thrown error's class name, for a failure that happened on this computer. */
+  readonly errorName?: string;
+}
 
 type ManagedAuthorityRejectionCode = Extract<
   ManagedConnectorAuthorityCommandStatus,
@@ -115,6 +143,8 @@ export interface ManagedAuthoritySyncServiceOptions {
   readonly createId?: () => string;
   /** Deterministic retry-jitter seam in the inclusive range 0..1. */
   readonly random?: () => number;
+  /** Deadline seam for one delivery; defaults to `AbortSignal.timeout`. */
+  readonly timeoutSignal?: (timeoutMs: number) => AbortSignal;
 }
 
 /** Locally closed agent authority and its durable hosted command. */
@@ -152,9 +182,12 @@ function commandHash(commandJson: string): string {
   return createHash('sha256').update(commandJson).digest('hex');
 }
 
-function isManagedCloudError(error: unknown): error is ManagedConnectorCloudError {
+function isManagedCloudError(
+  error: unknown
+): error is Pick<ManagedConnectorCloudError, 'code' | 'status'> {
   return (
-    error instanceof Error &&
+    typeof error === 'object' &&
+    error !== null &&
     'code' in error &&
     typeof error.code === 'string' &&
     [
@@ -213,13 +246,17 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   private readonly now: () => Date;
   private readonly createId: () => string;
   private readonly random: () => number;
+  private readonly timeoutSignal: (timeoutMs: number) => AbortSignal;
   private recoveryRunning = false;
+  /** Last failure logged per command, so a long outage logs a line, not a flood. */
+  private readonly failureLog = new Map<string, { signature: string; loggedAt: number }>();
 
   /** Construct the local managed authority synchronizer. */
   constructor(private readonly options: ManagedAuthoritySyncServiceOptions) {
     this.now = options.now ?? (() => new Date());
     this.createId = options.createId ?? ulid;
     this.random = options.random ?? Math.random;
+    this.timeoutSignal = options.timeoutSignal ?? ((timeoutMs) => AbortSignal.timeout(timeoutMs));
   }
 
   /** Synchronize one exact stored receive generation through the existing authority outbox. */
@@ -796,6 +833,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .map((row) => row.commandId);
     if (commandIds.length === 0) return 0;
     const compactedAt = this.now().toISOString();
+    for (const commandId of commandIds) this.failureLog.delete(commandId);
     return this.options.db
       .update(connectorManagedAuthorityOutbox)
       .set({ requestJson: '{}', compactedAt, updatedAt: compactedAt })
@@ -1009,24 +1047,71 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       );
     }
     const command = ManagedConnectorAuthorityCommandSchema.parse(JSON.parse(row.requestJson));
+    // A hung hosted request must not hold this command forever; the deadline
+    // covers the read and any repeat together. A recovery pass delivers its
+    // batch one command at a time, so a pass of 50 hung commands still takes up
+    // to 50 × 30s before the next pass can start, but it always ends.
+    const deadline = this.timeoutSignal(REQUEST_TIMEOUT_MS);
+    const requestSignal = AbortSignal.any([signal, deadline]);
     try {
       let status: ManagedConnectorAuthorityCommandStatus;
       if (recoverFirst) {
         try {
-          status = await this.options.cloud.readConnectorAuthorityCommand(commandId, signal);
-          if (status.state === 'pending' && command.kind === 'set_event_subscription')
-            status = await this.options.cloud.submitConnectorAuthorityCommand(command, signal);
+          status = await this.options.cloud.readConnectorAuthorityCommand(commandId, requestSignal);
+          if (this.progressesOnlyWhenRepeated(command, status))
+            status = await this.options.cloud.submitConnectorAuthorityCommand(
+              command,
+              requestSignal
+            );
         } catch (error) {
           if (!isManagedCloudError(error) || error.code !== 'not_found') throw error;
-          status = await this.options.cloud.submitConnectorAuthorityCommand(command, signal);
+          status = await this.options.cloud.submitConnectorAuthorityCommand(command, requestSignal);
         }
       } else {
-        status = await this.options.cloud.submitConnectorAuthorityCommand(command, signal);
+        status = await this.options.cloud.submitConnectorAuthorityCommand(command, requestSignal);
       }
       return this.recordStatus(row, leaseOwner, command, status);
     } catch (error) {
-      return this.recordFailure(row, leaseOwner, error);
+      return this.recordFailure(row, leaseOwner, this.classifyFailure(error, signal, deadline));
     }
+  }
+
+  /**
+   * Whether the hosted side only moves this command forward when the same
+   * command is sent again; reading its status never does. That holds for a
+   * pending event subscription, for a resume the hosted side still holds as
+   * pending, and for a disconnect whose credential cleanup is still pending
+   * (the POST that owned the cleanup died, or a concurrent claim won): there is
+   * no hosted sweeper to finish either lifecycle change. Repeating the exact
+   * command is safe: the hosted handler matches it by id and request hash, then
+   * retries a disconnect's cleanup under its own lease, or re-checks a resume's
+   * account and settles it only while it is still pending
+   * (`applyManagedAuthorityCommand` and `finishDisconnectCleanup` in
+   * `apps/site/src/lib/connectors/managed/authority-service.ts`).
+   */
+  private progressesOnlyWhenRepeated(
+    command: ManagedConnectorAuthorityCommand,
+    status: ManagedConnectorAuthorityCommandStatus
+  ): boolean {
+    if (command.kind === 'set_event_subscription') return status.state === 'pending';
+    if (command.kind !== 'set_connection_lifecycle') return false;
+    if (command.lifecycle === 'active') return status.state === 'pending';
+    return (
+      command.lifecycle === 'disconnected' &&
+      status.state === 'applied' &&
+      status.externalCleanup === 'pending'
+    );
+  }
+
+  private classifyFailure(
+    error: unknown,
+    signal: AbortSignal,
+    deadline: AbortSignal
+  ): DeliveryFailure {
+    if (signal.aborted) return { code: 'interrupted' };
+    if (deadline.aborted) return { code: 'timeout' };
+    if (isManagedCloudError(error)) return { code: error.code, status: error.status };
+    return { code: 'local_error', errorName: error instanceof Error ? error.name : typeof error };
   }
 
   private recordStatus(
@@ -1059,19 +1144,28 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         command.lifecycle === 'disconnected' &&
         status.state === 'applied' &&
         status.externalCleanup === 'pending';
-      // Keep polling the exact status receipt until credential cleanup also settles.
+      // Keep repeating the exact command until credential cleanup also settles.
       const state = current ? (cleanupPending ? 'pending' : status.state) : 'superseded';
       const safeReason =
         state === 'rejected'
           ? this.rejectionReason(status.state === 'rejected' ? status.rejectionCode : undefined)
-          : null;
+          : state === 'pending'
+            ? cleanupPending
+              ? CLEANUP_PENDING_REASON
+              : // Only a command recovery will send again is "trying again"; a
+                // read-only re-check gets no reason, so no retry time is shown.
+                this.progressesOnlyWhenRepeated(command, status)
+                ? HOSTED_PENDING_REASON
+                : null
+            : null;
+      const nextAttemptAt = state === 'pending' ? this.nextAttempt(row, now) : null;
       const updated = tx
         .update(connectorManagedAuthorityOutbox)
         .set({
           state,
           safeReason,
           attemptCount: row.attemptCount + 1,
-          nextAttemptAt: state === 'pending' ? this.nextAttempt(row, now) : null,
+          nextAttemptAt,
           leaseOwner: null,
           leasedUntil: null,
           updatedAt: now,
@@ -1140,9 +1234,9 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
             .run();
         }
       }
-      return { state, safeReason, committed };
+      return { state, safeReason, nextAttemptAt, committed };
     });
-    const { state, safeReason, committed } = resolution;
+    const { state, safeReason, nextAttemptAt, committed } = resolution;
     if (!committed) {
       return {
         authoritySync: { status: 'pending' },
@@ -1150,12 +1244,18 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         externalCleanup: 'not_required',
       };
     }
+    if (state === 'pending') {
+      const code = safeReason === CLEANUP_PENDING_REASON ? 'cleanup_pending' : 'hosted_pending';
+      this.logUnsettled(row, { code }, nextAttemptAt, 'info');
+    } else {
+      this.failureLog.delete(row.commandId);
+    }
     return {
       authoritySync:
         state === 'applied'
           ? { status: 'ready' }
           : state === 'pending'
-            ? { status: 'pending' }
+            ? pendingSync(safeReason, nextAttemptAt)
             : {
                 status: 'failed',
                 reason: safeReason ?? 'A newer connection change replaced this request.',
@@ -1173,20 +1273,22 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   private recordFailure(
     row: typeof connectorManagedAuthorityOutbox.$inferSelect,
     leaseOwner: string,
-    error: unknown
+    failure: DeliveryFailure
   ): ConnectorManagedLifecycleSyncResult {
     const now = this.now().toISOString();
-    const code = isManagedCloudError(error) ? error.code : undefined;
     const terminal =
-      code === 'conflict' || code === 'permission_upgrade_required' || code === 'unauthorized';
-    const safeReason = this.failureReason(code);
-    this.options.db
+      failure.code === 'conflict' ||
+      failure.code === 'permission_upgrade_required' ||
+      failure.code === 'unauthorized';
+    const safeReason = this.failureReason(failure);
+    const nextAttemptAt = terminal ? null : this.nextAttempt(row, now);
+    const updated = this.options.db
       .update(connectorManagedAuthorityOutbox)
       .set({
         state: terminal ? 'rejected' : 'pending',
         safeReason,
         attemptCount: row.attemptCount + 1,
-        nextAttemptAt: terminal ? null : this.nextAttempt(row, now),
+        nextAttemptAt,
         leaseOwner: null,
         leasedUntil: null,
         updatedAt: now,
@@ -1200,8 +1302,12 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         )
       )
       .run();
+    if (updated.changes === 1) this.logUnsettled(row, failure, nextAttemptAt, 'warn');
+    if (terminal) this.failureLog.delete(row.commandId);
     return {
-      authoritySync: terminal ? { status: 'failed', reason: safeReason } : { status: 'pending' },
+      authoritySync: terminal
+        ? { status: 'failed', reason: safeReason }
+        : pendingSync(safeReason, nextAttemptAt),
       applied: false,
       externalCleanup:
         row.scopeKind === 'connection_lifecycle' &&
@@ -1211,6 +1317,47 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
           ? 'pending'
           : 'not_required',
     };
+  }
+
+  /**
+   * Log one unsettled delivery: the first time a command fails, whenever the
+   * way it fails changes, and otherwise at most once per
+   * {@link FAILURE_LOG_INTERVAL_MS}. Ids and codes only, never hosted text.
+   */
+  private logUnsettled(
+    row: typeof connectorManagedAuthorityOutbox.$inferSelect,
+    failure: { readonly code: string; readonly status?: number; readonly errorName?: string },
+    nextAttemptAt: string | null,
+    level: 'warn' | 'info'
+  ): void {
+    const signature = `${failure.code}:${failure.status ?? ''}`;
+    const now = this.now().getTime();
+    const last = this.failureLog.get(row.commandId);
+    if (last && last.signature === signature && now - last.loggedAt < FAILURE_LOG_INTERVAL_MS)
+      return;
+    this.failureLog.set(row.commandId, { signature, loggedAt: now });
+    const context = {
+      code: failure.code,
+      ...(failure.status === undefined ? {} : { status: failure.status }),
+      ...(failure.errorName === undefined ? {} : { errorName: failure.errorName }),
+      commandId: row.commandId,
+      scopeKind: row.scopeKind,
+      attempt: row.attemptCount + 1,
+      nextAttemptAt,
+    };
+    if (level === 'warn') {
+      logger.warn(
+        nextAttemptAt
+          ? '[Connectors] Managed authority command did not settle; retrying'
+          : '[Connectors] Managed authority command was refused; not retrying',
+        context
+      );
+    } else {
+      logger.info(
+        '[Connectors] Managed authority command still pending on the hosted side; retrying',
+        context
+      );
+    }
   }
 
   private isCurrent(
@@ -1434,16 +1581,37 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     }
   }
 
-  private failureReason(code?: string): string {
-    switch (code) {
+  private failureReason(failure: DeliveryFailure): string {
+    switch (failure.code) {
       case 'permission_upgrade_required':
         return 'Relink this instance to enable managed connections.';
       case 'unauthorized':
         return 'This instance is no longer linked.';
       case 'conflict':
         return 'The hosted service refused a conflicting authority command.';
-      default:
-        return 'Managed connection synchronization is pending.';
+      case 'network_error':
+        return 'Couldn’t reach DorkOS’s servers.';
+      case 'timeout':
+        return 'DorkOS’s servers didn’t answer in time.';
+      case 'invalid_response':
+        return 'DorkOS’s servers sent back an answer that didn’t make sense.';
+      case 'request_failed':
+      case 'not_found':
+        return failure.status !== undefined && failure.status >= 500
+          ? 'DorkOS’s servers had a problem.'
+          : 'DorkOS’s servers turned the request down.';
+      case 'interrupted':
+        return 'The last try was stopped before it finished.';
+      case 'local_error':
+        return 'Something went wrong on this computer during the last try.';
     }
   }
+}
+
+/** A pending sync, carrying its plain reason and next try only when there is one. */
+function pendingSync(
+  reason: string | null,
+  retryAt: string | null
+): ConnectorManagedLifecycleSyncResult['authoritySync'] {
+  return reason && retryAt ? { status: 'pending', reason, retryAt } : { status: 'pending' };
 }

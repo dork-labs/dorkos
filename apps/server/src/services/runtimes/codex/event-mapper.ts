@@ -44,7 +44,12 @@ import {
   type RuntimeErrorCopy,
 } from '@dorkos/shared/runtime-error-classification';
 import { recordCodexMedia, type CodexMediaState } from './media-capture.js';
-import { readCodexTurnContextUsage, type CodexTurnContextUsage } from './turn-context-usage.js';
+import {
+  readCodexTurnReading,
+  type CodexTurnContextUsage,
+  type CodexTurnReading,
+} from './turn-context-usage.js';
+import { isCodexUsageLimitMessage, noteCodexTurnUsage } from './account-usage.js';
 
 /**
  * This adapter's runtime type — the identity {@link describeRuntimeError} turns
@@ -58,11 +63,11 @@ type ReadTurnContextUsage = (
   threadId: string,
   turnStartedAtMs: number,
   signal: AbortSignal
-) => Promise<CodexTurnContextUsage | null>;
+) => Promise<CodexTurnReading | null>;
 
 /** Optional dependencies for one Codex event-mapping context. */
 export interface CodexEventContextOptions {
-  /** Native rollout reader used after a completed turn. */
+  /** Native rollout reader used after a completed or failed turn. */
   readTurnContextUsage?: ReadTurnContextUsage;
   /** Maximum wait for optional native context metadata. */
   turnContextUsageTimeoutMs?: number;
@@ -119,8 +124,10 @@ export interface CodexEventContext extends CodexMediaState {
   threadId?: string;
   /** Local observation time for the current `turn.started` event. */
   turnStartedAtMs?: number;
-  /** Native context reader; optional metadata failures never fail the turn. */
+  /** Native context and rate-limit reader; optional metadata failures never fail the turn. */
   readonly readTurnContextUsage: ReadTurnContextUsage;
+  /** Set once this turn reported a usage limit (`account-usage.ts`). */
+  limitReportedThisTurn?: boolean;
   /** Maximum wait for the native context reader. */
   readonly turnContextUsageTimeoutMs: number;
   /** Clock used to mark a turn's lower timestamp boundary. */
@@ -162,7 +169,7 @@ export function createCodexEventContext(
     readTurnContextUsage:
       options.readTurnContextUsage ??
       ((threadId, turnStartedAtMs, signal) =>
-        readCodexTurnContextUsage({ threadId, turnStartedAtMs, signal })),
+        readCodexTurnReading({ threadId, turnStartedAtMs, signal })),
     turnContextUsageTimeoutMs: options.turnContextUsageTimeoutMs ?? TURN_CONTEXT_USAGE_TIMEOUT_MS,
     now: options.now ?? Date.now,
     lastTextById: new Map(),
@@ -279,9 +286,7 @@ export function mapCodexEvent(
   }
 }
 
-async function readCompletedTurnContext(
-  ctx: CodexEventContext
-): Promise<CodexTurnContextUsage | null> {
+async function readFinishedTurn(ctx: CodexEventContext): Promise<CodexTurnReading | null> {
   const threadId = ctx.threadId;
   const turnStartedAtMs = ctx.turnStartedAtMs;
   if (threadId === undefined || turnStartedAtMs === undefined) return null;
@@ -289,7 +294,7 @@ async function readCompletedTurnContext(
   const controller = new AbortController();
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (usage: CodexTurnContextUsage | null): void => {
+    const finish = (usage: CodexTurnReading | null): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -329,9 +334,22 @@ export async function* mapCodexThread(
 ): AsyncGenerator<StreamEvent> {
   try {
     for await (const event of events) {
-      const turnContextUsage =
-        event.type === 'turn.completed' ? await readCompletedTurnContext(ctx) : null;
-      for (const mapped of mapCodexEvent(event, ctx, turnContextUsage)) {
+      const finished = event.type === 'turn.completed' || event.type === 'turn.failed';
+      const reading = finished ? await readFinishedTurn(ctx) : null;
+      // The account's rate limits ride the same rollout read (spec
+      // claude-account-fleet §6 R): recorded for Codex's `default` account, and
+      // a limit they (or the failure) imply is announced before `done`, so the
+      // session settles already carrying it.
+      const limitStatus = finished
+        ? noteCodexTurnUsage(
+            ctx,
+            reading?.rateLimits ?? [],
+            event.type === 'turn.failed' && isCodexUsageLimitMessage(event.error.message),
+            new Date(ctx.now())
+          )
+        : null;
+      for (const mapped of mapCodexEvent(event, ctx, reading?.context ?? null)) {
+        if (mapped.type === 'done' && limitStatus) yield limitStatus;
         yield mapped;
         if (mapped.type === 'done') return;
       }
