@@ -363,6 +363,86 @@ describe('event source through real durable private acceptance', () => {
     expect(readChatSession(f.db, f.subscriptionId)).toBe(accepted.receipt.sessionId);
   });
 
+  it('opens a new chat, at the seed mode, once the owner has raised the kept chat’s mode', async () => {
+    const f = await fixture();
+    await f.adapter.prepareTarget(f.ref);
+    const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    f.acceptance.claim(first.receipt.id, await f.acceptance.prepare(first.receipt.id));
+    f.acceptance.markTurnStarted(first.receipt.id, 1);
+    const modeOf = (sessionId: string) =>
+      (
+        f.db.$client
+          .prepare('SELECT permission_mode FROM session_metadata WHERE session_id = ?')
+          .get(sessionId) as { permission_mode: string | null }
+      ).permission_mode;
+    expect(modeOf(first.receipt.sessionId)).toBeNull();
+    // The owner opened the chat and gave their own turns full autonomy.
+    f.db.$client
+      .prepare(
+        "UPDATE session_metadata SET permission_mode = 'bypassPermissions' WHERE session_id = ?"
+      )
+      .run(first.receipt.sessionId);
+
+    const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
+    await f.adapter.prepareTarget(second);
+    const accepted = f.adapter.acceptPrepared(f.acceptance, second);
+
+    expect(accepted.receipt.sessionId).not.toBe(first.receipt.sessionId);
+    expect(modeOf(accepted.receipt.sessionId)).toBeNull();
+    expect(readChatSession(f.db, f.subscriptionId)).toBe(accepted.receipt.sessionId);
+    expect(modeOf(first.receipt.sessionId)).toBe('bypassPermissions');
+  });
+
+  it('re-checks the kept chat’s mode at the claim and sends the event back to be retried', async () => {
+    const f = await fixture();
+    await f.adapter.prepareTarget(f.ref);
+    const first = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    f.acceptance.claim(first.receipt.id, await f.acceptance.prepare(first.receipt.id));
+    f.acceptance.markTurnStarted(first.receipt.id, 1);
+
+    const second = f.nextEvent('signed-event-two', '2026-09-07T12:05:00.000Z');
+    await f.adapter.prepareTarget(second);
+    // Raised between preparation and the claim.
+    f.db.$client
+      .prepare(
+        "UPDATE session_metadata SET permission_mode = 'bypassPermissions' WHERE session_id = ?"
+      )
+      .run(first.receipt.sessionId);
+    expect(() => f.adapter.acceptPrepared(f.acceptance, second)).toThrow();
+    expect(
+      f.db
+        .select()
+        .from(sessionMessageQueue)
+        .all()
+        .map((row) => row.sessionId)
+    ).not.toContain(first.receipt.sessionId);
+    expect(
+      f.db
+        .select()
+        .from(connectorEventInbox)
+        .where(eq(connectorEventInbox.id, second.inboxId))
+        .get()?.state
+    ).toBe('leased');
+  });
+
+  it('cancels an accepted event whose chat mode was raised before it ran', async () => {
+    const f = await fixture();
+    await f.adapter.prepareTarget(f.ref);
+    const accepted = f.adapter.acceptPrepared(f.acceptance, f.ref);
+    const prepared = await f.acceptance.prepare(accepted.receipt.id);
+    f.db.$client
+      .prepare(
+        "UPDATE session_metadata SET permission_mode = 'bypassPermissions' WHERE session_id = ?"
+      )
+      .run(accepted.receipt.sessionId);
+    const dispatch = vi.fn();
+    expect(() => {
+      f.acceptance.claim(accepted.receipt.id, prepared);
+      dispatch();
+    }).toThrow();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('refuses revoked authority between prepare and the final dispatch transaction', async () => {
     const f = await fixture();
     await f.adapter.prepareTarget(f.ref);
