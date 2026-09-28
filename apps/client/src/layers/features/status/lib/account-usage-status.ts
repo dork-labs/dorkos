@@ -176,11 +176,16 @@ export function pickUsage({
 }
 
 /**
- * The class that dims a stale number (decided, Q17): muted text on the number
- * only, never on its icon or the words around it. Empty when fresh.
+ * The class that dims a stale number (Q17, refined by the orchestrator on
+ * 2026-09-28): on the number only, never on its icon or the words around it.
+ * The status line is already muted, so a healthy number goes a step lighter
+ * (`/70`, the lightest step that keeps 3:1 contrast in both themes: 3.58:1
+ * light, 4.31:1 dark). An amber or red number turns muted. Empty when fresh.
  *
  * @param stale - Whether the reading is older than an hour (`isStale`).
+ * @param toned - Whether the number wears a warning or error color.
  */
-export function staleNumberClass(stale: boolean): string {
-  return stale ? 'text-muted-foreground' : '';
+export function staleNumberClass(stale: boolean, toned = false): string {
+  if (!stale) return '';
+  return toned ? 'text-muted-foreground' : 'text-muted-foreground/70';
 }

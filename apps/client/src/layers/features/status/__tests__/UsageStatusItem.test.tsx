@@ -261,19 +261,34 @@ describe('UsageStatusItem — freshness (spec claude-account-ui §6.8)', () => {
   };
   const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
 
-  it('dims the number once the reading is older than 60 minutes', () => {
+  it('takes a stale healthy number a step lighter past 60 minutes', () => {
     render(<UsageStatusItem usage={usage} observedAt={minutesAgo(61)} now={NOW} />, {
       wrapper: Wrapper,
     });
-    expect(screen.getByText('40%')).toHaveClass('text-muted-foreground');
-    expect(screen.getByLabelText('Subscription usage')).not.toHaveClass('text-muted-foreground');
+    // The line is already muted, so a healthy number needs the lighter step to show.
+    expect(screen.getByText('40%')).toHaveClass('text-muted-foreground/70');
+    expect(screen.getByLabelText('Subscription usage')).not.toHaveClass('text-muted-foreground/70');
   });
 
-  it('does not dim it at 59 minutes', () => {
+  it('does not dim a fresh healthy number at 59 minutes', () => {
     render(<UsageStatusItem usage={usage} observedAt={minutesAgo(59)} now={NOW} />, {
       wrapper: Wrapper,
     });
+    expect(screen.getByText('40%')).not.toHaveClass('text-muted-foreground/70');
     expect(screen.getByText('40%')).not.toHaveClass('text-muted-foreground');
+  });
+
+  it('mutes a stale amber number rather than lightening it', () => {
+    render(
+      <UsageStatusItem
+        usage={{ ...usage, utilization: 0.91, state: 'warning' }}
+        observedAt={minutesAgo(61)}
+        now={NOW}
+      />,
+      { wrapper: Wrapper }
+    );
+    expect(screen.getByText('91%')).toHaveClass('text-muted-foreground');
+    expect(screen.getByText('91%')).not.toHaveClass('text-muted-foreground/70');
   });
 
   it('never dims a reading whose time is unknown', () => {

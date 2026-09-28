@@ -60,8 +60,9 @@ function windowsToShow(
 /**
  * The detail behind the status-bar account chip (spec `claude-account-ui`
  * §6.1): the account and its plan, one bar per usage window with when it
- * resets, how fresh those numbers are (§6.8), the flow item the session serves, and, only while the session is out
- * and the server would take the move, "Continue on another account".
+ * resets, the flow item the session serves, and, only while the session is out
+ * and the server would take the move, "Continue on another account". It ends
+ * with how fresh the numbers are (§6.8).
  */
 export function AccountPopover({
   account,
@@ -105,7 +106,6 @@ export function AccountPopover({
               <UsageBar key={key} window={window} label={label} now={now} />
             ))}
           </div>
-          {observedAt !== null && <UsageFreshnessLine observedAt={observedAt} now={now} />}
           {account.trackerItem && (
             <p className="text-muted-foreground text-2xs">Working on {account.trackerItem.id}</p>
           )}
@@ -114,6 +114,7 @@ export function AccountPopover({
               Continue on another account →
             </Button>
           )}
+          {observedAt !== null && <UsageFreshnessLine observedAt={observedAt} now={now} />}
         </div>
       </ResponsivePopoverContent>
     </ResponsivePopover>

@@ -204,3 +204,14 @@ Under S4's contract 6d, Claude Code's standalone default (this computer's own si
 - **Its Settings row:** Settings → Runtimes shows it as a row in the existing account row pattern, with its usage bars and color control, its path as `~/.claude`, and no remove button. The color is stored in `runtimes.claudeCode.defaultAccountColor` (S4, DOR-2492). "Found on this computer" keeps skipping it.
 
 Spec: §6.5, §8.3, §8.5, §14 (Q21).
+
+## 13. Cached status bar details (orchestrator, 2026-09-28)
+
+Four calls on the cached usage and context in the status bar (task 2.4), each inside the existing chip's pattern.
+
+1. **A stale healthy number goes a step lighter.** The status bar is already muted, so muting a normal number again changes nothing you can see. When a healthy usage number is older than an hour it is drawn at 70% of the muted color (`text-muted-foreground/70`). The orchestrator asked for about 60%, but 60% falls under 3:1 contrast in light mode (2.87:1), so 70% is the lightest step that stays at or above 3:1 in both themes: 3.58:1 in light and 4.31:1 in dark, against the page background. An amber or red number turns muted as first built. The "as of" line always says how old the reading is.
+2. **The "as of" line ends the account popover**, after the bars, the flow item and "Continue on another account".
+3. **The /context usage popover is as wide as the account popover** (288px), so window names like "This week" are not cut off.
+4. **Only usage dims.** A context reading does not change between turns, so an old one is still true and is never dimmed. Its tooltip still says how old it is.
+
+Spec: §6.8.

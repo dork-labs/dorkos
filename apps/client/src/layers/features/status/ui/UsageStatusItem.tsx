@@ -155,7 +155,7 @@ export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: Usa
             data-stale={stale || undefined}
           >
             <Gauge className="size-(--size-icon-xs)" />
-            <span className={staleNumberClass(stale)}>{pct}%</span>
+            <span className={staleNumberClass(stale, colorClass !== '')}>{pct}%</span>
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-56">
