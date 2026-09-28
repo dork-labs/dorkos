@@ -1,5 +1,7 @@
 import { formatAsOf } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
+import { cn } from '@/layers/shared/lib';
+import { MUTED_TEXT, type UsageSurface } from '../lib/usage-surface';
 
 /** Props for {@link UsageFreshnessLine}. */
 export interface UsageFreshnessLineProps {
@@ -7,6 +9,8 @@ export interface UsageFreshnessLineProps {
   observedAt: string;
   /** A fixed moment to read from (tests and the Dev Playground); else the clock. */
   now?: Date;
+  /** What the line is painted on; the inverted tooltip needs its own muted text. */
+  surface?: UsageSurface;
 }
 
 /**
@@ -15,11 +19,15 @@ export interface UsageFreshnessLineProps {
  * `claude-account-ui` §6.8). Re-renders once a minute, so a cached reading ages
  * on screen.
  */
-export function UsageFreshnessLine({ observedAt, now: fixedNow }: UsageFreshnessLineProps) {
+export function UsageFreshnessLine({
+  observedAt,
+  now: fixedNow,
+  surface = 'panel',
+}: UsageFreshnessLineProps) {
   const tick = useNow();
   const now = fixedNow ?? new Date(tick);
   return (
-    <p data-slot="usage-freshness" className="text-muted-foreground text-2xs">
+    <p data-slot="usage-freshness" className={cn(MUTED_TEXT[surface], 'text-2xs')}>
       {formatAsOf(observedAt, now)}
     </p>
   );

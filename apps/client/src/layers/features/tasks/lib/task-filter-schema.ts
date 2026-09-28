@@ -50,9 +50,9 @@ export const taskFilterSchema = createFilterSchema<Task>({
       pending_approval: 'Pending Approval',
     },
     colors: {
-      active: 'text-emerald-400',
+      active: 'text-status-success',
       paused: 'text-muted-foreground',
-      pending_approval: 'text-amber-400',
+      pending_approval: 'text-status-warning-dot',
     },
   }),
   type: enumFilter({

@@ -10,7 +10,7 @@
  */
 import type { GitStatusResponse, UsageStatus } from '@dorkos/shared/types';
 import type { SessionStatusData } from '@/layers/entities/session';
-import { gitPromotionState } from '@/layers/features/status';
+import { gitPromotionState, showsStaleMark } from '@/layers/features/status';
 import type {
   ActiveSubagent,
   SessionDiagnostics,
@@ -196,12 +196,27 @@ const DEGRADED_STATUS: SessionStatusData = {
 export interface StatusScenario {
   /** What this state is, in the words a reviewer would use. */
   label: string;
-  /** Live state the promotion rules read. */
-  ctx: StatusPromotionContext;
-  /** Everything the items need, minus `density`. */
-  input: Omit<StatusItemNodesInput, 'density'>;
+  /** Live state the promotion rules read, minus what the row derives (`usageStale`). */
+  ctx: Omit<StatusPromotionContext, 'usageStale'>;
+  /** Everything the items need, minus `density` and the row's clock (`now`). */
+  input: Omit<StatusItemNodesInput, 'density' | 'now'>;
   /** What the Session panel behind the `⋯` reports for this session. */
   diagnostics: SessionDiagnostics;
+}
+
+/**
+ * A scenario's promotion context, with `usageStale` derived from its own usage
+ * by the rule the usage item draws from (`showsStaleMark`), so a showcase row
+ * can never say one thing in the item and budget for another.
+ *
+ * @param scenario - The row's scenario.
+ * @param now - The row's clock, the same one its items read.
+ */
+export function scenarioContext(scenario: StatusScenario, now: Date): StatusPromotionContext {
+  return {
+    ...scenario.ctx,
+    usageStale: showsStaleMark(scenario.input.usage, scenario.input.usageObservedAt, now),
+  };
 }
 
 const HEALTHY_DIAGNOSTICS: SessionDiagnostics = {
@@ -458,6 +473,25 @@ export const RATE_LIMITED: StatusScenario = {
     ...DEGRADED_DIAGNOSTICS,
     permissionMode: 'default',
     usage: USAGE_EXHAUSTED,
+  },
+};
+
+/**
+ * {@link RATE_LIMITED}, read from the account's cached reading two hours old.
+ *
+ * The usage item then says "100% · old", the widest a usage item gets, and it
+ * is rigid: it keeps every pixel. This is the row that proves the budget pays
+ * for that width rather than letting a neighbour paint over the `⋯`
+ * (spec `claude-account-ui` §6.8, 04 §13).
+ */
+export const RATE_LIMITED_STALE: StatusScenario = {
+  ...RATE_LIMITED,
+  label: 'Rate limited, from a reading two hours old',
+  input: {
+    ...RATE_LIMITED.input,
+    sessionId: 'showcase-rate-limited-stale',
+    usageSource: 'account',
+    usageObservedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
   },
 };
 

@@ -118,6 +118,12 @@ export interface StatusPromotionContext {
   /** Runtime-neutral usage descriptor, or `null` when the session has none. */
   usage: UsageStatus | null;
   /**
+   * Whether the usage item is drawing "· old" after its number: a utilization
+   * reading older than an hour (`showsStaleMark`, the same rule the item draws
+   * from). It makes the item wider than one slot, so the budget has to know.
+   */
+  usageStale: boolean;
+  /**
    * How many subagents this session has **in flight right now** — never how many
    * it could call.
    *
@@ -295,6 +301,17 @@ export interface StatusBarItemConfig {
    * claim that the row can afford one more thing that will not move.
    */
   rigid?: true;
+  /**
+   * Whether the item, in this state, draws more than the bounded value a slot is
+   * priced for. The budget charges a wide item two slots, so the least urgent
+   * item moves under the `⋯` instead of being painted over (see
+   * `applyStatusBudget`).
+   *
+   * Only for an item that is also {@link rigid}: a shrinkable item gives width
+   * back on its own. `usage` is the one today: a stale reading says
+   * "100% · old", about 36px past its slot, and it cannot give any of that up.
+   */
+  wide?: (ctx: StatusPromotionContext) => boolean;
 }
 
 /** Human-readable labels for each popover group, used as section headers. */
@@ -468,6 +485,8 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     // the account chip is showing, which carries usage itself. Severity still
     // rises near a limit.
     promote: (ctx) => ctx.usage !== null && hasRenderableUsage(ctx.usage) && !isUsageAbsorbed(ctx),
+    // "100% · old" (04 §13): the word is the signal, so the budget pays for it.
+    wide: (ctx) => ctx.usageStale,
     severity: (ctx) => {
       if (ctx.usage?.state === 'exhausted') return SEVERITY.USAGE_EXHAUSTED;
       if (ctx.usage?.state === 'warning') return SEVERITY.USAGE_WARNING;

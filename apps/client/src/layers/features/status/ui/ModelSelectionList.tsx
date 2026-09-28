@@ -252,7 +252,7 @@ function ModelCard({ model, isSelected }: { model: ModelOption; isSelected: bool
           // card that exists to change a decision, and half a warning is worse
           // than none. It is a short sentence, so wrapping costs a row at most.
           <div
-            className="text-2xs mt-0.5 leading-tight text-amber-600 dark:text-amber-500"
+            className="text-2xs text-status-warning-fg mt-0.5 leading-tight"
             data-testid={`model-limitation-${model.value}`}
           >
             {limitation}
@@ -278,7 +278,7 @@ function UnavailableSavedModel({ value }: { value: string }) {
   return (
     <div className="space-y-1.5" data-testid="model-unavailable-saved">
       <div className="border-border flex w-full items-center gap-3 rounded-xl border border-dashed p-3 opacity-80">
-        <AlertCircle className="size-4 shrink-0 text-amber-500" />
+        <AlertCircle className="text-status-warning-fg size-4 shrink-0" />
         {/* The saved id is ellipsized from the start like a card's: this row
             exists so the person can read WHICH model went away, and the tail is
             the half that says which.
