@@ -2980,7 +2980,7 @@ describe('runHarnessSync: harness.autoAdopt in a folder DorkOS does not own', ()
 
   /** B1's frozen sentence, spelled out rather than imported from what produced it. */
   const S8 =
-    'harness.autoAdopt is on, and it does nothing here: DorkOS only moves skills on its own inside the agent folders and room folders it owns. Run dorkos harness adopt <name> to move one yourself.';
+    'harness.autoAdopt is on, and it does nothing here: DorkOS only moves skills on its own inside the agent folders it owns. Run dorkos harness adopt <name> to move one yourself.';
 
   /** Write `config.json` into the staged dork home with the flag at `value`. */
   function writeAutoAdopt(value: boolean): void {

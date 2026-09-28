@@ -48,6 +48,7 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
+import { nameForAgents } from './room-context.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
 import type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
@@ -144,6 +145,18 @@ export class RoomService {
   /** The author registry, for callers that need to resolve their own identity. */
   get authorRegistry(): AuthorRegistry {
     return this.parts.core.authors;
+  }
+
+  /**
+   * The name an AGENT is told for an author: the stored label, except the
+   * install's owner, who is named by their profile name or "the operator" —
+   * never the registry's `'You'`, which an agent reads as itself (DOR-2458).
+   * `null` when no author row carries the id.
+   *
+   * @param authorId - The author to name.
+   */
+  nameForAgents(authorId: string): string | null {
+    return nameForAgents(this.parts.core, authorId);
   }
   /**
    * The room's shared canvas — the table, and the single writer that changes it.

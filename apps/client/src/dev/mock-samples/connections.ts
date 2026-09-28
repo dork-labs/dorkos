@@ -4,6 +4,7 @@
  * popular apps the catalog always lists.
  */
 import type {
+  ConnectorAppActions,
   ConnectorCatalogService,
   ConnectorConnectionDetail,
   ConnectorConnectionSummary,
@@ -294,18 +295,60 @@ export const MOCK_GMAIL_USAGE: ConnectorUsageItem[] = [
   usage(4, 'dorkbot', 'GMAIL_CREATE_EMAIL_DRAFT', 90),
 ];
 
+/** What Gmail lets agents do: its main actions first, as the service lists them. */
+export const MOCK_GMAIL_ACTIONS: ConnectorAppActions = {
+  status: 'listed',
+  toolkit: 'gmail',
+  toolkitVersion: '2026-09-01',
+  completeness: 'complete',
+  fetchedAt: '2026-09-27T00:00:00.000Z',
+  actions: (
+    [
+      ['GMAIL_FETCH_EMAILS', 'Fetch Emails', 'read', true],
+      ['GMAIL_SEARCH_EMAILS', 'Search Emails', 'read', true],
+      ['GMAIL_LIST_LABELS', 'List Labels', 'read', true],
+      ['GMAIL_GET_PROFILE', 'Get Profile', 'read', false],
+      ['GMAIL_FETCH_MESSAGE_BY_THREAD_ID', 'Fetch Message By Thread ID', 'read', false],
+      ['GMAIL_SEND_EMAIL', 'Send Email', 'write', true],
+      ['GMAIL_CREATE_EMAIL_DRAFT', 'Create Email Draft', 'write', true],
+      ['GMAIL_REPLY_TO_THREAD', 'Reply To Thread', 'write', true],
+      ['GMAIL_ADD_LABEL_TO_EMAIL', 'Add Label To Email', 'write', false],
+      ['GMAIL_MOVE_TO_TRASH', 'Move To Trash', 'destructive', true],
+      ['GMAIL_DELETE_DRAFT', 'Delete Draft', 'destructive', false],
+    ] as const
+  ).map(([operationSlug, displayName, capabilityClassification, important]) => ({
+    operationSlug,
+    displayName,
+    capabilityClassification,
+    important,
+  })),
+};
+
 /** What the "Who can use it?" card reads for the Gmail account: DorkBot and mailroom. */
 export function mockAccessPreview(connectionId: string): ConnectorReconciliationPreview {
-  const candidate = (id: string, classification: 'read' | 'write') => ({
-    operationRevisionId: id,
-    toolkit: 'gmail',
-    operationSlug: `gmail.${id}`,
-    toolkitVersion: '2026-09-01',
-    capabilityClassification: classification,
-    retryPolicy: 'never' as const,
-    inputSchema: {},
-    supported: true,
-  });
+  // The account's grant snapshot: Gmail's actions, as the panel's list names them.
+  const candidates =
+    MOCK_GMAIL_ACTIONS.status === 'listed'
+      ? MOCK_GMAIL_ACTIONS.actions.map((action) => ({
+          operationRevisionId: `${action.operationSlug}-v1`,
+          toolkit: 'gmail',
+          operationSlug: action.operationSlug,
+          toolkitVersion: '2026-09-01',
+          capabilityClassification: action.capabilityClassification,
+          retryPolicy: 'never' as const,
+          inputSchema: {},
+          supported: true,
+        }))
+      : [];
+  const ids = (level: 'read' | 'read-write') =>
+    candidates
+      .filter(
+        (candidate) =>
+          candidate.capabilityClassification === 'read' ||
+          (level === 'read-write' && candidate.capabilityClassification === 'write')
+      )
+      .map((candidate) => candidate.operationRevisionId)
+      .sort();
   return {
     previewId: `preview-${connectionId}`,
     connection: {
@@ -316,14 +359,14 @@ export function mockAccessPreview(connectionId: string): ConnectorReconciliation
       custody: 'managed',
       reconciliationStatus: 'ready',
     },
-    candidates: [candidate('list-v1', 'read'), candidate('send-v1', 'write')],
+    candidates,
     agents: [
       { agentId: 'dorkbot', displayName: 'DorkBot' },
       { agentId: 'mailroom', displayName: 'mailroom' },
     ],
     currentGrants: [
-      { agentId: 'dorkbot', operationRevisionIds: ['list-v1', 'send-v1'] },
-      { agentId: 'mailroom', operationRevisionIds: ['list-v1'] },
+      { agentId: 'dorkbot', operationRevisionIds: ids('read-write') },
+      { agentId: 'mailroom', operationRevisionIds: ids('read') },
     ],
     everyAgent: { available: true, operationRevisionIds: [] },
     catalogComplete: true,

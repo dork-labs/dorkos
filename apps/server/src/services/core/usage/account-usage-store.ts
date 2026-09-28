@@ -543,6 +543,37 @@ export class AccountUsageStore {
   }
 
   /**
+   * The usage of the account a session running in `root` bills, from memory
+   * only (synchronous): the registered account with that folder, else the
+   * ambient `default` when it is the machine default's folder, else the
+   * folder's memory-only record, the same attribution {@link record} uses.
+   * A memory-only folder with no readings yet still answers (no windows,
+   * `accountId: null`, its `path` set), so a client can match the first
+   * `account_usage` event for it by (`runtime`, `path`).
+   *
+   * Expressed through {@link usageAtPath}, so the two lookups cannot drift:
+   * only the empty memory-only answer is added here.
+   *
+   * @param runtime - The session's runtime.
+   * @param root - The folder the session runs in.
+   */
+  peekByRoot(runtime: LedgerRuntime, root: string): AccountUsage {
+    const found = this.usageAtPath(runtime, root);
+    if (found) return found;
+    const empty: UsageRecord = {
+      runtime,
+      ledgerId: null,
+      path: canonicalAccountPath(root, undefined, this.realpath),
+      ledger: null,
+      pending: [],
+      subscriptionType: null,
+      failures: 0,
+    };
+    // A memory record always resolves (it is never file-backed).
+    return this.usageOfRecord(empty)!;
+  }
+
+  /**
    * One account's usage, from memory (synchronous).
    *
    * @param account - An account from {@link listAccounts}.

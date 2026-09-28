@@ -1382,15 +1382,27 @@ export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void 
  * - `id-invalid`: the id fails {@link ACCOUNT_ID_PATTERN} (a hand edit);
  *   listed, but it has no usage file and cannot be routed.
  * - `color-invalid`: `color` is not lowercase `#rrggbb`; read as `null`.
+ * - `label-invalid`: `label` is set but not text; read as `null`.
+ * - `id-minted`: a listed row had no id; read with the one minted for it.
+ * - `accounts-invalid`: `accounts` is set but not a list; read as no rows.
+ *   It names no row, so its `index` is `-1`.
  */
 export type ClaudeAccountReadWarningCode =
-  'row-invalid' | 'path-invalid' | 'id-duplicate' | 'id-reserved' | 'id-invalid' | 'color-invalid';
+  | 'row-invalid'
+  | 'path-invalid'
+  | 'id-duplicate'
+  | 'id-reserved'
+  | 'id-invalid'
+  | 'color-invalid'
+  | 'label-invalid'
+  | 'id-minted'
+  | 'accounts-invalid';
 
 /** One thing the registry reader noticed about a stored row. */
 export interface ClaudeAccountReadWarning {
   /** What was wrong. */
   code: ClaudeAccountReadWarningCode;
-  /** The row's position in the STORED array. */
+  /** The row's position in the STORED array, or `-1` for `accounts-invalid`. */
   index: number;
   /** One line naming the row and what the reader did about it. */
   message: string;
@@ -1422,9 +1434,14 @@ export interface ClaudeAccountRowView {
  * the settings screen was never shown is exactly a row the write path keeps.
  *
  * @param value - The stored `runtimes.claudeCode.accounts` value, any shape.
+ * @param noun - What a warning calls one row, starting with a capital: `Claude account`
+ *   (the default), `Codex account` or `OpenCode account`.
  * @returns Every stored row with its verdict, and the warnings for the skipped ones.
  */
-export function classifyClaudeAccountRows(value: unknown): {
+export function classifyClaudeAccountRows(
+  value: unknown,
+  noun = 'Claude account'
+): {
   rows: ClaudeAccountRowView[];
   warnings: ClaudeAccountReadWarning[];
 } {
@@ -1437,7 +1454,7 @@ export function classifyClaudeAccountRows(value: unknown): {
       warnings.push({
         code: 'row-invalid',
         index,
-        message: `Claude account ${index + 1} is not an object, so it was skipped.`,
+        message: `${noun} ${index + 1} is not an object, so it was skipped.`,
       });
       return { index, row: null, listed: false };
     }
@@ -1447,7 +1464,7 @@ export function classifyClaudeAccountRows(value: unknown): {
       warnings.push({
         code: 'path-invalid',
         index,
-        message: `Claude account "${id}" has no absolute path, so it was skipped.`,
+        message: `${noun} "${id}" has no absolute path, so it was skipped.`,
       });
       return { index, row, listed: false };
     }
@@ -1455,7 +1472,7 @@ export function classifyClaudeAccountRows(value: unknown): {
       warnings.push({
         code: 'id-duplicate',
         index,
-        message: `Claude account "${id}" repeats an earlier account's id, so it was skipped.`,
+        message: `${noun} "${id}" repeats an earlier account's id, so it was skipped.`,
       });
       return { index, row, listed: false };
     }
@@ -1497,17 +1514,25 @@ export type ReadClaudeAccount = ClaudeCodeAccount & {
  * stays listed with a warning; a bad `color` reads as `null`. Each row's color
  * is resolved by its position among the LISTED rows, so a skipped hand edit
  * never shifts the colors the operator sees. A missing or non-string `label`
- * reads as `null`.
+ * reads as `null`. The warning codes are the contract's (`identity.cases` in
+ * flow's conformance fixture), so a minted id, a label that is not text and an
+ * `accounts` that is not a list are each reported too.
  *
  * Read-time only, by design. Nothing here writes: the migration remains the sole
  * writer of the settled shape, and a reader that heals cannot corrupt a file it
  * never touches. Nothing here logs either (this module is pure): the caller logs
  * `warnings`.
  *
- * @param raw - The stored `runtimes.claudeCode` block, or anything at all.
+ * @param raw - The stored `runtimes.claudeCode` block, or anything at all. Codex's
+ *   and OpenCode's blocks read by the same rules.
+ * @param noun - What a warning calls one row, starting with a capital: `Claude account`
+ *   (the default), `Codex account` or `OpenCode account`.
  * @returns The default account, the listed registry, and what the reader noticed.
  */
-export function readClaudeAccountSettings(raw: unknown): {
+export function readClaudeAccountSettings(
+  raw: unknown,
+  noun = 'Claude account'
+): {
   defaultAccount: string | null;
   accounts: ReadClaudeAccount[];
   warnings: ClaudeAccountReadWarning[];
@@ -1516,22 +1541,45 @@ export function readClaudeAccountSettings(raw: unknown): {
   const block =
     healed && typeof healed === 'object' ? (healed as Record<string, unknown>) : undefined;
   const defaultAccount = typeof block?.defaultAccount === 'string' ? block.defaultAccount : null;
-  const { rows, warnings } = classifyClaudeAccountRows(block?.accounts);
+  const storedRows = block?.accounts;
+  const { rows, warnings } = classifyClaudeAccountRows(storedRows, noun);
+  if (storedRows !== undefined && storedRows !== null && !Array.isArray(storedRows)) {
+    warnings.push({
+      code: 'accounts-invalid',
+      index: -1,
+      message: `The ${noun} list is not a list, so it was read as no accounts.`,
+    });
+  }
   const accounts: ReadClaudeAccount[] = [];
   for (const { index, row, listed } of rows) {
     if (!listed || !row) continue;
     const id = row.id as string;
+    const storedId = (storedRows as Record<string, unknown>[])[index]?.id;
+    if (typeof storedId !== 'string' || storedId.length === 0) {
+      warnings.push({
+        code: 'id-minted',
+        index,
+        message: `${noun} ${index + 1} has no id, so it was read as "${id}".`,
+      });
+    }
+    if (row.label !== undefined && row.label !== null && typeof row.label !== 'string') {
+      warnings.push({
+        code: 'label-invalid',
+        index,
+        message: `${noun} "${id}" has a label that is not text, so it has no label.`,
+      });
+    }
     if (id === IMPLICIT_ACCOUNT_ID) {
       warnings.push({
         code: 'id-reserved',
         index,
-        message: `Claude account "${id}" uses the reserved id "default", so it is listed but not routable until it is renamed.`,
+        message: `${noun} "${id}" uses the reserved id "default", so it is listed but not routable until it is renamed.`,
       });
     } else if (!ACCOUNT_ID_PATTERN.test(id)) {
       warnings.push({
         code: 'id-invalid',
         index,
-        message: `Claude account "${id}" has an id that is not lowercase words joined by hyphens, so it is listed but not routable.`,
+        message: `${noun} "${id}" has an id that is not lowercase words joined by hyphens, so it is listed but not routable.`,
       });
     }
     const stored = row.color;
@@ -1539,7 +1587,7 @@ export function readClaudeAccountSettings(raw: unknown): {
       warnings.push({
         code: 'color-invalid',
         index,
-        message: `Claude account "${id}" has a color that is not lowercase #rrggbb, so it uses the default.`,
+        message: `${noun} "${id}" has a color that is not lowercase #rrggbb, so it uses the default.`,
       });
     }
     const colorIsDefault = !isAccountColor(stored);

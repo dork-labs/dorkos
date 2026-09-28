@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
 import { setAccountUsageStore } from '../../../../core/usage/current-usage-store.js';
-import { recordSessionUsage } from '../account-usage-feed.js';
+import { recordSessionUsage, sessionSubscriptionUsage } from '../account-usage-feed.js';
 
 vi.mock('../../claude-config-dir.js', () => ({
   resolveActiveClaudeRoot: () => '/accounts/active',
@@ -49,5 +49,55 @@ describe('recordSessionUsage', () => {
       throw new Error('boom');
     });
     expect(() => recordSessionUsage({ accountRoot: '/b' }, obs)).not.toThrow();
+  });
+});
+
+describe('sessionSubscriptionUsage (spec claude-account-fleet §6 U)', () => {
+  afterEach(() => setAccountUsageStore(undefined));
+
+  function storeWithWindow() {
+    const peekByRoot = vi.fn(() => ({
+      runtime: 'claude-code',
+      accountId: 'work',
+      path: '/a',
+      windows: [
+        {
+          key: 'five_hour',
+          label: '5-hour window',
+          usedPct: 40,
+          resetsAt: null,
+          status: null,
+          expired: false,
+          observedAt: '2026-09-26T10:00:00.000Z',
+          source: 'sdk_usage',
+        },
+      ],
+    }));
+    setAccountUsageStore({ peekByRoot } as unknown as AccountUsageStore);
+  }
+
+  it('reads the account window for a session launched on the subscription', () => {
+    storeWithWindow();
+    expect(
+      sessionSubscriptionUsage({ launchedAccountRoot: '/a', launchedPerToken: false })
+    ).toMatchObject({ kind: 'subscription', utilization: 0.4 });
+  });
+
+  it('is undefined for a session billed per token (a stored API key or credits)', () => {
+    storeWithWindow();
+    expect(
+      sessionSubscriptionUsage({ launchedAccountRoot: '/a', launchedPerToken: true })
+    ).toBeUndefined();
+  });
+
+  it("follows the session's own subscription reading when it has not launched here", () => {
+    storeWithWindow();
+    expect(sessionSubscriptionUsage({ accountRoot: '/a' })).toBeUndefined();
+    expect(
+      sessionSubscriptionUsage({
+        accountRoot: '/a',
+        lastSubscriptionUsage: { kind: 'subscription', utilization: 0.1 },
+      })
+    ).toMatchObject({ utilization: 0.4 });
   });
 });

@@ -901,7 +901,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // machine — read as a write rather than as a scope.
       'harness.autoSync',
       // Whether DorkOS moves a person's own skill folders, unattended, inside
-      // the agent folders and room folders DorkOS owns (DOR-1853). The same
+      // the agent folders DorkOS owns (DOR-1853). The same
       // clause read one notch harder: `autoSync` writes links DorkOS made, this
       // one moves a file the person wrote.
       'harness.autoAdopt',

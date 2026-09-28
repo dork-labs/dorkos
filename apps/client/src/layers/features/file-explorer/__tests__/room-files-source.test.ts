@@ -303,6 +303,32 @@ describe('saving through the room files source', () => {
     );
   });
 
+  it('shows the room’s own sentence when its git settings name a program', async () => {
+    const { transport, source } = build();
+    // The server's sentence names each setting and the command that removes
+    // it: the one thing a person needs, and nothing generic could say it.
+    const said =
+      'This room’s shared git settings contain entries that can make git run programs: ' +
+      'filter.x.smudge. Remove each one with `git config --unset-all <name>`.';
+    const refusal = () =>
+      Object.assign(new Error(said), { code: 'ROOM_REPO_CONFIG_UNSAFE', status: 409 });
+    transport.saveRoomFile = vi.fn().mockRejectedValue(refusal());
+    await expect(
+      source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' })
+    ).resolves.toMatchObject({
+      status: 'refused',
+      reason: expect.stringContaining('filter.x.smudge. Remove each one with “git config'),
+    });
+
+    transport.deleteRoomFile = vi.fn().mockRejectedValue(refusal());
+    await expect(
+      source.changes!.remove({ path: 'ROOM.md', baseCommit: 'aaa1111' })
+    ).resolves.toMatchObject({
+      status: 'refused',
+      reason: expect.stringContaining('filter.x.smudge'),
+    });
+  });
+
   it('re-asks the room where it stands when a save says the room is stuck', async () => {
     const { transport, queryClient, source } = build();
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');

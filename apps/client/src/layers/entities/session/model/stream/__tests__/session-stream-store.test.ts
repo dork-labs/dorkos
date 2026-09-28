@@ -26,6 +26,7 @@ const STATUS: SessionStatus = {
   lifecycle: 'idle',
   lastError: null,
   limit: null,
+  accountUsage: null,
 };
 
 const MESSAGE: HistoryMessage = { id: 'm1', role: 'user', content: 'hello' };

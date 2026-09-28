@@ -42,6 +42,7 @@ import {
   configManager,
   ConfigBootError,
 } from './services/core/config-manager.js';
+import { readOperatorDisplayName } from './services/core/config/operator-display-name.js';
 import { logConfigWrite } from './services/core/operator/config-write.js';
 import { initClaudeAccountApplier } from './services/core/operator/config-patch.js';
 import { applyClaudeAccountChange } from './services/runtimes/claude-code/account-switch.js';
@@ -133,7 +134,10 @@ import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
 import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
 import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
-import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
+import {
+  ConnectorProviderBootstrapper,
+  TEST_CONNECTOR_PROVIDER_TYPE,
+} from './services/connectors/bootstrap.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
 import { ConnectorAuthorityCleanupService } from './services/connectors/authority-cleanup-service.js';
@@ -143,6 +147,7 @@ import { ConnectorReconciliationService } from './services/connectors/reconcilia
 import { ConnectorAuthenticationFlowService } from './services/connectors/resources/authentication-flow-service.js';
 import { ConnectorLifecycleService } from './services/connectors/resources/lifecycle-service.js';
 import { ConnectorOperatorQueryService } from './services/connectors/resources/operator-query-service.js';
+import { ConnectorAppActionsService } from './services/connectors/resources/app-actions-service.js';
 import { CatalogLogoService } from './services/connectors/resources/catalog-logos.js';
 import { ManagedAuthoritySyncService } from './services/connectors/resources/managed-authority-sync-service.js';
 import { ManagedCloudConnectorProvider } from './services/connectors/providers/managed/managed-cloud.js';
@@ -509,6 +514,9 @@ import {
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
+import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
+import { SessionContextStore } from './services/session/fleet/session-context-store.js';
+import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
@@ -1058,6 +1066,28 @@ async function start() {
   // and write the `session_metadata` table. Must happen before any route or
   // service uses these methods. See ADR 0255.
   runtimeRegistry.setDb(db);
+
+  // Usage and context shown the moment a session opens, before any turn (spec
+  // `claude-account-fleet` §6 U): every new projector is stamped from the usage
+  // store and `session_context`, live ones follow the store in memory (never
+  // through a session's event log), and a launch re-stamps the account it
+  // settled on.
+  const sessionStatusHydration = installSessionStatusHydration({
+    usageStore: () => accountUsageStore,
+    contextStore: new SessionContextStore(db),
+    resolveRuntime: async (sessionId) => {
+      try {
+        return await runtimeRegistry.resolveForSession(sessionId);
+      } catch {
+        return undefined;
+      }
+    },
+    resolveCwd: async (sessionId) =>
+      (await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null)) ?? DEFAULT_CWD,
+  });
+  onSessionAccountLaunched((sessionId, root, perToken) =>
+    sessionStatusHydration.noteAccountLaunched(sessionId, root, perToken)
+  );
 
   // Initialize the Better Auth identity core over the consolidated DB. Mounted
   // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate
@@ -1747,20 +1777,9 @@ async function start() {
   const resolveOperatorAuthorId = (): string => resolveOperatorAuthor(roomAuthors).id;
 
   // The REAL name a bridged group sees prefixed on an operator's post (chats-
-  // as-channels §6.7, DOR-899). `config.profile.displayName` ("what the user
-  // likes to be called", spec `user-profile-onboarding`) is the only place a
-  // real human name is stored on this machine — NOT `roomAuthors`' own
-  // `displayName` for this same person, which `bindOwner` fixes at `'You'`
-  // forever on purpose (the right word from the operator's own cockpit seat,
-  // the wrong one on the wire in somebody else's group). `sanitizeIdentity`
-  // runs the same label treatment every other agent-writable profile value
-  // gets before it reaches a line DorkOS wrote — `config_patch` can set this
-  // field mid-conversation, so it is not purely operator-authored text.
-  const resolveOperatorDisplayName = (): string | null => {
-    const raw = configManager.getAll().profile.displayName;
-    if (!raw) return null;
-    return sanitizeIdentity(raw) ?? null;
-  };
+  // as-channels §6.7, DOR-899) — never the room registry's 'You'. One reader,
+  // shared with the rooms domain's agent context (DOR-2458).
+  const resolveOperatorDisplayName = readOperatorDisplayName;
 
   // A room's own files (spec `project-rooms` §3). Same doctrine as the
   // attachment store above: WHERE they live is decided here and nowhere else,
@@ -3039,6 +3058,17 @@ async function start() {
             credentials: credentialProvider,
             // Test-mode connect flows use the actual dial origin of this server.
             localOrigin,
+            // A saved-again key starts a brand new scripted provider whose
+            // account ids never repeat (DOR-2451) — so a delete has to wipe
+            // this provider's own connection history too, or a stale row
+            // from an earlier key save just sits there under the same
+            // stable instance id forever.
+            purgeConnections: () =>
+              connectorRegistry.purgeTestConnectorConnections(
+                legacyDefaultProviderInstanceId(
+                  TEST_CONNECTOR_PROVIDER_TYPE
+                ) as ConnectorProviderInstanceId
+              ),
           });
         },
       },
@@ -3213,6 +3243,11 @@ async function start() {
         : undefined;
     }
   );
+  const connectorAppActions = new ConnectorAppActionsService({
+    db,
+    registry: connectorRegistry,
+    dorkHome,
+  });
   // A logo's source is looked up in the kept app lists only, never listed.
   const catalogLogos = new CatalogLogoService({
     dorkHome,
@@ -3934,6 +3969,7 @@ async function start() {
       logos: catalogLogos,
       authentication: connectorAuthenticationFlows,
       lifecycle: connectorLifecycle,
+      actions: connectorAppActions,
       resolveOwner: () => connectorOwner,
       loginEnabled: () => configManager.get('auth').enabled,
     })

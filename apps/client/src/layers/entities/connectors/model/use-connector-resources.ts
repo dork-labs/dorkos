@@ -41,6 +41,27 @@ export function useConnectorCatalog(query: string, enabled = true) {
   });
 }
 
+/** How long the browser treats an app's action list as current; the server keeps it for a day. */
+const APP_ACTIONS_STALE_MS = 5 * 60_000;
+
+/**
+ * Read what one app lets agents do through one configured way. Nothing is
+ * asked for until both are known, and a reopened panel shows the kept list
+ * at once.
+ *
+ * @param toolkit - The app's service id, e.g. `gmail`.
+ * @param providerInstanceId - The way that reaches it, or `null` when none is set up.
+ */
+export function useConnectorAppActions(toolkit: string, providerInstanceId: string | null) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: connectorKeys.appActions(providerInstanceId ?? '', toolkit),
+    queryFn: () => transport.getConnectorAppActions(toolkit, providerInstanceId ?? ''),
+    enabled: Boolean(providerInstanceId) && toolkit !== '',
+    staleTime: APP_ACTIONS_STALE_MS,
+  });
+}
+
 /** Read the operator's canonical stable connection inventory. */
 export function useConnectorConnections() {
   const transport = useTransport();

@@ -256,14 +256,14 @@ The cloud identity is a **second, fully independent Better Auth instance** in `a
 
 Accounts are moving from `apps/site` to the DorkOS Cloud service, which serves the same pages and API paths. `DORKOS_CLOUD_ACCOUNTS_ORIGIN` in `apps/site/src/env.ts` controls the hand-over. **Unset (the default, and what every test and credential-free build runs), the site serves everything below itself, exactly as described.** Set to the service's https origin, the site's edge proxy (`apps/site/src/proxy.ts`, decision in `apps/site/src/lib/cloud-accounts/forward.ts`) sends the account surface there:
 
-| Request                                                                                                               | What happens                    | Why                                                                                                                                      |
-| --------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| An account page: `/signin`, `/signup`, `/reset-password/**`, `/verify-email`, `/activate`, `/account/**`, `/admin/**` | 307 to the same path and query  | a session cookie belongs to one host, so the browser has to be where the service sets it                                                 |
-| A browser navigation to `/api/auth/**`, `/api/account/**` or the registry paths (an email link)                       | 307, the same way               | the same cookie reason                                                                                                                   |
-| Anything else on those API paths: a bearer token, a body, a background `fetch`                                        | proxied to the same path        | a cross-origin redirect drops `Authorization`, and released CLIs call these paths and must keep working                                  |
-| Managed connections (`/api/instances/connectors/**`, `/api/connectors/**`, `/connectors/**`)                          | not forwarded, and switched off | the service does not serve them yet, and they authenticate against account tables this site no longer holds; they move separately, later |
+| Request                                                                                                               | What happens                                                                                                                       | Why                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| An account page: `/signin`, `/signup`, `/reset-password/**`, `/verify-email`, `/activate`, `/account/**`, `/admin/**` | 307 to the same path and query                                                                                                     | a session cookie belongs to one host, so the browser has to be where the service sets it                                                                               |
+| A browser navigation to `/api/auth/**`, `/api/account/**` or the registry paths (an email link)                       | 307, the same way                                                                                                                  | the same cookie reason                                                                                                                                                 |
+| Anything else on those API paths: a bearer token, a body, a background `fetch`                                        | proxied to the same path                                                                                                           | a cross-origin redirect drops `Authorization`, and released CLIs call these paths and must keep working                                                                |
+| Managed connections (`/api/instances/connectors/**`, `/api/connectors/managed/**`, `/connectors/managed/**`)          | forwarded by the rules above **only with `DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD=1`**; otherwise not forwarded, and switched off | they authenticate against account tables this site no longer holds; the service serves them from its own release, so it goes first and this variable second (DOR-2485) |
 
-The redirect is temporary and sent `no-store`, so unsetting the variable takes effect without a browser remembering the old answer. While the variable is set, managed connections read as not enabled (`lib/connectors/managed/config.ts`), the two cron routes answer `200 { skipped: 'accounts-service' }` and touch nothing, and the root layout does not mount the session-to-analytics identity bridge, whose session now lives on the service's host. A value that is not an https origin with no path (plain `http` is allowed only for a loopback host), or that names the site's own origin, forwards nothing and logs one line. The loop guard compares exact origins, so never point the variable at another name for this same site (the `www` alias, say): the platform's own redirect between the two would send requests round in a circle.
+The redirect is temporary and sent `no-store`, so unsetting the variable takes effect without a browser remembering the old answer. While the variable is set, managed connections that are not forwarded read as not enabled (`lib/connectors/managed/config.ts`), the two cron routes answer `200 { skipped: 'accounts-service' }` and touch nothing, and the root layout does not mount the session-to-analytics identity bridge, whose session now lives on the service's host. A value that is not an https origin with no path (plain `http` is allowed only for a loopback host), or that names the site's own origin, forwards nothing and logs one line. The loop guard compares exact origins, so never point the variable at another name for this same site (the `www` alias, say): the platform's own redirect between the two would send requests round in a circle.
 
 On Vercel, a changed environment variable reaches traffic only with a new deployment, so turning the hand-over on or off is a redeploy, and promoting the previous deployment reverses it. A proxied request reaches the service from the site's platform, so the service sees that platform's address rather than the caller's. `DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET`, set to the same value on the site and the service, fixes that: on Vercel the site then adds the caller's address (as Vercel reported it) in `x-dorkos-client-address` and the secret in `x-dorkos-proxy-secret`, and the service believes the address only beside the secret. The site always removes a caller's own copy of either header, and never puts them on a redirect. The site sends them only when the platform says it is Vercel (`VERCEL=1` and a `production` or `preview` `VERCEL_ENV`), and treats a value shorter than 32 characters after trimming, or with characters a header cannot carry, as unset. Set the same value, with no surrounding whitespace, on both sides. Scope the variable to Production and mark it sensitive, so `vercel env pull` never writes it into a local file. Unset, proxied requests go out exactly as before, and the service counts every proxied caller together.
 
@@ -401,13 +401,20 @@ explicitly and also stamped on `session.impersonatedBy`.
 
 ### Cleanup jobs (DOR-194)
 
-A Vercel Cron (`crons` in `apps/site/vercel.json`) hits
-`GET /api/cron/instance-expiry`, which runs `runCleanup`
-(`lib/cleanup-service.ts`) over the account tables through the Better Auth
-adapter. It is one of the two routes the old combined `/api/cron/cleanup` split
-into; the other, `/api/cron/event-retention`, sweeps managed-connector event
-rows and shares nothing with this one but the `CRON_SECRET` check in
-`lib/cron/auth.ts`. One idempotent pass:
+`GET /api/cron/instance-expiry` runs `runCleanup` (`lib/cleanup-service.ts`)
+over the account tables through the Better Auth adapter. A Vercel Cron entry in
+`apps/site/vercel.json` used to hit it hourly; that entry is gone now that
+`DORKOS_CLOUD_ACCOUNTS_ORIGIN` is permanently set in production, so this route
+already answered `200 { skipped: 'accounts-service' }` and touched nothing (see
+above) — DorkOS Cloud's own scheduler runs the equivalent sweep on its side. The
+route and its `CRON_SECRET` gate are otherwise unchanged; deleting the route
+itself is a separate, later change (DOR-2442). It is one of the two routes the
+old combined `/api/cron/cleanup` split into; the other,
+`/api/cron/event-retention`, sweeps managed-connector event rows and, for the
+same reason, is currently also a no-op in production. Its cron entry stays in
+`apps/site/vercel.json` for now regardless: it belongs to managed connections,
+which move separately, and that migration owns its retirement. The two share
+nothing but the `CRON_SECRET` check in `lib/cron/auth.ts`. One idempotent pass:
 
 - **Purges never-verified accounts** — `user` rows still `emailVerified = false`
   after 7 days (`UNVERIFIED_USER_TTL_MS`). The `user` delete cascades its
@@ -439,19 +446,19 @@ anything — before running it against production data by hand.
 
 ### Key files (cloud account management)
 
-| Concept                           | Location                                                                         |
-| --------------------------------- | -------------------------------------------------------------------------------- |
-| Admin plugin + delete/link config | `apps/site/src/lib/auth.ts`                                                      |
-| Admin-action audit + ban hook     | `apps/site/src/lib/admin-audit-hook.ts`                                          |
-| Audit log service                 | `apps/site/src/lib/audit-service.ts`                                             |
-| Scheduled cleanup service         | `apps/site/src/lib/cleanup-service.ts`                                           |
-| Cleanup cron route + schedule     | `apps/site/src/app/api/cron/instance-expiry/route.ts`, `apps/site/vercel.json`   |
-| Audit table + registry plugin     | `apps/site/src/db/audit-schema.ts`, `apps/site/src/lib/audit-registry-plugin.ts` |
-| Data export service               | `apps/site/src/lib/account-service.ts`                                           |
-| Export route                      | `apps/site/src/app/api/account/export/route.ts`                                  |
-| Client admin + delete wrapper     | `apps/site/src/lib/auth-client.ts`                                               |
-| `/account` Danger Zone UI         | `apps/site/src/layers/features/account/ui/DangerZone.tsx`                        |
-| Admin columns + `impersonatedBy`  | `apps/site/src/db/auth-schema.ts`                                                |
+| Concept                                      | Location                                                                         |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| Admin plugin + delete/link config            | `apps/site/src/lib/auth.ts`                                                      |
+| Admin-action audit + ban hook                | `apps/site/src/lib/admin-audit-hook.ts`                                          |
+| Audit log service                            | `apps/site/src/lib/audit-service.ts`                                             |
+| Scheduled cleanup service                    | `apps/site/src/lib/cleanup-service.ts`                                           |
+| Cleanup cron route (unscheduled — see above) | `apps/site/src/app/api/cron/instance-expiry/route.ts`                            |
+| Audit table + registry plugin                | `apps/site/src/db/audit-schema.ts`, `apps/site/src/lib/audit-registry-plugin.ts` |
+| Data export service                          | `apps/site/src/lib/account-service.ts`                                           |
+| Export route                                 | `apps/site/src/app/api/account/export/route.ts`                                  |
+| Client admin + delete wrapper                | `apps/site/src/lib/auth-client.ts`                                               |
+| `/account` Danger Zone UI                    | `apps/site/src/layers/features/account/ui/DangerZone.tsx`                        |
+| Admin columns + `impersonatedBy`             | `apps/site/src/db/auth-schema.ts`                                                |
 
 ### Runbook: destructive ops
 

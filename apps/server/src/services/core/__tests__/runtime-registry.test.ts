@@ -10,7 +10,7 @@ import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-run
 import type { SessionSettings } from '@dorkos/shared/types';
 import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionMetadata, eq, type Db } from '@dorkos/db';
+import { sessionContext, sessionMetadata, eq, sql, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
 import {
   SessionLimitStore,
@@ -491,6 +491,23 @@ describe('RuntimeRegistry', () => {
       registry.setDb(db);
       registry.register(createMockRuntime('claude-code'));
       registry.register(createMockRuntime('test-mode'));
+    });
+
+    describe('forgetUnstartedSession', () => {
+      it('removes the binding a launch wrote, and only that session`s (DOR-2447)', async () => {
+        await registry.persistSessionRuntime('launched-never-ran', 'codex', A_PERSON);
+        await registry.persistSessionRuntime('a-real-one', 'codex', A_PERSON);
+
+        await registry.forgetUnstartedSession('launched-never-ran');
+
+        const ids = db
+          .select({ id: sessionMetadata.sessionId })
+          .from(sessionMetadata)
+          .all()
+          .map((row) => row.id);
+        expect(ids).not.toContain('launched-never-ran');
+        expect(ids).toContain('a-real-one');
+      });
     });
 
     describe('persistSessionRuntime', () => {
@@ -1465,6 +1482,62 @@ describe('RuntimeRegistry', () => {
       } finally {
         setSessionLimitStore(undefined);
       }
+    });
+
+    it("moves the session's context reading, even with no settings row (spec claude-account-fleet §6 U)", async () => {
+      db.insert(sessionContext)
+        .values({
+          sessionId: 'old',
+          contextTokens: 120_000,
+          contextMaxTokens: 200_000,
+          observedAt: '2026-09-27T10:00:00.000Z',
+        })
+        .run();
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(db.select().from(sessionContext).all()).toEqual([
+        {
+          sessionId: 'new',
+          contextTokens: 120_000,
+          contextMaxTokens: 200_000,
+          observedAt: '2026-09-27T10:00:00.000Z',
+        },
+      ]);
+      expect(allRows()).toEqual([]);
+    });
+
+    it('a context-table failure never stops the settings row (the runtime binding) from moving', async () => {
+      await registry.persistSessionRuntime('old', 'test-mode', A_PERSON);
+      db.run(sql`DROP TABLE session_context`);
+      const warn = vi.spyOn(logger, 'warn');
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(allRows()).toEqual([
+        expect.objectContaining({ sessionId: 'new', runtime: 'test-mode' }),
+      ]);
+      expect(warn).toHaveBeenCalledWith(
+        '[RuntimeRegistry] could not move a session context reading',
+        expect.objectContaining({ fromId: 'old', toId: 'new' })
+      );
+      warn.mockRestore();
+    });
+
+    it('keeps the newer context reading when both ids hold one', async () => {
+      const row = (sessionId: string, contextTokens: number, observedAt: string) =>
+        db
+          .insert(sessionContext)
+          .values({ sessionId, contextTokens, contextMaxTokens: 200_000, observedAt })
+          .run();
+      row('old', 1, '2026-09-27T09:00:00.000Z');
+      row('new', 2, '2026-09-27T10:00:00.000Z');
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(db.select().from(sessionContext).all()).toEqual([
+        expect.objectContaining({ sessionId: 'new', contextTokens: 2 }),
+      ]);
     });
 
     it('moves the whole row, identity columns included', async () => {

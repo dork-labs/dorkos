@@ -8,6 +8,7 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  * @module services/runtimes/claude-code/claude-code-runtime
  */
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { setAccountProbeBinaryResolver } from './accounts/account-probe.js';
 import path from 'path';
 import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig, Query } from '@anthropic-ai/claude-agent-sdk';
@@ -94,6 +95,7 @@ import {
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
+import { predictLaunchBillsPerToken } from './messaging/per-token-billing.js';
 import {
   disposeProjector,
   getOrCreateProjector,
@@ -258,6 +260,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Warm-up spawns the SDK too; give it the same resolved binary path so it
     // works in the packaged desktop app (see setClaudeCliPath's doc).
     this.cache.setClaudeCliPath(this.claudeCliPath);
+    // The account probe spawns too; it runs the binary a session would.
+    setAccountProbeBinaryResolver(() => this.spawnBinaryPath);
     this.transcriptReader = new TranscriptReader();
   }
 
@@ -1283,6 +1287,52 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
     return this.transcriptReader.getSession(projectDir, sessionId);
+  }
+
+  /**
+   * Whether this session bills per token rather than against its account's
+   * subscription (spec `claude-account-fleet` §6 U): what its last launch here
+   * did, else whether it has had a subscription reading of its own, else what
+   * its next launch would do, read off the environment a launch would get (a
+   * stored key, credits, or one inherited from the server's own environment),
+   * and per token when that cannot be told. A per-token session's `usage` stays
+   * its own cost.
+   *
+   * Not on the `AgentRuntime` port, for the reason `accountRootForSession`
+   * is not: accounts are a Claude-Code-only concept.
+   *
+   * @param sessionId - DorkOS or SDK session id.
+   */
+  async sessionBillsPerToken(sessionId: string): Promise<boolean> {
+    const session = this.sessionStore.findSession(sessionId);
+    if (session?.launchedPerToken !== undefined) return session.launchedPerToken;
+    if (session?.lastSubscriptionUsage?.kind === 'subscription') return false;
+    return predictLaunchBillsPerToken();
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The transcript tail's last assistant usage: the same bounded 64 KB read
+   * the session list's `contextTokens` comes from (`readTailStatus`), cached
+   * under the file's mtime. The transcript records no context window and the
+   * SDK's model list carries none either (`runtime-cache.ts`), so the window is
+   * `0`, which every reader shows as an unknown percentage until a turn reports
+   * the real one.
+   */
+  async readContextUsage(
+    sessionId: string,
+    cwd: string | undefined
+  ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
+    try {
+      const projectDir = cwd ?? this.sessionStore.findSession(sessionId)?.cwd ?? this.cwd;
+      const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
+      const session = await this.transcriptReader.getSession(projectDir, historyId);
+      if (!session?.contextTokens) return null;
+      return { contextTokens: session.contextTokens, contextMaxTokens: 0 };
+    } catch {
+      return null;
+    }
   }
 
   /**

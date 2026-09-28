@@ -41,6 +41,7 @@ function account(f: Fixture): RuntimeAccount {
     canonicalPath: `/accounts/${f.id}`,
     label: f.id.toUpperCase(),
     color: '#123456',
+    storedColor: '#123456',
     routable: f.routable ?? true,
     implicit: f.implicit ?? false,
     isDefault: f.implicit ?? false,

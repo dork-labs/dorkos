@@ -74,6 +74,10 @@
  *   recursed into it and ran that program as the server (measured, with or
  *   without the pin above). Ignoring submodules stops the recursion; merges
  *   refuse submodules anyway.
+ * - **No detached housekeeping** (`maintenance.autoDetach=false`,
+ *   `gc.autoDetach=false`). Git's automatic maintenance still runs after a
+ *   commit or merge, but in the foreground, so nothing keeps writing the room's
+ *   `.git` after the server's call returns.
  * - **Drivers named by committed `.gitattributes` run nothing.** An agent
  *   writes `.gitattributes`, and a `filter`, `diff` or `merge` attribute names a
  *   driver — but a driver is only a program when a config git reads defines it.
@@ -160,6 +164,17 @@ const SHARED_CONFIG_ARGS = [
   'status.submoduleSummary=false',
   '-c',
   'submodule.recurse=false',
+  // **Housekeeping runs INSIDE the call, never after it.** A commit or merge
+  // ends by running git's automatic maintenance, which by default detaches into
+  // the background and keeps writing `repo/.git` (a `gc`, a `maintenance.lock`)
+  // after the server's pinned, audited command has returned — racing the next
+  // command and the turn-start refresh. Kept rather than turned off, so a
+  // room's objects are still packed; just in the foreground, where it finishes
+  // before the call does.
+  '-c',
+  'maintenance.autoDetach=false',
+  '-c',
+  'gc.autoDetach=false',
 ];
 
 /**

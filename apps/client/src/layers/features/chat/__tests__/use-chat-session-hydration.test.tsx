@@ -80,6 +80,7 @@ function makeSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot
       lifecycle: 'idle',
       lastError: null,
       limit: null,
+      accountUsage: null,
     },
     pendingInteractions: [],
     queuedMessages: [],

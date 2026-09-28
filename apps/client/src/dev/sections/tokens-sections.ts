@@ -28,6 +28,13 @@ export const TOKENS_SECTIONS: PlaygroundSection[] = [
     keywords: ['color', 'sidebar', 'navigation', 'panel'],
   },
   {
+    id: 'account-palette',
+    title: 'Account palette',
+    page: 'tokens',
+    category: 'Colors',
+    keywords: ['account', 'palette', 'color', 'dot', 'contrast', 'claude', 'identity'],
+  },
+  {
     id: 'typography',
     title: 'Typography',
     page: 'tokens',

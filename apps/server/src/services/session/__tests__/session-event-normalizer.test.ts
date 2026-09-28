@@ -205,6 +205,8 @@ describe('toRawSessionEvent', () => {
             outputTokens: 20,
             cacheReadTokens: 80,
             cacheCreationTokens: 5,
+            // A live context reading is dated when it is taken (spec §6 U).
+            observedAt: expect.any(String),
           },
           cacheStats: { cacheReadTokens: 80, cacheCreationTokens: 5 },
         },
@@ -287,6 +289,7 @@ describe('toRawSessionEvent', () => {
             maxTokens: 200000,
             cacheReadTokens: 80,
             cacheCreationTokens: 5,
+            observedAt: expect.any(String),
           },
           cacheStats: { cacheReadTokens: 80, cacheCreationTokens: 5 },
         },
@@ -1283,6 +1286,7 @@ describe('feedProjector', () => {
       outputTokens: 148,
       cacheReadTokens: 326_000,
       cacheCreationTokens: 0,
+      observedAt: expect.any(String),
     });
   });
 

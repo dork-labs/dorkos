@@ -12,6 +12,8 @@ export const connectorKeys = {
     [...connectorKeys.connections(), 'authentication-flow', flowId] as const,
 
   catalog: (query: string) => [...connectorKeys.all, 'catalog', { query }] as const,
+  appActions: (providerInstanceId: string, toolkit: string) =>
+    [...connectorKeys.all, 'app-actions', providerInstanceId, toolkit] as const,
 
   connections: () => [...connectorKeys.all, 'connections'] as const,
   connection: (connectionId: string) =>

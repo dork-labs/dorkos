@@ -53,6 +53,11 @@ describe('every read of what an agent may do goes through the gate reader', () =
       const rel = path.relative(SRC, file).split(path.sep).join('/');
       if (ALLOWED[rel]) continue;
       const text = fs.readFileSync(file, 'utf-8');
+      // Lexing every source file is what made this test slow enough to time
+      // out on a busy CI runner. Blanking comments and strings only removes
+      // text, so a file whose raw text matches no pattern cannot match as
+      // code either: skip the lexer for it.
+      if (!PATTERNS.some((p) => p.test(text))) continue;
       // Code only: comments and string text blanked, positions kept, so a
       // sentence that names a field is never mistaken for a read of it.
       const { code, parseErrors } = lex(text, file);

@@ -103,6 +103,7 @@ function snapshot(cursor = 400, queuedMessages: QueuedMessage[] = []): SessionSn
       lifecycle: 'streaming',
       lastError: null,
       limit: null,
+      accountUsage: null,
     },
     pendingInteractions: [],
     canvas: [],

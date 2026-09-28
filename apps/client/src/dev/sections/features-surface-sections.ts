@@ -220,6 +220,10 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     keywords: [
       'side panel',
       'who can use it',
+      'what agents can do',
+      'look',
+      'change',
+      'actions',
       'recently',
       'try it',
       'more',

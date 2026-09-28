@@ -44,6 +44,36 @@ vi.mock('../../core/config-manager.js', () => ({
   configManager: { get: (key: string) => (key === 'runtimes' ? runtimesConfig : undefined) },
 }));
 
+/** The accounts the registry holds, by runtime; `null` = no usage store at all. */
+let accounts:
+  | { runtime: string; id: string; routable: boolean; implicit: boolean; isDefault: boolean }[]
+  | null = [];
+
+vi.mock('../../core/usage/current-usage-store.js', () => ({
+  getAccountUsageStore: () =>
+    accounts === null
+      ? undefined
+      : { listAccounts: (runtime: string) => accounts!.filter((a) => a.runtime === runtime) },
+}));
+
+/** The account advisor's answer, as `checkAccountLaunch` reports it. */
+const checkAccountLaunch = vi.fn();
+
+vi.mock('../../core/usage/account-ranking.js', () => ({
+  checkAccountLaunch: (request: unknown) => checkAccountLaunch(request),
+}));
+
+const logInfo = vi.fn();
+
+vi.mock('../../../lib/logger.js', () => ({
+  logger: {
+    info: (...a: unknown[]) => logInfo(...a),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 const { createTurnExecutionSettingsResolver } = await import('../turn-execution-settings.js');
 
 /** An agent directory holding the manifest this test wrote. */
@@ -285,5 +315,104 @@ describe('createTurnExecutionSettingsResolver', () => {
     // config section and no effort support, which is the same "no preference"
     // every other absent tier means.
     expect(settings).toEqual({ model: 'gpt-5.3-codex' });
+  });
+});
+
+describe('a relay message naming an account (DOR-2384)', () => {
+  /** A registered, routable Claude Code account. */
+  const WORK = {
+    runtime: 'claude-code',
+    id: 'work',
+    routable: true,
+    implicit: false,
+    isDefault: false,
+  };
+
+  beforeEach(async () => {
+    storedSettings = null;
+    readSettings = () => Promise.resolve(storedSettings);
+    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
+    registered = { 'claude-code': { configSection: 'claudeCode', supportsEffort: true } };
+    accounts = [WORK];
+    checkAccountLaunch.mockReset();
+    logInfo.mockReset();
+    agentDir = await mkdtemp(path.join(tmpdir(), 'dorkos-relay-agent-'));
+  });
+
+  afterEach(async () => {
+    await rm(agentDir, { recursive: true, force: true });
+  });
+
+  /** Ask the resolver about a new conversation that names `requestedAccount`. */
+  function ask(requestedAccount: string, runtimeType = 'claude-code') {
+    return createTurnExecutionSettingsResolver()({
+      runtimeType,
+      sessionId: 'agent-ulid-1',
+      agentDirectory: agentDir,
+      requestedAccount,
+    });
+  }
+
+  it('launches on the account when the advisor allows it, asking as a relay caller', async () => {
+    checkAccountLaunch.mockResolvedValue({ allowed: true });
+
+    const settings = await ask('work');
+
+    expect(settings.accountHint).toBe('work');
+    expect(checkAccountLaunch).toHaveBeenCalledWith({
+      accountId: 'work',
+      cwd: agentDir,
+      runtime: 'claude-code',
+      caller: 'relay',
+    });
+  });
+
+  it('runs without the account when no advisor is registered, and says why', async () => {
+    // With no advisor, an agent's or a relay message's pick is refused: nothing
+    // is spent on another account until the operator opts in.
+    checkAccountLaunch.mockResolvedValue({ allowed: false, reason: 'no advisor' });
+
+    const settings = await ask('work');
+
+    expect(settings).not.toHaveProperty('accountHint');
+    expect(logInfo).toHaveBeenCalledWith(
+      expect.stringContaining('account'),
+      expect.objectContaining({ account: 'work', reason: 'no advisor' })
+    );
+  });
+
+  it('runs without the account when the advisor refuses it', async () => {
+    checkAccountLaunch.mockResolvedValue({ allowed: false, reason: 'kept out' });
+
+    const settings = await ask('work');
+
+    expect(settings).not.toHaveProperty('accountHint');
+    expect(logInfo).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ account: 'work', reason: 'kept out' })
+    );
+  });
+
+  it('never asks the advisor about an id nobody registered', async () => {
+    checkAccountLaunch.mockResolvedValue({ allowed: true });
+
+    const settings = await ask('someone-elses');
+
+    expect(settings).not.toHaveProperty('accountHint');
+    expect(checkAccountLaunch).not.toHaveBeenCalled();
+    expect(logInfo).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ account: 'someone-elses' })
+    );
+  });
+
+  it('runs the turn on its settings when the account check throws', async () => {
+    checkAccountLaunch.mockRejectedValue(new Error('advisor exploded'));
+    await writeManifest({ model: 'claude-opus-4-6' });
+
+    const settings = await ask('work');
+
+    expect(settings).toEqual({ model: 'claude-opus-4-6' });
+    expect(checkAccountLaunch).toHaveBeenCalled();
   });
 });

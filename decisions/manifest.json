@@ -6663,7 +6663,7 @@
       "id": "260926-180308",
       "slug": "a-clean-room-worktree-is-fast-forwarded-when-its-agents-turn-launches",
       "title": "A clean room worktree is fast-forwarded when its agent's turn launches; otherwise the turn is told what moved",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-09-26",
       "extractedFrom": "agent-home-desk",
       "specSlug": "agent-home-desk",

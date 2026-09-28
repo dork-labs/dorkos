@@ -95,7 +95,12 @@ function warnOnce(warnings: readonly ClaudeAccountReadWarning[]): void {
   for (const warning of warnings) {
     if (loggedAccountWarnings.has(warning.message)) continue;
     loggedAccountWarnings.add(warning.message);
-    logger.warn(`[claude-accounts] ${warning.message}`, { code: warning.code });
+    // A minted id is expected on every install the '0.65.0' migration has not
+    // reached (a dev tree runs none), so it is not worth a warning each boot.
+    logger[warning.code === 'id-minted' ? 'debug' : 'warn'](
+      `[claude-accounts] ${warning.message}`,
+      { code: warning.code }
+    );
   }
 }
 
@@ -155,8 +160,14 @@ function readClaudeCodeConfig(config: ConfigReader): {
  * but that is observed behavior of one release and macOS-only, so nothing here
  * depends on it. An authentication failure surfaces as a runtime error, which is
  * honest, rather than as a pre-flight guess.
+ *
+ * Exported for the account probe (`accounts/account-probe.ts`), which refuses to
+ * boot the CLI against a folder that is not an account.
+ *
+ * @param dir - The folder to check.
+ * @returns True when the folder holds a `projects/` directory.
  */
-function isClaudeAccountRoot(dir: string): boolean {
+export function isClaudeAccountRoot(dir: string): boolean {
   try {
     return fs.statSync(path.join(dir, 'projects')).isDirectory();
   } catch {

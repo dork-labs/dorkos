@@ -10,6 +10,7 @@
  *
  * @module entities/session/model/stream/session-stream-binding
  */
+import { AccountUsageSchema } from '@dorkos/shared/account-usage';
 import { streamManager } from '@/layers/shared/lib/transport';
 import { clearUiStateSendCache } from '@/layers/shared/lib';
 import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
@@ -53,6 +54,8 @@ const SETTLED_LIFECYCLES = new Set(['idle', 'interrupted']);
  * - `onListEvent` → the list store's `applyListEvent`, plus a `session_removed`
  *   fan-out that evicts the per-session stream store, plus unseen-activity
  *   marking for background streaming→settled edges (see above).
+ * - the global `account_usage` event → `applyAccountUsage`, so every open
+ *   session on that account follows it (spec `claude-account-fleet` §6 U).
  * - list connection state → `resetStatuses` on every (re)connect, because
  *   `session_status` is fan-out-only (no replay): a status held across a
  *   disconnect may describe a turn that settled while the stream was down.
@@ -129,6 +132,14 @@ export function initSessionStreamBinding(): void {
         clearUiStateSendCache(event.sessionId);
       }
     },
+  });
+
+  // An account's usage changed (spec `claude-account-fleet` §6 U): every open
+  // session billing that account follows it. It never rides a session's own
+  // stream, so this global event is the only way an open session hears of it.
+  streamManager.subscribeEvent('account_usage', (data) => {
+    const parsed = AccountUsageSchema.safeParse(data);
+    if (parsed.success) useSessionStreamStore.getState().applyAccountUsage(parsed.data);
   });
 
   // Re-baseline statuses whenever the global stream ENTERS 'connected' — on

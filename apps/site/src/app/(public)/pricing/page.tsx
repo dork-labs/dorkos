@@ -13,6 +13,7 @@ import {
   MODEL_PRICES,
   NOTICE_DAYS,
   PAID_FROM,
+  TAX_NOTE,
   TOP_UP_MIN_CREDITS,
   creditsInDollars,
   formatCredits,
@@ -58,7 +59,7 @@ export default function PricingPage() {
         </h2>
         <PlanCards paidFrom={PAID_FROM} />
         <p className="text-warm-gray mt-6 text-center text-sm">
-          Every price on this page applies from {PAID_FROM}.
+          Every price on this page applies from {PAID_FROM}. {TAX_NOTE}
         </p>
       </section>
 
@@ -348,6 +349,10 @@ function Faq() {
     {
       q: 'Can prices change?',
       a: `Yes, but never by surprise. We post any change here, with the reason, at least ${NOTICE_DAYS} days before it takes effect. If you pay yearly, your price holds until your year ends. A credit you buy is always worth 1¢ of use at our posted prices. It never expires and never loses value.`,
+    },
+    {
+      q: 'Is tax included?',
+      a: TAX_NOTE,
     },
     {
       q: 'What if I cancel?',

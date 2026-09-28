@@ -2,7 +2,7 @@
 slug: agent-home-desk
 id: 260926-172253
 created: 2026-09-26
-status: specified
+status: implemented
 ---
 
 # Home, desk and shared folders — decision record

@@ -43,6 +43,18 @@ import { publishSessionStreaming, tapGlobalStream } from '../rooms/room-signals'
  */
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
+// DorkBot's reply here plays the test-mode server's DEFAULT scenario, and any
+// spec that ran earlier on this leg may have changed it and died before putting
+// it back. Two queue runs of PR #2125 failed exactly that way (a leftover
+// `browser-recording` default), so this file states the default it depends on
+// rather than trusting every neighbour's cleanup.
+test.beforeAll(async ({ request }) => {
+  // Only the default, not `/api/test/reset`: a reset would also abort turns
+  // other projects on this leg have parked and wipe their tracked sessions.
+  const res = await request.post('/api/test/scenario', { data: { name: 'simple-text' } });
+  expect(res.ok(), `could not set the default scenario: ${await res.text()}`).toBe(true);
+});
+
 /**
  * Wait for a message this test just typed to be stored, and answer with the
  * cascade it opened.

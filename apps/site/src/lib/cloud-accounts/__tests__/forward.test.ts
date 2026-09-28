@@ -4,6 +4,8 @@ import {
   cloudAccountsForwarding,
   decideCloudAccountsForward,
   isCloudAccountPath,
+  isManagedConnectionsPath,
+  managedConnectionsForwarding,
   parseCloudAccountsOrigin,
   PROXIED_ADDRESS_HEADER,
   PROXY_SECRET_HEADER,
@@ -218,6 +220,105 @@ describe('decideCloudAccountsForward', () => {
 
   it('never forwards a request to the origin it arrived on', () => {
     expect(decideCloudAccountsForward(req('/signin'), 'https://site.example.test')).toBeNull();
+  });
+});
+
+// DOR-2485: managed connections move to the service too, behind their own switch.
+describe('managed connections', () => {
+  const MANAGED = { managedConnections: true } as const;
+
+  it.each([
+    '/api/instances/connectors',
+    '/api/instances/connectors/catalog',
+    '/api/instances/connectors/executions/attempt-1',
+    '/api/connectors/managed/events',
+    '/api/connectors/managed/callback',
+    '/connectors/managed/authorize',
+    '/connectors/managed/fields',
+  ])('%s is a managed-connection path', (path) => {
+    expect(isManagedConnectionsPath(path)).toBe(true);
+    // Not an account path: the account hand-over alone never sends it on.
+    expect(isCloudAccountPath(path)).toBe(false);
+  });
+
+  it.each(['/connectors', '/connectors/other', '/api/connectors', '/api/instances/connectorsx'])(
+    '%s is not a managed-connection path',
+    (path) => {
+      expect(isManagedConnectionsPath(path)).toBe(false);
+    }
+  );
+
+  it('stays on the site unless its own switch is on as well', () => {
+    const pull = req('/api/instances/connectors/events/pull', {
+      method: 'POST',
+      headers: { authorization: 'Bearer t' },
+    });
+    expect(decideCloudAccountsForward(pull, SERVICE)).toBeNull();
+    expect(decideCloudAccountsForward(pull, SERVICE, { managedConnections: false })).toBeNull();
+    // And the switch means nothing without the accounts origin.
+    expect(decideCloudAccountsForward(pull, null, MANAGED)).toBeNull();
+  });
+
+  it('proxies a linked instance’s bearer calls, keeping the query', () => {
+    const decision = decideCloudAccountsForward(
+      req('/api/instances/connectors/catalog?version=1&limit=20', {
+        headers: { authorization: 'Bearer t' },
+      }),
+      SERVICE,
+      MANAGED
+    );
+    expect(decision).toEqual({
+      kind: 'proxy',
+      url: new URL(`${SERVICE}/api/instances/connectors/catalog?version=1&limit=20`),
+    });
+  });
+
+  it('proxies the provider’s signed webhook, which has a body', () => {
+    expect(
+      decideCloudAccountsForward(
+        req('/api/connectors/managed/events', { method: 'POST' }),
+        SERVICE,
+        MANAGED
+      )?.kind
+    ).toBe('proxy');
+  });
+
+  it('redirects the browser to the provider callback and the hand-off pages, keeping the query', () => {
+    const callback = decideCloudAccountsForward(
+      req('/api/connectors/managed/callback?session_uri=s', {
+        headers: { 'sec-fetch-mode': 'navigate' },
+      }),
+      SERVICE,
+      MANAGED
+    );
+    expect(callback?.kind).toBe('redirect');
+    expect(callback?.url.toString()).toBe(
+      `${SERVICE}/api/connectors/managed/callback?session_uri=s`
+    );
+    for (const path of [
+      '/connectors/managed/authorize?flow=f&nonce=n',
+      '/connectors/managed/fields',
+    ]) {
+      const decision = decideCloudAccountsForward(
+        req(path, { headers: { 'sec-fetch-mode': 'cors' } }),
+        SERVICE,
+        MANAGED
+      );
+      expect(decision?.kind, path).toBe('redirect');
+      expect(decision?.url.toString(), path).toBe(`${SERVICE}${path}`);
+    }
+  });
+
+  it('leaves the account surface exactly as it was', () => {
+    expect(decideCloudAccountsForward(req('/signin'), SERVICE, MANAGED)?.kind).toBe('redirect');
+    expect(decideCloudAccountsForward(req('/blog'), SERVICE, MANAGED)).toBeNull();
+  });
+
+  it('turns on only for exactly 1', () => {
+    expect(managedConnectionsForwarding('1')).toBe(true);
+    for (const value of [undefined, '', '0', 'true', ' 1']) {
+      expect(managedConnectionsForwarding(value), String(value)).toBe(false);
+    }
   });
 });
 

@@ -248,6 +248,17 @@ describe('read_canvas', () => {
     expect(result.viewers).toBe(0);
   });
 
+  it('names a document the operator opened by the operator`s name, never "You" (DOR-2458)', async () => {
+    harness.service.canvas.open(roomId, harness.human, { type: 'json', data: {}, title: 'mine' });
+    const result = (await registryFor(harness).invoke(
+      'rooms.read_canvas',
+      { roomId },
+      { identity: identityFor(ANA, 'Ana') }
+    )) as { documents: Array<{ title: string; author: string }> };
+
+    expect(result.documents.find((d) => d.title === 'mine')?.author).toBe('the operator');
+  });
+
   it('returns the contents of a document that names no file', async () => {
     const document = harness.service.canvas.open(roomId, ana, {
       type: 'json',

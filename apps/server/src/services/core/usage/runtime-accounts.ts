@@ -1,7 +1,7 @@
 /**
  * Which accounts each runtime has, and which one `default` names: DorkOS's
  * implementation of the shared account rules (marketplace `specs/flow-cli-core`
- * §1.1a, revision 6d, fixtures 3.0.0), mirroring flow's `resolveAccounts`.
+ * §1.1a, revision 6d; fixtures 4.0.0), mirroring flow's `resolveAccounts`.
  *
  * - **An account is its folder, not its id.** Two folders are one account when
  *   their comparable forms match ({@link canonicalAccountPath}).
@@ -32,7 +32,7 @@ import {
   resolveAccountColor,
   type LedgerRuntime,
 } from '@dorkos/shared/account-usage';
-import { claudeAccountId } from '@dorkos/shared/config-schema';
+import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
 
 /** The label a standalone `default` account shows (contract §1.1a rev 6d, rule 4). */
 export const DEFAULT_ACCOUNT_LABEL = "Main (this computer's sign-in)";
@@ -42,6 +42,13 @@ const RUNTIME_CONFIG_KEYS: Readonly<Record<LedgerRuntime, string>> = {
   'claude-code': 'claudeCode',
   codex: 'codex',
   opencode: 'opencode',
+};
+
+/** What a registry warning calls one row of each runtime. */
+const ACCOUNT_NOUNS: Readonly<Record<LedgerRuntime, string>> = {
+  'claude-code': 'Claude account',
+  codex: 'Codex account',
+  opencode: 'OpenCode account',
 };
 
 /** A warning the account rules raise, named as the contract's fixtures name them. */
@@ -61,7 +68,10 @@ export interface RuntimeAccount {
   runtime: LedgerRuntime;
   /** The registry id, or `default` for the runtime's own account. */
   id: string;
-  /** The folder it runs in, `~` expanded; `null` for OpenCode's ambient default. */
+  /**
+   * The folder it runs in: a registered row's as written, a standalone default's
+   * with `~` expanded; `null` for OpenCode's ambient default.
+   */
   path: string | null;
   /** Its folder in comparable form, or `null` with no folder. */
   canonicalPath: string | null;
@@ -69,6 +79,8 @@ export interface RuntimeAccount {
   label: string | null;
   /** The resolved display color (stored, else the default for its position). */
   color: string;
+  /** The color the row stores, when it is a valid `#rrggbb`; else `null` (the contract's `color`). */
+  storedColor: string | null;
   /** False for a row whose id fails the pattern or is the reserved `default`. */
   routable: boolean;
   /** True for the runtime's own `default` (no registry row). */
@@ -218,11 +230,14 @@ export function defaultAccountFolder(
 }
 
 /**
- * One runtime's registered rows (contract §1.1a read rules): ids minted over
- * every object row BEFORE any row is skipped (every present id reserved first,
- * and `default` always taken), rows without an absolute path skipped, the first
+ * One runtime's registered rows, read by the contract's identity rules
+ * (§1.1a, the `identity.cases` fixture) through the one reader every surface
+ * uses, {@link readClaudeAccountSettings}: ids minted over every object row
+ * BEFORE any row is skipped, rows without an absolute path skipped, the first
  * of two rows sharing an id kept, a pattern-failing or `default` id listed but
- * not routable, and a bad color read as the positional default.
+ * not routable, and a bad color read as the positional default. Every runtime's
+ * rows follow the same rules. `path` is the folder as written; its comparable
+ * form is `canonicalPath`.
  */
 function readRegistered(
   runtime: LedgerRuntime,
@@ -230,78 +245,31 @@ function readRegistered(
   home: string | undefined,
   realpath: RealpathLookup
 ): { accounts: RuntimeAccount[]; warnings: AccountWarning[] } {
-  const warnings: AccountWarning[] = [];
-  const accounts: RuntimeAccount[] = [];
-  const key = RUNTIME_CONFIG_KEYS[runtime];
   const runtimes = isObject(config) ? config.runtimes : undefined;
-  const section = isObject(runtimes) ? runtimes[key] : undefined;
-  const rows = isObject(section) ? section.accounts : undefined;
-  if (!Array.isArray(rows)) return { accounts, warnings };
-
-  const taken = new Set<string>([IMPLICIT_ACCOUNT_ID]);
-  for (const row of rows) {
-    if (isObject(row) && typeof row.id === 'string' && row.id.length > 0) taken.add(row.id);
-  }
-  const ids = rows.map((row) => {
-    if (!isObject(row)) return null;
-    if (typeof row.id === 'string' && row.id.length > 0) return row.id;
-    const id = claudeAccountId({
-      label: typeof row.label === 'string' ? row.label : null,
-      path: typeof row.path === 'string' ? row.path : '',
-      taken,
-    });
-    taken.add(id);
-    return id;
-  });
-
-  const seen = new Set<string>();
-  rows.forEach((row, index) => {
-    const id = ids[index];
-    if (!isObject(row) || id === null || id === undefined) return;
-    if (!isAbsolutePath(row.path)) {
-      warnings.push({
-        code: 'path-invalid',
-        message: `runtimes.${key}.accounts[${index}] has no absolute path; skipped it.`,
-      });
-      return;
-    }
-    if (seen.has(id)) {
-      warnings.push({
-        code: 'id-duplicate',
-        message: `Account id "${id}" appears more than once; kept the first row.`,
-      });
-      return;
-    }
-    seen.add(id);
-    const reserved = id === IMPLICIT_ACCOUNT_ID;
-    const routable = !reserved && ACCOUNT_ID_PATTERN.test(id);
-    if (reserved) {
-      warnings.push({
-        code: 'id-reserved',
-        message: 'Account id "default" is reserved; this row is listed with no usage file.',
-      });
-    } else if (!routable) {
-      warnings.push({
-        code: 'id-invalid',
-        message: `Account id "${id}" is not lowercase letters, digits and single hyphens; it has no usage file.`,
-      });
-    }
+  const section = isObject(runtimes) ? runtimes[RUNTIME_CONFIG_KEYS[runtime]] : undefined;
+  const read = readClaudeAccountSettings(section, ACCOUNT_NOUNS[runtime]);
+  const accounts = read.accounts.map((row): RuntimeAccount => {
+    const routable = row.id !== IMPLICIT_ACCOUNT_ID && ACCOUNT_ID_PATTERN.test(row.id);
     const expanded = expandAccountPath(row.path, home);
-    accounts.push({
+    return {
       runtime,
-      id,
-      path: expanded,
+      id: row.id,
+      path: row.path,
       canonicalPath: realpath(expanded) ?? expanded,
-      label: typeof row.label === 'string' ? row.label : null,
-      color: resolveAccountColor(typeof row.color === 'string' ? row.color : null, index),
+      label: row.label ?? null,
+      color: row.color,
+      storedColor: row.colorIsDefault ? null : row.color,
       routable,
       implicit: false,
       isDefault: false,
-      ledgerId: routable ? id : null,
+      ledgerId: routable ? row.id : null,
       ...(typeof row.renamedFrom === 'string' ? { renamedFrom: row.renamedFrom } : {}),
-    });
+    };
   });
-  return { accounts, warnings };
+  return {
+    accounts,
+    warnings: read.warnings.map(({ code, message }) => ({ code, message })),
+  };
 }
 
 /**
@@ -366,6 +334,7 @@ function implicitAccount(
     canonicalPath: canonical,
     label: folder === null ? null : DEFAULT_ACCOUNT_LABEL,
     color,
+    storedColor: null,
     routable: true,
     implicit: true,
     isDefault: true,

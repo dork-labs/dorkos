@@ -214,6 +214,7 @@ export function useSwitcherFixture(): void {
           lifecycle: 'streaming',
           lastError: null,
           limit: null,
+          accountUsage: null,
         },
         LONG_NAME_AGENT.path
       );
@@ -233,6 +234,7 @@ export function useSwitcherFixture(): void {
           lifecycle: 'streaming',
           lastError: null,
           limit: null,
+          accountUsage: null,
           activity: { toolName, target },
         },
         SWITCHER_AGENT.path

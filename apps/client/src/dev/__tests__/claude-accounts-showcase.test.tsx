@@ -19,6 +19,7 @@ import { render, screen, cleanup, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { TransportProvider } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
 import { ClaudeAccountsSection } from '@/layers/features/settings';
 import { createPlaygroundTransport } from '../playground-transport';
 import {
@@ -64,14 +65,20 @@ function PlaygroundShell({ children }: { children: React.ReactNode }) {
   return <TransportProvider transport={createPlaygroundTransport()}>{children}</TransportProvider>;
 }
 
-/** The Claude Code card, opened, with its declared accounts section drawn. */
+/**
+ * The Claude Code card, opened, with its declared accounts section drawn,
+ * inside the tooltip provider `DevPlayground.tsx` supplies (account dots carry
+ * tooltips).
+ */
 function AccountsCard() {
   return (
-    <LiveRuntimeCard
-      type="claude-code"
-      expanded
-      renderSection={(kind) => (kind === 'claude-accounts' ? <ClaudeAccountsSection /> : null)}
-    />
+    <TooltipProvider>
+      <LiveRuntimeCard
+        type="claude-code"
+        expanded
+        renderSection={(kind) => (kind === 'claude-accounts' ? <ClaudeAccountsSection /> : null)}
+      />
+    </TooltipProvider>
   );
 }
 

@@ -33,6 +33,10 @@ export const LAST_UPDATED = formatDay(POSTED_ON);
 /** The day every price on this page takes effect: the plans, credits, extras and model prices. */
 export const PAID_FROM = formatDay(POSTED_ON, NOTICE_DAYS);
 
+/** What a price here does not include. Said under the plan cards and in the questions. */
+export const TAX_NOTE =
+  'Prices are in US dollars. Sales tax or VAT is added at checkout where it applies.';
+
 // ── Credits and money ────────────────────────────────────────────────────────
 //
 // One credit is one US cent. Credit figures are stored as exact numbers and

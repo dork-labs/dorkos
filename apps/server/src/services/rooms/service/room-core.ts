@@ -86,6 +86,8 @@ export interface RoomCore {
   readonly canvasNow?: () => number;
   /** Whether an author is the install's owner. Read per check, never captured. */
   readonly isOwnerAuthor: (authorId: string) => boolean;
+  /** The operator's profile name, or `null`; see `RoomServiceDeps.operatorName`. */
+  readonly operatorName?: () => string | null;
   /** The record-based twin of {@link RoomCore.isOwnerAuthor}. */
   readonly isOwnerRecord: (record: AuthorRecord) => boolean;
   /**
@@ -198,6 +200,10 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     reactions: deps.reactions,
     authors: deps.authors,
     agents: deps.agents,
+    // Who the owner is and what they like to be called, so an agent reads the
+    // operator by name rather than by the registry's 'You' (DOR-2458).
+    isOwnerAuthor: deps.isOwnerAuthor,
+    ...(deps.operatorName ? { operatorName: deps.operatorName } : {}),
     // Read per turn, never captured: a room becomes bridged partway through
     // its life, and the standing line in the fence has to follow that rather
     // than whatever was true when the service was built.
@@ -265,6 +271,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     roomRepoPath: deps.roomRepoPath,
     ...(deps.canvasNow ? { canvasNow: deps.canvasNow } : {}),
     isOwnerAuthor: deps.isOwnerAuthor,
+    ...(deps.operatorName ? { operatorName: deps.operatorName } : {}),
     isOwnerRecord: deps.isOwnerRecord,
     isOwnerVoice: deps.isOwnerVoice,
     bridges: deps.bridges,

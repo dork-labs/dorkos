@@ -2,12 +2,13 @@
 slug: agent-home-desk
 id: 260926-172253
 created: 2026-09-26
-status: specified
+status: implemented
 ---
 
 # Home, desk and shared folders — specification
 
-**Status:** Specified
+**Status:** Implemented. T1 to T7 shipped 2026-09-26/27 (#2161, #2162, #2170, #2167, #2177,
+#2188, #2197, #2218, #2221); T8 accepted the four ADRs and updated `docs/concepts/rooms.mdx`.
 **Author:** Claude (spec author), direction approved by Dorian 2026-09-26
 **Tracker:** DOR-2355 (closes DOR-2356; DOR-2359 becomes moot for rooms; retires DOR-1640's patch)
 **Decision record:** [01-ideation.md](01-ideation.md) — the rule, the operator's decisions and the

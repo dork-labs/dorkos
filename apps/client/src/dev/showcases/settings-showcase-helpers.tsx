@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   NavigationLayout,
@@ -9,7 +10,7 @@ import {
   NavigationLayoutPanel,
   NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, seedAccountUsage } from '@/layers/shared/model';
 import { RuntimeCardView } from '@/layers/features/settings';
 import { createPlaygroundTransport } from '../playground-transport';
 import {
@@ -33,13 +34,16 @@ import { configKeys } from '@/layers/entities/config';
  *
  * @param children - Showcase content to render.
  * @param config - Server config to seed; defaults to {@link MOCK_SERVER_CONFIG}.
+ * @param usage - Account usage to seed into each runtime's usage cache.
  */
 export function MockedQueryProvider({
   children,
   config = MOCK_SERVER_CONFIG,
+  usage = [],
 }: {
   children: React.ReactNode;
   config?: ServerConfig;
+  usage?: AccountUsage[];
 }) {
   const [client] = useState(() => {
     const c = new QueryClient({
@@ -47,6 +51,7 @@ export function MockedQueryProvider({
     });
     c.setQueryData(configKeys.current(), config);
     c.setQueryData(['mesh', 'agents'], MOCK_MESH_AGENTS);
+    seedAccountUsage(c, usage);
     return c;
   });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;

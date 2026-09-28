@@ -12,7 +12,16 @@ amends: [260807-233816]
 
 ## Status
 
-Accepted (spec `agent-home-desk`; shipped by DOR-2410, #2197). It amends **260807-233816**, which stays `accepted`: the
+Accepted (spec `agent-home-desk`; designed in #2153). Shipped: per-turn directory grants on all
+three runtimes, gated by `runtimeConformance`, in #2162 and #2170 (DOR-2408); room turns standing
+at home with the narrowed `.git` grant and the `ROOM_REPO_CONFIG_UNSAFE` audit in #2197 (DOR-2410);
+an agent attaching a file from its own copy of the room's files, as well as from its home, in #2221.
+Residual limits, recorded rather than solved: the `repo/.git/objects/` and `refs/heads/room/` (with
+its reflog folder) grants are shared by every agent in the room, so an agent can overwrite a loose
+object or move another agent's `room/<slug>` branch (see Negative). Closing them needs a per-agent
+object store and per-agent refs, which is follow-up work.
+
+It amends **260807-233816**, which stays `accepted`: the
 "filesystem grant on the `AgentRuntime` port" that record declined on cost is now built, and the
 Positive bullet "the `AgentRuntime` port is untouched" is retired. Attachments are still projected,
 into the turn's working directory, which for a room turn is the agent's home again.

@@ -484,6 +484,74 @@ export const ConnectorDisconnectImpactSchema = z
 /** Owner-visible authority affected by disconnecting one connection. */
 export type ConnectorDisconnectImpact = z.infer<typeof ConnectorDisconnectImpactSchema>;
 
+/**
+ * The most actions one app's list carries. Matches the page bound the grant
+ * review reads (20 pages of 100), so a complete list here is one the review
+ * could read too.
+ */
+export const CONNECTOR_APP_ACTIONS_LIMIT = 2_000;
+
+/** Which app's actions to list, and through which configured way. */
+export const ConnectorAppActionsQuerySchema = z
+  .object({ providerInstanceId: ConnectorProviderInstanceIdSchema })
+  .strict();
+/** Which app's actions to list, and through which configured way. */
+export type ConnectorAppActionsQuery = z.infer<typeof ConnectorAppActionsQuerySchema>;
+
+/** One action an app offers agents, as the owner's side panel shows it. */
+export const ConnectorAppActionSchema = z
+  .object({
+    /** The service's action id, e.g. `GMAIL_SEND_EMAIL`. */
+    operationSlug: z.string().min(1).max(200),
+    /** The service's own display name for the action, when it gives one. */
+    displayName: z.string().min(1).max(200).optional(),
+    /**
+     * The safety classification the grant review stores and execution
+     * enforces: the exact value the service's discovery produced, never a
+     * reinterpretation. `read` is the only one that does not change anything.
+     */
+    capabilityClassification: ConnectorOperationClassificationSchema,
+    /** True when the service marks the action as one of its main ones. */
+    important: z.boolean(),
+  })
+  .strict();
+/** One action an app offers agents, as the owner's side panel shows it. */
+export type ConnectorAppAction = z.infer<typeof ConnectorAppActionSchema>;
+
+/**
+ * What one app lets agents do through one configured way: its action list at
+ * one exact service version, or an honest "this service can't list them".
+ */
+export const ConnectorAppActionsSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('listed'),
+      toolkit: z.string().min(1).max(200),
+      toolkitVersion: z.string().min(1).max(200),
+      actions: z.array(ConnectorAppActionSchema).max(CONNECTOR_APP_ACTIONS_LIMIT),
+      /**
+       * Whether this is the whole list. `too_large` means the app has more
+       * actions than DorkOS reads; `interrupted` means the listing stopped part
+       * way. Either way the list is the first ones only, never the whole.
+       */
+      completeness: z.enum(['complete', 'too_large', 'interrupted']),
+      /** When the list was last read from the service. */
+      fetchedAt: z.string().datetime(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('unlisted'),
+      toolkit: z.string().min(1).max(200),
+    })
+    .strict(),
+]);
+/**
+ * What one app lets agents do through one configured way: its action list at
+ * one exact service version, or an honest "this service can't list them".
+ */
+export type ConnectorAppActions = z.infer<typeof ConnectorAppActionsSchema>;
+
 /** One exact granted connection in an owner-visible agent profile. */
 export const ConnectorAgentConnectionSchema = z
   .object({

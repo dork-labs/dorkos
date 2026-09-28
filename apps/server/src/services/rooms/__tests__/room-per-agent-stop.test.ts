@@ -53,10 +53,10 @@ const agents = agentLookupFor({
 /** How this room's own line reads for the three outcomes, in full. */
 const STOPPED_ANA = {
   interrupted:
-    'You stopped Ana. Ana was working here and has been interrupted. Send a message to start it again.',
+    'The operator stopped Ana. Ana was working here and has been interrupted. Send a message to start it again.',
   unstarted:
-    'You stopped Ana. Ana had not started yet, so it will not answer what was waiting. Send a message to ask again.',
-  idle: 'You stopped Ana. Ana was not working here at the time.',
+    'The operator stopped Ana. Ana had not started yet, so it will not answer what was waiting. Send a message to ask again.',
+  idle: 'The operator stopped Ana. Ana was not working here at the time.',
 };
 
 describe('stopping one agent in a room', () => {
@@ -260,7 +260,9 @@ describe('stopping one agent in a room', () => {
     await service.haltAgent(room.id, bo, human);
 
     expect(haltedLines().map((entry) => entry.body.subjectAuthorId)).toEqual([ana, bo]);
-    expect(haltedLines()[1].body.text).toBe('You stopped Bo. Bo was not working here at the time.');
+    expect(haltedLines()[1].body.text).toBe(
+      'The operator stopped Bo. Bo was not working here at the time.'
+    );
   });
 
   it('a room-wide stop after a per-agent one still speaks', async () => {

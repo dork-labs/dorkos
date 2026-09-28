@@ -41,11 +41,24 @@ export {
   useFeatureEnabledState,
   type FeatureEnabledState,
 } from './server-config/use-feature-enabled';
-export { useClaudeAccounts } from './server-config/use-claude-accounts';
+export {
+  useAccountUsage,
+  mergeAccountUsage,
+  seedAccountUsage,
+  type AccountUsageView,
+  type UseAccountUsageOptions,
+} from './server-config/use-account-usage';
+export { useAccountUsageSync } from './server-config/use-account-usage-sync';
+export {
+  useClaudeAccounts,
+  type ClaudeAccountEntry,
+  type ClaudeAccountsView,
+} from './server-config/use-claude-accounts';
 // The one `/config` query key, here rather than in `entities/config` because
 // `shared/` reads config too and may not import an entity. `entities/config`
 // re-exports it, so nothing above changes its import.
 export {
+  accountKeys,
   configKeys,
   CONFIG_STALE_TIME_MS,
   CONFIG_WRITE_MUTATION_KEY,

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { test, expect } from '@playwright/test';
+import { test, expect, request as playwrightRequest } from '@playwright/test';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
@@ -76,6 +76,7 @@ test.beforeAll(async () => {
     COMMUNITY_BOOTSTRAP_SECRET: 'c'.repeat(32),
     COMMUNITY_PUBLIC_URL: baseUrl,
     COMMUNITY_STORAGE_PATH: '/tmp/community-browser-test-blobs',
+    COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: '20',
   });
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
@@ -117,6 +118,202 @@ test.afterAll(async () => {
 });
 
 test.describe('Community pairing approval @smoke', () => {
+  test('offers configured sign-in methods with a callback to this exact request', async ({
+    page,
+  }) => {
+    const { pairingId, approvalUrl } = await pairing('Social sign-in install', communityId);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.route('**/auth-options', (route) =>
+      route.fulfill({ json: { google: true, github: true, oidc: { label: 'Team SSO' } } })
+    );
+    const handoffs: { provider: string; callbackURL: string; errorCallbackURL: string }[] = [];
+    await page.route('**/api/auth/sign-in/social', async (route) => {
+      handoffs.push(JSON.parse(route.request().postData() ?? '{}'));
+      await route.fulfill({ status: 400, json: { message: 'Test-owned provider boundary' } });
+    });
+    await page.goto(`${approvalUrl}&unused=ignored`);
+    await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Continue with GitHub' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Continue with Team SSO' })).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+    ).toBe(true);
+    await page.screenshot({ path: '/tmp/community-pairing-social-mobile.png', fullPage: true });
+    for (const [name, provider] of [
+      ['Continue with Google', 'google'],
+      ['Continue with GitHub', 'github'],
+      ['Continue with Team SSO', 'oidc'],
+    ]) {
+      await page.getByRole('button', { name }).click();
+      await expect.poll(() => handoffs.length).toBe(1);
+      const handoff = handoffs.pop();
+      expect(handoff).toEqual({
+        provider,
+        callbackURL: approvalUrl,
+        errorCallbackURL: approvalUrl,
+      });
+    }
+    // A failed provider return keeps the same tenant and request, and explains the refusal.
+    await page.goto(`${approvalUrl}&error=account_not_linked`);
+    await expect(page.getByRole('alert')).toContainText('already exists here');
+    await expect(page).toHaveURL(approvalUrl);
+    await expect(page.getByRole('button', { name: 'Sign in and review' })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get('pairingId')).toBe(pairingId);
+    await page.getByLabel('Email').fill('owner@browser.test');
+    await page.getByLabel('Password').fill('password1234');
+    await page.getByRole('button', { name: 'Sign in and review' }).click();
+    await expect(page.getByText('Social sign-in install')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve connection' })).toBeVisible();
+
+    // The host-wide pairing address has the same callback contract without a tenant path.
+    const hostPairing = await pairing('Host sign-in install');
+    await page.context().clearCookies();
+    await page.goto(hostPairing.approvalUrl);
+    await page.getByRole('button', { name: 'Continue with Google' }).click();
+    await expect.poll(() => handoffs.length).toBe(1);
+    expect(handoffs.pop()).toEqual({
+      provider: 'google',
+      callbackURL: hostPairing.approvalUrl,
+      errorCallbackURL: hostPairing.approvalUrl,
+    });
+  });
+
+  test('shows an expired request after sign-in and removes stale actions after a 409', async ({
+    page,
+  }) => {
+    const expired = await pairing('Expired before sign-in', communityId);
+    await pool.query(
+      "UPDATE connection_pairings SET expires_at=now()-interval '1 second' WHERE id=$1",
+      [expired.pairingId]
+    );
+    await page.goto(expired.approvalUrl);
+    await page.getByLabel('Email').fill('owner@browser.test');
+    await page.getByLabel('Password').fill('password1234');
+    await page.getByRole('button', { name: 'Sign in and review' }).click();
+    await expect(page.getByRole('status')).toContainText('no longer available');
+    await expect(page.getByRole('button', { name: 'Approve connection' })).toHaveCount(0);
+
+    const racing = await pairing('Expires while reviewing', communityId);
+    await page.goto(racing.approvalUrl);
+    await expect(page.getByRole('button', { name: 'Approve connection' })).toBeVisible();
+    await pool.query(
+      "UPDATE connection_pairings SET expires_at=now()-interval '1 second' WHERE id=$1",
+      [racing.pairingId]
+    );
+    const conflict = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/pairings/approve') && response.status() === 409
+    );
+    await page.getByRole('button', { name: 'Approve connection' }).click();
+    await conflict;
+    await expect(page.getByRole('status')).toContainText('no longer available');
+    await expect(page.getByRole('button', { name: 'Approve connection' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Decline' })).toHaveCount(0);
+  });
+
+  test('asks for sign-in again when the session ends before approval', async ({ page }) => {
+    const { pairingId, approvalUrl } = await pairing('Session-expiry install', communityId);
+    await page.goto(approvalUrl);
+    await page.getByLabel('Email').fill('owner@browser.test');
+    await page.getByLabel('Password').fill('password1234');
+    await page.getByRole('button', { name: 'Sign in and review' }).click();
+    await expect(page.getByText('Session-expiry install')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve connection' })).toBeVisible();
+
+    await page.context().clearCookies();
+    const unauthorized = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/pairings/approve') && response.status() === 401
+    );
+    await page.getByRole('button', { name: 'Approve connection' }).click();
+    await unauthorized;
+    await expect(page).toHaveURL(approvalUrl);
+    await expect(page.getByRole('button', { name: 'Approve connection' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Sign in and review' })).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeFocused();
+    const stillPending = await pool.query<{ approved_at: Date | null }>(
+      'SELECT approved_at FROM connection_pairings WHERE id=$1',
+      [pairingId]
+    );
+    expect(stillPending.rows[0].approved_at).toBeNull();
+
+    await page.getByLabel('Email').fill('owner@browser.test');
+    await page.getByLabel('Password').fill('password1234');
+    await page.getByRole('button', { name: 'Sign in and review' }).click();
+    await expect(page.getByText('Session-expiry install')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve connection' })).toBeVisible();
+    expect(
+      (await pool.query('SELECT approved_at FROM connection_pairings WHERE id=$1', [pairingId]))
+        .rows[0].approved_at
+    ).toBeNull();
+    await page.getByRole('button', { name: 'Approve connection' }).click();
+    await expect(page.getByRole('status')).toContainText('Approved');
+  });
+
+  test('removes approval controls when membership ends during review', async ({ page }) => {
+    const { approvalUrl } = await pairing('Former member install', communityId);
+    await page.goto(approvalUrl);
+    await page.getByLabel('Email').fill('owner@browser.test');
+    await page.getByLabel('Password').fill('password1234');
+    await page.getByRole('button', { name: 'Sign in and review' }).click();
+    await expect(page.getByRole('button', { name: 'Approve connection' })).toBeVisible();
+    const { token } = await page.evaluate(async (id) => {
+      const response = await fetch(`/api/v1/communities/${id}/invites`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ seats: 1 }),
+      });
+      if (!response.ok) throw new Error(`Invite request failed: ${response.status}`);
+      return (await response.json()) as { token: string };
+    }, communityId);
+    const memberApi = await playwrightRequest.newContext({
+      baseURL: baseUrl,
+      extraHTTPHeaders: { origin: baseUrl },
+    });
+    let memberId = '';
+    try {
+      const tenant = `/api/v1/communities/${communityId}`;
+      expect((await memberApi.post(`${tenant}/invites/preflight`, { data: { token } })).ok()).toBe(
+        true
+      );
+      expect(
+        (
+          await memberApi.post('/api/auth/sign-up/email', {
+            data: {
+              name: 'Former member',
+              email: 'former-pairing@browser.test',
+              password: 'password1234',
+            },
+          })
+        ).ok()
+      ).toBe(true);
+      expect((await memberApi.post(`${tenant}/invites/bind`, { data: {} })).ok()).toBe(true);
+      const redeemed = await memberApi.post(`${tenant}/invites/redeem`, { data: {} });
+      expect(redeemed.ok()).toBe(true);
+      memberId = ((await redeemed.json()) as { memberId: string }).memberId;
+      await page.context().clearCookies();
+      await page.context().addCookies((await memberApi.storageState()).cookies);
+      await page.goto(approvalUrl);
+      await expect(page.getByRole('button', { name: 'Approve connection' })).toBeVisible();
+
+      await pool.query('UPDATE members SET active=false WHERE id=$1', [memberId]);
+      const forbidden = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/pairings/decline') &&
+          response.status() === 403
+      );
+      await page.getByRole('button', { name: 'Decline' }).click();
+      await forbidden;
+      await expect(page.getByRole('alert')).toContainText('You have not joined this community.');
+      await expect(page.getByRole('button', { name: 'Approve connection' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Decline' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Sign in and review' })).toHaveCount(0);
+    } finally {
+      if (memberId) await pool.query('UPDATE members SET active=true WHERE id=$1', [memberId]);
+      await memberApi.dispose();
+    }
+  });
+
   test('shows install and scopes, approves, and keeps code and bearer out of the browser', async ({
     page,
   }) => {
@@ -191,6 +388,7 @@ test.describe('Community pairing approval @smoke', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(approvalUrl);
     await expect(page.getByLabel('Email')).toBeFocused();
+    await expect(page.getByRole('button', { name: /^Continue with / })).toHaveCount(0);
     await page.getByLabel('Email').fill('owner@browser.test');
     await page.getByLabel('Password').fill('password1234');
     await page.getByLabel('Password').press('Enter');

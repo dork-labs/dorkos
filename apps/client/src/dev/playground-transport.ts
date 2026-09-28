@@ -1,6 +1,11 @@
 import type { Transport } from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+import {
+  MOCK_ACCOUNT_USAGE,
+  MOCK_CONTINUE_OPTIONS,
+  MOCK_LIMIT_HISTORY,
+} from './showcases/account-mock-data';
 
 /**
  * The one room `getRoom` answers for — everything the `AppTabStrip` showcase
@@ -306,6 +311,20 @@ export function createPlaygroundTransport(): Transport {
             status: 409,
           });
         };
+      }
+      // Account usage and the carry-over routes (spec `claude-account-ui` §13):
+      // the reads answer from fixtures so account surfaces show real states,
+      // and the writes succeed without effect.
+      if (prop === 'getAccountUsage') {
+        return async (runtime: string) => ({
+          accounts: MOCK_ACCOUNT_USAGE.filter((usage) => usage.runtime === runtime),
+        });
+      }
+      if (prop === 'getContinueOptions') return async () => MOCK_CONTINUE_OPTIONS;
+      if (prop === 'getLimitHistory') return async () => ({ entries: MOCK_LIMIT_HISTORY });
+      if (prop === 'continueSession') return async () => ({});
+      if (prop === 'waitForReset' || prop === 'cancelAutoContinue') {
+        return async () => undefined;
       }
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;

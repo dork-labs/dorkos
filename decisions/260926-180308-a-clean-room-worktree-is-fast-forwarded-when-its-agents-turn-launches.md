@@ -1,7 +1,7 @@
 ---
 id: 260926-180308
 title: A clean room worktree is fast-forwarded when its agent's turn launches; otherwise the turn is told what moved
-status: proposed
+status: accepted
 created: 2026-09-26
 spec: agent-home-desk
 superseded-by: null
@@ -12,7 +12,12 @@ amends: [260829-115621]
 
 ## Status
 
-Proposed (spec `agent-home-desk`). It amends **260829-115621**, which stays `accepted`: retired are the
+Accepted (spec `agent-home-desk`; designed in #2153). Shipped in #2218 (DOR-2411): the launch-time
+fast-forward behind `prepareLaunch`, the "what moved" heads-up for a held copy, and a copy left
+alone (`held: unsafe-config`) while the room's shared git settings name a program. It builds on the
+`prepareLaunch` hook added in #2197 (DOR-2410).
+
+It amends **260829-115621**, which stays `accepted`: retired are the
 Decision sentence "The server never reaches into a worktree" and the Alternatives bullet "The server
 syncing worktrees for agents". Pull-based propagation stands for any worktree holding work.
 

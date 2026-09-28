@@ -127,7 +127,7 @@ export const ADOPT_SENTENCES = {
   /** B1 — `harness.autoAdopt` is on somewhere DorkOS does not own. */
   S8: (): string =>
     `harness.autoAdopt is on, and it does nothing here: DorkOS only moves skills on its own ` +
-    `inside the agent folders and room folders it owns. Run dorkos harness adopt <name> to ` +
+    `inside the agent folders it owns. Run dorkos harness adopt <name> to ` +
     `move one yourself.`,
 
   /** R8 — `--claude-only` on a candidate that does not live in Claude Code's folder. */

@@ -15,6 +15,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { stableStringify } from '@dorkos/shared/capabilities';
+import { checkConnectorArguments } from '@dorkos/shared/connector-arguments';
 import {
   ConnectorOperationRevisionSchema,
   type ConnectorExecutionTarget,
@@ -611,6 +612,12 @@ export class ConnectorExecutionAuthorizationService {
     };
   }
 
+  /**
+   * The arguments exactly as the agent sent them, once they satisfy the
+   * operation's frozen input schema. Nothing is filled in, coerced or dropped:
+   * the digest binds, the audit records and the provider receives this very
+   * object, and the provider applies its own defaults (`checkConnectorArguments`).
+   */
   private validateArguments(
     inputSchemaJson: string,
     argumentsValue: Record<string, unknown>
@@ -618,28 +625,28 @@ export class ConnectorExecutionAuthorizationService {
     if (!isPlainJson(argumentsValue)) {
       return refuse('CONNECTOR_ARGUMENTS_INVALID', 'Connector arguments must be plain JSON data.');
     }
+    let inputSchema: unknown;
     try {
-      const schema = z.fromJSONSchema(JSON.parse(inputSchemaJson));
-      const parsed = schema.parse(argumentsValue);
-      if (
-        !isPlainJson(parsed) ||
-        typeof parsed !== 'object' ||
-        parsed === null ||
-        Array.isArray(parsed) ||
-        stableStringify(parsed) !== stableStringify(argumentsValue)
-      ) {
-        return refuse(
-          'CONNECTOR_ARGUMENTS_INVALID',
-          'Connector arguments must exactly match the immutable operation schema.'
-        );
-      }
-      return parsed as Record<string, unknown>;
-    } catch (error) {
-      if (error instanceof CapabilityToolError) throw error;
+      inputSchema = JSON.parse(inputSchemaJson);
+    } catch {
+      inputSchema = undefined;
+    }
+    const check =
+      inputSchema !== null && typeof inputSchema === 'object' && !Array.isArray(inputSchema)
+        ? checkConnectorArguments(inputSchema as Record<string, unknown>, argumentsValue)
+        : ({ ok: false, reason: 'schema_unreadable' } as const);
+    if (check.ok) return argumentsValue;
+    if (check.reason === 'schema_unreadable') {
       return refuse(
         'CONNECTOR_ARGUMENTS_INVALID',
-        'Connector arguments do not match the immutable operation schema.'
+        "This operation's input schema cannot be checked, so it cannot run."
       );
     }
+    return refuse(
+      'CONNECTOR_ARGUMENTS_INVALID',
+      check.problem
+        ? `Connector arguments do not match the operation's input schema: ${check.problem}.`
+        : "Connector arguments do not match the operation's input schema."
+    );
   }
 }

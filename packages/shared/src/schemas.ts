@@ -450,6 +450,13 @@ export const SessionSchema = z
       .object({
         lifecycle: SessionLifecycleSchema,
         limit: SessionLimitSchema.nullable(),
+        /**
+         * Account-wide cached usage for the account this session bills, as
+         * `SessionStatus.accountUsage` carries it (spec `claude-account-fleet`
+         * §6 U). Set by `GET /api/sessions/:id`; ABSENT on the list, whose
+         * envelope carries each account once.
+         */
+        accountUsage: AccountUsageSchema.nullable().optional(),
       })
       .optional(),
     /**

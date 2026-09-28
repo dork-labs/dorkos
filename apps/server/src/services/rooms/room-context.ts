@@ -98,6 +98,72 @@ const ACKNOWLEDGMENT_EXCERPT_CHARS = 80;
  */
 const UNKNOWN_DISPLAY_NAME = 'Unknown';
 
+/**
+ * What an agent calls the operator when they have not said what they like to
+ * be called (DOR-2458).
+ */
+export const OPERATOR_FALLBACK_NAME = 'the operator';
+
+/**
+ * The name an agent reads for an author: the stored label for everyone except
+ * the install's owner, who is named by their profile name, or
+ * {@link OPERATOR_FALLBACK_NAME} (DOR-2458).
+ *
+ * **Why the owner is special.** The registry stores the owner's label as
+ * `'You'` forever (`bindOwner`), which is the right word in the operator's own
+ * window — and in an agent's context it is a pronoun that points at the agent.
+ * "You (person): ship it" reads as the agent's own words, and a heads-up saying
+ * "You changed ROOM.md" reads as something the agent did. Resolved the way a
+ * person's commit is authored (`personName` in `index.ts`), so the agent and
+ * `git log` call the operator the same thing. Login on or off makes no
+ * difference: `isOwnerAuthor` answers for whichever row is the owner now.
+ *
+ * @param deps - Who the owner is, and their profile name.
+ * @param authorId - The author being named.
+ * @param stored - The registry's label for them.
+ */
+export function agentFacingName(
+  deps: Pick<RoomContextDeps, 'isOwnerAuthor' | 'operatorName'>,
+  authorId: string,
+  stored: string
+): string {
+  if (!deps.isOwnerAuthor(authorId)) return stored;
+  return deps.operatorName?.() ?? OPERATOR_FALLBACK_NAME;
+}
+
+/** What {@link nameForAgents} needs: the registry, who the owner is, and their name. */
+export interface AgentFacingNameDeps {
+  authors: Pick<AuthorRegistry, 'getById'>;
+  isOwnerAuthor(authorId: string): boolean;
+  operatorName?(): string | null;
+}
+
+/**
+ * An author's name as an agent should read it — {@link agentFacingName} over
+ * the stored row — or `null` when no row carries the id.
+ *
+ * The one reader for every name DorkOS writes where an agent will read it: the
+ * room context, tool results, and the texts a room stores in its log (a
+ * notice, a canvas sentence), which the next turn reads back (DOR-2458).
+ *
+ * @param deps - The registry and the owner facts.
+ * @param authorId - The author to name.
+ * @param opts.sentenceStart - The name opens a sentence DorkOS stores.
+ */
+export function nameForAgents(
+  deps: AgentFacingNameDeps,
+  authorId: string,
+  opts: { sentenceStart?: boolean } = {}
+): string | null {
+  const author = deps.authors.getById(authorId);
+  if (!author) return null;
+  const name = agentFacingName(deps, authorId, author.displayName);
+  // "The operator stopped Bo." — the fallback is a phrase, not a name, so it
+  // takes a capital when it opens a sentence. A person's own name is left
+  // exactly as they wrote it.
+  return opts.sentenceStart && name === OPERATOR_FALLBACK_NAME ? 'The operator' : name;
+}
+
 /** The data this module reads. Everything is synchronous (`better-sqlite3`). */
 export interface RoomContextDeps {
   store: RoomStore;
@@ -106,6 +172,19 @@ export interface RoomContextDeps {
   authors: AuthorRegistry;
   /** Resolves an agent's handle from its directory — one name an `@` may match. */
   agents: RoomAgentLookup;
+  /**
+   * Whether an author is the install's owner — read per check, the same
+   * predicate `RoomServiceDeps.isOwnerAuthor` is. The owner is the one author
+   * an agent must never read under the registry's `'You'` (see
+   * {@link agentFacingName}).
+   */
+  isOwnerAuthor(authorId: string): boolean;
+  /**
+   * The operator's profile name, or `null` when they have not given one. Absent
+   * where nothing supplies it; either way the owner is then
+   * {@link OPERATOR_FALLBACK_NAME}.
+   */
+  operatorName?(): string | null;
   /**
    * What this room's turn is told about the chat it projects, or `null` for an
    * unbridged room (chats-as-channels §8, §9.2, §15).
@@ -618,9 +697,11 @@ export function buildRoomContext(
    * attribution and claims nothing.
    */
   function nameOf(authorId: string): RoomContextAuthor {
+    const stored = records.get(authorId)?.displayName;
     return {
       handle: handles.get(authorId) ?? null,
-      displayName: records.get(authorId)?.displayName ?? UNKNOWN_DISPLAY_NAME,
+      displayName:
+        stored === undefined ? UNKNOWN_DISPLAY_NAME : agentFacingName(deps, authorId, stored),
     };
   }
 

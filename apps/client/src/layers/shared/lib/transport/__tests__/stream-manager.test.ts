@@ -68,6 +68,7 @@ const STATUS: SessionStatus = {
   lifecycle: 'idle',
   lastError: null,
   limit: null,
+  accountUsage: null,
 };
 
 const SNAPSHOT: SessionSnapshot = {

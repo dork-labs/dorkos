@@ -45,6 +45,8 @@ import type { NotificationPayload } from '../notification-registry.js';
 import { withSessionLimitStore } from '../../session/fleet/session-limit-store.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { canonicalAccountPath } from '../../core/usage/runtime-accounts.js';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 
 /**
  * What to call a session in a sentence.
@@ -95,6 +97,30 @@ function accountRefOf(accountPath: string): string {
   return createHash('sha256').update(canonical).digest('hex').slice(0, 12);
 }
 
+/** What to call an account with no label, per runtime; never a raw id. */
+const UNLABELLED_ACCOUNT: Readonly<Record<LedgerRuntime, string>> = {
+  'claude-code': 'Your Claude account',
+  codex: 'Your Codex account',
+  opencode: 'Your OpenCode account',
+};
+
+/**
+ * The runtime a session is bound to, for the usage ledgers: its
+ * `session_metadata` row, else Claude Code (the only runtime with more than one
+ * account, and the one every limit came from before §6 R). Never throws.
+ */
+function ledgerRuntimeOf(sessionId: string): LedgerRuntime {
+  try {
+    const bound = runtimeRegistry.getSessionBindings([sessionId]).get(sessionId)?.runtime;
+    if (bound && (LEDGER_RUNTIMES as readonly string[]).includes(bound)) {
+      return bound as LedgerRuntime;
+    }
+  } catch {
+    // No database yet (a unit test, early boot): fall through.
+  }
+  return 'claude-code';
+}
+
 /**
  * Describe a usage limit a session hit, naming the account the way the
  * operator does.
@@ -103,7 +129,9 @@ function accountRefOf(accountPath: string): string {
  * machine default's. An unregistered folder (`accountId` null) is found by the
  * folder the session's stored limit recorded, which is also its identity in
  * the dedupe key, as a short hash ({@link accountRefOf}) so the path itself is
- * never stored in the notification.
+ * never stored in the notification. The account is looked up in the session's
+ * own runtime (spec §6 R): Codex's and OpenCode's `default` is not Claude
+ * Code's, so their payload names the runtime, which keeps their episodes apart.
  *
  * @param sessionId - The session that stopped.
  * @param cwd - Its working directory, when the projector knew one.
@@ -117,18 +145,20 @@ function accountLimitedPayload(
   const agentId = resolveAgentIdForPath(cwd);
   const accountPath =
     withSessionLimitStore('get', (store) => store.get(sessionId))?.accountPath ?? undefined;
+  const runtime = ledgerRuntimeOf(sessionId);
   const usageStore = getAccountUsageStore();
   const usage = limit.accountId
-    ? usageStore?.peek('claude-code', [limit.accountId])[0]
+    ? usageStore?.peek(runtime, [limit.accountId])[0]
     : accountPath
-      ? (usageStore?.usageAtPath('claude-code', accountPath) ?? undefined)
+      ? (usageStore?.usageAtPath(runtime, accountPath) ?? undefined)
       : undefined;
   return {
     sessionId,
     sessionLabel: sessionLabelFor(cwd),
     accountId: limit.accountId,
     // A raw id (`default`, `default-2`) is never shown: without a label, say what it is.
-    accountLabel: usage?.label ?? 'Your Claude account',
+    accountLabel: usage?.label ?? UNLABELLED_ACCOUNT[runtime],
+    ...(runtime !== 'claude-code' ? { runtime } : {}),
     window: limit.window,
     resetsAt: limit.resetsAt,
     since: limit.since,

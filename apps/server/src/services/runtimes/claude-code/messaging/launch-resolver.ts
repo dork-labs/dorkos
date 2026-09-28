@@ -55,6 +55,8 @@ import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
+import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants } from './directory-grants.js';
@@ -281,6 +283,8 @@ export async function resolveLaunch(args: {
   // env seam (ADR-0315). Injected below ONLY when configured; a missing or
   // dangling reference yields `{}`, leaving host/delegated-login auth untouched.
   const claudeCredentialEnv = await resolveClaudeCredentialEnv();
+  // DorkOS credits as the inference source, when armed (DOR-2027); `{}` otherwise.
+  const creditsEnv = creditsTurnEnv('claude-code');
 
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
   // rides the process env — NOT the context-builder's prompt block — so it
@@ -324,15 +328,6 @@ export async function resolveLaunch(args: {
       agentAccountId: manifest?.account,
     });
   const accountEnv = claudeConfigDirEnv(accountRoot);
-  // Record which account this launch settled on, so the session can say later
-  // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
-  // read by the sign-in watch). Written HERE rather than in the two callers for
-  // the same reason this function exists at all: the turn path and the pump
-  // would otherwise each keep their own copy, and a copy that drifted would
-  // attribute a dead sign-in to the wrong account. It is deliberately not
-  // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
-  session.launchedAccountRoot = accountRoot;
-
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
@@ -414,10 +409,32 @@ export async function resolveLaunch(args: {
       // URL and token are runtime values obtained before the turn, never minted
       // on this path: a launch that waited on the network would turn a cloud
       // hiccup into a stalled turn.
-      ...creditsTurnEnv('claude-code'),
+      ...creditsEnv,
     }),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };
+
+  // Record which account this launch settled on, so the session can say later
+  // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
+  // read by the sign-in watch). Written HERE rather than in the two callers for
+  // the same reason this function exists at all: the turn path and the pump
+  // would otherwise each keep their own copy, and a copy that drifted would
+  // attribute a dead sign-in to the wrong account. It is deliberately not
+  // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
+  //
+  // Beside it, whether this launch bills per token, read off the FINAL
+  // environment the binary receives (a stored key, credits, or a key inherited
+  // from the server's own environment), so the folder's subscription windows
+  // are never shown as this session's usage when it pays per token (spec §6 U).
+  // The binary's own `apiKeySource` on session init overrides this guess. Both
+  // are written only once the options are built, so a launch that throws while
+  // building them changes neither.
+  session.launchedAccountRoot = accountRoot;
+  session.launchedPerToken = envBillsPerToken(sdkOptions.env ?? {});
+  // The session's shown account usage follows the account it now runs on: a
+  // new session's per-send hint is only known here (spec `claude-account-fleet`
+  // §6 U, "the first send re-stamps").
+  noteSessionAccountLaunched(sessionId, accountRoot, session.launchedPerToken);
 
   // Set the session title on the first turn when the caller supplies one
   // (SDK 0.2.113 `title` option — skips auto-generation). Ignored on resume.

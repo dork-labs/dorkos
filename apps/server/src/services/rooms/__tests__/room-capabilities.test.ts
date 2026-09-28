@@ -612,6 +612,20 @@ describe('the rooms capability domain', () => {
       ).toBe(true);
     });
 
+    it('names the operator as an agent should read them, never the registry`s "You"', async () => {
+      // DOR-2458: "You" in a tool result reads as the agent itself. No profile
+      // name in this harness, so it is the fallback.
+      service.post(channel.id, { authorId: human, text: 'ship it' });
+
+      const result = (await call('rooms.read_history', {
+        roomId: channel.id,
+        limit: 10,
+      })) as { entries: Array<{ text: string; author: string }> };
+
+      expect(result.entries.find((entry) => entry.text === 'ship it')?.author).toBe('the operator');
+      expect(result.entries.some((entry) => entry.author === 'You')).toBe(false);
+    });
+
     it('finds a message through the shipped index', async () => {
       service.post(channel.id, { authorId: human, text: 'the kubernetes rollout is done' });
       await harness.indexMessages();
@@ -674,6 +688,19 @@ describe('the rooms capability domain', () => {
     async function describeAs(roomId: string): Promise<RoomDetailPayload> {
       return (await call('rooms.get_room', { roomId })) as RoomDetailPayload;
     }
+
+    it('names the operator as an agent reads them, on get_room and find_room (DOR-2458)', async () => {
+      const described = await describeAs(channel.id);
+      const operator = described.members.find((member) => member.authorId === human);
+      expect(operator?.name).toBe('the operator');
+      expect(described.members.some((member) => member.name === 'You')).toBe(false);
+
+      const found = (await call('rooms.find_room', { name: 'Backend' })) as {
+        rooms: RoomDetailPayload[];
+      };
+      const listed = found.rooms[0]!.members.find((member) => member.authorId === human);
+      expect(listed?.name).toBe('the operator');
+    });
 
     /** Ask for one room as somebody else — the positive control on a refusal. */
     function describeAsAgent(roomId: string, agentPath: string): Promise<unknown> {

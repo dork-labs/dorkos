@@ -34,7 +34,9 @@
  *    looks.** It is written at the FIRST MESSAGE (`routes/sessions.ts`,
  *    "First-message binding: choose + persist the runtime BEFORE resolving"),
  *    under the client's request UUID, before any SDK contact — so a bound id is
- *    not yet a filename on disk. The two id migrations that follow run on
+ *    not yet a filename on disk. A room turn binds at the same moment, as its
+ *    turn launches (`room-turn-runner.ts`, DOR-2447), under the id it launched
+ *    with, and takes the row back if no turn runs. The two id migrations that follow run on
  *    different beats: `session_metadata` moves in the SDK rebind
  *    (`session-store.ts` → `RuntimeRegistry.rekeySessionSettings`), the durable
  *    rows move in the event tap (`trigger-turn.ts` → the projector's rekey). A

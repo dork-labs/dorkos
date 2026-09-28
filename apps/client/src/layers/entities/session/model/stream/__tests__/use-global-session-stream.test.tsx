@@ -241,6 +241,7 @@ describe('useGlobalSessionStream', () => {
           lifecycle: 'streaming',
           lastError: null,
           limit: null,
+          accountUsage: null,
         },
       });
     });

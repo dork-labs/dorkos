@@ -64,6 +64,7 @@ const STATUS: SessionStatus = {
   lifecycle: 'idle',
   lastError: null,
   limit: null,
+  accountUsage: null,
 };
 
 const SNAPSHOT: SessionSnapshot = {
@@ -352,5 +353,149 @@ describe('initSessionStreamBinding', () => {
 
     expect(useSessionListStore.getState().statuses['stale']).toBeUndefined();
     expect(useSessionListStore.getState().unseen['done-bg']).toBe('/projects/bg');
+  });
+});
+
+describe('account_usage reaches every open session on the account (spec claude-account-fleet §6 U)', () => {
+  const account = (accountId: string | null, path: string, usedPct: number) => ({
+    runtime: 'claude-code' as const,
+    accountId,
+    path,
+    label: null,
+    color: '#000',
+    subscriptionType: null,
+    plan: null,
+    credits: null,
+    spend: null,
+    windows: [
+      {
+        key: 'five_hour',
+        label: '5-hour window',
+        usedPct,
+        resetsAt: null,
+        status: null,
+        expired: false,
+        observedAt: '2026-09-27T10:00:00.000Z',
+        source: 'sdk_event' as const,
+      },
+    ],
+    state: 'ok' as const,
+    limit: null,
+    updatedAt: '2026-09-27T10:00:00.000Z',
+  });
+
+  it('applies the event to sessions naming that account and leaves the others alone', () => {
+    vi.restoreAllMocks();
+    resetSessionStreamBinding();
+    const handlers = new Map<string, (data: unknown) => void>();
+    vi.spyOn(streamManager, 'setListeners').mockImplementation(() => {});
+    vi.spyOn(streamManager, 'subscribeListConnectionState').mockImplementation(() => () => {});
+    vi.spyOn(streamManager, 'subscribeEvent').mockImplementation((name, handler) => {
+      handlers.set(name, handler);
+      return () => {};
+    });
+    initSessionStreamBinding();
+
+    const store = useSessionStreamStore.getState();
+    const open = (id: string, usage: ReturnType<typeof account>) =>
+      store.applySnapshot(id, { ...SNAPSHOT, status: { ...STATUS, accountUsage: usage } });
+    open('a', account('work', '/h/.claude3', 10));
+    open('b', account('work', '/h/.claude3', 10));
+    open('c', account('default', '/h/.claude', 10));
+    open('d', account(null, '/h/.claude9', 10));
+
+    handlers.get('account_usage')!(account('work', '/h/.claude3', 70));
+    handlers.get('account_usage')!(account(null, '/h/.claude9', 30));
+    // Not an AccountUsage: ignored rather than written into a status.
+    handlers.get('account_usage')!({ runtime: 'claude-code' });
+
+    const pct = (id: string) =>
+      useSessionStreamStore.getState().getSession(id).status?.accountUsage?.windows[0]?.usedPct;
+    expect(pct('a')).toBe(70);
+    expect(pct('b')).toBe(70);
+    expect(pct('c')).toBe(10);
+    expect(pct('d')).toBe(30);
+  });
+});
+
+describe('account_usage matching and the Claude subscription bar', () => {
+  function usage(runtime: 'claude-code' | 'codex', usedPct: number) {
+    return {
+      runtime,
+      accountId: 'default',
+      path: runtime === 'codex' ? '/h/.codex' : '/h/.claude',
+      label: null,
+      color: '#000',
+      subscriptionType: null,
+      plan: null,
+      credits: null,
+      spend: null,
+      windows: [
+        {
+          key: 'five_hour',
+          label: '5-hour window',
+          usedPct,
+          resetsAt: null,
+          status: null,
+          expired: false,
+          observedAt: '2026-09-27T10:00:00.000Z',
+          source: 'sdk_event' as const,
+        },
+      ],
+      state: 'ok' as const,
+      limit: null,
+      updatedAt: null,
+    };
+  }
+
+  beforeEach(() => {
+    useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
+  });
+
+  it('a Codex default event never touches a Claude default session', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot('claude', {
+      ...SNAPSHOT,
+      status: { ...STATUS, accountUsage: usage('claude-code', 10) },
+    });
+    store.applyAccountUsage(usage('codex', 90));
+    expect(
+      useSessionStreamStore.getState().getSession('claude').status?.accountUsage?.runtime
+    ).toBe('claude-code');
+  });
+
+  it("moves a Claude subscription session's bar with its account and keeps its cost; pay-as-you-go stays", () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot('sub', {
+      ...SNAPSHOT,
+      status: {
+        ...STATUS,
+        accountUsage: usage('claude-code', 10),
+        usage: {
+          kind: 'subscription',
+          utilization: 0.1,
+          costUsd: 0.3,
+          detail: 'Using overage capacity',
+        },
+      },
+    });
+    store.applySnapshot('key', {
+      ...SNAPSHOT,
+      status: {
+        ...STATUS,
+        accountUsage: usage('claude-code', 10),
+        usage: { kind: 'pay-as-you-go', costUsd: 2 },
+      },
+    });
+    store.applyAccountUsage(usage('claude-code', 70));
+    const get = (id: string) => useSessionStreamStore.getState().getSession(id).status?.usage;
+    expect(get('sub')).toEqual({
+      kind: 'subscription',
+      utilization: 0.7,
+      windowLabel: '5-hour window',
+      costUsd: 0.3,
+      detail: 'Using overage capacity',
+    });
+    expect(get('key')).toEqual({ kind: 'pay-as-you-go', costUsd: 2 });
   });
 });

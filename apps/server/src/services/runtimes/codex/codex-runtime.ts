@@ -84,6 +84,7 @@ import {
 } from '../../core/agent-identity/index.js';
 import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
+import { readCodexTurnContextUsage } from './turn-context-usage.js';
 import { captureCodexMedia } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { CodexSessionRegistry } from './session-registry.js';
@@ -134,6 +135,13 @@ import {
  * synchronous.
  */
 const MCP_STATUS_TTL_MS = 60_000;
+
+/**
+ * Deadline for reading a rollout's last context reading when a session is
+ * opened. Wider than a live turn's (that one waits on nothing but a file just
+ * written); still bounded, so a slow disk only costs the gauge.
+ */
+const CONTEXT_USAGE_AT_REST_TIMEOUT_MS = 500;
 
 /** This runtime's own mode descriptors — the only meaning any mode id has. */
 const CODEX_MODES = CODEX_CAPABILITIES.permissionModes.values ?? [];
@@ -1255,6 +1263,22 @@ export class CodexRuntime implements AgentRuntime {
    */
   getInternalSessionId(_sessionId: string): string | undefined {
     return undefined;
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The rollout's last `token_count` record, found through the session's bound
+   * thread id with the same bounded tail read a finished turn uses. `null` for
+   * a session that never started a thread.
+   */
+  async readContextUsage(
+    sessionId: string,
+    _cwd: string | undefined
+  ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
+    const threadId = this.threadMap.get(sessionId)?.threadId;
+    if (!threadId) return null;
+    return readCodexTurnContextUsage({ threadId, timeoutMs: CONTEXT_USAGE_AT_REST_TIMEOUT_MS });
   }
 
   // --- Dependency injection ---

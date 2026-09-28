@@ -28,7 +28,16 @@ import {
   type OriginPermissionSeed,
   type TurnOrigin,
 } from '../session/origin/turn-origin.js';
-import { sessionMetadata, eq, inArray, isNull, sql, type Db, type SQL } from '@dorkos/db';
+import {
+  sessionContext,
+  sessionMetadata,
+  eq,
+  inArray,
+  isNull,
+  sql,
+  type Db,
+  type SQL,
+} from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
@@ -151,6 +160,40 @@ function fillNullsWith(seed: Partial<typeof sessionMetadata.$inferInsert>): Sett
     if (value !== undefined) update[key] = sql`coalesce(${sessionMetadata[key]}, ${value})`;
   }
   return update;
+}
+
+/**
+ * Move a session's stored context reading (`session_context`, spec
+ * `claude-account-fleet` §6 U) from `fromId` to `toId`. When both ids hold one,
+ * the newer reading wins. A no-op when `fromId` holds none.
+ *
+ * @param db - The database.
+ * @param fromId - The id the reading is stored under today.
+ * @param toId - The id the session is now known by.
+ */
+function moveSessionContext(db: Db, fromId: string, toId: string): void {
+  const source = db.select().from(sessionContext).where(eq(sessionContext.sessionId, fromId)).get();
+  if (!source) return;
+  const destination = db
+    .select()
+    .from(sessionContext)
+    .where(eq(sessionContext.sessionId, toId))
+    .get();
+  db.transaction((tx) => {
+    tx.delete(sessionContext).where(eq(sessionContext.sessionId, fromId)).run();
+    if (destination && destination.observedAt >= source.observedAt) return;
+    tx.insert(sessionContext)
+      .values({ ...source, sessionId: toId })
+      .onConflictDoUpdate({
+        target: sessionContext.sessionId,
+        set: {
+          contextTokens: source.contextTokens,
+          contextMaxTokens: source.contextMaxTokens,
+          observedAt: source.observedAt,
+        },
+      })
+      .run();
+  });
 }
 
 /**
@@ -353,6 +396,24 @@ export class RuntimeRegistry {
     // — 1 for a fresh insert, 1 for a claim, and 0 when `setWhere` refused an
     // already-bound row. That is exactly "this call bound the session".
     return result.changes > 0;
+  }
+
+  /**
+   * Take back the binding row a caller wrote at a turn's launch when that turn
+   * then never ran (DOR-2447).
+   *
+   * A room records a session's owner as its turn launches, because a runtime may
+   * ask for authority that needs the row the moment it starts. If the dispatch
+   * then fails before any turn runs, the room never binds that freshly minted
+   * id and mints another next time — so the row would belong to nothing. Only
+   * the caller that wrote the row, for an id only it knows, may ask this.
+   *
+   * @param sessionId - The minted session id whose launch never produced a turn
+   */
+  async forgetUnstartedSession(sessionId: string): Promise<void> {
+    const db = this.requireDb('forgetUnstartedSession');
+    db.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).run();
+    return Promise.resolve();
   }
 
   /**
@@ -784,6 +845,20 @@ export class RuntimeRegistry {
     // live under the old id. `rekeySession` is idempotent, so the second call
     // on the same move finds no source row and does nothing.
     withSessionLimitStore('rekey', (store) => store.rekeySession(fromId, toId));
+    // The context reading moves with the session whether or not it has a
+    // settings row (a session can be opened, and so hold a reading, before any
+    // setting is chosen).
+    // A failure here costs the reading, never the settings row below, which
+    // carries the session's runtime binding.
+    try {
+      moveSessionContext(db, fromId, toId);
+    } catch (err) {
+      logger.warn('[RuntimeRegistry] could not move a session context reading', {
+        fromId,
+        toId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
     const source = db
       .select()
       .from(sessionMetadata)

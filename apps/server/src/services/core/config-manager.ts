@@ -3249,8 +3249,7 @@ export function seedHarnessGlobal(store: {
  * Seeds it OFF, which is the whole posture: an upgrade must never start moving
  * a person's own skill folders because they upgraded. Turning it on is a
  * decision somebody makes with `dorkos config set harness.autoAdopt true`, and
- * even then DorkOS acts on it only inside the agent folders and room folders it
- * owns.
+ * even then DorkOS acts on it only inside the agent folders it owns.
  *
  * Additive and idempotent — it writes only when `autoAdopt` is not already a
  * boolean, so a corrupt-recovery re-run cannot switch off something somebody

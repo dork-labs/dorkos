@@ -1,0 +1,264 @@
+<h2>The Flow panel in DorkOS: your accounts and what's running, in one place</h2>
+<p class="subtitle">
+  The Flow plugin adds this panel (it's the <code>flow fleet</code> screen, made visual). It shows
+  each account's usage and which task each session is working on, and lets you pause flow or move a
+  task. Where should it live?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-app {
+    display: flex;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 8px;
+    min-height: 250px;
+    color: #18181b;
+  }
+  .ax-chat {
+    flex: 1;
+    padding: 10px;
+    border-right: 1px solid #e4e4e7;
+    color: #a1a1aa;
+  }
+  .ax-panel {
+    width: 250px;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .ax-tabs {
+    display: flex;
+    gap: 10px;
+    font-size: 11px;
+    color: #71717a;
+    border-bottom: 1px solid #f4f4f5;
+    padding-bottom: 5px;
+    margin-bottom: 8px;
+  }
+  .ax-tabs .on {
+    color: #18181b;
+    font-weight: 600;
+    border-bottom: 2px solid #18181b;
+  }
+  .ax-cap {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #a1a1aa;
+    margin: 8px 0 3px;
+  }
+  .ax-acc {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 0;
+  }
+  .ax-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .ax-grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .ax-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 70px;
+  }
+  .ax-t {
+    height: 4px;
+    background: #e4e4e7;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .ax-t b {
+    display: block;
+    height: 4px;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 11px;
+  }
+  .ax-run {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-state {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid #e4e4e7;
+    color: #3f3f46;
+  }
+  .ax-btn {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    border: 1px solid #d4d4d8;
+    background: #fff;
+    color: #18181b;
+  }
+  .ax-dash {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    color: #18181b;
+  }
+  .ax-grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A "Flow" tab in the right-side panel</h3>
+      <p>
+        It's always one click away next to any chat, like the other right-panel tabs. The top half
+        shows accounts, the bottom half the running tasks.
+      </p>
+      <div class="ax">
+        <div class="ax-app">
+          <div class="ax-chat">(your chat)</div>
+          <div class="ax-panel">
+            <div class="ax-tabs">
+              <span>Files</span><span>Canvas</span><span class="on">Flow</span>
+            </div>
+            <div class="ax-cap">Accounts</div>
+            <div class="ax-acc">
+              <span class="ax-dot" style="background: #16a34a"></span
+              ><span class="ax-grow">Claude2</span>
+              <div class="ax-bars">
+                <div class="ax-t"><b style="width: 30%; background: #16a34a"></b></div>
+                <div class="ax-t"><b style="width: 55%; background: #d97706"></b></div>
+              </div>
+            </div>
+            <div class="ax-acc">
+              <span class="ax-dot" style="background: #d97706"></span
+              ><span class="ax-grow">Claude3 <span class="ax-muted">out · Tue</span></span>
+              <div class="ax-bars">
+                <div class="ax-t"><b style="width: 10%; background: #16a34a"></b></div>
+                <div class="ax-t"><b style="width: 100%; background: #dc2626"></b></div>
+              </div>
+            </div>
+            <div class="ax-acc">
+              <span class="ax-dot" style="background: #9333ea"></span
+              ><span class="ax-grow">Claude4</span>
+              <div class="ax-bars">
+                <div class="ax-t"><b style="width: 20%; background: #16a34a"></b></div>
+                <div class="ax-t"><b style="width: 40%; background: #16a34a"></b></div>
+              </div>
+            </div>
+            <div class="ax-acc">
+              <span class="ax-dot" style="background: #2563eb"></span
+              ><span class="ax-grow">Main <span class="ax-muted">reserved</span></span>
+              <div class="ax-bars">
+                <div class="ax-t"><b style="width: 4%; background: #16a34a"></b></div>
+                <div class="ax-t"><b style="width: 91%; background: #dc2626"></b></div>
+              </div>
+            </div>
+            <div class="ax-cap">Running</div>
+            <div class="ax-run">
+              <span class="ax-dot" style="background: #16a34a"></span
+              ><span class="ax-grow">DOR-2387 account chip</span
+              ><span class="ax-state">building</span>
+            </div>
+            <div class="ax-run">
+              <span class="ax-dot" style="background: #9333ea"></span
+              ><span class="ax-grow">DOR-2380 usage store</span
+              ><span class="ax-state">in review</span>
+            </div>
+            <div class="ax-run">
+              <span class="ax-dot" style="background: #9333ea"></span
+              ><span class="ax-grow">DOR-2377 prose trim</span
+              ><span class="ax-state">waiting on you</span>
+            </div>
+            <div style="margin-top: 8px">
+              <span class="ax-btn">Pause flow</span>
+              <span class="ax-muted">· 2 of 3 slots busy</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>A section on the Activity page</h3>
+      <p>
+        It's a wider, calmer overview you visit on purpose. It's not beside every chat, so you'd go
+        to Activity to check on flow.
+      </p>
+      <div class="ax">
+        <div class="ax-dash">
+          <div style="font-weight: 600; margin-bottom: 6px">
+            Flow
+            <span class="ax-muted">· 2 of 3 slots busy · <span class="ax-btn">Pause</span></span>
+          </div>
+          <div class="ax-grid2">
+            <div>
+              <div class="ax-cap">Accounts</div>
+              <div class="ax-acc">
+                <span class="ax-dot" style="background: #16a34a"></span
+                ><span class="ax-grow">Claude2</span><span class="ax-muted">55% week</span>
+              </div>
+              <div class="ax-acc">
+                <span class="ax-dot" style="background: #d97706"></span
+                ><span class="ax-grow">Claude3</span><span class="ax-muted">out · Tue</span>
+              </div>
+              <div class="ax-acc">
+                <span class="ax-dot" style="background: #9333ea"></span
+                ><span class="ax-grow">Claude4</span><span class="ax-muted">40% week</span>
+              </div>
+              <div class="ax-acc">
+                <span class="ax-dot" style="background: #2563eb"></span
+                ><span class="ax-grow">Main</span><span class="ax-muted">reserved</span>
+              </div>
+            </div>
+            <div>
+              <div class="ax-cap">Running</div>
+              <div class="ax-run">
+                <span class="ax-grow">DOR-2387 account chip</span
+                ><span class="ax-state">building</span>
+              </div>
+              <div class="ax-run">
+                <span class="ax-grow">DOR-2380 usage store</span
+                ><span class="ax-state">in review</span>
+              </div>
+              <div class="ax-run">
+                <span class="ax-grow">DOR-2377 prose trim</span
+                ><span class="ax-state">waiting on you</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 14px">
+  <b>My pick: A.</b> The point of the panel is glancing at it while you work, so it belongs next to
+  the chat. Clicking a running task opens its session; clicking an account opens its details. Only
+  shown when flow is installed.
+</p>

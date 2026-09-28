@@ -194,7 +194,7 @@ import {
   type RoomCollection,
 } from './room-collect.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
-import { buildRoomContext } from './room-context.js';
+import { agentFacingName, buildRoomContext, nameForAgents } from './room-context.js';
 import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import {
   resolveRoomTurnPlace,
@@ -385,6 +385,10 @@ export interface RoomTriggerDeps {
   reactions: ReactionStore;
   authors: AuthorRegistry;
   agents: RoomAgentLookup;
+  /** Whether an author is the install's owner — see `RoomContextDeps.isOwnerAuthor`. */
+  isOwnerAuthor(authorId: string): boolean;
+  /** The operator's profile name — see `RoomContextDeps.operatorName`. */
+  operatorName?(): string | null;
   /**
    * What a room's turn is told about the chat it projects, or `null` when
    * unbridged. Read only by `buildRoomContext` — the dispatcher itself never
@@ -730,7 +734,11 @@ export class RoomTriggerDispatcher {
 
   constructor(deps: RoomTriggerDeps) {
     this.deps = deps;
-    this.notices = new RoomNoticeLog({ writer: deps.writer, authors: deps.authors });
+    this.notices = new RoomNoticeLog({
+      writer: deps.writer,
+      authors: deps.authors,
+      nameForAgents: (authorId) => nameForAgents(deps, authorId, { sentenceStart: true }),
+    });
     this.collector = new RoomCollector({
       window: deps.collect,
       run: (batch) => this.runCollected(batch),
@@ -4107,10 +4115,13 @@ export class RoomTriggerDispatcher {
           describeCommits: (shas) => {
             const named = new Map<string, { kind: 'merge' | 'person'; who: string | null }>();
             for (const [sha, note] of this.deps.store.commitAnnouncements(roomId, shas)) {
+              const subject = note.subjectAuthorId;
+              const stored = subject === null ? null : this.deps.authors.getById(subject);
+              // The owner by their own name, never the registry's 'You' (DOR-2458).
               const who =
-                note.subjectAuthorId === null
+                subject === null || !stored
                   ? null
-                  : (this.deps.authors.getById(note.subjectAuthorId)?.displayName ?? null);
+                  : agentFacingName(this.deps, subject, stored.displayName);
               named.set(sha, { kind: note.kind, who });
             }
             return named;

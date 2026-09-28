@@ -177,6 +177,15 @@ export const MCP_TOOL_TIERS = {
     areaNote: ALWAYS_ON,
     title: 'Read how much of each Claude account is used',
   },
+  // Starts Claude Code on an idle prompt and asks it for the account's usage: no
+  // turn, no spend, no transcript, and at most once a minute per account. It
+  // changes nothing a person owns, so no area switches it off.
+  accounts_probe: {
+    tier: 'act',
+    area: null,
+    areaNote: 'reads usage only: no turn runs, nothing is spent, nothing a person owns changes',
+    title: "Check a Claude account's usage without running a turn",
+  },
 
   // ── Tasks ───────────────────────────────────────────────────────────────
   tasks_list: {

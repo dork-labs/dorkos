@@ -3,6 +3,14 @@ import { claudeAccountName, type ClaudeAccountRef } from '../../lib/claude-accou
 import { useTransport } from '../TransportContext';
 import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
 
+/** A registered account with the color its dot and badge are drawn in. */
+export interface ClaudeAccountEntry extends ClaudeAccountRef {
+  /** The account's color as lowercase `#rrggbb`: the stored one, else its position's default. */
+  color: string;
+  /** True when {@link color} is the position's default rather than a color the operator stored. */
+  colorIsDefault: boolean;
+}
+
 /** What {@link useClaudeAccounts} reports. */
 export interface ClaudeAccountsView {
   /**
@@ -11,7 +19,7 @@ export interface ClaudeAccountsView {
    * surface that OFFERS an account the server already flagged unusable has to say
    * so, or selecting it silently points new work at a signed-out config.
    */
-  accounts: ClaudeAccountRef[];
+  accounts: ClaudeAccountEntry[];
   /**
    * Absolute path a NEW session runs and bills on, already resolved by the
    * server. `undefined` until the config lands, or on a server too old to
@@ -29,6 +37,11 @@ export interface ClaudeAccountsView {
   isMultiAccount: boolean;
   /** The shortest honest name for an account path (label, else folder name). */
   nameFor: (path: string) => string;
+  /**
+   * The color of a registered account, found by registry id and then by path,
+   * or `null` when no registered account matches.
+   */
+  colorFor: (pathOrId: string) => string | null;
 }
 
 /**
@@ -50,7 +63,7 @@ export function useClaudeAccounts(): ClaudeAccountsView {
   });
 
   const claudeCode = data?.claudeCode;
-  const accounts = claudeCode?.accounts ?? [];
+  const accounts: ClaudeAccountEntry[] = claudeCode?.accounts ?? [];
 
   return {
     accounts,
@@ -58,5 +71,10 @@ export function useClaudeAccounts(): ClaudeAccountsView {
     inherited: claudeCode?.inherited ?? true,
     isMultiAccount: accounts.length > 1,
     nameFor: (path: string) => claudeAccountName(path, accounts),
+    colorFor: (pathOrId: string) =>
+      (
+        accounts.find((account) => account.id === pathOrId) ??
+        accounts.find((account) => account.path === pathOrId)
+      )?.color ?? null,
   };
 }

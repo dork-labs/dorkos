@@ -69,9 +69,16 @@ import {
   type RawMcpServerDescriptor,
   type RawMcpPendingConnectResolver,
 } from './providers/raw-mcp.js';
+import { TEST_CONNECTOR_PROVIDER_TYPE } from './connection-store.js';
 
-/** The test-mode provider type the credential route accepts under `DORKOS_TEST_RUNTIME`. */
-export const TEST_CONNECTOR_PROVIDER_TYPE = 'test-connector';
+/**
+ * The test-mode provider type the credential route accepts under
+ * `DORKOS_TEST_RUNTIME` — re-exported for every consumer that already imports
+ * it from here (`test-mode.ts`, `index.ts`). Defined in `connection-store.js`,
+ * the lower layer that enforces it as a purge guard
+ * ({@link ConnectionStore.purgeTestConnectorConnections}).
+ */
+export { TEST_CONNECTOR_PROVIDER_TYPE };
 
 /** The credential-store name the test-mode connector key is stored under. */
 export const TEST_CONNECTOR_CREDENTIAL_NAME = 'test-connector-api-key';

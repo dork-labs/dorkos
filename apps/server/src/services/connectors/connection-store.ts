@@ -38,6 +38,17 @@ import {
   type LegacyConnectionMigrationInput,
 } from './legacy-connection-migration.js';
 
+/**
+ * The test-mode provider type the credential route accepts under
+ * `DORKOS_TEST_RUNTIME`. Defined here — the lowest layer that needs it — and
+ * re-exported from `bootstrap.js`, which is where every other consumer
+ * (`test-mode.ts`, `index.ts`) already imports it from; this store is what
+ * enforces {@link ConnectionStore.purgeTestConnectorConnections}'s "only this
+ * type" guard, so it owns the constant rather than reaching up into
+ * `bootstrap.ts` for it.
+ */
+export const TEST_CONNECTOR_PROVIDER_TYPE = 'test-connector';
+
 /** Raised when connector identity migration failed and mixed-store writes are blocked. */
 export class ConnectorMigrationUnavailableError extends Error {
   /** Stable machine-readable health state. */
@@ -244,6 +255,100 @@ export class ConnectionStore {
       .set({ status: 'unavailable', updatedAt: new Date().toISOString() })
       .where(eq(connectorProviderInstances.id, instanceId))
       .run();
+  }
+
+  /**
+   * Tombstone every live connection ONE `test-connector` provider instance
+   * ever reconciled, and revoke or drop everything that hangs off one
+   * (grants, agent attachments, session overrides, event subscriptions) — the
+   * deliberate opposite of {@link unregisterProvider}, which keeps a real
+   * provider's history on purpose so re-entering a rotated key doesn't forget
+   * which accounts were connected. `connections` rows cannot be hard-deleted
+   * (a DB trigger enforces tombstone-only), so this sets `removedAt` exactly
+   * as an owner's own remove would, rather than deleting the row — but unlike
+   * an owner's remove, it writes no audit trail or Activity record: this is a
+   * blunt test-isolation reset nobody asked for on purpose, not a user action
+   * worth narrating back to them.
+   *
+   * Refuses (throws) an instance whose persisted type is not
+   * `TEST_CONNECTOR_PROVIDER_TYPE` — this is a scripted-provider-only reset,
+   * never a general-purpose "erase a provider's connections" tool a real
+   * (`composio`/`nango`) instance could reach by a wrong id.
+   *
+   * For an ephemeral, scripted provider only, whose own reload already
+   * promises a clean slate (the test-mode connector's account map is
+   * in-memory and starts fresh on every credential save). Once its account
+   * ids stopped repeating across key saves (DOR-2451), a stale row from an
+   * earlier key save would otherwise sit there — still `removedAt IS NULL`,
+   * still joined into every owner and agent query — under a
+   * `providerInstanceId` that outlives any one save: forever a second
+   * "Gmail (work)" no test ever asked for.
+   *
+   * @param instanceId - The ephemeral `test-connector` instance whose connections to tombstone.
+   * @throws {Error} If a persisted provider instance exists at `instanceId` and its type isn't `test-connector`.
+   */
+  purgeTestConnectorConnections(instanceId: ConnectorProviderInstanceId): void {
+    this.assertAvailable();
+    const provider = this.db
+      .select({ type: connectorProviderInstances.type })
+      .from(connectorProviderInstances)
+      .where(eq(connectorProviderInstances.id, instanceId))
+      .get();
+    if (provider && provider.type !== TEST_CONNECTOR_PROVIDER_TYPE) {
+      throw new Error(
+        `purgeTestConnectorConnections refuses provider type '${provider.type}' — only '${TEST_CONNECTOR_PROVIDER_TYPE}' connections may be purged this way.`
+      );
+    }
+    const now = new Date().toISOString();
+    this.db.transaction((tx) => {
+      const ids = tx
+        .select({ id: connections.id })
+        .from(connections)
+        .where(and(eq(connections.providerInstanceId, instanceId), isNull(connections.removedAt)))
+        .all()
+        .map((row) => row.id);
+      if (ids.length === 0) return;
+      tx.update(connections)
+        .set({
+          lifecycleState: 'disconnected',
+          externalCleanupState: 'not_required',
+          enabled: false,
+          removedAt: now,
+          cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+          updatedAt: now,
+        })
+        .where(inArray(connections.id, ids))
+        .run();
+      tx.delete(agentConnectionAttachments)
+        .where(inArray(agentConnectionAttachments.connectionId, ids))
+        .run();
+      tx.delete(sessionConnectionOverrides)
+        .where(inArray(sessionConnectionOverrides.connectionId, ids))
+        .run();
+      tx.update(connectionOperationGrants)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            inArray(connectionOperationGrants.connectionId, ids),
+            isNull(connectionOperationGrants.revokedAt)
+          )
+        )
+        .run();
+      tx.update(connectorEventSubscriptions)
+        .set({
+          enabled: false,
+          revokedAt: now,
+          scopeVersion: sql`${connectorEventSubscriptions.scopeVersion} + 1`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(connectorEventSubscriptions.connectionId, ids),
+            isNull(connectorEventSubscriptions.revokedAt)
+          )
+        )
+        .run();
+    });
   }
 
   /** Reconcile one private provider account to a stable DorkOS connection. */

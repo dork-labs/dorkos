@@ -193,6 +193,13 @@ vi.mock('@/layers/entities/config', async (importOriginal) => ({
   useConfigSync: () => {},
 }));
 
+// Account usage updates ride the same stream; the rest of the shared model stays
+// real.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useAccountUsageSync: () => {},
+}));
+
 // `community_connections_changed` rides the same stream; its subscriber is
 // stubbed for the same reason.
 vi.mock('@/layers/entities/community', async (importOriginal) => ({

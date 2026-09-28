@@ -41,6 +41,8 @@
       "description": "Deployment boundaries, protocols, ports, Community, Cloud and marketplace; diagrams",
       "patterns": [
         "apps/community/",
+        "apps/site/src/lib/cloud-accounts/",
+        "apps/site/src/proxy",
         "packages/cloud-api/",
         "apps/server/src/services/core/cloud/",
         "apps/server/src/services/core/auth/cloud-link",
@@ -554,6 +556,8 @@
         "apps/server/src/services/",
         "transport.ts",
         "apps/community/",
+        "apps/site/src/lib/cloud-accounts/",
+        "apps/site/src/proxy",
         "packages/cloud-api/",
         "packages/harness/"
       ]
@@ -731,6 +735,8 @@
         "apps/server/src/services/",
         "transport.ts",
         "apps/community/",
+        "apps/site/src/lib/cloud-accounts/",
+        "apps/site/src/proxy",
         "packages/cloud-api/",
         "packages/harness/"
       ]

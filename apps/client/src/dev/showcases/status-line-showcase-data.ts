@@ -21,7 +21,27 @@ import type {
   StatusItemNodesInput,
 } from '@/layers/features/chat/ui/status/status-item-nodes';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import type { RuntimeChipState } from '@/layers/features/status';
+import type { RuntimeChipState, SessionAccount } from '@/layers/features/status';
+
+/**
+ * One account on this machine, so the identity gate is closed and the account
+ * chip stays out of the line: these showcases are about the line's budget, and
+ * the chip has its own section on the Conversation page.
+ */
+const NO_ACCOUNT_CHIP: SessionAccount = {
+  visible: false,
+  runtime: 'claude-code',
+  accountId: null,
+  path: null,
+  name: null,
+  color: null,
+  usage: null,
+  limit: null,
+  chipState: 'unknown',
+  trackerItem: null,
+  lifecycle: 'idle',
+  pending: false,
+};
 
 export const AGENT = {
   name: 'dorkbot',
@@ -255,6 +275,7 @@ export const HEALTHY: StatusScenario = {
     permissionDescriptor: null,
     plan: { active: false },
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: USAGE_OK,
     subagentsInFlight: 0,
   },
@@ -273,6 +294,7 @@ export const HEALTHY: StatusScenario = {
     gitStatus: CLEAN_GIT,
     workspace: null,
     runtimeChip: DEFAULT_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
     contextPercent: 31,
     contextUsage: null,
     compact: null,
@@ -311,6 +333,7 @@ export const DEGRADED: StatusScenario = {
     },
     plan: null,
     runtime: { isDefault: false, canSelect: false },
+    account: null,
     usage: USAGE_WARNING,
     subagentsInFlight: RUNNING_SUBAGENTS.length,
   },
@@ -329,6 +352,7 @@ export const DEGRADED: StatusScenario = {
     gitStatus: DIRTY_GIT,
     workspace: null,
     runtimeChip: CODEX_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
     contextPercent: 88,
     contextUsage: null,
     compact: null,
@@ -358,6 +382,7 @@ export const DEGRADED_ON_DEFAULT: StatusScenario = {
     sessionId: 'showcase-degraded-default',
     status: { ...DEGRADED_STATUS, model: 'claude-opus-4-6' },
     runtimeChip: DEFAULT_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
   },
   diagnostics: {
     ...DEGRADED_DIAGNOSTICS,
@@ -419,6 +444,7 @@ export const DELEGATING: StatusScenario = {
     permissionDescriptor: null,
     plan: { active: false },
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: USAGE_OK,
   },
   input: {
@@ -426,6 +452,7 @@ export const DELEGATING: StatusScenario = {
     sessionId: 'showcase-delegating',
     status: { ...DEGRADED_STATUS, permissionMode: 'default' },
     runtimeChip: DEFAULT_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
     usage: USAGE_OK,
     connectionState: 'connected',
   },
@@ -480,6 +507,7 @@ export const PLANNING: StatusScenario = {
     permissionDescriptor: PLAN_MODE,
     plan: { active: true },
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: USAGE_OK,
     subagentsInFlight: 0,
   },
@@ -496,6 +524,7 @@ export const PLANNING: StatusScenario = {
     gitStatus: CLEAN_GIT,
     workspace: null,
     runtimeChip: DEFAULT_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
     contextPercent: 92,
     contextUsage: null,
     compact: null,

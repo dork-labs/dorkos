@@ -38,6 +38,7 @@ import type {
   SessionContextUsage,
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
+import { withAccountSubscription, type AccountUsage } from '@dorkos/shared/account-usage';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import {
   isAbsolvingTerminalReason,
@@ -278,6 +279,17 @@ const ZERO_CONTEXT_USAGE: SessionContextUsage = {
 };
 
 /**
+ * Whether two usage records are the same account: the same runtime and registry
+ * id, or, for a folder no account names (`accountId: null`), the same folder.
+ * The server matches by the same rule.
+ */
+function isSameAccount(held: AccountUsage, next: AccountUsage): boolean {
+  if (held.runtime !== next.runtime) return false;
+  if (held.accountId !== null || next.accountId !== null) return held.accountId === next.accountId;
+  return held.path === next.path;
+}
+
+/**
  * The status a session holds when nothing about it is known yet — every field
  * at its documented before-the-first-turn value.
  *
@@ -303,6 +315,7 @@ const UNHYDRATED_SESSION_STATUS: SessionStatus = {
   lifecycle: 'idle',
   lastError: null,
   limit: null,
+  accountUsage: null,
 };
 
 /**
@@ -633,6 +646,14 @@ interface SessionStreamActions {
   setConnectionState: (sessionId: string, state: ConnectionState) => void;
   /** Remove a session's state entirely. */
   removeSession: (sessionId: string) => void;
+  /**
+   * Apply one account's new usage (the global `account_usage` event) to every
+   * held session whose `status.accountUsage` names that account (spec
+   * `claude-account-fleet` §6 U), and to a Claude Code subscription session's
+   * `usage` too. Account usage never rides a session's own stream, so this is
+   * how an open session follows its account.
+   */
+  applyAccountUsage: (usage: AccountUsage) => void;
   /** Ensure a default entry exists for an unknown id (returns nothing). */
   ensureSession: (sessionId: string) => void;
   /** Read a session's state, or {@link DEFAULT_SESSION_STREAM_STATE} for unknown ids. */
@@ -1213,6 +1234,31 @@ export const useSessionStreamStore: SessionStreamStore = create<
           },
           false,
           'session-stream/removeSession'
+        ),
+
+      applyAccountUsage: (usage) =>
+        set(
+          (state) => {
+            for (const session of Object.values(state.sessions)) {
+              const held = session.status?.accountUsage;
+              if (session.status && held && isSameAccount(held, usage)) {
+                session.status.accountUsage = usage;
+                // A Claude Code session on the subscription shows its account's
+                // binding window, by the rule the server uses, so every session
+                // on the account moves together. A session billed per token
+                // (pay-as-you-go) keeps its own cost, and other runtimes' usage
+                // is their own.
+                if (
+                  usage.runtime === 'claude-code' &&
+                  session.status.usage?.kind === 'subscription'
+                ) {
+                  session.status.usage = withAccountSubscription(session.status.usage, usage);
+                }
+              }
+            }
+          },
+          false,
+          'session-stream/applyAccountUsage'
         ),
 
       ensureSession: (sessionId) =>

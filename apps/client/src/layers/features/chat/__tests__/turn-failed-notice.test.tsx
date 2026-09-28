@@ -67,6 +67,7 @@ function statusWithLastError(lastError: SessionStatus['lastError']): SessionStat
     lifecycle: 'error',
     lastError,
     limit: null,
+    accountUsage: null,
   };
 }
 

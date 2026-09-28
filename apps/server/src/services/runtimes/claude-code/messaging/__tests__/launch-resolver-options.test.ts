@@ -85,6 +85,26 @@ describe('the launch options every Claude Code turn is given', () => {
     vi.clearAllMocks();
   });
 
+  it('records a launch as per token when its final environment carries a key, whatever its source (spec claude-account-fleet §6 U)', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'inherited-from-the-server');
+    try {
+      const inherited = makeSession();
+      await captureSdkOptions(undefined, inherited);
+      expect(inherited.launchedPerToken).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.stubEnv('ANTHROPIC_AUTH_TOKEN', '');
+    try {
+      const signedIn = makeSession();
+      await captureSdkOptions(undefined, signedIn);
+      expect(signedIn.launchedPerToken).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('turns the task and todo tools on, which no newer model gets by default', async () => {
     const options = await captureSdkOptions();
 

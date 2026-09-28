@@ -262,6 +262,13 @@ export interface RoomServiceDeps {
    */
   isOwnerAuthor(authorId: string): boolean;
   /**
+   * The operator's profile name (`config.profile.displayName`, sanitized), or
+   * `null` when they have not given one — read per call. What an agent's room
+   * context calls the owner instead of the registry's `'You'`; absent, the
+   * owner is "the operator" (DOR-2458).
+   */
+  operatorName?(): string | null;
+  /**
    * The record-based twin of {@link RoomServiceDeps.isOwnerAuthor}, for a
    * caller that already holds the row — resolving an id `isOwnerAuthor`
    * would otherwise re-fetch from a batch {@link AuthorRegistry.getMany}

@@ -3,6 +3,7 @@ import { isMarkdownPreferred, rewritePath } from 'fumadocs-core/negotiation';
 import { env } from '@/env';
 import {
   decideCloudAccountsForward,
+  managedConnectionsForwarding,
   parseCloudAccountsOrigin,
   proxiedRequestHeaders,
 } from '@/lib/cloud-accounts/forward';
@@ -48,7 +49,9 @@ function isDocsPath(pathname: string): boolean {
  * Edge proxy (Next.js 16's successor to `middleware`) with four jobs:
  *
  * 0. **Handing accounts to the accounts service**, only when
- *    `DORKOS_CLOUD_ACCOUNTS_ORIGIN` is set (`lib/cloud-accounts/forward.ts`). Unset,
+ *    `DORKOS_CLOUD_ACCOUNTS_ORIGIN` is set (`lib/cloud-accounts/forward.ts`), and
+ *    managed connections with them only when `DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD`
+ *    is also `1`. Unset,
  *    this step does nothing and every path below behaves as before. It runs
  *    first and returns early, so a forwarded request gets no region cookie and
  *    no negotiation: it is not this site's response.
@@ -98,7 +101,12 @@ export function proxy(request: NextRequest): NextResponse {
 
   const forward = decideCloudAccountsForward(
     request,
-    parseCloudAccountsOrigin(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN)
+    parseCloudAccountsOrigin(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN),
+    {
+      managedConnections: managedConnectionsForwarding(
+        env.DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD
+      ),
+    }
   );
   if (forward?.kind === 'redirect') {
     const response = NextResponse.redirect(forward.url, 307);
@@ -168,14 +176,18 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 /**
- * Run on page navigations, plus the account API paths the accounts hand-over
- * may forward. The first entry skips Next internals, the analytics ingest proxy
- * (`/hub`), API routes, and any path with a file extension (static assets, and
- * the `.md`/`.mdx` markdown routes which `next.config.ts` rewrites directly) —
- * none of which need the region cookie or markdown negotiation. The rest name
- * the account API (`CLOUD_ACCOUNT_API_*` in `lib/cloud-accounts/forward.ts`; a test
- * keeps the two lists in step). Matchers must be literals, so they are written
- * out rather than built from those constants.
+ * Run on page navigations, plus the account and managed-connection API paths
+ * the hand-over may forward. The first entry skips Next internals, the analytics
+ * ingest proxy (`/hub`), API routes, and any path with a file extension (static
+ * assets, and the `.md`/`.mdx` markdown routes which `next.config.ts` rewrites
+ * directly) — none of which need the region cookie or markdown negotiation. The
+ * rest name the account API (`CLOUD_ACCOUNT_API_*` in
+ * `lib/cloud-accounts/forward.ts`) and the managed-connection API
+ * (`CLOUD_MANAGED_API_PREFIXES`); a test keeps the lists in step, and the
+ * managed-connection pages are already under the first entry. Matchers must be
+ * literals, so they are written out rather than built from those constants.
+ * With forwarding off, a matched API path costs one proxy call and ends at
+ * `NextResponse.next()` unchanged, the trade already made for the account API.
  */
 export const config = {
   matcher: [
@@ -186,5 +198,7 @@ export const config = {
     '/api/instances/heartbeat',
     '/api/instances/pending',
     '/api/instances/revoke',
+    '/api/instances/connectors/:path*',
+    '/api/connectors/managed/:path*',
   ],
 };

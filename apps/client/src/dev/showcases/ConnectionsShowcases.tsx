@@ -30,6 +30,7 @@ import {
   MOCK_CHAT_APPS,
   MOCK_CHAT_BINDINGS,
   MOCK_CONNECTIONS,
+  MOCK_GMAIL_ACTIONS,
   MOCK_GMAIL_USAGE,
   mockAccessPreview,
   mockConnection,
@@ -126,6 +127,7 @@ function panelTransport(connection: ConnectorConnectionSummary): Transport {
           : (connection.externalCleanup ?? 'not_required'),
     }),
     getOperatorConnectorUsage: async () => ({ items: MOCK_GMAIL_USAGE }),
+    getConnectorAppActions: async () => MOCK_GMAIL_ACTIONS,
     previewConnectorReconciliation: async ({ connectionId }: { connectionId: string }) =>
       mockAccessPreview(connectionId),
     getConnectorCatalog: async () => ({ services: MOCK_CATALOG_SERVICES, warnings: [] }),
@@ -292,7 +294,7 @@ export function ConnectionsShowcases() {
 
       <PlaygroundSection
         title="AccountPanel"
-        description="An app account's side panel: who can use it, what agents did lately, and a few things to try. Everything else is under More. A broken account puts its one fix on top."
+        description="An app account's side panel: who can use it, what that level lets agents do (Look and Change), what agents did lately, and a few things to try. Everything else is under More. A broken account puts its one fix on top."
       >
         <ShowcaseLabel>Connected</ShowcaseLabel>
         <ShowcaseDemo>

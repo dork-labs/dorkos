@@ -555,6 +555,39 @@ describe('AccountUsageStore: failed writes back off and stay bounded', () => {
       expect.objectContaining({ key: 'five_hour', usedPct: 99 }),
     ]);
   });
+
+  // Contract 4.0.0: the pending collapse goes through mergeLedger, so two
+  // sessions that see a limit in the same millisecond keep the rejected one in
+  // memory, in the pending batch and on disk, whichever records first.
+  it('keeps a same-millisecond rejected reading, whichever session records first', async () => {
+    await writeConfig(claudeConfig([]));
+    for (const rejectedFirst of [true, false]) {
+      await fs.rm(claudeDir(), { recursive: true, force: true });
+      const store = makeStore({ lockOptions: { giveUpMs: 1 } });
+      await store.load();
+      await fs.mkdir(claudeDir(), { recursive: true });
+      await fs.writeFile(path.join(claudeDir(), 'default.json.lock'), '1:held');
+      const rejected = { ...obs('five_hour', 10), status: 'rejected' as const };
+      const allowed = { ...obs('five_hour', 90), status: 'allowed' as const };
+      for (const reading of rejectedFirst ? [rejected, allowed] : [allowed, rejected]) {
+        store.record('claude-code', { accountId: 'default' }, [reading]);
+      }
+      const records = (store as unknown as { records: Map<string, { pending: unknown[] }> })
+        .records;
+      expect(records.get('claude-code:default')!.pending).toEqual([
+        expect.objectContaining({ key: 'five_hour', status: 'rejected', usedPct: 10 }),
+      ]);
+      expect(store.peek('claude-code', ['default'])[0]!.state).toBe('limited');
+      await store.flush();
+      await fs.rm(path.join(claudeDir(), 'default.json.lock'));
+      await store.flush();
+      expect((await readLedger(claudeDir(), 'default'))!.windows.five_hour).toMatchObject({
+        status: 'rejected',
+        usedPct: 10,
+      });
+      store.stop();
+    }
+  });
 });
 
 describe('AccountUsageStore: readings put back after a failed write', () => {
@@ -709,5 +742,35 @@ describe('AccountUsageStore: the folder watch', () => {
       { timeout: 3_000 }
     );
     await vi.waitFor(() => expect(broadcast).toHaveBeenCalled(), { timeout: 3_000 });
+  });
+});
+
+describe('AccountUsageStore.peekByRoot (spec claude-account-fleet §6 U)', () => {
+  it('answers the registered account at a folder, the ambient default, and a memory-only folder', async () => {
+    await writeConfig(
+      claudeConfig([{ id: 'work', path: path.join(home, '.claude3'), label: 'Work' }])
+    );
+    const store = makeStore();
+    await store.load();
+    store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 30)]);
+
+    const registered = store.peekByRoot('claude-code', `${path.join(home, '.claude3')}/`);
+    expect(registered).toMatchObject({ accountId: 'work', label: 'Work' });
+    expect(registered.windows.map((w) => w.usedPct)).toEqual([30]);
+
+    expect(store.peekByRoot('claude-code', path.join(home, '.claude'))).toMatchObject({
+      accountId: 'default',
+    });
+
+    const stray = path.join(home, '.claude9');
+    // No reading yet: it still answers, with its folder, so a client can match
+    // the first event for it by path.
+    expect(store.peekByRoot('claude-code', stray)).toMatchObject({
+      accountId: null,
+      path: stray,
+      windows: [],
+    });
+    store.record('claude-code', { path: stray }, [obs('seven_day', 5)]);
+    expect(store.peekByRoot('claude-code', stray).windows.map((w) => w.usedPct)).toEqual([5]);
   });
 });

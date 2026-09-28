@@ -1,0 +1,206 @@
+{
+  "contract": "fleet",
+  "about": "The reserve and room on one account (spec flow-cli-core 1.1b 'The reserve and the spend-down window' and 'Room on an account'). input.policy is one resolved account policy; input.windows is the ledger's windows object, or null when the account has no ledger. Every window is read with readWindow first. effectiveReservePct is 0 when the seven_day entry has a resetsAt and resetsAt - spendDownWindowHours <= now < resetsAt, else reservePct (at or after resetsAt the reading has expired: the window reset, so the reserve applies again). fiveHourRoom is false when the five_hour reading is rejected or usedPct >= 100, null with no reading, else true. weeklyRoom is the same for seven_day against 100 - effectiveReservePct. When input.model is given, modelRoom checks the window 'model:<model>' against 100 with no reserve.",
+  "cases": [
+    {
+      "name": "no ledger: the reserve is the policy's and room is unknown",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": null
+      },
+      "expected": { "effectiveReservePct": 50, "fiveHourRoom": null, "weeklyRoom": null }
+    },
+    {
+      "name": "main below its reserve has room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "five_hour": { "usedPct": 20, "resetsAt": "2026-09-26T19:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "statusline" },
+          "seven_day": { "usedPct": 45, "resetsAt": "2026-09-29T16:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "statusline" }
+        }
+      },
+      "expected": { "effectiveReservePct": 50, "fiveHourRoom": true, "weeklyRoom": true }
+    },
+    {
+      "name": "main at its reserve has no weekly room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "seven_day": { "usedPct": 50, "resetsAt": "2026-09-29T16:00:00.000Z", "status": "allowed", "observedAt": "2026-09-26T15:59:00.000Z", "source": "sdk_event" }
+        }
+      },
+      "expected": { "effectiveReservePct": 50, "fiveHourRoom": null, "weeklyRoom": false }
+    },
+    {
+      "name": "inside the spend-down window the reserve drops to 0",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "seven_day": { "usedPct": 80, "resetsAt": "2026-09-27T04:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "statusline" }
+        }
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": null, "weeklyRoom": true }
+    },
+    {
+      "name": "the spend-down window starts at exactly resetsAt minus its hours",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "seven_day": { "usedPct": 60, "resetsAt": "2026-09-27T16:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "statusline" }
+        }
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": null, "weeklyRoom": true }
+    },
+    {
+      "name": "one millisecond before the spend-down window the reserve holds",
+      "input": {
+        "now": "2026-09-26T15:59:59.999Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "seven_day": { "usedPct": 60, "resetsAt": "2026-09-27T16:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "statusline" }
+        }
+      },
+      "expected": { "effectiveReservePct": 50, "fiveHourRoom": null, "weeklyRoom": false }
+    },
+    {
+      "name": "after the reset, the main account's 50% reserve applies again",
+      "input": {
+        "now": "2026-09-28T10:00:00.000Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "seven_day": { "usedPct": 90, "resetsAt": "2026-09-27T16:00:00.000Z", "status": null, "observedAt": "2026-09-27T15:00:00.000Z", "source": "statusline" }
+        }
+      },
+      "expected": { "effectiveReservePct": 50, "fiveHourRoom": null, "weeklyRoom": true }
+    },
+    {
+      "name": "at exactly resetsAt the spend-down window has ended and the reserve applies",
+      "input": {
+        "now": "2026-09-27T16:00:00.000Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "seven_day": { "usedPct": 90, "resetsAt": "2026-09-27T16:00:00.000Z", "status": null, "observedAt": "2026-09-27T15:00:00.000Z", "source": "statusline" }
+        }
+      },
+      "expected": { "effectiveReservePct": 50, "fiveHourRoom": null, "weeklyRoom": true }
+    },
+    {
+      "name": "a seven_day reading with no resetsAt keeps the reserve",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "seven_day": { "usedPct": 30, "resetsAt": null, "status": null, "observedAt": "2026-09-26T12:00:00.000Z", "source": "sdk_usage" }
+        }
+      },
+      "expected": { "effectiveReservePct": 50, "fiveHourRoom": null, "weeklyRoom": true }
+    },
+    {
+      "name": "a stale seven_day reading is unknown room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "claude3", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "seven_day": { "usedPct": 30, "resetsAt": null, "status": null, "observedAt": "2026-09-18T12:00:00.000Z", "source": "sdk_usage" }
+        }
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": null, "weeklyRoom": null }
+    },
+    {
+      "name": "rotation spends to 100: 99.9 has room, 100 does not",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "claude3", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "five_hour": { "usedPct": 100, "resetsAt": "2026-09-26T19:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "statusline" },
+          "seven_day": { "usedPct": 99.9, "resetsAt": "2026-09-30T16:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "statusline" }
+        }
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": false, "weeklyRoom": true }
+    },
+    {
+      "name": "a rejection with no percentage has no room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "claude3", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "five_hour": { "usedPct": null, "resetsAt": "2026-09-26T19:00:00.000Z", "status": "rejected", "observedAt": "2026-09-26T15:59:00.000Z", "source": "transcript" },
+          "seven_day": { "usedPct": 10, "resetsAt": "2026-09-30T16:00:00.000Z", "status": "rejected", "observedAt": "2026-09-26T15:59:00.000Z", "source": "sdk_event" }
+        }
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": false, "weeklyRoom": false }
+    },
+    {
+      "name": "a warning status still has room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "claude3", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "five_hour": { "usedPct": 95, "resetsAt": "2026-09-26T19:00:00.000Z", "status": "allowed_warning", "observedAt": "2026-09-26T15:59:00.000Z", "source": "sdk_event" }
+        }
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": true, "weeklyRoom": null }
+    },
+    {
+      "name": "an expired five_hour rejection has room again",
+      "input": {
+        "now": "2026-09-26T19:00:00.000Z",
+        "policy": { "id": "claude3", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "five_hour": { "usedPct": null, "resetsAt": "2026-09-26T19:00:00.000Z", "status": "rejected", "observedAt": "2026-09-26T15:59:00.000Z", "source": "transcript" }
+        }
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": true, "weeklyRoom": null }
+    },
+    {
+      "name": "a 100% reserve leaves no weekly room at 0% used",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "policy": { "id": "org", "role": "kept-out", "reservePct": 100, "spendDownWindowHours": 0, "scope": { "repos": ["acme/app"] } },
+        "windows": {
+          "seven_day": { "usedPct": 0, "resetsAt": "2026-09-30T16:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "statusline" }
+        }
+      },
+      "expected": { "effectiveReservePct": 100, "fiveHourRoom": null, "weeklyRoom": false }
+    },
+    {
+      "name": "a model bucket is checked against 100 with no reserve",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "model": "opus",
+        "policy": { "id": "personal", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "model:opus": { "usedPct": 70, "resetsAt": "2026-09-30T16:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "sdk_usage" }
+        }
+      },
+      "expected": { "effectiveReservePct": 50, "fiveHourRoom": null, "weeklyRoom": null, "modelRoom": true }
+    },
+    {
+      "name": "a full model bucket has no room",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "model": "opus",
+        "policy": { "id": "claude3", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {
+          "model:opus": { "usedPct": 100, "resetsAt": "2026-09-30T16:00:00.000Z", "status": null, "observedAt": "2026-09-26T15:59:00.000Z", "source": "sdk_usage" }
+        }
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": null, "weeklyRoom": null, "modelRoom": false }
+    },
+    {
+      "name": "a model with no bucket is unknown",
+      "input": {
+        "now": "2026-09-26T16:00:00.000Z",
+        "model": "sonnet",
+        "policy": { "id": "claude3", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": { "repos": [] } },
+        "windows": {}
+      },
+      "expected": { "effectiveReservePct": 0, "fiveHourRoom": null, "weeklyRoom": null, "modelRoom": null }
+    }
+  ]
+}
