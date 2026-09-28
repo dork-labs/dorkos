@@ -3,6 +3,7 @@
  *
  * @module features/status/lib/usage-surface
  */
+import { TOOLTIP_MUTED_TEXT } from '@/layers/shared/ui';
 
 /**
  * `panel` is a popover or panel on the page's own colors. `tooltip` is the
@@ -19,5 +20,5 @@ export type UsageSurface = 'panel' | 'tooltip';
  */
 export const MUTED_TEXT: Record<UsageSurface, string> = {
   panel: 'text-muted-foreground',
-  tooltip: 'text-dui-background/70',
+  tooltip: TOOLTIP_MUTED_TEXT,
 };

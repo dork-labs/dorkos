@@ -354,7 +354,13 @@ export type { PathInputProps } from './path-input';
 export { Skeleton } from './skeleton';
 export { Textarea } from './textarea';
 export { Toaster } from './sonner';
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+  TOOLTIP_MUTED_TEXT,
+} from './tooltip';
 export { AccountDot, type AccountDotProps } from './account-dot';
 export {
   UsageBar,

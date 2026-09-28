@@ -1,7 +1,13 @@
 import type { ReactNode } from 'react';
 import { Layers, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { STATUS_TONE_TEXT, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import {
+  STATUS_TONE_TEXT,
+  TOOLTIP_MUTED_TEXT,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import {
   resolveDisplayContextPercent,
@@ -190,12 +196,16 @@ function ContextBreakdown({
                     />
                     {cat.name}
                   </span>
-                  <span className="text-muted-foreground shrink-0">{formatTokens(cat.tokens)}</span>
+                  <span className={cn(TOOLTIP_MUTED_TEXT, 'shrink-0')}>
+                    {formatTokens(cat.tokens)}
+                  </span>
                 </div>
               ))}
             </div>
           )}
-          {observedAt !== null && <UsageFreshnessLine observedAt={observedAt} now={now} />}
+          {observedAt !== null && (
+            <UsageFreshnessLine observedAt={observedAt} now={now} surface="tooltip" />
+          )}
         </div>
       </TooltipContent>
     </Tooltip>

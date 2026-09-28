@@ -134,6 +134,28 @@ test.describe('Claude account UI showcases @smoke', () => {
             await expect(tip).toHaveCount(0);
           }
 
+          // The other status-bar tooltips on the same inverted surface: the
+          // context item's (with its "as of" line) and the subagents item's.
+          const others: [string, ReturnType<typeof page.locator>][] = [
+            ['context', page.locator('#contextitem').getByLabel('Context window usage').first()],
+            [
+              'subagents',
+              page.locator('[data-testid="status-item-subagents"] [aria-label]').first(),
+            ],
+          ];
+          for (const [what, trigger] of others) {
+            await trigger.scrollIntoViewIfNeeded();
+            await trigger.hover();
+            const tip = page.locator('[data-slot="tooltip-content"]');
+            await expect(tip).toBeVisible();
+            violations.push(
+              ...(await scan(page, '[data-slot="tooltip-content"]', `the ${what} tooltip`))
+            );
+            await page.keyboard.press('Escape');
+            await page.mouse.move(0, 0);
+            await expect(tip).toHaveCount(0);
+          }
+
           // The open usage reveal while out: its amber overage note and its red
           // "Rate limit reached" are text on the popover, so they need 4.5:1.
           await page
@@ -161,6 +183,22 @@ test.describe('Claude account UI showcases @smoke', () => {
           await page.keyboard.press('Escape');
         }
       }
+
+      // A session row's context gauge, on the same inverted tooltip. Only the
+      // tooltip is scanned here, not the row.
+      await page.goto('/dev/sidebar-model');
+      const rows = page.locator('#accountmark');
+      await expect(rows).toBeVisible({ timeout: PLAYGROUND_COLD_START_MS });
+      await setTheme(page, theme);
+      const gauge = rows.locator('[aria-label^="Context "][aria-label$="% full"]').first();
+      await gauge.scrollIntoViewIfNeeded();
+      await gauge.hover();
+      const gaugeTip = page.locator('[data-slot="tooltip-content"]');
+      await expect(gaugeTip.getByText(/^as of /)).toBeVisible();
+      violations.push(
+        ...(await scan(page, '[data-slot="tooltip-content"]', 'the session row context tooltip'))
+      );
+
       expect(violations, `axe found a11y defects in the ${theme} theme`).toEqual([]);
     });
   }
