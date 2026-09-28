@@ -497,6 +497,69 @@ test.describe('Sidebar model showcase @smoke', () => {
     await expect(header).not.toHaveClass(/font-semibold/);
   });
 
+  // A real browser, because the trap this guards is one jsdom never shows:
+  // motion's press gesture (`whileTap`) gives any non-native element without a
+  // tabindex `tabindex="0"`, so the full row's box became an unnamed tab stop
+  // before its own button, and Enter or Space on it did nothing.
+  test('walks a full session row by keyboard: one stop for the row, then its own buttons', async ({
+    page,
+  }) => {
+    await openShowcase(page);
+    const row = page.locator('section#accountmark [data-testid="session-row"]').first();
+    const open = row.locator('[data-slot="session-row-open"]');
+    await expect(open).toHaveAttribute('aria-label', /^Session: /);
+
+    /** Where focus is: its accessible label, and whether it sits in the row. */
+    const focused = () =>
+      row.evaluate((el) => {
+        const active = document.activeElement;
+        return {
+          label: active?.getAttribute('aria-label') ?? null,
+          inRow: !!active && el.contains(active),
+        };
+      });
+
+    // Nothing in the row comes before its button.
+    await open.focus();
+    await page.keyboard.press('Shift+Tab');
+    expect((await focused()).inRow, 'Shift+Tab from the row button stayed in the row').toBe(false);
+
+    // Then the row's own controls, in the order they are drawn, then out.
+    await open.focus();
+    const stops: string[] = [];
+    for (;;) {
+      await page.keyboard.press('Tab');
+      const where = await focused();
+      if (!where.inRow) break;
+      stops.push(where.label ?? '(unnamed)');
+      expect(stops.length, `too many stops in one row: ${stops.join(', ')}`).toBeLessThan(5);
+    }
+    const expected = ['Rename session', 'Session details'];
+    if ((await row.getByRole('button', { name: /^Full power/ }).count()) > 0) {
+      expected.unshift('Full power: acts without approval prompts');
+    }
+    expect(stops).toEqual(expected);
+
+    // Enter on the row button reaches the row's click handler, which lives on
+    // the row box it sits in (the playground wires a no-op there, so the click
+    // itself is what is observed).
+    await row.evaluate((el) => {
+      (window as unknown as { rowClicks: string[] }).rowClicks = [];
+      el.addEventListener('click', (event) => {
+        const target = event.target as HTMLElement;
+        (window as unknown as { rowClicks: string[] }).rowClicks.push(
+          target.getAttribute('data-slot') ?? target.tagName
+        );
+      });
+    });
+    await open.focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Space');
+    expect(
+      await page.evaluate(() => (window as unknown as { rowClicks: string[] }).rowClicks)
+    ).toEqual(['session-row-open', 'session-row-open']);
+  });
+
   // The R1 gate. A `for` loop rather than two copies so neither theme can be
   // quietly dropped: removing one is removing a loop entry, which reads as a
   // deletion in a diff.
@@ -520,6 +583,12 @@ test.describe('Sidebar model showcase @smoke', () => {
       // cannot be satisfied by a page that outgrew the viewport, which an
       // absolute floor could be. See PAGE_MUST_FIT_VIEWPORT.
       await expectPageFitsViewport(page);
+      // The full session rows are on this page on purpose: they used to be a
+      // control holding controls (`nested-interactive`) and had to live
+      // elsewhere. Pinned, so the gate below keeps judging them.
+      await expect(
+        page.locator(`${AXE_CONTEXT} [data-slot="session-row-open"]`).first()
+      ).toBeVisible();
       const results = await runAxe(page, AXE_CONTEXT);
       await expectEveryReasonChipEvaluated(page, results);
 

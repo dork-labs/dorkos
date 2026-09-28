@@ -48,6 +48,7 @@ import { configManager } from '../../core/config-manager.js';
 import { IMPLICIT_ACCOUNT_ID, isAccountColor } from '@dorkos/shared/account-usage';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import {
+  accountForPath,
   canonicalAccountPath,
   defaultAccountFolder,
   expandAccountPath,
@@ -587,27 +588,85 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
 }
 
 /**
- * The color `claude-code:default` is drawn in, by `resolveRuntimeAccounts`:
- * an alias row's own color (matched by real path, routable rows only), else
- * `runtimes.claudeCode.defaultAccountColor`, else the default for its
- * position among the listed rows. The default folder comes from config and the
- * OS home only, exactly as the usage store resolves it, never from this
- * process's `CLAUDE_CONFIG_DIR` (DOR-2492).
+ * Two answers about the default account that `GET /api/config` hands the
+ * client, both read off ONE `resolveRuntimeAccounts` pass so no client
+ * re-derives either by comparing path strings:
  *
- * Omitted, rather than guessed, when the config cannot be read.
+ * - `defaultAccountResolvedColor`: the color `claude-code:default` is drawn
+ *   in: an alias row's own color (matched by real path, routable rows only),
+ *   else `runtimes.claudeCode.defaultAccountColor`, else the default for its
+ *   position among the listed rows. The default folder comes from config and
+ *   the OS home only, exactly as the usage store resolves it, never from this
+ *   process's `CLAUDE_CONFIG_DIR` (DOR-2492).
+ * - `resolvedAccountId`: the row a NEW session runs on, the one Settings marks
+ *   "in use". The folder is {@link resolveActiveClaudeRoot}'s, the function the
+ *   launch ladder falls back to, so it DOES follow `$CLAUDE_CONFIG_DIR` when no
+ *   default is chosen, because new sessions do. It is matched to a row by
+ *   {@link accountForPath}, the usage store's own canonical comparison (`~`
+ *   expanded, real path), so a trailing slash, a symlink or a `~` spelling
+ *   still names its row. `default` when no routable row has that folder and
+ *   it is the standalone default's own folder; omitted when it is neither (an
+ *   inherited `$CLAUDE_CONFIG_DIR` nobody registered).
+ *
+ * Both are omitted, rather than guessed, when the config cannot be read.
  */
-function resolvedDefaultColor(config: ConfigReader): { defaultAccountResolvedColor?: string } {
+function resolvedDefaultAccount(
+  config: ConfigReader,
+  unavailable: boolean
+): { defaultAccountResolvedColor?: string; resolvedAccountId?: string } {
+  if (unavailable) return {};
   try {
+    const home = os.homedir();
     const { accounts } = resolveRuntimeAccounts('claude-code', {
       config: { runtimes: { claudeCode: config.get('runtimes')?.claudeCode } },
+      home,
       defaultFolder: (_runtime, raw) => claudeDefaultAccountFolder(raw),
     });
     const color = accounts.find((account) => account.isDefault)?.color;
-    return color ? { defaultAccountResolvedColor: color } : {};
+    const root = resolveActiveClaudeRoot(config);
+    const row = accountForPath(accounts, 'claude-code', root, home);
+    // `default` only when the folder IS the standalone default the usage store
+    // lists as Main. Main is env-free by the shared contract (flow-cli-core
+    // §1.1a rev 6d: `defaultAccount`, else `activeAccount`, else `~/.claude`),
+    // because flow's CLI runs in other processes with other environments. The
+    // server's `$CLAUDE_CONFIG_DIR` is a LAUNCH-ONLY override, so a folder it
+    // names that nobody registered is not Main: no row can honestly claim it,
+    // and the field is left out rather than marking the wrong one
+    // (`launchOverride` says where new sessions go instead).
+    const standalone = accounts.find((account) => account.implicit);
+    const isMain =
+      !row &&
+      standalone?.canonicalPath != null &&
+      canonicalAccountPath(root, home) === standalone.canonicalPath;
+    const id = row?.id ?? (isMain ? IMPLICIT_ACCOUNT_ID : undefined);
+    return {
+      ...(color ? { defaultAccountResolvedColor: color } : {}),
+      ...(id ? { resolvedAccountId: id } : {}),
+    };
   } catch (err) {
-    logger.debug('[claude-config-dir] default account color unavailable', { err: String(err) });
+    logger.debug('[claude-config-dir] default account unavailable', { err: String(err) });
     return {};
   }
+}
+
+/**
+ * The launch-only override Settings has to say in words, if any: the server's
+ * inherited `$CLAUDE_CONFIG_DIR` while no default account is chosen (exactly
+ * when {@link resolveActiveClaudeRoot} hands new sessions that folder), AND no
+ * row can say "in use" for it. When the variable names `~/.claude` itself or a
+ * registered row, that row already says it, so the line would only repeat it.
+ * Never sent when the config could not be read: nobody can say then.
+ *
+ * The path is no new disclosure: `resolvedAccount` already carries it then.
+ */
+function launchOverride(
+  defaultAccount: string | null,
+  resolvedAccountId: string | undefined,
+  unavailable: boolean
+): { launchOverride?: { env: 'CLAUDE_CONFIG_DIR'; path: string } } {
+  const ambient = ambientClaudeConfigDir();
+  if (defaultAccount !== null || !ambient || resolvedAccountId || unavailable) return {};
+  return { launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: ambient } };
 }
 
 /**
@@ -630,6 +689,7 @@ export function describeClaudeCodeAccounts(
 ): NonNullable<ServerConfig['claudeCode']> {
   const { defaultAccount, accounts, defaultAccountColor, unavailable } =
     readClaudeCodeConfig(config);
+  const resolved = resolvedDefaultAccount(config, unavailable);
   return {
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
@@ -637,9 +697,14 @@ export function describeClaudeCodeAccounts(
     // follows its position (DOR-2492): the Settings color control's value, so
     // it can tell "chosen" from "default", as a row's `colorIsDefault` does.
     defaultAccountColor,
-    // The color the default account is DRAWN in, decided here and nowhere
-    // else: the same rule the usage store applies, so no client re-derives it.
-    ...resolvedDefaultColor(config),
+    // The color the default account is DRAWN in, and the row new sessions run
+    // on, decided here and nowhere else: the same rules the usage store and the
+    // launch ladder apply, so no client re-derives them from path strings.
+    ...resolved,
+    // Set only when the server's own `$CLAUDE_CONFIG_DIR` decides where new
+    // sessions go (no default chosen) and no row stands for that folder, so
+    // Settings can say so: Main never follows that variable (contract rev 6d).
+    ...launchOverride(defaultAccount, resolved.resolvedAccountId, unavailable),
     // Sent only when it is true, so an ordinary response carries no extra key
     // and a client that never learned about this field reads the same wire it
     // always did. What it buys the client is the difference between "your

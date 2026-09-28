@@ -78,6 +78,7 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     resolvedAccount: '/Users/dev/.claude',
     inherited: true,
     accounts: [],
+    resolvedAccountId: 'default',
   },
   tunnel: {
     enabled: false,
@@ -192,6 +193,7 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
   claudeCode: {
     resolvedAccount: '/Users/dev/.claude2',
     inherited: false,
+    resolvedAccountId: 'acme-corp',
     accounts: [
       {
         id: 'personal',
@@ -249,6 +251,7 @@ export const MOCK_SERVER_CONFIG_STANDALONE_DEFAULT: ServerConfig = {
     ),
     defaultAccountColor: null,
     defaultAccountResolvedColor: DEFAULT_ACCOUNT_COLORS[2]!,
+    resolvedAccountId: 'default',
   },
 };
 

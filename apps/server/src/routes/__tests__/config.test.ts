@@ -1708,6 +1708,9 @@ describe('GET /api/config', () => {
         accounts: [],
         defaultAccountColor: null,
         defaultAccountResolvedColor: DEFAULT_ACCOUNT_COLORS[0],
+        // Nobody registered the inherited folder and Main never follows the
+        // env (contract rev 6d), so no row is named; the override says where.
+        launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/tmp/inherited-claude' },
         // Warm agents default on, exposed here for the Control Center switch.
         persistentSession: true,
       });
@@ -1746,6 +1749,8 @@ describe('GET /api/config', () => {
         defaultAccountColor: null,
         // `default` names the acme-corp folder, so it is that row's color.
         defaultAccountResolvedColor: '#12ab9f',
+        // The row Settings marks "in use", named by the server.
+        resolvedAccountId: 'acme-corp',
         accounts: [
           {
             id: 'acme-corp',
