@@ -431,6 +431,46 @@ export class ConnectionStore {
       .run();
   }
 
+  /**
+   * Move already-saved accounts to the service id their provider now reports
+   * for them, so an account keeps matching its app when a provider starts
+   * listing that app under a new id (a Nango Gmail integration saved as
+   * `google-mail` before it joined the popular Gmail row, DOR-2436). Only live
+   * rows this provider already holds change: an account it has never been
+   * connected through here is not imported. A label that was only the old id
+   * (the name an account nobody named carries) follows it; a name the person
+   * chose stays.
+   *
+   * @param instanceId - The provider instance the accounts belong to.
+   * @param accounts - The provider's current accounts.
+   */
+  syncAccountServices(
+    instanceId: ConnectorProviderInstanceId,
+    accounts: readonly ProviderConnectedAccount[]
+  ): void {
+    this.assertAvailable();
+    const now = new Date().toISOString();
+    this.db.transaction((tx) => {
+      for (const account of accounts) {
+        tx.update(connections)
+          .set({
+            label: sql`CASE WHEN ${connections.label} = ${connections.toolkit} THEN ${account.label} ELSE ${connections.label} END`,
+            toolkit: account.toolkit,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(connections.providerInstanceId, instanceId),
+              eq(connections.externalAccountRef, account.externalAccountRef),
+              isNull(connections.removedAt),
+              sql`${connections.toolkit} <> ${account.toolkit}`
+            )
+          )
+          .run();
+      }
+    });
+  }
+
   /** Replace the operator-facing label of one stable connection. */
   setLabel(connectionId: ConnectionId, label: string): void {
     this.assertAvailable();

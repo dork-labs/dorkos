@@ -14,7 +14,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
+import type { ConnectedAccount, ProviderConnectedAccount } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../registry.js';
 
 const NOW = '2026-09-05T12:00:00.000Z';
@@ -321,6 +321,47 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     expect(registry.disconnectedConnectionFor(provider, 'gmail')).toBeUndefined();
     expect(registry.disconnectedConnectionFor(provider, 'gmail', 'work')).toBe(connection.id);
     expect(registry.disconnectedConnectionFor(provider, 'gmail', 'personal')).toBe(personal.id);
+  });
+
+  it('moves saved accounts to the service id their provider now reports, keeping chosen names', () => {
+    const account = (ref: string, label: string) => ({
+      externalAccountRef: ref as ProviderConnectedAccount['externalAccountRef'],
+      toolkit: 'google-mail',
+      label,
+      status: 'active' as const,
+      custody: 'self-host' as const,
+    });
+    // Saved before the provider listed Nango's Gmail integration as Gmail.
+    const unnamed = registry.recordConnect(provider, account('nango:unnamed', 'google-mail'));
+    const named = registry.recordConnect(provider, account('nango:named', 'home'));
+    const removed = registry.recordConnect(provider, account('nango:removed', 'google-mail'));
+    db.update(connections).set({ removedAt: NOW }).where(eq(connections.id, removed.id)).run();
+
+    registry.syncAccountServices(
+      provider,
+      ['nango:unnamed', 'nango:named', 'nango:removed', 'nango:never-saved'].map((ref) => ({
+        ...account(ref, 'gmail'),
+        toolkit: 'gmail',
+      }))
+    );
+
+    const row = (id: string) =>
+      db
+        .select({ toolkit: connections.toolkit, label: connections.label })
+        .from(connections)
+        .where(eq(connections.id, id))
+        .get();
+    expect(row(unnamed.id)).toEqual({ toolkit: 'gmail', label: 'gmail' });
+    expect(row(named.id)).toEqual({ toolkit: 'gmail', label: 'home' });
+    expect(row(removed.id)?.toolkit).toBe('google-mail');
+    // An account never connected here is not imported.
+    expect(
+      db
+        .select()
+        .from(connections)
+        .where(eq(connections.externalAccountRef, 'nango:never-saved'))
+        .get()
+    ).toBeUndefined();
   });
 
   it('removes all owned authority for one agent without touching another agent', () => {

@@ -11,6 +11,10 @@ import {
   type Db,
 } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
+import type {
+  ConnectorExternalAccountRef,
+  ConnectorProviderInstanceId,
+} from '@dorkos/shared/connector-provider';
 import type { CredentialProvider, CredentialResolution } from '../../core/credential-provider.js';
 import { ConnectorRegistry } from '../registry.js';
 import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
@@ -97,6 +101,7 @@ describe('ConnectorProviderBootstrapper', () => {
     /** Error the Composio connection check rejects with (the wrong-key branch). */
     composioProbeError?: Error;
     managedCloud?: ConstructorParameters<typeof ConnectorProviderBootstrapper>[0]['managedCloud'];
+    nangoClient?: NangoHttpClient;
   }) {
     return new ConnectorProviderBootstrapper({
       rawMcpPendingConnect: () => undefined,
@@ -107,7 +112,7 @@ describe('ConnectorProviderBootstrapper', () => {
       // Hermetic vendor clients: without these the post-registration connection
       // check would issue a real network request from the test suite.
       makeComposioClient: () => fakeComposioClient(opts?.composioProbeError),
-      makeNangoClient: () => fakeNangoClient(),
+      makeNangoClient: () => opts?.nangoClient ?? fakeNangoClient(),
       ...(opts?.testConnector && { testConnector: opts.testConnector }),
       ...(opts?.onUnregistered && { onUnregistered: opts.onUnregistered }),
       ...(opts?.managedCloud && { managedCloud: opts.managedCloud }),
@@ -169,6 +174,42 @@ describe('ConnectorProviderBootstrapper', () => {
         }),
       }).registerBootProviders();
       expect(registry.resolveProvider('nango')).toBeDefined();
+    });
+
+    it('moves a saved Nango account to the popular app its integration serves (DOR-2436)', async () => {
+      const nangoId = legacyDefaultProviderInstanceId('nango') as ConnectorProviderInstanceId;
+      // Saved while the integration's own key was the app's id.
+      const earlier = new FakeConnectorProvider({ instanceId: nangoId, type: 'nango' });
+      registry.register(earlier);
+      const saved = registry.recordConnect(earlier, {
+        externalAccountRef: 'nango:conn_1' as ConnectorExternalAccountRef,
+        toolkit: 'google-mail',
+        label: 'google-mail',
+        status: 'active',
+        custody: 'self-host',
+      });
+      secrets.set(NANGO_SECRET_KEY_REF, 'sk-nango-test');
+
+      await makeBootstrapper({
+        nangoEnv: () => ({ baseUrl: 'http://localhost:3003', encryptionKey: VALID_ENCRYPTION_KEY }),
+        nangoClient: {
+          ...fakeNangoClient(),
+          listIntegrations: () =>
+            Promise.resolve([{ uniqueKey: 'google-mail', provider: 'google-mail' }]),
+          listConnections: () =>
+            Promise.resolve([
+              { connectionId: 'conn_1', integration: 'google-mail', status: 'ACTIVE' },
+            ]),
+        },
+      }).registerBootProviders();
+
+      expect(
+        db
+          .select({ toolkit: connections.toolkit, label: connections.label })
+          .from(connections)
+          .where(eq(connections.id, saved.id))
+          .get()
+      ).toEqual({ toolkit: 'gmail', label: 'gmail' });
     });
 
     it('registers the hosted managed provider only while a linked key is configured', async () => {

@@ -303,6 +303,22 @@ export class ConnectorRegistry {
   }
 
   /**
+   * Move a provider's already-saved accounts to the service ids it now reports
+   * for them. Called with the accounts a provider listed when it was set up;
+   * a no-op while the connection store is unavailable.
+   *
+   * @param provider - The provider the accounts came from.
+   * @param accounts - Its current accounts.
+   */
+  syncAccountServices(
+    provider: ConnectorProvider,
+    accounts: readonly ProviderConnectedAccount[]
+  ): void {
+    if (this._connections.health().status !== 'ready') return;
+    this._connections.syncAccountServices(provider.instanceId, accounts);
+  }
+
+  /**
    * Reconcile a provider-owned account to its stable DorkOS connection. Called
    * after a successful `pollConnect` and provider inventory refresh.
    *

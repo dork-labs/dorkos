@@ -492,8 +492,11 @@ export class ConnectorProviderBootstrapper {
         // credential gate and 401ing on every call — without this check the
         // card said Ready over a dead service grid. The failure message
         // (Composio's own, secret-free) lands on the status DTO instead.
-        await provider.listAccounts();
+        const accounts = await provider.listAccounts();
         this._registry.register(provider, providerExecutionConfigDigest(provider), 'byo');
+        // A provider may now list an app under a new id (DOR-2436); saved
+        // accounts follow it so they keep matching their app.
+        this._registry.syncAccountServices(provider, accounts);
         this._instanceBySpecType.set(spec.type, provider.instanceId);
         logger.info(`[Connectors] ${spec.logLabel} registered`);
       }
