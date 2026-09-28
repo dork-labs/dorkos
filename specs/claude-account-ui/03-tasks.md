@@ -4,30 +4,31 @@ Generated from `03-tasks.json` (the canonical file). Spec: `02-specification.md`
 
 ## Summary
 
-| Task | Title                                                                                                            | Size   | Priority | Depends on                   | Repo        |
-| ---- | ---------------------------------------------------------------------------------------------------------------- | ------ | -------- | ---------------------------- | ----------- |
-| 1.1  | Set the account palette and add the pure account display helpers and test factories                              | medium | high     | none                         | dorkos      |
-| 1.2  | Bring account data into the client and add the account dot and usage bar atoms                                   | large  | high     | 1.1                          | dorkos      |
-| 2.1  | Add the status-bar account chip and its popover, and move the pre-launch account picker into it                  | large  | high     | 1.2                          | dorkos      |
-| 2.2  | Show the account dot and out-of-usage state on sidebar rows, and the account badge in the session header         | medium | high     | 2.1                          | dorkos      |
-| 2.3  | Show usage for every runtime in Settings → Runtimes, with account colors and the pointer to the Flow tab         | medium | medium   | 1.2                          | dorkos      |
-| 2.4  | Show cached account usage and context in the status bar from the moment a session opens                          | large  | high     | 1.2, 2.1                     | dorkos      |
-| 2.5  | Offer the Claude account folders found on this computer in Settings                                              | medium | high     | 1.2, 2.3                     | dorkos      |
-| 3.1  | Keep a short history of usage-limit episodes for the transcript marker                                           | medium | high     | none                         | dorkos      |
-| 3.2  | Build the "Continue on another account" picker and open it from the account popover                              | large  | high     | 1.2, 2.1                     | dorkos      |
-| 3.3  | Build the out-of-usage banner and its transcript marker, and run the accessibility check over every new showcase | xl     | high     | 3.2, 3.1, 2.2, 2.3, 2.4      | dorkos      |
-| 4.1  | Keep a plugin extension's approval across a plugin update, and settle the ADR                                    | small  | high     | none                         | dorkos      |
-| 4.2  | Scaffold the Flow extension with its fleet routes and the account advisor (marketplace)                          | xl     | high     | none                         | marketplace |
-| 4.3  | Build the Flow settings tab for choosing how flow spends each account (marketplace)                              | large  | medium   | 4.2                          | marketplace |
-| 4.4  | Add the Flow panel beside the chat: accounts, running work, pause                                                | large  | high     | 4.3                          | marketplace |
-| 5.1  | Document using several Claude accounts and what happens when usage runs out                                      | small  | medium   | 2.1, 2.3, 2.4, 3.2, 3.3, 4.3 | dorkos      |
+| Task | Title                                                                                                            | Size   | Priority | Depends on                        | Repo        |
+| ---- | ---------------------------------------------------------------------------------------------------------------- | ------ | -------- | --------------------------------- | ----------- |
+| 1.1  | Set the account palette and add the pure account display helpers and test factories                              | medium | high     | none                              | dorkos      |
+| 1.2  | Bring account data into the client and add the account dot and usage bar atoms                                   | large  | high     | 1.1                               | dorkos      |
+| 2.1  | Add the status-bar account chip and its popover, and move the pre-launch account picker into it                  | large  | high     | 1.2                               | dorkos      |
+| 2.2  | Show the account dot and out-of-usage state on sidebar rows, and the account badge in the session header         | medium | high     | 2.1                               | dorkos      |
+| 2.3  | Show usage for every runtime in Settings → Runtimes, with account colors and the pointer to the Flow tab         | medium | medium   | 1.2                               | dorkos      |
+| 2.4  | Show cached account usage and context in the status bar from the moment a session opens                          | large  | high     | 1.2, 2.1                          | dorkos      |
+| 2.5  | Offer the Claude account folders found on this computer in Settings                                              | medium | high     | 1.2, 2.3                          | dorkos      |
+| 2.6  | Show this computer's own Claude sign-in as Main in Settings, with its color control                              | small  | medium   | 2.3, 2.5                          | dorkos      |
+| 3.1  | Keep a short history of usage-limit episodes for the transcript marker                                           | medium | high     | none                              | dorkos      |
+| 3.2  | Build the "Continue on another account" picker and open it from the account popover                              | large  | high     | 1.2, 2.1                          | dorkos      |
+| 3.3  | Build the out-of-usage banner and its transcript marker, and run the accessibility check over every new showcase | xl     | high     | 3.2, 3.1, 2.2, 2.3, 2.4           | dorkos      |
+| 4.1  | Keep a plugin extension's approval across a plugin update, and settle the ADR                                    | small  | high     | none                              | dorkos      |
+| 4.2  | Scaffold the Flow extension with its fleet routes and the account advisor (marketplace)                          | xl     | high     | none                              | marketplace |
+| 4.3  | Build the Flow settings tab for choosing how flow spends each account (marketplace)                              | large  | medium   | 4.2                               | marketplace |
+| 4.4  | Add the Flow panel beside the chat: accounts, running work, pause                                                | large  | high     | 4.3                               | marketplace |
+| 5.1  | Document using several Claude accounts and what happens when usage runs out                                      | small  | medium   | 2.1, 2.3, 2.4, 2.6, 3.2, 3.3, 4.3 | dorkos      |
 
 ## Parallel groups
 
 - **A**: 1.1, 3.1, 4.1, 4.2. No dependencies in this file (each waits on its S4-on-main pieces; 4.2 also on flow contract revision 6); different files and repos.
 - **B**: 1.2, 4.3. After 1.1 (1.2) and 4.2 (4.3, marketplace repo).
 - **C**: 2.1, 2.3. After 1.2.
-- **D**: 2.2, 2.4, 3.2. After 2.1 (2.2, 2.4, 3.2). 2.4 and 2.1 share status-bar-registry.ts, so 2.4 rebases onto 2.1.
+- **D**: 2.2, 2.4, 3.2, 2.6. After 2.1 (2.2, 2.4, 3.2). 2.4 and 2.1 share status-bar-registry.ts, so 2.4 rebases onto 2.1. 2.6 after 2.3 and 2.5 (both edit ClaudeAccountsSection) and S4 DOR-2492.
 - **E**: 3.3. After 3.2, 3.1, 2.2, 2.3, 2.4; its axe spec covers every new showcase, the status-bar ones included.
 - **F**: 5.1. After every user-facing task, including the Flow tab.
 
@@ -541,6 +542,26 @@ Changelog: user-facing. Add one fragment `changelog/unreleased/<id>-<slug>.md` (
 
 Always (client): work in your own worktree based on origin/main (one checkout, one writer). TSDoc on every export (a block description, not tags alone). Tests beside the code in **tests**/. Every new test must fail with its implementation reverted. Run `pnpm vitest run <file>` per file, `pnpm --filter @dorkos/client typecheck` and `lint` (plus each other touched package), and every existing test that renders a component you change. Rebuild `@dorkos/shared` (`pnpm --filter @dorkos/shared build`) after changing it. FSD: `shared <- entities <- features <- widgets`; import other slices only through their barrel `index.ts`; a feature's `model/` may not import another feature's `model/` path (lint rule `fsd/no-cross-feature-model-import`) but may import a sibling's public barrel, and `ui/` may compose a sibling feature's component. An entity may not import `entities/config`, which is why account data lives in `shared/`. Client tests: React Testing Library with `createMockTransport` (from `@dorkos/test-utils`) inside `TransportProvider` and a fresh `createTestQueryClient()` (pattern: apps/client/src/layers/features/settings/ui/runtimes/**tests**/ClaudeAccountsSection.test.tsx); query by role and accessible name, never by class. THE GATE (invariant 1): `useAccountIdentityGate(runtime)` (apps/client/src/layers/entities/runtime/model/use-account-identity-gate.ts, exported from the entities/runtime barrel, task 1.2) is true only when `runtimeCapabilities[runtime].supportsAccounts` (S4 on main §R and task 2.8: `true` for claude-code, `false` for codex, opencode and test-mode) AND that runtime has 2 or more registered accounts (Claude Code: `useClaudeAccounts().accounts.length >= 2`; no other runtime has a registry today). It is the ONE gate for every account-identity surface: the status-bar chip, the popover's continue action, the sidebar dot and limited-row text, the header badge, the Settings dots and the Flow note. `isMultiAccount` stays only for the existing pre-launch and team-roster uses. Each gated surface's test renders it with 0, 1 and 2 Claude accounts and with a Codex session (`supportsAccounts: false`) and asserts `queryBy*` is null in every case except 2 Claude accounts on a Claude session. The out-of-usage banner and its transcript marker are NOT gated: they follow the session's `limit` for any runtime and any number of accounts (invariant 5). The status bar's usage and context items are not account identity and are never gated either (spec §6.8, task 2.4). Color is never the only signal (invariant 2): every dot has the account name as its accessible name and tooltip, the chip and badge always print the name, amber and red states print what happened in words. Unknown is never zero (invariant 3): a window with no reading is announced as "unknown" and never drawn as an empty 0% bar. The UI never decides what the server decides (invariant 6): state, countdown targets, eligibility and the recommended account come from S4's `limit` and `continue-options`; the client computes only display text. No user-facing copy beyond what is quoted here; all copy follows the writing-for-humans skill; never use "mission control", "cockpit", "integration", "connector", "adapter" or "provider" in user copy. Everything works at 360px wide. Dev Playground (maintaining-dev-playground skill): render the real component with injected data, never a rebuilt layout; section id = slug of the title.
 
+### Task 2.6: Show this computer's own Claude sign-in as Main in Settings, with its color control
+
+- Size small, priority medium, repo dorkos
+- Depends on: 2.3, 2.5
+
+Depends on (outside this file): S4's `runtimes.claudeCode.defaultAccountColor` (dorkos PR #2267, DOR-2492) on main: the stored color (lowercase `#rrggbb`, or null for the positional default), written through PATCH /api/config (a bad value is a 400; an `accounts` save keeps it); GET /api/config `claudeCode` also sends `defaultAccountResolvedColor`, the color the server uses (an aliased default takes its row's color); `useClaudeAccounts` exposes both, and `colorFor('default')` returns the resolved one. In this file: 2.3 and 2.5 (both edit `ClaudeAccountsSection`; rebase on them).
+
+Tracker: DOR-2492 (UI half) and DOR-2387. Spec §6.5 ("Main's own row"), §14 Q21 (amended); 04-design-decisions §12.
+
+Build, in apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx:
+
+- With the identity gate open (2+ Claude accounts) and Claude Code's `default` standing alone (no registered row's canonical folder is the default folder; read it from what the server already sends, never by re-resolving paths on the client), render one extra row for it, after the registered rows, using the SAME `AccountRow` pattern: `AccountColorControl` dot (value `defaultAccountColor`, displayed color `defaultAccountResolvedColor`, `colorIsDefault` when the stored value is null), the name "Main (this computer's sign-in)" (the host's label), the path line `~/.claude` (the default folder through the existing `shortenHomePath`), and the compact 5h/wk bars from the implicit `default` usage record (`usage.byId.get(IMPLICIT_ACCOUNT_ID)`). NO remove button and no "in use" toggle beyond what the row pattern shows for the default. Choosing a color writes `{ runtimes: { claudeCode: { defaultAccountColor } } }` (null for Default) through the section's existing write path; it must not rewrite `accounts`.
+- When `default` aliases a registered row, render nothing extra (that row is Main).
+- Anything beyond the existing row pattern is a NEW visual question: stop and report it.
+- Server: confirm with a test that `findUnregisteredClaudeFolders` never offers the default folder (it already excludes it; pin it with the default at `<home>/.claude`).
+
+Tests (RTL, mock Transport): the row renders only in the standalone case with 2+ accounts; it has no remove button; its dot shows the resolved color; choosing a swatch PATCHes only `defaultAccountColor`; Default writes null; the aliased case renders no extra row. Every new test must fail with its implementation reverted. Dev Playground: add the standalone-default case to the Settings accounts showcase (`settings-mock-data.ts`). Screenshots from a real browser on your own ports, light and dark, into the lead's scratchpad.
+
+Changelog: one plain fragment ("Choose a color for this computer's own Claude sign-in in Settings").
+
 ### Task 3.1: Keep a short history of usage-limit episodes for the transcript marker
 
 - Size medium, priority high, repo dorkos
@@ -907,7 +928,7 @@ Every call is validated by the host and bounded at 2 s, `move` included (it only
   - `key` is the contract's policy key (`<runtime>:<account-id>` in revision 6, as flow's own modules spell it).
   - Policy from `loadFleetPolicy(ctx.dorkHome, identities)`; `role` is the resolved role, and `anyRoleStored` is true when at least one account has a role stored in fleet.json (read the raw file), so task 4.3 can show its first-visit notice; `effectiveReservePct` from the account's raw ledger read with flow's `usage-ledger.ts` (one helper `ledgerWindowsFor(dorkHome, runtime, accountId)`, a missing ledger = null windows; `ctx.accounts.usage()` is not used for this).
   - `supportsAccounts` per group (spec §8.2): the runtime's capability, from the host when it exposes one; else true when the runtime has a registered, non-implicit account in `ctx.accounts.list()`. Task 4.3's nothing-in-rotation rule counts only those runtimes.
-  - Group labels "Claude Code", "Codex", "OpenCode"; an implicit account's label is "<Runtime> (this computer's sign-in)" and its color the stone palette value `#78716c` (decided, Q21), held in one exported constant `IMPLICIT_ACCOUNT_COLOR`.
+  - Group labels "Claude Code", "Codex", "OpenCode"; Claude Code's standalone default takes the host's label ("Main (this computer's sign-in)") and color (Q21 amended, 04-design-decisions §12); a Codex or OpenCode implicit account's label is "<Runtime> (this computer's sign-in)" and its color the stone palette value `#78716c` (decided, Q21), held in one exported constant `IMPLICIT_ACCOUNT_COLOR`.
 - `PUT /fleet/accounts/:key` body `{ role?, reservePct?, spendDownWindowHours?, repos? }` (flow's `AccountPolicyPatch`; `null` resets a field): ONE `updateFleetPolicy` call under the contract's lock. Choosing `main` while another account of the SAME runtime is `main` demotes that one to `rotation` in the same locked write (one `main` per runtime, per the contract). `repos` entries must match `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, else `400` naming the entry. Unknown key -> `404`. Returns the new `GET /fleet` body.
 - `PUT /fleet/handoff` `{ handoff: 'auto' | 'ask' }` via `setHandoff`; `PUT /fleet/cross-runtime` `{ crossRuntimeFallback: 'off' | 'on' }` (R4's fleet-wide field, decided Q16: one toggle; written with the same lock-and-merge steps). Both return the new body.
 - A lock error (gave up after 2 s, or a newer file version / `PreconditionError`) -> `409` with flow's own message; `UsageError` -> `400` with its message.

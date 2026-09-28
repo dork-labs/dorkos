@@ -36,9 +36,10 @@
       "tasks": [
         "2.2",
         "2.4",
-        "3.2"
+        "3.2",
+        "2.6"
       ],
-      "note": "After 2.1 (2.2, 2.4, 3.2). 2.4 and 2.1 share status-bar-registry.ts, so 2.4 rebases onto 2.1."
+      "note": "After 2.1 (2.2, 2.4, 3.2). 2.4 and 2.1 share status-bar-registry.ts, so 2.4 rebases onto 2.1. 2.6 after 2.3 and 2.5 (both edit ClaudeAccountsSection) and S4 DOR-2492."
     },
     {
       "group": "E",
@@ -229,6 +230,26 @@
       "parentIssue": null
     },
     {
+      "id": "2.6",
+      "phase": 2,
+      "phaseName": "Where you work",
+      "subject": "[claude-account-ui] [P2] Show this computer's own Claude sign-in as Main in Settings, with its color control",
+      "description": "Depends on (outside this file): S4's `runtimes.claudeCode.defaultAccountColor` (dorkos PR #2267, DOR-2492) on main: the stored color (lowercase `#rrggbb`, or null for the positional default), written through PATCH /api/config (a bad value is a 400; an `accounts` save keeps it); GET /api/config `claudeCode` also sends `defaultAccountResolvedColor`, the color the server uses (an aliased default takes its row's color); `useClaudeAccounts` exposes both, and `colorFor('default')` returns the resolved one. In this file: 2.3 and 2.5 (both edit `ClaudeAccountsSection`; rebase on them).\n\nTracker: DOR-2492 (UI half) and DOR-2387. Spec §6.5 (\"Main's own row\"), §14 Q21 (amended); 04-design-decisions §12.\n\nBuild, in apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx:\n- With the identity gate open (2+ Claude accounts) and Claude Code's `default` standing alone (no registered row's canonical folder is the default folder; read it from what the server already sends, never by re-resolving paths on the client), render one extra row for it, after the registered rows, using the SAME `AccountRow` pattern: `AccountColorControl` dot (value `defaultAccountColor`, displayed color `defaultAccountResolvedColor`, `colorIsDefault` when the stored value is null), the name \"Main (this computer's sign-in)\" (the host's label), the path line `~/.claude` (the default folder through the existing `shortenHomePath`), and the compact 5h/wk bars from the implicit `default` usage record (`usage.byId.get(IMPLICIT_ACCOUNT_ID)`). NO remove button and no \"in use\" toggle beyond what the row pattern shows for the default. Choosing a color writes `{ runtimes: { claudeCode: { defaultAccountColor } } }` (null for Default) through the section's existing write path; it must not rewrite `accounts`.\n- When `default` aliases a registered row, render nothing extra (that row is Main).\n- Anything beyond the existing row pattern is a NEW visual question: stop and report it.\n- Server: confirm with a test that `findUnregisteredClaudeFolders` never offers the default folder (it already excludes it; pin it with the default at `<home>/.claude`).\n\nTests (RTL, mock Transport): the row renders only in the standalone case with 2+ accounts; it has no remove button; its dot shows the resolved color; choosing a swatch PATCHes only `defaultAccountColor`; Default writes null; the aliased case renders no extra row. Every new test must fail with its implementation reverted. Dev Playground: add the standalone-default case to the Settings accounts showcase (`settings-mock-data.ts`). Screenshots from a real browser on your own ports, light and dark, into the lead's scratchpad.\n\nChangelog: one plain fragment (\"Choose a color for this computer's own Claude sign-in in Settings\").",
+      "activeForm": "Adding Main's own row to Settings",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "2.3",
+        "2.5"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
       "id": "3.1",
       "phase": 3,
       "phaseName": "Out of usage",
@@ -387,7 +408,8 @@
         "3.3",
         "4.3",
         "2.5",
-        "4.4"
+        "4.4",
+        "2.6"
       ],
       "parallelWith": [],
       "issue": null,
