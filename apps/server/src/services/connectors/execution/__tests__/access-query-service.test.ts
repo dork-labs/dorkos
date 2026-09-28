@@ -297,12 +297,26 @@ describe('ConnectorAccessQueryService', () => {
       {
         toolkit: 'gmail',
         label: 'Work Gmail',
-        note: expect.stringContaining('needs to be linked again'),
+        note: expect.stringContaining("isn't linked anymore"),
       },
     ]);
     await expect(
       withWays.listRuntimeOperations(RUNTIME_PRINCIPAL, 'connection-a')
     ).rejects.toMatchObject({ code: 'connection_not_found' });
+
+    // The same agent and session under a different owner never learns of an
+    // account on this owner's instance, even one that cannot be used.
+    const foreign = createServerPrincipal({
+      kind: 'runtime',
+      owner: OTHER_OWNER,
+      bindingId: 'binding-foreign',
+      runtime: 'codex',
+      canonicalSessionId: 'session-a',
+      agentId: 'agent-a',
+      agentPath: '/agents/agent-a',
+      canonicalCwd: '/repo-a',
+    });
+    await expect(withWays.listRuntimeConnections(foreign)).resolves.toEqual({ connections: [] });
 
     // The same grant and session rules as usable accounts: a chat with the
     // account turned off, or a paused account, is not named.

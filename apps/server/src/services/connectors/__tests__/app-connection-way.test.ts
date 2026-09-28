@@ -131,15 +131,15 @@ describe('agent notes', () => {
     }
   });
 
-  it('tells an agent holding an account whose way is down not to ask for it again', () => {
-    for (const problem of [
-      'dorkos_account_unlinked',
-      'dorkos_account_unavailable',
-      'own_key_unavailable',
-    ] as const) {
-      expect(agentWayProblemNote(problem)).toContain('do not ask them to connect it again');
-    }
-    expect(agentWayProblemNote('dorkos_account_unlinked')).toContain('linked again');
+  it('tells an agent holding an account whose way is down what the person does, honestly', () => {
+    // Linking again does not bring the old connection back, so the note never
+    // promises that and says the app is connected again.
+    const unlinked = agentWayProblemNote('dorkos_account_unlinked');
+    expect(unlinked).toContain("isn't linked anymore");
+    expect(unlinked).toContain('does not bring it back');
+    expect(unlinked).toContain('connects this app again');
+    expect(agentWayProblemNote('own_key_unavailable')).toContain("isn't set up or didn't answer");
+    expect(agentWayProblemNote('dorkos_account_unavailable')).toContain('Try again later');
   });
 });
 

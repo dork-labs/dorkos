@@ -35,11 +35,13 @@ interface AccountAttentionStepProps {
   onRecheck: () => void;
   /** The accounts are being read again. */
   rechecking: boolean;
+  /** Connect the app again through any way that works, the one-time step first when none does. */
+  onConnectAgain: () => void;
 }
 
 /**
- * The way the account was connected through is down. Signing in to the app
- * again would not help, so the line names the way and its fix instead.
+ * The way the account was connected through is down, so the line names that
+ * way. Connecting the app again, through any way that works, is always offered.
  */
 function wayDownLine(
   problem: ConnectorWayProblem,
@@ -49,11 +51,11 @@ function wayDownLine(
 ): string {
   switch (problem) {
     case 'dorkos_account_unlinked':
-      return `Your DorkOS account needs to be linked again. ${serviceName} (${label}) was connected through it, so ${agentName} can’t use it until then.`;
+      return `${serviceName} (${label}) was connected through your DorkOS account, which isn’t linked anymore, so ${agentName} can’t use it. To use ${serviceName} here, connect it again.`;
     case 'dorkos_account_unavailable':
       return `Your DorkOS account can’t reach ${serviceName} right now, so ${agentName} can’t use ${label} yet. Try again in a while.`;
     case 'own_key_unavailable':
-      return `The key ${serviceName} (${label}) was connected through didn’t work the last time DorkOS checked it. Fix it so ${agentName} can use it.`;
+      return `The key ${serviceName} (${label}) was connected through isn’t set up or didn’t answer when DorkOS last checked it, so ${agentName} can’t use it. Fix the key, or connect ${serviceName} again.`;
   }
 }
 
@@ -92,6 +94,7 @@ export function AccountAttentionStep({
   deciding,
   onRecheck,
   rechecking,
+  onConnectAgain,
 }: AccountAttentionStepProps) {
   const titleId = useId();
   const settings = useSettingsDeepLink();
@@ -159,16 +162,18 @@ export function AccountAttentionStep({
             Sign in again
           </Button>
         )}
-        {attention.kind === 'way_down' && attention.problem === 'dorkos_account_unlinked' && (
-          <Button onClick={() => settings.open('access', 'account')}>Link it in Access</Button>
-        )}
         {attention.kind === 'way_down' && attention.problem === 'dorkos_account_unavailable' && (
           <Button variant="secondary" onClick={onRecheck} disabled={rechecking}>
             {rechecking ? 'Checking…' : 'Check again'}
           </Button>
         )}
         {attention.kind === 'way_down' && attention.problem === 'own_key_unavailable' && (
-          <Button onClick={() => settings.open('connections', 'ways')}>Fix the key</Button>
+          <Button variant="secondary" onClick={() => settings.open('connections', 'ways')}>
+            Fix the key
+          </Button>
+        )}
+        {attention.kind === 'way_down' && (
+          <Button onClick={onConnectAgain}>Connect {serviceName} again</Button>
         )}
         {attention.kind === 'needs_review' && (
           <Button asChild variant="secondary">

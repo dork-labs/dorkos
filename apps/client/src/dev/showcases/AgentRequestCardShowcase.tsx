@@ -224,8 +224,8 @@ export function AgentRequestCardShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Nothing reaches Gmail because the DorkOS account was unlinked: Connect opens the one-time
-        step, which offers linking it again first
+        Nothing reaches Gmail because the DorkOS account isn’t linked anymore: the one-time step
+        offers linking it again or a key, as equal choices
       </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <CardDemo
@@ -243,7 +243,7 @@ export function AgentRequestCardShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Connected through a DorkOS account that was unlinked: link it again, not reconnect
+        Connected through a DorkOS account that isn’t linked anymore: connect it again
       </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <CardDemo

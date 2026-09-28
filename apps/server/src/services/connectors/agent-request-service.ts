@@ -414,8 +414,9 @@ function unreachedDirectoryMessage(
       return partialCatalogMessage(quoted);
     case 'dorkos_account_unlinked':
       return (
-        `DorkOS cannot check ${quoted} right now: the person's DorkOS account needs to be ` +
-        'linked again. Ask them to link it in Settings › Access in the DorkOS app, then ask again.'
+        `DorkOS cannot check ${quoted} right now: the person's DorkOS account isn't linked ` +
+        'anymore. They can link it again in Settings › Access in the DorkOS app, or add their ' +
+        'own key in Settings › Connections; then ask again.'
       );
     case 'dorkos_account_unavailable':
       return (
@@ -424,9 +425,9 @@ function unreachedDirectoryMessage(
       );
     case 'own_key_unavailable':
       return (
-        `DorkOS cannot check ${quoted} right now: the key the person set up for reaching apps ` +
-        'did not work the last time DorkOS checked it. Ask them to fix it in Settings › ' +
-        'Connections in the DorkOS app, then ask again.'
+        `DorkOS cannot check ${quoted} right now: the person's own key for reaching apps ` +
+        "isn't set up or didn't answer when DorkOS last checked it. Ask them to fix it in " +
+        'Settings › Connections in the DorkOS app, then ask again.'
       );
     case 'nothing_set_up':
       return (

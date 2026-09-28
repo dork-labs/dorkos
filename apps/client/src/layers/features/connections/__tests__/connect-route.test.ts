@@ -168,9 +168,7 @@ describe('firstConnectReason', () => {
         },
         notion
       )
-    ).toBe(
-      'Your DorkOS account needs to be linked again. Apps you connected through it come back once it is.'
-    );
+    ).toBe('Your DorkOS account isn’t linked anymore.');
     expect(
       firstConnectReason(
         { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },

@@ -184,9 +184,9 @@ describe('connector discovery capabilities', () => {
 
   it.each([
     ['nothing_set_up', 'DorkOS is not set up to reach apps yet'],
-    ['dorkos_account_unlinked', 'DorkOS account needs to be linked again'],
+    ['dorkos_account_unlinked', "DorkOS account isn't linked anymore"],
     ['dorkos_account_unavailable', 'linked but cannot reach apps right now'],
-    ['own_key_unavailable', 'did not work the last time DorkOS checked it'],
+    ['own_key_unavailable', "isn't set up or didn't answer"],
   ] as const)('says plainly why no way reaches a popular app (%s)', async (reason, sentence) => {
     const deps: ConnectorCapabilityDeps = {
       registry,
@@ -203,9 +203,9 @@ describe('connector discovery capabilities', () => {
 
     const note = result.services.find((service) => service.serviceSlug === 'notion')?.setupNote;
     expect(note).toContain(sentence);
-    expect(note).toContain('request');
-    // Never "connect Notion" when a way is set up and only needs fixing.
-    if (reason !== 'nothing_set_up') expect(note).not.toContain('connect it');
+    expect(note).toContain('still request');
+    // Never a promise that linking again restores anything.
+    expect(note).not.toMatch(/come back|work again|brings? (it|them) back/);
   });
 
   it('omits sign-in setup even when provider metadata supplies it', async () => {

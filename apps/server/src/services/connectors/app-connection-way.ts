@@ -122,9 +122,9 @@ export function agentAppSetupNote(problem: AppReachProblem, app: string): string
       );
     case 'dorkos_account_unlinked':
       return (
-        `The person's DorkOS account needs to be linked again before DorkOS can reach ${app}. ` +
-        'They link it in Settings › Access in the DorkOS app, and apps they connected through ' +
-        `it work again. You can still request ${app}.`
+        `The person's DorkOS account isn't linked anymore, so DorkOS cannot reach ${app}. ` +
+        'They can link it again in Settings › Access in the DorkOS app, or use their own key, ' +
+        `and then connect ${app}. You can still request it.`
       );
     case 'dorkos_account_unavailable':
       return (
@@ -134,9 +134,9 @@ export function agentAppSetupNote(problem: AppReachProblem, app: string): string
       );
     case 'own_key_unavailable':
       return (
-        'The key the person set up for reaching apps did not work the last time DorkOS ' +
-        `checked it, so DorkOS cannot reach ${app}. They fix it in Settings › Connections in ` +
-        `the DorkOS app. You can still request ${app}.`
+        "The person's own key for reaching apps isn't set up or didn't answer when DorkOS last " +
+        `checked it, so DorkOS cannot reach ${app}. They fix it in Settings › Connections in the ` +
+        `DorkOS app. You can still request ${app}.`
       );
   }
 }
@@ -161,8 +161,7 @@ export function wayProblemFor(input: {
 
 /**
  * What an agent reads beside an account it was given but cannot use because
- * the way it was connected through is not working: the fix, and that
- * connecting the app again is not it.
+ * the way it was connected through is not working, and what the person does.
  *
  * @param problem - Which way is not working.
  */
@@ -170,20 +169,20 @@ export function agentWayProblemNote(problem: ConnectorWayProblem): string {
   switch (problem) {
     case 'dorkos_account_unlinked':
       return (
-        "It was connected through the person's DorkOS account, which needs to be linked " +
-        'again (Settings › Access in the DorkOS app). It works again once linked; do not ask ' +
-        'them to connect it again.'
+        "It was connected through the person's DorkOS account, which isn't linked anymore. " +
+        'Linking again does not bring it back: the person links the account again (Settings › ' +
+        'Access in the DorkOS app) or uses their own key, and then connects this app again.'
       );
     case 'dorkos_account_unavailable':
       return (
         "It was connected through the person's DorkOS account, which cannot reach apps right " +
-        'now. Try again later; do not ask them to connect it again.'
+        'now. Try again later.'
       );
     case 'own_key_unavailable':
       return (
-        "It was connected through the person's own key, which did not work the last time " +
-        'DorkOS checked it. They fix it in Settings › Connections in the DorkOS app; do not ' +
-        'ask them to connect it again.'
+        "It was connected through the person's own key, which isn't set up or didn't answer " +
+        'when DorkOS last checked it. The person fixes the key in Settings › Connections in the ' +
+        'DorkOS app, or connects this app again another way.'
       );
   }
 }

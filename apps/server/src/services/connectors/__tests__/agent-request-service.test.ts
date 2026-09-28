@@ -595,13 +595,9 @@ describe('ConnectorAgentRequestService', () => {
     });
 
     it.each([
-      ['dorkos_account_unlinked', 'needs to be linked again', 'Settings › Access'],
+      ['dorkos_account_unlinked', "isn't linked anymore", 'Settings › Access'],
       ['dorkos_account_unavailable', 'is linked but cannot reach apps', 'Try again later'],
-      [
-        'own_key_unavailable',
-        'did not work the last time DorkOS checked it',
-        'Settings › Connections',
-      ],
+      ['own_key_unavailable', "isn't set up or didn't answer", 'Settings › Connections'],
     ] as const)(
       'names the fix for a way that is set up but down (%s), not "connect an app"',
       async (reachProblem, why, fix) => {

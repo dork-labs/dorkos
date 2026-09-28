@@ -16,6 +16,11 @@ import { KeyEntry } from './KeyEntry';
 interface FirstConnectStepProps {
   /** Why the step shows although something is set up; `null` when nothing is. */
   reason: string | null;
+  /**
+   * Called before Settings opens from the step, so a dialog hosting the step
+   * closes first rather than stacking under Settings.
+   */
+  onLeave?: () => void;
 }
 
 /**
@@ -27,11 +32,11 @@ interface FirstConnectStepProps {
  * The big button is the person's own Composio key: DorkOS account app
  * connections are not available yet (DOR-1798), and when a linked DorkOS
  * account can serve apps it is used without asking, so this step never shows
- * for it. Once a linked account has been unlinked with apps still kept through
- * it, linking it again is offered too, since that brings those apps back.
+ * for it. When a DorkOS account that apps were connected through isn't linked
+ * anymore, linking it again is offered beside the key as an equal choice.
  * Nango is folded under "Other ways".
  */
-export function FirstConnectStep({ reason }: FirstConnectStepProps) {
+export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
   const providers = useConnectorProviders();
   const appConnections = useConnectorAppConnections();
   const settings = useSettingsDeepLink();
@@ -52,8 +57,8 @@ export function FirstConnectStep({ reason }: FirstConnectStepProps) {
   }
   const composio = findStatus(providers.data, 'composio');
   const nango = findStatus(providers.data, 'nango');
-  // Linking the account again brings back every app kept through it, so it is
-  // offered first; a key below is still a way in.
+  // An account that isn't linked anymore can be linked again; that and a key
+  // are equal choices, so neither is pressed on the person.
   const newApps = appConnections.data?.newApps;
   const relink = newApps?.status === 'setup_needed' && newApps.reason === 'dorkos_account_unlinked';
 
@@ -66,8 +71,16 @@ export function FirstConnectStep({ reason }: FirstConnectStepProps) {
       )}
 
       {relink && (
-        <Button size="lg" className="w-full" onClick={() => settings.open('access', 'account')}>
-          Link it again in Access
+        <Button
+          size="lg"
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            onLeave?.();
+            settings.open('access', 'account');
+          }}
+        >
+          Link my DorkOS account again
         </Button>
       )}
 

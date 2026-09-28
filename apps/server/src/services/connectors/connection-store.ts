@@ -609,29 +609,87 @@ export class ConnectionStore {
   /** Tombstone a connection and synchronously revoke local active access. */
   revokeConnection(connectionId: ConnectionId): void {
     this.assertAvailable();
+    this.closeConnections([connectionId], { externalCleanupState: 'unknown' });
+  }
+
+  /**
+   * Close every kept account of one instance that a complete, successful
+   * listing from that instance no longer contains: the hosted side has no such
+   * account, so it can never be used again and the owner connects the app
+   * again. Closed, not removed, so the account's history stays; there is
+   * nothing left to clean up on the other side. Callers pass only a listing
+   * that succeeded in full — a failed or partial read must never reach here.
+   *
+   * @param instanceId - The instance the listing came from.
+   * @param listedRefs - Every account the listing returned.
+   * @returns The ids closed, for the caller's log line.
+   */
+  closeUnlistedConnections(
+    instanceId: ConnectorProviderInstanceId,
+    listedRefs: ReadonlySet<string>
+  ): ConnectionId[] {
+    this.assertAvailable();
+    const unlisted = this.db
+      .select({ id: connections.id, externalAccountRef: connections.externalAccountRef })
+      .from(connections)
+      .where(
+        and(
+          eq(connections.providerInstanceId, instanceId),
+          eq(connections.lifecycleState, 'connected'),
+          isNull(connections.removedAt)
+        )
+      )
+      .all()
+      .filter((row) => !listedRefs.has(row.externalAccountRef))
+      .map((row) => row.id as ConnectionId);
+    if (unlisted.length > 0) {
+      this.closeConnections(unlisted, {
+        externalCleanupState: 'not_required',
+        status: 'revoked',
+        enabled: false,
+      });
+    }
+    return unlisted;
+  }
+
+  /**
+   * Mark connections disconnected and synchronously end every local authority
+   * hanging off them: agent attachments, session overrides, grants and event
+   * subscriptions.
+   */
+  private closeConnections(
+    ids: readonly ConnectionId[],
+    close: {
+      externalCleanupState: 'unknown' | 'not_required';
+      status?: 'revoked';
+      enabled?: false;
+    }
+  ): void {
     const now = new Date().toISOString();
     // Read before the connection-wide revoke below ends it, so the owner is
     // told sharing with every agent stopped (ADR 260926-192625).
     const ended = this.db.transaction((tx) => {
-      const endedSharing = liveEveryAgentConnections(tx, [connectionId]);
+      const endedSharing = liveEveryAgentConnections(tx, [...ids]);
       tx.update(connections)
         .set({
           lifecycleState: 'disconnected',
-          externalCleanupState: 'unknown',
+          externalCleanupState: close.externalCleanupState,
+          ...(close.status && { status: close.status }),
+          ...(close.enabled === false && { enabled: false }),
           cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
           updatedAt: now,
         })
-        .where(eq(connections.id, connectionId))
+        .where(inArray(connections.id, [...ids]))
         .run();
       tx.delete(agentConnectionAttachments)
-        .where(eq(agentConnectionAttachments.connectionId, connectionId))
+        .where(inArray(agentConnectionAttachments.connectionId, [...ids]))
         .run();
       tx.delete(sessionConnectionOverrides)
-        .where(eq(sessionConnectionOverrides.connectionId, connectionId))
+        .where(inArray(sessionConnectionOverrides.connectionId, [...ids]))
         .run();
       tx.update(connectionOperationGrants)
         .set({ revokedAt: now })
-        .where(eq(connectionOperationGrants.connectionId, connectionId))
+        .where(inArray(connectionOperationGrants.connectionId, [...ids]))
         .run();
       tx.update(connectorEventSubscriptions)
         .set({
@@ -642,7 +700,7 @@ export class ConnectionStore {
         })
         .where(
           and(
-            eq(connectorEventSubscriptions.connectionId, connectionId),
+            inArray(connectorEventSubscriptions.connectionId, [...ids]),
             isNull(connectorEventSubscriptions.revokedAt)
           )
         )

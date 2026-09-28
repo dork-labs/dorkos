@@ -329,6 +329,27 @@ export class ConnectorRegistry {
   }
 
   /**
+   * Close the kept accounts of one registered instance that its complete,
+   * successful account listing no longer contains (see
+   * {@link ConnectionStore.closeUnlistedConnections}). A no-op while the
+   * connection store is unavailable.
+   *
+   * @param provider - The registered instance the listing came from.
+   * @param listed - Every account that listing returned.
+   * @returns The ids closed.
+   */
+  closeUnlistedConnections(
+    provider: ConnectorProvider,
+    listed: readonly ProviderConnectedAccount[]
+  ): ConnectionId[] {
+    if (this._connections.health().status !== 'ready') return [];
+    return this._connections.closeUnlistedConnections(
+      provider.instanceId,
+      new Set(listed.map((account) => account.externalAccountRef))
+    );
+  }
+
+  /**
    * Route an active account id to the provider that owns it, via the canonical
    * private binding. Returns `undefined` when the id is unknown, locally paused
    * or disconnected, provider-expired, or its exact provider is unavailable.

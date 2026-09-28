@@ -123,7 +123,7 @@ export function firstConnectReason(
     case 'dorkos_account_unavailable':
       return 'Your DorkOS account is linked, but it can’t connect apps right now.';
     case 'dorkos_account_unlinked':
-      return 'Your DorkOS account needs to be linked again. Apps you connected through it come back once it is.';
+      return 'Your DorkOS account isn’t linked anymore.';
     case 'own_key_unavailable':
       return 'Your saved key didn’t work the last time DorkOS checked it.';
     case 'nothing_set_up':

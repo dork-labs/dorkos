@@ -37,6 +37,7 @@ import type {
   ConnectorKeyKind,
   ConnectorProvider,
   ConnectorProviderStatus,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import type {
   ConnectorAppConnections,
@@ -364,7 +365,7 @@ export class ConnectorProviderBootstrapper {
     if (!managed.configured() || !expectedDigest) return;
     try {
       const provider = managed.create();
-      await provider.listAccounts();
+      const accounts = await provider.listAccounts();
       if (
         !managed.configured() ||
         managed.executionConfigDigest() !== expectedDigest ||
@@ -374,6 +375,7 @@ export class ConnectorProviderBootstrapper {
       }
       this._registry.register(provider, expectedDigest, 'managed');
       logger.info('[Connectors] DorkOS managed provider recovered');
+      this._closeUnlistedManagedConnections(provider, accounts);
     } catch (error) {
       logger.error(
         `[Connectors] DorkOS managed provider recovery check failed: ${
@@ -391,9 +393,10 @@ export class ConnectorProviderBootstrapper {
     try {
       if (!managed.configured()) return;
       const provider = managed.create();
-      await provider.listAccounts();
+      const accounts = await provider.listAccounts();
       this._registry.register(provider, managed.executionConfigDigest(), 'managed');
       logger.info('[Connectors] DorkOS managed provider registered');
+      this._closeUnlistedManagedConnections(provider, accounts);
     } catch (error) {
       logger.error(
         `[Connectors] DorkOS managed provider failed its connection check: ${
@@ -462,8 +465,9 @@ export class ConnectorProviderBootstrapper {
         )
       );
     } else if (managed && this._registry.hasLiveConnections(managed.instanceId)) {
-      // Unlinked (by the person, or revoked by the cloud) with apps still kept:
-      // linking again brings them back, which is the fix to name.
+      // No longer linked (by the person, or ended from the account's side)
+      // while apps connected through it are still kept: say that, rather than
+      // "nothing set up". Linking again does not bring those apps back.
       ways.push({
         ...this._way('dorkos_account', MANAGED_CLOUD_PROVIDER_TYPE, undefined),
         status: 'unlinked',
@@ -513,6 +517,27 @@ export class ConnectorProviderBootstrapper {
       ...(ready && { providerInstanceId: ready.instanceId }),
       ...(signInThrough !== undefined && { signInThrough }),
     };
+  }
+
+  /**
+   * After the DorkOS account's route answered with its whole account list,
+   * close the kept accounts that list no longer has. Linking the account again
+   * does not currently restore connections made through the old link, so such
+   * an account would otherwise look healthy while nothing could use it; closed,
+   * it reads as disconnected and the owner is offered to connect the app again.
+   * Only a listing that succeeded reaches here: a failed read throws before it,
+   * and a partial one throws inside the route's own `listAccounts`.
+   */
+  private _closeUnlistedManagedConnections(
+    provider: ConnectorProvider,
+    accounts: readonly ProviderConnectedAccount[]
+  ): void {
+    const closed = this._registry.closeUnlistedConnections(provider, accounts);
+    if (closed.length > 0) {
+      logger.info(
+        `[Connectors] Closed ${closed.length} DorkOS account connection(s) the linked account no longer lists; the person connects those apps again`
+      );
+    }
   }
 
   /** Unregister → create → probe → register-if-it-answers, recording any failure. */

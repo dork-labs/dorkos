@@ -117,11 +117,14 @@ export type ConnectorAppSetupReason = z.infer<typeof ConnectorAppSetupReasonSche
 
 /**
  * Why a connected account cannot be used although it is still connected: the
- * way it was connected through is not working. Fixing that way brings the
- * account back; connecting the app again is not the fix.
+ * way it was connected through is not working.
  */
 export const ConnectorWayProblemSchema = z.enum([
-  /** It was connected through a DorkOS account that is no longer linked. */
+  /**
+   * It was connected through a DorkOS account that is no longer linked.
+   * Linking again does not currently restore connections made through the
+   * old link, so the person connects the app again.
+   */
   'dorkos_account_unlinked',
   /** It was connected through a DorkOS account that cannot reach apps right now. */
   'dorkos_account_unavailable',

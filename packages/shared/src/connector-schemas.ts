@@ -425,8 +425,8 @@ export const ConnectorAccessibleConnectionsResponseSchema = z
     connections: z.array(AccessibleConnectorConnectionSchema),
     /**
      * Accounts this agent was given that cannot be used right now because the
-     * way they were connected through is not working. Each note says what the
-     * person fixes, so the agent does not ask them to connect the app again.
+     * way they were connected through is not working. Each note says why, and
+     * what the person does about it.
      */
     unavailable: z
       .array(
