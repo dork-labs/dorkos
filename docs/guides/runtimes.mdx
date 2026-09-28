@@ -161,11 +161,11 @@ Settings → Runtimes shows usage bars for every runtime that reports them, even
 
 Every account has usage limits. When a chat's account runs out, the chat can't go on until the limit resets, or, for some Claude Code chats, until you move the work to another account. This applies to every runtime, with any number of accounts.
 
-{/* 3.3: verify against merged behaviour */}
-A notice appears above the message box, such as "Acct 4 is out of usage until Tue 3pm." When the 5-hour limit ran out, it says how long to wait instead: "Acct 4 is out of usage · back in 47 min." With one account, or on Codex or OpenCode, the notice names the runtime rather than an account. The notice is red while the account is out and needs you.
+A notice appears above the message box, such as "Acct 4 is out of usage until Tue 3pm." When the 5-hour limit ran out, it says how long to wait instead: "Acct 4 is out of usage · back in 47 min." With one account, or on Codex or OpenCode, the notice names the runtime rather than an account, like "Codex is out of usage until Tue 3pm."
 
-{/* 3.3: verify against merged behaviour */}
-On a Claude Code chat that can move, the notice has two buttons: **Continue on another account** and **Wait for reset**. Otherwise it offers only **Wait for reset**. Until you pick one, the message box is paused.
+On a Claude Code chat that can move, with two or more accounts, the notice has two buttons: **Continue on another account…** and **Wait for reset**. Otherwise it offers only **Wait for reset**. While the notice waits for you, the message box is paused: "Paused until you continue or the account resets". If DorkOS doesn't know when the limit resets, the message box stays open.
+
+The notice is red while an account is out and needs you. It turns grey once there is nothing you need to do: while you wait, after the reset, and after the work has moved.
 
 With two or more Claude accounts, the sidebar shows the same thing in words, in place of the chat's time:
 
@@ -175,11 +175,13 @@ With two or more Claude accounts, the sidebar shows the same thing in words, in 
 
 The header badge shows the same words. On a narrow window, the header shortens "out · waiting for reset" to "out · waiting". Once the work has moved on, the old chat goes back to looking normal.
 
+If something goes wrong when you choose a button, the notice says why in a line of its own, or "Couldn't do that. Try again." when there is no reason to give.
+
 ### Continue on Another Account
 
 Only Claude Code chats can continue on another account, and only ones you started in DorkOS, or that an agent started for you. Any other chat can only wait for its reset, such as one started by a schedule, in a room or channel, from Telegram or Slack, or in the terminal. So can every Codex or OpenCode chat.
 
-To move on, click the account chip and choose **Continue on another account**. It only shows while the chat is out of usage. A list opens with your other accounts, each with how much of its week is left and when it resets, like "28% left · resets Sun". An account that is out too can't be picked.
+To move on, choose **Continue on another account…** on the notice, or click the account chip and choose it there. It only shows while the chat is out of usage. A list opens with your other accounts, each with how much of its week is left and when it resets, like "28% left · resets Sun". An account that is out too can't be picked.
 
 Pick one and choose **Continue on** followed by its name, like **Continue on Acct 2**. DorkOS starts a new chat in the same folder, on the account you picked, with a summary of this one. The chat itself does not move: the old chat stays where it was, and the new one picks up the work. On a flow run, flow picks the task up in the same folder and branch from where it last saved its progress.
 
@@ -193,35 +195,31 @@ If no account can take the work, the list says "No other account can take this w
 
 ### Wait for the Reset
 
-{/* 3.3: verify against merged behaviour */}
-Choose **Wait for reset** and the notice turns grey, such as "Waiting for Acct 4 · back in 1h 12m". On a Claude Code chat, tick **Continue automatically when it resets** and the chat picks up again on its own when the limit resets.
+Choose **Wait for reset** and the notice turns grey, such as "Waiting for Acct 4 · back in 1h 12m", or "Waiting for Acct 4 · back Tue 3pm" when the reset is more than a day away.
 
-{/* 3.3: verify against merged behaviour */}
-Codex and OpenCode chats never continue on their own. When the limit resets, the notice says so and offers **Continue**, so you can carry on when you're ready.
+On a chat that could move to another account, the notice also has a **Continue automatically when it resets** checkbox. Tick it and the chat picks up again on its own when the limit resets. Only Claude Code chats can do this. Codex and OpenCode chats, and any chat that can only wait, never continue on their own: you choose when to carry on.
 
-{/* 3.3: verify against merged behaviour */}
-When the chat carries on, the notice goes away and leaves a one-line note in the chat where the work stopped, such as "Resumed after reset at 4:02pm".
+When the reset comes, the notice says "Acct 4 has reset." with a **Continue** button that picks the chat up where it left off. If DorkOS can't confirm the reset, it says "Acct 4 should have reset by now." instead. The same words appear if the reset time passes while the notice still waits for you, and the message box opens again so you can just send a message.
+
+Once the limit is over, the notice goes away and leaves a one-line note in the chat where the work stopped:
+
+- "Resumed after reset at 4:02pm" after a reset;
+- "Acct 4 ran out · moved to Acct 2 at 2:14pm" after the work moved (the new account's name opens the new chat);
+- "Opus ran out · continued on Sonnet at 4:02pm" after a switch to another model;
+- "Acct 4 ran out · continued here at 4:02pm" when you kept going in this chat before the reset.
 
 ### Other Things You Might See
 
-{/* 3.3: verify against merged behaviour */}
-
-- **"All accounts are out."** Every account you could use has run out. The notice names the one that comes back soonest, and the only choice is to wait.
-- **"Opus is out on Acct 3 for this week."** Only one model ran out. Choose **Keep going on Sonnet, same account** to carry on with a different model.
-- **"This task continued on Acct 2."** The work moved to a new chat. Choose **Open it** to go there. If you want to keep using this chat anyway, choose **Continue here anyway**. That choice lasts until this limit ends.
-
-{/* 3.3: verify against merged behaviour */}
-The notice is grey once there is nothing you need to do: while you wait, after the reset, and after the work has moved.
+- **"All accounts are out."** Every account you could use has run out. The notice names the one that comes back soonest, like "Soonest back: Acct 2, Sun 9am", and the only choice is **Wait for reset**.
+- **"Opus is out on Acct 3 for this week."** Only one model ran out. Choose **Keep going on Sonnet, same account** to carry on with a different model. The notice may also offer **Continue on another account…** and always offers **Wait for reset**.
+- **"This task continued on Acct 2."** The work moved to a new chat. Choose **Open it →** to go there. The message box here stays shut, so you don't split the work by accident. To keep using this chat anyway, choose **Continue here anyway**. That choice lasts for this limit only; if the account runs out again later, the notice asks again.
 
 ### On a Flow Run
 
-{/* 3.3: verify against merged behaviour */}
-If flow is running the task and is set to **Hand off automatically**, the notice counts down for 10 seconds before moving the task: "Moving this task to Acct 2 in 10s…". Choose **Move now** to skip the wait. The notice then says "Moving this task to Acct 2…" until flow reports the move, and after that it says the task continued elsewhere.
+If flow is running the task and is set to **Hand off automatically**, the notice counts down for 10 seconds before moving the task: "Moving this task to Acct 2 in 10s…". The message box reads "Paused until the task moves or the account resets". Choose **Move now** to skip the wait, **Choose account…** to pick a different account, or **Wait for reset** to stay. After the countdown, the notice says "Moving this task to Acct 2…" until flow reports the move, and then it says the task continued elsewhere.
 
-{/* 3.3: verify against merged behaviour */}
 Choosing **Wait for reset** on a flow run hands the wait to flow. Flow holds the run, and picks it up again at the reset only when **Continue automatically when it resets** is on.
 
-{/* 3.3: verify against merged behaviour */}
 If DorkOS can't reach flow, the notice says "Flow could not be reached, so this was not changed."
 
 ## Let Flow Share the Work
