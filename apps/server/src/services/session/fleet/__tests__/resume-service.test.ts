@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { Db } from '@dorkos/db';
-import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { ACCOUNT_RESUME_PROMPT, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { AccountAdvisor } from '@dorkos/extension-api/server';
 import type { LimitPlan } from '@dorkos/shared/schemas';
 
@@ -53,7 +53,6 @@ import { SessionLimitStore, setSessionLimitStore } from '../session-limit-store.
 import { planNewLimit, startLimitPlanning, writePlan } from '../limit-plans.js';
 import { continueSession, installContinueService, waitForReset } from '../continue-service.js';
 import {
-  ACCOUNT_RESUME_PROMPT,
   RESET_MAX_RECHECKS,
   RESET_RECHECK_MS,
   RESUME_CAP_RETRY_MS,

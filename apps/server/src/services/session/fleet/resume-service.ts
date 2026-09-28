@@ -38,7 +38,7 @@
  * @module services/session/fleet/resume-service
  */
 import type { LimitPlan } from '@dorkos/shared/schemas';
-import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { ACCOUNT_RESUME_PROMPT, type AccountUsage } from '@dorkos/shared/account-usage';
 import { logger } from '../../../lib/logger.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
@@ -63,9 +63,6 @@ import {
   writePlan,
 } from './limit-plans.js';
 import { getSessionLimitStore, type StoredSessionLimit } from './session-limit-store.js';
-
-/** The message core sends when it resumes a session by itself (spec D9, quoted). */
-export const ACCOUNT_RESUME_PROMPT = "Your account's usage has reset. Continue where you left off.";
 
 /** The soonest a newly written wait may fire, so an advisor's past time never fires at once. */
 export const RESUME_MIN_DELAY_MS = 60_000;

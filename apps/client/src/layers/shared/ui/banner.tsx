@@ -46,6 +46,12 @@ export interface BannerProps
   details?: React.ReactNode;
   /** Whether the {@link BannerProps.details} region is expanded. */
   detailsOpen?: boolean;
+  /**
+   * Override the announce role. Omit for the per-variant default. A critical
+   * banner that follows a stop something else already announced passes
+   * `status`, so it is read politely rather than a second time as an alert.
+   */
+  role?: 'alert' | 'status';
 }
 
 /**
@@ -66,6 +72,7 @@ export interface BannerProps
  * @param dismissLabel - Accessible label for the dismiss button.
  * @param details - Collapsible detail content.
  * @param detailsOpen - Whether the details region is expanded.
+ * @param role - Announce role override; omitted uses the per-variant default.
  */
 export function Banner({
   variant = 'neutral',
@@ -75,12 +82,13 @@ export function Banner({
   dismissLabel = 'Dismiss',
   details,
   detailsOpen = false,
+  role: roleOverride,
   className,
   children,
   ...props
 }: BannerProps) {
   const Icon = icon === null ? null : (icon ?? VARIANT_ICON[variant ?? 'neutral']);
-  const role = variant === 'critical' ? 'alert' : 'status';
+  const role = roleOverride ?? (variant === 'critical' ? 'alert' : 'status');
 
   return (
     <div

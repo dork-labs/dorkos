@@ -38,6 +38,11 @@ export interface ClaudeAccountsView {
    */
   isMultiAccount: boolean;
   /**
+   * True once the config has landed, so an answer read from this view (no
+   * accounts, one account) is the real one rather than the empty start.
+   */
+  isLoaded: boolean;
+  /**
    * The shortest honest name for an account path: a registered account's label,
    * the host's label for the standalone default ("Main (this computer's
    * sign-in)"), else the folder name. Every surface that names a Claude account
@@ -77,7 +82,7 @@ export interface ClaudeAccountsView {
 export function useClaudeAccounts(): ClaudeAccountsView {
   const transport = useTransport();
 
-  const { data } = useQuery({
+  const { data, isSuccess } = useQuery({
     queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: CONFIG_STALE_TIME_MS,
@@ -103,6 +108,7 @@ export function useClaudeAccounts(): ClaudeAccountsView {
     resolvedAccount: claudeCode?.resolvedAccount,
     inherited: claudeCode?.inherited ?? true,
     isMultiAccount: accounts.length > 1,
+    isLoaded: isSuccess,
     defaultAccountColor: claudeCode?.defaultAccountColor ?? null,
     defaultAccountResolvedColor: claudeCode?.defaultAccountResolvedColor ?? null,
     nameFor: (path: string) => claudeAccountName(path, accounts, standaloneDefault),

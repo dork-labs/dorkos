@@ -891,6 +891,14 @@ export interface ContinueOptionsResponse {
   advised?: boolean;
 }
 
+/**
+ * The message that continues a session once its account's usage has reset
+ * (spec `claude-account-fleet` D9, quoted). The server sends it when it
+ * resumes a session by itself, and the out-of-usage banner's Continue sends
+ * the same words as the person's own message, so both read alike in the chat.
+ */
+export const ACCOUNT_RESUME_PROMPT = "Your account's usage has reset. Continue where you left off.";
+
 /** How a session limit episode ended (spec `claude-account-ui` §7.1). */
 export const LimitResolutionSchema = z
   .enum(['moved', 'resumed-reset', 'resumed-model', 'resumed-early'])

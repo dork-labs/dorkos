@@ -124,8 +124,13 @@ export function accountChipPromotion(account: SessionAccount): AccountPromotionS
  * account the server's ladder would pick (the agent's, else the default).
  *
  * @param sessionId - The session, or `null` when there is none.
+ * @param options - `fetchUsage: false` for a surface that must never ask for
+ *   usage (the out-of-usage banner): it reads only what is already cached.
  */
-export function useSessionAccount(sessionId: string | null): SessionAccount {
+export function useSessionAccount(
+  sessionId: string | null,
+  options: { fetchUsage?: boolean } = {}
+): SessionAccount {
   const id = sessionId ?? '';
   const resolved = useResolvedSessionRuntime(id);
   const runtime = resolved.runtime;
@@ -159,7 +164,8 @@ export function useSessionAccount(sessionId: string | null): SessionAccount {
 
   // Asked about the account only while the gate is open, so a one-account chat
   // never makes a usage request (spec §12, gate row). The cache is still read.
-  const usageView = useAccountUsage(runtime, visible ? { accountId, path } : {});
+  const fetchUsage = visible && options.fetchUsage !== false;
+  const usageView = useAccountUsage(runtime, fetchUsage ? { accountId, path } : {});
   const cachedUsage =
     (accountId !== null ? usageView.byId.get(accountId) : undefined) ??
     (path !== null ? usageView.byPath.get(path) : undefined) ??

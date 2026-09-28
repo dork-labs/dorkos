@@ -1090,3 +1090,98 @@ describe('ErrorMessageBlock', () => {
     expect(screen.getByText('Agent stopped unexpectedly')).toBeInTheDocument();
   });
 });
+
+describe('ErrorMessageBlock rate_limit (spec claude-account-ui §6.7)', () => {
+  it('becomes the out-of-usage marker for a rate_limit part, found by time', async () => {
+    sessionRows.current = [{ id: SESSION_ID, runtime: 'claude-code' } as Session];
+    const at = '2026-09-27T14:00:00.000Z';
+    const getLimitHistory = vi.fn().mockResolvedValue({
+      entries: [
+        {
+          id: 'row-1',
+          sessionId: SESSION_ID,
+          since: '2026-09-27T14:01:00.000Z',
+          runtime: 'claude-code',
+          accountId: null,
+          window: 'seven_day',
+          scope: 'account',
+          resetsAt: null,
+          resolution: 'resumed-reset',
+          resolvedAt: '2026-09-27T16:02:00.000Z',
+          toSessionId: null,
+          toAccountId: null,
+          modelFrom: null,
+          modelTo: null,
+        },
+      ],
+    });
+    renderBlock(
+      <ErrorMessageBlock
+        message="You've hit your weekly limit"
+        code="rate_limit"
+        sessionId={SESSION_ID}
+        at={at}
+      />,
+      { getLimitHistory }
+    );
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="account-limit-marker"]')).toHaveTextContent(
+        /^Resumed after reset at /
+      )
+    );
+    expect(getLimitHistory).toHaveBeenCalledWith(SESSION_ID);
+    expect(screen.queryByTestId('error-message-block')).toBeNull();
+  });
+
+  it('keeps the plain card with no history row for it', async () => {
+    sessionRows.current = [{ id: SESSION_ID, runtime: 'claude-code' } as Session];
+    renderBlock(
+      <ErrorMessageBlock
+        message="You've hit your weekly limit"
+        code="rate_limit"
+        sessionId={SESSION_ID}
+        at="2026-09-27T14:00:00.000Z"
+      />,
+      { getLimitHistory: vi.fn().mockResolvedValue({ entries: [] }) }
+    );
+    expect(await screen.findByTestId('error-message-block')).toBeInTheDocument();
+    expect(screen.getByText("You've hit your weekly limit")).toBeInTheDocument();
+  });
+
+  it('draws nothing on a live turn (no timestamp yet) while the limit is open', async () => {
+    sessionRows.current = [
+      {
+        id: SESSION_ID,
+        runtime: 'claude-code',
+        status: {
+          lifecycle: 'idle',
+          limit: {
+            accountId: null,
+            window: 'seven_day',
+            resetsAt: null,
+            since: '2026-09-27T14:01:00.000Z',
+            plan: { mode: 'ask' },
+            scope: 'account',
+            state: 'limited',
+          },
+        },
+      } as Session,
+    ];
+    const transport = renderBlock(
+      <ErrorMessageBlock
+        message="You've hit your weekly limit"
+        code="rate_limit"
+        sessionId={SESSION_ID}
+        at=""
+      />
+    );
+    await waitFor(() => expect(transport.getLimitHistory).toHaveBeenCalled());
+    expect(screen.queryByTestId('error-message-block')).toBeNull();
+  });
+
+  it('is unchanged without a code', () => {
+    const transport = renderBlock(<ErrorMessageBlock message="boom" sessionId={SESSION_ID} />);
+    expect(screen.getByTestId('error-message-block')).toBeInTheDocument();
+    expect(transport.getLimitHistory).not.toHaveBeenCalled();
+  });
+});
