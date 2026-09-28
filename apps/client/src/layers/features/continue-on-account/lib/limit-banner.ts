@@ -62,6 +62,27 @@ export function isCarryOverRefused(plan: LimitPlan): boolean {
 }
 
 /**
+ * Whether an instant has come: `false` for `null` (never known).
+ *
+ * @param iso - The instant, ISO-8601, or `null`.
+ * @param now - The moment to read from.
+ */
+export function hasPassed(iso: string | null, now: Date): boolean {
+  return iso !== null && Date.parse(iso) <= now.getTime();
+}
+
+/**
+ * How a reset that should have come reads (decision Q12's unconfirmed
+ * wording): `Acct 4 should have reset by now.`, never a countdown at or below
+ * zero.
+ *
+ * @param name - Who ran out (`limitSubject`).
+ */
+export function shouldHaveResetSentence(name: string): string {
+  return `${name} should have reset by now.`;
+}
+
+/**
  * The banner's bold first sentence for an account that is out:
  * `Acct 4 is out of usage until Tue 3pm.`, `Acct 4 is out of usage · back in
  * 47 min.` (the 5-hour window within a day), or `Acct 4 is out of usage.` with
@@ -78,6 +99,9 @@ export function outOfUsageSentence(
   resetsAt: string | null,
   now: Date
 ): string {
+  // Only a `waiting` plan is moved to reset-ready by the server; any other
+  // state stays until the next turn, so a passed reset reads as Q12 words it.
+  if (hasPassed(resetsAt, now)) return shouldHaveResetSentence(name);
   const words = limitText(windowKey, resetsAt, now);
   if (words === 'out') return `${name} is out of usage.`;
   if (words.startsWith('back in ')) return `${name} is out of usage · ${words}.`;
@@ -107,6 +131,7 @@ export function waitTargetOf(limit: SessionLimitView): string | null {
  */
 export function waitingSentence(name: string, target: string | null, now: Date): string {
   if (target === null) return `Waiting for ${name}`;
+  if (hasPassed(target, now)) return shouldHaveResetSentence(name);
   const wait = Date.parse(target) - now.getTime();
   if (wait < DAY_MS) return `Waiting for ${name} · back in ${formatBackIn(wait)}`;
   return `Waiting for ${name} · back ${formatResetTime(target, now)}`;
@@ -214,24 +239,29 @@ const OPEN_COMPOSER: LimitComposerState = { canSubmit: true, placeholder: null }
 
 /**
  * The composer while a session has a limit (spec §6.7): paused with the row's
- * words in every state that waits for the person or the reset, but only when
- * something is known to end the wait (a reset time, or a move time for
- * `handing-off`), since a pause with no end could never lift. `reset-ready`
- * is open. `moved` is closed until the person chose "Continue here anyway"
- * for this episode.
+ * words in every state that waits for the person or the reset, but only while
+ * something known still lies ahead (the reset, or for `handing-off` the move),
+ * since a pause with no end, or one whose end has passed, could never lift:
+ * the server leaves every state but a `waiting` plan as it is until the next
+ * turn. `reset-ready` is open. `moved` is closed until the person chose
+ * "Continue here anyway" for this episode.
  *
  * @param limit - The session's usage limit, or `null` when it has none.
  * @param continuedHere - Whether the person chose to continue here in this episode.
+ * @param now - The moment to read from.
  */
 export function limitComposerState(
   limit: SessionLimitView | null,
-  continuedHere: boolean
+  continuedHere: boolean,
+  now: Date
 ): LimitComposerState {
   if (!limit) return OPEN_COMPOSER;
   const state = limitStateOf(limit);
   if (state === 'moved') return { canSubmit: continuedHere, placeholder: null };
   if (!PAUSED_STATES.has(state)) return OPEN_COMPOSER;
-  const ends = waitTargetOf(limit) !== null || limit.plan.mode === 'auto';
+  const ahead = (iso: string | null) => iso !== null && !hasPassed(iso, now);
+  const ends =
+    ahead(waitTargetOf(limit)) || (limit.plan.mode === 'auto' && ahead(limit.plan.fireAt));
   if (!ends) return OPEN_COMPOSER;
   return {
     canSubmit: false,

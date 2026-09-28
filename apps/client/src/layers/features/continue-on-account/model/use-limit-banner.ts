@@ -23,7 +23,7 @@ import {
   type SessionLimitView,
 } from '@/layers/shared/lib';
 import { accountKeys, useClaudeAccounts, useTransport } from '@/layers/shared/model';
-import { canOpenPicker } from '../lib/continue-picker';
+import { canOpenPicker, isSelectable } from '../lib/continue-picker';
 import { isCarryOverRefused } from '../lib/limit-banner';
 import type { ModelName } from '../lib/limit-marker';
 import { useAccountNamer, type NamedAccount } from './use-account-namer';
@@ -123,14 +123,18 @@ export function useLimitBanner(sessionId: string, injected?: LimitBannerAccount)
   const { isLoaded: accountsLoaded } = useClaudeAccounts();
   const { data: capabilities } = useRuntimeCapabilities();
   const gateKnown = accountsLoaded && capabilities !== undefined;
+  // A model limit is reported even when no other account could take the work
+  // (the server ranks it above wait-only), so it offers the picker only when
+  // the ranking has an account that can be picked; that needs the gate too.
+  const modelLimited = state === 'model-limited';
   const options = useContinueOptions(
     sessionId,
-    movable && gateKnown && !identityGate && state !== 'model-limited'
+    movable && gateKnown && (modelLimited ? identityGate : !identityGate)
   );
   const canPick =
     movable &&
-    (state === 'model-limited'
-      ? identityGate
+    (modelLimited
+      ? identityGate && (options.data?.ranking.accounts.some(isSelectable) ?? false)
       : canOpenPicker(identityGate, options.data?.ranking, runtime));
 
   const { continuedHere, continueHere } = useContinuedHere(sessionId, limit?.since ?? null);

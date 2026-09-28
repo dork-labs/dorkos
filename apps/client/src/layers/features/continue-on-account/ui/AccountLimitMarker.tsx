@@ -120,7 +120,7 @@ export function AccountLimitMarkerLine({ entry, now: fixedNow }: AccountLimitMar
 export interface AccountLimitMarkerProps {
   /** The session the turn belongs to. */
   sessionId: string;
-  /** The timestamp of the message holding the turn's `rate_limit` error. */
+  /** The timestamp of the message holding the turn's `rate_limit` error; empty on a live turn. */
   at: string;
   /** What to show when no history row matches: the plain error card. */
   fallback: ReactNode;
@@ -139,11 +139,14 @@ export function AccountLimitMarker({ sessionId, at, fallback, now }: AccountLimi
   const { limit } = useSessionAccount(sessionId, { fetchUsage: false });
   const history = useLimitHistory(sessionId);
 
-  // This episode is still open: its banner above the message box speaks for it.
-  if (limit && isEpisodeOf(limit.since, at)) return null;
+  // This episode is still open: its banner above the message box speaks for
+  // it. A live turn's message has no timestamp yet, and its limit is the open one.
+  if (limit && (at === '' || isEpisodeOf(limit.since, at))) return null;
   // Nothing flashes in while the history loads.
   if (history.isPending) return null;
-  const entry = history.data ? episodeFor(history.data.entries, at) : null;
-  if (!entry) return <>{fallback}</>;
+  const entry = history.data && at ? episodeFor(history.data.entries, at) : null;
+  // Just after a limit clears the history is read again; the card waits for
+  // it rather than flashing in before the episode's row arrives.
+  if (!entry) return history.isFetching ? null : <>{fallback}</>;
   return <AccountLimitMarkerLine entry={entry} now={now} />;
 }

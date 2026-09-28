@@ -6,6 +6,7 @@ import { useNow } from '@/layers/shared/model';
 import {
   bannerActions,
   bannerVariantFor,
+  hasPassed,
   isCarryOverRefused,
   outOfUsageSentence,
   PRIMARY_ACTIONS,
@@ -129,7 +130,13 @@ export function AccountLimitBanner({
   // Seconds only while a move counts down; minutes otherwise. One interval.
   const tick = useNow(state === 'handing-off' ? 1000 : 60_000);
   const now = fixedNow ?? new Date(tick);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // The picker belongs to the episode and state it was opened in: a limit
+  // that clears, moves on or stops offering the picker closes it, and the
+  // next episode never finds it open (and never cancels a move unasked).
+  const pickerKey = limit && state ? `${limit.since}:${state}` : null;
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const pickerOpen = banner.canPick && pickerKey !== null && pickerFor === pickerKey;
+  const setPickerOpen = (open: boolean) => setPickerFor(open ? pickerKey : null);
   const checkboxId = useId();
 
   if (!limit || !state) return null;
@@ -172,7 +179,7 @@ export function AccountLimitBanner({
         <TickingText
           visible={waitingSentence(subject, target, now)}
           spoken={waitingSentence(subject, target, now)}
-          spokenKey={episode}
+          spokenKey={`${episode}:${hasPassed(target, now)}`}
         />
       );
       break;
@@ -196,7 +203,13 @@ export function AccountLimitBanner({
     }
     default: {
       const sentence = outOfUsageSentence(subject, limit.window, limit.resetsAt, now);
-      headline = <TickingText visible={sentence} spoken={sentence} spokenKey={episode} />;
+      headline = (
+        <TickingText
+          visible={sentence}
+          spoken={sentence}
+          spokenKey={`${episode}:${hasPassed(limit.resetsAt, now)}`}
+        />
+      );
       if (state === 'handing-off' && plan.mode === 'auto') {
         const target = banner.nameOf(plan.target);
         const seconds = secondsUntil(plan.fireAt, now);

@@ -7,7 +7,7 @@
  * history keeps the plain error card.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
@@ -17,8 +17,9 @@ import type { Session, ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockSession, createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, accountKeys } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { useSessionStreamStore } from '@/layers/entities/session';
 
 let mockSessions: Session[] = [];
 const mockSetSessionId = vi.fn();
@@ -62,6 +63,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  useSessionStreamStore.getState().removeSession(SID);
 });
 
 function entry(overrides: Partial<LimitHistoryEntry> = {}): LimitHistoryEntry {
@@ -107,6 +109,7 @@ interface Setup {
   runtime?: string;
   limit?: ReturnType<typeof createMockSessionLimit> | null;
   historyFails?: boolean;
+  at?: string;
 }
 
 function renderMarker(setup: Setup) {
@@ -141,12 +144,12 @@ function renderMarker(setup: Setup) {
   render(
     <AccountLimitMarker
       sessionId={SID}
-      at={MESSAGE_AT}
+      at={setup.at ?? MESSAGE_AT}
       fallback={<div data-testid="plain-card">plain error card</div>}
     />,
     { wrapper: Wrapper }
   );
-  return { transport };
+  return { transport, queryClient };
 }
 
 function marker(): HTMLElement | null {
@@ -279,5 +282,45 @@ describe('while the episode is open', () => {
       limit: createMockSessionLimit('ask', { since: local(16, 20) }),
     });
     await waitFor(() => expect(marker()).toHaveTextContent('Resumed after reset at 4:02pm'));
+  });
+});
+
+describe('no card flashes beside the banner', () => {
+  it('draws nothing on a live turn (no timestamp yet) while a limit is open', async () => {
+    const { transport } = renderMarker({
+      entries: [],
+      at: '',
+      limit: createMockSessionLimit('ask', { since: local(14, 1) }),
+    });
+    await waitFor(() => expect(transport.getLimitHistory).toHaveBeenCalled());
+    expect(marker()).toBeNull();
+    expect(screen.queryByTestId('plain-card')).toBeNull();
+  });
+
+  it('draws nothing while the history is read again after the limit clears', async () => {
+    const { transport, queryClient } = renderMarker({
+      entries: [],
+      limit: createMockSessionLimit('ask', { since: local(14, 1) }),
+    });
+    await waitFor(() => expect(transport.getLimitHistory).toHaveBeenCalledTimes(1));
+    let answer!: (value: { entries: LimitHistoryEntry[] }) => void;
+    vi.mocked(transport.getLimitHistory).mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    act(() => {
+      useSessionStreamStore
+        .getState()
+        .applyEvent(SID, { type: 'status_change', seq: 1, status: { limit: null } } as never);
+      void queryClient.invalidateQueries({ queryKey: accountKeys.limitHistory(SID) });
+    });
+    await waitFor(() => expect(transport.getLimitHistory).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('plain-card')).toBeNull();
+    await act(async () => {
+      answer({ entries: [entry({ resolution: 'resumed-reset', resolvedAt: local(16, 2) })] });
+    });
+    await waitFor(() => expect(marker()).toHaveTextContent('Resumed after reset at 4:02pm'));
+    expect(screen.queryByTestId('plain-card')).toBeNull();
   });
 });

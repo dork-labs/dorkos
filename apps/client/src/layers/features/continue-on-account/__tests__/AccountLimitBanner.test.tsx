@@ -223,6 +223,41 @@ describe('limited', () => {
   });
 });
 
+describe('across the reset (the server only moves a waiting plan on)', () => {
+  it('a limited 5-hour window stops counting once its reset passes', async () => {
+    await renderBanner({
+      limit: limitOf('ask', { window: 'five_hour', resetsAt: at(30_000) }),
+    });
+    await waitFor(() =>
+      expect(bannerEl()).toHaveTextContent('Acct 4 is out of usage · back in 1 min.')
+    );
+    act(() => {
+      vi.advanceTimersByTime(MINUTE);
+    });
+    expect(bannerEl()).toHaveTextContent('Acct 4 should have reset by now.');
+    expect(bannerEl()).not.toHaveTextContent(/back in/);
+  });
+
+  it('a Codex wait past its reset says so, never "back in 1 min"', async () => {
+    await renderBanner({
+      runtime: 'codex',
+      accountId: 'default',
+      limit: limitOf('waiting', {
+        accountId: 'default',
+        state: 'waiting-reset',
+        resetsAt: at(30_000),
+        plan: { mode: 'waiting', resumeAt: at(30_000), autoResume: false, carryOver: false },
+      }),
+    });
+    await waitFor(() => expect(bannerEl()).toHaveTextContent('Waiting for Codex · back in 1 min'));
+    act(() => {
+      vi.advanceTimersByTime(MINUTE);
+    });
+    expect(bannerEl()).toHaveTextContent('Codex should have reset by now.');
+    expect(bannerEl()).not.toHaveTextContent(/back in/);
+  });
+});
+
 describe('handing-off', () => {
   const handingOff = (overrides: Partial<SessionLimit> = {}) =>
     limitOf('auto', { state: 'handing-off', ...overrides });
@@ -316,6 +351,42 @@ describe('handing-off', () => {
   });
 });
 
+describe('the picker belongs to its episode', () => {
+  function streamLimit(limit: SessionLimit | null, seq: number) {
+    act(() => {
+      useSessionStreamStore
+        .getState()
+        .applyEvent(SID, { type: 'status_change', seq, status: { limit } } as never);
+    });
+  }
+
+  it('closes when the limit moves on, and a new episode does not find it open', async () => {
+    await renderBanner({ limit: limitOf('ask') });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Continue on another account…' })
+    );
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    streamLimit(limitOf('continued', { state: 'moved' }), 1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    streamLimit(limitOf('ask', { since: at(MINUTE) }), 2);
+    await waitFor(() =>
+      expect(bannerEl()).toHaveTextContent('Acct 4 is out of usage until Tue 3pm.')
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it("never cancels the next episode's automatic move unasked", async () => {
+    const { transport } = await renderBanner({ limit: limitOf('auto', { state: 'handing-off' }) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose account…' }));
+    await waitFor(() => expect(transport.cancelAutoContinue).toHaveBeenCalledTimes(1));
+    streamLimit(null, 1);
+    streamLimit(limitOf('auto', { state: 'handing-off', since: at(MINUTE) }), 2);
+    await waitFor(() => expect(bannerEl()).toHaveTextContent('Moving this task to Acct 2'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(transport.cancelAutoContinue).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('wait-only (invariant 5)', () => {
   it('a Codex session is named "Codex" and can only wait', async () => {
     const { transport } = await renderBanner({
@@ -400,8 +471,36 @@ describe('model-limited', () => {
       ...overrides,
     });
 
+  /** The server's ranking with Acct 2 free to take the work, or with no one. */
+  const ranking = (accounts: 'one' | 'none') => ({
+    getContinueOptions: vi.fn().mockResolvedValue({
+      plan: { mode: 'ask' },
+      ranking: {
+        accounts:
+          accounts === 'one'
+            ? [
+                {
+                  runtime: 'claude-code',
+                  id: 'acct-2',
+                  label: 'Acct 2',
+                  color: '#2f7be0',
+                  usage: { state: 'ok' },
+                  eligible: true,
+                  reason: 'Has usage left.',
+                },
+              ]
+            : [],
+        recommendedId: accounts === 'one' ? 'acct-2' : null,
+      },
+      advised: false,
+    }),
+  });
+
   it('names the model by its display name, and keeps going on the fallback', async () => {
-    const { transport } = await renderBanner({ limit: modelLimited() });
+    const { transport } = await renderBanner({
+      limit: modelLimited(),
+      transport: ranking('one') as Partial<Transport>,
+    });
     await waitFor(() =>
       expect(bannerEl()).toHaveTextContent('Opus is out on Acct 4 for this week.')
     );
@@ -416,6 +515,17 @@ describe('model-limited', () => {
       screen.getByRole('button', { name: 'Keep going on Sonnet, same account' })
     );
     expect(transport.continueSession).toHaveBeenCalledWith(SID, { model: 'claude-sonnet-4-6' });
+  });
+
+  it('offers no other account when the ranking has none that can take the work', async () => {
+    const { transport } = await renderBanner({
+      limit: modelLimited(),
+      transport: ranking('none') as Partial<Transport>,
+    });
+    await waitFor(() => expect(transport.getContinueOptions).toHaveBeenCalledWith(SID));
+    await waitFor(() =>
+      expect(buttons()).toEqual(['Keep going on Sonnet, same account', 'Wait for reset'])
+    );
   });
 
   it('offers no other account with the gate closed', async () => {
@@ -646,6 +756,15 @@ describe('the composer', () => {
   ])('pauses in %s', async (_, limit, text) => {
     const { result } = composerFor(limit);
     await waitFor(() => expect(result.current).toEqual({ canSubmit: false, placeholder: text }));
+  });
+
+  it('opens once the reset passes, though the server leaves the state as it is', async () => {
+    const { result } = composerFor(limitOf('ask', { window: 'five_hour', resetsAt: at(30_000) }));
+    await waitFor(() => expect(result.current.canSubmit).toBe(false));
+    act(() => {
+      vi.advanceTimersByTime(MINUTE);
+    });
+    expect(result.current).toEqual({ canSubmit: true, placeholder: null });
   });
 
   it('is open when the reset is ready', async () => {

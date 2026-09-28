@@ -1148,6 +1148,37 @@ describe('ErrorMessageBlock rate_limit (spec claude-account-ui §6.7)', () => {
     expect(screen.getByText("You've hit your weekly limit")).toBeInTheDocument();
   });
 
+  it('draws nothing on a live turn (no timestamp yet) while the limit is open', async () => {
+    sessionRows.current = [
+      {
+        id: SESSION_ID,
+        runtime: 'claude-code',
+        status: {
+          lifecycle: 'idle',
+          limit: {
+            accountId: null,
+            window: 'seven_day',
+            resetsAt: null,
+            since: '2026-09-27T14:01:00.000Z',
+            plan: { mode: 'ask' },
+            scope: 'account',
+            state: 'limited',
+          },
+        },
+      } as Session,
+    ];
+    const transport = renderBlock(
+      <ErrorMessageBlock
+        message="You've hit your weekly limit"
+        code="rate_limit"
+        sessionId={SESSION_ID}
+        at=""
+      />
+    );
+    await waitFor(() => expect(transport.getLimitHistory).toHaveBeenCalled());
+    expect(screen.queryByTestId('error-message-block')).toBeNull();
+  });
+
   it('is unchanged without a code', () => {
     const transport = renderBlock(<ErrorMessageBlock message="boom" sessionId={SESSION_ID} />);
     expect(screen.getByTestId('error-message-block')).toBeInTheDocument();

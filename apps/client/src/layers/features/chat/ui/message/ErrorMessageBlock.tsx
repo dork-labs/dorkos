@@ -129,7 +129,8 @@ interface ErrorMessageBlockProps {
   /**
    * The error part's own code, when it had one. `rate_limit` (an account ran
    * out of usage) renders the out-of-usage marker instead of the card, given a
-   * `sessionId` and the message timestamp `at` to find its episode by.
+   * `sessionId`; the message timestamp `at` finds its episode (none yet on a
+   * live turn, when the open limit's banner speaks for it).
    */
   code?: string;
   /** The timestamp of the message holding this error, ISO-8601. */
@@ -165,8 +166,10 @@ export function ErrorMessageBlock(props: ErrorMessageBlockProps) {
   // A turn that ran out of usage is told by the out-of-usage banner while the
   // episode is open, then by one muted line; the card stays for an episode
   // older than the limit history (spec `claude-account-ui` §6.7).
-  if (code === RATE_LIMIT_CODE && sessionId && at) {
-    return <AccountLimitMarker sessionId={sessionId} at={at} fallback={<ErrorCard {...props} />} />;
+  if (code === RATE_LIMIT_CODE && sessionId) {
+    return (
+      <AccountLimitMarker sessionId={sessionId} at={at ?? ''} fallback={<ErrorCard {...props} />} />
+    );
   }
   return <ErrorCard {...props} />;
 }
