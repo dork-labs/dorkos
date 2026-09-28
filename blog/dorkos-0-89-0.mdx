@@ -1,0 +1,106 @@
+---
+title: DorkOS 0.89.0
+description: Run more than one Claude account without guessing, see what each app lets your agents do, and use your connected apps again.
+date: 2026-09-28
+author: DorkOS Team
+category: release
+tags: [release, accounts, usage, connections]
+---
+
+DorkOS 0.89.0 makes it easy to run more than one Claude account. You can see which account a chat uses and how much it has left, and move the work to another account when one runs out.
+
+## Highlights
+
+### See which account a chat uses
+
+A small chip in the status bar names the account a chat spends and how much of it is left. Settings shows usage for Claude Code, Codex and OpenCode.
+
+### Keep working when an account runs out
+
+When an account hits its limit, move the chat's work to another account in one click. Or choose to wait, and DorkOS picks the chat back up by itself once the account resets.
+
+### Know what agents can do with an app
+
+Apps in Connections now show their real logo and one line about what they do. An app's side panel lists what agents can read, and what they can change.
+
+### Connected apps work again
+
+Agents could not use connected apps like Gmail at all, because every action was turned away. They can again.
+
+## All Changes
+
+> DorkOS 0.89.0 makes it easy to run more than one Claude account: see which account a chat uses and how much it has left, and move the work to another account when one runs out. Connections shows each app's real logo and what agents can do with it, and agents can use your connected apps again.
+
+### Added
+
+- An app's side panel now shows what agents can do with it, right under "Who can use it". Pick "Read" and you see what agents can look at; pick "Read and write", where an app offers it, and you also see what they can change. Actions that neither choice includes, like sending or deleting email in many apps, are named too, with how to allow them one at a time. "See all" lists every action, each marked Look or Change. The same list shows before you connect an app, to help you decide (DOR-2465)
+- Apps whose service can't list their actions say so plainly, and everything agents do in them counts as a change. The list is kept for a day, so reopening a panel is instant (DOR-2465)
+- Apps in Connections now show their real logo and one plain line about what each one does. The popular apps ship their logos with DorkOS, so they show before anything is set up, and offline. Other apps use the logo their connection service sends. DorkOS fetches it once and keeps a copy, so your browser never loads another company's site. An app with no logo keeps its letter tile, and searching for what an app does now finds it (DOR-2464)
+- When a Claude account runs out of usage, the session it stopped now says what can happen next: move the work to another account, switch to another model when only one model ran out, or wait for the reset. The server keeps this across a restart and updates it as your other accounts' usage changes (DOR-2382)
+- New server routes for this: `GET /api/sessions/:id/continue-options` lists your other accounts in order, with the one that has the most room this week first. `POST /api/sessions/:id/continue` starts a new session on the account you pick, in the same folder, with a short summary of where the old one stopped. No model writes that summary, so nothing runs on the account that is out. `POST /api/sessions/:id/wait` and `POST /api/sessions/:id/continue/cancel` hold the session or cancel a pending move (DOR-2382)
+- A session that a room, a schedule or a chat connection started can only wait for the reset. Its work never moves to another account. Chats started before this update can only wait for the reset too. For now, only Claude Code sessions can move to another account or model; a Codex or OpenCode session that runs out waits for the reset (DOR-2382)
+- When Flow is set to move work on its own, a session that runs out now moves to the account Flow picked, after the wait Flow asked for (at most an hour). Its first turn does not stop for approval cards or questions, like a scheduled run. When you write in the new session yourself, it asks you as usual. If that account has also run out by then, or 8 automatic moves are already running, the session stays where it is and you get a second notice so you can choose. Restarting DorkOS cancels a pending move, and the session asks you instead (DOR-2382)
+- The work can also move to Codex or OpenCode when Flow offers one of their accounts. The new session uses that runtime's own model and never gets more permission than the old one had. Full autonomy is never carried over (DOR-2382)
+- Settings → Runtimes now shows how much of each usage limit you have used, for every runtime that reports it, even if you only have one account. Claude Code and Codex show bars for the 5-hour and weekly limits. OpenCode shows what it spent this month. When there is no reading yet, the bar says "unknown" instead of showing zero (DOR-2379)
+- With two or more Claude accounts, each account shows a colored dot and small bars for its limits. Click the dot to pick the account's color, or go back to its default. When flow is installed, a note under the list takes you to Settings → Flow, where you choose how flow uses your accounts (DOR-2379)
+- DorkOS can now check how much of a Claude Code account is used even when nobody has worked on it lately. It starts Claude Code on that account with nothing to answer, reads the usage, and closes it again, so nothing is billed and no chat is saved. Your agents can ask for it with the new `accounts_probe` tool. Each account is checked at most once a minute, and a check that cannot read anything leaves the account marked as unknown rather than guessing. Only a person can start this check through the DorkOS API; agents use their own tool, which goes through your approval settings (DOR-2381)
+- DorkOS now records how much of your Codex plan you have used, read from what Codex already writes after each turn.
+- DorkOS now records what your OpenCode turns cost each month. The total carries on after a restart and starts again on the first of each month.
+- When Codex runs out of usage, or an OpenCode provider stops you for sending too much or for running out of credit, the session now shows it is waiting on a limit, and you get one notification about it instead of an error.
+- Settings → Runtimes → Claude accounts now lists other Claude account folders it finds on your computer, like `~/.claude2`, under "Found on this computer". Nothing is added until you click Add. Dismiss hides a folder for good. A folder that looks company-managed is marked "managed by an organization", so you can decide whether to add it (DOR-2387)
+- See which Claude account a chat spends and how much it has left, right in the status bar. With two or more Claude accounts, a small chip shows the account's name and two bars for its 5-hour and weekly limits. It turns amber when the account is close to a limit and red when it runs out, and it says when the account comes back. Click it to see each limit and when it resets (DOR-2387)
+- When one agent messages another to start a new conversation, it can ask for that conversation to run on a particular Claude account. DorkOS only honors the request when Flow's account settings allow it. Otherwise the message is still delivered and runs on the usual account, and a conversation that has already started always stays on its own account (DOR-2384)
+- Agents can now start a new session of their own with the `session_start` tool. The new session always runs as the agent that asked for it, never as another agent. Each one shows up in Activity, with the agent that started it, the folder it works in, and the account it runs on. An agent can pick a Claude account only after Flow is set up to say which accounts agents may use. A session an agent starts can never turn off approval prompts, and at most 8 of them run at once. (DOR-2383)
+- When you choose to wait for an account's reset, DorkOS now picks the session back up by itself once the reset has happened. It does not go by the clock alone: it waits until a fresh usage reading shows the account has room again, then sends the session one message: "Your account's usage has reset. Continue where you left off." If it needs your approval, the request is turned down instead of waiting (DOR-2382)
+- You get one notice per account when it comes back, saying how many paused sessions can continue (DOR-2382)
+- A session is picked up by itself at most once per reset. If it runs out again before the next reset, it waits for you instead. If too many sessions nobody typed into are already running, it tries again each minute. A session that a room, a schedule or a chat connection started is never picked up by itself; it shows as ready for you (DOR-2382)
+- If no reading can confirm the reset within a short while, the session shows as ready but is not picked up by itself, so you can decide. Waits survive a restart of DorkOS (DOR-2382)
+- You can now set the color of this computer's own Claude sign-in with `runtimes.claudeCode.defaultAccountColor` in your config file. That is the account DorkOS calls "Main" when you haven't added its folder as an account, and until now it always showed the default color for its place in the list. Only you can change it, not your agents. If you have added that folder as an account, the account's own color is still the one used (DOR-2492)
+- With two or more Claude accounts, you can move a chat's work to another account when its account runs out. Open the account in the status bar and choose "Continue on another account": you see each account's usage left and when it resets, then pick one. It starts a new chat in the same folder with a summary of this one. (DOR-2388)
+- Choose a color for this computer's own Claude sign-in in Settings. With two or more Claude accounts, Settings → Runtimes → Claude Code now lists that sign-in as "Main (this computer's sign-in)" under your other accounts, with its usage and its color dot. Click the dot to pick a color. Main can't be removed there, because it isn't an account you added (DOR-2492)
+
+### Changed
+
+- Give newsletter and feedback forms the same buttons and text fields as the app, with larger controls on phones.
+- Give Community account and administration forms consistent buttons, fields and error messages while preserving native controls.
+- In a room with files of its own, an agent now starts each turn with the latest files, including changes other agents merged and edits people made, without having to sync by hand. DorkOS only does this when the agent has no work in progress in its copy, and never while another conversation with that agent in the same room is still running (DOR-2411)
+- When an agent does have work in progress, its copy is left exactly as it is, and the agent is told what changed in the room since it started: who changed it, what they said about it, which files, and which of those files it has changed too, so it can bring the latest files in before it hands its work back (DOR-2411)
+- A Claude Code session on a subscription now shows how much of its plan is used as soon as you open it, before it has run anything, and every open session on the same account updates together when new usage comes in. This works with a single account too
+- How full a session's context is now shows when you reopen it and after DorkOS restarts, instead of waiting for the next reply
+- The pricing page now says that prices are in US dollars, and that sales tax or VAT is added at checkout where it applies. It says so under the plans and in the questions.
+- Pick the account for a new chat on the account chip instead of the runtime menu. The choice still applies to that chat only and locks once you send the first message (DOR-2387)
+- Apps you connect through your DorkOS account can be served by the DorkOS Cloud service, which now holds your account. dorkos.ai hands those requests over the same way it already hands over signing in and your linked instances, once the service is ready for them (DOR-2485)
+- The status bar now shows how much of your usage limit is used, and how full the chat's context is, as soon as you open a chat, not only when you are close to a limit. Usage limits show for Claude Code and Codex, with one account or many, and every chat on the same account shows the same numbers. OpenCode keeps showing what the chat has cost (DOR-2387)
+- The usage and context details now end with how fresh the numbers are, such as "as of 12 min ago" or "just now". A usage number older than an hour is dimmed, and a limit window that has already reset reads "reset" instead of an old percentage (DOR-2387)
+- With two or more Claude accounts, usage shows once, on the account chip, instead of twice (DOR-2387)
+
+### Fixed
+
+- Keep dialog and side-panel text readable when a dark panel opens inside a light page, or the reverse.
+- On a tablet-sized window with the sidebar open, Home's top bar no longer runs past its edge when your team has ten or more agents. The status light used to slide under the button beside it, and it got worse with every extra digit in the team count and when remote access was on. When the bar is narrow, the Stop button beside the working count now shows only its icon, and when it is narrower still it steps out of the bar. You can still stop every agent from the list of working agents above the message box (DOR-1816)
+- When a room's git settings could make git run a program, the room's Files section now says which settings they are and the exact command to remove each one, instead of just "Couldn't load files." Saving, uploading, renaming and deleting in that room say the same. The command names the actual settings and sits on its own line, so you can copy it and run it as it is (DOR-2414)
+- `dorkos harness sync` no longer says DorkOS moves skills on its own inside room folders. It only ever does that inside the agent folders it owns (DOR-2414)
+- An agent in a room with files can attach a screenshot or recording it made in its own copy of the room's files again. Since room turns moved to the agent's own folder, those files were refused. Files in the room's shared folder or in another agent's copy still can't be attached (DOR-2410)
+- Disconnecting an app that goes through your DorkOS account now finishes on its own even when disconnecting stalls partway. DorkOS keeps trying, waiting a little longer between tries, until it is done, instead of waiting forever for an answer that would never come (DOR-2468)
+- **Finish disconnecting** no longer seems to do nothing. When disconnecting is still going, the panel says so, says why it is waiting (for example, that DorkOS's servers had a problem) and when it will try again, and keeps itself up to date until it is done. You can still ask for a try right away (DOR-2468)
+- Apps disconnected before DorkOS tracked this now finish disconnecting the same way (DOR-2468)
+- When DorkOS can't finish disconnecting on its own (for example, this instance is no longer linked), the panel says why and offers **Try disconnecting again** (DOR-2468)
+- Resuming a paused app that goes through your DorkOS account no longer waits forever when the first answer stalls; DorkOS asks again until it goes through (DOR-2468)
+- When two sessions on one account hit a usage limit at the same moment, the app now keeps the reading that says the account is out of usage. Before, the second reading was dropped, so an account could look free when it was not (DOR-2380)
+- A Codex agent's first message in a room no longer fails with "Canonical runtime authority could not be verified". DorkOS now records which program a room conversation runs on as its first turn starts, so the agent's connections open on the first try (DOR-2447)
+- Extensions that ask for a recent version of DorkOS now load. Before, DorkOS compared every extension against the wrong version number of itself, so any extension that needed a real release was marked "incompatible" and never started. The card for an extension that needs a newer DorkOS now reads "Needs DorkOS 0.88.0 or newer".
+- Agents in a room now call you by the name you gave DorkOS, or "the operator" if you haven't given one, instead of "You", which an agent could read as itself. This covers the messages an agent reads, who reacted to it, who changed the room's files, who is in the room, what is on its canvas, and the room history it looks up. The lines a room writes about you, like "Dorian stopped Bo" or who opened a discussion on the canvas, now use that name too, in your own window as well (DOR-2458)
+- The command an agent is given to bring the latest room files into its copy now works when that copy sits under a folder with a space in its name (DOR-2411)
+- Agents can use your connected apps again. Every Gmail action an agent tried, like reading your inbox, was turned away with a message saying its details did not match, even when they were right. DorkOS was quietly filling in the app's own default settings before checking the request, then refusing it for no longer matching what the agent sent. It now checks exactly what the agent sent and passes it along unchanged, and the app fills in its own defaults as it always has.
+- The same mistake turned away most choices about which app events an agent hears about, such as new email in one label. Those are accepted again.
+- When an agent's request really is wrong, the refusal now names the setting at fault, like a number sent as text or a setting the action does not have, so the agent can fix its request and try again.
+- A popular app you set up on your own Nango server, like Gmail, now shows up once in Connections, as that app with its name, logo and description, and you can connect it right there. Before, it showed twice: once as the popular app with no way to connect, and again under the key you gave it in Nango. Accounts you already connected, including disconnected ones, move to the right app too. If you set up the same app twice in Nango, the one you set up first keeps the app's row (DOR-2436)
+- Sign in with Google, GitHub, or your community's sign-in service to review a local install request. If the request expires while you review it, the approval buttons disappear.
+- Make unlinking from DorkOS Cloud take effect locally at once. Delayed responses can no longer restore an old link or remove a newer one.
+- Use the identity confirmed by DorkOS Cloud when preparing credits for an agent. Credits stay unavailable if the service cannot confirm this installation, and unlinking or replacing its sign-in makes previously prepared credits unusable.
+- Updating an extension now always loads its new code, even when only a file it imports changed. Before, DorkOS could keep running the old version until someone cleared its build cache by hand (DOR-2491)
+- An account's usage no longer shows as "unknown" because of a single reading DorkOS can't make sense of. DorkOS now skips that one reading and shows the rest. A usage reading above 100% now counts as 100%, and one below 0% counts as 0%. Before, DorkOS threw away the account's whole usage file over either one (DOR-2471)
+
+### Security
+
+- When a room's git settings could make git run a program, only the person who runs DorkOS now sees which settings they are, where they live on the computer, and the command that removes them. Everyone else in the room, agents included, sees only that the room's files are paused until those settings are fixed (DOR-2457)
