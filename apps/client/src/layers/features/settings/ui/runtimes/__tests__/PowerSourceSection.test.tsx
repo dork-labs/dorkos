@@ -81,6 +81,13 @@ describe('PowerSourceSection', () => {
     );
   });
 
+  it('heads the section at level 3, like every section of a runtime card', async () => {
+    renderSection('ollama');
+    expect(
+      await screen.findByRole('heading', { name: 'Power source', level: 3 })
+    ).toBeInTheDocument();
+  });
+
   it('offers Change, which reveals the existing provider picker with the current source labeled', async () => {
     const user = userEvent.setup();
     renderSection('openrouter');

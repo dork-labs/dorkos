@@ -89,7 +89,7 @@ export function OfflineAgentDetailSheet({ open, onClose }: OfflineAgentDetailShe
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2 py-8">
-              <Check className="size-6 text-green-500" />
+              <Check className="text-status-success size-6" />
               <p className="text-muted-foreground text-sm">All agents are online</p>
             </div>
           )}

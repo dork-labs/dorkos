@@ -5,6 +5,7 @@ import type { ErrorCategory } from '@dorkos/shared/types';
 import { describeKnownModelError } from '@dorkos/shared/runtime-error-classification';
 import { Button, LinkifiedText, containsUrl } from '@/layers/shared/ui';
 import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
+import { AccountLimitMarker } from '@/layers/features/continue-on-account';
 import { AuthErrorActions } from './AuthErrorActions';
 import { ModelErrorActions } from './ModelErrorActions';
 
@@ -125,7 +126,19 @@ interface ErrorMessageBlockProps {
   onSigninComplete?: () => boolean;
   /** Opens the active session's model control for a permanent model rejection. */
   onChooseModel?: () => void;
+  /**
+   * The error part's own code, when it had one. `rate_limit` (an account ran
+   * out of usage) renders the out-of-usage marker instead of the card, given a
+   * `sessionId`; the message timestamp `at` finds its episode (none yet on a
+   * live turn, when the open limit's banner speaks for it).
+   */
+  code?: string;
+  /** The timestamp of the message holding this error, ISO-8601. */
+  at?: string;
 }
+
+/** The part code of a turn that stopped because its account ran out of usage. */
+const RATE_LIMIT_CODE = 'rate_limit';
 
 /**
  * Inline error block rendered in the assistant message stream — the single
@@ -148,7 +161,21 @@ interface ErrorMessageBlockProps {
  * URLs as real anchors, deliberately NOT as markdown (see that module for why
  * untrusted machine output is linkified rather than parsed).
  */
-export function ErrorMessageBlock({
+export function ErrorMessageBlock(props: ErrorMessageBlockProps) {
+  const { code, at, sessionId } = props;
+  // A turn that ran out of usage is told by the out-of-usage banner while the
+  // episode is open, then by one muted line; the card stays for an episode
+  // older than the limit history (spec `claude-account-ui` §6.7).
+  if (code === RATE_LIMIT_CODE && sessionId) {
+    return (
+      <AccountLimitMarker sessionId={sessionId} at={at ?? ''} fallback={<ErrorCard {...props} />} />
+    );
+  }
+  return <ErrorCard {...props} />;
+}
+
+/** The error card itself; see {@link ErrorMessageBlock}. */
+function ErrorCard({
   message,
   category,
   details,

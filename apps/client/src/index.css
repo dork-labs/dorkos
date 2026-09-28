@@ -267,8 +267,14 @@
      this token's own luminance and the tightest ratio): 30% clears it at
      4.51:1, `--accent` at 4.73:1, `--muted` at 4.95:1, the `-bg` wash at
      5.08:1, and plain white at 5.40:1. Dark mode's `-fg` (50%) already
-     clears every ground by a wide margin and is unchanged. */
-  --status-warning-fg: 38 92% 30%;
+     clears every ground by a wide margin and is unchanged.
+     claude-account-ui 04 §13: 28%, not 30%. The session row's context gauge
+     paints this bare on the sidebar (91%), where 30% read 4.41:1, and on the
+     Heads up zone's tint, 4.21:1. At 28% the binding ground is that tint at
+     4.68:1; the sidebar reads 4.91:1, `--secondary` 5.02:1, the `-bg` wash
+     5.66:1 and white 6.01:1. Hue and saturation held. Pinned by
+     `__tests__/destructive-contrast.test.ts`. */
+  --status-warning-fg: 38 92% 28%;
 
   --status-info: 217 91% 60%;
   --status-info-bg: 217 91% 96%;

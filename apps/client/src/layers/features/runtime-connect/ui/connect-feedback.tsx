@@ -50,7 +50,7 @@ export function ConnectedRow({ message = 'Connected' }: { message?: string }) {
   return (
     <div
       role="status"
-      className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs text-emerald-500"
+      className="text-status-success-fg flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs"
       data-testid="connect-connected"
     >
       <Check className="size-3.5" />

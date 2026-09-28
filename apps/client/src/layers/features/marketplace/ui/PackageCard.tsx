@@ -213,7 +213,7 @@ export function PackageCard({
       {!isCompact && (
         <div className="mt-auto flex items-center justify-end gap-2">
           {installed ? (
-            <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+            <span className="text-status-success-fg flex items-center gap-1 text-xs">
               <Check className="size-3" aria-hidden />
               Installed
             </span>

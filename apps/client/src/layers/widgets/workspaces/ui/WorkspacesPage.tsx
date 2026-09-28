@@ -71,9 +71,7 @@ function WorktreeRow({ worktree }: { worktree: WorktreeScanEntry }) {
         )}
       </TableCell>
 
-      <TableCell
-        className={hasChanges ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}
-      >
+      <TableCell className={hasChanges ? 'text-status-warning-fg' : 'text-muted-foreground'}>
         <span className="text-xs whitespace-nowrap">{changesLabel(worktree)}</span>
       </TableCell>
 

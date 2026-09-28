@@ -25,6 +25,16 @@ import type { Session } from '@dorkos/shared/types';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 
 // The durable stream: attach/connect must never open a real fetch in jsdom.
+// The out-of-usage banner and its composer pause read the session's account
+// (spec claude-account-ui §6.7); they have their own tests, and this file's
+// narrow mocks do not carry what they read.
+vi.mock('@/layers/features/continue-on-account', () => ({
+  AccountLimitBanner: () => null,
+  AccountLimitMarker: () => null,
+  useLimitComposer: () => ({ canSubmit: true, placeholder: null }),
+  useSessionHasLimit: () => false,
+}));
+
 vi.mock('@/layers/entities/attention', () => ({
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
 }));

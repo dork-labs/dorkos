@@ -334,9 +334,11 @@ export function ClaudeAccountsSection() {
       data-testid="claude-accounts-section"
     >
       <div className="flex items-center justify-between gap-3">
-        <h4 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+        {/* h3: the runtime card's sections sit under the Settings dialog's h2
+            with no heading between on a phone, so an h4 skipped a level. */}
+        <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
           Billing account
-        </h4>
+        </h3>
         {/* Quiet by design: adding an account is a rare, deliberate act, and the
             fields would otherwise crowd the card every time it is opened. */}
         <Button

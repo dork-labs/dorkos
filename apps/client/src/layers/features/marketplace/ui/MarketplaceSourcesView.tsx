@@ -125,9 +125,9 @@ function SourceCard({
   const dotColor = !enabled
     ? 'fill-current text-muted-foreground'
     : listing
-      ? 'fill-current text-amber-500'
+      ? 'fill-current text-status-warning-dot'
       : fetched
-        ? 'fill-current text-emerald-500'
+        ? 'fill-current text-status-success'
         : 'fill-none text-muted-foreground';
 
   return (
@@ -148,7 +148,7 @@ function SourceCard({
               its one persistent announcer, so a row appearing with a note
               already in it is still heard. */}
           {listing && (
-            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+            <p className="text-status-warning-fg mt-2 text-xs">
               {listing.message}{' '}
               <Button
                 variant="link"
@@ -156,7 +156,7 @@ function SourceCard({
                 onClick={onRefresh}
                 aria-busy={isRefreshing}
                 aria-label={`Try again for ${name}`}
-                className="h-auto p-0 text-xs text-amber-700 underline dark:text-amber-400"
+                className="text-status-warning-fg h-auto p-0 text-xs underline"
               >
                 Try again
               </Button>

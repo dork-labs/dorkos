@@ -38,7 +38,7 @@ export { ModelConfigPopover } from './ui/ModelConfigPopover';
 export { ContextItem } from './ui/ContextItem';
 export type { ContextCompactAction } from './ui/ContextItem';
 export { UsageStatusItem } from './ui/UsageStatusItem';
-export { hasRenderableUsage } from './lib/account-usage-status';
+export { hasRenderableUsage, showsStaleMark } from './lib/account-usage-status';
 export type { UsageSource } from './lib/account-usage-status';
 export { UsageRevealPopover } from './ui/UsageRevealPopover';
 export { ConnectionItem } from './ui/ConnectionItem';

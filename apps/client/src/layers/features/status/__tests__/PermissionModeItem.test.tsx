@@ -484,7 +484,9 @@ describe('PermissionModeItem', () => {
 
       expect(triggerClasses()).not.toContain('text-status-success');
       // The divergence is said instead of shouted — amber, on the caption.
-      expect(screen.getByTestId('trust-dial-caption').className).toContain('amber');
+      expect(screen.getByTestId('trust-dial-caption').className).toContain(
+        'text-status-warning-fg'
+      );
     });
 
     it('leaves the cautious choice plain — nothing shames it', () => {

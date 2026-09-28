@@ -160,7 +160,7 @@ export function RuntimeCardHeader({
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
           {ready && (
             <span
-              className="inline-flex items-center gap-1 text-xs whitespace-nowrap text-emerald-500"
+              className="text-status-success-fg inline-flex items-center gap-1 text-xs whitespace-nowrap"
               data-testid={`runtime-ready-${type}`}
             >
               <Check className="size-3.5" />

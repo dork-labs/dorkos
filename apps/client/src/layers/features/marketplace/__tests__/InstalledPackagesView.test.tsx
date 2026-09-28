@@ -1071,7 +1071,7 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
       const summary = screen.getByTestId('installation-integrity').querySelector('summary')!;
       expect(summary.className).toContain('text-muted-foreground');
-      expect(summary.className).not.toMatch(/text-amber/);
+      expect(summary.className).not.toMatch(/text-amber|status-warning/);
     });
 
     // Purpose: an unchanged install, or one not yet verified, says nothing new.

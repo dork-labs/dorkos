@@ -256,7 +256,7 @@ function InstallationsPanel({
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+      <div className="text-status-success-fg flex items-center gap-2 text-sm font-medium">
         <Check className="size-4 shrink-0" aria-hidden />
         {installations.length === 1
           ? 'Installed'

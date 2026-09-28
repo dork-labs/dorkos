@@ -774,6 +774,31 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'runtime',
     ],
   },
+  // AccountLimitShowcases (spec claude-account-ui §6.7, §13)
+  {
+    id: 'accountlimitbanner',
+    title: 'AccountLimitBanner',
+    page: 'conversation',
+    category: 'Status',
+    keywords: [
+      'account',
+      'limit',
+      'out of usage',
+      'banner',
+      'reset',
+      'wait',
+      'handing off',
+      'moved',
+      'codex',
+    ],
+  },
+  {
+    id: 'accountlimitmarker',
+    title: 'AccountLimitMarker',
+    page: 'conversation',
+    category: 'Status',
+    keywords: ['account', 'limit', 'marker', 'transcript', 'moved', 'resumed', 'reset'],
+  },
   // ModelPickerShowcases — the panel behind the status line's model name, and
   // the widths a stranger's catalog forces on it (DOR-1673).
   {

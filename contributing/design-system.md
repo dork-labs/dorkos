@@ -43,27 +43,29 @@ Portable palette values live in `packages/ui/tokens.css` as namespaced HSL chann
 
 ### Light Mode
 
-| Tailwind class          | HSL value   | Usage                    |
-| ----------------------- | ----------- | ------------------------ |
-| `bg-background`         | `0 0% 98%`  | Page background          |
-| `bg-muted`              | `0 0% 96%`  | Subtle backgrounds       |
-| `bg-secondary`          | `0 0% 92%`  | User message tint        |
-| `bg-card`               | `0 0% 100%` | Elevated cards, popovers |
-| `text-foreground`       | `0 0% 9%`   | Body text                |
-| `text-muted-foreground` | `0 0% 32%`  | Labels, metadata         |
-| `border-border`         | `0 0% 83%`  | Card borders, inputs     |
+| Tailwind class           | HSL value    | Usage                                                                            |
+| ------------------------ | ------------ | -------------------------------------------------------------------------------- |
+| `bg-background`          | `0 0% 98%`   | Page background                                                                  |
+| `bg-muted`               | `0 0% 96%`   | Subtle backgrounds                                                               |
+| `bg-secondary`           | `0 0% 92%`   | User message tint                                                                |
+| `bg-card`                | `0 0% 100%`  | Elevated cards, popovers                                                         |
+| `text-foreground`        | `0 0% 9%`    | Body text                                                                        |
+| `text-muted-foreground`  | `0 0% 32%`   | Labels, metadata                                                                 |
+| `text-status-warning-fg` | `38 92% 28%` | Warning text: 4.68:1 or better on the page, cards, the sidebar and its zone tint |
+| `border-border`          | `0 0% 83%`   | Card borders, inputs                                                             |
 
 ### Dark Mode
 
-| Tailwind class          | HSL value  | Usage                    |
-| ----------------------- | ---------- | ------------------------ |
-| `bg-background`         | `0 0% 4%`  | Page background          |
-| `bg-muted`              | `0 0% 9%`  | Subtle backgrounds       |
-| `bg-secondary`          | `0 0% 14%` | User message tint        |
-| `bg-card`               | `0 0% 4%`  | Elevated cards, popovers |
-| `text-foreground`       | `0 0% 87%` | Body text                |
-| `text-muted-foreground` | `0 0% 64%` | Labels, metadata         |
-| `border-border`         | `0 0% 25%` | Card borders, inputs     |
+| Tailwind class           | HSL value    | Usage                    |
+| ------------------------ | ------------ | ------------------------ |
+| `bg-background`          | `0 0% 4%`    | Page background          |
+| `bg-muted`               | `0 0% 9%`    | Subtle backgrounds       |
+| `bg-secondary`           | `0 0% 14%`   | User message tint        |
+| `bg-card`                | `0 0% 4%`    | Elevated cards, popovers |
+| `text-foreground`        | `0 0% 87%`   | Body text                |
+| `text-muted-foreground`  | `0 0% 64%`   | Labels, metadata         |
+| `text-status-warning-fg` | `38 92% 50%` | Warning text             |
+| `border-border`          | `0 0% 25%`   | Card borders, inputs     |
 
 ### Brand Accent
 

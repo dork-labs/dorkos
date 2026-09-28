@@ -20,6 +20,10 @@ import {
   AccountPopoverShowcases,
 } from '../../showcases/AccountChipShowcases';
 import { ContinueOnAccountShowcases } from '../../showcases/ContinueOnAccountShowcases';
+import {
+  AccountLimitBannerShowcases,
+  AccountLimitMarkerShowcases,
+} from '../../showcases/AccountLimitShowcases';
 import { ModelPickerShowcases } from '../../showcases/ModelPickerShowcases';
 import { TrustDialShowcases } from '../../showcases/TrustDialShowcases';
 import { SessionInspectorShowcases } from '../../showcases/SessionInspectorShowcases';
@@ -49,6 +53,8 @@ export function ConversationPage() {
       <AccountItemShowcases />
       <AccountPopoverShowcases />
       <ContinueOnAccountShowcases />
+      <AccountLimitBannerShowcases />
+      <AccountLimitMarkerShowcases />
       <ModelPickerShowcases />
       <TrustDialShowcases />
       <SessionInspectorShowcases />
