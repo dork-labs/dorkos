@@ -55,7 +55,7 @@ export function InstallationUpdateStatus({ state }: { state: RowUpdateState }) {
           </p>
           {check.note && <Note text={check.note} />}
           {check.applyError && (
-            <p className={`${LINE} text-status-error-fg`}>
+            <p className={`${LINE} text-destructive`}>
               <TriangleAlert className={ICON} aria-hidden />
               <span>Couldn’t update: {check.applyError}</span>
             </p>

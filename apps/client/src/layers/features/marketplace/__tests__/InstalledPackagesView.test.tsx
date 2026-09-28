@@ -697,6 +697,11 @@ describe('InstalledPackagesView', () => {
 
       const reviewer = row('Reviewer');
       expect(within(reviewer).getByText('Couldn’t update: disk full')).toBeInTheDocument();
+      // Bare red text on the card wears the text-tuned red, not the tint's
+      // `-fg` partner, which misses AA on grey in dark mode (DOR-2493).
+      expect(within(reviewer).getByText('Couldn’t update: disk full').closest('p')).toHaveClass(
+        'text-destructive'
+      );
       expect(within(reviewer).getByRole('button', { name: /^update reviewer/i })).toBeEnabled();
     });
 
