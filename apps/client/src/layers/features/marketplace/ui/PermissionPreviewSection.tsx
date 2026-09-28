@@ -58,7 +58,7 @@ const ICON_MAP: Record<
 
 const SEVERITY_CLASS: Record<PermissionSeverity, string> = {
   info: 'text-muted-foreground',
-  warning: 'text-amber-600 dark:text-amber-400',
+  warning: 'text-status-warning-fg',
   error: 'text-destructive',
 };
 
@@ -219,7 +219,7 @@ function PermissionSection({ title, items, tone, defaultOpen = false }: SectionP
         <span
           className={cn(
             'text-xs font-semibold tracking-wider uppercase',
-            tone === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
+            tone === 'warning' ? 'text-status-warning-fg' : 'text-muted-foreground'
           )}
         >
           {title}

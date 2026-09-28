@@ -59,8 +59,8 @@ describe('MetricsSummary', () => {
     render(<MetricsSummary enabled />);
 
     const value = screen.getByText('No listener').parentElement?.querySelector('span:last-child');
-    expect(value).not.toHaveClass('text-red-600');
-    expect(value).not.toHaveClass('text-amber-600');
+    expect(value).not.toHaveClass('text-destructive');
+    expect(value).not.toHaveClass('text-status-warning-fg');
   });
 
   it('shows every headline count and the average latency', () => {

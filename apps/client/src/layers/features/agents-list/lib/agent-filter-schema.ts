@@ -41,10 +41,10 @@ export const agentFilterSchema = createFilterSchema<TopologyAgent>({
       unreachable: 'Unreachable',
     },
     colors: {
-      active: 'text-emerald-400',
-      inactive: 'text-amber-400',
+      active: 'text-status-success',
+      inactive: 'text-status-warning-dot',
       stale: 'text-muted-foreground',
-      unreachable: 'text-red-400',
+      unreachable: 'text-status-error',
     },
   }),
   runtime: enumFilter({

@@ -48,11 +48,11 @@ const OLLAMA_LIBRARY_URL = 'https://ollama.com/library';
 const VERDICT_META: Record<OllamaFitVerdict, { label: string; tone: string }> = {
   'runs-well': {
     label: 'Runs well on your machine',
-    tone: 'text-emerald-600 dark:text-emerald-400',
+    tone: 'text-status-success-fg',
   },
   'may-be-slow': {
     label: 'May be slow on your machine',
-    tone: 'text-amber-600 dark:text-amber-400',
+    tone: 'text-status-warning-fg',
   },
   'too-large': { label: 'Too large for your machine', tone: 'text-destructive' },
 };
@@ -126,7 +126,7 @@ export function OllamaLocalPath({ active, onConnected, onConnectDirectly }: Olla
     if (onConnected) return null;
     return (
       <div
-        className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs text-emerald-500"
+        className="text-status-success-fg flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs"
         data-testid="guided-pull-connected"
       >
         <Check className="size-3.5 shrink-0" />

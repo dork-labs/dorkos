@@ -82,7 +82,7 @@ function politeCopy(flow: McpSigninFlow): React.ReactNode {
   }
   if (state.step === 'connected') {
     return (
-      <p className="flex items-center gap-2 text-xs text-green-600 dark:text-green-500">
+      <p className="text-status-success-fg flex items-center gap-2 text-xs">
         <CheckCircle2 className="size-3.5" aria-hidden />
         {connectedCopy(state.toolCount)}
       </p>

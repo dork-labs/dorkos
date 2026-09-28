@@ -38,7 +38,7 @@ function RunStatusIcon({ status }: { status: TaskRun['status'] }) {
     case 'running':
       return <Spinner size="xs" className="text-status-info shrink-0" />;
     case 'completed':
-      return <CheckCircle2 className="size-3 shrink-0 text-green-500" aria-hidden />;
+      return <CheckCircle2 className="text-status-success size-3 shrink-0" aria-hidden />;
     case 'failed':
       return <XCircle className="text-destructive size-3 shrink-0" aria-hidden />;
     case 'cancelled':

@@ -199,7 +199,7 @@ export function SessionRowFull({
                     <SessionContextGauge session={session} />
                     {borderState.kind === 'pendingApproval' && (
                       <Hand
-                        className="size-(--size-icon-xs) text-amber-500"
+                        className="text-status-warning-fg size-(--size-icon-xs)"
                         aria-label="Awaiting your approval"
                       />
                     )}

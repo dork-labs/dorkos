@@ -138,7 +138,9 @@ describe('BindingAdvancedSection permissions', () => {
       await waitFor(() =>
         expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(/can’t pause to ask/)
       );
-      expect(screen.getByTestId('trust-dial-caption').className).toContain('amber');
+      expect(screen.getByTestId('trust-dial-caption').className).toContain(
+        'text-status-warning-fg'
+      );
     });
 
     it('never offers planning as a level of trust', async () => {

@@ -72,7 +72,10 @@ export function ExtensionCard({
           {/* Name row */}
           <div className="flex flex-wrap items-center gap-2">
             {hasError && (
-              <AlertTriangle className="size-4 shrink-0 text-amber-500" aria-hidden="true" />
+              <AlertTriangle
+                className="text-status-warning-dot size-4 shrink-0"
+                aria-hidden="true"
+              />
             )}
             {(isIncompatible || isInvalid) && !hasError && (
               <XCircle className="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
@@ -100,7 +103,7 @@ export function ExtensionCard({
           {/* Error summary with expandable details */}
           {hasError && error && (
             <div className="space-y-1">
-              <p className="text-sm text-amber-600 dark:text-amber-400">
+              <p className="text-status-warning-fg text-sm">
                 {status === 'compile_error' ? 'Compilation error: ' : 'Activation failed: '}
                 {error.message}
               </p>
@@ -130,7 +133,7 @@ export function ExtensionCard({
               extension rather than through the status badge: everything else
               about it — including the part that draws in this window — is fine. */}
           {serverError && (
-            <p className="text-sm text-amber-600 dark:text-amber-400">
+            <p className="text-status-warning-fg text-sm">
               Server side failed to rebuild: {serverError.message}. The previous version is still
               running.
             </p>

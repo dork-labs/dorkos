@@ -27,7 +27,7 @@ export interface TaskExecutionFieldsProps {
 }
 
 /** The amber a setting that no longer holds is written in, app-wide. */
-const WARNING_CLASS = 'text-xs text-amber-700 dark:text-amber-400';
+const WARNING_CLASS = 'text-xs text-status-warning-fg';
 
 /**
  * Which runtime a scheduled task runs on, on which model, thinking how hard.
@@ -174,7 +174,7 @@ export function TaskExecutionFields({
             <button
               type="button"
               onClick={() => onEffortChange('')}
-              className="focus-ring rounded-sm text-xs text-amber-700 underline-offset-2 hover:underline dark:text-amber-400"
+              className="focus-ring text-status-warning-fg rounded-sm text-xs underline-offset-2 hover:underline"
               data-testid="task-effort-clear"
             >
               Clear it

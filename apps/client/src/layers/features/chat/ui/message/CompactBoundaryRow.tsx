@@ -43,8 +43,10 @@ export function CompactBoundaryRow({
       <CompactResultRow
         data-testid="compact-boundary-row"
         data-failed="true"
-        icon={<AlertTriangle aria-hidden="true" className="size-3 shrink-0 text-amber-500" />}
-        label={<span className="text-amber-600 dark:text-amber-400">Compaction failed</span>}
+        icon={
+          <AlertTriangle aria-hidden="true" className="text-status-warning-dot size-3 shrink-0" />
+        }
+        label={<span className="text-status-warning-fg">Compaction failed</span>}
       >
         {error ? <p className="text-muted-foreground mt-1 text-xs">{error}</p> : null}
       </CompactResultRow>
