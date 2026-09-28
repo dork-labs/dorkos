@@ -11,7 +11,12 @@ import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import { useAccountIdentityGate, useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useSessions, useSessionStreamStatus } from '@/layers/entities/session';
-import { chipState, type ChipState, type SessionLimitView } from '@/layers/shared/lib';
+import {
+  accountIdentity,
+  chipState,
+  type ChipState,
+  type SessionLimitView,
+} from '@/layers/shared/lib';
 import { useAccountUsage, useClaudeAccounts, useNow } from '@/layers/shared/model';
 import { withExpiredWindows } from '../lib/account-usage-status';
 import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from './use-account-switch';
@@ -171,16 +176,13 @@ export function useSessionAccount(sessionId: string | null): SessionAccount {
   const tick = useNow();
   const usage = withExpiredWindows(newerReading(cachedUsage, statusUsage), new Date(tick));
 
-  const registered =
-    (accountId !== null ? accounts.find((account) => account.id === accountId) : undefined) ??
-    (path !== null ? accounts.find((account) => account.path === path) : undefined);
-  const knownPath = path ?? registered?.path ?? usage?.path ?? null;
-  const name = knownPath ? nameFor(knownPath) : (usage?.label ?? accountId);
-  const color =
-    (accountId !== null ? colorFor(accountId) : null) ??
-    (knownPath ? colorFor(knownPath) : null) ??
-    usage?.color ??
-    null;
+  // The sidebar row names and colors its dot through the same helper, so the
+  // two agree by construction (spec §6.4).
+  const {
+    path: knownPath,
+    name,
+    color,
+  } = accountIdentity({ accountId, path, accounts, usage, nameFor, colorFor });
 
   // The stream's status is the live one: once a snapshot or event has arrived,
   // its `limit` (even `null`, a limit that cleared) wins over the row's.

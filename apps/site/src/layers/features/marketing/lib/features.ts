@@ -289,11 +289,11 @@ export const features: Feature[] = [
       'Work and personal on one machine gets awkward. Add more than one Claude account, then say which one an agent bills, or which one a single chat bills.',
     status: 'ga',
     benefits: [
-      'Add more than one Claude account in Settings',
       'Pin an agent to the account that should pay for it',
       'Send one chat to a different account, just this once',
+      'See how much each account has left, right in the status bar',
+      'When one account runs out, carry the work on with another',
       'Switch accounts without restarting anything',
-      'Once a chat has started, its account never changes',
     ],
     moment:
       'Your work agent bills the work account, and your side project bills your own. You choose once per agent, and every session it starts follows that choice.',

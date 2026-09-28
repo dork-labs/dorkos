@@ -228,3 +228,16 @@ Four small calls on the "Continue on another account" picker (task 3.2), each in
 4. **The "Other runtimes" heading** is the same small, uppercase, muted group caption the Flow tab and Settings use, not a style of its own.
 
 Spec: §6.6, §11.
+
+## 15. Out-of-usage sidebar rows and the account name (orchestrator, 2026-09-28)
+
+- **Rows follow Q13, like the banner.** A row is red (soft tint, red text, red border) only while its account is out and the session needs the person: `limited`, `wait-only`, `all-accounts-out` and `handing-off`. Once the person chose to wait (`waiting-reset`, `reset-ready`) the row is neutral grey. A moved session and a limit on one model show nothing (Q14).
+- **The words change with the color**, so color is never the only signal: "out · handing off" while the work is about to move by itself, "out · needs you" while it waits for the person to choose, and "out · waiting for reset" after they chose to wait.
+- **The row's hover covers the tint.** The house hover background is kept. While the pointer is on a row, its text and its border still say what happened.
+- **The header badge says the row's words.** It follows the row's rule and prints the same words after the account name: "out · needs you" or "out · handing off" in red, "out · waiting for reset" in neutral grey. On a phone's narrow header the waiting words shorten to "out · waiting"; the badge's spoken name and its tooltip keep the full words.
+- **Session row labels keep full contrast.** Every session row's title and time, and the compact row's "out · waiting for reset", now use the full muted text color. The faded greys they used before (60% and 70% of it) measured 2.67:1 to 4.05:1 against the sidebar and the red tint, below the 4.5:1 text needs, and the house rule (DOR-1098) is that muted text stays readable.
+- **The red row words use the destructive text color.** "out · needs you" and "out · handing off" use `text-destructive`, not the status error text. When a row is hovered or selected its tint gives way to a grey surface, and there the dark theme's status error text measured 4.08:1 (selected) and 4.28:1 to 4.33:1 (hover). The destructive color clears 4.5:1 on every surface a row sits on in both themes: 4.63:1 to 5.01:1 in light, 4.54:1 to 5.14:1 in dark. The Sidebar Model page now shows a selected out row, so its accessibility check covers that state.
+- **The full-row demo sits on the Components page.** The Dev Playground shows full session rows that ran out on the Components page ("SessionRow out of usage") until the full row's buttons-inside-a-button structure is fixed in its own follow-up. The Sidebar Model page keeps the dots and the compact rows.
+- **One name for Main everywhere.** Every surface that names a Claude account uses the one shared naming helper, so this computer's own sign-in reads "Main (this computer's sign-in)" (§12) on the chip and its popover, the sidebar dot, the header badge, the pre-launch picker, the session details and Settings. Places that show a folder as a folder, such as the path line and "Found on this computer", keep the folder.
+
+Spec: §6.2, §11, §12.

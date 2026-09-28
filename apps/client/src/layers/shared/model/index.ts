@@ -43,6 +43,7 @@ export {
 } from './server-config/use-feature-enabled';
 export {
   useAccountUsage,
+  useAccountUsageRecord,
   mergeAccountUsage,
   seedAccountUsage,
   type AccountUsageView,

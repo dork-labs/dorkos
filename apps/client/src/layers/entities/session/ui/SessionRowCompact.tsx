@@ -3,10 +3,18 @@ import { motion } from 'motion/react';
 import { Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { PRESS_ROW, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import {
+  PRESS_ROW,
+  STATUS_TONE_SURFACE,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import { useSessionBorderState } from '../model/status/use-session-border-state';
 import { useInlineRename } from '../model/rename/use-inline-rename';
+import { useSessionRowAccount } from '../model/status/use-session-row-account';
+import { LIMIT_ACTION_TEXT_CLASS } from '../lib/session-limit-text';
 import { usePulseMotion } from '../model/status/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
@@ -43,7 +51,17 @@ export function SessionRowCompact({
     onCommit: (next) => onRename?.(session.id, next),
   });
 
-  const borderState = useSessionBorderState(session.id);
+  const account = useSessionRowAccount(session);
+  const limitDisplay = account.limitDisplay;
+  const borderState = useSessionBorderState(session.id, account.limitStatus);
+  // The row's tooltip names the account (the dot has none of its own, so two
+  // never open at once) and, when there is one, the row's state.
+  const tooltipText = [
+    account.visible && account.color ? account.name : null,
+    borderState.kind === 'idle' ? null : borderState.label,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   const now = useNow(60_000);
   const relativeTime = useMemo(
@@ -73,10 +91,19 @@ export function SessionRowCompact({
           <button
             type="button"
             data-testid="session-row"
+            // Which out-of-usage look the row wears: `action` is the red tint, `waiting`
+            // the neutral one (Q13). Absent when it shows no limit.
+            data-limit={
+              limitDisplay ? (limitDisplay.needsAction ? 'action' : 'waiting') : undefined
+            }
             onClick={onClick}
             className={cn(
               'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs',
               PRESS_ROW,
+              // The soft red tint of an account that ran out and needs the
+              // person (Q13). Before the state classes, so the active
+              // highlight and the row's own text colors win over it.
+              limitDisplay?.needsAction && STATUS_TONE_SURFACE.error,
               isActive
                 ? 'bg-secondary text-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -93,6 +120,8 @@ export function SessionRowCompact({
               style={pulsing ? undefined : { backgroundColor: borderState.color }}
               className="size-1.5 shrink-0 rounded-full"
             />
+            {/* The account's dot leads the title; its name is the dot's tooltip (Q4). */}
+            <AccountMark account={account} tooltip={false} />
             {isRenaming ? (
               <input
                 ref={renameInputRef}
@@ -125,15 +154,29 @@ export function SessionRowCompact({
                 model={session.model}
                 className="text-muted-foreground/50"
               />
-              <AccountMark account={session.account} className="text-muted-foreground/60" />
-              <span className="text-muted-foreground/60 text-3xs">{relativeTime}</span>
+              {/* A session that ran out says so where its time sits (§6.2). */}
+              {limitDisplay ? (
+                <span
+                  className={cn(
+                    'text-3xs whitespace-nowrap',
+                    limitDisplay.needsAction ? LIMIT_ACTION_TEXT_CLASS : 'text-muted-foreground'
+                  )}
+                >
+                  {limitDisplay.text}
+                </span>
+              ) : (
+                // Full muted, never dimmed further: a label on the sidebar and
+                // on the red row tint must clear 4.5:1 in both themes (the
+                // design system's muted rule, DOR-1098).
+                <span className="text-muted-foreground text-3xs">{relativeTime}</span>
+              )}
             </span>
           </button>
         </TooltipTrigger>
       </SessionContextMenu>
-      {borderState.kind !== 'idle' && (
+      {tooltipText && (
         <TooltipContent side="right" sideOffset={8}>
-          {borderState.label}
+          {tooltipText}
         </TooltipContent>
       )}
     </Tooltip>

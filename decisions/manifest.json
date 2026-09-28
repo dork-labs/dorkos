@@ -2,6 +2,22 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260928-130908",
+      "slug": "own-terminal-actions-separately-from-request-admission",
+      "title": "Own terminal actions separately from request admission",
+      "status": "proposed",
+      "created": "2026-09-28",
+      "extractedFrom": "terminal-request-admission",
+      "specSlug": "terminal-request-admission",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/index.ts",
+        "apps/server/src/app.ts",
+        "apps/server/src/routes/admin.ts",
+        "apps/server/src/services/core/streams/upgrade-router.ts"
+      ]
+    },
+    {
       "id": "260928-001608",
       "slug": "resolve-cloud-identity-under-its-current-credential",
       "title": "Resolve Cloud identity under the credential that will use it",

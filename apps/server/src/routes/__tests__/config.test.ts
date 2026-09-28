@@ -706,6 +706,39 @@ describe('PATCH /api/config', () => {
     });
   });
 
+  describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {
+    async function stored(): Promise<unknown> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      return configManager.getDot('runtimes.claudeCode.defaultAccount');
+    }
+
+    beforeEach(() => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+    });
+
+    it('stores ~/.claude2 as the absolute folder, never the literal ~', async () => {
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccount: '~/.claude2' } } })
+        .expect(200);
+      expect(await stored()).toBe(path.join(os.homedir(), '.claude2'));
+    });
+
+    it('stores an absolute folder unchanged, and null as null', async () => {
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccount: '/Users/me/.claude2' } } })
+        .expect(200);
+      expect(await stored()).toBe('/Users/me/.claude2');
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccount: null } } })
+        .expect(200);
+      expect(await stored()).toBeNull();
+    });
+  });
+
   it('refuses an agent turning login OFF, the setting approvals depend on', async () => {
     agentHeader = 'agent-token';
     signedInUser = undefined;

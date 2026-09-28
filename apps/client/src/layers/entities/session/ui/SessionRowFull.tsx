@@ -3,7 +3,13 @@ import { motion, type TargetAndTransition, type Transition } from 'motion/react'
 import { ChevronDown, Pencil, Zap, Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { Tooltip, TooltipContent, TooltipTrigger, TRUST_TONE_TEXT } from '@/layers/shared/ui';
+import {
+  STATUS_TONE_SURFACE,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TRUST_TONE_TEXT,
+} from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import {
   useSessionBorderState,
@@ -11,6 +17,8 @@ import {
 } from '../model/status/use-session-border-state';
 import { useInlineRename } from '../model/rename/use-inline-rename';
 import { useSessionPermissionSummary } from '../model/settings/use-session-permission-summary';
+import { useSessionRowAccount } from '../model/status/use-session-row-account';
+import { LIMIT_ACTION_TEXT_CLASS } from '../lib/session-limit-text';
 import { usePulseMotion } from '../model/status/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { FULL_POWER_MARK_LABEL } from '../lib/permission-mode';
@@ -62,7 +70,26 @@ export function SessionRowFull({
     [session.updatedAt, now]
   );
 
-  const borderState = useSessionBorderState(session.id);
+  const account = useSessionRowAccount(session);
+  const limitDisplay = account.limitDisplay;
+  const borderState = useSessionBorderState(session.id, account.limitStatus);
+  // What the row says aloud: the title, the account the dot names, what
+  // happened to it (the words replace the time on screen), and its state.
+  const accountName = account.visible && account.color ? account.name : null;
+  // The row's tooltip names the account (the dot has none of its own, so two
+  // never open at once) and, when there is one, the row's state.
+  const tooltipText = [accountName, borderState.kind === 'idle' ? null : borderState.label]
+    .filter(Boolean)
+    .join(' · ');
+  const ariaLabel = [
+    `Session: ${sessionDisplayTitle(session.title)}`,
+    accountName,
+    limitDisplay?.text,
+    borderState.label,
+  ]
+    .filter(Boolean)
+    .map((part) => `${part}.`)
+    .join(' ');
 
   const handleExpandToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -91,9 +118,15 @@ export function SessionRowFull({
         // Reports what the hook decided. No motion prop is assertable in jsdom,
         // so this attribute is the only observable half.
         data-pulsing={pulsing ? 'true' : 'false'}
+        // Which out-of-usage look the row wears: `action` is the red tint, `waiting`
+        // the neutral one (Q13). Absent when it shows no limit.
+        data-limit={limitDisplay ? (limitDisplay.needsAction ? 'action' : 'waiting') : undefined}
         style={pulsing ? undefined : { borderLeftColor: borderState.color }}
         className={cn(
           'group relative rounded-lg border-l-2 transition-colors duration-150',
+          // The soft red tint of an account that ran out and needs the person
+          // (Q13); the active highlight still paints over it.
+          limitDisplay?.needsAction && STATUS_TONE_SURFACE.error,
           isActive ? 'text-foreground' : 'hover:bg-secondary/60'
         )}
       >
@@ -108,12 +141,12 @@ export function SessionRowFull({
           onRename={onRename ? startRename : undefined}
           onFork={onFork ? () => onFork(session.id) : undefined}
         >
-          <TooltipTrigger asChild disabled={borderState.kind === 'idle'}>
+          <TooltipTrigger asChild disabled={!tooltipText}>
             <motion.div
               role="button"
               tabIndex={0}
               aria-current={isActive ? 'page' : undefined}
-              aria-label={`Session: ${sessionDisplayTitle(session.title)}. ${borderState.label}.`}
+              aria-label={ariaLabel}
               onClick={onClick}
               onKeyDown={(e) => {
                 // Not while the rename field is up. This row is a synthetic
@@ -142,7 +175,19 @@ export function SessionRowFull({
             >
               {/* Line 1: relative time + icons + expand chevron */}
               <div className="text-muted-foreground flex items-center gap-1 text-xs">
-                <span className="min-w-0 flex-1">{relativeTime}</span>
+                {/* A session that ran out says so where its time sits (§6.2). */}
+                {limitDisplay ? (
+                  <span
+                    className={cn(
+                      'min-w-0 flex-1 truncate',
+                      limitDisplay.needsAction && LIMIT_ACTION_TEXT_CLASS
+                    )}
+                  >
+                    {limitDisplay.text}
+                  </span>
+                ) : (
+                  <span className="min-w-0 flex-1">{relativeTime}</span>
+                )}
                 <span className="flex flex-shrink-0 items-center gap-1">
                   <SessionContextGauge session={session} />
                   {borderState.kind === 'pendingApproval' && (
@@ -209,9 +254,12 @@ export function SessionRowFull({
                     model={session.model}
                     className="text-muted-foreground/50"
                   />
-                  <AccountMark account={session.account} className="text-muted-foreground/60" />
+                  <AccountMark account={account} tooltip={false} />
                   <div
-                    className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs"
+                    // Full muted, never dimmed further: the title must clear
+                    // 4.5:1 on the sidebar and on the red row tint in both
+                    // themes (the design system's muted rule, DOR-1098).
+                    className="text-muted-foreground min-w-0 flex-1 truncate text-xs"
                     title={onRename ? 'Click the pencil icon to rename' : undefined}
                   >
                     {sessionDisplayTitle(session.title)}
@@ -222,7 +270,7 @@ export function SessionRowFull({
           </TooltipTrigger>
         </SessionContextMenu>
         <TooltipContent side="right" sideOffset={8}>
-          {borderState.label}
+          {tooltipText || borderState.label}
         </TooltipContent>
 
         <SessionDetailsPanel

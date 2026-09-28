@@ -325,6 +325,33 @@ describe('useSessionAccount', () => {
     expect(result.current.chipState).not.toBe('out');
   });
 
+  it('names this computer’s own sign-in by the host’s label on the chip, never ".claude" (§12)', async () => {
+    const MAIN = "Main (this computer's sign-in)";
+    mockSessions = [
+      createMockSession({
+        id: SID,
+        runtime: 'claude-code',
+        accountId: 'default',
+        account: '/Users/test/.claude',
+      }),
+    ];
+    const queryClient = createTestQueryClient();
+    seedAccountUsage(queryClient, [
+      createMockAccountUsage({ accountId: 'default', path: '/Users/test/.claude', label: MAIN }),
+    ]);
+    renderChip(transportWith(2), queryClient);
+    expect(
+      await screen.findByRole('button', { name: new RegExp(`^${MAIN.replace(/[()]/g, '\\$&')}`) })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('.claude')).toBeNull();
+  });
+
+  it('keeps a registered account’s own label on the chip', async () => {
+    mockSessions = [createMockSession({ id: SID, runtime: 'claude-code', accountId: 'acct-2' })];
+    const { result } = renderAccount(transportWith(2));
+    await waitFor(() => expect(result.current.name).toBe('Acct 2'));
+  });
+
   it('reads a row with no status as no limit, idle', async () => {
     mockSessions = [createMockSession({ id: SID, runtime: 'claude-code', accountId: 'acct-2' })];
     const { result } = renderAccount(transportWith(2));

@@ -50,6 +50,7 @@ import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import {
   canonicalAccountPath,
   defaultAccountFolder,
+  expandAccountPath,
   resolveRuntimeAccounts,
   type AccountWarning,
 } from '../../core/usage/runtime-accounts.js';
@@ -100,6 +101,27 @@ export function listClaudeAccountFolderCandidates(home: string = os.homedir()): 
  */
 export function canonicalClaudeAccountPath(dir: string): string {
   return canonicalAccountPath(dir, os.homedir());
+}
+
+/**
+ * A Claude account folder with a leading `~` expanded against the OS home, and
+ * anything else returned exactly as written.
+ *
+ * `CLAUDE_CONFIG_DIR` reaches the child through an env object, never a shell,
+ * so a stored `~/.claude2` would otherwise name a folder literally called `~`.
+ * Deliberately NOT {@link canonicalClaudeAccountPath}: no real-path lookup, so
+ * a symlinked spelling survives (the Keychain entry is keyed on the literal
+ * string), and a value that is not a `~` path is not resolved against the
+ * working directory either.
+ *
+ * Lives here because this file is the Hard Rule 3 carve-out; the config write
+ * path (`operator/config-patch.ts`) calls it to store the absolute form.
+ *
+ * @param dir - A folder as written in config or typed by a person.
+ * @returns The folder with `~` expanded, else `dir` unchanged.
+ */
+export function expandClaudeAccountHome(dir: string): string {
+  return dir === '~' || dir.startsWith('~/') ? expandAccountPath(dir, os.homedir()) : dir;
 }
 
 /**
@@ -191,6 +213,12 @@ function readClaudeCodeConfig(config: ConfigReader): {
     const color = (block as { defaultAccountColor?: unknown } | undefined)?.defaultAccountColor;
     return {
       ...settings,
+      // The write path stores it absolute, but a value written before that, or
+      // by hand, may still start with `~`: expanded here so every reader below
+      // (the launch, `claudeConfigDirEnv`'s Keychain case, the settings view)
+      // sees the folder, not a literal `~` relative to the working directory.
+      defaultAccount:
+        settings.defaultAccount === null ? null : expandClaudeAccountHome(settings.defaultAccount),
       defaultAccountColor: isAccountColor(color) ? color : null,
       unavailable: false,
     };
@@ -243,7 +271,7 @@ export function isClaudeAccountRoot(dir: string): boolean {
  * particular launch is going.
  *
  * @param config - Config reader (defaults to the module singleton).
- * @returns The absolute Claude config directory to run in.
+ * @returns The absolute Claude config directory to run in, `~` expanded.
  */
 export function resolveActiveClaudeRoot(config: ConfigReader = configManager): string {
   return readClaudeCodeConfig(config).defaultAccount ?? inheritedClaudeRoot();

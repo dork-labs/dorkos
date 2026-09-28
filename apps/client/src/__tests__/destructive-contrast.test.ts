@@ -31,6 +31,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, relative, resolve } from 'node:path';
+import { STATUS_TONE_TEXT } from '@/layers/shared/ui/status-dot';
 
 const SRC = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const INDEX_CSS = join(SRC, 'index.css');
@@ -250,6 +251,76 @@ describe('destructive contrast', () => {
       pairs[`text-destructive-foreground over ${ground}`] = contrast(label, fill);
     }
     expectAll(pairs);
+  });
+});
+
+/**
+ * The token a bare text-colour class paints with (`text-destructive` →
+ * `--destructive`), so the assertion follows whatever class the map holds.
+ */
+function textToken(cls: string): string {
+  const m = cls.match(/^text-([a-z-]+)$/);
+  expect(m, `not a plain text-colour class: ${cls}`).not.toBeNull();
+  return `--${m![1]}`;
+}
+
+describe('bare red status text (DOR-2493)', () => {
+  // `STATUS_TONE_TEXT.error` is red painted straight on grey, not on its own
+  // tint: the session row's context gauge (sidebar, hovered, selected), the
+  // status bar's context percent, the connection hover card, a relay
+  // conversation's status word. `--status-error-fg` measured 4.08:1 on the
+  // selected session row in dark mode; this fails if the map goes back to it.
+  const css = readFileSync(INDEX_CSS, 'utf8');
+  const tokens = readFileSync(join(UI_ROOT, 'tokens.css'), 'utf8');
+  const themes = {
+    light: resolveSharedTokens(
+      section(css, ':root,', '.dark {'),
+      section(tokens, ':root,', '@media')
+    ),
+    dark: resolveSharedTokens(
+      section(css, '.dark {', '@layer border-defaults'),
+      section(tokens, '\n.dark {', '\n}')
+    ),
+  };
+
+  /** Every ground the bare red sits on, in one theme. */
+  function grounds(theme: string): Record<string, Rgb> {
+    const sidebar = hsl(theme, '--sidebar');
+    const secondary = hsl(theme, '--secondary');
+    const bg = hsl(theme, '--background');
+    const muted = hsl(theme, '--muted');
+    return {
+      sidebar,
+      'session row hover (bg-secondary/60 over sidebar)': over(secondary, 0.6, sidebar),
+      'selected session row (bg-secondary)': secondary,
+      background: bg,
+      card: hsl(theme, '--card'),
+      popover: hsl(theme, '--popover'),
+      'relay row hover (bg-muted/50)': over(muted, 0.5, bg),
+      // An out-of-usage session row wears the red tint; the gauge's red sits on it.
+      'out-of-usage session row (bg-status-error-bg)': hsl(theme, '--status-error-bg'),
+    };
+  }
+
+  function ratios(theme: string, cls: string): Record<string, number> {
+    const red = hsl(theme, textToken(cls));
+    return Object.fromEntries(
+      Object.entries(grounds(theme)).map(([name, ground]) => [name, contrast(red, ground)])
+    );
+  }
+
+  it('discriminates: the tint-tuned `-fg` red fails the selected row in dark mode', () => {
+    expect(
+      ratios(themes.dark, 'text-status-error-fg')['selected session row (bg-secondary)']
+    ).toBeLessThan(AA);
+  });
+
+  it('light: clears AA on every ground', () => {
+    expectAll(ratios(themes.light, STATUS_TONE_TEXT.error));
+  });
+
+  it('dark: clears AA on every ground', () => {
+    expectAll(ratios(themes.dark, STATUS_TONE_TEXT.error));
   });
 });
 

@@ -197,6 +197,54 @@ describe('applyGuardedConfigWrite', () => {
     });
   });
 
+  describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {
+    /** Exactly the patch `dorkos config set runtimes.claudeCode.defaultAccount <value>` sends. */
+    function configSet(value: string | null): void {
+      const result = applyGuardedConfigWrite({
+        patch: { runtimes: { claudeCode: { defaultAccount: value } } },
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
+      });
+      expect(result.ok).toBe(true);
+    }
+
+    function storedDefault(): unknown {
+      return configManager.getDot('runtimes.claudeCode.defaultAccount');
+    }
+
+    it('stores ~/.claude2 from `dorkos config set` as the absolute folder', () => {
+      configSet('~/.claude2');
+      expect(storedDefault()).toBe(path.join(os.homedir(), '.claude2'));
+    });
+
+    it('stores an absolute folder unchanged, and null as null', () => {
+      configSet('/Users/dev/.claude2');
+      expect(storedDefault()).toBe('/Users/dev/.claude2');
+      configSet(null);
+      expect(storedDefault()).toBeNull();
+    });
+
+    it('expands a pre-0.65.0 activeAccount the heal carries across on the next runtimes write', () => {
+      configManager.set('runtimes', {
+        ...configManager.get('runtimes'),
+        claudeCode: {
+          ...configManager.get('runtimes').claudeCode,
+          defaultAccount: null,
+          activeAccount: '~/.claude2',
+        } as never,
+      });
+      const result = applyGuardedConfigWrite({
+        patch: { runtimes: { claudeCode: { persistentSession: true } } },
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
+      });
+      expect(result.ok).toBe(true);
+      expect(storedDefault()).toBe(path.join(os.homedir(), '.claude2'));
+    });
+  });
+
   describe('as the config_patch tool, under the agent authority', () => {
     it('refuses the same operator-only leaf the CLI may write, and writes nothing', async () => {
       const { OPERATOR_ONLY_CONFIG_CODE } = await import('../config-write-policy.js');
