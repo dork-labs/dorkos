@@ -402,7 +402,7 @@ export function ClaudeAccountsSection() {
             colorIsDefault: (claudeCode?.defaultAccountColor ?? null) === null,
             isAccountRoot: true,
           }}
-          // No default account chosen means new sessions run on this sign-in.
+          // No registered account is the default, so new sessions run on this sign-in.
           isActive={!registeredDefault}
           onChooseColor={(color) => write({ defaultAccountColor: color })}
           disabled={updateConfig.isPending}
