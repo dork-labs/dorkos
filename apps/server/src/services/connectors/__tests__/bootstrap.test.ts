@@ -1358,13 +1358,16 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(bootstrapper.wayProblem('raw-mcp-dropped-from-config')).toBeUndefined();
 
       // The same facts as readiness reads them: down with the fix, or unreachable.
+      // Nothing else answers and runs actions here (the key was refused too).
       expect(bootstrapper.wayHealth('managed-provider')).toEqual({
         status: 'down',
         problem: 'dorkos_account_unavailable',
+        anotherWayWorks: false,
       });
       expect(bootstrapper.wayHealth('raw-mcp-dropped-from-config')).toEqual({
         status: 'down',
         problem: 'unreachable',
+        anotherWayWorks: false,
       });
       expect(bootstrapper.wayHealth(registry.resolveProvider('mcp')!.instanceId)).toMatchObject({
         status: 'up',

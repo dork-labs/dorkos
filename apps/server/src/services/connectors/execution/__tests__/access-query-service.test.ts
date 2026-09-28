@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   connectionOperationGrants,
   connections,
+  connectorManagedAuthorityOutbox,
+  connectorManagedAuthorityScopes,
   connectorOperationRevisions,
+  connectorProviderInstances,
   connectorUsageAttempts,
   connectorUsageTerminalReceipts,
   createDb,
@@ -13,7 +16,12 @@ import {
   type Db,
 } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import { ConnectorProviderInstanceIdSchema } from '@dorkos/shared/connector-schemas';
+import {
+  ConnectorExecutionTargetSchema,
+  ConnectorProviderInstanceIdSchema,
+} from '@dorkos/shared/connector-schemas';
+import { ConnectorExecutionAuthorizationService } from '../authorization-service.js';
+import type { ConnectionWayHealth } from '../../readiness/connection-readiness.js';
 import { ConnectorAccessQueryError, ConnectorAccessQueryService } from '../access-query-service.js';
 import { ConnectorRegistry } from '../../registry.js';
 import { createServerPrincipal } from '../../principal/server-principal.js';
@@ -280,10 +288,10 @@ describe('ConnectorAccessQueryService', () => {
       { ownsAgent: (_owner, agentId) => agentId === 'agent-a' },
       registry,
       { revalidatePrincipal: async () => true },
-      (providerInstanceId) =>
+      (providerInstanceId): ConnectionWayHealth =>
         registry.resolveProviderInstance(providerInstanceId as never)
           ? { status: 'up', canRunActions: true }
-          : { status: 'down', problem: 'dorkos_account_unlinked' }
+          : { status: 'down', problem: 'dorkos_account_unlinked', anotherWayWorks: false }
     );
     // Working: listed as usable, nothing under unavailable.
     await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
@@ -401,6 +409,156 @@ describe('ConnectorAccessQueryService', () => {
       })
       .run();
     await expect(withWays.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
+      connections: [],
+    });
+  });
+
+  it('lists a DorkOS-account account as usable only once this agent’s own access has applied', async () => {
+    db.update(connections).set({ enabled: true }).where(eq(connections.id, 'connection-a')).run();
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, 'provider-a'))
+      .run();
+    const command = (commandId: string, scopeVersion: number, state: string, reason?: string) => {
+      db.insert(connectorManagedAuthorityOutbox)
+        .values({
+          commandId,
+          connectionId: 'connection-a',
+          providerInstanceId: 'provider-a',
+          executionConfigGeneration: 1,
+          ownerKind: 'local_install',
+          ownerId: OWNER.installationId,
+          managedConnectionId: 'private-account-a',
+          scopeKind: 'agent_grants',
+          subjectId: 'agent-a',
+          scopeVersion,
+          requestHash: `hash-${commandId}`,
+          requestJson: '{}',
+          state: state as 'pending',
+          ...(reason && { safeReason: reason }),
+          createdAt: STARTED_AT,
+          updatedAt: STARTED_AT,
+        })
+        .run();
+      db.insert(connectorManagedAuthorityScopes)
+        .values({
+          managedConnectionId: 'private-account-a',
+          scopeKind: 'agent_grants',
+          subjectId: 'agent-a',
+          scopeVersion,
+          lastCommandId: commandId,
+          lastCommandHash: `hash-${commandId}`,
+          updatedAt: STARTED_AT,
+        })
+        .onConflictDoUpdate({
+          target: [
+            connectorManagedAuthorityScopes.managedConnectionId,
+            connectorManagedAuthorityScopes.scopeKind,
+            connectorManagedAuthorityScopes.subjectId,
+          ],
+          set: { scopeVersion, lastCommandId: commandId },
+        })
+        .run();
+    };
+
+    // Refused at the hosted side: not usable, and the agent is told so.
+    command('command-1', 1, 'rejected', 'This account is no longer linked.');
+    let listed = await service.listRuntimeConnections(RUNTIME_PRINCIPAL);
+    expect(listed.connections).toEqual([]);
+    expect(listed.unavailable).toEqual([
+      expect.objectContaining({
+        connectionId: 'connection-a',
+        reason: 'access_update_failed',
+        note: expect.stringContaining('didn’t go through'),
+      }),
+    ]);
+    expect((await service.accessSnapshot(OWNER, 'agent-a', 'session-a')).accountCount).toBe(0);
+    // A call is refused with the same reason and words.
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'revision-hosted',
+        providerInstanceId: 'provider-a',
+        toolkit: 'gmail',
+        operationSlug: 'gmail.messages.get',
+        toolkitVersion: '20260901',
+        schemaHash: 'sha256:b',
+        providerRevisionRef: '0b6a3f7e-1d2c-4b5a-9e8f-7a6b5c4d3e2f',
+        capabilityClassification: 'read',
+        retryPolicy: 'never',
+        inputSchemaJson: JSON.stringify({ type: 'object', properties: {} }),
+        discoveredAt: STARTED_AT,
+      })
+      .run();
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-hosted',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: 'connection-a',
+        operationRevisionId: 'revision-hosted',
+        createdBy: 'operator',
+        createdAt: STARTED_AT,
+      })
+      .run();
+    const authorization = new ConnectorExecutionAuthorizationService(db, registry, {
+      ownsAgent: (_owner, agentId) => agentId === 'agent-a',
+    });
+    const refused = await authorization
+      .prepare({
+        capabilityId: 'connectors.execute_read',
+        principal: RUNTIME_PRINCIPAL,
+        target: ConnectorExecutionTargetSchema.parse({
+          connectionId: 'connection-a',
+          operationRevisionId: 'revision-hosted',
+          arguments: {},
+        }),
+      })
+      .then(
+        () => undefined,
+        (error: { payload?: Record<string, unknown> }) => error.payload
+      );
+    expect(refused).toEqual({
+      code: 'CONNECTOR_MANAGED_AUTHORITY_PENDING',
+      reason: 'access_update_failed',
+      error: expect.stringContaining('didn’t go through'),
+    });
+
+    // A newer change still applying: still not usable, and it says so.
+    command('command-2', 2, 'pending');
+    listed = await service.listRuntimeConnections(RUNTIME_PRINCIPAL);
+    expect(listed.unavailable).toEqual([expect.objectContaining({ reason: 'access_updating' })]);
+
+    // Applied: usable, and counted.
+    db.update(connectorManagedAuthorityOutbox)
+      .set({ state: 'applied' })
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'command-2'))
+      .run();
+    listed = await service.listRuntimeConnections(RUNTIME_PRINCIPAL);
+    expect(listed.connections).toEqual([expect.objectContaining({ connectionId: 'connection-a' })]);
+    expect(listed.unavailable).toBeUndefined();
+    expect((await service.accessSnapshot(OWNER, 'agent-a', 'session-a')).accountCount).toBe(1);
+
+    // A later change refused does not take away the access already applied.
+    command('command-3', 3, 'rejected', 'Refused.');
+    listed = await service.listRuntimeConnections(RUNTIME_PRINCIPAL);
+    expect(listed.connections).toEqual([expect.objectContaining({ connectionId: 'connection-a' })]);
+  });
+
+  it('never calls an account off for this chat because of another agent’s override', async () => {
+    db.update(connections).set({ enabled: true }).where(eq(connections.id, 'connection-a')).run();
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'session-a',
+        agentId: 'agent-b',
+        connectionId: 'connection-a',
+        state: 'detached',
+        updatedAt: STARTED_AT,
+      })
+      .run();
+    // Another agent's override in this session shuts this agent out without
+    // being this chat's choice for it, so it is dropped, not named.
+    await expect(service.listRuntimeConnections(RUNTIME_PRINCIPAL)).resolves.toEqual({
       connections: [],
     });
   });

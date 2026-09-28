@@ -14,6 +14,7 @@ import type {
   ConnectionReadinessState,
   ConnectorUsageItem,
 } from '@dorkos/shared/connector-schemas';
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -291,23 +292,52 @@ describe('AccountPanel', () => {
     expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
   });
 
+  it('connects a disconnected account again as the same account', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(
+      summary({
+        lifecycle: 'disconnected',
+        externalCleanup: 'complete',
+        readiness: createMockConnectionReadiness({
+          state: 'gone',
+          reason: 'disconnected',
+          fix: { action: 'connect_again', fixableBy: 'person' },
+        }),
+      })
+    );
+    vi.mocked(transport.reconnectConnectorConnection).mockResolvedValue({
+      flowId: 'flow-again',
+    } as never);
+    const handlers = renderPanel(transport);
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(fix).toHaveTextContent(CONNECTION_READINESS_COPY.disconnected.owner);
+    await user.click(within(fix).getByRole('button', { name: 'Connect again' }));
+    // The same account, through its own reconnect: never a new connection.
+    await waitFor(() => expect(handlers.onSignInStarted).toHaveBeenCalledWith('flow-again'));
+    expect(transport.reconnectConnectorConnection).toHaveBeenCalledWith(
+      'c-1',
+      expect.objectContaining({ idempotencyKey: expect.any(String) })
+    );
+    expect(handlers.onAddAnother).not.toHaveBeenCalled();
+  });
+
   it('connects the app again through a way that works when its DorkOS account is unlinked', async () => {
     const user = userEvent.setup();
-    const handlers = renderPanel(
-      transportFor(
-        summary({
-          readiness: notReady(
-            'needs_you',
-            'dorkos_account_unlinked',
-            'It was connected through your DorkOS account, which isn’t linked anymore.',
-            { action: 'connect_new', fixableBy: 'person' }
-          ),
-        })
-      )
+    const transport = transportFor(
+      summary({
+        readiness: createMockConnectionReadiness({
+          state: 'needs_you',
+          reason: 'dorkos_account_unlinked',
+          fix: { action: 'connect_new', fixableBy: 'person' },
+        }),
+      })
     );
+    const handlers = renderPanel(transport);
     const fix = await screen.findByTestId('app-panel-fix');
     await user.click(within(fix).getByRole('button', { name: 'Connect Gmail again' }));
+    // A new connection through a way that works, never the dead account's own reconnect.
     expect(handlers.onAddAnother).toHaveBeenCalledWith('gmail');
+    expect(transport.reconnectConnectorConnection).not.toHaveBeenCalled();
     expect(screen.queryByRole('region', { name: 'Try it' })).not.toBeInTheDocument();
   });
 
@@ -321,10 +351,14 @@ describe('AccountPanel', () => {
         }),
       })
     );
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({ services: [], warnings: [] });
     renderPanel(transport);
     const fix = await screen.findByTestId('app-panel-fix');
     const reads = vi.mocked(transport.getConnectorConnection).mock.calls.length;
+    expect(transport.getConnectorCatalog).not.toHaveBeenCalledWith({ limit: 1 });
     await user.click(within(fix).getByRole('button', { name: 'Check again' }));
+    // The catalog read is what makes the server try the DorkOS account again.
+    await waitFor(() => expect(transport.getConnectorCatalog).toHaveBeenCalledWith({ limit: 1 }));
     await waitFor(() =>
       expect(vi.mocked(transport.getConnectorConnection).mock.calls.length).toBeGreaterThan(reads)
     );

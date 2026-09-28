@@ -532,6 +532,150 @@ export const ConnectionReadinessSchema = z
 /** Whether agents can use one connected account right now, and the one fix if not. */
 export type ConnectionReadiness = z.infer<typeof ConnectionReadinessSchema>;
 
+/** One readiness reason's words: for the owner, and for an agent. */
+export interface ConnectionReadinessCopy {
+  readonly owner: string;
+  readonly agent: string;
+}
+
+const READINESS_ASK_ON_CONNECTIONS = 'on the Connections page in the DorkOS app';
+/** What an agent reads about an account the person disconnected. */
+export const CONNECTION_GONE_AGENT_COPY =
+  'The person disconnected this account. Ask them to connect it again if you need it.';
+
+/**
+ * Every line readiness says, in one place: the server's readiness function is
+ * its one reader (tests read it too, so a mock never copies a string). Owner
+ * lines sit under the app's name, so they say "it". Agent lines say what the
+ * person must do.
+ */
+export const CONNECTION_READINESS_COPY: Readonly<
+  Record<Exclude<ConnectionReadinessReason, 'disconnect_stuck'>, ConnectionReadinessCopy>
+> = {
+  usable: {
+    owner: 'Agents can use it.',
+    agent: 'You can use this account.',
+  },
+  off_for_this_chat: {
+    owner: 'Turned off for this chat.',
+    agent:
+      'The person turned this account off for this chat, so you can’t use it here. Don’t ask for it again in this chat.',
+  },
+  dorkos_account_unlinked: {
+    owner:
+      'It was connected through your DorkOS account, which isn’t linked anymore. Connect it again to use it.',
+    agent:
+      'It was connected through the person’s DorkOS account, which isn’t linked anymore. Ask the person to connect this app again ' +
+      `${READINESS_ASK_ON_CONNECTIONS}. Linking the account again doesn’t bring it back on its own.`,
+  },
+  dorkos_account_unavailable: {
+    owner: 'Your DorkOS account can’t reach it right now, so agents can’t use it.',
+    agent:
+      'It was connected through the person’s DorkOS account, which can’t reach apps right now. Try again later. The person doesn’t need to do anything.',
+  },
+  own_key_unavailable: {
+    owner: 'The key it was connected through isn’t set up or didn’t answer. Fix the key to use it.',
+    agent:
+      'It was connected through the person’s own key, which isn’t set up or didn’t answer when DorkOS last checked it. ' +
+      'Ask the person to fix the key in Settings › Connections in the DorkOS app.',
+  },
+  way_unreachable: {
+    owner: 'DorkOS can’t reach the service it was connected through, so agents can’t use it.',
+    agent:
+      'DorkOS can’t reach the service this account was connected through. Tell the person. Asking for access won’t help.',
+  },
+  own_key_cannot_run_actions: {
+    owner:
+      'Agents can’t use it: your key can sign in to apps but can’t run their actions. Change it to a project key.',
+    agent:
+      'The person’s own key can sign in to apps but can’t run their actions. Ask the person to change it to a project key in Settings › Connections in the DorkOS app.',
+  },
+  cannot_run_actions: {
+    owner: 'Agents can’t use apps connected this way yet.',
+    agent:
+      'Agents can’t use apps connected the way this one was. Tell the person. Asking for access won’t help.',
+  },
+  paused: {
+    owner: 'Paused. Agents can’t use it until you resume it.',
+    agent: `The person paused this account. Ask them to resume it ${READINESS_ASK_ON_CONNECTIONS}.`,
+  },
+  signed_out: {
+    owner: 'Signed out. Agents can’t use it until you sign in again.',
+    agent: `The sign-in for this account ended. Ask the person to sign in again ${READINESS_ASK_ON_CONNECTIONS}.`,
+  },
+  sign_in_unfinished: {
+    owner: 'Sign-in didn’t finish. Agents can’t use it until you sign in again.',
+    agent: `The sign-in for this account didn’t finish. Ask the person to sign in again ${READINESS_ASK_ON_CONNECTIONS}.`,
+  },
+  needs_review: {
+    owner: 'Check who can use it. Agents can’t use it until you do.',
+    agent: `The person needs to check who can use this account before agents can use it again. Ask them to check it ${READINESS_ASK_ON_CONNECTIONS}.`,
+  },
+  access_update_failed: {
+    owner: 'A change to who can use it didn’t go through. Check who can use it.',
+    agent: `A change to who can use this account didn’t go through. Ask the person to check it ${READINESS_ASK_ON_CONNECTIONS}.`,
+  },
+  access_updating: {
+    owner: 'Updating who can use it…',
+    agent:
+      'DorkOS is still updating who can use this account. Try again in a few minutes. The person doesn’t need to do anything.',
+  },
+  disconnected: {
+    owner: 'Disconnected. Agents can’t use it.',
+    agent: CONNECTION_GONE_AGENT_COPY,
+  },
+  disconnect_finishing: {
+    owner: 'Disconnected. Agents can’t use it. DorkOS is still removing its access at the service.',
+    agent: CONNECTION_GONE_AGENT_COPY,
+  },
+  disconnect_failed: {
+    owner:
+      'Disconnected. Agents can’t use it. Removing its access at the service didn’t finish. Try again.',
+    agent: CONNECTION_GONE_AGENT_COPY,
+  },
+};
+
+/** Why DorkOS can't finish removing a disconnected account's access at the service. */
+export type ConnectionDisconnectStuckCause =
+  | 'own_key_unavailable'
+  | 'dorkos_account_unlinked'
+  | 'dorkos_account_unavailable'
+  | 'unreachable'
+  | 'unconfirmed';
+
+/**
+ * The owner's line for a disconnect DorkOS can't finish right now, by why it
+ * can't: the one thing the person can do, or where they can finish it
+ * themselves.
+ *
+ * @param cause - Why it can't finish.
+ */
+export function disconnectStuckOwnerLine(cause: ConnectionDisconnectStuckCause): string {
+  const lead = 'Disconnected. Agents can’t use it.';
+  const ownSettings = 'To be sure its access ended, remove it in that app’s own account settings.';
+  switch (cause) {
+    case 'own_key_unavailable':
+      return `${lead} DorkOS can’t finish removing its access at the service until your key works again. Fix the key, then try again.`;
+    case 'dorkos_account_unlinked':
+      return `${lead} DorkOS can’t finish removing its access at the service, because your DorkOS account isn’t linked anymore. ${ownSettings}`;
+    case 'unconfirmed':
+      return `${lead} DorkOS couldn’t confirm its access ended at the service. ${ownSettings}`;
+    case 'dorkos_account_unavailable':
+    case 'unreachable':
+      return `${lead} DorkOS can’t reach the service to finish removing its access. ${ownSettings}`;
+  }
+}
+
+/**
+ * The words added when an account connected a way that can't be used offers
+ * connecting it again, because another way works.
+ */
+export const CONNECT_ANOTHER_WAY_COPY: ConnectionReadinessCopy = {
+  owner: 'Connect it again another way to use it.',
+  agent:
+    'Ask the person to connect it again another way on the Connections page in the DorkOS app.',
+};
+
 /** Connection metadata visible to an agent that already holds access. */
 export const AccessibleConnectorConnectionSchema = z
   .object({

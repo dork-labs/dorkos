@@ -62,6 +62,21 @@ export function useConnectorAppActions(toolkit: string, providerInstanceId: stri
   });
 }
 
+/**
+ * Check again whether the DorkOS account can reach apps. Reading the catalog
+ * is what makes the server try the DorkOS account's route again when it isn't
+ * registered, so this reads one page of it first, then every connector read
+ * again, so the accounts show what that check found.
+ */
+export function useRecheckConnectorWays() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => transport.getConnectorCatalog({ limit: 1 }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
+  });
+}
+
 /** Read the operator's canonical stable connection inventory. */
 export function useConnectorConnections() {
   const transport = useTransport();

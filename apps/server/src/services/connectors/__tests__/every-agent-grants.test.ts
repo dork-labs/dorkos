@@ -5,6 +5,7 @@
  * rules (disconnect clears it, removing an agent never does).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import {
   and,
   connectionOperationGrants,
@@ -323,6 +324,15 @@ describe('every-agent grants', () => {
     expect(
       await refusal(execute(runtimePrincipal('agent-new', 'session-detached'), read, 'read'))
     ).toBe('CONNECTOR_GRANT_REQUIRED');
+    // The refusal says the chat turned it off, never "not granted".
+    await expect(
+      execute(runtimePrincipal('agent-new', 'session-detached'), read, 'read')
+    ).rejects.toMatchObject({
+      payload: {
+        reason: 'off_for_this_chat',
+        error: CONNECTION_READINESS_COPY.off_for_this_chat.agent,
+      },
+    });
     expect(
       await refusal(execute(runtimePrincipal('agent-new', 'session-attached'), read, 'read'))
     ).toBe('CONNECTOR_GRANT_REQUIRED');

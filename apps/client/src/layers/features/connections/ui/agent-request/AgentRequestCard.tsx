@@ -231,8 +231,6 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           agentName={agentName}
           onDecline={decline}
           deciding={resolve.isPending}
-          onRecheck={() => void connections.refetch()}
-          rechecking={connections.isFetching}
           onConnectAgain={() => setConnectingAgain(true)}
         />
         {declineFailure}

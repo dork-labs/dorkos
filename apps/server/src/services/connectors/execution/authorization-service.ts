@@ -4,12 +4,9 @@ import { z } from 'zod';
 import {
   connectionOperationGrants,
   connections,
-  connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connectorProviderInstances,
   and,
-  desc,
-  EVERY_AGENT_GRANT_SUBJECT_ID,
   eq,
   isNull,
   type Db,
@@ -45,7 +42,8 @@ import {
   type ConnectionReadinessFacts,
   type ConnectionWayHealthPort,
 } from '../readiness/connection-readiness.js';
-import { agentGrantScope } from './agent-grant-scope.js';
+import { agentGrantScope, type AgentGrantDenial } from './agent-grant-scope.js';
+import { managedAgentAccess } from './managed-agent-access.js';
 
 const CLASSIFICATION_BY_CAPABILITY = {
   'connectors.execute_read': 'read',
@@ -367,6 +365,9 @@ export class ConnectorExecutionAuthorizationService {
       );
     }
     const granted = this.matchingGrants(actor.agentId, actor.sessionId, input.target);
+    if (granted.denied === 'detached') {
+      return this.refuseNotReady('CONNECTOR_GRANT_REQUIRED', row, { offForThisChat: true });
+    }
     if (!granted.named && !granted.everyAgent) {
       return refuse(
         'CONNECTOR_GRANT_REQUIRED',
@@ -393,15 +394,15 @@ export class ConnectorExecutionAuthorizationService {
       );
     }
     const argumentsValue = this.validateArguments(row.inputSchemaJson, input.target.arguments);
-    const managedGrant =
+    const managedAccess =
       row.providerMode === 'managed'
-        ? this.appliedManagedGrant(row.externalAccountRef, actor.agentId, granted)
+        ? managedAgentAccess(this.db, row.externalAccountRef, actor.agentId, granted)
         : undefined;
-    const managedGrantScopeVersion = managedGrant?.scopeVersion;
-    const managedGrantSubject = managedGrant?.subject;
-    if (row.providerMode === 'managed' && managedGrantScopeVersion === undefined) {
+    const managedGrantScopeVersion = managedAccess?.applied?.scopeVersion;
+    const managedGrantSubject = managedAccess?.applied?.subject;
+    if (managedAccess && managedGrantScopeVersion === undefined) {
       return this.refuseNotReady('CONNECTOR_MANAGED_AUTHORITY_PENDING', row, {
-        authoritySync: { status: 'pending' },
+        authoritySync: managedAccess.sync,
       });
     }
     const operation = ConnectorOperationRevisionSchema.parse({
@@ -459,53 +460,6 @@ export class ConnectorExecutionAuthorizationService {
     });
     this.preparedExecutions.add(authorized);
     return authorized;
-  }
-
-  /**
-   * The hosted scope that authorizes this managed call: the agent's own grant
-   * when it has one hosted authority has applied, otherwise "every agent"
-   * (DOR-2439) when that is what grants it and hosted authority has applied it.
-   */
-  private appliedManagedGrant(
-    managedConnectionId: string,
-    agentId: string,
-    granted: { readonly named: boolean; readonly everyAgent: boolean }
-  ): { subject: 'agent' | 'every_agent'; scopeVersion: number } | undefined {
-    const named = granted.named
-      ? this.readAppliedManagedGrantScopeVersion(managedConnectionId, 'agent_grants', agentId)
-      : undefined;
-    if (named !== undefined) return { subject: 'agent', scopeVersion: named };
-    const everyAgent = granted.everyAgent
-      ? this.readAppliedManagedGrantScopeVersion(
-          managedConnectionId,
-          'every_agent_grants',
-          EVERY_AGENT_GRANT_SUBJECT_ID
-        )
-      : undefined;
-    return everyAgent === undefined
-      ? undefined
-      : { subject: 'every_agent', scopeVersion: everyAgent };
-  }
-
-  private readAppliedManagedGrantScopeVersion(
-    managedConnectionId: string,
-    scopeKind: 'agent_grants' | 'every_agent_grants',
-    subjectId: string
-  ): number | undefined {
-    return this.db
-      .select({ scopeVersion: connectorManagedAuthorityOutbox.scopeVersion })
-      .from(connectorManagedAuthorityOutbox)
-      .where(
-        and(
-          eq(connectorManagedAuthorityOutbox.managedConnectionId, managedConnectionId),
-          eq(connectorManagedAuthorityOutbox.scopeKind, scopeKind),
-          eq(connectorManagedAuthorityOutbox.subjectId, subjectId),
-          eq(connectorManagedAuthorityOutbox.state, 'applied')
-        )
-      )
-      .orderBy(desc(connectorManagedAuthorityOutbox.scopeVersion))
-      .limit(1)
-      .get()?.scopeVersion;
   }
 
   private async resolveActor(
@@ -625,13 +579,13 @@ export class ConnectorExecutionAuthorizationService {
     agentId: string,
     sessionId: string | undefined,
     target: ConnectorExecutionTarget
-  ): { named: boolean; everyAgent: boolean } {
+  ): { named: boolean; everyAgent: boolean; denied?: AgentGrantDenial } {
     const scope = agentGrantScope(this.db, {
       agentId,
       sessionId,
       connectionId: target.connectionId,
     });
-    if (scope.kind === 'denied') return { named: false, everyAgent: false };
+    if (scope.kind === 'denied') return { named: false, everyAgent: false, denied: scope.reason };
     const subjects = this.db
       .select({ subjectType: connectionOperationGrants.subjectType })
       .from(connectionOperationGrants)

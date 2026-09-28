@@ -5,6 +5,7 @@ import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resour
 import {
   useConnectorAuthentication,
   useReconnectConnectorConnection,
+  useRecheckConnectorWays,
   useResumeConnectorConnection,
   type ServiceLogo,
 } from '@/layers/entities/connectors';
@@ -25,10 +26,6 @@ interface AccountAttentionStepProps {
   onDecline: () => void;
   /** An answer is being saved. */
   deciding: boolean;
-  /** Read the accounts again, to see whether the way came back. */
-  onRecheck: () => void;
-  /** The accounts are being read again. */
-  rechecking: boolean;
   /** Connect the app again through any way that works, the one-time step first when none does. */
   onConnectAgain: () => void;
 }
@@ -50,14 +47,14 @@ export function AccountAttentionStep({
   agentName,
   onDecline,
   deciding,
-  onRecheck,
-  rechecking,
   onConnectAgain,
 }: AccountAttentionStepProps) {
   const titleId = useId();
   const settings = useSettingsDeepLink();
   const resume = useResumeConnectorConnection();
   const reconnect = useReconnectConnectorConnection();
+  // Asks the server to try the DorkOS account's route again, then re-reads.
+  const recheck = useRecheckConnectorWays();
   const [flowId, setFlowId] = useState<string | null>(null);
   const flow = useConnectorAuthentication(flowId);
   const flowState = flow.data?.state;
@@ -126,8 +123,8 @@ export function AccountAttentionStep({
           </Button>
         )}
         {action === 'retry' && (
-          <Button variant="secondary" onClick={onRecheck} disabled={rechecking}>
-            {rechecking ? 'Checking…' : 'Check again'}
+          <Button variant="secondary" onClick={() => recheck.mutate()} disabled={recheck.isPending}>
+            {recheck.isPending ? 'Checking…' : 'Check again'}
           </Button>
         )}
         {action === 'fix_key' && (

@@ -6,6 +6,7 @@ import {
   useConnectorConnection,
   useConnectorUsage,
   useDisconnectConnectorConnection,
+  useRecheckConnectorWays,
   usePauseConnectorConnection,
   useReconnectConnectorConnection,
   useRemoveConnectorConnection,
@@ -200,7 +201,7 @@ function ReadinessFix({
   retryingDisconnect: boolean;
 }) {
   const settings = useSettingsDeepLink();
-  const recheck = useConnectorConnection(detail.connection.connectionId, false);
+  const recheck = useRecheckConnectorWays();
   const [confirmRemove, setConfirmRemove] = useState(false);
   const { readiness } = detail.connection;
   if (readiness.state === 'ready') return null;
@@ -233,8 +234,8 @@ function ReadinessFix({
         }
         return {
           action: 'Check again',
-          onAction: () => void recheck.refetch(),
-          pending: recheck.isFetching,
+          onAction: () => recheck.mutate(),
+          pending: recheck.isPending,
         };
       case 'wait':
       case undefined:

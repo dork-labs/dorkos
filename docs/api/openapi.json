@@ -27530,6 +27530,9 @@
                               },
                               "canRunActions": {
                                 "type": "boolean"
+                              },
+                              "keyCanFix": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -27585,6 +27588,9 @@
                                       "maxLength": 100
                                     },
                                     "canRunActions": {
+                                      "type": "boolean"
+                                    },
+                                    "keyCanFix": {
                                       "type": "boolean"
                                     }
                                   },
@@ -28413,6 +28419,9 @@
                               },
                               "canRunActions": {
                                 "type": "boolean"
+                              },
+                              "keyCanFix": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -28468,6 +28477,9 @@
                                       "maxLength": 100
                                     },
                                     "canRunActions": {
+                                      "type": "boolean"
+                                    },
+                                    "keyCanFix": {
                                       "type": "boolean"
                                     }
                                   },
@@ -32400,12 +32412,11 @@
                             "minLength": 1,
                             "maxLength": 200
                           },
-                          "access": {
+                          "source": {
                             "type": "string",
                             "enum": [
-                              "inherited",
-                              "session_only",
-                              "disabled"
+                              "agent",
+                              "this_chat"
                             ]
                           },
                           "operationRevisionIds": {
@@ -32417,27 +32428,113 @@
                             },
                             "maxItems": 100000
                           },
-                          "dominatingReason": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "connection_paused",
-                              "connection_revoked",
-                              "authentication_required",
-                              "grant_revoked",
-                              "session_detached",
-                              "reconciliation_required",
-                              "authority_sync_required"
-                            ]
+                          "readiness": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "paused",
+                                  "needs_you",
+                                  "finishing",
+                                  "unavailable",
+                                  "gone"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "usable",
+                                  "off_for_this_chat",
+                                  "dorkos_account_unlinked",
+                                  "dorkos_account_unavailable",
+                                  "own_key_unavailable",
+                                  "way_unreachable",
+                                  "own_key_cannot_run_actions",
+                                  "cannot_run_actions",
+                                  "paused",
+                                  "signed_out",
+                                  "sign_in_unfinished",
+                                  "needs_review",
+                                  "access_update_failed",
+                                  "access_updating",
+                                  "disconnected",
+                                  "disconnect_finishing",
+                                  "disconnect_failed",
+                                  "disconnect_stuck"
+                                ]
+                              },
+                              "fix": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "sign_in_again",
+                                      "connect_again",
+                                      "connect_new",
+                                      "resume",
+                                      "review_access",
+                                      "fix_key",
+                                      "retry",
+                                      "wait"
+                                    ]
+                                  },
+                                  "fixableBy": {
+                                    "type": "string",
+                                    "enum": [
+                                      "person",
+                                      "dorkos"
+                                    ]
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "copy": {
+                                "type": "object",
+                                "properties": {
+                                  "owner": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  }
+                                },
+                                "required": [
+                                  "owner",
+                                  "agent"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "reason",
+                              "copy"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
                           "connectionId",
                           "toolkit",
                           "label",
-                          "access",
+                          "source",
                           "operationRevisionIds",
-                          "dominatingReason"
+                          "readiness"
                         ],
                         "additionalProperties": false
                       },

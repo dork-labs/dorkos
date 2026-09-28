@@ -4,12 +4,13 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type {
-  ConnectionFixAction,
-  ConnectionReadinessReason,
-  ConnectionReadinessState,
-  ConnectorAgentRequestItem,
-  ConnectorReconciliationPreview,
+import {
+  CONNECTION_READINESS_COPY,
+  type ConnectionFixAction,
+  type ConnectionReadinessReason,
+  type ConnectionReadinessState,
+  type ConnectorAgentRequestItem,
+  type ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import type {
   ConnectorCatalogService,
@@ -588,7 +589,7 @@ describe('AgentRequestCard — an account that needs attention first', () => {
         readiness: needs(
           'dorkos_account_unavailable',
           'retry',
-          'Your DorkOS account can’t reach it right now. DorkOS will keep checking.',
+          CONNECTION_READINESS_COPY.dorkos_account_unavailable.owner,
           'unavailable'
         ),
       },
@@ -599,7 +600,14 @@ describe('AgentRequestCard — an account that needs attention first', () => {
       'can’t reach it right now'
     );
     const reads = vi.mocked(transport.getConnectorConnections).mock.calls.length;
+    const catalogReads = vi.mocked(transport.getConnectorCatalog).mock.calls.length;
     await user.click(screen.getByRole('button', { name: 'Check again' }));
+    // The catalog read is what makes the server try the DorkOS account again.
+    await waitFor(() =>
+      expect(vi.mocked(transport.getConnectorCatalog).mock.calls.length).toBeGreaterThan(
+        catalogReads
+      )
+    );
     await waitFor(() =>
       expect(vi.mocked(transport.getConnectorConnections).mock.calls.length).toBeGreaterThan(reads)
     );
@@ -828,13 +836,33 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     const transport = transportWith([
       {
         ...account('connection-1'),
-        authoritySync: { status: 'failed', reason: 'Other agent.' },
-        readiness: needs('access_update_failed', 'review_access', 'A change didn’t go through.'),
+        authoritySync: { status: 'pending' },
+        readiness: needs('access_updating', 'wait', 'Updating who can use it…', 'finishing'),
       },
     ]);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
     expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
     expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
+  });
+
+  it('asks for the review, not an Allow, when a change to who can use it was refused', async () => {
+    const transport = transportWith([
+      {
+        ...account('connection-1'),
+        authoritySync: { status: 'failed', reason: 'Refused.' },
+        readiness: needs('access_update_failed', 'review_access', 'A change didn’t go through.'),
+      },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+    expect(await screen.findByTestId('account-attention')).toHaveAttribute(
+      'data-reason',
+      'access_update_failed'
+    );
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open Connections/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('app=connection-1')
+    );
   });
 
   it('never starts below the level the agent already holds', async () => {

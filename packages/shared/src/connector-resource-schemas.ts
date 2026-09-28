@@ -103,6 +103,11 @@ export const ConnectorAppWaySchema = z
      * (an account key where a project key is needed, a self-hosted server).
      */
     canRunActions: z.boolean().optional(),
+    /**
+     * Present only when the way can't run actions: true when changing the key
+     * would fix that (an account key, where a project key runs them).
+     */
+    keyCanFix: z.boolean().optional(),
   })
   .strict();
 /** One way DorkOS can reach apps that the person has set up. */
@@ -631,20 +636,13 @@ export const ConnectorSessionEffectiveAccessSchema = z
     connectionId: ConnectionIdSchema,
     toolkit: z.string().min(1).max(200),
     label: z.string().min(1).max(200),
-    access: z.enum(['inherited', 'session_only', 'disabled']),
+    /** Where this chat's access comes from: the agent's own, or this chat alone. */
+    source: z.enum(['agent', 'this_chat']),
     operationRevisionIds: z
       .array(z.string().min(1).max(200))
       .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
-    dominatingReason: z.enum([
-      'none',
-      'connection_paused',
-      'connection_revoked',
-      'authentication_required',
-      'grant_revoked',
-      'session_detached',
-      'reconciliation_required',
-      'authority_sync_required',
-    ]),
+    /** Whether this chat's agent can use it here right now and, if not, the one fix. */
+    readiness: ConnectionReadinessSchema,
   })
   .strict();
 /** Effective owner-visible connection access for one exact session. */

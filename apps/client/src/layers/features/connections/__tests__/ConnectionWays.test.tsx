@@ -181,6 +181,7 @@ describe('ConnectionWays', () => {
               status: 'ready',
               providerInstanceId: 'cpi_composio' as never,
               canRunActions: false,
+              keyCanFix: true,
             },
           ],
           newApps: {
@@ -191,6 +192,7 @@ describe('ConnectionWays', () => {
               status: 'ready',
               providerInstanceId: 'cpi_composio' as never,
               canRunActions: false,
+              keyCanFix: true,
             },
           },
         }),
@@ -274,8 +276,21 @@ describe('ConnectionWays', () => {
         connections: [
           connection({ connectionId: 'b1' as never, toolkit: 'notion', label: 'team' }),
           connection({ connectionId: 'b2' as never, label: 'personal', agentCount: 1 }),
-          connection({ connectionId: 'p1' as never, toolkit: 'linear', lifecycle: 'paused' }),
-          connection({ connectionId: 'gone' as never, lifecycle: 'disconnected' }),
+          connection({
+            connectionId: 'p1' as never,
+            toolkit: 'linear',
+            lifecycle: 'paused',
+            readiness: createMockConnectionReadiness({
+              state: 'paused',
+              reason: 'paused',
+              fix: { action: 'resume', fixableBy: 'person' },
+            }),
+          }),
+          connection({
+            connectionId: 'gone' as never,
+            lifecycle: 'disconnected',
+            readiness: createMockConnectionReadiness({ state: 'gone', reason: 'disconnected' }),
+          }),
         ],
       }),
     });
@@ -387,7 +402,18 @@ describe('ConnectionWays', () => {
           provider({ configured: true, registered: false, error: 'Invalid API key' }),
           nango,
         ]),
-        getConnectorConnections: vi.fn().mockResolvedValue({ connections: [connection({})] }),
+        // The server already reads the key's apps as cut off.
+        getConnectorConnections: vi.fn().mockResolvedValue({
+          connections: [
+            connection({
+              readiness: createMockConnectionReadiness({
+                state: 'needs_you',
+                reason: 'own_key_unavailable',
+                fix: { action: 'fix_key', fixableBy: 'person' },
+              }),
+            }),
+          ],
+        }),
       })
     );
     const row = await screen.findByTestId('connection-way-composio');

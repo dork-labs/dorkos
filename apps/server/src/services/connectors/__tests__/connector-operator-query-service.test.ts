@@ -26,6 +26,7 @@ import {
   ConnectorOperatorQueryError,
   ConnectorOperatorQueryService,
 } from '../resources/operator-query-service.js';
+import type { ConnectionWayHealth } from '../readiness/connection-readiness.js';
 import type { NangoHttpClient, NangoIntegration } from '../providers/nango-client.js';
 import { NangoConnectorProvider } from '../providers/nango.js';
 import { ConnectionStore } from '../connection-store.js';
@@ -156,10 +157,10 @@ describe('ConnectorOperatorQueryService', () => {
   });
 
   it('says on every account whether agents can use it, from its way’s live health', async () => {
-    const wayHealth = vi.fn((providerInstanceId: string) =>
+    const wayHealth = vi.fn((providerInstanceId: string): ConnectionWayHealth =>
       providerInstanceId === PROVIDER_ID
-        ? ({ status: 'down', problem: 'dorkos_account_unlinked' } as const)
-        : ({ status: 'up', canRunActions: true } as const)
+        ? { status: 'down', problem: 'dorkos_account_unlinked', anotherWayWorks: false }
+        : { status: 'up', canRunActions: true }
     );
     const withWays = new ConnectorOperatorQueryService({
       db,
@@ -974,7 +975,7 @@ describe('ConnectorOperatorQueryService', () => {
     });
   });
 
-  it('shows canonical session detach and connection pause as disabled effective access', async () => {
+  it('says per chat whether its agent can use each account, from one readiness', async () => {
     db.insert(sessionConnectionOverrides)
       .values({
         sessionId: 'session-a',
@@ -986,21 +987,46 @@ describe('ConnectorOperatorQueryService', () => {
       .run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
       connections: [
-        { connectionId: 'connection-a', access: 'disabled', dominatingReason: 'session_detached' },
+        {
+          connectionId: 'connection-a',
+          source: 'this_chat',
+          readiness: { state: 'unavailable', reason: 'off_for_this_chat' },
+        },
       ],
     });
 
+    // Turned on with nothing of its own: this chat's access needs a look.
     db.update(sessionConnectionOverrides)
       .set({ state: 'attached' })
       .where(eq(sessionConnectionOverrides.sessionId, 'session-a'))
       .run();
+    await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
+      connections: [{ readiness: { reason: 'needs_review', fix: { action: 'review_access' } } }],
+    });
+
     db.update(connections).set({ enabled: false }).where(eq(connections.id, 'connection-a')).run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
-      connections: [{ access: 'disabled', dominatingReason: 'connection_paused' }],
+      connections: [{ readiness: { state: 'paused', reason: 'paused' } }],
+    });
+
+    // Another agent's override: this chat was handed to someone else.
+    db.update(connections).set({ enabled: true }).where(eq(connections.id, 'connection-a')).run();
+    db.update(sessionConnectionOverrides)
+      .set({ agentId: 'agent-b' })
+      .where(eq(sessionConnectionOverrides.sessionId, 'session-a'))
+      .run();
+    await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
+      connections: [{ readiness: { reason: 'off_for_this_chat' } }],
+    });
+
+    // No override: the agent's own access, ready.
+    db.delete(sessionConnectionOverrides).run();
+    await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
+      connections: [{ source: 'agent', readiness: { state: 'ready', reason: 'usable' } }],
     });
   });
 
-  it('derives managed synchronization only from each scope current command', async () => {
+  it('derives managed synchronization only from each scope current command, and a chat from its agent’s own', async () => {
     db.update(connectorProviderInstances)
       .set({ mode: 'managed' })
       .where(eq(connectorProviderInstances.id, PROVIDER_ID))
@@ -1084,8 +1110,10 @@ describe('ConnectorOperatorQueryService', () => {
     expect((await service.getConnection(OWNER, 'connection-a')).connection.authoritySync).toEqual({
       status: 'pending',
     });
+    // A chat's readiness reads this agent's own hosted access, never the
+    // account-wide lifecycle: nothing applied for it yet reads as updating.
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
-      connections: [{ access: 'disabled', dominatingReason: 'authority_sync_required' }],
+      connections: [{ source: 'agent', readiness: { reason: 'access_updating' } }],
     });
     db.insert(sessionConnectionOverrides)
       .values({
@@ -1108,16 +1136,52 @@ describe('ConnectorOperatorQueryService', () => {
         createdAt: NOW,
       })
       .run();
+    db.insert(connectorManagedAuthorityOutbox)
+      .values({
+        connectionId: 'connection-a',
+        providerInstanceId: PROVIDER_ID,
+        executionConfigGeneration: 1,
+        ownerKind: OWNER.kind,
+        ownerId: OWNER.installationId,
+        commandId: 'agent-grants-1',
+        managedConnectionId: 'private-account-a',
+        scopeKind: 'agent_grants',
+        subjectId: 'agent-a',
+        scopeVersion: 1,
+        requestHash: 'agent',
+        requestJson: '{}',
+        state: 'rejected',
+        safeReason: 'Refused.',
+        attemptCount: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    db.insert(connectorManagedAuthorityScopes)
+      .values({
+        managedConnectionId: 'private-account-a',
+        scopeKind: 'agent_grants',
+        subjectId: 'agent-a',
+        scopeVersion: 1,
+        lastCommandId: 'agent-grants-1',
+        lastCommandHash: 'agent',
+        updatedAt: NOW,
+      })
+      .run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
-      connections: [{ access: 'disabled', dominatingReason: 'authority_sync_required' }],
+      connections: [{ source: 'this_chat', readiness: { reason: 'access_update_failed' } }],
     });
     db.update(connectorManagedAuthorityOutbox)
       .set({ state: 'applied' })
-      .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'agent-grants-1'))
       .run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
       connections: [
-        { access: 'session_only', dominatingReason: 'none', operationRevisionIds: ['revision-a'] },
+        {
+          source: 'this_chat',
+          readiness: { state: 'ready' },
+          operationRevisionIds: ['revision-a'],
+        },
       ],
     });
   });

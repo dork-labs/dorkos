@@ -9,9 +9,12 @@ import type {
   ConnectorConnectionDetail,
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
-import type {
-  ConnectorReconciliationPreview,
-  ConnectorUsageItem,
+import {
+  CONNECTION_GONE_AGENT_COPY,
+  CONNECTION_READINESS_COPY,
+  disconnectStuckOwnerLine,
+  type ConnectorReconciliationPreview,
+  type ConnectorUsageItem,
 } from '@dorkos/shared/connector-schemas';
 import type { AdapterBinding, CatalogEntry } from '@dorkos/shared/relay-schemas';
 
@@ -19,55 +22,47 @@ import type { AdapterBinding, CatalogEntry } from '@dorkos/shared/relay-schemas'
 export const READY: ConnectorConnectionSummary['readiness'] = {
   state: 'ready',
   reason: 'usable',
-  copy: { owner: 'Agents can use it.', agent: 'You can use this account.' },
+  copy: CONNECTION_READINESS_COPY.usable,
 };
 
-/** The server's readiness for the not-ready accounts the showcases draw. */
+/** The server's readiness for the not-ready accounts the showcases draw, in its own words. */
 export const MOCK_READINESS = {
   signedOut: {
     state: 'needs_you',
     reason: 'signed_out',
     fix: { action: 'sign_in_again', fixableBy: 'person' },
-    copy: {
-      owner: 'Signed out. Agents can’t use it until you sign in again.',
-      agent: 'The sign-in for this account ended. Ask the person to sign in again.',
-    },
+    copy: CONNECTION_READINESS_COPY.signed_out,
   },
   paused: {
     state: 'paused',
     reason: 'paused',
     fix: { action: 'resume', fixableBy: 'person' },
-    copy: {
-      owner: 'Paused. Agents can’t use it until you resume it.',
-      agent: 'The person paused this account. Ask them to resume it.',
-    },
+    copy: CONNECTION_READINESS_COPY.paused,
   },
   needsReview: {
     state: 'needs_you',
     reason: 'needs_review',
     fix: { action: 'review_access', fixableBy: 'person' },
-    copy: {
-      owner: 'Check who can use it. Agents can’t use it until you do.',
-      agent: 'The person needs to check who can use this account.',
-    },
+    copy: CONNECTION_READINESS_COPY.needs_review,
   },
   unlinked: {
     state: 'needs_you',
     reason: 'dorkos_account_unlinked',
     fix: { action: 'connect_new', fixableBy: 'person' },
-    copy: {
-      owner:
-        'It was connected through your DorkOS account, which isn’t linked anymore. Connect it again to use it.',
-      agent: 'Ask the person to connect this app again.',
-    },
+    copy: CONNECTION_READINESS_COPY.dorkos_account_unlinked,
+  },
+  disconnectFinishing: {
+    state: 'gone',
+    reason: 'disconnect_finishing',
+    fix: { action: 'retry', fixableBy: 'dorkos' },
+    copy: CONNECTION_READINESS_COPY.disconnect_finishing,
   },
   disconnectStuck: {
     state: 'gone',
     reason: 'disconnect_stuck',
     copy: {
-      owner:
-        'Disconnected. Agents can’t use it. DorkOS can’t finish removing its access at the service, because your DorkOS account isn’t linked anymore. To be sure its access ended, remove it in that app’s own account settings.',
-      agent: 'The person disconnected this account.',
+      owner: disconnectStuckOwnerLine('dorkos_account_unlinked'),
+      agent: CONNECTION_GONE_AGENT_COPY,
     },
   },
 } satisfies Record<string, ConnectorConnectionSummary['readiness']>;

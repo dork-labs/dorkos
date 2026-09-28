@@ -42,6 +42,7 @@ import {
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAgentOwnershipPort } from './authorization-service.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { managedAgentAccess } from './managed-agent-access.js';
 
 /** Bounded cursor input shared by agent and operator usage views. */
 export interface ConnectorUsageQuery {
@@ -522,6 +523,8 @@ export class ConnectorAccessQueryService {
         reconciliationStatus: connections.grantReconciliationStatus,
         providerInstanceId: connectorProviderInstances.id,
         providerType: connectorProviderInstances.type,
+        mode: connectorProviderInstances.mode,
+        externalAccountRef: connections.externalAccountRef,
         operationRevisionId: connectorOperationRevisions.id,
         operationToolkit: connectorOperationRevisions.toolkit,
         operationSlug: connectorOperationRevisions.operationSlug,
@@ -571,7 +574,16 @@ export class ConnectorAccessQueryService {
       ) {
         return false;
       }
-      return grantApplies(row, overrides.get(row.connectionId), agentId);
+      if (!grantApplies(row, overrides.get(row.connectionId), agentId)) return false;
+      // Through a DorkOS account, a call needs this agent's access applied at
+      // the hosted side, exactly as the execution check reads it.
+      return (
+        row.mode !== 'managed' ||
+        managedAgentAccess(this.db, row.externalAccountRef, agentId, {
+          named: row.subjectType !== 'every_agent',
+          everyAgent: row.subjectType === 'every_agent',
+        }).applied !== undefined
+      );
     });
     return uniqueRevisions(executable);
   }
@@ -582,8 +594,8 @@ export class ConnectorAccessQueryService {
    * Same owner and grant rules as {@link listRuntimeGrantRows}, except that an
    * account this chat turned off is listed (as off for this chat) rather than
    * dropped. A disconnected account is not listed: it is no longer the
-   * agent's to use. Access sync is left out: it spans every agent's access,
-   * and execution checks this agent's own.
+   * agent's to use. Access sync is this agent's own ({@link managedAgentAccess}),
+   * never the account-wide state that spans every agent.
    */
   private listUnavailableConnections(
     owner: ConnectorOwnerAuthority,
@@ -609,6 +621,7 @@ export class ConnectorAccessQueryService {
         status: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
+        externalAccountRef: connections.externalAccountRef,
       })
       .from(connectionOperationGrants)
       .innerJoin(connections, eq(connections.id, connectionOperationGrants.connectionId))
@@ -637,14 +650,37 @@ export class ConnectorAccessQueryService {
         note: string;
       }
     >();
+    // Every grant row that gives this agent the account, by account.
+    const byConnection = new Map<
+      string,
+      {
+        row: (typeof rows)[number];
+        offHere: boolean;
+        granted: { named: boolean; everyAgent: boolean };
+      }
+    >();
     for (const row of rows) {
       const override = overrides.get(row.connectionId);
       const offHere = turnedOffHere(override, agentId);
       if (!offHere && !grantApplies(row, override, agentId)) continue;
+      const current = byConnection.get(row.connectionId) ?? {
+        row,
+        offHere,
+        granted: { named: false, everyAgent: false },
+      };
+      if (row.subjectType === 'every_agent') current.granted.everyAgent = true;
+      else current.granted.named = true;
+      byConnection.set(row.connectionId, current);
+    }
+    for (const { row, offHere, granted } of byConnection.values()) {
       const readiness = deriveConnectionReadiness({
         lifecycle: row.enabled ? 'connected' : 'paused',
         authenticationStatus: row.status,
         reconciliationStatus: row.reconciliationStatus,
+        // This agent's own hosted access, never another agent's.
+        ...(row.mode === 'managed' && {
+          authoritySync: managedAgentAccess(this.db, row.externalAccountRef, agentId, granted).sync,
+        }),
         mode: row.mode,
         way: this.wayHealth(row.providerInstanceId),
         offForThisChat: offHere,

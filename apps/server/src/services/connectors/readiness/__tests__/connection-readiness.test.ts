@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+  CONNECT_ANOTHER_WAY_COPY,
+  CONNECTION_READINESS_COPY,
+} from '@dorkos/shared/connector-schemas';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
 import {
   deriveConnectionReadiness,
@@ -24,8 +28,10 @@ function facts(overrides: Partial<ConnectionReadinessFacts> = {}): ConnectionRea
   };
 }
 
-const down = (problem: Extract<ConnectionWayHealth, { status: 'down' }>['problem']) =>
-  ({ status: 'down', problem }) as const;
+const down = (
+  problem: Extract<ConnectionWayHealth, { status: 'down' }>['problem'],
+  anotherWayWorks = false
+) => ({ status: 'down', problem, anotherWayWorks }) as const;
 
 describe('deriveConnectionReadiness truth table', () => {
   // [row, facts, state, reason, fix action (undefined = no fix), fixableBy]
@@ -204,27 +210,55 @@ describe('deriveConnectionReadiness truth table', () => {
     ],
     [
       '14 account key cannot run actions',
-      { way: { status: 'up', canRunActions: false, keyCanFix: true }, lifecycle: 'paused' },
+      {
+        way: { status: 'up', canRunActions: false, keyCanFix: true, anotherWayWorks: false },
+        lifecycle: 'paused',
+      },
       'needs_you',
       'own_key_cannot_run_actions',
       'fix_key',
       'person',
     ],
     [
+      '13 way unreachable, another way works',
+      { way: down('unreachable', true) },
+      'unavailable',
+      'way_unreachable',
+      'connect_new',
+      'person',
+    ],
+    [
       '15 self-hosted way cannot run actions',
-      { way: { status: 'up', canRunActions: false, keyCanFix: false } },
+      { way: { status: 'up', canRunActions: false, keyCanFix: false, anotherWayWorks: false } },
       'unavailable',
       'cannot_run_actions',
       undefined,
     ],
     [
-      '16 paused',
-      { lifecycle: 'paused', authenticationStatus: 'expired' },
-      'paused',
-      'paused',
-      'resume',
+      '15 self-hosted way cannot run actions, another way works',
+      { way: { status: 'up', canRunActions: false, keyCanFix: false, anotherWayWorks: true } },
+      'unavailable',
+      'cannot_run_actions',
+      'connect_new',
       'person',
     ],
+    [
+      '16 paused and signed out: sign in again first (it resumes too)',
+      { lifecycle: 'paused', authenticationStatus: 'expired' },
+      'needs_you',
+      'signed_out',
+      'sign_in_again',
+      'person',
+    ],
+    [
+      '17 paused with an unfinished sign-in',
+      { lifecycle: 'paused', authenticationStatus: 'pending' },
+      'needs_you',
+      'sign_in_unfinished',
+      'sign_in_again',
+      'person',
+    ],
+    ['18 paused', { lifecycle: 'paused' }, 'paused', 'paused', 'resume', 'person'],
     [
       '17 expired',
       { authenticationStatus: 'expired' },
@@ -325,9 +359,25 @@ describe('deriveConnectionReadiness truth table', () => {
         expect(line).not.toMatch(/instance|authority|provider|connector|synchroniz|—/i);
       }
     }
-    expect(deriveConnectionReadiness(facts({ lifecycle: 'paused' })).copy.agent).toContain(
-      'Ask them to resume it'
+    expect(deriveConnectionReadiness(facts({ lifecycle: 'paused' })).copy).toEqual(
+      CONNECTION_READINESS_COPY.paused
     );
+  });
+
+  it('says to connect it again another way only when another way works', () => {
+    const withWay = deriveConnectionReadiness(facts({ way: down('unreachable', true) }));
+    expect(withWay.copy.owner).toBe(
+      `${CONNECTION_READINESS_COPY.way_unreachable.owner} ${CONNECT_ANOTHER_WAY_COPY.owner}`
+    );
+    const without = deriveConnectionReadiness(facts({ way: down('unreachable') }));
+    expect(without.copy).toEqual(CONNECTION_READINESS_COPY.way_unreachable);
+  });
+
+  it('never promises an automatic re-check it doesn’t make', () => {
+    const unavailable = deriveConnectionReadiness(
+      facts({ way: down('dorkos_account_unavailable') })
+    );
+    expect(unavailable.copy.owner).not.toMatch(/keep checking|will check/i);
   });
 });
 
@@ -355,11 +405,26 @@ describe('wayHealthOf', () => {
       status: 'up',
       canRunActions: false,
       keyCanFix: true,
+      anotherWayWorks: false,
     });
-    expect(wayHealthOf(provider('nango', false), () => undefined)).toEqual({
+    expect(
+      wayHealthOf(
+        provider('nango', false),
+        () => undefined,
+        () => true
+      )
+    ).toEqual({
       status: 'up',
       canRunActions: false,
       keyCanFix: false,
+      anotherWayWorks: true,
     });
+    expect(
+      wayHealthOf(
+        undefined,
+        () => undefined,
+        () => true
+      )
+    ).toEqual(down('unreachable', true));
   });
 });

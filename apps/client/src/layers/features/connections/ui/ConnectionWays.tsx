@@ -167,10 +167,7 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
             usedForNewApps={
               markNewApps && newAppsWay?.kind === 'own_key' && newAppsWay.type === status.type
             }
-            canRunActions={
-              ways.find((way) => way.kind === 'own_key' && way.type === status.type)
-                ?.canRunActions !== false
-            }
+            way={ways.find((way) => way.kind === 'own_key' && way.type === status.type)}
           />
         ))}
       </ul>

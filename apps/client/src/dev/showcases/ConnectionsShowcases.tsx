@@ -39,6 +39,7 @@ import {
 } from '../mock-samples';
 import { ConnectionAccessCardShowcase } from './ConnectionAccessCardShowcase';
 import { AgentRequestCardShowcase } from './AgentRequestCardShowcase';
+import { SessionConnectionAccessListShowcase } from './SessionConnectionAccessListShowcase';
 
 const SERVICES = new Map(MOCK_CATALOG_SERVICES.map((service) => [service.serviceSlug, service]));
 
@@ -335,14 +336,8 @@ export function ConnectionsShowcases() {
                 retryAt: STALLED_RETRY_AT,
               },
               readiness: {
-                state: 'gone',
-                reason: 'disconnect_finishing',
+                ...MOCK_READINESS.disconnectFinishing,
                 fix: { action: 'retry', fixableBy: 'dorkos', retryAt: STALLED_RETRY_AT },
-                copy: {
-                  owner:
-                    'Disconnected. Agents can’t use it. DorkOS is still removing its access at the service.',
-                  agent: 'The person disconnected this account.',
-                },
               },
             })}
           >
@@ -380,6 +375,7 @@ export function ConnectionsShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
+      <SessionConnectionAccessListShowcase />
       <ConnectionAccessCardShowcase />
       <AgentRequestCardShowcase />
       <ConnectionWaysShowcase />

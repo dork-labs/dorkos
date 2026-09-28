@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConnectionReadinessSchema } from '../connector-schemas.js';
+import { CONNECTION_READINESS_COPY, ConnectionReadinessSchema } from '../connector-schemas.js';
 import {
   ConnectorAuthoritySyncStateSchema,
   ConnectorAuthenticationFlowStateSchema,
@@ -175,7 +175,7 @@ describe('connector resource schemas', () => {
     ).toBe(false);
   });
 
-  it('expresses session-only access as a local narrowing state', () => {
+  it('carries each chat’s source and readiness, never a separate access verdict', () => {
     expect(
       ConnectorSessionConnectionsSchema.parse({
         sessionId: 'session-1',
@@ -185,9 +185,14 @@ describe('connector resource schemas', () => {
             connectionId: 'connection-1',
             toolkit: 'gmail',
             label: 'Work Gmail',
-            access: 'disabled',
+            source: 'agent',
             operationRevisionIds: [],
-            dominatingReason: 'connection_paused',
+            readiness: {
+              state: 'paused',
+              reason: 'paused',
+              fix: { action: 'resume', fixableBy: 'person' },
+              copy: CONNECTION_READINESS_COPY.paused,
+            },
           },
         ],
       })

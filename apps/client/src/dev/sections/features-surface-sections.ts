@@ -232,6 +232,20 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'sessionconnectionaccesslist',
+    title: 'SessionConnectionAccessList',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: [
+      'chat',
+      'session',
+      'side panel',
+      'accounts',
+      'turned off for this chat',
+      'readiness',
+    ],
+  },
+  {
     id: 'chatapppanel',
     title: 'ChatAppPanel',
     page: 'home-inbox',

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
+import type { ConnectorAppWay } from '@dorkos/shared/connector-resource-schemas';
 import {
   appCount,
   ConnectionImpactList,
@@ -68,7 +69,7 @@ export function KeyWayRow({
   status,
   apps,
   usedForNewApps = false,
-  canRunActions = true,
+  way,
 }: {
   /** The key's setup status from `GET /api/connectors/providers`. */
   status: ConnectorProviderStatus;
@@ -76,16 +77,17 @@ export function KeyWayRow({
   apps: readonly ImpactApp[];
   /** True when new apps connect through this key (see {@link WayRow}). */
   usedForNewApps?: boolean;
-  /** False when the key signs in to apps but agents can't act through it (the server says). */
-  canRunActions?: boolean;
+  /** How the server reads this key as a way to reach apps, when it is set up. */
+  way?: ConnectorAppWay;
 }) {
+  const canRunActions = way?.canRunActions !== false;
   const [changing, setChanging] = useState(false);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const remove = useDeleteConnectorCredential();
   const name = providerName(status.type);
   const kind = status.configured ? keyKindLine(status.keyKind) : null;
   const detail = [`${appCount(apps.length)} connected`, kind].filter(Boolean).join(' · ');
-  const { stopping, idle } = splitByImpact(apps, status.registered);
+  const { stopping, idle } = splitByImpact(apps);
 
   const startChange = () => {
     // Nothing to lose: go straight to the form.
@@ -129,7 +131,7 @@ export function KeyWayRow({
       )}
       {status.registered && !canRunActions && (
         <p className="text-muted-foreground text-xs">
-          {status.type === 'composio'
+          {way?.keyCanFix
             ? 'Agents can’t act through an account key. Change it to a project key from your Composio dashboard.'
             : 'Agents can’t act in apps connected this way yet.'}
         </p>
