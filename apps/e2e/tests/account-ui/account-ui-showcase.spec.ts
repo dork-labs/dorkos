@@ -113,6 +113,17 @@ test.describe('Claude account UI showcases @smoke', () => {
           await page.keyboard.press('Escape');
           await expect(page.getByRole('dialog')).toHaveCount(0);
 
+          // The open usage reveal while out: its amber overage note and its red
+          // "Rate limit reached" are text on the popover, so they need 4.5:1.
+          await page
+            .locator('#usagestatusitem')
+            .getByRole('button', { name: 'Open the out-of-usage reveal' })
+            .click();
+          await expect(page.getByRole('dialog').getByText('Rate limit reached')).toBeVisible();
+          violations.push(...(await scan(page, '[role="dialog"]', 'the open UsageRevealPopover')));
+          await page.keyboard.press('Escape');
+          await expect(page.getByRole('dialog')).toHaveCount(0);
+
           // The open picker.
           await page
             .locator('#continueonaccountdialog')

@@ -279,6 +279,7 @@ export const HEALTHY: StatusScenario = {
     runtime: { isDefault: true, canSelect: false },
     account: null,
     usage: USAGE_OK,
+    usageStale: false,
     subagentsInFlight: 0,
   },
   input: {
@@ -368,6 +369,7 @@ export const DEGRADED: StatusScenario = {
     runtime: { isDefault: false, canSelect: false },
     account: null,
     usage: USAGE_WARNING,
+    usageStale: false,
     subagentsInFlight: RUNNING_SUBAGENTS.length,
   },
   input: {
@@ -462,6 +464,26 @@ export const RATE_LIMITED: StatusScenario = {
 };
 
 /**
+ * {@link RATE_LIMITED}, read from the account's cached reading two hours old.
+ *
+ * The usage item then says "100% · old", the widest a usage item gets, and it
+ * is rigid: it keeps every pixel. This is the row that proves the budget pays
+ * for that width rather than letting a neighbour paint over the `⋯`
+ * (spec `claude-account-ui` §6.8, 04 §13).
+ */
+export const RATE_LIMITED_STALE: StatusScenario = {
+  ...RATE_LIMITED,
+  label: 'Rate limited, from a reading two hours old',
+  ctx: { ...RATE_LIMITED.ctx, usageStale: true },
+  input: {
+    ...RATE_LIMITED.input,
+    sessionId: 'showcase-rate-limited-stale',
+    usageSource: 'account',
+    usageObservedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+  },
+};
+
+/**
  * A turn that has delegated work, with one number beside it.
  *
  * The row where the subagents item is actually drawn: two rigid items is the most
@@ -545,6 +567,7 @@ export const PLANNING: StatusScenario = {
     runtime: { isDefault: true, canSelect: false },
     account: null,
     usage: USAGE_OK,
+    usageStale: false,
     subagentsInFlight: 0,
   },
   input: {

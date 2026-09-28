@@ -265,6 +265,7 @@ describe('buildStatusItemNodes — one usage display, never two (spec claude-acc
         runtime: null,
         account: { chipState: 'ok' },
         usage: ACCOUNT_USAGE,
+        usageStale: false,
         subagentsInFlight: 0,
       },
       pins: ['usage'],
@@ -521,6 +522,7 @@ function buildLine(
     runtime: null,
     account: null,
     usage: null,
+    usageStale: false,
     subagentsInFlight: 0,
   };
   return applyStatusBudget(selectPromotedItems({ ctx, pins: [], nodes }), budget);

@@ -39,6 +39,7 @@ import {
   PLANNING,
   WAITING_ON_BACKGROUND_TASKS,
   RATE_LIMITED,
+  RATE_LIMITED_STALE,
   SAMPLED_WIDTHS,
   TIER_WIDTHS,
   type StatusScenario,
@@ -222,6 +223,17 @@ export function StatusLineShowcases() {
           <div className="space-y-5">
             {TIER_WIDTHS.map((width) => (
               <BudgetedLine key={width} scenario={RATE_LIMITED} width={width} />
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Rate limited from an old reading: the wider “100% · old” still fits
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <div className="space-y-5">
+            {TIER_WIDTHS.map((width) => (
+              <BudgetedLine key={width} scenario={RATE_LIMITED_STALE} width={width} />
             ))}
           </div>
         </ShowcaseDemo>

@@ -23,6 +23,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     runtime: { isDefault: true, canSelect: false },
     account: null,
     usage: null,
+    usageStale: false,
     subagentsInFlight: 0,
     ...overrides,
   };

@@ -312,3 +312,20 @@ describe('UsageStatusItem — freshness (spec claude-account-ui §6.8)', () => {
     expect((await screen.findAllByText('as of 2h ago')).length).toBeGreaterThan(0);
   });
 });
+
+describe('UsageDetail — the overage note and "Rate limit reached" on a panel', () => {
+  it('wear the text-tuned warning and error tokens, which clear 4.5:1 on a popover', () => {
+    render(
+      <UsageDetail
+        usage={{
+          kind: 'subscription',
+          utilization: 1,
+          state: 'exhausted',
+          detail: 'Using overage capacity',
+        }}
+      />
+    );
+    expect(screen.getByText('Using overage capacity')).toHaveClass('text-status-warning-fg');
+    expect(screen.getByText('Rate limit reached')).toHaveClass('text-destructive');
+  });
+});

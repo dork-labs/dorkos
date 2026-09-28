@@ -8,7 +8,7 @@
  */
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { nearestWindow, type AccountWindow } from '@/layers/shared/lib';
+import { isStale, nearestWindow, type AccountWindow } from '@/layers/shared/lib';
 
 /**
  * Whether a {@link UsageStatus} has a metric worth rendering. A subscription
@@ -250,4 +250,23 @@ export function pickUsage({
  */
 export function staleNumberClass(stale: boolean): string {
   return stale ? 'text-muted-foreground' : '';
+}
+
+/**
+ * Whether the usage item draws "· old" after its number: it shows a
+ * utilization percent, and that reading is older than an hour. The item and
+ * the status line's budget both read this, so the width the budget pays for is
+ * the width the item draws (04 §13).
+ *
+ * @param usage - What the usage item shows, or nothing.
+ * @param observedAt - When it was observed, ISO-8601, or `null` when not known.
+ * @param now - The moment to read freshness from.
+ */
+export function showsStaleMark(
+  usage: UsageStatus | null,
+  observedAt: string | null,
+  now: Date
+): boolean {
+  if (usage?.kind !== 'subscription' || usage.utilization == null) return false;
+  return observedAt !== null && isStale(observedAt, now);
 }
