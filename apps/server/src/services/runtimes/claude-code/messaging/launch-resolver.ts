@@ -283,8 +283,6 @@ export async function resolveLaunch(args: {
   // env seam (ADR-0315). Injected below ONLY when configured; a missing or
   // dangling reference yields `{}`, leaving host/delegated-login auth untouched.
   const claudeCredentialEnv = await resolveClaudeCredentialEnv();
-  // DorkOS credits as the inference source, when armed (DOR-2027); `{}` otherwise.
-  const creditsEnv = creditsTurnEnv('claude-code');
 
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
   // rides the process env — NOT the context-builder's prompt block — so it
@@ -409,7 +407,9 @@ export async function resolveLaunch(args: {
       // URL and token are runtime values obtained before the turn, never minted
       // on this path: a launch that waited on the network would turn a cloud
       // hiccup into a stalled turn.
-      ...creditsEnv,
+      // Recheck after the awaited credential/agent resolution: unlink or relink
+      // during either wait must not hand this launch a retired credits token.
+      ...creditsTurnEnv('claude-code'),
     }),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };

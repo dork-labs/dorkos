@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(cloud): bind identity and delayed responses to the current link'
+  - 'fix(cloud): recheck credits after launch preparation'
 ---
 
 ### Fixed

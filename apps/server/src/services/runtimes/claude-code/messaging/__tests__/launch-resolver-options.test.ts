@@ -14,6 +14,8 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { configManager } from '../../../../core/config-manager.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
+import { creditsTurnEnv } from '../../../../core/cloud/credits-inference.js';
+import { resolveAgentTokenEnv } from '../../../../core/agent-identity/index.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -45,6 +47,14 @@ vi.mock('../../../../core/config-manager.js', () => ({
 }));
 vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../../../../core/cloud/credits-inference.js', () => ({
+  creditsTurnEnv: vi.fn().mockReturnValue({}),
+}));
+vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
+  resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
 }));
 
 /** A minimal cold session — enough for one launch to be planned. */
@@ -79,6 +89,33 @@ async function captureSdkOptions(
   }
   return capturedOptions!;
 }
+
+it('excludes retired Cloud credits when the link changes while agent identity resolves', async () => {
+  let release!: (value: Record<string, string>) => void;
+  let entered!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  vi.mocked(creditsTurnEnv).mockReturnValue({ ANTHROPIC_AUTH_TOKEN: 'retired-credits-token' });
+  vi.mocked(resolveAgentTokenEnv).mockImplementationOnce(() => {
+    entered();
+    return new Promise((resolve) => {
+      release = resolve;
+    });
+  });
+  try {
+    const launching = captureSdkOptions();
+    await waiting;
+    // The Cloud identity service returns no credentials after unlink/relink.
+    vi.mocked(creditsTurnEnv).mockReturnValue({});
+    release({});
+    const options = await launching;
+    expect(options.env?.ANTHROPIC_AUTH_TOKEN).not.toBe('retired-credits-token');
+  } finally {
+    release?.({});
+    vi.mocked(creditsTurnEnv).mockReturnValue({});
+  }
+});
 
 describe('the launch options every Claude Code turn is given', () => {
   beforeEach(() => {
