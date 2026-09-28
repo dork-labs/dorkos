@@ -10,6 +10,7 @@ import {
   describeClaudeCodeAccounts,
   resolveActiveClaudeRoot,
   resolveClaudeRootSet,
+  resolveLaunchAccountRoot,
 } from '../claude-config-dir.js';
 import { logger } from '../../../../lib/logger.js';
 
@@ -96,6 +97,52 @@ describe('resolveActiveClaudeRoot (spec claude-code-accounts D2)', () => {
     expect(resolveActiveClaudeRoot(fakeConfig())).toBe(path.join(os.homedir(), '.claude'));
     process.env.CLAUDE_CONFIG_DIR = '/tmp/second-config';
     expect(resolveActiveClaudeRoot(fakeConfig())).toBe('/tmp/second-config');
+  });
+});
+
+describe('a default account stored with ~ (written by hand, or before it was expanded on write)', () => {
+  const ORIGINAL_ENV = process.env.CLAUDE_CONFIG_DIR;
+
+  beforeEach(() => {
+    delete process.env.CLAUDE_CONFIG_DIR;
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = ORIGINAL_ENV;
+  });
+
+  /** What a launch hands the child: the ladder's folder, spelled as the env var. */
+  function launchEnv(defaultAccount: string | null): { CLAUDE_CONFIG_DIR: string | undefined } {
+    return claudeConfigDirEnv(resolveLaunchAccountRoot({ config: fakeConfig({ defaultAccount }) }));
+  }
+
+  it('launches ~/.claude2 in the expanded folder, not a folder literally named ~', () => {
+    // No shell sits between the env object and the child, so nothing else would
+    // ever expand it.
+    expect(launchEnv('~/.claude2')).toEqual({
+      CLAUDE_CONFIG_DIR: path.join(os.homedir(), '.claude2'),
+    });
+    expect(resolveActiveClaudeRoot(fakeConfig({ defaultAccount: '~/.claude2' }))).toBe(
+      path.join(os.homedir(), '.claude2')
+    );
+  });
+
+  it('launches ~/.claude with the variable UNSET, which is what its Keychain entry answers to', () => {
+    const answer = launchEnv('~/.claude');
+    expect(answer.CLAUDE_CONFIG_DIR).toBeUndefined();
+    expect('CLAUDE_CONFIG_DIR' in answer).toBe(true);
+  });
+
+  it('launches an absolute folder exactly as stored', () => {
+    expect(launchEnv('/Users/dev/.claude2')).toEqual({ CLAUDE_CONFIG_DIR: '/Users/dev/.claude2' });
+  });
+
+  it('shows Settings the expanded folder as where new sessions run', () => {
+    expect(describeClaudeCodeAccounts(fakeConfig({ defaultAccount: '~/.claude2' }))).toMatchObject({
+      resolvedAccount: path.join(os.homedir(), '.claude2'),
+      inherited: false,
+    });
   });
 });
 
