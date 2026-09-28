@@ -220,10 +220,7 @@ function IntegrityNote({
     return (
       <details data-testid="installation-integrity" className="group/files mt-1 text-xs">
         <summary className="text-muted-foreground hover:text-foreground focus-ring flex cursor-pointer list-none items-start gap-1 rounded-sm select-none [&::-webkit-details-marker]:hidden">
-          <FileWarning
-            className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400"
-            aria-hidden
-          />
+          <FileWarning className="text-status-warning-dot mt-0.5 size-3 shrink-0" aria-hidden />
           <span>
             {changeSummary(integrity)}.
             {/* On a phone the long consequence waits inside the disclosure, so
@@ -261,10 +258,7 @@ function IntegrityNote({
         data-testid="installation-integrity"
         className="text-muted-foreground mt-1 flex items-start gap-1 text-xs"
       >
-        <History
-          className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400"
-          aria-hidden
-        />
+        <History className="text-status-warning-dot mt-0.5 size-3 shrink-0" aria-hidden />
         <span>
           {text}
           {retry && (

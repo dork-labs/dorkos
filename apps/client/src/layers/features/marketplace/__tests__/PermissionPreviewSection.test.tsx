@@ -390,7 +390,7 @@ describe('PermissionPreviewSection', () => {
 
     const warning = screen.getByText('1 file lands outside /Users/kai/.dork.');
     expect(warning).toBeInTheDocument();
-    expect(warning.closest('li')?.className).toMatch(/amber/);
+    expect(warning.closest('li')?.className).toContain('text-status-warning-fg');
   });
 
   it('makes no containment claim when no install folder is given', () => {
@@ -466,7 +466,7 @@ describe('PermissionPreviewSection', () => {
     // The heading uses amber/warning colour — we assert on the className.
     const heading = screen.getByText('Conflicts');
     expect(heading).toBeInTheDocument();
-    expect(heading.className).toMatch(/amber/);
+    expect(heading.className).toContain('text-status-warning-fg');
     expect(screen.getByText(/a package with this name already exists/i)).toBeInTheDocument();
   });
 

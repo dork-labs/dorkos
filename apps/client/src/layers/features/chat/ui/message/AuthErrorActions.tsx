@@ -105,10 +105,7 @@ function InlineSigninActions({
   if (login.isSuccess) {
     return (
       <div className="mt-3" data-testid="auth-error-signin-success">
-        <p
-          className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-500"
-          role="status"
-        >
+        <p className="text-status-success-fg flex items-center gap-2 text-sm" role="status">
           <Check aria-hidden="true" className="size-3.5 shrink-0" />
           {resending ? 'Signed in. Sending your message again…' : 'Signed in.'}
         </p>

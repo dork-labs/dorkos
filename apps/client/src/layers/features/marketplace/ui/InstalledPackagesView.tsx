@@ -94,7 +94,7 @@ function HeldBackNotice({
   return (
     // On a phone the note takes the row and Review sits on its own line under
     // it, lined up with the text; from `sm` up they share one line.
-    <div className="mt-1.5 flex flex-col items-start gap-1.5 text-xs text-amber-700 sm:flex-row sm:gap-2 dark:text-amber-300">
+    <div className="text-status-warning-fg mt-1.5 flex flex-col items-start gap-1.5 text-xs sm:flex-row sm:gap-2">
       <div className="flex min-w-0 items-start gap-2">
         <ShieldAlert className="mt-0.5 size-3 shrink-0" aria-hidden />
         {/* A linked install's note names a folder path, which must wrap. */}
@@ -273,10 +273,7 @@ function PackageRow({
         {dependencyWarnings.length > 0 && (
           <div className="mt-1 space-y-0.5">
             {dependencyWarnings.map((warning) => (
-              <p
-                key={warning}
-                className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-400"
-              >
+              <p key={warning} className="text-status-warning-fg flex items-start gap-1 text-xs">
                 <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
                 <span>{warning}</span>
               </p>

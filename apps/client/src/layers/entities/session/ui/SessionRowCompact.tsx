@@ -140,7 +140,7 @@ export function SessionRowCompact({
             <span className="flex shrink-0 items-center gap-1">
               {borderState.kind === 'pendingApproval' && (
                 <Hand
-                  className="size-(--size-icon-xs) text-amber-500"
+                  className="text-status-warning-fg size-(--size-icon-xs)"
                   aria-label="Awaiting approval"
                 />
               )}

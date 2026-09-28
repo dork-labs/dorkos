@@ -383,7 +383,7 @@ export function RuntimeCard({
   const setupBadge = requirementsEntry ? (
     <Badge
       variant="secondary"
-      className={cn('text-xs', unsatisfiedDeps?.length ? 'text-amber-600 dark:text-amber-400' : '')}
+      className={cn('text-xs', unsatisfiedDeps?.length ? 'text-status-warning-fg' : '')}
     >
       {unsatisfiedDeps?.length
         ? `${unsatisfiedDeps.length} missing`
@@ -584,9 +584,9 @@ function SetupDependencyRow({ dep }: { dep: DependencyCheck }) {
           gap, written out as a number that silently broke if either moved. */}
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-2">
         {satisfied ? (
-          <Check className="size-3.5 shrink-0 text-emerald-500" />
+          <Check className="text-status-success size-3.5 shrink-0" />
         ) : (
-          <CircleAlert className="size-3.5 shrink-0 text-amber-500" />
+          <CircleAlert className="text-status-warning-dot size-3.5 shrink-0" />
         )}
         <span className="text-sm">{dep.name}</span>
         <p className="text-muted-foreground col-start-2 mt-1 text-xs">

@@ -126,9 +126,7 @@ export function ExecutionExceptionsStrip({
                   <span
                     className={cn(
                       'flex min-w-0 items-start gap-1.5 text-xs sm:ml-auto sm:max-w-[65%]',
-                      report.isBroken
-                        ? 'text-amber-700 dark:text-amber-400'
-                        : 'text-muted-foreground'
+                      report.isBroken ? 'text-status-warning-fg' : 'text-muted-foreground'
                     )}
                   >
                     {report.isBroken && (

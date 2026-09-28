@@ -46,9 +46,9 @@ export function MetricsSummary({ enabled }: MetricsSummaryProps) {
           <span
             className={cn(
               'font-medium tabular-nums',
-              variant === 'success' && value > 0 && 'text-green-600 dark:text-green-500',
-              variant === 'danger' && 'text-red-600 dark:text-red-500',
-              variant === 'warning' && 'text-amber-600 dark:text-amber-500'
+              variant === 'success' && value > 0 && 'text-status-success-fg',
+              variant === 'danger' && 'text-destructive',
+              variant === 'warning' && 'text-status-warning-fg'
             )}
           >
             {value.toLocaleString()}

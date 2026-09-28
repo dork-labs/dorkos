@@ -291,7 +291,7 @@ function RuntimeSection({
         {isReady && (
           <div className="flex items-center gap-2">
             <span
-              className="inline-flex items-center gap-1 text-xs text-emerald-500"
+              className="text-status-success-fg inline-flex items-center gap-1 text-xs"
               data-testid={`runtime-ready-${type}`}
             >
               <Check className="size-3.5" /> Ready
@@ -553,9 +553,9 @@ function DependencyRow({ dep }: { dep: DependencyCheck }) {
           gap, written out as a number that silently broke if either moved. */}
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-2">
         {satisfied ? (
-          <Check className="size-3.5 shrink-0 text-emerald-500" />
+          <Check className="text-status-success size-3.5 shrink-0" />
         ) : (
-          <CircleAlert className="size-3.5 shrink-0 text-amber-500" />
+          <CircleAlert className="text-status-warning-dot size-3.5 shrink-0" />
         )}
         <span className="text-sm">{dep.name}</span>
         <p className="text-muted-foreground col-start-2 mt-1 text-xs">
@@ -746,7 +746,7 @@ function RuntimeConnectedPanel({
   return (
     <div className="space-y-4" data-testid="runtime-connected-panel">
       <div className="flex items-start gap-2.5">
-        <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+        <Check className="text-status-success mt-0.5 size-4 shrink-0" />
         <div className="space-y-1">
           <p className="text-sm font-medium">{success.title}</p>
           <p className="text-muted-foreground text-xs leading-relaxed">{success.body}</p>

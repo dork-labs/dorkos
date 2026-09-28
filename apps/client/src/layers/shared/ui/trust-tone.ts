@@ -46,7 +46,7 @@ export type TrustTone = 'power' | 'divergent' | 'neutral';
  */
 export const TRUST_TONE_TEXT: Record<TrustTone, string> = {
   power: 'text-status-success',
-  divergent: 'text-amber-600 dark:text-amber-400',
+  divergent: 'text-status-warning-fg',
   neutral: 'text-muted-foreground',
 };
 

@@ -8,7 +8,7 @@ import { TaskDetail } from './TaskDetail';
 const STATUS_ICON: Record<SessionTaskStatus, React.ReactNode> = {
   in_progress: <Spinner size="xs" className="text-status-info shrink-0" />,
   pending: <Circle className="text-muted-foreground size-(--size-icon-xs) shrink-0" />,
-  completed: <CheckCircle2 className="size-(--size-icon-xs) shrink-0 text-green-500" />,
+  completed: <CheckCircle2 className="text-status-success size-(--size-icon-xs) shrink-0" />,
 };
 
 interface TaskRowProps {

@@ -495,7 +495,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={fadeTransition}
-              className="mt-2 text-xs text-red-500"
+              className="text-destructive mt-2 text-xs"
             >
               {error}
             </motion.p>
