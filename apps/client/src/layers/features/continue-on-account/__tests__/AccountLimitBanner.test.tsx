@@ -587,6 +587,15 @@ describe('flow unreachable (Q1)', () => {
     expect(bannerEl()).toHaveAttribute('data-state', 'handing-off');
   });
 
+  it('a refusal with no message of its own says so plainly', async () => {
+    await renderBanner({
+      limit: limitOf('ask'),
+      transport: { waitForReset: vi.fn().mockRejectedValue(new Error('')) },
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Wait for reset' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't do that. Try again.");
+  });
+
   it('a refused Move now shows inline too, and nothing is retried', async () => {
     const continueSession = refused();
     await renderBanner({

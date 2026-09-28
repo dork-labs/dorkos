@@ -83,9 +83,7 @@ export interface LimitBanner {
 
 /** The message a refused write carries, for the inline alert. */
 function messageOf(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Couldn't change this. Try again.";
+  return error instanceof Error && error.message ? error.message : "Couldn't do that. Try again.";
 }
 
 /**
