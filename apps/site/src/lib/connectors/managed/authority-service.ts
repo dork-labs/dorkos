@@ -492,6 +492,9 @@ export async function finishDisconnectCleanup(
   } catch {
     externalCleanup = 'failed';
   }
+  if (externalCleanup === 'complete' && 'revokedInstance' in principal) {
+    await traceReboundDeletion(db, principal, binding, provider);
+  }
   const [updated] = await db
     .update(schema.managedConnectorAuthorityCommand)
     .set({ externalCleanup, cleanupClaimedAt: null, updatedAt: new Date() })
@@ -503,6 +506,51 @@ export async function finishDisconnectCleanup(
       : previousStatus,
     conflict: false,
   };
+}
+
+/**
+ * Leave an operator trace when a revoked instance's account was deleted under
+ * provider material other than the one it was made with.
+ *
+ * Such a deletion is counted done, as it must be for the cleanup to finish,
+ * but the provider answers "not found" (which the client treats as already
+ * deleted) both when the account really is gone and when the deployment has
+ * moved to a different provider project that never held it. Only a person can
+ * tell those apart, so the line names the account for a check by hand. It
+ * carries provider ids only, never a person's name, email or account id.
+ */
+async function traceReboundDeletion(
+  db: ManagedConnectorDatabase,
+  principal: RevokedInstanceCleanupPrincipal,
+  binding: NonNullable<
+    (typeof schema.managedConnectorAuthorityCommand.$inferSelect)['cleanupBinding']
+  >,
+  provider: ManagedAuthorityProviderContext
+): Promise<void> {
+  const [current] = await db
+    .select({ configurationDigest: schema.managedConnectorProvider.configurationDigest })
+    .from(schema.managedConnectorProvider)
+    .where(
+      and(
+        eq(schema.managedConnectorProvider.tenantId, principal.tenantId),
+        eq(schema.managedConnectorProvider.id, binding.providerInstanceId)
+      )
+    )
+    .limit(1);
+  const rebound =
+    binding.materialGeneration !== provider.materialGeneration ||
+    current?.configurationDigest !== provider.executionConfigDigest;
+  if (!rebound) return;
+  console.error(
+    '[instance-revocation] Account deleted under changed provider settings; check by hand that it is gone',
+    {
+      providerInstanceId: binding.providerInstanceId,
+      providerUserId: binding.providerUserId,
+      externalAccountRef: binding.externalAccountRef,
+      boundGeneration: binding.materialGeneration,
+      currentGeneration: provider.materialGeneration,
+    }
+  );
 }
 
 /** Apply one exact idempotent authority command beneath its verified tenant. */

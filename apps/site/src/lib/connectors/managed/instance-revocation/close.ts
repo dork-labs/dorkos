@@ -362,8 +362,9 @@ export async function closeRevokedInstance(
 }
 
 /**
- * Stamp a revoked instance's unclosed connections as just tried, after a close
- * that failed as a whole, so the sweep moves on to other instances first.
+ * Stamp everything a revoked instance still has unclosed (its connections and
+ * its live subscriptions) as just tried, after a close that failed as a
+ * whole, so the sweep moves on to other instances first.
  *
  * @param db - The site database.
  * @param instanceId - The instance whose close failed.
@@ -378,4 +379,8 @@ export async function markCloseAttempted(
     .update(connections)
     .set({ updatedAt: now })
     .where(and(eq(connections.originatingInstanceId, instanceId), connectionNeedsClose()));
+  await db
+    .update(subscriptions)
+    .set({ updatedAt: now })
+    .where(and(eq(subscriptions.targetInstanceId, instanceId), isNull(subscriptions.revokedAt)));
 }

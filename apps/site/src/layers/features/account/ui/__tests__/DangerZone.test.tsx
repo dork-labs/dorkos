@@ -16,8 +16,9 @@ describe('DangerZone', () => {
 
     const status = screen.getByRole('status');
     expect(status.textContent).toContain("Your account hasn't been deleted yet.");
-    expect(status.textContent).toContain('request deletion again from this page');
-    expect(status.textContent).not.toMatch(/try again/i);
+    expect(status.textContent).toContain('That can take up to a day.');
+    expect(status.textContent).toContain('Request deletion again from this page later.');
+    expect(status.textContent).not.toMatch(/try again|few minutes/i);
     // The way to request it again is right there.
     expect(screen.getByText('Delete my account')).toBeTruthy();
   });

@@ -26,8 +26,8 @@ import {
 /** Shown after a confirmed deletion had to wait for app sign-ins to end at the service. */
 const DELETION_POSTPONED_MESSAGE =
   "Your account hasn't been deleted yet. Some apps you connected through it are still being " +
-  'signed out, and your linked instances are already revoked. In a few minutes, request ' +
-  'deletion again from this page.';
+  'signed out, and your linked instances are already revoked. That can take up to a day. ' +
+  'Request deletion again from this page later.';
 
 /**
  * The `/account` "Danger zone": self-serve data export and account deletion

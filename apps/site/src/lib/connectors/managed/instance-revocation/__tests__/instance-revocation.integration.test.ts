@@ -24,7 +24,7 @@ import {
 } from '../../event-cleanup-service';
 import { provisionManagedTestDatabase } from '../../__tests__/managed-database-fixture';
 import { endRevokedInstanceConnections, sweepRevokedInstances } from '../cleanup';
-import { endOwnerConnectionsBeforeErasure } from '../erasure';
+import { endOwnerConnectionsBeforeErasure, prepareAccountErasure } from '../erasure';
 import { countRevokedInstanceOrphans, runRevokedInstanceOrphanCleanup } from '../orphans';
 import { REVOKED_INSTANCE_CONNECTION_GRACE_MS, revokedInstanceConnectionsDue } from '../policy';
 
@@ -233,6 +233,7 @@ describe('ending a revoked instance’s managed connections', () => {
     const other = await seedInstance('owner-b', 'instance-b', 'b');
     const service = fakeService(mine.tenant.providerUserId);
     await revoke('instance-a');
+    const operatorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await endRevokedInstanceConnections(db, 'instance-a', {
       signal: new AbortController().signal,
@@ -240,6 +241,9 @@ describe('ending a revoked instance’s managed connections', () => {
     });
 
     expect(service.calls).toEqual(['trigger:tr_a', 'account:ca_a']);
+    // Deleted under the material it was made with: nothing to check by hand.
+    expect(operatorLog).not.toHaveBeenCalled();
+    operatorLog.mockRestore();
     expect(await connectionOf(mine.connectionId)).toMatchObject({ lifecycle: 'disconnected' });
     const after = await rowsFor('instance-a');
     expect(after.grants).toEqual([
@@ -524,6 +528,7 @@ describe('ending a revoked instance’s managed connections', () => {
       // The generation change pauses open connections, never a closed one.
       expect(await connectionOf(mine.connectionId)).toMatchObject({ lifecycle: 'disconnected' });
       const service = serviceWithDigest('digest-rotated');
+      const operatorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
       expect(
         await sweepRevokedInstances(db, {
@@ -532,11 +537,22 @@ describe('ending a revoked instance’s managed connections', () => {
         })
       ).toMatchObject({ accountsCompleted: 1 });
       expect(service.deleteAccount).toHaveBeenCalledWith('ca_a', expect.anything());
+      // Counted done, but a "not found" under new settings may mean a moved
+      // project, so an operator gets the account to check by hand.
+      expect(operatorLog).toHaveBeenCalledTimes(1);
+      expect(operatorLog.mock.calls[0][0]).toContain('[instance-revocation]');
+      expect(operatorLog.mock.calls[0][1]).toMatchObject({
+        externalAccountRef: 'ca_a',
+        boundGeneration: 1,
+        currentGeneration: 2,
+      });
+      operatorLog.mockRestore();
     });
 
     it('still deletes the account when the deployment’s config changed and the tenant never re-registered', async () => {
       await closedAndOwed();
       const service = serviceWithDigest('digest-changed-since');
+      const operatorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
       expect(
         await sweepRevokedInstances(db, {
@@ -546,6 +562,8 @@ describe('ending a revoked instance’s managed connections', () => {
       ).toMatchObject({ accountsCompleted: 1 });
       expect(service.deleteAccount).toHaveBeenCalledWith('ca_a', expect.anything());
       expect(await countRevokedInstanceOrphans(db)).toMatchObject({ accountsOwed: 0 });
+      expect(operatorLog.mock.calls[0]?.[1]).toMatchObject({ externalAccountRef: 'ca_a' });
+      operatorLog.mockRestore();
     });
   });
 
@@ -715,6 +733,119 @@ describe('ending a revoked instance’s managed connections', () => {
       accountsCompleted: 1,
     });
     expect(service.deleteAccount).toHaveBeenCalledWith('ca_c', expect.anything());
+  });
+
+  /** Make every close of this instance's connection fail in the database (its scope is already the column's maximum). */
+  async function makeCloseFail(connectionId: string) {
+    await client.query(
+      `UPDATE managed_connector_connection SET lifecycle_scope_version = 2147483647 WHERE id = $1`,
+      [connectionId]
+    );
+  }
+
+  it('moves an instance whose whole close fails behind the others', async () => {
+    const stuck = await seedInstance('owner-a', 'instance-a', 'a');
+    const other = await seedInstance('owner-a', 'instance-c', 'c');
+    await makeCloseFail(stuck.connectionId);
+    await revoke('instance-a');
+    await revoke('instance-c');
+    await client.query(
+      `UPDATE managed_connector_connection SET updated_at = '2025-01-01' WHERE id = $1`,
+      [stuck.connectionId]
+    );
+    await client.query(
+      `UPDATE managed_connector_event_subscription SET updated_at = '2025-01-01' WHERE id = 'subscription-a'`
+    );
+    await client.query(
+      `UPDATE managed_connector_connection SET updated_at = '2026-01-01' WHERE id = $1`,
+      [other.connectionId]
+    );
+    await client.query(
+      `UPDATE managed_connector_event_subscription SET updated_at = '2026-01-01' WHERE id = 'subscription-c'`
+    );
+    const options = {
+      signal: new AbortController().signal,
+      resolveProvider: () => undefined,
+      limit: 1,
+    };
+
+    expect(await sweepRevokedInstances(db, options)).toMatchObject({ instancesClosed: 0 });
+    expect(await connectionOf(other.connectionId)).toMatchObject({ lifecycle: 'active' });
+    expect(await sweepRevokedInstances(db, options)).toMatchObject({ instancesClosed: 1 });
+    expect(await connectionOf(other.connectionId)).toMatchObject({ lifecycle: 'disconnected' });
+    expect(await connectionOf(stuck.connectionId)).toMatchObject({ lifecycle: 'active' });
+  });
+
+  describe('the erasure deadline', () => {
+    it('starts at the revocation, not at a receipt written while the instance was live', async () => {
+      const mine = await seedInstance('owner-a', 'instance-a', 'a');
+      // The instance disconnected the app itself days ago, and the service was down then.
+      await expect(
+        applyManagedAuthorityCommand(
+          db,
+          {
+            ownerId: 'owner-a',
+            instanceId: 'instance-a',
+            tenantId: mine.tenant.id,
+            keyId: 'key-a',
+          },
+          {
+            version: 1,
+            kind: 'set_connection_lifecycle',
+            commandId: 'own-disconnect',
+            managedConnectionId: mine.connectionId,
+            scopeVersion: 2,
+            lifecycle: 'disconnected',
+          }
+        )
+      ).rejects.toMatchObject({ name: 'ManagedAuthorityProviderUnavailableError' });
+      await client.query(
+        `UPDATE managed_connector_authority_command SET created_at = now() - interval '3 days'
+         WHERE command_id = 'own-disconnect'`
+      );
+      const service = fakeService();
+      service.deleteAccount.mockRejectedValueOnce(new Error('503 from the service'));
+      const logError = vi.fn();
+      const startedAt = Date.now();
+
+      // The instance was live until this erasure, so the service has never
+      // retried: one transient failure must postpone, not erase.
+      const erasure = prepareAccountErasure('owner-a', 'owner', {
+        end: (owner) =>
+          endOwnerConnectionsBeforeErasure(db, owner, {
+            signal: new AbortController().signal,
+            resolveProvider: service.resolveProvider,
+          }),
+        clock: () => new Date(),
+        logError,
+      });
+      await expect(erasure).rejects.toMatchObject({ status: 'FOUND' });
+      expect(logError).not.toHaveBeenCalled();
+      const [owed] = await endOwnerConnectionsBeforeErasure(db, 'owner-a', {
+        signal: new AbortController().signal,
+        resolveProvider: () => undefined,
+      });
+      expect(owed.owedSince.getTime()).toBeGreaterThanOrEqual(startedAt - 1_000);
+    });
+
+    it('does not move when a failing close is retried', async () => {
+      const mine = await seedInstance('owner-a', 'instance-a', 'a');
+      await makeCloseFail(mine.connectionId);
+      const revokedAt = new Date(Date.now() - 2 * 24 * 3_600_000);
+      await db
+        .update(schema.instance)
+        .set({ revokedAt })
+        .where(eq(schema.instance.id, 'instance-a'));
+      await client.query(`DELETE FROM apikey WHERE id = 'key-a'`);
+      const options = { signal: new AbortController().signal, resolveProvider: () => undefined };
+      // Every pass stamps the unclosed connection as just tried.
+      await sweepRevokedInstances(db, options);
+      await sweepRevokedInstances(db, options);
+
+      const [owed] = await endOwnerConnectionsBeforeErasure(db, 'owner-a', options);
+      expect(owed.externalAccountRef).toBe('ca_a');
+      expect(owed.owedSince.getTime()).toBe(revokedAt.getTime());
+    });
   });
 
   describe('the revoked-instance authority', () => {

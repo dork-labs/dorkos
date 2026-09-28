@@ -34,7 +34,7 @@ export interface OwedProviderAccount {
   providerUserId: string;
   /** The provider's own id for the account: what an operator deletes by hand. */
   externalAccountRef: string;
-  /** When its deletion was first put on record (the owed receipt), or last touched. */
+  /** When the service started owing its deletion: the later of the revocation and the newest owed receipt. */
   owedSince: Date;
 }
 
@@ -89,32 +89,58 @@ export async function endOwnerConnectionsBeforeErasure(
       providerInstanceId: connections.providerInstanceId,
       providerUserId: connections.providerUserId,
       externalAccountRef: connections.externalAccountRef,
-      owedSince: sql<Date | string>`coalesce((
+      revokedAt: schema.instance.revokedAt,
+      latestReceipt: sql<Date | string | null>`(
         SELECT max(k.created_at) FROM managed_connector_authority_command k
         WHERE k.tenant_id = ${connections.tenantId}
           AND k.instance_id = ${connections.originatingInstanceId}
           AND k.connection_id = ${connections.id}
           AND k.kind = 'set_connection_lifecycle' AND k.state = 'applied'
           AND k.external_cleanup IN ('pending', 'failed')
-      ), ${connections.updatedAt})`,
+      )`,
     })
     .from(connections)
     .innerJoin(tenants, and(eq(tenants.id, connections.tenantId), eq(tenants.ownerUserId, ownerId)))
+    .innerJoin(schema.instance, eq(schema.instance.id, connections.originatingInstanceId))
     .where(not(accountDeletionDone()));
-  return owed.map((row) => ({ ...row, owedSince: new Date(row.owedSince) }));
+  return owed.map(({ latestReceipt, revokedAt, ...account }) => ({
+    ...account,
+    owedSince: owedSince(latestReceipt, revokedAt ?? now),
+  }));
+}
+
+/**
+ * When an owed deletion started owing, for the stuck bound: the later of its
+ * instance's revocation and its newest owed receipt.
+ *
+ * Anchored at the revocation because only a revoked instance's deletion is
+ * ever retried by the service: a receipt an instance wrote while it was still
+ * live may be days old with not one service retry behind it. Nothing a sweep
+ * touches can move this (the sweep stamps `updatedAt`, never these), so a
+ * cleanup that keeps failing cannot push the deadline back either.
+ *
+ * @param latestReceipt - The newest pending or failed receipt's `created_at`, if any.
+ * @param revokedAt - When the connection's instance was revoked.
+ */
+function owedSince(latestReceipt: Date | string | null, revokedAt: Date): Date {
+  const receipt = latestReceipt === null ? null : new Date(latestReceipt);
+  return receipt && receipt.getTime() > revokedAt.getTime() ? receipt : revokedAt;
 }
 
 /**
  * How long the person's own account deletion waits on an owed account
- * deletion at the service: 24 hours after it was put on record.
+ * deletion at the service: 24 hours from when the service started owing it
+ * (the later of the instance's revocation and the newest owed receipt; an
+ * erasure revokes every live instance first, so a just-revoked instance always
+ * gets the full day).
  *
- * Inside that window the cleanup is still being retried (every revoke and
- * every hourly sweep), and a deletion that goes ahead would erase the only
- * record of a sign-in that may well end on its own within minutes. Past it,
- * the cleanup has had two dozen tries and is plainly stuck (a service outage
- * that long, or an account moved to another project), and holding the
- * person's right to erasure hostage to it would be worse: the erasure goes
- * ahead, and the operator log names what to finish by hand.
+ * Inside that window the service retries the deletion (the erasure attempt
+ * itself, and every hourly sweep after it), and a deletion that goes ahead
+ * would erase the only record of a sign-in that may well end on its own
+ * soon. Past it, the cleanup has had about two dozen tries and is plainly
+ * stuck (a service outage that long, or an account moved to another project),
+ * and holding the person's right to erasure hostage to it would be worse: the
+ * erasure goes ahead, and the operator log names what to finish by hand.
  */
 export const ERASURE_STUCK_CLEANUP_MS = 24 * 60 * 60 * 1000;
 
