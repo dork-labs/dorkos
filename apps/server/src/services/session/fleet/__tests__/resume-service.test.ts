@@ -373,6 +373,25 @@ describe('waiting for the reset', () => {
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
   });
 
+  it('leaves the row to the resumed turn, which records one resumed-reset in the history', async () => {
+    await waitingSession('s-1');
+    readings.set('main', MOVED_ON);
+    await vi.advanceTimersByTimeAsync(TO_RESET);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+    // Confirming and sending never clear the row: the resumed turn does.
+    expect(store.get('s-1')?.limit.plan).toMatchObject({ resetConfirmedAt: RESETS });
+    expect(store.history('s-1')).toEqual([]);
+    usedProjectors.add('s-1');
+    getOrCreateProjector('s-1', '/work/project').ingest({
+      type: 'turn_start',
+      userMessage: ACCOUNT_RESUME_PROMPT,
+    } as never);
+    expect(store.get('s-1')).toBeUndefined();
+    const history = store.history('s-1');
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ since: SINCE, resolution: 'resumed-reset' });
+  });
+
   it('does not trust the clock: a reading from before the reset leaves it waiting', async () => {
     await waitingSession('s-1');
     // The store reads the old window as expired once its time passes: the clock's guess.
