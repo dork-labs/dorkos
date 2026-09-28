@@ -275,15 +275,29 @@ describe('AccountItem before launch — the account picker', () => {
     await waitFor(() => expect(accountGroup()).toHaveTextContent('Default: Acme Corp'));
   });
 
-  it('draws nothing, not a made-up name, while it cannot tell which account a new chat would use', async () => {
+  it('still offers the picker, reading "Default", while it cannot tell which account a new chat would use', async () => {
     mockServerConfig = withAccounts();
     const agentAnswer = createDeferred<AgentManifest | null>();
     render(<Chip />, () => agentAnswer.promise);
-    await waitFor(() => expect(lastQueryClient.getQueryData(configKeys.current())).toBeDefined());
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    const trigger = await screen.findByRole('button', { name: /^Default,/ });
+    expect(trigger).toBeInTheDocument();
+    expect(accountGroup()).toHaveTextContent('Acme Corp');
 
     agentAnswer.resolve(null);
     expect(await screen.findByRole('button', { name: /^Personal/ })).toBeInTheDocument();
+  });
+
+  it('keeps the picker when the agent read fails, so the only account choice never disappears', async () => {
+    mockServerConfig = withAccounts();
+    const user = userEvent.setup();
+    render(<Chip />, () => Promise.reject(new Error('agent read failed')));
+    await waitFor(() => expect(lastTransport.getAgentByPath).toHaveBeenCalled());
+
+    const trigger = await screen.findByRole('button', { name: /^Default,/ });
+    await user.click(trigger);
+    expect(accountGroup()).toHaveTextContent('Acme Corp');
+    await user.click(within(accountGroup()).getByText('Acme Corp'));
+    expect(useAppStore.getState().pendingAccount).toEqual({ id: 'acme-corp', sessionId: SESSION });
   });
 
   it('holds the pick for THIS session, shows it on the chip, and writes no config', async () => {

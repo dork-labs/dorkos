@@ -271,9 +271,7 @@ export function AccountItem({
   });
   const [internalOpen, setInternalOpen] = useState(false);
 
-  // Closed gate, or an account nobody can name: saying nothing beats inventing
-  // a label for money that is being spent somewhere.
-  if (!account.visible || account.name === null) return null;
+  if (!account.visible) return null;
 
   const stateText = accountChipText({
     chipState: account.chipState,
@@ -284,15 +282,23 @@ export function AccountItem({
   });
 
   if (account.pending) {
+    // Before launch the chip is the only account picker, so it always renders:
+    // named by the pick, else the account the ladder resolves to, else the
+    // menu's own "Default" while that answer is unknown (the agent read may be
+    // in flight or have failed).
     return (
       <AccountPicker
         sessionId={sessionId}
         account={account}
-        name={account.name}
+        name={account.name ?? 'Default'}
         stateText={stateText}
       />
     );
   }
+
+  // After launch, an account nobody can name renders nothing: saying nothing
+  // beats inventing a label for money that is being spent somewhere.
+  if (account.name === null) return null;
 
   const isOpen = open ?? internalOpen;
   return (
