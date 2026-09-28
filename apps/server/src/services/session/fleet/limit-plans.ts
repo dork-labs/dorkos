@@ -105,6 +105,24 @@ export function mayCarryOver(stored: StoredSessionLimit): boolean {
   return carryOverAllowed(launchOriginOf(stored.sessionId));
 }
 
+/**
+ * Whether a stored limit belongs to a session bound to Claude Code, the one
+ * runtime core can continue from today. Codex and OpenCode record limits in the
+ * same table, but until a carry-over can start from them their sessions only
+ * wait: no model fallback, no advisor, and no ranking of Claude accounts. Deny
+ * by default: an unbound or unreadable session is not one.
+ *
+ * @param stored - The session's stored limit.
+ */
+export async function isClaudeCodeLimit(stored: StoredSessionLimit): Promise<boolean> {
+  try {
+    const resolved = await runtimeRegistry.resolveSessionRuntime(stored.sessionId);
+    return resolved.bound && resolved.type === LIMIT_RUNTIME;
+  } catch {
+    return false;
+  }
+}
+
 /** The working directory a stored limit's session ran in. */
 export function cwdOf(stored: StoredSessionLimit): string | undefined {
   return stored.cwd ?? peekProjector(stored.sessionId)?.cwd;
@@ -292,6 +310,10 @@ export async function writePlan(
 /** The state of a stored limit, from the current ranking and usage. */
 async function deriveFor(stored: StoredSessionLimit, modelFallback: string | undefined) {
   let candidates: { id: string; eligible: boolean; resetsAt: string | null }[] = [];
+  // Another runtime's session is never ranked against Claude accounts.
+  if (!(await isClaudeCodeLimit(stored))) {
+    return deriveLimitState({ limit: stored.limit, modelFallback, accountUsage: null, candidates });
+  }
   try {
     const ranking = await rankForLimit(stored);
     candidates = ranking.accounts.map((a) => ({
@@ -478,6 +500,12 @@ async function askClaim(stored: StoredSessionLimit): Promise<string | null> {
 }
 
 async function planEpisode(stored: StoredSessionLimit): Promise<void> {
+  if (!(await isClaudeCodeLimit(stored))) {
+    // Only a Claude Code session can continue elsewhere today: another
+    // runtime's limit shows, and waits.
+    await writePlan(stored, { mode: 'ask', carryOver: false }, { modelFallback: undefined });
+    return;
+  }
   const carryOver = mayCarryOver(stored);
   const info = await limitedInfoOf(stored);
   const modelFallback = await modelFallbackFor(stored, info);
@@ -565,7 +593,7 @@ export async function reclaimForAdvisor(ownerId: string): Promise<void> {
   for (const stored of store.list()) {
     const mode = stored.limit.plan.mode;
     if (stored.claimedBy || (mode !== 'ask' && mode !== 'waiting')) continue;
-    if (!mayCarryOver(stored)) continue;
+    if (!mayCarryOver(stored) || !(await isClaudeCodeLimit(stored))) continue;
     if (accountAdvisorOwner() !== ownerId) return;
     const answer = await callAdvisor('claims', await sessionInfoOf(stored));
     if (answer !== true || accountAdvisorOwner() !== ownerId) continue;

@@ -46,6 +46,7 @@ import {
   readStoredLimit,
   sessionInfoOf,
   writePlan,
+  isClaudeCodeLimit,
   CORE_AUTO_RESUME_AVAILABLE,
   PlanChangedError,
 } from './limit-plans.js';
@@ -144,6 +145,13 @@ function keptCarryOver(plan: LimitPlan): { carryOver?: false } {
  */
 export async function continueOptions(sessionId: string): Promise<ContinueOptionsResponse> {
   const stored = await requireLimit(sessionId);
+  if (!(await isClaudeCodeLimit(stored))) {
+    return {
+      plan: stored.limit.plan,
+      ranking: { accounts: [], recommendedId: null },
+      advised: false,
+    };
+  }
   const ranking = await rankForLimit(stored);
   return {
     plan: stored.limit.plan,
@@ -162,6 +170,15 @@ export async function continueOptions(sessionId: string): Promise<ContinueOption
     },
     advised: ranking.advised,
   };
+}
+
+/** Whether no binding write ever named the session's runtime. */
+async function isUnbound(stored: StoredSessionLimit): Promise<boolean> {
+  try {
+    return !(await runtimeRegistry.resolveSessionRuntime(stored.sessionId)).bound;
+  } catch {
+    return true;
+  }
 }
 
 /** Continues in flight (a carry-over or a claimed move), per limit episode, shared by every caller. */
@@ -271,6 +288,16 @@ export async function continueSession(
   }
   const stored = await requireLimit(sessionId);
   const plan = stored.limit.plan;
+  // A session bound to another runtime cannot continue here yet (400). One
+  // bound to nothing may still ask for an account, and gets the wait-only
+  // refusal below, like every session that did not start here.
+  if (!(await isClaudeCodeLimit(stored)) && (body.model || !(await isUnbound(stored)))) {
+    throw new ContinueError(
+      400,
+      'RUNTIME_NOT_OFFERED',
+      'Only a Claude Code session can continue on another account or model for now. This one can wait for the reset.'
+    );
+  }
   // Idempotent per episode: a moved session answers with where it went.
   if (body.account && plan.mode === 'continued') return { sessionId: plan.sessionId };
   if (body.runtime && body.runtime !== 'claude-code') {

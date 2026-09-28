@@ -175,11 +175,14 @@ async function limitedSession(
     scope?: SessionLimit['scope'];
     accountId?: string | null;
     live?: boolean;
+    runtime?: string;
   } = {}
 ): Promise<void> {
   const origin = opts.origin === undefined ? 'interactive' : opts.origin;
   if (origin !== null) {
-    await runtimeRegistry.persistSessionRuntime(id, 'claude-code', { kind: origin } as never);
+    await runtimeRegistry.persistSessionRuntime(id, opts.runtime ?? 'claude-code', {
+      kind: origin,
+    } as never);
   }
   const window = opts.window ?? 'seven_day';
   store.upsert({
@@ -526,6 +529,49 @@ describe('which sessions may carry over', () => {
       autoResume: false,
       carryOver: false,
     });
+  });
+});
+
+// === Only Claude Code sessions continue =====================================
+
+describe('a session on another runtime', () => {
+  it('a Codex model bucket gets no Sonnet fallback, only waits, and refuses a continue', async () => {
+    await limitedSession('src-codex', {
+      runtime: 'codex',
+      window: 'model:gpt-5-codex',
+      scope: 'model',
+    });
+    expect(plan('src-codex')).toEqual({ mode: 'ask', carryOver: false });
+    expect(store.get('src-codex')?.limit.modelFallback).toBeUndefined();
+    expect(state('src-codex')).toBe('wait-only');
+    for (const body of [{ model: 'sonnet' }, { account: 'spare' }]) {
+      const err = await refusal(continueSession('src-codex', body, deps));
+      expect(err.status).toBe(400);
+      expect(err.code).toBe('RUNTIME_NOT_OFFERED');
+    }
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(runtime.updateSession).not.toHaveBeenCalled();
+    // Waiting still works.
+    expect((await waitForReset('src-codex', {})).mode).toBe('waiting');
+  });
+
+  it('an OpenCode account limit only waits and never ranks or asks about Claude accounts', async () => {
+    const rank = vi.fn(async () => ({ accounts: [], recommendedId: null }));
+    const claims = vi.fn(async () => true);
+    const onLimited = vi.fn(async () => ({ mode: 'wait' as const }));
+    advise({ rank, claims, onLimited });
+    await limitedSession('src-oc', { runtime: 'opencode', accountId: 'default' });
+    expect(plan('src-oc')).toEqual({ mode: 'ask', carryOver: false });
+    expect(state('src-oc')).toBe('wait-only');
+    expect(store.get('src-oc')?.claimedBy).toBeNull();
+    expect(await continueOptions('src-oc')).toEqual({
+      plan: { mode: 'ask', carryOver: false },
+      ranking: { accounts: [], recommendedId: null },
+      advised: false,
+    });
+    expect(rank).not.toHaveBeenCalled();
+    expect(claims).not.toHaveBeenCalled();
+    expect(onLimited).not.toHaveBeenCalled();
   });
 });
 
