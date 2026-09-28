@@ -18,6 +18,20 @@
       ]
     },
     {
+      "id": "260928-121730",
+      "slug": "composio-create-and-update-are-write-deletes-stay-out-of-levels",
+      "title": "Composio create and update actions are write; deletes stay out of every level",
+      "status": "accepted",
+      "created": "2026-09-28",
+      "extractedFrom": null,
+      "specSlug": "connection-app-details",
+      "supersedes": null,
+      "affects": [
+        "packages/connector-providers/src/composio/sdk-client.ts",
+        "apps/client/src/layers/features/connections/lib/reconciliation-selection.ts"
+      ]
+    },
+    {
       "id": "260928-001608",
       "slug": "resolve-cloud-identity-under-its-current-credential",
       "title": "Resolve Cloud identity under the credential that will use it",

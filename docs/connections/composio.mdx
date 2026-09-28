@@ -75,7 +75,11 @@ DorkOS chooses the sign-in method in this order:
 4. A service that needs no account fields asks the owner to confirm before continuing.
 5. A service that needs an unsupported method or custom developer setup stays visible with that requirement.
 
-The actions available after OAuth depend on the scopes approved during consent. You then grant a named agent only the exact action versions it may use. For example, Gmail can offer read or write actions when the approved scopes allow them, but neither set is automatic. Gmail send and draft actions are available to review when consent allows them. Actions whose effects are uncertain require the stricter approval level.
+The actions available after OAuth depend on the scopes approved during consent. You then choose which agents can use the account, and how much they can do. Nothing is automatic:
+
+- **Read** lets agents look without changing anything, such as reading email or finding free time in your calendar.
+- **Read and write**, for Gmail and Google Calendar, also lets agents send, create and edit things, such as sending an email, replying, saving a draft, labeling a message or adding an event. Other apps offer **Read** only for now.
+- Some actions are never part of a level, and you allow them one at a time: deleting anything, sharing a calendar, forwarding or redirecting mail, changing who your mail is sent as or how it is delivered, turning on an automatic reply, changing many messages at once, moving an event to another calendar, and watching for changes. So is any action whose effect DorkOS can't tell for sure.
 
 [Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. That interval does not describe webhook delivery or Slack and Telegram Messaging.
 

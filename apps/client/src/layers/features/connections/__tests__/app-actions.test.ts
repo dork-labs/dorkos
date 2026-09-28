@@ -19,12 +19,14 @@ function action(
   return { operationSlug, capabilityClassification, important: false, ...extra };
 }
 
+// Gmail as Composio classifies it (DOR-2466): sending creates, so it is
+// `write`; deleting carries Composio's destructive verdict, so it is in no level.
 const GMAIL = [
   action('GMAIL_LIST_LABELS', 'read'),
   action('GMAIL_FETCH_EMAILS', 'read', { important: true }),
   action('GMAIL_ADD_LABEL', 'write'),
-  action('GMAIL_SEND_EMAIL', 'destructive', { important: true }),
-  action('GMAIL_MOVE_TO_TRASH', 'destructive'),
+  action('GMAIL_SEND_EMAIL', 'write', { important: true }),
+  action('GMAIL_DELETE_MESSAGE', 'destructive'),
 ];
 
 describe('actionKind', () => {
@@ -58,18 +60,21 @@ describe('actionBuckets', () => {
       'GMAIL_LIST_LABELS',
     ]);
     expect(buckets.change).toEqual([]);
-    expect(buckets.addedByReadWrite.map((a) => a.operationSlug)).toEqual(['GMAIL_ADD_LABEL']);
-    expect(buckets.outsideLevels.map((a) => a.operationSlug)).toEqual([
+    expect(buckets.addedByReadWrite.map((a) => a.operationSlug)).toEqual([
       'GMAIL_SEND_EMAIL',
-      'GMAIL_MOVE_TO_TRASH',
+      'GMAIL_ADD_LABEL',
     ]);
+    expect(buckets.outsideLevels.map((a) => a.operationSlug)).toEqual(['GMAIL_DELETE_MESSAGE']);
   });
 
   it('adds write actions to Change on "Read and write", never delete-class ones', () => {
     const buckets = actionBuckets(GMAIL, 'read-write');
-    expect(buckets.change.map((a) => a.operationSlug)).toEqual(['GMAIL_ADD_LABEL']);
+    expect(buckets.change.map((a) => a.operationSlug)).toEqual([
+      'GMAIL_SEND_EMAIL',
+      'GMAIL_ADD_LABEL',
+    ]);
     expect(buckets.addedByReadWrite).toEqual([]);
-    expect(buckets.outsideLevels).toHaveLength(2);
+    expect(buckets.outsideLevels.map((a) => a.operationSlug)).toEqual(['GMAIL_DELETE_MESSAGE']);
   });
 
   it('describes the app itself with no level: every change in Change, main ones first', () => {
@@ -77,7 +82,7 @@ describe('actionBuckets', () => {
     expect(buckets.change.map((a) => a.operationSlug)).toEqual([
       'GMAIL_SEND_EMAIL',
       'GMAIL_ADD_LABEL',
-      'GMAIL_MOVE_TO_TRASH',
+      'GMAIL_DELETE_MESSAGE',
     ]);
     expect(buckets.outsideLevels).toEqual([]);
   });

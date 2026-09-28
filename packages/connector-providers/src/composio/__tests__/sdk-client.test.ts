@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -5,6 +6,7 @@ import type {
   ConnectorOperationRevision,
   ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-schemas';
+import { createComposioHostedClients } from '../hosted-client-factory.js';
 import { ComposioSdkClient, normalizeComposioCatalogAuthentication } from '../sdk-client.js';
 
 const API_KEY = 'sk_fixture_private';
@@ -374,27 +376,103 @@ describe('ComposioSdkClient', () => {
     expect(local.requests.every((entry) => entry.apiKey === API_KEY)).toBe(true);
   });
 
+  // Tag shapes follow Composio's documented verdicts (only `…Hint` tags count): every action carries at
+  // least one of readOnlyHint / createHint / updateHint / destructiveHint, and
+  // an irreversible update carries updateHint AND destructiveHint.
   it.each([
-    ['GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint'], 'destructive'],
-    ['GMAIL_CREATE_EMAIL_DRAFT', ['important', 'openWorldHint', 'createHint'], 'destructive'],
+    // Makes or changes something, nothing removed: the "Read and write" tier.
+    ['GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint'], 'write'],
+    ['GMAIL_CREATE_EMAIL_DRAFT', ['important', 'openWorldHint', 'createHint'], 'write'],
+    ['GOOGLECALENDAR_CREATE_EVENT', ['createHint'], 'write'],
+    // Only audited apps (Gmail, Google Calendar) get a write tier; every other
+    // app's create and update actions stay one at a time.
+    ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'destructive'],
+    ['GOOGLEDRIVE_CREATE_FILE', ['createHint'], 'destructive'],
+    // DorkOS keeps account-reach actions out of levels, by name for future tools too.
+    ['GOOGLEDRIVE_CREATE_PERMISSION', ['createHint'], 'destructive'],
+    ['OUTLOOK_CREATE_EMAIL_RULE', ['createHint'], 'destructive'],
+    ['GITHUB_ADD_A_REPOSITORY_COLLABORATOR', ['createHint'], 'destructive'],
+    ['GOOGLEDRIVE_WATCH_FILE', ['createHint'], 'destructive'],
+    // Every word of the name pattern, inside an audited app where only the
+    // pattern stops it (none of these is on the exact list).
+    ['GOOGLECALENDAR_CREATE_ACL_ENTRY', ['createHint'], 'destructive'], // _ACL_
+    ['GMAIL_SET_FORWARDING_ADDRESS', ['createHint'], 'destructive'], // FORWARD
+    ['GMAIL_CREATE_SEND_AS_ALIAS', ['createHint'], 'destructive'], // SEND_AS
+    ['GMAIL_SET_IMAP_ACCESS', ['createHint'], 'destructive'], // _IMAP_
+    ['GMAIL_SET_POP_ACCESS', ['createHint'], 'destructive'], // _POP_
+    ['GMAIL_ADD_FILTER_ENTRY', ['createHint'], 'destructive'], // FILTER
+    ['GMAIL_SET_VACATION_RESPONDER', ['createHint'], 'destructive'], // VACATION
+    ['GMAIL_ENABLE_AUTO_REPLIES', ['createHint'], 'destructive'], // AUTO_REPL
+    ['GMAIL_START_WATCH_INBOX', ['createHint'], 'destructive'], // WATCH
+    ['GOOGLECALENDAR_ADD_PERMISSION', ['createHint'], 'destructive'], // PERMISSION
+    ['GOOGLECALENDAR_UPDATE_SHARING', ['createHint'], 'destructive'], // SHARING
+    ['GOOGLECALENDAR_SHARE_CALENDAR', ['createHint'], 'destructive'], // SHARE_
+    ['GMAIL_ADD_COLLABORATOR', ['createHint'], 'destructive'], // COLLABORAT
+    ['GMAIL_CREATE_GROUP_MEMBERSHIP', ['createHint'], 'destructive'], // MEMBERSHIP
+    ['GOOGLECALENDAR_SEND_INVITATION', ['createHint'], 'destructive'], // INVITAT
+    ['GMAIL_CREATE_INBOX_RULE', ['createHint'], 'destructive'], // _RULE
+    ['GOOGLECALENDAR_CREATE_WEBHOOK', ['createHint'], 'destructive'], // WEBHOOK
+    ['GMAIL_ADD_HOOK', ['createHint'], 'destructive'], // _HOOK
+    ['GOOGLECALENDAR_CREATE_SUBSCRIPTION', ['createHint'], 'destructive'], // SUBSCRI
+    ['GMAIL_ADD_DEPLOY_KEY', ['createHint'], 'destructive'], // DEPLOY_KEY
+    ['GMAIL_SET_CLIENT_SECRET', ['createHint'], 'destructive'], // SECRET
+    ['GOOGLECALENDAR_TRANSFER_OWNERSHIP', ['createHint'], 'destructive'], // TRANSFER
+    ['GMAIL_ADD_DELEGATE', ['createHint'], 'destructive'], // DELEGAT
+    ['GOOGLECALENDAR_SET_VISIBILITY', ['createHint'], 'destructive'], // VISIBILITY
+    ['GMAIL_UPDATE_MAILBOX_SETTINGS', ['createHint'], 'destructive'], // MAILBOX_SETTINGS
+    ['OUTLOOK_SET_AUTO_FORWARDING', ['updateHint'], 'destructive'],
+    ['GOOGLEDRIVE_CREATE_ACL_ENTRY', ['createHint'], 'destructive'],
+    ['SLACK_CHANNELS_WATCH', ['createHint', 'openWorldHint'], 'destructive'],
+    ['OUTLOOK_SET_AUTO_REPLY', ['updateHint'], 'destructive'],
+    // Removes, cancels, revokes, or changes irreversibly: never in a level.
+    ['GMAIL_DELETE_MESSAGE', ['destructiveHint'], 'destructive'],
+    [
+      'GMAIL_BATCH_DELETE_MESSAGES',
+      ['important', 'destructiveHint', 'idempotentHint'],
+      'destructive',
+    ],
     [
       'GMAIL_SEND_DRAFT',
       ['important', 'openWorldHint', 'destructiveHint', 'updateHint'],
       'destructive',
     ],
+    ['GMAIL_CONFLICT', ['createHint', 'destructiveHint'], 'destructive'],
+    // No verdict, or a tag DorkOS does not know: the strictest tier.
     ['GMAIL_UNKNOWN', [], 'destructive'],
     ['GMAIL_UNKNOWN', ['futureEffectHint'], 'destructive'],
     ['GMAIL_UNKNOWN', ['openWorldHint', 'idempotentHint'], 'destructive'],
+    ['GMAIL_UNKNOWN', ['createHint', 'futureEffectHint'], 'destructive'],
+    ['GMAIL_UNKNOWN', ['important', 'gmail', 'messages'], 'destructive'],
+    // Contradictory verdicts.
     ['GMAIL_CONFLICT', ['readOnlyHint', 'createHint'], 'destructive'],
     ['GMAIL_CONFLICT', ['updateHint', 'readOnlyHint'], 'destructive'],
     ['GMAIL_CONFLICT', ['readOnlyHint', 'futureEffectHint'], 'destructive'],
     ['GMAIL_CONFLICT', ['destructiveHint', 'readOnlyHint'], 'destructive'],
+    // Explicit, uncontradicted read.
     ['GMAIL_GET_PROFILE', ['readOnlyHint'], 'read'],
     ['GMAIL_GET_PROFILE', ['important', 'openWorldHint', 'idempotentHint', 'readOnlyHint'], 'read'],
+    // Category tags ride in the same list and are not verdicts: ignored.
+    [
+      'GMAIL_LIST_MESSAGES',
+      ['important', 'readOnlyHint', 'openWorldHint', 'messages', 'deprecated'],
+      'read',
+    ],
+    [
+      'GOOGLECALENDAR_CREATE_EVENT',
+      ['openWorldHint', 'important', 'Events Management', 'createHint'],
+      'write',
+    ],
+    [
+      'GMAIL_BATCH_DELETE_MESSAGES',
+      ['gmail', 'destructiveHint', 'batch', 'messages'],
+      'destructive',
+    ],
   ])('retains %s with conservative effects for %j', async (slug, tags, classification) => {
+    // Each action is listed under its own app, as Composio names it: GMAIL_… is gmail.
+    const toolkit = slug.split('_')[0]!.toLowerCase();
     const metadata = {
       ...tool(slug, tags),
-      toolkit: { slug: 'gmail', name: 'Gmail', logo: 'https://fixture.invalid/gmail.svg' },
+      toolkit: { slug: toolkit, name: toolkit, logo: 'https://fixture.invalid/app.svg' },
     };
     const local = await fixture((_request, response) =>
       json(response, 200, {
@@ -406,7 +484,7 @@ describe('ComposioSdkClient', () => {
       })
     );
     const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
-      toolkit: 'gmail',
+      toolkit,
       toolkitVersion: TOOLKIT_VERSION,
       limit: 10,
       signal: new AbortController().signal,
@@ -414,7 +492,7 @@ describe('ComposioSdkClient', () => {
     expect(result.page.operations).toHaveLength(1);
     expect(result.page.operations[0]).toMatchObject({
       operationSlug: slug,
-      toolkit: 'gmail',
+      toolkit,
       toolkitVersion: TOOLKIT_VERSION,
       capabilityClassification: classification,
       retryPolicy: 'never',
@@ -422,6 +500,170 @@ describe('ComposioSdkClient', () => {
       schemaHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     });
     expect(local.requests.map(({ method }) => method)).toEqual(['GET']);
+  });
+
+  it('classifies Composio’s live Gmail and Calendar tags: deletes never in a level', async () => {
+    // Slugs and tags exactly as Composio listed them (latest versions, 2026-09-28).
+    const live = JSON.parse(
+      readFileSync(new URL('./fixtures/live-tool-tags.json', import.meta.url), 'utf8')
+    ) as Record<string, Array<{ slug: string; tags: string[] }>>;
+    const classOf = new Map<string, string>();
+    for (const [toolkit, actions] of Object.entries(live)) {
+      const items = actions.map(({ slug, tags }) => ({
+        ...tool(slug, tags),
+        toolkit: { slug: toolkit, name: toolkit, logo: 'https://fixture.invalid/app.svg' },
+      }));
+      const local = await fixture((_request, response) =>
+        json(response, 200, {
+          current_page: 1,
+          total_pages: 1,
+          total_items: items.length,
+          next_cursor: null,
+          items,
+        })
+      );
+      const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
+        toolkit,
+        toolkitVersion: TOOLKIT_VERSION,
+        limit: 1_000,
+        signal: new AbortController().signal,
+      });
+      for (const operation of result.page.operations)
+        classOf.set(operation.operationSlug, operation.capabilityClassification);
+    }
+    expect(classOf.size).toBe(Object.values(live).flat().length);
+
+    const removing = [...classOf.keys()].filter((slug) => /DELETE|REMOVE|CLEAR/.test(slug));
+    expect(removing.length).toBeGreaterThan(0);
+    for (const slug of removing) expect([slug, classOf.get(slug)]).toEqual([slug, 'destructive']);
+    for (const slug of [
+      'GMAIL_SEND_EMAIL',
+      'GMAIL_REPLY_TO_THREAD',
+      'GMAIL_CREATE_EMAIL_DRAFT',
+      'GMAIL_ADD_LABEL_TO_EMAIL',
+      'GMAIL_MOVE_TO_TRASH',
+      'GOOGLECALENDAR_CREATE_EVENT',
+      'GOOGLECALENDAR_UPDATE_EVENT',
+      'GOOGLECALENDAR_QUICK_ADD',
+    ])
+      expect([slug, classOf.get(slug)]).toEqual([slug, 'write']);
+    // Composio calls these create/update, but they share access, redirect
+    // mail, change the sending identity or delivery, or start a subscription:
+    // DorkOS keeps them out of every level.
+    const accountReach = [
+      'GOOGLECALENDAR_ACL_INSERT',
+      'GOOGLECALENDAR_ACL_PATCH',
+      'GOOGLECALENDAR_ACL_UPDATE',
+      'GOOGLECALENDAR_ACL_WATCH',
+      'GOOGLECALENDAR_CALENDAR_LIST_WATCH',
+      'GOOGLECALENDAR_EVENTS_WATCH',
+      'GOOGLECALENDAR_SETTINGS_WATCH',
+      'GMAIL_CREATE_FILTER',
+      'GMAIL_FORWARD_MESSAGE',
+      'GMAIL_PATCH_SEND_AS',
+      'GMAIL_UPDATE_SEND_AS',
+      'GMAIL_UPDATE_IMAP_SETTINGS',
+      'GMAIL_UPDATE_POP_SETTINGS',
+      'GMAIL_IMPORT_MESSAGE',
+      'GMAIL_INSERT_MESSAGE',
+      'GMAIL_UPDATE_VACATION_SETTINGS',
+      'GMAIL_BATCH_MODIFY_MESSAGES',
+      'GOOGLECALENDAR_EVENTS_MOVE',
+    ];
+    for (const slug of accountReach)
+      expect([slug, classOf.get(slug)]).toEqual([slug, 'destructive']);
+    // The tightening only ever moves write to destructive: reads it names stay reads.
+    expect(classOf.get('GOOGLECALENDAR_ACL_LIST')).toBe('read');
+    expect(classOf.get('GMAIL_LIST_FILTERS')).toBe('read');
+    for (const slug of [
+      'GMAIL_LIST_MESSAGES',
+      'GMAIL_GET_DRAFT',
+      'GOOGLECALENDAR_EVENTS_LIST',
+      'GOOGLECALENDAR_FIND_FREE_SLOTS',
+    ])
+      expect([slug, classOf.get(slug)]).toEqual([slug, 'read']);
+    expect(classOf.get('GMAIL_SEND_DRAFT')).toBe('destructive');
+    // The whole of "Read and write" for these two apps, pinned so any change is reviewed.
+    expect(
+      [...classOf]
+        .filter(([, classification]) => classification === 'write')
+        .map(([slug]) => slug)
+        .sort()
+    ).toEqual([
+      'GMAIL_ADD_LABEL_TO_EMAIL',
+      'GMAIL_CREATE_EMAIL_DRAFT',
+      'GMAIL_CREATE_LABEL',
+      'GMAIL_MODIFY_THREAD_LABELS',
+      'GMAIL_MOVE_THREAD_TO_TRASH',
+      'GMAIL_MOVE_TO_TRASH',
+      'GMAIL_PATCH_LABEL',
+      'GMAIL_REPLY_TO_THREAD',
+      'GMAIL_SEND_EMAIL',
+      'GMAIL_UNTRASH_MESSAGE',
+      'GMAIL_UNTRASH_THREAD',
+      'GMAIL_UPDATE_DRAFT',
+      'GMAIL_UPDATE_LABEL',
+      'GMAIL_UPDATE_LANGUAGE_SETTINGS',
+      'GOOGLECALENDAR_CALENDARS_UPDATE',
+      'GOOGLECALENDAR_CALENDAR_LIST_INSERT',
+      'GOOGLECALENDAR_CALENDAR_LIST_PATCH',
+      'GOOGLECALENDAR_CALENDAR_LIST_UPDATE',
+      'GOOGLECALENDAR_CREATE_CALENDAR',
+      'GOOGLECALENDAR_CREATE_EVENT',
+      'GOOGLECALENDAR_DUPLICATE_CALENDAR',
+      'GOOGLECALENDAR_EVENTS_IMPORT',
+      'GOOGLECALENDAR_PATCH_CALENDAR',
+      'GOOGLECALENDAR_PATCH_EVENT',
+      'GOOGLECALENDAR_QUICK_ADD',
+      'GOOGLECALENDAR_UPDATE_EVENT',
+    ]);
+  });
+
+  it('classifies identically on this computer and in the hosted DorkOS account path', async () => {
+    const gmail = { slug: 'gmail', name: 'Gmail', logo: 'https://fixture.invalid/gmail.svg' };
+    const items = [
+      { ...tool('GMAIL_FETCH_EMAILS', ['readOnlyHint']), toolkit: gmail },
+      { ...tool('GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint']), toolkit: gmail },
+      { ...tool('GMAIL_FORWARD_MESSAGE', ['createHint']), toolkit: gmail },
+      { ...tool('GMAIL_DELETE_MESSAGE', ['destructiveHint']), toolkit: gmail },
+      { ...tool('GMAIL_FUTURE', ['createHint', 'futureEffectHint']), toolkit: gmail },
+    ];
+    const local = await fixture((_request, response) =>
+      json(response, 200, {
+        current_page: 1,
+        total_pages: 1,
+        total_items: items.length,
+        next_cursor: null,
+        items,
+      })
+    );
+    const hosted = createComposioHostedClients({
+      apiKey: API_KEY,
+      serverUserId: SERVER_USER_ID,
+      authConfigByToolkit: {},
+      baseUrl: local.baseUrl,
+    }).operations;
+    const classes = async (operations: ComposioSdkClient) => {
+      const result = await operations.listOperationSchemas(INSTANCE_ID, {
+        toolkit: 'gmail',
+        toolkitVersion: TOOLKIT_VERSION,
+        limit: 10,
+        signal: new AbortController().signal,
+      });
+      return result.page.operations.map((operation) => [
+        operation.operationSlug,
+        operation.capabilityClassification,
+      ]);
+    };
+    const expected = [
+      ['GMAIL_FETCH_EMAILS', 'read'],
+      ['GMAIL_SEND_EMAIL', 'write'],
+      ['GMAIL_FORWARD_MESSAGE', 'destructive'],
+      ['GMAIL_DELETE_MESSAGE', 'destructive'],
+      ['GMAIL_FUTURE', 'destructive'],
+    ];
+    expect(await classes(client(local.baseUrl))).toEqual(expected);
+    expect(await classes(hosted)).toEqual(expected);
   });
 
   it('carries the display name and the important tag as hints, without changing the classification', async () => {
