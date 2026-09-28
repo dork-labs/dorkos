@@ -479,6 +479,20 @@ jobs:
       - name: Ephemeral Docker sweep fixtures
         run: bash scripts/test-sweep-ephemeral-docker.sh
 
+      # sweep-docker-orphans.sh is the machine-wide backstop for what that label
+      # never reached: anonymous volumes no container mounts, old build cache,
+      # dangling images. No gate runs it (an operator schedules it nightly), but
+      # it deletes on shared developer machines, so its keep side is pinned here:
+      # named volumes, volumes a STOPPED container still mounts, young volumes,
+      # unreadable dates and a container that starts mid-sweep are all kept, and
+      # every keep case has a positive control proving the flipped case goes.
+      # Dates are parsed with their own offset, not the caller's zone. Hermetic:
+      # a stub `docker` on PATH (the one no-docker case uses an EMPTY PATH, since
+      # this runner has a real daemon), run under /bin/bash, about fifteen
+      # seconds, four of them deliberate retry and timeout waits.
+      - name: Docker orphan sweep fixtures
+        run: bash scripts/test-sweep-docker-orphans.sh
+
       # run-credential-free.sh (DOR-2081) is the environment scrub behind the
       # `credential-free-build` check, and it is the only thing standing behind
       # this repo's promise that it clones, builds, tests and runs with no
