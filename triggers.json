@@ -1,7 +1,7 @@
 {
  "schema": 1,
- "date": "2026-09-26",
- "computed_at": "2026-09-27T10:29:14.236Z",
+ "date": "2026-09-27",
+ "computed_at": "2026-09-28T11:37:01.536Z",
  "constraint": "collector-health",
  "canary_since": "2026-09-21T05:17:15Z",
  "open": [
@@ -10,66 +10,66 @@
    "rule": "collector-health",
    "severity": "red",
    "scope": "",
-   "what": "Collector unhealthy 2 of 3 days (2026-09-25, 2026-09-26): The local export from clone clone-71ebf1f648 is 4 days old (last 2026-09-22); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).",
+   "what": "Collector unhealthy 3 of 3 days (2026-09-25, 2026-09-26, 2026-09-27): The local export from clone clone-71ebf1f648 is 4 days old (last 2026-09-22); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).",
    "action": "Fix this first. Every other number comes from the same run.",
    "ledger_entry": null,
    "first_fired": "2026-09-25",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "headroom:wf.browser-test.browser-shard",
    "rule": "headroom",
    "severity": "red",
    "scope": "wf.browser-test.browser-shard",
-   "what": "wf.browser-test.browser-shard p95 uses 96.9% of its time limit (n=1208).",
+   "what": "wf.browser-test.browser-shard p95 uses 116.5% of its time limit (n=1691).",
    "action": "Make it faster. Raising the limit hides it; the next green run still gets killed.",
-   "ledger_entry": "260919-175503",
+   "ledger_entry": null,
    "first_fired": "2026-09-25",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "machine-saturated",
    "rule": "machine-saturated",
    "severity": "red",
    "scope": "",
-   "what": "2 machines running the hooks is saturated — CPU: load 18.43/core p90; RAM: 430.4 MB free p10; swap: 13798 MB in use p50.",
+   "what": "2 machines running the hooks is saturated — CPU: load 17.89/core p90; RAM: 412 MB free p10; swap: 14932 MB in use p50.",
    "action": "Run fewer suites at once (ci/config.yaml local.heavy_run_slots), or close what is holding the memory. No pipeline change helps.",
    "ledger_entry": null,
    "first_fired": "2026-09-21",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "slo-floor:headroom",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "headroom",
-   "what": "headroom under floor: 96.9% (n=24169, 2026-09-20 to 2026-09-26).",
+   "what": "headroom under floor: 116.5% (n=28653, 2026-09-21 to 2026-09-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": null,
    "first_fired": "2026-09-25",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "slo-floor:main-green",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "main-green",
-   "what": "main-green under floor: red_episodes 8, restore_p90 119.8 (n=694, 2026-08-30 to 2026-09-26).",
+   "what": "main-green under floor: red_episodes 10, restore_p90 157.5 (n=742, 2026-08-31 to 2026-09-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "slo-floor:queue-green",
    "rule": "slo-floor",
    "severity": "red",
    "scope": "queue-green",
-   "what": "queue-green under floor: 70.8% (n=404, 2026-09-20 to 2026-09-26).",
+   "what": "queue-green under floor: 69.8% (n=494, 2026-09-21 to 2026-09-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175500",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "verdict:260830-213616",
@@ -80,7 +80,29 @@
    "action": "Revert it (status: reverted, name the PR), or re-state the hypothesis.",
    "ledger_entry": null,
    "first_fired": "2026-09-24",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "main-red:85804f0a6453",
+   "rule": "main-red",
+   "severity": "amber",
+   "scope": "main-green",
+   "what": "main red 179 min (85804f0).",
+   "action": "Why did the queue miss it? If nothing did, this one is history.",
+   "ledger_entry": "260919-175509",
+   "first_fired": "2026-09-27",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "main-red:ab1f29233c21",
+   "rule": "main-red",
+   "severity": "amber",
+   "scope": "main-green",
+   "what": "main red 32 min (ab1f292).",
+   "action": "Why did the queue miss it? If nothing did, this one is history.",
+   "ledger_entry": "260919-175509",
+   "first_fired": "2026-09-27",
+   "last_fired": "2026-09-27"
   },
   {
    "id": "main-red:df28a0bba1f3",
@@ -91,63 +113,186 @@
    "action": "Why did the queue miss it? If nothing did, this one is history.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-09-23",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "slo-floor:lead-time",
    "rule": "slo-floor",
    "severity": "amber",
    "scope": "lead-time",
-   "what": "lead-time under floor: p50 83.9, p90 515.6 (n=227, 2026-09-20 to 2026-09-26).",
+   "what": "lead-time under floor: p50 81.8, p90 456.4 (n=264, 2026-09-21 to 2026-09-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-204500",
    "first_fired": "2026-09-20",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "slo-floor:local-commit",
    "rule": "slo-floor",
    "severity": "amber",
    "scope": "local-commit",
-   "what": "local-commit under floor: p90 237.7, 0.4% (n=1730, 2026-09-20 to 2026-09-26).",
+   "what": "local-commit under floor: p90 212, 0.3% (n=1907, 2026-09-21 to 2026-09-27).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": null,
    "first_fired": "2026-09-20",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "slo-floor:queue-build",
    "rule": "slo-floor",
    "severity": "amber",
    "scope": "queue-build",
-   "what": "queue-build under floor: p50 29.7, p90 58.6 (n=167, 2026-09-20 to 2026-09-26).",
+   "what": "queue-build under floor: p50 29.9, p90 64.2 (n=196, 2026-09-21 to 2026-09-27).",
    "action": "Take its path from ci/slos.yaml.",
-   "ledger_entry": "260919-175503",
+   "ledger_entry": "260921-011949",
    "first_fired": "2026-09-21",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.browser-test.browser-test",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.browser-test.browser-test",
+   "what": "wf.browser-test.browser-test failed 10.2%, was 8.1% (1.26x). 7d vs 7d, n=1157/345.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-27",
+   "last_fired": "2026-09-27"
   },
   {
    "id": "gate-failure-spike:wf.browser-test.copy-spec-drift",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.browser-test.copy-spec-drift",
-   "what": "wf.browser-test.copy-spec-drift failed 1.7%, was 0.7% (2.37x). 7d vs 7d, n=963/285.",
+   "what": "wf.browser-test.copy-spec-drift failed 2.1%, was 0.6% (3.67x). 7d vs 7d, n=1127/345.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-09-26",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
   {
    "id": "gate-failure-spike:wf.changelog-fragment-check.fragment-present",
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.changelog-fragment-check.fragment-present",
-   "what": "wf.changelog-fragment-check.fragment-present failed 4.2%, was 1.2% (3.58x). 7d vs 7d, n=1490/430.",
+   "what": "wf.changelog-fragment-check.fragment-present failed 4%, was 0.8% (5.23x). 7d vs 7d, n=1679/524.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-09-23",
-   "last_fired": "2026-09-26"
+   "last_fired": "2026-09-27"
   },
+  {
+   "id": "gate-failure-spike:wf.scripts-test.harness",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.scripts-test.harness",
+   "what": "wf.scripts-test.harness failed 5.1%, was 2.2% (2.31x). 7d vs 7d, n=467/135.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-27",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.site-build.site-build",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.site-build.site-build",
+   "what": "wf.site-build.site-build failed 1.2%, was 0.6% (2x). 7d vs 7d, n=1120/344.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-27",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "gate-failure-spike:wf.test.test",
+   "rule": "gate-failure-spike",
+   "severity": "amber",
+   "scope": "wf.test.test",
+   "what": "wf.test.test failed 19.7%, was 11.8% (1.67x). 7d vs 7d, n=1177/348.",
+   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-23",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "repeat-ejection:wf.browser-test.browser-test",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.browser-test.browser-test",
+   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 38 of 57 queue ejections in 7d; 14 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "repeat-ejection:wf.credential-free-build.credential-free-build",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.credential-free-build.credential-free-build",
+   "what": "wf.credential-free-build.credential-free-build failed on 5 of 57 queue ejections in 7d; 0 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "repeat-ejection:wf.test.test",
+   "rule": "repeat-ejection",
+   "severity": "amber",
+   "scope": "wf.test.test",
+   "what": "wf.test.test (with wf.test.community-packaged and wf.test.community-pg and wf.test.test-shard) failed on 17 of 57 queue ejections in 7d; 5 real.",
+   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-20",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "gate-cost:job-minutes-per-merged-pr",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "tracked.job-minutes-per-merged-pr",
+   "what": "Job minutes per merged PR 590.3, was 418.2 (+41.1%). 7d vs 7d.",
+   "action": "A job added to a required path, or more runs thrown away. Both land here.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-23",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "gate-cost:wf.claude-code-review.review",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.claude-code-review.review",
+   "what": "wf.claude-code-review.review p90 7.5 min, was 6 (+26.6%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-27",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "gate-cost:wf.merge-tail.arm",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.merge-tail.arm",
+   "what": "wf.merge-tail.arm p90 0.9 min, was 0.4 (+124.2%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-23",
+   "last_fired": "2026-09-27"
+  },
+  {
+   "id": "gate-cost:wf.test.community-pg",
+   "rule": "gate-cost",
+   "severity": "amber",
+   "scope": "wf.test.community-pg",
+   "what": "wf.test.community-pg p90 6.2 min, was 2.3 (+169.8%). 7d vs 7d.",
+   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-24",
+   "last_fired": "2026-09-27"
+  }
+ ],
+ "cleared": [
   {
    "id": "gate-failure-spike:wf.test.community-pg",
    "rule": "gate-failure-spike",
@@ -158,107 +303,6 @@
    "ledger_entry": null,
    "first_fired": "2026-09-26",
    "last_fired": "2026-09-26"
-  },
-  {
-   "id": "gate-failure-spike:wf.test.test",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.test.test",
-   "what": "wf.test.test failed 22.7%, was 7.3% (3.1x). 7d vs 7d, n=1003/286.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-23",
-   "last_fired": "2026-09-26"
-  },
-  {
-   "id": "repeat-ejection:wf.browser-test.browser-test",
-   "rule": "repeat-ejection",
-   "severity": "amber",
-   "scope": "wf.browser-test.browser-test",
-   "what": "wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 32 of 56 queue ejections in 7d; 10 real.",
-   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-26"
-  },
-  {
-   "id": "repeat-ejection:wf.credential-free-build.credential-free-build",
-   "rule": "repeat-ejection",
-   "severity": "amber",
-   "scope": "wf.credential-free-build.credential-free-build",
-   "what": "wf.credential-free-build.credential-free-build failed on 4 of 56 queue ejections in 7d; 0 real.",
-   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-26"
-  },
-  {
-   "id": "repeat-ejection:wf.test.test",
-   "rule": "repeat-ejection",
-   "severity": "amber",
-   "scope": "wf.test.test",
-   "what": "wf.test.test (with wf.test.community-packaged and wf.test.community-pg and wf.test.test-shard) failed on 27 of 56 queue ejections in 7d; 5 real.",
-   "action": "Quarantine or fix what fails without the code being wrong. The rest are wasted builds.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-26"
-  },
-  {
-   "id": "gate-cost:job-minutes-per-merged-pr",
-   "rule": "gate-cost",
-   "severity": "amber",
-   "scope": "tracked.job-minutes-per-merged-pr",
-   "what": "Job minutes per merged PR 554.9, was 370.8 (+49.6%). 7d vs 7d.",
-   "action": "A job added to a required path, or more runs thrown away. Both land here.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-23",
-   "last_fired": "2026-09-26"
-  },
-  {
-   "id": "gate-cost:wf.merge-tail.arm",
-   "rule": "gate-cost",
-   "severity": "amber",
-   "scope": "wf.merge-tail.arm",
-   "what": "wf.merge-tail.arm p90 0.8 min, was 0.4 (+117.4%). 7d vs 7d.",
-   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-23",
-   "last_fired": "2026-09-26"
-  },
-  {
-   "id": "gate-cost:wf.test.community-pg",
-   "rule": "gate-cost",
-   "severity": "amber",
-   "scope": "wf.test.community-pg",
-   "what": "wf.test.community-pg p90 6 min, was 2.5 (+144%). 7d vs 7d.",
-   "action": "Find the step that grew. Cheaper now than a timeout raise later.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-24",
-   "last_fired": "2026-09-26"
-  }
- ],
- "cleared": [
-  {
-   "id": "gate-failure-spike:wf.site-build.site-build",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.site-build.site-build",
-   "what": "wf.site-build.site-build failed 0.9%, was 0.6% (1.58x). 7d vs 7d, n=844/334.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-25",
-   "last_fired": "2026-09-25"
-  },
-  {
-   "id": "constraint-changed:queue-green->collector-health",
-   "rule": "constraint-changed",
-   "severity": "amber",
-   "scope": "collector-health",
-   "what": "Constraint moved: queue-green → collector-health.",
-   "action": "Drop queue-green unless it is nearly done. Pick up collector-health.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-25",
-   "last_fired": "2026-09-25"
   }
  ]
 }

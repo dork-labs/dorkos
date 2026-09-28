@@ -1,27 +1,27 @@
 {
  "schema": 1,
- "date": "2026-09-26",
- "collected_at": "2026-09-27T10:29:14.236Z",
- "snapshot": "snapshots/2026-09-26.json",
- "report_ref": "reports/2026-W38.md",
+ "date": "2026-09-27",
+ "collected_at": "2026-09-28T11:37:01.536Z",
+ "snapshot": "snapshots/2026-09-27.json",
+ "report_ref": "reports/2026-W39.md",
  "healthy": false,
  "failures": [
-  "The local export from clone clone-71ebf1f648 is 5 days old (last 2026-09-22); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
+  "The local export from clone clone-71ebf1f648 is 6 days old (last 2026-09-22); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
  ],
  "warnings": [
-  "Thin sample: review-recovery (n=3 < 5); those SLOs read as insufficient, not as a breach or a win."
+  "Thin sample: review-recovery (n=4 < 5); those SLOs read as insufficient, not as a breach or a win."
  ],
- "api_calls": 279,
+ "api_calls": 407,
  "slos": [
   {
    "id": "headroom",
    "kind": "tripwire",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 24169,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 28653,
    "min_n": 10,
    "stats": {
-    "p95_over_timeout": 0.969
+    "p95_over_timeout": 1.165
    },
    "status": "breach",
    "excess_hours": null,
@@ -30,12 +30,12 @@
   {
    "id": "queue-green",
    "kind": "quality",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 404,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 494,
    "min_n": 30,
    "stats": {
-    "share": 0.7079
+    "share": 0.6984
    },
    "status": "breach",
    "excess_hours": null
@@ -43,42 +43,42 @@
   {
    "id": "wasted-queue-builds",
    "kind": "quality",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 404,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 494,
    "min_n": 30,
    "stats": {
-    "share": 0.104
+    "share": 0.0789
    },
    "status": "ok",
-   "excess_hours": 66.89
+   "excess_hours": 66.14
   },
   {
    "id": "flaky-test-runs",
    "kind": "quality",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 3096025,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 3144790,
    "min_n": 1000,
    "stats": {
     "share": 0,
-    "failed_jobs": 133,
-    "unreported_failed_jobs": 57
+    "failed_jobs": 153,
+    "unreported_failed_jobs": 37
    },
    "status": "unmeasured",
    "excess_hours": null,
-   "note": "coverage unknown: 57 of 133 failed queue test jobs wrote no retry-aware report (wf.test.community-packaged 37, wf.credential-free-build.credential-free-build 10, wf.test.community-pg 8, wf.harness-windows.harness-windows 2); share 0 is over the reported suites only"
+   "note": "coverage unknown: 37 of 153 failed queue test jobs wrote no retry-aware report (wf.test.community-packaged 20, wf.credential-free-build.credential-free-build 11, wf.test.community-pg 5, wf.harness-windows.harness-windows 1); share 0 is over the reported suites only"
   },
   {
    "id": "main-green",
    "kind": "quality",
-   "from": "2026-08-30",
-   "to": "2026-09-26",
-   "n": 694,
+   "from": "2026-08-31",
+   "to": "2026-09-27",
+   "n": 742,
    "min_n": 1,
    "stats": {
-    "red_episodes": 8,
-    "restore_p90": 119.8
+    "red_episodes": 10,
+    "restore_p90": 157.5
    },
    "status": "breach",
    "excess_hours": null
@@ -86,12 +86,12 @@
   {
    "id": "review-completes",
    "kind": "quality",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 265,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 319,
    "min_n": 30,
    "stats": {
-    "share": 0.9698
+    "share": 0.9655
    },
    "status": "ok",
    "excess_hours": null
@@ -99,12 +99,12 @@
   {
    "id": "review-recovery",
    "kind": "quality",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 3,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 4,
    "min_n": 5,
    "stats": {
-    "p90": 211.5
+    "p90": 204.2
    },
    "status": "insufficient",
    "excess_hours": null
@@ -112,93 +112,93 @@
   {
    "id": "pr-feedback",
    "kind": "speed",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 338,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 380,
    "min_n": 30,
    "stats": {
-    "p50": 15,
-    "p90": 20.9
+    "p50": 16.2,
+    "p90": 24
    },
    "status": "ok",
-   "excess_hours": 28.72
+   "excess_hours": 34.53
   },
   {
    "id": "queue-build",
    "kind": "speed",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 167,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 196,
    "min_n": 20,
    "stats": {
-    "p50": 29.7,
-    "p90": 58.6
+    "p50": 29.9,
+    "p90": 64.2
    },
    "status": "breach",
-   "excess_hours": 56.91
+   "excess_hours": 76.73
   },
   {
    "id": "lead-time",
    "kind": "speed",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 227,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 264,
    "min_n": 30,
    "stats": {
-    "p50": 83.9,
-    "p90": 515.6
+    "p50": 81.8,
+    "p90": 456.4
    },
    "status": "breach",
-   "excess_hours": 650.55
+   "excess_hours": 687.61
   },
   {
    "id": "local-commit",
    "kind": "speed",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 1730,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 1907,
    "min_n": 20,
    "stats": {
-    "p90": 237.7,
-    "killed_share": 0.0035
+    "p90": 212,
+    "killed_share": 0.0031
    },
    "status": "breach",
-   "excess_hours": 38.16
+   "excess_hours": 39.71
   },
   {
    "id": "local-push",
    "kind": "speed",
-   "from": "2026-09-20",
-   "to": "2026-09-26",
-   "n": 1005,
+   "from": "2026-09-21",
+   "to": "2026-09-27",
+   "n": 1098,
    "min_n": 20,
    "stats": {
-    "p90": 19.2,
-    "killed_share": 0.006
+    "p90": 16,
+    "killed_share": 0.0018
    },
    "status": "ok",
-   "excess_hours": 13.97
+   "excess_hours": 6.7
   }
  ],
  "constraint": {
   "tier": "tripwire",
   "id": "collector-health",
-  "reason": "The collector's own health failed (1 problem); no other number can be trusted until it is fixed. First: The local export from clone clone-71ebf1f648 is 5 days old (last 2026-09-22); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
+  "reason": "The collector's own health failed (1 problem); no other number can be trusted until it is fixed. First: The local export from clone clone-71ebf1f648 is 6 days old (last 2026-09-22); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
  },
  "local_breaches": [
   "local-commit"
  ],
  "machine": {
-  "n": 34233,
+  "n": 40974,
   "clones": 2,
-  "load_per_core_p90": 18.43,
-  "mem_available_mb_p10": 430.4,
-  "swap_used_mb_p50": 13798
+  "load_per_core_p90": 17.89,
+  "mem_available_mb_p10": 412,
+  "swap_used_mb_p50": 14932
  },
  "safeguards_ok": true,
  "triggers": {
   "red": 7,
-  "amber": 14,
-  "top": "Collector unhealthy 2 of 3 days (2026-09-25, 2026-09-26): The local export from clone clone-71ebf1f648 is 4 days old (last 2026-09-22); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
+  "amber": 19,
+  "top": "Collector unhealthy 3 of 3 days (2026-09-25, 2026-09-26, 2026-09-27): The local export from clone clone-71ebf1f648 is 4 days old (last 2026-09-22); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
  }
 }
