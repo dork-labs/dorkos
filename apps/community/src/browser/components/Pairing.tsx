@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createAuthClient } from 'better-auth/react';
 import { Check, KeyRound, Laptop2, ShieldCheck } from 'lucide-react';
 import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError, request } from '../api.js';
 import { HostPolicyLinks } from './HostLinks.js';
+import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
+
+const authClient = createAuthClient({ baseURL: window.location.origin });
 
 type PairingStatus = {
   pairingId: string;
@@ -40,22 +44,30 @@ async function isHeldCommunity(path = window.location.pathname): Promise<boolean
 export function Pairing({ search = location.search }: { search?: string }) {
   const pairingId = new URLSearchParams(search).get('pairingId');
   const [status, setStatus] = useState<PairingStatus | null>(null);
-  const [error, setError] = useState(pairingId ? '' : 'This approval link is incomplete.');
+  const [error, setError] = useState(() =>
+    pairingId ? (takeSignInError() ?? '') : 'This approval link is incomplete.'
+  );
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [held, setHeld] = useState(false);
   const emailInput = useRef<HTMLInputElement>(null);
+  const providers = useSignInOptions();
 
   const loadPairing = useCallback(
-    async (isCurrent: () => boolean = () => true) => {
+    async (isCurrent: () => boolean = () => true, allowPending = true) => {
       if (!pairingId) return;
       try {
         const body = await request<PairingStatus>(
           `/api/v1/pairings/${encodeURIComponent(pairingId)}`
         );
         if (!isCurrent()) return;
+        if (!allowPending && body.status === 'pending') {
+          setStatus(null);
+          setError('This connection request changed. Start again from your local app.');
+          return;
+        }
         setStatus(body);
         setNeedsSignIn(false);
         setError('');
@@ -66,7 +78,6 @@ export function Pairing({ search = location.search }: { search?: string }) {
         setStatus(null);
         if (cause instanceof RequestError && cause.status === 401) {
           setNeedsSignIn(true);
-          setError('');
         } else {
           setNeedsSignIn(false);
           setError(describeError(cause));
@@ -103,6 +114,28 @@ export function Pairing({ search = location.search }: { search?: string }) {
     }
   }
 
+  async function social(provider: 'google' | 'github' | 'oidc') {
+    if (!pairingId) return;
+    setBusy(true);
+    setError('');
+    try {
+      // Keep only the request identifier, on this exact host and tenant path. Provider errors
+      // append their own query parameters; unrelated URL input must not enter the callback.
+      const callback = new URL(window.location.pathname, window.location.origin);
+      callback.searchParams.set('pairingId', pairingId);
+      const callbackURL = callback.toString();
+      const result = await authClient.signIn.social({
+        provider,
+        callbackURL,
+        errorCallbackURL: callbackURL,
+      });
+      if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
+    } catch (cause) {
+      setError(describeError(cause));
+      setBusy(false);
+    }
+  }
+
   async function decide(action: 'approve' | 'decline') {
     if (!pairingId) return;
     setBusy(true);
@@ -115,7 +148,12 @@ export function Pairing({ search = location.search }: { search?: string }) {
           : previous
       );
     } catch (cause) {
-      setError(describeError(cause));
+      if (cause instanceof RequestError && [401, 403, 409].includes(cause.status)) {
+        setStatus(null);
+        await loadPairing(() => true, cause.status === 401);
+      } else {
+        setError(describeError(cause));
+      }
     } finally {
       setBusy(false);
     }
@@ -142,42 +180,77 @@ export function Pairing({ search = location.search }: { search?: string }) {
           </div>
         )}
         {needsSignIn && (
-          <form className="panel" onSubmit={(event) => void signIn(event)}>
-            <div className="notice mb-5">
-              Sign in to review this connection. The request will stay on this page.
-            </div>
-            <div className="field">
-              <label htmlFor="pairing-email">Email</label>
-              <input
-                id="pairing-email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                ref={emailInput}
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="pairing-password">Password</label>
-              <input
-                id="pairing-password"
-                type="password"
-                autoComplete="current-password"
-                minLength={8}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-              <span className="hint">
-                Forgot your password? Ask the person running this community for help.
-              </span>
-            </div>
-            <button className="button primary w-full" disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in and review'}
-              <KeyRound size={16} />
-            </button>
-          </form>
+          <>
+            <form className="panel" onSubmit={(event) => void signIn(event)}>
+              <div className="notice mb-5">
+                Sign in to review this connection. You’ll return to this request.
+              </div>
+              <div className="field">
+                <label htmlFor="pairing-email">Email</label>
+                <input
+                  id="pairing-email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  ref={emailInput}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="pairing-password">Password</label>
+                <input
+                  id="pairing-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+                <span className="hint">
+                  Forgot your password? Ask the person running this community for help.
+                </span>
+              </div>
+              <button className="button primary w-full" disabled={busy}>
+                {busy ? 'Signing in…' : 'Sign in and review'}
+                <KeyRound size={16} />
+              </button>
+            </form>
+            {(providers.google || providers.github || providers.oidc) && (
+              <div className="row mt-4">
+                {providers.google && (
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void social('google')}
+                  >
+                    Continue with Google
+                  </button>
+                )}
+                {providers.github && (
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void social('github')}
+                  >
+                    Continue with GitHub
+                  </button>
+                )}
+                {providers.oidc && (
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void social('oidc')}
+                  >
+                    Continue with {providers.oidc.label}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
         {!error && !status && !needsSignIn && <p role="status">Loading the request…</p>}
         {status && (
