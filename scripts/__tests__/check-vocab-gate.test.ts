@@ -551,9 +551,8 @@ describe("stripNonProse — fence detection the docs scan's line/column pins dep
     // An earlier version of this suite assumed the opposite — that a closer
     // trailing content still closes the fence — and shipped that as the
     // "deployment.mdx shape." It was never checked against a real parser.
-    // docs-mdx-markers-compile.test.ts's sibling, run by hand against
-    // @mdx-js/mdx on the real file as it shipped at the time, showed the
-    // fence genuinely never closed there: the ``` at the end of
+    // Compiling the real file as it shipped at the time with @mdx-js/mdx, by
+    // hand, showed the fence genuinely never closed there: the ``` at the end of
     // "...DORKOS_BOUNDARY=/path/to/boundary ```" was swallowed as code text,
     // and the block absorbed everything after it — including the entire
     // "Interactive Setup" tab, which never rendered. A real, pre-existing
@@ -675,23 +674,57 @@ describe('scanMdx — copy positions the docs gate must catch', () => {
     );
   });
 
-  it('ignores a line carrying the vocab-allow marker', () => {
+  it('a "vocab-allow" marker inside docs/ is ITSELF a violation, not an exemption (DOR-2508, third review round)', () => {
+    // An inline marker was tried and reverted: Fumadocs' remarkHeading and
+    // remarkStructure copy a JSX comment's text into the live page's heading
+    // titles/anchors and search index. There is no longer any per-line
+    // exemption mechanism for docs/ — only a `contains`-scoped
+    // allowlist.json entry (see AllowlistEntry.contains) works.
     const violations = scanMdx(
       'docs/guide.mdx',
-      '### Claude Code adapter <!-- vocab-allow: names the real built-in component -->\n',
+      '### Claude Code adapter {/* vocab-allow: names the real built-in component */}\n',
       WAVE_4_TERMS
     );
-    expect(violations).toEqual([]);
+    // Two independent violations on the same line: the banned term itself
+    // (still fully reported — the marker text does not suppress it anymore)
+    // and the marker-ban hit.
+    expect(violations.map((v) => v.term).sort()).toEqual(['adapter', 'vocab-allow']);
+    expect(violations.every((v) => v.line === 1)).toBe(true);
+    const markerHit = violations.find((v) => v.term === 'vocab-allow');
+    expect(markerHit?.wave).toBe('docs-marker-ban');
   });
 
-  it('the vocab-allow marker only exempts the line it is on, not its neighbors', () => {
-    const text = [
-      'A connector mention with no marker.', // still flagged
-      'Another connector mention. <!-- vocab-allow: reason -->', // exempt
-    ].join('\n');
-    const violations = scanMdx('docs/guide.mdx', text, WAVE_4_TERMS);
+  it('the marker ban fires even on a line with no banned term at all', () => {
+    const violations = scanMdx(
+      'docs/guide.mdx',
+      'Nothing retired here. {/* vocab-allow: reason */}\n',
+      WAVE_4_TERMS
+    );
     expect(violations).toHaveLength(1);
-    expect(violations[0]?.line).toBe(1);
+    expect(violations[0]?.term).toBe('vocab-allow');
+  });
+
+  it('the marker ban is NOT allowlistable — a normal contains-scoped entry never suppresses it (mutation this bans-not-exempts design exists to catch)', () => {
+    const scopedButNotForMarkers: AllowlistEntry[] = [
+      {
+        path: 'docs/guide.mdx',
+        terms: ['vocab-allow'],
+        reason: 'An entry someone might mistakenly add, naming the marker text as its own term.',
+      },
+    ];
+    const violations = scanMdx(
+      'docs/guide.mdx',
+      '### Claude Code adapter {/* vocab-allow: reason */}\n',
+      WAVE_4_TERMS
+    );
+    const markerHit = violations.find((v) => v.term === 'vocab-allow')!;
+    expect(markerHit).toBeDefined();
+    // isAllowlisted alone WOULD suppress it (it only checks path/terms/contains) —
+    // proving the real protection lives in runVocabGate's `v.wave !==
+    // 'docs-marker-ban'` guard, not in scanMdx or isAllowlisted individually.
+    expect(
+      isAllowlisted(markerHit.file, markerHit.term, scopedButNotForMarkers, markerHit.snippet)
+    ).toBe(true);
   });
 });
 
@@ -850,6 +883,18 @@ describe('runVocabGate — docs scan wired end to end', () => {
     expect(violations).toHaveLength(1);
     expect(violations[0]?.term).toBe('connectors');
     expect(violations[0]?.snippet).toBe('### Connectors');
+  });
+
+  it('a vocab-allow marker anywhere under docs/ fails the real, end-to-end gate — never suppressed by any allowlist.json entry (DOR-2508, third review round)', () => {
+    const root = makeTempDir();
+    const docPath = join(root, 'docs/guides/fixture-guide.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(docPath, '### Ordinary heading {/* vocab-allow: some reason */}\n');
+
+    const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('vocab-allow');
+    expect(violations[0]?.wave).toBe('docs-marker-ban');
   });
 });
 

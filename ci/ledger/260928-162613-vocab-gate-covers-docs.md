@@ -28,7 +28,7 @@ wave is a separate, unscoped effort this change does not take on. `docs/api/**`
 excluded, the same carve-outs `check-banned-words.sh` already documented for
 wave 2.
 
-Four rounds of code review on this change caught real defects before any of
+Five rounds of code review on this change caught real defects before any of
 them landed, each verified against ground truth rather than taken on faith:
 
 1. **Fence detection.** The tracker mis-parsed a fenced block that Prettier
@@ -53,7 +53,7 @@ them landed, each verified against ground truth rather than taken on faith:
    same shape — a content line ending in a fence-character run, with no
    opener earlier on that same line — plus an EOF-unclosed-fence check across
    all 313 docs files; deployment.mdx was the only instance of either.
-2. **`vocab-allow` marker syntax.** Written as an HTML comment
+2. **`vocab-allow` marker syntax, round one.** Written as an HTML comment
    (`<!-- vocab-allow: reason -->`) in four files, which reads as an ordinary
    comment in plain Markdown but breaks MDX compilation outright: MDX parses
    `<` as the start of a JSX tag, and `<!--` is not a valid tag name. Caught
@@ -62,12 +62,9 @@ them landed, each verified against ground truth rather than taken on faith:
    (`docs/concepts/relay.mdx`, `docs/guides/relay-messaging.mdx`,
    `docs/guides/workspaces.mdx`, `docs/marketplace/index.mdx`) would have
    failed the site build. Switched every marker to the JSX-comment form
-   (`{/* vocab-allow: reason */}`) MDX actually supports, and added
-   `scripts/__tests__/docs-mdx-markers-compile.test.ts`, which compiles every
-   docs `.mdx` file carrying the marker on every run — resolving `@mdx-js/mdx`
-   by walking pnpm's real dependency graph from `apps/site`'s own declared
-   `fumadocs-mdx` dependency, since the package isn't directly reachable from
-   `scripts/`.
+   (`{/* vocab-allow: reason */}`) MDX actually supports — compiling is a
+   necessary check, not a sufficient one; see item 4 below for what it still
+   missed.
 3. **Whole-file `allowlist.json` entries still too wide.** A file-scoped entry
    (no `contains`) exempts every matching line in that file, which is right
    for a whole-page developer guide (`docs/integrations/`) but wrong for a
@@ -83,41 +80,65 @@ them landed, each verified against ground truth rather than taken on faith:
 for your workspace.` in `workspaces.mdx`, `First, add a Telegram adapter.`
    in `agent-coordination.mdx` — each still gets caught now, each was
    silently swallowed before.
+4. **`vocab-allow` marker syntax, round two: banned outright.** The
+   JSX-comment marker from item 2 compiled cleanly but still leaked, because
+   compiling proves valid syntax, not an invisible render. Fumadocs' own
+   remark pipeline reads a JSX comment's text like any other inline child:
+   `remarkHeading` copies it into BOTH the sidebar table-of-contents title and
+   the anchor slug generated from that title, and `remarkStructure` copies a
+   marked paragraph's text into the page's search index entry. A marker meant
+   to be read only by this script and a future editor showed up as visible,
+   malformed heading text, a broken anchor, and noise in search results —
+   confirmed against Fumadocs' real plugins, not assumed, in
+   `docs/concepts/relay.mdx` (`### Adapters`, four bulleted component
+   definitions), `docs/guides/relay-messaging.mdx` (five headings, five
+   paragraphs) and `docs/marketplace/index.mdx` (two paragraphs). Removed
+   every inline marker from `docs/**/*.mdx` — there is no marker mechanism for
+   docs at all anymore — and replaced each with a `contains`-scoped
+   `allowlist.json` entry (19 new entries, one per line that legitimately
+   needs it). Made the string `vocab-allow` itself a hard, non-allowlistable
+   violation inside `docs/` (`MDX_ALLOW_MARKER_BAN` in `scanMdx`, bypassing
+   `isAllowlisted` entirely in `runVocabGate` so a future allowlist entry that
+   omits `terms` can't reopen the gap), so the convention cannot quietly
+   return. Dropped `scripts/__tests__/docs-mdx-markers-compile.test.ts`: its
+   entire premise — that a docs marker exists and needs compiling — is gone.
 
-The `vocab-allow` marker placement itself needed a second correction mid-review
-too: Prettier always moves a trailing `//`/JSX comment on a multi-property
-object's or multi-child `<Card>`'s opening line onto its own following line,
-breaking the same-line requirement the marker depends on — confirmed by
-committing, letting the format hook run, and re-scanning (8 markers moved).
-Replaced those specific spots with `contains`-scoped allowlist entries instead
-of fighting Prettier; markers stay everywhere they demonstrably survive (plain
-prose, headings, list items).
+The `vocab-allow` marker placement (round two, JSX-comment form) also needed a
+correction mid-review: Prettier always moves a trailing `//`/JSX comment on a
+multi-property object's or multi-child `<Card>`'s opening line onto its own
+following line, breaking the same-line requirement the marker depended on —
+confirmed by committing, letting the format hook run, and re-scanning (8
+markers moved). Replaced those specific spots with `contains`-scoped allowlist
+entries at the time; moot now that item 4 replaced every marker the same way.
 
 The docs sweep itself — the false/stale lines the audit found, rewording most
 of an initial 24-entry allowlist sweep down to 4 directory/file entries for
 genuinely developer-only sections (`docs/integrations/`,
 `docs/marketplace/publishing.mdx`, `docs/contributing/architecture.mdx`,
-`docs/guides/flow/`) — is content work, not a pipeline change; this entry
-covers only the gate extension mechanism (docs scanning, fence detection, the
-marker convention, `contains` scoping, MDX-compile verification).
+`docs/guides/flow/`), then converting every remaining inline marker to a
+`contains`-scoped entry per item 4 — is content work, not a pipeline change;
+this entry covers only the gate extension mechanism (docs scanning, fence
+detection, `contains` scoping, the marker ban, MDX-compile verification of the
+fence fix).
 
 No new workflow step, job or required check: the docs scan rides the existing
-`Retired-vocabulary gate` step in `typecheck` (renamed to say so), the
+`Retired-vocabulary gate` step in `typecheck` (renamed to say so) and the
 existing real-repo canary in `scripts/__tests__/check-vocab-gate.test.ts`
 (`runVocabGate(repoRoot)` now walks both `apps/{client,site,server}/src` and
-`docs/`), and the new `docs-mdx-markers-compile.test.ts` — same step, same
-`scripts` vitest project, no new job. That suite gained fixture and
-mutation-style tests for the new mechanism: fence detection (both original
-defects as pinned regressions, the corrected closer-anchoring behavior against
-the real compiler, a 4-backtick/3-backtick nested-fence case, and a mid-line
-``` that must never be mistaken for a closer), the `vocab-allow` marker and
-its `contains` scoping (including the exact mutations review proposed, with
-`configuration.mdx`'s pinned as its own fixture test against the real shipped
-file), and two tests that drive a seeded docs violation through `runVocabGate`
-itself (never `scanMdx` directly) specifically so a future change that
-disables or drops the docs half of that function fails a test — verified by
-hand every time: deleting the relevant code reds exactly the tests naming it,
-restoring it goes green again.
+`docs/`). That suite gained fixture and mutation-style tests for the whole
+mechanism: fence detection (both original defects as pinned regressions, the
+corrected closer-anchoring behavior against the real compiler, a
+4-backtick/3-backtick nested-fence case, and a mid-line ``` that must never be
+mistaken for a closer), `contains` scoping (including the exact mutations
+review proposed, with `configuration.mdx`'s pinned as its own fixture test
+against the real shipped file), the marker ban (a line with a marker is
+flagged even with no banned term present, and is never suppressed by any
+allowlist entry, path-only or `contains`-scoped), and tests that drive a
+seeded docs violation — or a seeded marker — through `runVocabGate` itself
+(never `scanMdx` directly) specifically so a future change that disables or
+drops any part of the docs scan fails a test — verified by hand every time:
+deleting the relevant code reds exactly the tests naming it, restoring it goes
+green again.
 `kind: hygiene` — this closes a coverage gap the tool already existed to
 close, it does not change what "passing" means for any surface that was
 already scanned. Revert if the docs scan produces false positives faster than

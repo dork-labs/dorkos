@@ -79,7 +79,11 @@
  * survive for a real domain reason (the `/flow` engine's own tracker-adapter
  * pattern, OpenCode's model-provider picker, a marketplace package's
  * `adapter` facet, the software-testing sense of "integration test") — see
- * the allowlist file itself for the full audit trail.
+ * the allowlist file itself for the full audit trail. Unlike {@link scanSource},
+ * `scanMdx` has NO inline marker for a docs exemption — see
+ * {@link MDX_ALLOW_MARKER_BAN} for why one was tried and banned outright; the
+ * only way to exempt a docs line is a scoped `allowlist.json` entry, narrowed
+ * with {@link AllowlistEntry.contains} to the exact line it covers.
  *
  * A second unclosed gap, measured in DOR-1814: a string handed to an ordinary
  * function call is invisible, even when that call's return value lands in a
@@ -190,7 +194,14 @@ export interface AllowlistEntry {
    * round). Reserved for narrow, single-purpose entries — a directory or a
    * whole-page developer guide with dozens of legitimate uses throughout
    * (`docs/integrations/`, `docs/guides/flow/`) has no one line to name, and
-   * stays path-only on purpose; see each such entry's own reason.
+   * stays path-only on purpose; see each such entry's own reason. For
+   * `docs/**\/*.mdx`, a `contains`-scoped entry here is the ONLY way to exempt
+   * one line — {@link MDX_ALLOW_MARKER_BAN} bans the inline-comment
+   * alternative outright, because it leaks into the rendered page. `snippet`
+   * is truncated to 140 characters (see {@link scanSource} and
+   * {@link scanMdx}), so `contains` must match text within that window — a
+   * substring from later in a long line never matches, silently, since a
+   * missing match just means the violation stays reported rather than erring.
    */
   contains?: string;
   /** Why the usage is legitimate — required so the file stays an audit trail. */
@@ -592,15 +603,14 @@ function stripInlineCodeAndTargets(segment: string): string {
  * shorter run of the same character (the nested-fence case above), never the
  * other character, and never a run that merely ends a line of real content or
  * sits in the middle of one (a shell script echoing `` ``` `` is content, not
- * a closer). Verified against the real compiler, not assumed:
- * `docs-mdx-markers-compile.test.ts`'s sibling test in the fence-detection
- * suite compiled `docs/self-hosting/deployment.mdx`'s original closer-trails-
- * content line through `@mdx-js/mdx` and confirmed it did NOT close there
- * either — a real, pre-existing site bug (the "Interactive Setup" tab never
- * rendered; it was absorbed into the wrong code block), fixed directly in
- * that file alongside this rule, which anchors the way it does — rather than
- * the looser "anywhere on the line" check an earlier, unverified version of
- * this file shipped — precisely so a shape like it is recognized as still
+ * a closer). Verified against the real compiler, not assumed: compiling
+ * `docs/self-hosting/deployment.mdx`'s original closer-trails-content line
+ * through `@mdx-js/mdx` directly confirmed it did NOT close there either — a
+ * real, pre-existing site bug (the "Interactive Setup" tab never rendered; it
+ * was absorbed into the wrong code block), fixed directly in that file
+ * alongside this rule, which anchors the way it does — rather than the looser
+ * "anywhere on the line" check an earlier, unverified version of this file
+ * shipped — precisely so a shape like it is recognized as still
  * open rather than silently accepted as closed anywhere else in `docs/`.
  *
  * EVERYTHING ELSE. Inline code spans (`` `...` ``), markdown link targets
@@ -634,14 +644,13 @@ export function stripNonProse(text: string): string {
         // real code content (a shell script echoing markdown, say) is
         // content, never a closer, and neither is a shorter same-character
         // run (the nested-fence case) even when it does start the line.
-        // Verified against the real MDX compiler, not assumed:
-        // `docs-mdx-markers-compile.test.ts`'s sibling test compiled
-        // `docs/self-hosting/deployment.mdx`'s ORIGINAL "```content" ending
-        // — a run of the fence character trailing real content, not alone on
-        // its line — and confirmed the real compiler treats it as literal
-        // code text too, exactly what this anchored check now also does.
-        // That file had this exact shape and shipped broken because of it
-        // (fixed directly, same change that added this check).
+        // Verified against the real MDX compiler, not assumed: compiling
+        // `docs/self-hosting/deployment.mdx`'s ORIGINAL "```content" ending —
+        // a run of the fence character trailing real content, not alone on
+        // its line — confirmed the real compiler treats it as literal code
+        // text too, exactly what this anchored check now also does. That
+        // file had this exact shape and shipped broken because of it (fixed
+        // directly, same change that added this check).
         if (new RegExp(`^\\s*${fenceChar}{${fenceLen},}\\s*$`).test(line)) inFence = false;
         return '';
       }
@@ -686,28 +695,41 @@ export function stripNonProse(text: string): string {
 }
 
 /**
- * The inline exemption marker `check-banned-words.sh` already honours
- * (its `ALLOW_PATTERNS` list), extended here to {@link scanMdx}: a line
- * containing this substring anywhere — typically an MDX comment wrapping it
- * in JSX-comment syntax, opening curly-brace-slash-star and closing
- * star-slash-curly-brace, with a reason after the colon — is exempt from
- * every banned term on that line, the same per-line scope
- * `check-banned-words.sh` gives it. This is the scoped alternative to a file-
- * or directory-wide `allowlist.json` entry: a heading or sentence that must
- * name a real architecture term (`### Claude Code adapter`) gets a one-line,
- * self-documenting exemption instead of silencing every other line in the file.
+ * An inline JSX-comment marker wrapping the text `vocab-allow: reason` — the convention
+ * `check-banned-words.sh` uses for its own, unrelated wave-2 ban — was tried
+ * in `.mdx` prose for wave 4 (DOR-2508) and reverted: Fumadocs' remark
+ * pipeline does not treat a JSX comment as invisible the way a browser does.
+ * `remarkHeading` copies a heading's inline children, comment included, into
+ * the sidebar table-of-contents title AND the anchor slug it generates from
+ * that title; `remarkStructure` does the same into the page's search index
+ * entry for the paragraph it sits in. A marker meant to be read only by this
+ * script and a future editor ends up as visible, malformed text on the live
+ * site instead — confirmed against Fumadocs' own plugins, not assumed, after
+ * the JSX-comment marker had already shipped and been caught doing exactly
+ * that in `docs/concepts/relay.mdx`, `docs/guides/relay-messaging.mdx`,
+ * `docs/guides/workspaces.mdx` and `docs/marketplace/index.mdx`. There is no
+ * position in a docs page a JSX comment is provably safe in: a heading, list
+ * item or paragraph can all be titles, anchors or search text depending on
+ * where Fumadocs' plugins choose to look, and that set is not part of this
+ * script's contract with them. `docs/**\/*.mdx` therefore has no marker
+ * mechanism at all — {@link MDX_ALLOW_MARKER_BAN} makes the string
+ * `vocab-allow` itself a hard violation inside `docs/`, so the convention
+ * cannot quietly return. The scoped exemption a docs violation needs is a
+ * `contains`-scoped `allowlist.json` entry instead (see
+ * {@link AllowlistEntry.contains}), which lives in a file the site never
+ * renders.
  */
-const MDX_ALLOW_MARKER = 'vocab-allow';
+const MDX_ALLOW_MARKER_BAN = 'vocab-allow';
 
 /**
  * Scan one already-read `.mdx` docs file for banned-term hits in prose, after
  * {@link stripNonProse} removes code and link/attribute targets. A line-based
  * regex scan rather than {@link scanSource}'s parser walk, because MDX is not
  * TypeScript — see the module doc (DOR-2508) for why that is the right tool
- * here and what it can't tell apart from real prose. A line carrying
- * {@link MDX_ALLOW_MARKER} is skipped entirely, checked against the raw line
- * rather than the stripped one since the marker is prose-shaped MDX comment
- * text, not code.
+ * here and what it can't tell apart from real prose. Independently of any
+ * banned term, a line containing the substring {@link MDX_ALLOW_MARKER_BAN}
+ * is ALWAYS reported — see that constant's doc for why an inline marker is
+ * never safe in a docs page, whatever it's exempting.
  *
  * @param filePath - Repo-relative path, used only to label violations.
  * @param text - The raw `.mdx` file contents.
@@ -719,8 +741,21 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
   const matchers = terms.map((t) => ({ ...t, re: new RegExp(termMatcher(t.term).source, 'gi') }));
   const violations: Violation[] = [];
 
+  rawLines.forEach((rawLine, index) => {
+    const markerColumn = rawLine.indexOf(MDX_ALLOW_MARKER_BAN);
+    if (markerColumn === -1) return;
+    violations.push({
+      file: filePath,
+      line: index + 1,
+      column: markerColumn + 1,
+      term: MDX_ALLOW_MARKER_BAN,
+      wave: 'docs-marker-ban',
+      issue: 'DOR-2508',
+      snippet: rawLine.trim().slice(0, 140),
+    });
+  });
+
   stripped.forEach((line, index) => {
-    if (rawLines[index]!.includes(MDX_ALLOW_MARKER)) return;
     for (const m of matchers) {
       m.re.lastIndex = 0;
       let match: RegExpExecArray | null;
@@ -793,7 +828,13 @@ export function runVocabGate(
     const relPath = toPosixRelative(repoRoot, file);
     const text = readFileSync(file, 'utf8');
     for (const v of scanMdx(relPath, text, docsTerms)) {
-      if (isAllowlisted(v.file, v.term, allowlist, v.snippet)) continue;
+      // The marker ban is deliberately not allowlistable — an `allowlist.json`
+      // entry that omitted `terms` would otherwise cover every term at its
+      // path, this one included, quietly reopening the exact leak the ban
+      // exists to close. See MDX_ALLOW_MARKER_BAN's doc.
+      if (v.wave !== 'docs-marker-ban' && isAllowlisted(v.file, v.term, allowlist, v.snippet)) {
+        continue;
+      }
       violations.push(v);
     }
   }
@@ -819,6 +860,14 @@ if (isMain) {
         'Connections-domain noun, GitHub\'s own "Mission Control", a code sample — add ' +
         'a scoped entry with a reason to scripts/vocab-gate/allowlist.json.'
     );
+    if (violations.some((v) => v.wave === 'docs-marker-ban')) {
+      console.error(
+        '\nA "vocab-allow" hit above is a docs/**/*.mdx marker, banned outright: it leaks ' +
+          "into the live page's heading titles, anchors and search text through Fumadocs' " +
+          'own remark plugins. Remove the inline comment and add a `contains`-scoped entry ' +
+          'to scripts/vocab-gate/allowlist.json instead — see AllowlistEntry.contains.'
+      );
+    }
     process.exit(1);
   }
 

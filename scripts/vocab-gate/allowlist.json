@@ -283,7 +283,121 @@
       "path": "docs/marketplace/index.mdx",
       "terms": ["adapter", "adapters"],
       "contains": "Build a custom adapter and ship it to the marketplace.",
-      "reason": "DOR-2508. The Card body copy below the 'Building Relay Adapters' title, same Prettier limitation. `contains` pins this second entry to that exact sentence — two other lines in this file (the catalog summary and the Discord bullet) carry working `vocab-allow` markers instead, since plain prose and list items, unlike a multi-child Card, are not reformatted onto separate lines by Prettier."
+      "reason": "DOR-2508. The Card body copy below the 'Building Relay Adapters' title, same Prettier limitation. `contains` pins this second entry to that exact sentence."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The DorkOS Marketplace is a curated catalog of pre-built agents, plugins, skill packs, and adapters.",
+      "reason": "DOR-2508, third review round. 'Adapter' is a real marketplace package-type facet an author picks — the ADR's marketplace-author domain carve-out. Was an inline `vocab-allow` marker; removed because Fumadocs' remarkStructure copies a marked paragraph's raw text, comment included, into the page's search index entry. `contains` pins this entry to the catalog-summary sentence."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "Adapters that connect messaging services like Discord",
+      "reason": "DOR-2508, third review round. Same marketplace-facet carve-out and same reason for dropping the marker as the entry above. `contains` pins this entry to the Discord bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Adapters",
+      "reason": "DOR-2508, third review round. Names Relay's own adapter architecture (RelayAdapter, adapters.json), the ADR's carved-out sense. Was an inline `vocab-allow` marker on this heading; removed because Fumadocs' remarkHeading copies a heading's children, comment included, into BOTH the sidebar table-of-contents title and the anchor slug generated from it — a marker meant to be invisible showed up as visible, malformed heading text and a broken anchor on the live site. `contains` pins this entry to the heading text instead."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "Relay connects to external platforms through **adapters**:",
+      "reason": "DOR-2508, third review round. Defines the real architecture term. Same reason for dropping the marker as the heading entry above (this one leaked into the paragraph's search-index entry via remarkStructure). `contains` pins this entry to the start of that sentence — inside the first 140 characters, since a violation's snippet is truncated there and `contains` is checked against it."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "**Claude Code adapter**: routes messages to Claude sessions",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "**Telegram adapter**: connects a Telegram bot to the bus via the grammy library",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "**Slack adapter**: bridges Slack workspaces into Relay using Socket Mode",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "**Webhook adapter**: a generic HTTP webhook bridge",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
+    },
+    {
+      "path": "docs/concepts/relay.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "You can add custom adapters from npm packages or local file paths.",
+      "reason": "DOR-2508, third review round. Covers this line's whole sentence ('...Plugin adapters implement the same RelayAdapter interface as built-in adapters.', RelayAdapter being the ADR's own carved-out identifier). Same marker-removal reason as the entries above. `contains` pins this entry to the start of the line — inside the first 140 characters, since a violation's snippet is truncated there and `contains` is checked against it."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "## Built-in adapters",
+      "reason": "DOR-2508, third review round. Names Relay's own adapter architecture (adapters.json, /api/relay/adapters), the ADR's carved-out sense. Was an inline `vocab-allow` marker on this heading; removed for the same remarkHeading title/anchor leak documented on docs/concepts/relay.mdx's '### Adapters' entry above. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "Adapters connect external platforms to Relay's subject system.",
+      "reason": "DOR-2508, third review round. Same Relay architecture noun and same marker-removal reason as the heading entry above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Claude Code adapter",
+      "reason": "DOR-2508, third review round. The real config \"type\" value and built-in component name. Same heading-leak marker-removal reason as docs/concepts/relay.mdx's '### Adapters' entry. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The Claude Code adapter is on by default whenever Relay starts.",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Telegram adapter",
+      "reason": "DOR-2508, third review round. The real config \"type\" value and built-in component name. Same heading-leak marker-removal reason as docs/concepts/relay.mdx's '### Adapters' entry. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The Telegram adapter connects a Telegram bot to Relay.",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Slack adapter",
+      "reason": "DOR-2508, third review round. The real config \"type\" value and built-in component name. Same heading-leak marker-removal reason as docs/concepts/relay.mdx's '### Adapters' entry. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The Slack adapter connects a Slack workspace to Relay using Socket Mode",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "### Webhook adapter",
+      "reason": "DOR-2508, third review round. The real config \"type\" value and built-in component name. Same heading-leak marker-removal reason as docs/concepts/relay.mdx's '### Adapters' entry. `contains` pins this entry to the heading text."
+    },
+    {
+      "path": "docs/guides/relay-messaging.mdx",
+      "terms": ["adapter", "adapters"],
+      "contains": "The webhook adapter is a generic HTTP bridge.",
+      "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
     }
   ]
 }
