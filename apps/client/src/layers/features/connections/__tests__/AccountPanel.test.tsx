@@ -222,7 +222,9 @@ describe('AccountPanel', () => {
     // same-day wording check would misread as a failure.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 8, 28, 12, 0));
-    onTestFinished(() => vi.useRealTimers());
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
     renderPanel(
       transportFor(
