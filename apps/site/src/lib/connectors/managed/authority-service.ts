@@ -17,7 +17,7 @@ import {
   type ManagedConnectorAuthorityCommandStatus,
 } from '@dorkos/shared/connector-managed-schemas';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import { and, asc, desc, eq, exists, gt, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { schema } from '@/db/client';
 import type { getTransactionDb } from '@/db/transaction-client';
@@ -33,6 +33,25 @@ export interface ManagedConnectorPrincipal {
   keyId: string;
 }
 
+/**
+ * A revoked linked instance whose leftover connections the service ends on its
+ * own, with no key and no request from the instance.
+ *
+ * It can only finish cleanup (delete a provider account or trigger that a
+ * closed connection or subscription still owes). Every route that grants,
+ * executes or reads takes a {@link ManagedConnectorPrincipal}, which this type
+ * is not, so it can never authorize anything new.
+ */
+export interface RevokedInstanceCleanupPrincipal {
+  revokedInstance: true;
+  ownerId: string;
+  instanceId: string;
+  tenantId: string;
+}
+
+/** The authority a cleanup runs under: the live instance's key, or its revocation. */
+export type ManagedCleanupPrincipal = ManagedConnectorPrincipal | RevokedInstanceCleanupPrincipal;
+
 /** Fail-closed authority error when the linked instance changes before commit. */
 export class ManagedAuthorityUnauthorizedError extends Error {
   constructor() {
@@ -47,6 +66,20 @@ export class ManagedAuthorityProviderUnavailableError extends Error {
     super('Managed connector provider is unavailable.');
     this.name = 'ManagedAuthorityProviderUnavailableError';
   }
+}
+
+/**
+ * Whether an account lookup failed because the service no longer has the
+ * account (it answered 404), as opposed to failing for a reason that may pass.
+ *
+ * @param error - The error the account lookup threw.
+ */
+function isAccountGoneAtProvider(error: unknown): boolean {
+  return (
+    error instanceof ComposioManagedAccountError &&
+    error.code === 'provider_rejected' &&
+    error.status === 404
+  );
 }
 
 /** Exact provider material required for lifecycle health and cleanup work. */
@@ -88,6 +121,37 @@ export async function lockLiveAuthorityPrincipal(
     )
     .for('update');
   if (!live) throw new ManagedAuthorityUnauthorizedError();
+}
+
+/**
+ * Lock the authority a cleanup runs under before it commits.
+ *
+ * A live principal must still hold its exact key ({@link lockLiveAuthorityPrincipal}).
+ * A revoked principal must name an instance that is revoked and still belongs
+ * to the same owner. Revocation is final (a relink creates a new instance), so
+ * that authority never lapses once it holds.
+ *
+ * @param tx - The open transaction.
+ * @param principal - The live or revoked cleanup authority.
+ * @throws ManagedAuthorityUnauthorizedError when the authority no longer holds.
+ */
+export async function lockCleanupAuthority(
+  tx: Parameters<Parameters<ManagedConnectorDatabase['transaction']>[0]>[0],
+  principal: ManagedCleanupPrincipal
+): Promise<void> {
+  if (!('revokedInstance' in principal)) return lockLiveAuthorityPrincipal(tx, principal);
+  const [revoked] = await tx
+    .select({ id: schema.instance.id })
+    .from(schema.instance)
+    .where(
+      and(
+        eq(schema.instance.id, principal.instanceId),
+        eq(schema.instance.userId, principal.ownerId),
+        isNotNull(schema.instance.revokedAt)
+      )
+    )
+    .for('update');
+  if (!revoked) throw new ManagedAuthorityUnauthorizedError();
 }
 
 /**
@@ -280,10 +344,27 @@ function statusOf(row: typeof schema.managedConnectorAuthorityCommand.$inferSele
   };
 }
 
-/** Finish only the external binding captured by this still-current disconnect. */
-async function finishDisconnectCleanup(
+/**
+ * Finish only the external binding captured by this still-current disconnect.
+ *
+ * Leased (one worker deletes a binding at a time), idempotent (a replay of a
+ * finished cleanup changes nothing) and retried (a failure is recorded as
+ * `failed` and claimed again later). It runs for a live instance's own
+ * disconnect and for the disconnects the service writes when an instance is
+ * revoked; neither case locks a key, because cleanup only removes access.
+ *
+ * @param db - The site database.
+ * @param principal - The live or revoked instance the disconnect belongs to.
+ * @param command - The exact disconnect command.
+ * @param requestHash - The stored hash of that command.
+ * @param binding - The provider binding captured when the disconnect applied.
+ * @param previousStatus - The status to report when nothing changes.
+ * @param provider - Provider material; without it the cleanup stays owed.
+ * @throws ManagedAuthorityProviderUnavailableError when no provider material is available.
+ */
+export async function finishDisconnectCleanup(
   db: ManagedConnectorDatabase,
-  principal: ManagedConnectorPrincipal,
+  principal: ManagedCleanupPrincipal,
   command: Extract<
     ReturnType<typeof ManagedConnectorAuthorityCommandSchema.parse>,
     { kind: 'set_connection_lifecycle' }
@@ -712,16 +793,21 @@ export async function applyManagedAuthorityCommand(
     )[0];
   if (!connection) return { status: claimed.status, conflict: false };
 
-  let account: Awaited<ReturnType<ManagedAuthorityProviderContext['accounts']['getAccount']>>;
+  let account: Awaited<
+    ReturnType<ManagedAuthorityProviderContext['accounts']['getAccount']>
+  > | null;
   try {
     account = await provider.accounts.getAccount(connection.externalAccountRef, provider.signal);
   } catch (error) {
-    if (error instanceof ComposioManagedAccountError || error instanceof Error) {
-      throw new ManagedAuthorityProviderUnavailableError();
-    }
-    throw error;
+    // An account the service no longer has will never come back, so the resume
+    // ends here as rejected. Every other failure may pass, so the command stays
+    // pending and the linked instance's retry can finish it.
+    if (isAccountGoneAtProvider(error)) account = null;
+    else if (error instanceof Error) throw new ManagedAuthorityProviderUnavailableError();
+    else throw error;
   }
   const accountMatches =
+    account !== null &&
     account.connectedAccountId === connection.externalAccountRef &&
     account.providerUserId === provider.providerUserId &&
     account.toolkit === connection.toolkit &&
@@ -822,7 +908,7 @@ export async function applyManagedAuthorityCommand(
 /** Read one command status only beneath its verified tenant and instance. */
 export async function getManagedAuthorityCommandStatus(
   db: ManagedConnectorDatabase,
-  principal: ManagedConnectorPrincipal,
+  principal: ManagedCleanupPrincipal,
   commandId: string
 ): Promise<ManagedConnectorAuthorityCommandStatus | null> {
   const [row] = await db

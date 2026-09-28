@@ -34,7 +34,7 @@
 import { apiKey } from '@better-auth/api-key';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { createAuthMiddleware } from 'better-auth/api';
+import { createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { admin, deviceAuthorization } from 'better-auth/plugins';
 
 import { auditLog } from '@/db/audit-schema';
@@ -43,6 +43,7 @@ import { getDb } from '@/db/client';
 import { instance } from '@/db/instance-schema';
 import { env } from '@/env';
 import { handleAdminAfter } from '@/lib/admin-audit-hook';
+import { refuseErasureWhileAppsSignedIn } from '@/lib/connectors/managed/instance-revocation/erasure';
 import { auditRegistry } from '@/lib/audit-registry-plugin';
 import { recordAudit } from '@/lib/audit-service';
 import { INSTANCE_PERMISSION_RESOURCE, parseInstanceDescriptor } from '@/lib/instance-descriptor';
@@ -113,6 +114,18 @@ export function resolveBaseURL(e: BaseURLEnv = env): string {
   return e.BETTER_AUTH_URL;
 }
 
+/** Optional wiring for {@link createAuth}. */
+export interface CreateAuthOptions {
+  /**
+   * Runs before an account is erased, by the person (self-serve deletion) or
+   * by an admin (remove user). Throw to refuse: the account and everything it
+   * owns stay. Production ends the account's managed app sign-ins at the
+   * service here ({@link refuseErasureWhileAppsSignedIn}), because the erasure
+   * deletes the only record of them. Tests over a memory adapter omit it.
+   */
+  beforeAccountErasure?: (userId: string) => Promise<void>;
+}
+
 /**
  * Build a DorkOS-account Better Auth instance over the given database adapter.
  *
@@ -122,8 +135,9 @@ export function resolveBaseURL(e: BaseURLEnv = env): string {
  *
  * @param database - The Better Auth database adapter to bind (Drizzle pg in
  *   production; an in-memory adapter in tests).
+ * @param options - Optional wiring; see {@link CreateAuthOptions}.
  */
-export function createAuth(database: AuthDatabase) {
+export function createAuth(database: AuthDatabase, options: CreateAuthOptions = {}) {
   // Lazy self-reference: the `/device/token` after-hook (below) needs the built
   // instance to mint an API key, but the hook only runs at request time — long
   // after construction — so it is filled in before any request. Each createAuth
@@ -194,6 +208,9 @@ export function createAuth(database: AuthDatabase) {
           } catch {
             /* never block erasure on an audit write */
           }
+          // Unlike the audit, this may refuse: erasing while an app sign-in is
+          // still live at the service would delete the only record of it.
+          await options.beforeAccountErasure?.(recipient.id);
         },
         afterDelete: async (recipient) => {
           try {
@@ -274,6 +291,23 @@ export function createAuth(database: AuthDatabase) {
       auditRegistry(),
     ],
     hooks: {
+      // An admin's remove-user erases an account just as self-serve deletion
+      // does, and needs the same step first. The admin endpoint deletes the
+      // account's sign-in methods before its user row, so this cannot wait for
+      // a database hook; it runs before the endpoint instead, and only for a
+      // caller the endpoint itself would allow, removing someone else.
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/admin/remove-user' || !options.beforeAccountErasure) return;
+        const target = (ctx.body as { userId?: unknown } | undefined)?.userId;
+        if (typeof target !== 'string' || !target) return;
+        const session = await getSessionFromCtx(ctx);
+        if (!session || session.user.id === target) return;
+        const allowed = await (selfRef.current as Auth).api.userHasPermission({
+          body: { userId: session.user.id, permissions: { user: ['delete'] } },
+        });
+        if (!allowed.success) return;
+        await options.beforeAccountErasure(target);
+      }),
       // Swap the device-flow session for a scoped API key. By default
       // `/device/token` mints a browser session on approval; an instance must
       // instead hold a revocable, account-scoped API key. On a successful token
@@ -406,7 +440,8 @@ export function getAuth(): Auth {
       // `apikey` + `deviceCode` back the plugins; `instance` backs the registry;
       // `auditLog` backs the audit log.
       schema: { user, session, account, verification, apikey, deviceCode, instance, auditLog },
-    })
+    }),
+    { beforeAccountErasure: (userId) => refuseErasureWhileAppsSignedIn(userId) }
   );
   return cached;
 }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from '@/env';
 import { recoverManagedEventCleanup } from '@/lib/connectors/managed/event-cleanup-service';
 import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
+import { sweepRevokedInstances } from '@/lib/connectors/managed/instance-revocation/cleanup';
 
 import { GET } from '../route';
 
@@ -16,6 +17,13 @@ vi.mock('@/lib/connectors/managed/event-delivery-service', () => ({
     contentRowsCleared: 2,
     metadataRowsDeleted: 1,
     protectedBytesCleared: 256,
+  }),
+}));
+vi.mock('@/lib/connectors/managed/instance-revocation/cleanup', () => ({
+  sweepRevokedInstances: vi.fn().mockResolvedValue({
+    instancesClosed: 1,
+    accountsExamined: 2,
+    accountsCompleted: 2,
   }),
 }));
 // Proves the split: this route never reaches the account cleanup pass. The mock
@@ -50,6 +58,7 @@ describe('GET /api/cron/event-retention', () => {
     expect(res.status).toBe(401);
     expect(sweepManagedConnectorEventRetention).not.toHaveBeenCalled();
     expect(recoverManagedEventCleanup).not.toHaveBeenCalled();
+    expect(sweepRevokedInstances).not.toHaveBeenCalled();
   });
 
   it('401s when the Bearer secret does not match', async () => {
@@ -73,6 +82,7 @@ describe('GET /api/cron/event-retention', () => {
       ok: boolean;
       eventRetention: Record<string, number>;
       eventSubscriptions: Record<string, number>;
+      revokedInstances: Record<string, number>;
     };
     expect(body.ok).toBe(true);
     expect(body.eventRetention).toEqual({
@@ -89,6 +99,19 @@ describe('GET /api/cron/event-retention', () => {
     expect(recoverManagedEventCleanup).toHaveBeenCalledWith(
       { marker: 'db' },
       expect.any(AbortSignal)
+    );
+    expect(body.revokedInstances).toEqual({
+      instancesClosed: 1,
+      accountsExamined: 2,
+      accountsCompleted: 2,
+    });
+    expect(sweepRevokedInstances).toHaveBeenCalledWith(
+      { marker: 'db' },
+      { signal: expect.any(AbortSignal) }
+    );
+    // Triggers are deleted before the accounts they watch.
+    expect(vi.mocked(recoverManagedEventCleanup).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(sweepRevokedInstances).mock.invocationCallOrder[0]
     );
   });
 
@@ -124,6 +147,7 @@ describe('GET /api/cron/event-retention with accounts handed over', () => {
     expect(await res.json()).toEqual({ ok: true, skipped: 'accounts-service' });
     expect(sweepManagedConnectorEventRetention).not.toHaveBeenCalled();
     expect(recoverManagedEventCleanup).not.toHaveBeenCalled();
+    expect(sweepRevokedInstances).not.toHaveBeenCalled();
   });
 
   it('still refuses an unauthenticated caller when the variable is set', async () => {

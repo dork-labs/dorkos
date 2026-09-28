@@ -22,6 +22,11 @@ import * as schema from '@/db/schema';
 import { createAuth } from '../auth';
 import * as mailer from '../mailer';
 import { revokeInstance } from '../instance-service';
+import {
+  endOwnerConnectionsBeforeErasure,
+  refuseErasureWhileAppsSignedIn,
+} from '../connectors/managed/instance-revocation/erasure';
+import type { ManagedConnectorDatabase } from '../connectors/managed/authority-service';
 import { migrateCurrentSchema } from '@/db/__tests__/migrate-current-schema';
 
 const ORIGIN = 'http://localhost:3000';
@@ -343,6 +348,55 @@ describe('managed event account deletion', () => {
     },
     30_000
   );
+
+  it('ends every sign-in at the service before erasing an owner, and refuses while one is live', async () => {
+    const client = new PGlite();
+    try {
+      const db = drizzle(client, { schema });
+      await migrateCurrentSchema(db);
+      const deleteAccount = vi.fn<(ref: string, signal: AbortSignal) => Promise<void>>();
+      deleteAccount.mockRejectedValueOnce(new Error('service unavailable'));
+      const auth = createAuth(drizzleAdapter(db, { provider: 'pg', schema }), {
+        beforeAccountErasure: (userId) =>
+          refuseErasureWhileAppsSignedIn(userId, (owner) =>
+            endOwnerConnectionsBeforeErasure(db as unknown as ManagedConnectorDatabase, owner, {
+              signal: new AbortController().signal,
+              resolveProvider: () => ({
+                executionConfigDigest: 'digest-a',
+                accounts: { getAccount: vi.fn(), deleteAccount },
+              }),
+            })
+          ),
+      });
+      const handlers = toNextJsHandler(auth);
+      const owner = await createSignedInOwner(client, handlers, 'guarded');
+      const target = await seedManagedGraph(client, {
+        ownerId: owner.ownerId,
+        prefix: 'a',
+        kind: 'full_graph',
+      });
+
+      // The service is down: the account, and the record of its sign-in, stay.
+      expect((await completeAccountDeletion(handlers, owner.cookie)).status).toBe(503);
+      expect(
+        (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.ownerId])).rows
+      ).toHaveLength(1);
+      const kept = await client.query<{ external_account_ref: string; lifecycle: string }>(
+        'SELECT external_account_ref, lifecycle FROM managed_connector_connection WHERE tenant_id = $1',
+        [target.tenantId]
+      );
+      expect(kept.rows).toEqual([{ external_account_ref: 'ca-a', lifecycle: 'disconnected' }]);
+
+      // Once the service answers, the sign-in ends first and the erasure follows.
+      expect((await completeAccountDeletion(handlers, owner.cookie)).status).toBe(302);
+      expect(deleteAccount.mock.calls.map(([ref]) => ref)).toEqual(['ca-a', 'ca-a']);
+      expect(
+        (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.ownerId])).rows
+      ).toHaveLength(0);
+    } finally {
+      await client.close();
+    }
+  });
 
   it('keeps event history when an owner performs the ordinary instance revoke', async () => {
     const client = new PGlite();
