@@ -46,6 +46,9 @@ const TEAM_VIEW_MODES: TeamViewMode[] = ['cards', 'table', 'topology', 'denied',
 /** The width a phone gives the bar. */
 const PHONE_WIDTH = 390;
 
+/** The narrowest phone the app supports, where the account badge's long words shorten. */
+const NARROW_BADGE_WIDTH = 360;
+
 /**
  * The width the page really has at 768px with the sidebar and the right panel
  * both docked — the frame `min-w-28` was added for (audit finding 2.3).
@@ -707,7 +710,7 @@ export function OneBarShowcases() {
 
       <PlaygroundSection
         title="AccountBadge"
-        description="The session header names the account the session spends, after the origin chip, once two or more Claude accounts are set up. It says “out” when the session ran out, in red only while it needs you, exactly as its sidebar row does; a moved session or a limit on one model only keeps the normal pill."
+        description="The session header names the account the session spends, after the origin chip, once two or more Claude accounts are set up. When the session ran out it prints its sidebar row's words, in red only while it needs you; a moved session or a limit on one model only keeps the normal pill."
       >
         <ShowcaseLabel>Normal</ShowcaseLabel>
         <ShowcaseDemo>
@@ -735,6 +738,29 @@ export function OneBarShowcases() {
             <OneBar
               identity={<BarTitle>Main · groom check</BarTitle>}
               chips={<AccountBadgeView account={badgeAccount(3, 'waiting-reset')} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The same wait at 360px: the words shorten to “out · waiting”, and the spoken name and the
+          tooltip keep “waiting for reset”
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={NARROW_BADGE_WIDTH}>
+            <OneBar
+              identity={<BarTitle>Main · groom check</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(3, 'waiting-reset')} />}
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Needs you at 360px: its words fit and stay whole</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={NARROW_BADGE_WIDTH}>
+            <OneBar
+              identity={<BarTitle>DOR-2361 issuer column</BarTitle>}
+              chips={<AccountBadgeView account={badgeAccount(4, 'limited')} />}
             />
           </BarFrame>
         </ShowcaseDemo>

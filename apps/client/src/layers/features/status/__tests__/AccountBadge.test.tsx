@@ -144,7 +144,8 @@ describe('AccountBadge', () => {
     ];
     renderBadge(transportWith(4));
     const badge = await screen.findByRole('group', { name: 'Acct 4, out · needs you' });
-    expect(badge).toHaveTextContent('Acct 4 · out');
+    // The row's own words are printed, not just "out" (color is never the only signal).
+    expect(badge).toHaveTextContent('Acct 4 · out · needs you');
     expect(badge).toHaveClass(...RED);
   });
 
@@ -154,6 +155,7 @@ describe('AccountBadge', () => {
     ];
     renderBadge(transportWith(4));
     const badge = await screen.findByRole('group', { name: 'Acct 4, out · handing off' });
+    expect(badge).toHaveTextContent('Acct 4 · out · handing off');
     expect(badge).toHaveClass(...RED);
   });
 
@@ -167,8 +169,14 @@ describe('AccountBadge', () => {
       ];
       renderBadge(transportWith(4));
       const badge = await screen.findByRole('group', { name: 'Acct 4, out · waiting for reset' });
-      expect(badge).toHaveTextContent('Acct 4 · out');
+      expect(badge).toHaveTextContent('Acct 4 · out · waiting for reset');
       expect(badge).not.toHaveClass(...RED);
+      // A narrow bar prints the short form; the accessible name and the
+      // tooltip keep the full words (04 §15).
+      const narrow = badge.querySelector('[data-slot="account-badge-narrow"]');
+      expect(narrow).toHaveTextContent('· out · waiting');
+      expect(narrow).not.toHaveTextContent('reset');
+      expect(badge).toHaveAttribute('title', 'Acct 4 · out · waiting for reset');
     }
   );
 
@@ -200,6 +208,7 @@ describe('AccountBadge', () => {
     const row = screen.getByTestId('session-row');
     if (text) {
       expect(row).toHaveTextContent(text);
+      expect(badge).toHaveTextContent(`Acct 4 · ${text}`);
       expect(badge.classList.contains(RED[0]!)).toBe(row.classList.contains(RED[0]!));
     } else {
       expect(row).not.toHaveTextContent(/out ·/);

@@ -4,7 +4,6 @@ import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-sch
 import type { EffortLevel } from '@dorkos/shared/types';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import {
-  claudeAccountName,
   cn,
   describeAgentExecution,
   effortLabel,
@@ -12,7 +11,7 @@ import {
   shortenHomePath,
   type KnownAccount,
 } from '@/layers/shared/lib';
-import { useIsMobile } from '@/layers/shared/model';
+import { useClaudeAccounts, useIsMobile } from '@/layers/shared/model';
 import {
   ProvenanceChip,
   ResponsivePopover,
@@ -284,11 +283,11 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // 260821-205324) — so the filter states that rule at the place it matters,
   // which is the list of things a person can choose.
   const accountRows = config?.claudeCode?.accounts;
+  // The app's one name for an account, so this computer's own sign-in reads
+  // "Main (this computer's sign-in)" here as everywhere (decision §12).
+  const { nameFor: accountName } = useClaudeAccounts();
   const knownAccounts: (KnownAccount & { path: string })[] | undefined = accountRows?.flatMap(
-    (row) =>
-      row.id === null
-        ? []
-        : [{ id: row.id, label: claudeAccountName(row.path, accountRows), path: row.path }]
+    (row) => (row.id === null ? [] : [{ id: row.id, label: accountName(row.path), path: row.path }])
   );
   // `?? null`, not `!= null` alone: an in-flight optimistic reset carries the
   // wire's `null`, and every provenance read below has to see that as "back to
@@ -298,7 +297,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // The account a new session would bill to with nothing set here — already
   // resolved by the server, because the client cannot compute it.
   const serverDefaultAccount = config?.claudeCode
-    ? claudeAccountName(config.claudeCode.resolvedAccount, accountRows ?? [])
+    ? accountName(config.claudeCode.resolvedAccount)
     : null;
 
   // **The Account row writes through the OPERATOR's route, never the agent
