@@ -385,6 +385,10 @@ describe('ComposioSdkClient', () => {
     ['GMAIL_CREATE_EMAIL_DRAFT', ['important', 'openWorldHint', 'createHint'], 'write'],
     ['GOOGLECALENDAR_CREATE_EVENT', ['createHint'], 'write'],
     ['GITHUB_UPDATE_AN_ISSUE', ['updateHint', 'idempotentHint'], 'write'],
+    // DorkOS keeps account-reach actions out of levels, by name for future tools too.
+    ['OUTLOOK_SET_AUTO_FORWARDING', ['updateHint'], 'destructive'],
+    ['GOOGLEDRIVE_CREATE_ACL_ENTRY', ['createHint'], 'destructive'],
+    ['SLACK_CHANNELS_WATCH', ['createHint', 'openWorldHint'], 'destructive'],
     // Removes, cancels, revokes, or changes irreversibly: never in a level.
     ['GMAIL_DELETE_MESSAGE', ['destructiveHint'], 'destructive'],
     [
@@ -498,10 +502,39 @@ describe('ComposioSdkClient', () => {
     for (const slug of [
       'GMAIL_SEND_EMAIL',
       'GMAIL_REPLY_TO_THREAD',
+      'GMAIL_CREATE_EMAIL_DRAFT',
+      'GMAIL_ADD_LABEL_TO_EMAIL',
+      'GMAIL_MOVE_TO_TRASH',
       'GOOGLECALENDAR_CREATE_EVENT',
       'GOOGLECALENDAR_UPDATE_EVENT',
+      'GOOGLECALENDAR_QUICK_ADD',
     ])
       expect([slug, classOf.get(slug)]).toEqual([slug, 'write']);
+    // Composio calls these create/update, but they share access, redirect
+    // mail, change the sending identity or delivery, or start a subscription:
+    // DorkOS keeps them out of every level.
+    const accountReach = [
+      'GOOGLECALENDAR_ACL_INSERT',
+      'GOOGLECALENDAR_ACL_PATCH',
+      'GOOGLECALENDAR_ACL_UPDATE',
+      'GOOGLECALENDAR_ACL_WATCH',
+      'GOOGLECALENDAR_CALENDAR_LIST_WATCH',
+      'GOOGLECALENDAR_EVENTS_WATCH',
+      'GOOGLECALENDAR_SETTINGS_WATCH',
+      'GMAIL_CREATE_FILTER',
+      'GMAIL_FORWARD_MESSAGE',
+      'GMAIL_PATCH_SEND_AS',
+      'GMAIL_UPDATE_SEND_AS',
+      'GMAIL_UPDATE_IMAP_SETTINGS',
+      'GMAIL_UPDATE_POP_SETTINGS',
+      'GMAIL_IMPORT_MESSAGE',
+      'GMAIL_INSERT_MESSAGE',
+    ];
+    for (const slug of accountReach)
+      expect([slug, classOf.get(slug)]).toEqual([slug, 'destructive']);
+    // The tightening only ever moves write to destructive: reads it names stay reads.
+    expect(classOf.get('GOOGLECALENDAR_ACL_LIST')).toBe('read');
+    expect(classOf.get('GMAIL_LIST_FILTERS')).toBe('read');
     for (const slug of [
       'GMAIL_LIST_MESSAGES',
       'GMAIL_GET_DRAFT',
@@ -510,6 +543,43 @@ describe('ComposioSdkClient', () => {
     ])
       expect([slug, classOf.get(slug)]).toEqual([slug, 'read']);
     expect(classOf.get('GMAIL_SEND_DRAFT')).toBe('destructive');
+    // The whole of "Read and write" for these two apps, pinned so any change is reviewed.
+    expect(
+      [...classOf]
+        .filter(([, classification]) => classification === 'write')
+        .map(([slug]) => slug)
+        .sort()
+    ).toEqual([
+      'GMAIL_ADD_LABEL_TO_EMAIL',
+      'GMAIL_BATCH_MODIFY_MESSAGES',
+      'GMAIL_CREATE_EMAIL_DRAFT',
+      'GMAIL_CREATE_LABEL',
+      'GMAIL_MODIFY_THREAD_LABELS',
+      'GMAIL_MOVE_THREAD_TO_TRASH',
+      'GMAIL_MOVE_TO_TRASH',
+      'GMAIL_PATCH_LABEL',
+      'GMAIL_REPLY_TO_THREAD',
+      'GMAIL_SEND_EMAIL',
+      'GMAIL_UNTRASH_MESSAGE',
+      'GMAIL_UNTRASH_THREAD',
+      'GMAIL_UPDATE_DRAFT',
+      'GMAIL_UPDATE_LABEL',
+      'GMAIL_UPDATE_LANGUAGE_SETTINGS',
+      'GMAIL_UPDATE_VACATION_SETTINGS',
+      'GOOGLECALENDAR_CALENDARS_UPDATE',
+      'GOOGLECALENDAR_CALENDAR_LIST_INSERT',
+      'GOOGLECALENDAR_CALENDAR_LIST_PATCH',
+      'GOOGLECALENDAR_CALENDAR_LIST_UPDATE',
+      'GOOGLECALENDAR_CREATE_CALENDAR',
+      'GOOGLECALENDAR_CREATE_EVENT',
+      'GOOGLECALENDAR_DUPLICATE_CALENDAR',
+      'GOOGLECALENDAR_EVENTS_IMPORT',
+      'GOOGLECALENDAR_EVENTS_MOVE',
+      'GOOGLECALENDAR_PATCH_CALENDAR',
+      'GOOGLECALENDAR_PATCH_EVENT',
+      'GOOGLECALENDAR_QUICK_ADD',
+      'GOOGLECALENDAR_UPDATE_EVENT',
+    ]);
   });
 
   it('classifies identically on this computer and in the hosted DorkOS account path', async () => {

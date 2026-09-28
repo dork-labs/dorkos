@@ -187,6 +187,56 @@ function classifyComposioTags(tags: readonly string[]): ConnectorOperationClassi
   return 'destructive';
 }
 
+/**
+ * Composio `write` actions DorkOS keeps out of "Read and write": ones that
+ * share access, redirect or forward mail, change the sending identity, change
+ * how the account delivers mail, or start a subscription. They can hand data
+ * or access to someone else, so they are allowed one action at a time, like a
+ * delete. Exact slugs from Composio's Gmail and Google Calendar lists.
+ */
+const ACCOUNT_REACH_ACTIONS = new Set([
+  'GOOGLECALENDAR_ACL_INSERT',
+  'GOOGLECALENDAR_ACL_PATCH',
+  'GOOGLECALENDAR_ACL_UPDATE',
+  'GOOGLECALENDAR_ACL_WATCH',
+  'GOOGLECALENDAR_CALENDAR_LIST_WATCH',
+  'GOOGLECALENDAR_EVENTS_WATCH',
+  'GOOGLECALENDAR_SETTINGS_WATCH',
+  'GMAIL_CREATE_FILTER',
+  'GMAIL_FORWARD_MESSAGE',
+  'GMAIL_PATCH_SEND_AS',
+  'GMAIL_UPDATE_SEND_AS',
+  'GMAIL_UPDATE_IMAP_SETTINGS',
+  'GMAIL_UPDATE_POP_SETTINGS',
+  'GMAIL_IMPORT_MESSAGE',
+  'GMAIL_INSERT_MESSAGE',
+]);
+
+/**
+ * The same kinds of action by name, so a tool Composio adds later is caught
+ * too. A match only ever moves `write` to `destructive`, never the other way,
+ * so a pattern that matches too much costs convenience, not safety.
+ */
+const ACCOUNT_REACH_PATTERN = /_ACL_|FORWARD|SEND_AS|_IMAP_|_POP_|FILTER|_WATCH$/;
+
+/**
+ * Classify one Composio action: its safety hints ({@link classifyComposioTags}),
+ * then DorkOS's own tightening for actions with reach beyond the account.
+ *
+ * @param slug - The action's Composio slug, e.g. `GMAIL_SEND_EMAIL`.
+ * @param tags - The action's `tags` exactly as Composio listed them.
+ */
+function classifyComposioAction(
+  slug: string,
+  tags: readonly string[]
+): ConnectorOperationClassification {
+  const classification = classifyComposioTags(tags);
+  return classification === 'write' &&
+    (ACCOUNT_REACH_ACTIONS.has(slug) || ACCOUNT_REACH_PATTERN.test(slug))
+    ? 'destructive'
+    : classification;
+}
+
 /** Hash the exact input schema body reviewed by the operator. */
 function schemaHash(inputSchema: Record<string, unknown>): string {
   return `sha256:${createHash('sha256').update(stableStringify(inputSchema)).digest('hex')}`;
@@ -404,7 +454,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
       }
 
       const operations = result.items.map((item) => {
-        const classification = classifyComposioTags(item.tags);
+        const classification = classifyComposioAction(item.slug, item.tags);
         if (item.toolkit.slug !== request.toolkit || item.version !== request.toolkitVersion) {
           throw new ComposioCatalogError(
             'Composio returned operation metadata for another version.'
