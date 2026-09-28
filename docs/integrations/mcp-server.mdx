@@ -109,12 +109,13 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 67 tools in total, covering sessions, account usage, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent permissions, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting gives a client DorkOS's full external tool surface: 68 tools in total, covering sessions, account usage, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent permissions, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
 
 | Domain              | Tools | Examples                                                                                       |
 | ------------------- | ----- | ---------------------------------------------------------------------------------------------- |
 | Core                | 4     | `ping`, `get_server_info`, `get_session_count`, `get_agent`                                    |
 | Accounts            | 2     | `accounts_usage`, `accounts_probe`                                                             |
+| Sessions            | 1     | `session_start`                                                                                |
 | Scheduled tasks     | 5     | `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_get_run_history`          |
 | Relay (messaging)   | 13    | `relay_send`, `relay_inbox`, `relay_send_and_wait`, `relay_list_adapters`, `relay_get_metrics` |
 | Bindings            | 3     | `binding_list`, `binding_create`, `binding_delete`                                             |
@@ -125,16 +126,16 @@ Connecting gives a client DorkOS's full external tool surface: 67 tools in total
 | Self-description    | 1     | `list_capabilities`                                                                            |
 | Marketplace         | 9     | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_uninstall`     |
 
-The last four rows (operator, memory, self-description, marketplace: 21 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 42 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+The last four rows (operator, memory, self-description, marketplace: 21 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 43 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
 
-Being off the registry does not mean running unasked. All 42 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive` and answer with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
+Being off the registry does not mean running unasked. All 43 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive` and answer with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 
 Inside a DorkOS session, Claude Code is also told which tier a tool sits at and that the call already passed this check, so its auto mode stops asking about things DorkOS has already decided. This server gets no equivalent: it has no session, so there is nothing to tell. Your client makes its own decisions about when to ask you, exactly as it does today.
 
 <Callout type="info">
   The 9 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
   successfully. Without that, the marketplace branch is silently skipped and the server still boots
-  with the other 58. `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`,
+  with the other 59. `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`,
   and `marketplace_update` with `apply: true` each return a pending approval with a token instead of
   doing the work; a person decides it in the DorkOS UI, and the client retries with the token.
   Without `apply`, `marketplace_update` only says which packages have a newer version.
@@ -178,7 +179,7 @@ Alongside tools, the server registers seven read-only `dorkos://` resources: fou
 | `dorkos://skills/{name}` | Template | Full `SKILL.md` frontmatter and body for one skill, by name.                                                                                                                                           |
 | `dorkos://capabilities`  | List     | The live capability catalog: id, title, description, permission tier, input/output schema, and surfaces for every capability on the registry.                                                          |
 
-Session and skill resources are scoped to the server's default working directory; the external surface has no per-request `cwd` parameter to key on. The session and agent lists are the complete enumeration for their kind, so the item templates aren't re-listed separately; a client reads those once it already has an id or name. The skill list has one deliberate gap: a skill whose author wrote `disable-model-invocation: true` meant "do not reach for this on your own", so it is not advertised there. Asking for it by name still works — `dorkos://skills/{name}` serves every skill, because naming one is your choice, not the model's. `dorkos://capabilities` is the exception: it enumerates the capability registry, not the tool list, so the 41 tools registered directly on this server are absent from it. The resource's own description says so, so a client reading the list does not have to infer the gap.
+Session and skill resources are scoped to the server's default working directory; the external surface has no per-request `cwd` parameter to key on. The session and agent lists are the complete enumeration for their kind, so the item templates aren't re-listed separately; a client reads those once it already has an id or name. The skill list has one deliberate gap: a skill whose author wrote `disable-model-invocation: true` meant "do not reach for this on your own", so it is not advertised there. Asking for it by name still works — `dorkos://skills/{name}` serves every skill, because naming one is your choice, not the model's. `dorkos://capabilities` is the exception: it enumerates the capability registry, not the tool list, so the 43 tools registered directly on this server are absent from it. The resource's own description says so, so a client reading the list does not have to infer the gap.
 
 <Callout type="info">
   The server is stateless per request (a fresh instance is built for every `/mcp` call), so it never

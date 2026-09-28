@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { trackClientError } from '@/lib/analytics';
-import { Button } from '@/components/ui/button';
+import { Button } from '@dork-labs/ui/button';
 import { RefreshCw, Home } from 'lucide-react';
 import Link from 'next/link';
 
@@ -37,9 +37,11 @@ export default function Error({
             <RefreshCw className="mr-2 size-4" />
             Try again
           </Button>
-          <Button variant="outline" render={<Link href="/" />} nativeButton={false}>
-            <Home className="mr-2 size-4" />
-            Go home
+          <Button variant="outline" asChild>
+            <Link href="/">
+              <Home className="mr-2 size-4" />
+              Go home
+            </Link>
           </Button>
         </div>
       </div>

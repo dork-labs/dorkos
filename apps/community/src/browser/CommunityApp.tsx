@@ -1,3 +1,4 @@
+import { Button, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
@@ -253,9 +254,9 @@ export function CommunityApp() {
           <p role="alert" className="muted">
             {error}
           </p>
-          <button className="button primary" onClick={() => setRevision((old) => old + 1)}>
+          <Button variant="default" onClick={() => setRevision((old) => old + 1)}>
             Try again
-          </button>
+          </Button>
         </div>
       </main>
     );
@@ -270,22 +271,22 @@ export function CommunityApp() {
           <p className="muted">
             Open the community now, or connect a DorkOS installation as a separate next step.
           </p>
-          <button
-            className="button primary"
+          <Button
+            variant="default"
             onClick={() => {
               setAdmissionComplete(false);
               setRevision((old) => old + 1);
             }}
           >
             Open community
-          </button>
-          <div className="notice mt-4">
+          </Button>
+          <Notice tone="info" className="mt-4">
             <strong>Connect this DorkOS installation</strong>
             <p className="small muted mb-0">
               In the DorkOS app, open Connections, then Messaging, then Communities. Each
               installation needs its own approval.
             </p>
-          </div>
+          </Notice>
         </section>
       </main>
     );
@@ -329,9 +330,13 @@ export function CommunityApp() {
           <p className="eyebrow">DorkOS Community</p>
           <h1>{community?.name ?? 'Your community'}</h1>
           <p className="small muted mb-0">Signed in as {me.member.displayName}</p>
-          <button className="button mt-3 w-full" onClick={() => window.location.assign('/')}>
+          <Button
+            variant="outline"
+            className="mt-3 w-full"
+            onClick={() => window.location.assign('/')}
+          >
             Switch community
-          </button>
+          </Button>
         </div>
         <div className="sidebar-list">
           <p className="sidebar-section">Your channels</p>
@@ -401,13 +406,14 @@ export function CommunityApp() {
       <section className="main-area">
         <header className="topbar">
           <div className="row">
-            <button
-              className="button ghost mobile-only"
+            <Button
+              variant="ghost"
+              className="mobile-only"
               aria-label="Open channel navigation"
               onClick={() => setMobileOpen(true)}
             >
               <Menu size={20} />
-            </button>
+            </Button>
             <div>
               <p className="eyebrow mb-0">
                 {held
@@ -428,28 +434,28 @@ export function CommunityApp() {
               <span className="small muted hidden sm:inline">
                 {selected.archived ? 'Archived' : selected.joined ? 'Joined' : 'Explore'}
               </span>
-              <button className="button" aria-label="Manage" onClick={() => setSettings(true)}>
+              <Button variant="outline" aria-label="Manage" onClick={() => setSettings(true)}>
                 <Settings2 size={16} />
                 <span className="hidden sm:inline">Manage</span>
-              </button>
+              </Button>
             </div>
           )}
           {settings && (
-            <button
-              className="button"
+            <Button
+              variant="outline"
               onClick={() => {
                 setSettings(false);
                 leaveSettingsPath();
               }}
             >
               <X size={16} /> Close
-            </button>
+            </Button>
           )}
         </header>
         {error && (
-          <div className="notice error m-3" role="alert">
+          <Notice tone="error" className="m-3" role="alert">
             {error}
-          </div>
+          </Notice>
         )}
         <ErasureBanner communityId={community!.id} />
         {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
@@ -491,9 +497,9 @@ export function CommunityApp() {
             <div className="panel p-8">
               <h2>No channels yet</h2>
               <p className="muted">An admin can create a channel from Settings.</p>
-              <button className="button primary" onClick={() => setSettings(true)}>
+              <Button variant="default" onClick={() => setSettings(true)}>
                 Open settings
-              </button>
+              </Button>
             </div>
           </div>
         )}

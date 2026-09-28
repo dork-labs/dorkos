@@ -1,3 +1,4 @@
+import { Button, Input, Label } from '@dork-labs/ui';
 import { useRef, useState } from 'react';
 import { Copy } from 'lucide-react';
 
@@ -27,9 +28,9 @@ export function CommunityAddress({ address }: { address: string }) {
         Members open the community here. It doesn’t let anyone new in; use an invite for that.
       </p>
       <div className="field mb-2">
-        <label htmlFor="community-address">Address</label>
+        <Label htmlFor="community-address">Address</Label>
         <div className="row">
-          <input
+          <Input
             id="community-address"
             ref={input}
             className="min-w-0 flex-1"
@@ -37,9 +38,14 @@ export function CommunityAddress({ address }: { address: string }) {
             value={address}
             onFocus={(event) => event.currentTarget.select()}
           />
-          <button className="button shrink-0" type="button" onClick={() => void copyLink()}>
+          <Button
+            variant="outline"
+            className="shrink-0"
+            type="button"
+            onClick={() => void copyLink()}
+          >
             <Copy size={15} /> {copy === 'copied' ? 'Copied' : 'Copy link'}
-          </button>
+          </Button>
         </div>
       </div>
       <p className="small mb-0" aria-live="polite">

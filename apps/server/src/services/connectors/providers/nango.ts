@@ -10,6 +10,9 @@
  * self-host base URL; the upstream tokens live in the operator's Nango, never in
  * DorkOS's store. The `connectionId ↔ ConnectorExternalAccountRef` normalization is
  * confined to this file ({@link toExternalAccountRef} / {@link toNangoConnectionId}).
+ * So is the integration key ↔ service id one: across the port every app goes by
+ * its DorkOS service id, so a Nango Gmail integration is the popular Gmail app
+ * whatever the person named it (`nango-apps.ts`, DOR-2436).
  *
  * Provider credentials and transport remain confined to this adapter. Account
  * management is available, while operation discovery and broker execution stay
@@ -47,8 +50,10 @@ import {
   type NangoConnection,
   type NangoConnectionStatus,
   type NangoHttpClient,
+  type NangoIntegration,
 } from './nango-client.js';
 import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
+import { NANGO_TEMPLATE_SERVICES, nangoServiceIds, type NangoServiceIds } from './nango-apps.js';
 
 /** The backend type identifier this provider registers and reports under. */
 export const NANGO_PROVIDER_TYPE = 'nango';
@@ -211,6 +216,15 @@ export class NangoConnectorProvider implements ConnectorProvider {
   readonly type = NANGO_PROVIDER_TYPE;
 
   private readonly _client: NangoHttpClient;
+  /**
+   * Sign-ins started under an integration's own key whose id can differ by the
+   * time they finish, by flow id: an old key now listed under a popular app's
+   * id (an account saved before the rename moved it), or a key that becomes the
+   * app's id while the sign-in runs. The account is reported under the key the
+   * sign-in started with, so it finishes instead of being refused for a
+   * service mismatch; the next rename moves it to the app's id.
+   */
+  private readonly _ownKeyFlows = new Map<string, string>();
   readonly #executionConfigDigest: string | undefined;
 
   /**
@@ -304,12 +318,12 @@ export class NangoConnectorProvider implements ConnectorProvider {
   async listToolkits(): Promise<ConnectorToolkit[]> {
     // A failure propagates on purpose: the registry aggregation converts it to
     // a per-provider warning the client renders (never a silent empty list).
-    const integrations = await this._client.listIntegrations();
-    return integrations.map((it) => ({
-      slug: it.uniqueKey,
-      displayName: it.displayName ?? it.provider ?? it.uniqueKey,
-      authKind: toAuthKind(it.authMode),
-      ...(it.logoUrl && { logoUrl: it.logoUrl }),
+    const { entries } = (await this._read()).ids;
+    return entries.map(({ serviceSlug, displayName, integration }) => ({
+      slug: serviceSlug,
+      displayName,
+      authKind: toAuthKind(integration.authMode),
+      ...(integration.logoUrl && { logoUrl: integration.logoUrl }),
     }));
   }
 
@@ -318,14 +332,25 @@ export class NangoConnectorProvider implements ConnectorProvider {
     // so a transport failure here throws a clear error rather than degrading — the
     // UI shows it and the user retries. The label rides as a Nango tag, the
     // disambiguator between two connections of one integration.
+    const { integrations, ids } = await this._read();
+    const integration =
+      ids.integrationFor(toolkit) ?? integrations.find((it) => it.uniqueKey === toolkit);
+    if (!integration) {
+      // Only a listed service can be connected; guessing an integration key
+      // would start a sign-in whose account comes back under another id.
+      throw new Error(`Nango has no integration for the service '${toolkit}'.`);
+    }
     const request = await this._client.initiateConnection({
-      integration: toolkit,
+      integration: integration.uniqueKey,
       ...(opts?.label && { label: opts.label }),
     });
     if (!request.authorizeUrl) {
       // A missing consent URL is unusable — fail loudly instead of returning an
       // empty `authorizeUrl` the picker would silently open to nowhere.
       throw new Error(`Nango returned no authorize URL for integration '${toolkit}'.`);
+    }
+    if (integration.uniqueKey === toolkit && NANGO_TEMPLATE_SERVICES[integration.provider]) {
+      this._ownKeyFlows.set(request.connectionRequestId, toolkit);
     }
     return { authorizeUrl: request.authorizeUrl, flowId: request.connectionRequestId };
   }
@@ -334,11 +359,27 @@ export class NangoConnectorProvider implements ConnectorProvider {
     try {
       const state = await this._client.getConnectionState(flowId);
       if (state.status === 'ACTIVE' && state.connection) {
-        return { status: 'connected', account: this._toPortAccount(state.connection) };
+        let ids: NangoServiceIds;
+        try {
+          ({ ids } = await this._read());
+        } catch (err) {
+          // The account is connected; only naming its app failed. A failed
+          // poll would be final and false, so the next poll tries again.
+          if (isTransportError(err)) return { status: 'pending' };
+          throw err;
+        }
+        const account = toPortAccount(state.connection, ids);
+        const ownKey = this._ownKeyFlows.get(flowId);
+        this._ownKeyFlows.delete(flowId);
+        if (ownKey === state.connection.integration) {
+          return { status: 'connected', account: { ...account, toolkit: ownKey } };
+        }
+        return { status: 'connected', account };
       }
       if (state.status === 'PENDING') {
         return { status: 'pending' };
       }
+      this._ownKeyFlows.delete(flowId);
       // Any unusable terminal state is a typed failure, never a throw.
       return {
         status: 'failed',
@@ -356,10 +397,21 @@ export class NangoConnectorProvider implements ConnectorProvider {
 
   async listAccounts(opts?: { toolkit?: string }): Promise<ProviderConnectedAccount[]> {
     // Propagates on failure — see listToolkits.
-    const connections = await this._client.listConnections(
-      opts?.toolkit ? { integration: opts.toolkit } : undefined
-    );
-    return connections.map((connection) => this._toPortAccount(connection));
+    const { ids, connections } = await this._read();
+    const accounts = connections.map((connection) => toPortAccount(connection, ids));
+    return opts?.toolkit
+      ? accounts.filter((account) => account.toolkit === opts.toolkit)
+      : accounts;
+  }
+
+  /**
+   * Every integration whose accounts now go by a popular app's id instead of
+   * the integration's own key: key → id. The bootstrapper moves accounts DorkOS
+   * saved under a key to its id, so they keep matching their app (DOR-2436).
+   * Propagates a transport failure, like {@link listAccounts}.
+   */
+  async serviceRenames(): Promise<ReadonlyMap<string, string>> {
+    return (await this._read()).ids.renames;
   }
 
   async disconnect(accountId: ConnectorExternalAccountRef): Promise<void> {
@@ -368,16 +420,44 @@ export class NangoConnectorProvider implements ConnectorProvider {
     await this._client.deleteConnection(toNangoConnectionId(accountId));
   }
 
-  /** Map a Nango connection onto private provider account metadata. */
-  private _toPortAccount(connection: NangoConnection): ProviderConnectedAccount {
-    return {
-      externalAccountRef: toExternalAccountRef(connection.connectionId),
-      toolkit: connection.integration,
-      label: connection.label ?? connection.integration,
-      status: toPortStatus(connection.status),
-      custody: 'self-host',
-    };
+  /**
+   * Read the integrations and connections, and give each integration its
+   * service id. The connections decide it too: an integration that already
+   * holds accounts keeps its app's id, so a later setup never takes it.
+   */
+  private async _read(): Promise<{
+    integrations: NangoIntegration[];
+    connections: NangoConnection[];
+    ids: NangoServiceIds;
+  }> {
+    const [integrations, connections] = await Promise.all([
+      this._client.listIntegrations(),
+      this._client.listConnections(),
+    ]);
+    const withAccounts = new Set(connections.map((connection) => connection.integration));
+    return { integrations, connections, ids: nangoServiceIds(integrations, withAccounts) };
   }
+}
+
+/**
+ * Map a Nango connection onto private provider account metadata, under the
+ * service id its integration goes by.
+ *
+ * @param connection - The Nango connection.
+ * @param ids - The integrations' service ids.
+ */
+function toPortAccount(
+  connection: NangoConnection,
+  ids: NangoServiceIds
+): ProviderConnectedAccount {
+  const toolkit = ids.serviceSlugOf(connection.integration);
+  return {
+    externalAccountRef: toExternalAccountRef(connection.connectionId),
+    toolkit,
+    label: connection.label ?? toolkit,
+    status: toPortStatus(connection.status),
+    custody: 'self-host',
+  };
 }
 
 /** Injectable dependencies for {@link maybeCreateNangoProvider}. */

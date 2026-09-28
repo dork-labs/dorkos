@@ -1,3 +1,4 @@
+import { Button, Notice } from '@dork-labs/ui';
 import { useEffect, useState } from 'react';
 import type { CommunityWireShortNameLookupSchema } from '@dorkos/shared/community-wire';
 import type { z } from 'zod';
@@ -49,12 +50,12 @@ export function ShortNameRoute({ name, rest }: { name: string; rest: string }) {
   return (
     <main className="grid min-h-dvh place-items-center p-5">
       {failure ? (
-        <div role="alert" className="notice error stack max-w-md">
+        <Notice role="alert" tone="error" className="stack max-w-md">
           <p>Couldn’t open this community. {failure}</p>
-          <button type="button" className="button" onClick={() => setAttempt((n) => n + 1)}>
+          <Button type="button" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
             Try again
-          </button>
-        </div>
+          </Button>
+        </Notice>
       ) : (
         <p role="status">Opening community…</p>
       )}

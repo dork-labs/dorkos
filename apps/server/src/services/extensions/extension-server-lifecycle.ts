@@ -30,7 +30,7 @@ const require = createRequire(import.meta.url);
  * Everything the running instance of an extension was built from, as one
  * comparable string: the directory it was read from, the manifest fields that
  * decide what gets mounted, and — for an extension with a server entry — the
- * content hash of its server ENTRY FILE.
+ * content hash of its compiled server bundle.
  *
  * This is what makes {@link ExtensionServerLifecycle.initialize} idempotent. The
  * client asks the server to initialize every server-side extension on every page
@@ -41,16 +41,13 @@ const require = createRequire(import.meta.url);
  * that field is the CLIENT bundle's hash, which answers a different question and
  * would have missed an edited `server.ts`.
  *
- * **Its limit, worth knowing before trusting it:** the hash covers the entry
- * file's own bytes, nothing it imports (`ExtensionCompiler.compileServer` hashes
- * the entry it reads, and its bundle cache is keyed the same way). So editing a
- * helper module that `server.ts` imports does not change this key and does not
- * restart the extension — the same blind spot the compile cache has always had,
- * now also deciding whether to restart. `reload_extensions --id <ext>` restarts
- * unconditionally and is the way out.
+ * The bundle hash covers everything `server.ts` imports, because it is the
+ * hash of the bundled output (`ExtensionCompiler.compileServer`, DOR-2491): an
+ * edit to a helper module changes the bundle and so restarts the extension,
+ * while an edit that leaves the output identical does not.
  *
  * @param record - The extension's discovery record.
- * @param serverSourceHash - Content hash of the compiled server entry file, or
+ * @param serverSourceHash - Content hash of the compiled server bundle, or
  *   `null` for a proxy-only extension (there is no server source to hash).
  */
 function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null): string {

@@ -340,9 +340,11 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       //
       // 43 -> 44 (and 41 -> 42 external) for `accounts_probe` (spec
       // `claude-account-fleet` D3), registered on both servers.
-      expect(registeredByServer['in-session']).toHaveLength(44);
-      expect(registeredByServer.external).toHaveLength(42);
-      expect(declaredNames).toHaveLength(44);
+      // 44 -> 45 (and 42 -> 43 external) for `session_start` (spec
+      // `claude-account-fleet` D5), registered on both servers.
+      expect(registeredByServer['in-session']).toHaveLength(45);
+      expect(registeredByServer.external).toHaveLength(43);
+      expect(declaredNames).toHaveLength(45);
     });
 
     it('names exactly two tools destructive', () => {

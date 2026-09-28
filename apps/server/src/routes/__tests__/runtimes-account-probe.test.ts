@@ -1,13 +1,18 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import runtimesRouter from '../runtimes.js';
+import { initConfigManager } from '../../services/core/config-manager.js';
 import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 import type { RuntimeAccount } from '../../services/core/usage/runtime-accounts.js';
 import { resetAccountProbeState } from '../../services/runtimes/claude-code/accounts/account-probe.js';
+import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 
 const app = express();
 app.use('/api/runtimes', runtimesRouter);
@@ -36,6 +41,13 @@ function installStore(accounts: RuntimeAccount[]) {
 }
 
 describe('POST /api/runtimes/claude-code/accounts/:id/probe (spec claude-account-fleet D3)', () => {
+  beforeEach(() => {
+    // The route asks the config whether login is on before anything else.
+    const dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-probe-route-'));
+    fs.writeFileSync(path.join(dorkHome, 'config.json'), JSON.stringify({}), 'utf-8');
+    initConfigManager(dorkHome);
+  });
+
   afterEach(() => {
     setAccountUsageStore(undefined);
     resetAccountProbeState();
@@ -54,6 +66,17 @@ describe('POST /api/runtimes/claude-code/accounts/:id/probe (spec claude-account
     const res = await request(server).post('/api/runtimes/claude-code/accounts/nobody/probe');
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('UNKNOWN_ACCOUNT');
+  });
+
+  it('refuses a caller that names itself an agent, and starts nothing', async () => {
+    const store = installStore([work]);
+    const res = await request(server)
+      .post('/api/runtimes/claude-code/accounts/work/probe')
+      .set(AGENT_IDENTITY_HEADER, 'any-agent-token');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PERSON_ONLY');
+    expect(store.listAccounts).not.toHaveBeenCalled();
+    expect(store.record).not.toHaveBeenCalled();
   });
 
   it('answers 503 before the usage store is running', async () => {

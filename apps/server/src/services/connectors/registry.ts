@@ -353,6 +353,18 @@ export class ConnectorRegistry {
   }
 
   /**
+   * Move a provider's saved accounts from service ids it renamed to the ids it
+   * now lists them under. A no-op while the connection store is unavailable.
+   *
+   * @param provider - The provider that renamed them.
+   * @param renames - Old service id → new service id.
+   */
+  renameServices(provider: ConnectorProvider, renames: ReadonlyMap<string, string>): void {
+    if (this._connections.health().status !== 'ready') return;
+    this._connections.renameServices(provider.instanceId, renames);
+  }
+
+  /**
    * Reconcile a provider-owned account to its stable DorkOS connection. Called
    * after a successful `pollConnect` and provider inventory refresh.
    *

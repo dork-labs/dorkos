@@ -49,7 +49,7 @@ export interface ExtensionRecord {
    * matches its source. Cleared when a fixed version takes over.
    */
   serverError?: { code: string; message: string; details?: string };
-  /** Content hash of the source file (for cache keying). */
+  /** Content hash of the compiled client bundle; changes whenever the served code does. */
   sourceHash?: string;
   /** Whether the compiled bundle is available on the server. */
   bundleReady: boolean;

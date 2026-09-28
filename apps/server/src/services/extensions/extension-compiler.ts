@@ -1,20 +1,26 @@
-import { build } from 'esbuild';
-import { createHash } from 'crypto';
+import { build, version as esbuildVersion } from 'esbuild';
+import type { BuildOptions } from 'esbuild';
 import fs from 'fs/promises';
 import path from 'path';
 
 import { logger } from '../../lib/logger.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
-
-/** Structured compilation error written to cache as `.error.json`. */
-interface CompilationError {
-  code: 'compilation_failed';
-  message: string;
-  errors: Array<{
-    text: string;
-    location?: { file: string; line: number; column: number };
-  }>;
-}
+import {
+  buildStartTime,
+  computeBuildKey,
+  createInputRecorder,
+  digestBuildInputs,
+  digestFailedBuild,
+  readCurrentManifest,
+  snapshotSourceTree,
+  shortHash,
+  writeFileAtomic,
+  writeBuildManifest,
+  type BuildManifest,
+  type CompilationError,
+  type SourceDigest,
+  type TreeSnapshot,
+} from './extension-build-cache.js';
 
 /** Bundle size threshold for warning log. Not a hard limit. */
 const BUNDLE_SIZE_WARNING_KB = 500;
@@ -58,9 +64,8 @@ const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
  *   `stat`-ing each candidate name (`resolver.go`'s `loadAsFile`, called
  *   while resolving the entry point itself — before opening any file).
  *   Empirically verified: `chmod 0111` (execute-only — the directory can
- *   still be traversed into by a known filename, so this does not confound
- *   the two `fs.readFile` calls `compile()`/`compileServer()` make before
- *   esbuild runs, which need no `readdir` permission) on a ZERO-import
+ *   still be traversed into by a known filename, so the test isolates
+ *   esbuild's own directory read) on a ZERO-import
  *   entry point's own directory rejects with a `BuildFailure` carrying a
  *   POPULATED, two-entry `errors[]`: `Cannot read directory %q: %s`
  *   alongside a `Could not resolve %q` for the entry point itself (both
@@ -108,64 +113,6 @@ const ESBUILD_IO_FAILURE_PATTERNS: RegExp[] = [
 ];
 
 /**
- * Text a *Node-thrown* error (not esbuild's own `BuildFailure`) could have
- * carried before {@link isEnvironmentFailure} existed and this file always
- * cached whatever it caught. Node's own errors — a failed `spawn()` when
- * launching esbuild's helper process, `generateBinPath()`'s "package could
- * not be found" when `@esbuild/<platform>` is missing — use OS errno
- * symbols and different prose than esbuild's Go binary does.
- *
- * These never fire on a *live* classification: a Node-thrown error has no
- * `errors` array at all, so {@link isEnvironmentFailure}'s shape check
- * already keeps it out of the cache before any text is examined. They
- * exist solely to evict a `.error.json` a pre-fix build wrote for one of
- * these — the file has no shape signal left once serialized to JSON, only
- * text. Unlike {@link ESBUILD_IO_FAILURE_PATTERNS}, matching still requires
- * an absent `location`: a raw errno symbol like `EMFILE` is common enough
- * in arbitrary text that a genuine compile error's source position is
- * worth keeping as a corroborating signal here.
- */
-const LEGACY_NODE_THROWN_ERROR_PATTERNS: RegExp[] = [
-  /could not be found, and is needed by esbuild/i,
-  /installed esbuild for another platform/i,
-  /\bEMFILE\b/,
-  /\bENFILE\b/,
-  /\bENOENT\b/,
-  /\bENOMEM\b/,
-  /\bENOSPC\b/,
-  /\bEACCES\b/,
-];
-
-/**
- * Test a set of esbuild-shaped error entries for a message matching any of
- * `patterns`, irrespective of `location`.
- *
- * @param errors - Error entries from either a raw esbuild rejection or a
- *   parsed `.error.json` cache file.
- * @param patterns - Regexes to test each entry's text against.
- * @returns `true` when at least one entry matches.
- */
-function hasTextMatch(errors: Array<{ text: string }>, patterns: RegExp[]): boolean {
-  return errors.some((e) => patterns.some((p) => p.test(e.text)));
-}
-
-/**
- * Test a set of esbuild-shaped error entries for a LOCATION-LESS message
- * matching any of `patterns`.
- *
- * @param errors - Error entries from either a raw esbuild rejection or a
- *   parsed `.error.json` cache file.
- * @param patterns - Regexes to test each location-less entry's text against.
- * @returns `true` when at least one entry matches.
- */
-function hasLocationlessTextMatch(
-  errors: Array<{ text: string; location?: unknown }>,
-  patterns: RegExp[]
-): boolean {
-  return errors.some((e) => !e.location && patterns.some((p) => p.test(e.text)));
-}
-
-/**
  * Decide whether a thrown esbuild error reflects a problem with the local
  * environment — a missing native binary, exhausted file descriptors, a
  * full disk, an out-of-memory condition, a permission error — rather than
@@ -190,7 +137,7 @@ function hasLocationlessTextMatch(
  *    message text can.
  *
  * Either way, the failure is not a deterministic property of the
- * extension's content hash, so caching it would brick the extension on
+ * extension's source, so caching it would brick the extension on
  * every future start — including after the environment recovers — for a
  * problem the extension author never had a chance to cause.
  *
@@ -210,7 +157,7 @@ function hasLocationlessTextMatch(
  * This path is reasoned from the sources, NOT reproduced: on macOS with
  * Node 24 and an exhausted descriptor table, the observed failure is a
  * *synchronous* `spawn EBADF`, which propagates out of the `build(...)`
- * call expression into `runEsbuild`'s own `try` and is handled here as an
+ * call expression into `runBuild`'s own `try` and is handled here as an
  * ordinary environment failure. Treat the fatal variant as platform-
  * dependent and unverified rather than as established behavior. Per-
  * process fd limits mean the DorkOS server exhausting its own descriptors
@@ -241,48 +188,20 @@ function isEnvironmentFailure(err: unknown): boolean {
   if (!Array.isArray(esbuildErr.errors) || esbuildErr.errors.length === 0) {
     return true;
   }
-  return hasTextMatch(esbuildErr.errors, ESBUILD_IO_FAILURE_PATTERNS);
-}
-
-/**
- * Detect a cached compile error, written before {@link isEnvironmentFailure}
- * existed, that actually describes an environment problem rather than a
- * defect in the extension's own source.
- *
- * Checks the cached entries' text against both pattern sets
- * {@link isEnvironmentFailure} would now classify live —
- * {@link ESBUILD_IO_FAILURE_PATTERNS}, for the file/directory-read-failure
- * case a plain shape check cannot catch even on a *live* classification —
- * plus {@link LEGACY_NODE_THROWN_ERROR_PATTERNS} for the Node-thrown case,
- * whose shape signal (no `errors` array) does not survive being written to
- * and re-read from JSON.
- *
- * @param cached - The parsed contents of a cached `.error.json` file.
- * @returns `true` when the cached error looks like a stale environment
- *   failure rather than a real, still-current compile error.
- */
-function isLegacyTransientCachedError(cached: CompilationError): boolean {
-  return (
-    hasTextMatch(cached.errors, ESBUILD_IO_FAILURE_PATTERNS) ||
-    hasLocationlessTextMatch(cached.errors, LEGACY_NODE_THROWN_ERROR_PATTERNS)
-  );
+  return esbuildErr.errors.some((e) => ESBUILD_IO_FAILURE_PATTERNS.some((p) => p.test(e.text)));
 }
 
 /**
  * Build the error result for an unexpected filesystem failure outside of
- * esbuild itself — reading the entry file before esbuild ever runs,
- * persisting a compiled or pre-compiled bundle to cache. `what` names the
- * operation that failed (e.g. `'read the entry point'`,
- * `'cache the pre-compiled bundle'`) so the message reflects what actually
- * broke rather than always claiming "compilation failed."
+ * esbuild itself — reading a pre-compiled entry file, persisting a compiled
+ * or pre-compiled bundle to cache. `what` names the operation that failed
+ * (e.g. `'read the entry point'`, `'cache the pre-compiled bundle'`) so the
+ * message reflects what actually broke rather than always claiming
+ * "compilation failed."
  *
- * The `sourceHash` a caller attaches separately decides whether this is
- * cacheable: a pre-read failure has none to key a `.error.json` by (see
- * {@link resolveEntryPoint}'s identical "no entry point" case), so it is
- * uncacheable by construction; a write-after-successful-compile failure
- * DOES have one, but nothing here writes anything under it either —
- * there is no point persisting an error about a directory that just
- * proved it can't be written to.
+ * Nothing here is ever cached: there is no point persisting an error about
+ * a file that could not be read or a directory that just proved it can't
+ * be written to.
  *
  * Reuses {@link isEnvironmentFailure} for the log framing rather than
  * assuming: a plain Node `fs` error (`EACCES`, `EMFILE`, `ENOENT`, ...) has
@@ -314,12 +233,98 @@ function buildIoFailureError(
   };
 }
 
+/** The result of compiling one bundle: its code, or the error that stopped it. */
+type CompileResult =
+  { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string };
+
+/**
+ * One kind of bundle the compiler produces. The options object is the whole
+ * build configuration apart from the entry point, and it is hashed into every
+ * cache key, so changing any option here invalidates every cached build of
+ * that kind.
+ */
+interface BuildTarget {
+  /** Cache subdirectory under the cache root, or `null` for the root itself. */
+  subDir: string | null;
+  /** Log and error-message prefix (`''` or `'Server '`). */
+  prefix: string;
+  /** What the output is called in log lines. */
+  noun: string;
+  /** Every esbuild option except the entry point and working directory. */
+  options: Omit<BuildOptions, 'entryPoints' | 'absWorkingDir' | 'metafile'>;
+}
+
+/** Browser ESM bundle the client `import()`s. */
+const CLIENT_TARGET: BuildTarget = {
+  subDir: null,
+  prefix: '',
+  noun: 'bundle',
+  options: {
+    bundle: true,
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2022',
+    external: ['react', 'react-dom', '@dorkos/extension-api'],
+    write: false,
+    minify: false,
+    sourcemap: 'inline',
+    logLevel: 'silent',
+    // Allow JSX in .ts files — extensions commonly use JSX without .tsx rename
+    loader: { '.ts': 'tsx' },
+  },
+};
+
+/**
+ * Node CJS bundle loaded with `require()`. Externals are provided by the host
+ * process.
+ */
+const SERVER_TARGET: BuildTarget = {
+  subDir: 'server',
+  prefix: 'Server ',
+  noun: 'server bundle',
+  options: {
+    bundle: true,
+    format: 'cjs',
+    platform: 'node',
+    target: 'node20',
+    external: ['express', '@dorkos/extension-api', '@dorkos/extension-api/server'],
+    write: false,
+    minify: false,
+    sourcemap: 'inline',
+    logLevel: 'silent',
+    loader: { '.ts': 'tsx' },
+  },
+};
+
+/** Where one build's cache entries live, and the key for its configuration. */
+interface BuildContext {
+  extId: string;
+  entryPath: string;
+  extRoot: string;
+  target: BuildTarget;
+  cacheDir: string;
+  manifestPath: string;
+  buildKey: string;
+  cwd: string;
+}
+
+/** Per-build state: when it started, the tree before it, and what esbuild read. */
+interface BuildRun {
+  startedAt: number;
+  snapshot: TreeSnapshot | null;
+  recorder: ReturnType<typeof createInputRecorder>;
+}
+
 /**
  * Compiles TypeScript extensions with esbuild and serves pre-compiled JS extensions.
  *
- * Uses content-hash-based caching to avoid redundant compilations. Cache entries
- * are keyed by `{extensionId}.{sha256Hash}.js` where the hash is the first 16 hex
- * characters of the SHA-256 of the source content.
+ * A compiled bundle is cached as `{extensionId}.{hash}.js`, where the hash is
+ * the first 16 hex characters of the SHA-256 of the bundle itself. Whether
+ * that bundle is still current is decided by a manifest beside it
+ * (`{extensionId}.{entryHash}.manifest.json`, see `extension-build-cache.ts`)
+ * that lists every file the build read, so an update that only changes an
+ * imported module is rebuilt too (DOR-2491). The returned `sourceHash` is the
+ * bundle's hash: it changes exactly when the served code does.
  */
 export class ExtensionCompiler {
   private cacheDir: string;
@@ -335,30 +340,24 @@ export class ExtensionCompiler {
    * @returns Object with `code` (compiled JS string) on success, or `error` on failure.
    *          Also returns the `sourceHash` for cache keying.
    */
-  async compile(
-    record: ExtensionRecord
-  ): Promise<
-    { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
-  > {
+  async compile(record: ExtensionRecord): Promise<CompileResult> {
     const entryResult = await this.resolveEntryPoint(record.path);
     if ('error' in entryResult) {
       return { error: entryResult.error, sourceHash: '' };
     }
 
     const { entryPath, isPrecompiled } = entryResult;
+    if (!isPrecompiled) {
+      return this.compileCached(record.id, entryPath, record.path, CLIENT_TARGET);
+    }
+
     let source: string;
     try {
       source = await fs.readFile(entryPath, 'utf-8');
     } catch (err) {
       return { error: buildIoFailureError(record.id, err, 'read the entry point'), sourceHash: '' };
     }
-    const sourceHash = this.computeSourceHash(source);
-
-    if (isPrecompiled) {
-      return this.handlePrecompiled(record.id, source, sourceHash);
-    }
-
-    return this.handleCompilation(record.id, entryPath, sourceHash);
+    return this.handlePrecompiled(record.id, source, shortHash(source));
   }
 
   /**
@@ -370,11 +369,7 @@ export class ExtensionCompiler {
    * @param record - Extension record with serverEntryPath
    * @returns Compiled code and hash on success, or error on failure
    */
-  async compileServer(
-    record: ExtensionRecord
-  ): Promise<
-    { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
-  > {
+  async compileServer(record: ExtensionRecord): Promise<CompileResult> {
     if (!record.serverEntryPath) {
       return {
         error: {
@@ -385,19 +380,7 @@ export class ExtensionCompiler {
         sourceHash: '',
       };
     }
-
-    let source: string;
-    try {
-      source = await fs.readFile(record.serverEntryPath, 'utf-8');
-    } catch (err) {
-      return {
-        error: buildIoFailureError(record.id, err, 'read the entry point', 'Server '),
-        sourceHash: '',
-      };
-    }
-    const sourceHash = this.computeSourceHash(source);
-
-    return this.handleServerCompilation(record.id, record.serverEntryPath, sourceHash);
+    return this.compileCached(record.id, record.serverEntryPath, record.path, SERVER_TARGET);
   }
 
   /**
@@ -405,7 +388,7 @@ export class ExtensionCompiler {
    * Used by the bundle serving endpoint.
    *
    * @param extId - Extension identifier
-   * @param sourceHash - Content hash of the source file
+   * @param sourceHash - The hash {@link compile} returned for this bundle
    */
   async readBundle(extId: string, sourceHash: string): Promise<string | null> {
     const cachedPath = path.join(this.cacheDir, `${extId}.${sourceHash}.js`);
@@ -422,6 +405,10 @@ export class ExtensionCompiler {
   /**
    * Clean stale cache entries not accessed in 7+ days.
    * Called on server startup. Cleans both client and server cache directories.
+   *
+   * This is also what retires cache files an older DorkOS wrote (bundles and
+   * `.error.json` files keyed by the entry file alone): nothing reads them
+   * any more, so they age out here like any other unused entry.
    *
    * A `readdir` failure — the directory doesn't exist yet (normal, nothing
    * to clean), or a transient EMFILE/EACCES under exactly the resource
@@ -506,6 +493,10 @@ export class ExtensionCompiler {
   /**
    * Handle a pre-compiled JS extension — cache for consistent serving.
    *
+   * A pre-compiled `index.js` is served as-is, never bundled, so the file's
+   * own bytes are everything the served code depends on and its content hash
+   * is a complete key.
+   *
    * Unlike TypeScript compilation, caching here is NOT an optimization:
    * `applyCompileResult` (`extension-manager.ts`) keeps only `sourceHash`
    * and `bundleReady` from a successful result and discards `code` — the
@@ -521,9 +512,7 @@ export class ExtensionCompiler {
     extId: string,
     source: string,
     sourceHash: string
-  ): Promise<
-    { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
-  > {
+  ): Promise<CompileResult> {
     await this.ensureCacheDir();
     const cachedPath = path.join(this.cacheDir, `${extId}.${sourceHash}.js`);
 
@@ -546,102 +535,64 @@ export class ExtensionCompiler {
     }
   }
 
-  /** Handle client-side TypeScript compilation with cache hit/miss logic. */
-  private async handleCompilation(
+  /**
+   * Return the cached build of `entryPath` when its manifest says it is still
+   * current, or build it fresh.
+   *
+   * The manifest file is named by the entry point's path, so two copies of
+   * one extension (an installed one and a marketplace staging copy, say)
+   * never overwrite each other's record.
+   */
+  private async compileCached(
     extId: string,
     entryPath: string,
-    sourceHash: string
-  ): Promise<
-    { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
-  > {
-    await this.ensureCacheDir();
-    const cachedJsPath = path.join(this.cacheDir, `${extId}.${sourceHash}.js`);
-    const cachedErrorPath = path.join(this.cacheDir, `${extId}.${sourceHash}.error.json`);
+    extRoot: string,
+    target: BuildTarget
+  ): Promise<CompileResult> {
+    const cacheDir = target.subDir ? path.join(this.cacheDir, target.subDir) : this.cacheDir;
+    await this.ensureCacheDir(cacheDir);
+    const cwd = process.cwd();
+    const ctx: BuildContext = {
+      extId,
+      entryPath,
+      extRoot,
+      target,
+      cacheDir,
+      manifestPath: path.join(cacheDir, `${extId}.${shortHash(entryPath)}.manifest.json`),
+      buildKey: computeBuildKey(esbuildVersion, cwd, target.options),
+      cwd,
+    };
 
-    // Cache hit: compiled JS
-    try {
-      await fs.access(cachedJsPath);
-      const cached = await fs.readFile(cachedJsPath, 'utf-8');
-      logger.debug(`[Extensions] Cache hit for ${extId} (${sourceHash})`);
-      return { code: cached, sourceHash };
-    } catch {
-      // Cache miss
-    }
-
-    // Cache hit: previous compilation error
-    try {
-      await fs.access(cachedErrorPath);
-      const cachedError = JSON.parse(
-        await fs.readFile(cachedErrorPath, 'utf-8')
-      ) as CompilationError;
-      if (isLegacyTransientCachedError(cachedError)) {
-        logger.info(
-          `[Extensions] Discarding a stale cached error for ${extId} (${sourceHash}) — it ` +
-            `looks like an environment failure from a previous run, not a real problem with ` +
-            `the extension; recompiling`
-        );
-        await fs.unlink(cachedErrorPath).catch(() => {});
-      } else {
-        logger.debug(`[Extensions] Cached error for ${extId} (${sourceHash})`);
-        return { error: cachedError, sourceHash };
+    const check = await readCurrentManifest(ctx.manifestPath, ctx.buildKey, entryPath);
+    if ('current' in check) {
+      const { key, outcome } = check.current;
+      if (outcome.kind === 'error') {
+        logger.debug(`[Extensions] ${target.prefix}Cached error for ${extId} (${key})`);
+        return { error: outcome.error, sourceHash: key };
       }
-    } catch {
-      // Cache miss — compile
-    }
-
-    return this.runEsbuild(extId, entryPath, sourceHash, cachedJsPath, cachedErrorPath);
-  }
-
-  /** Handle server-side TypeScript compilation with cache hit/miss logic. */
-  private async handleServerCompilation(
-    extId: string,
-    entryPath: string,
-    sourceHash: string
-  ): Promise<
-    { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
-  > {
-    const serverCacheDir = path.join(this.cacheDir, 'server');
-    await this.ensureCacheDir(serverCacheDir);
-
-    const cachedJsPath = path.join(serverCacheDir, `${extId}.${sourceHash}.js`);
-    const cachedErrorPath = path.join(serverCacheDir, `${extId}.${sourceHash}.error.json`);
-
-    // Cache hit: compiled JS
-    try {
-      await fs.access(cachedJsPath);
-      const cached = await fs.readFile(cachedJsPath, 'utf-8');
-      logger.debug(`[Extensions] Server cache hit for ${extId} (${sourceHash})`);
-      return { code: cached, sourceHash };
-    } catch {
-      // Cache miss
-    }
-
-    // Cache hit: previous compilation error
-    try {
-      await fs.access(cachedErrorPath);
-      const cachedError = JSON.parse(
-        await fs.readFile(cachedErrorPath, 'utf-8')
-      ) as CompilationError;
-      if (isLegacyTransientCachedError(cachedError)) {
-        logger.info(
-          `[Extensions] Discarding a stale server cached error for ${extId} (${sourceHash}) — ` +
-            `it looks like an environment failure from a previous run, not a real problem with ` +
-            `the extension; recompiling`
-        );
-        await fs.unlink(cachedErrorPath).catch(() => {});
-      } else {
-        logger.debug(`[Extensions] Server cached error for ${extId} (${sourceHash})`);
-        return { error: cachedError, sourceHash };
+      try {
+        const code = await fs.readFile(this.bundlePath(cacheDir, extId, key), 'utf-8');
+        logger.debug(`[Extensions] ${target.prefix}Cache hit for ${extId} (${key})`);
+        return { code, sourceHash: key };
+      } catch {
+        // The manifest outlived its bundle (stale-cache cleanup): rebuild.
       }
-    } catch {
-      // Cache miss — compile
+    } else {
+      logger.debug(`[Extensions] ${target.prefix}Rebuilding ${extId}: ${check.stale}`);
     }
 
-    return this.runServerEsbuild(extId, entryPath, sourceHash, cachedJsPath, cachedErrorPath);
+    return this.runBuild(ctx);
   }
 
   /**
-   * Run esbuild compilation for client-side extensions and cache the result.
+   * Run esbuild, cache the bundle under its content hash, and record the
+   * files it was built from.
+   *
+   * What gets recorded is what esbuild actually consumed: the input recorder
+   * hashes each file's bytes as esbuild reads them, and the extension's tree
+   * is snapshotted before the build starts. So an edit that lands while the
+   * build runs leaves a manifest that no longer matches, and the next load
+   * rebuilds, instead of vouching for the old bundle (DOR-2491 review).
    *
    * Two separate `try` blocks, deliberately: a failure from `build()`
    * itself goes through {@link handleEsbuildError} and is worded as a
@@ -650,139 +601,91 @@ export class ExtensionCompiler {
    * did its job — and must not be reported as "Compilation failed for
    * <id>" with a confusing `ENOENT: ... open '<cache path>'` underneath
    * it; {@link buildIoFailureError} words it as what it actually is.
+   *
+   * A manifest that cannot be written costs only speed: the bundle is on
+   * disk and served, and the next load, finding no current manifest, builds
+   * again.
    */
-  private async runEsbuild(
-    extId: string,
-    entryPath: string,
-    sourceHash: string,
-    cachedJsPath: string,
-    cachedErrorPath: string
-  ): Promise<
-    { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
-  > {
+  private async runBuild(ctx: BuildContext): Promise<CompileResult> {
+    const { extId, target } = ctx;
+    const run: BuildRun = {
+      startedAt: buildStartTime(),
+      snapshot: await snapshotSourceTree(ctx.extRoot, this.cacheDir),
+      recorder: createInputRecorder(),
+    };
     let code: string;
-    let sizeKb: number;
+    let inputs: Record<string, unknown> | undefined;
     try {
       const result = await build({
-        entryPoints: [entryPath],
-        bundle: true,
-        format: 'esm',
-        platform: 'browser',
-        target: 'es2022',
-        external: ['react', 'react-dom', '@dorkos/extension-api'],
-        write: false,
-        minify: false,
-        sourcemap: 'inline',
-        logLevel: 'silent',
-        // Allow JSX in .ts files — extensions commonly use JSX without .tsx rename
-        loader: { '.ts': 'tsx' },
+        ...target.options,
+        entryPoints: [ctx.entryPath],
+        absWorkingDir: ctx.cwd,
+        metafile: true,
+        plugins: [run.recorder.plugin],
       });
-
       code = result.outputFiles?.[0]?.text ?? '';
-      sizeKb = Buffer.byteLength(code, 'utf-8') / 1024;
-      if (sizeKb > BUNDLE_SIZE_WARNING_KB) {
-        logger.warn(
-          `[Extensions] Bundle for ${extId} is ${sizeKb.toFixed(0)}KB (exceeds ${BUNDLE_SIZE_WARNING_KB}KB guideline)`
-        );
-      }
+      inputs = result.metafile?.inputs;
     } catch (err) {
-      return this.handleEsbuildError(extId, err, cachedErrorPath, sourceHash);
+      return this.handleEsbuildError(ctx, run, err);
     }
 
-    try {
-      await fs.writeFile(cachedJsPath, code, 'utf-8');
-      await fs.unlink(cachedErrorPath).catch(() => {
-        /* no stale error */
-      });
-      logger.info(`[Extensions] Compiled ${extId} (${sizeKb.toFixed(1)}KB)`);
-      return { code, sourceHash };
-    } catch (err) {
-      return { error: buildIoFailureError(extId, err, 'cache the compiled bundle'), sourceHash };
-    }
-  }
-
-  /**
-   * Run esbuild compilation for server-side extensions and cache the result.
-   * See {@link runEsbuild} for why compile failures and cache-write
-   * failures are handled in separate `try` blocks.
-   */
-  private async runServerEsbuild(
-    extId: string,
-    entryPath: string,
-    sourceHash: string,
-    cachedJsPath: string,
-    cachedErrorPath: string
-  ): Promise<
-    { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
-  > {
-    let code: string;
-    let sizeKb: number;
-    try {
-      const result = await build({
-        entryPoints: [entryPath],
-        bundle: true,
-        format: 'cjs',
-        platform: 'node',
-        target: 'node20',
-        external: ['express', '@dorkos/extension-api', '@dorkos/extension-api/server'],
-        write: false,
-        minify: false,
-        sourcemap: 'inline',
-        logLevel: 'silent',
-        loader: { '.ts': 'tsx' },
-      });
-
-      code = result.outputFiles?.[0]?.text ?? '';
-      sizeKb = Buffer.byteLength(code, 'utf-8') / 1024;
-      if (sizeKb > BUNDLE_SIZE_WARNING_KB) {
-        logger.warn(
-          `[Extensions] Server bundle for ${extId} is ${sizeKb.toFixed(0)}KB (exceeds ${BUNDLE_SIZE_WARNING_KB}KB guideline)`
-        );
-      }
-    } catch (err) {
-      return this.handleEsbuildError(extId, err, cachedErrorPath, sourceHash, 'Server ');
+    const sizeKb = Buffer.byteLength(code, 'utf-8') / 1024;
+    if (sizeKb > BUNDLE_SIZE_WARNING_KB) {
+      logger.warn(
+        `[Extensions] ${target.prefix}Bundle for ${extId} is ${sizeKb.toFixed(0)}KB (exceeds ${BUNDLE_SIZE_WARNING_KB}KB guideline)`
+      );
     }
 
+    const key = shortHash(code);
     try {
-      await fs.writeFile(cachedJsPath, code, 'utf-8');
-      await fs.unlink(cachedErrorPath).catch(() => {
-        /* no stale error */
-      });
-      logger.info(`[Extensions] Compiled server bundle for ${extId} (${sizeKb.toFixed(1)}KB)`);
-      return { code, sourceHash };
+      await writeFileAtomic(this.bundlePath(ctx.cacheDir, extId, key), code);
     } catch (err) {
       return {
-        error: buildIoFailureError(extId, err, 'cache the compiled bundle', 'Server '),
-        sourceHash,
+        error: buildIoFailureError(extId, err, 'cache the compiled bundle', target.prefix),
+        sourceHash: key,
       };
     }
+    logger.info(`[Extensions] Compiled ${target.noun} for ${extId} (${sizeKb.toFixed(1)}KB)`);
+
+    const digest = inputs
+      ? await digestBuildInputs(inputs, ctx.cwd, run.recorder.hashes, run.snapshot)
+      : null;
+    if (digest) {
+      await this.persistManifest(ctx, run, key, digest, { kind: 'bundle' });
+    } else {
+      logger.warn(
+        `[Extensions] Could not record the files ${extId}'s ${target.noun} was built from; ` +
+          `it will be rebuilt on the next load`
+      );
+    }
+    return { code, sourceHash: key };
   }
 
   /**
    * Handle an esbuild compilation error: cache it and return a structured
    * error result — unless {@link isEnvironmentFailure} says the failure
    * describes the local environment rather than the extension's source, in
-   * which case the cache write is skipped so the next compile attempt (the
-   * next start, or the next `reload_extensions`) tries fresh instead of
+   * which case nothing is cached so the next compile attempt (the next
+   * start, or the next `reload_extensions`) tries fresh instead of
    * replaying a one-time environment hiccup forever.
    *
-   * @param extId - Extension identifier
-   * @param err - Error thrown by esbuild
-   * @param cachedErrorPath - Path to write the cached error JSON
-   * @param sourceHash - Content hash of the source file
-   * @param prefix - Optional prefix for log messages (e.g. 'Server ')
+   * A failed build has no metafile, so a genuine error is cached against the
+   * extension's whole source tree as it was before the build
+   * ({@link digestFailedBuild}): editing any file in it, or adding the module
+   * an import was missing, rebuilds. A tree too large to snapshot is not
+   * cached; the next compile simply runs esbuild again.
    */
   private async handleEsbuildError(
-    extId: string,
-    err: unknown,
-    cachedErrorPath: string,
-    sourceHash: string,
-    prefix = ''
+    ctx: BuildContext,
+    run: BuildRun,
+    err: unknown
   ): Promise<{ error: CompilationError; sourceHash: string }> {
+    const { extId, target } = ctx;
+    const prefix = target.prefix;
     const esbuildErr = err as {
       errors?: Array<{
         text: string;
-        location?: { file: string; line: number; column: number };
+        location?: { file: string; line: number; column: number } | null;
       }>;
     };
 
@@ -802,31 +705,61 @@ export class ExtensionCompiler {
         `[Extensions] ${prefix}Compilation failed for ${extId} (environment failure, not ` +
           `cached — will retry next compile): ${compilationError.errors[0]?.text}`
       );
-      return { error: compilationError, sourceHash };
+      return { error: compilationError, sourceHash: '' };
     }
 
-    try {
-      await fs.writeFile(cachedErrorPath, JSON.stringify(compilationError, null, 2), 'utf-8');
-    } catch (writeErr) {
-      // The error itself is genuine and still returned below — only
-      // persisting it failed (a full disk while writing the cache entry
-      // for a real compile error). It will be re-detected, and the write
-      // re-attempted, on the next compile; nothing crashes over it either way.
-      logger.warn(
-        `[Extensions] Could not cache the compile error for ${extId}: ` +
-          `${writeErr instanceof Error ? writeErr.message : String(writeErr)}`
-      );
+    const key = shortHash(JSON.stringify(compilationError));
+    const digest = run.snapshot ? await digestFailedBuild(run.snapshot, run.recorder.hashes) : null;
+    if (digest) {
+      await this.persistManifest(ctx, run, key, digest, {
+        kind: 'error',
+        error: compilationError,
+      });
     }
 
     logger.error(
       `[Extensions] ${prefix}Compilation failed for ${extId}: ${compilationError.errors[0]?.text}`
     );
-    return { error: compilationError, sourceHash };
+    return { error: compilationError, sourceHash: key };
   }
 
-  /** Compute SHA-256 content hash (first 16 hex chars). */
-  private computeSourceHash(source: string): string {
-    return createHash('sha256').update(source).digest('hex').slice(0, 16);
+  /**
+   * Write a build's manifest. Never throws: a manifest that fails to write
+   * (a full disk) only means the next load rebuilds. A manifest from a build
+   * that started later than this one is left in place.
+   */
+  private async persistManifest(
+    ctx: BuildContext,
+    run: BuildRun,
+    key: string,
+    digest: SourceDigest,
+    outcome: BuildManifest['outcome']
+  ): Promise<void> {
+    try {
+      const written = await writeBuildManifest(ctx.manifestPath, {
+        buildKey: ctx.buildKey,
+        entryPath: ctx.entryPath,
+        startedAt: run.startedAt,
+        key,
+        files: digest.files,
+        dirs: digest.dirs,
+        absent: digest.absent,
+        outcome,
+      });
+      if (!written) {
+        logger.debug(`[Extensions] Kept the record of a newer build of ${ctx.extId}`);
+      }
+    } catch (err) {
+      logger.warn(
+        `[Extensions] Could not record the build of ${ctx.extId}; it will be rebuilt on the ` +
+          `next load: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  /** Path of a cached bundle. */
+  private bundlePath(cacheDir: string, extId: string, key: string): string {
+    return path.join(cacheDir, `${extId}.${key}.js`);
   }
 
   /**
@@ -838,8 +771,8 @@ export class ExtensionCompiler {
    * downstream read against a still-missing directory reports a harmless
    * cache miss; a downstream write fails the same way and is handled as
    * its own clearly-worded failure by whichever caller made it — see
-   * {@link buildIoFailureError} and its use in {@link handlePrecompiled},
-   * {@link runEsbuild}, and {@link runServerEsbuild}.
+   * {@link buildIoFailureError} and its use in {@link handlePrecompiled}
+   * and {@link runBuild}.
    *
    * @param dir - The directory to create. Defaults to the client-side cache root.
    */

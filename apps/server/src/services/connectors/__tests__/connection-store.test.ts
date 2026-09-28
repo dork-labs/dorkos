@@ -17,6 +17,7 @@ import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
   ConnectedAccount,
   ConnectorProviderInstanceId,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../registry.js';
 import { TEST_CONNECTOR_PROVIDER_TYPE } from '../connection-store.js';
@@ -325,6 +326,43 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     expect(registry.disconnectedConnectionFor(provider, 'gmail')).toBeUndefined();
     expect(registry.disconnectedConnectionFor(provider, 'gmail', 'work')).toBe(connection.id);
     expect(registry.disconnectedConnectionFor(provider, 'gmail', 'personal')).toBe(personal.id);
+  });
+
+  it('moves every saved account off a renamed service id, disconnected ones included', () => {
+    const save = (ref: string, label: string) =>
+      registry.recordConnect(provider, {
+        externalAccountRef: ref as ProviderConnectedAccount['externalAccountRef'],
+        toolkit: 'google-mail',
+        label,
+        status: 'active',
+        custody: 'self-host',
+      });
+    // Saved before the provider listed Nango's Gmail integration as Gmail.
+    const unnamed = save('nango:unnamed', 'google-mail');
+    const named = save('nango:named', 'home');
+    const disconnected = save('nango:disconnected', 'google-mail');
+    registry.recordDisconnect(disconnected.id);
+    const removed = save('nango:removed', 'google-mail');
+    db.update(connections).set({ removedAt: NOW }).where(eq(connections.id, removed.id)).run();
+
+    registry.renameServices(provider, new Map([['google-mail', 'gmail']]));
+
+    const row = (id: string) =>
+      db
+        .select({ toolkit: connections.toolkit, label: connections.label })
+        .from(connections)
+        .where(eq(connections.id, id))
+        .get();
+    expect(row(unnamed.id)).toEqual({ toolkit: 'gmail', label: 'gmail' });
+    expect(row(named.id)).toEqual({ toolkit: 'gmail', label: 'home' });
+    expect(row(disconnected.id)).toEqual({ toolkit: 'gmail', label: 'gmail' });
+    // A removed account stays as history, under the id it had.
+    expect(row(removed.id)?.toolkit).toBe('google-mail');
+    // Another app's account is untouched.
+    expect(row(connection.id)?.toolkit).toBe('gmail');
+
+    // Reconnecting Gmail finds and restores the disconnected account.
+    expect(registry.disconnectedConnectionFor(provider, 'gmail')).toBe(disconnected.id);
   });
 
   it('removes all owned authority for one agent without touching another agent', () => {

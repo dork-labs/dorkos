@@ -44,6 +44,8 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/relay/binding-subsystem.ts': ['relay-binding'],
   // A connector event woke an agent up.
   'services/connectors/events/session-target.ts': ['connector-event'],
+  // An agent started a session through the `session_start` tool.
+  'services/runtimes/claude-code/mcp-tools/session-tools.ts': ['agent-launch'],
   // The in-process end-to-end harness, behind `DORKOS_TEST_RUNTIME`.
   'index.ts': ['test-harness'],
 };

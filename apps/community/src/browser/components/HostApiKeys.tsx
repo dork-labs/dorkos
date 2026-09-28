@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeError, request } from '../api.js';
 import { describeReauthenticationError } from '../account-controls.js';
@@ -73,7 +74,7 @@ function SecretReveal({ handoff }: { handoff: SecretHandoff }) {
     }
   }
   return (
-    <div className="notice mt-4">
+    <Notice tone="info" className="mt-4">
       <strong>Copy your new key now</strong>
       <p className="small">
         This is the only time the key for “{handoff.key.label}” is shown. Store it where your
@@ -82,9 +83,9 @@ function SecretReveal({ handoff }: { handoff: SecretHandoff }) {
           ` The key it replaces stops working ${new Date(handoff.previousKeyExpiresAt).toLocaleString()}.`}
       </p>
       <div className="field mb-2">
-        <label htmlFor="host-api-key-secret">API key</label>
+        <Label htmlFor="host-api-key-secret">API key</Label>
         <div className="row">
-          <input
+          <Input
             id="host-api-key-secret"
             ref={input}
             className="min-w-0 flex-1 font-mono"
@@ -92,9 +93,14 @@ function SecretReveal({ handoff }: { handoff: SecretHandoff }) {
             value={handoff.secret}
             onFocus={(event) => event.currentTarget.select()}
           />
-          <button className="button shrink-0" type="button" onClick={() => void copySecret()}>
+          <Button
+            variant="outline"
+            className="shrink-0"
+            type="button"
+            onClick={() => void copySecret()}
+          >
             {copy === 'copied' ? 'Copied' : 'Copy key'}
-          </button>
+          </Button>
         </div>
       </div>
       <p className="small mb-0" aria-live="polite">
@@ -104,7 +110,7 @@ function SecretReveal({ handoff }: { handoff: SecretHandoff }) {
             ? 'This browser blocked copying. Copy the selected key by hand.'
             : ''}
       </p>
-    </div>
+    </Notice>
   );
 }
 
@@ -208,19 +214,19 @@ export function HostApiKeys() {
         key can never read messages, files, or members, and it cannot create other keys.
       </p>
       {error && (
-        <div role="alert" className="notice error mb-4">
+        <Notice role="alert" tone="error" className="mb-4">
           {error}
-        </div>
+        </Notice>
       )}
       {message && (
-        <div role="status" className="notice success mb-4">
+        <Notice role="status" tone="success" className="mb-4">
           {message}
-        </div>
+        </Notice>
       )}
       <form onSubmit={(event) => void issue(event)}>
         <div className="field">
-          <label htmlFor="host-api-key-label">Key name</label>
-          <input
+          <Label htmlFor="host-api-key-label">Key name</Label>
+          <Input
             id="host-api-key-label"
             value={label}
             maxLength={80}
@@ -233,7 +239,7 @@ export function HostApiKeys() {
           <legend className="mb-2 text-[0.83rem] font-bold">What it can do</legend>
           <div className="grid gap-3">
             {SCOPES.map(({ scope, label: scopeLabel, detail }) => (
-              <label key={scope} className="flex items-start gap-3">
+              <Label key={scope} className="flex items-start gap-3">
                 <input
                   type="checkbox"
                   className="mt-1 size-4 shrink-0"
@@ -250,12 +256,12 @@ export function HostApiKeys() {
                   {scopeLabel}
                   <span className="small muted block">{detail}</span>
                 </span>
-              </label>
+              </Label>
             ))}
           </div>
         </fieldset>
         <div className="field">
-          <label htmlFor="host-api-key-expiry">Expires</label>
+          <Label htmlFor="host-api-key-expiry">Expires</Label>
           <select
             id="host-api-key-expiry"
             value={expiry}
@@ -268,8 +274,8 @@ export function HostApiKeys() {
           </select>
         </div>
         <div className="field">
-          <label htmlFor="host-api-key-password">Your password</label>
-          <input
+          <Label htmlFor="host-api-key-password">Your password</Label>
+          <Input
             id="host-api-key-password"
             type="password"
             autoComplete="current-password"
@@ -278,9 +284,9 @@ export function HostApiKeys() {
             onChange={(event) => setPassword(event.target.value)}
           />
         </div>
-        <button className="button primary" disabled={busy || scopes.length === 0}>
+        <Button type="submit" variant="default" disabled={busy || scopes.length === 0}>
           Create key
-        </button>
+        </Button>
       </form>
       {handoff && <SecretReveal key={handoff.key.id} handoff={handoff} />}
       <h3 className="mt-8 mb-3">Keys on this host</h3>
@@ -315,20 +321,20 @@ export function HostApiKeys() {
                 </p>
                 {live && (
                   <div className="row flex-wrap gap-2">
-                    <button
-                      className="button"
+                    <Button
+                      variant="outline"
                       disabled={busy}
                       onClick={() => setConfirmation({ key, action: 'rotate' })}
                     >
                       Replace
-                    </button>
-                    <button
-                      className="button danger"
+                    </Button>
+                    <Button
+                      variant="destructive"
                       disabled={busy}
                       onClick={() => setConfirmation({ key, action: 'revoke' })}
                     >
                       Revoke
-                    </button>
+                    </Button>
                   </div>
                 )}
               </article>
@@ -353,7 +359,7 @@ export function HostApiKeys() {
                 you choose, so you can switch your program over without downtime.
               </p>
               <div className="field">
-                <label htmlFor="host-api-key-overlap">Keep the old key working for</label>
+                <Label htmlFor="host-api-key-overlap">Keep the old key working for</Label>
                 <select
                   id="host-api-key-overlap"
                   value={overlapMinutes}
@@ -365,8 +371,8 @@ export function HostApiKeys() {
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="host-api-key-rotate-password">Your password</label>
-                <input
+                <Label htmlFor="host-api-key-rotate-password">Your password</Label>
+                <Input
                   id="host-api-key-rotate-password"
                   type="password"
                   autoComplete="current-password"
@@ -382,16 +388,16 @@ export function HostApiKeys() {
             </p>
           )}
           <div className="row justify-end gap-2">
-            <button className="button" onClick={closeConfirmation}>
+            <Button variant="outline" onClick={closeConfirmation}>
               Cancel
-            </button>
-            <button
-              className={confirmation.action === 'rotate' ? 'button primary' : 'button danger'}
+            </Button>
+            <Button
+              variant={confirmation.action === 'rotate' ? 'default' : 'destructive'}
               disabled={busy || (confirmation.action === 'rotate' && !confirmPassword)}
               onClick={() => void confirm()}
             >
               {confirmation.action === 'rotate' ? 'Replace key' : 'Revoke key'}
-            </button>
+            </Button>
           </div>
         </FocusDialog>
       )}

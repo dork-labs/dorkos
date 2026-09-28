@@ -120,7 +120,7 @@ test.afterAll(async () => {
 test.describe('Community pairing approval @smoke', () => {
   test('offers configured sign-in methods with a callback to this exact request', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const { pairingId, approvalUrl } = await pairing('Social sign-in install', communityId);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.route('**/auth-options', (route) =>
@@ -138,13 +138,19 @@ test.describe('Community pairing approval @smoke', () => {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
-    await page.screenshot({ path: '/tmp/community-pairing-social-mobile.png', fullPage: true });
+    await page.screenshot({
+      path: testInfo.outputPath('community-pairing-social-mobile.png'),
+      fullPage: true,
+    });
     for (const [name, provider] of [
       ['Continue with Google', 'google'],
       ['Continue with GitHub', 'github'],
       ['Continue with Team SSO', 'oidc'],
     ]) {
-      await page.getByRole('button', { name }).click();
+      const signIn = page.getByRole('button', { name });
+      await expect(signIn).toHaveAttribute('data-slot', 'button');
+      await expect(signIn).toHaveAttribute('type', 'button');
+      await signIn.click();
       await expect.poll(() => handoffs.length).toBe(1);
       const handoff = handoffs.pop();
       expect(handoff).toEqual({
@@ -326,6 +332,11 @@ test.describe('Community pairing approval @smoke', () => {
     await page.goto(approvalUrl);
     await expect(page.getByText('Sign in to review this connection.')).toBeVisible();
     await expect(page.getByLabel('Email')).toBeFocused();
+    await expect(page.getByLabel('Email')).toHaveAttribute('data-slot', 'input');
+    await expect(page.getByRole('button', { name: 'Sign in and review' })).toHaveAttribute(
+      'type',
+      'submit'
+    );
     await expect(page.getByRole('button', { name: 'Approve connection' })).toHaveCount(0);
     const statusResponse = page.waitForResponse(
       (response) =>

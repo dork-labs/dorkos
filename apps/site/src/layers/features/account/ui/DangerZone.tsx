@@ -73,12 +73,10 @@ export function DangerZone({ email }: { email: string }) {
               Download everything we hold about your account as JSON. Secrets are never included.
             </span>
           </div>
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={<a href="/api/account/export" download />}
-          >
-            Export my data
+          <Button variant="outline" asChild>
+            <a href="/api/account/export" download>
+              Export my data
+            </a>
           </Button>
         </div>
 

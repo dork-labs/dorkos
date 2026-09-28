@@ -25,6 +25,8 @@ import {
   ConnectorOperatorQueryError,
   ConnectorOperatorQueryService,
 } from '../resources/operator-query-service.js';
+import type { NangoHttpClient, NangoIntegration } from '../providers/nango-client.js';
+import { NangoConnectorProvider } from '../providers/nango.js';
 import { ConnectionStore } from '../connection-store.js';
 import { ConnectorRegistry } from '../registry.js';
 
@@ -330,6 +332,80 @@ describe('ConnectorOperatorQueryService', () => {
     // A built-in app nothing sends a logo for has none either.
     expect(bySlug.get('notion')).not.toHaveProperty('logo');
     expect(JSON.stringify(page)).not.toContain('logos.composio.dev');
+  });
+
+  it('lists a popular app a self-hosted Nango server reaches once, under the app (DOR-2436)', async () => {
+    const integrations: NangoIntegration[] = [
+      {
+        uniqueKey: 'google-mail',
+        provider: 'google-mail',
+        displayName: 'Gmail',
+        authMode: 'OAUTH2',
+        logoUrl: 'https://app.nango.dev/images/template-logos/google-mail.svg',
+      },
+      { uniqueKey: 'mail-work', provider: 'google-mail', displayName: 'Gmail' },
+      { uniqueKey: 'acme-crm', provider: 'acme', displayName: 'Acme' },
+    ];
+    const client: NangoHttpClient = {
+      listIntegrations: () => Promise.resolve(integrations),
+      initiateConnection: () => Promise.reject(new Error('not used')),
+      getConnectionState: () => Promise.reject(new Error('not used')),
+      listConnections: () => Promise.resolve([]),
+      deleteConnection: () => Promise.resolve(),
+    };
+    const nangoRegistry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    nangoRegistry.register(
+      new NangoConnectorProvider({
+        client,
+        instanceId: ConnectorProviderInstanceIdSchema.parse('provider-nango'),
+      }),
+      'material-nango'
+    );
+    const queries = new ConnectorOperatorQueryService({
+      db,
+      registry: nangoRegistry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+    });
+    const signal = new AbortController().signal;
+
+    const page = await queries.catalog({ limit: 100, signal });
+    const slugs = page.services.map((entry) => entry.serviceSlug);
+    expect(slugs).not.toContain('google-mail');
+    expect(slugs.filter((slug) => slug === 'gmail')).toHaveLength(1);
+    const gmail = page.services.find((entry) => entry.serviceSlug === 'gmail');
+    expect(gmail).toMatchObject({
+      displayName: 'Gmail',
+      description: 'Read, search and send email.',
+      logo: '/api/connectors/catalog/logos/gmail',
+      popular: true,
+      intents: [
+        {
+          kind: 'account',
+          routes: [
+            expect.objectContaining({ providerInstanceId: 'provider-nango', custody: 'self-host' }),
+          ],
+        },
+      ],
+    });
+    // A second Gmail setup stays reachable on its own row, named so it never
+    // reads as a copy of the popular one; an app DorkOS doesn't know keeps its key.
+    expect(page.services.find((entry) => entry.serviceSlug === 'mail-work')?.displayName).toBe(
+      'Gmail (mail-work)'
+    );
+    expect(slugs).toContain('acme-crm');
+
+    // An agent may now ask for Gmail, and the Nango key is not a service it can name.
+    const directory = await queries.serviceDirectory(signal);
+    expect(directory.services).toContainEqual({
+      serviceSlug: 'gmail',
+      displayName: 'Gmail',
+      requestable: true,
+    });
+    expect(directory.services.map((entry) => entry.serviceSlug)).not.toContain('google-mail');
   });
 
   it('names the service an app will ask about on every route that signs in through one', async () => {

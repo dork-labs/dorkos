@@ -40,10 +40,15 @@ class FakeNangoClient implements NangoHttpClient {
   private _counter = 0;
   private _failure: Error | null = null;
 
-  private readonly _integrations: NangoIntegration[] = [
-    { uniqueKey: 'gmail', provider: 'google-mail', displayName: 'Gmail', authMode: 'OAUTH2' },
-    { uniqueKey: 'slack', provider: 'slack', displayName: 'Slack', authMode: 'OAUTH2' },
-  ];
+  /** The integration keys each connect was started with, in order. */
+  readonly startedWith: string[] = [];
+
+  constructor(
+    private readonly _integrations: NangoIntegration[] = [
+      { uniqueKey: 'gmail', provider: 'google-mail', displayName: 'Gmail', authMode: 'OAUTH2' },
+      { uniqueKey: 'slack', provider: 'slack', displayName: 'Slack', authMode: 'OAUTH2' },
+    ]
+  ) {}
 
   listIntegrations(): Promise<NangoIntegration[]> {
     if (this._failure) return Promise.reject(this._failure);
@@ -55,6 +60,7 @@ class FakeNangoClient implements NangoHttpClient {
     label?: string;
   }): Promise<NangoConnectionRequest> {
     if (this._failure) return Promise.reject(this._failure);
+    this.startedWith.push(input.integration);
     this._counter += 1;
     const connectionRequestId = `cs_${this._counter}`;
     this._requests.set(connectionRequestId, {
@@ -193,6 +199,163 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
     await expect(
       provider.disconnect('nango:conn_nope' as ConnectorExternalAccountRef)
     ).resolves.toBeUndefined();
+  });
+});
+
+// A Nango integration's key is the person's own name for it; its template id
+// says which app it is. Across the port it goes by the app's DorkOS id, so it
+// joins the popular app's row instead of listing it twice (DOR-2436).
+describe('NangoConnectorProvider — integrations go by their app’s service id', () => {
+  function providerOver(integrations: NangoIntegration[]) {
+    const client = new FakeNangoClient(integrations);
+    return { client, provider: new NangoConnectorProvider({ client }) };
+  }
+
+  it('lists a Nango Gmail integration as the Gmail service', async () => {
+    const { provider } = providerOver([
+      { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
+    ]);
+
+    await expect(provider.listToolkits()).resolves.toEqual([
+      { slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' },
+    ]);
+  });
+
+  it('connects through the integration’s own key and reports the account under the app', async () => {
+    const { client, provider } = providerOver([
+      { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
+    ]);
+
+    const { flowId } = await provider.startConnect('gmail');
+    const poll = await provider.pollConnect(flowId);
+
+    expect(client.startedWith).toEqual(['google-mail']);
+    expect(poll.account).toMatchObject({ toolkit: 'gmail', label: 'gmail' });
+    const accounts = await provider.listAccounts({ toolkit: 'gmail' });
+    expect(accounts.map((account) => account.toolkit)).toEqual(['gmail']);
+  });
+
+  it('refuses to connect a service no integration goes by', async () => {
+    const { client, provider } = providerOver([
+      { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
+    ]);
+
+    await expect(provider.startConnect('dropbox')).rejects.toThrow(/no integration/);
+    expect(client.startedWith).toEqual([]);
+  });
+
+  it('still finishes a sign-in started under the integration’s old key', async () => {
+    // A caller holding an account saved before the rename moved it.
+    const { client, provider } = providerOver([
+      { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
+    ]);
+
+    const { flowId } = await provider.startConnect('google-mail');
+    const poll = await provider.pollConnect(flowId);
+
+    expect(client.startedWith).toEqual(['google-mail']);
+    expect(poll).toMatchObject({ status: 'connected', account: { toolkit: 'google-mail' } });
+    // Everywhere else the account goes by the app's id.
+    const accounts = await provider.listAccounts();
+    expect(accounts.map((account) => account.toolkit)).toEqual(['gmail']);
+    await expect(provider.listAccounts({ toolkit: 'google-mail' })).resolves.toEqual([]);
+  });
+
+  it('reports which integration keys now go by an app’s id', async () => {
+    const { provider } = providerOver([
+      { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
+      { uniqueKey: 'notion', provider: 'notion', displayName: 'Notion' },
+      { uniqueKey: 'acme-crm', provider: 'acme', displayName: 'Acme' },
+    ]);
+
+    await expect(provider.serviceRenames()).resolves.toEqual(new Map([['google-mail', 'gmail']]));
+  });
+
+  it('never gives the app’s row to an integration set up later', async () => {
+    const home = {
+      uniqueKey: 'mail-home',
+      provider: 'google-mail',
+      displayName: 'Gmail',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    const later = {
+      uniqueKey: 'a-gmail',
+      provider: 'google-mail',
+      displayName: 'Gmail',
+      createdAt: '2026-09-01T00:00:00.000Z',
+    };
+    const { client, provider } = providerOver([home, later]);
+
+    const toolkits = await provider.listToolkits();
+    expect(toolkits.map((toolkit) => toolkit.slug)).toEqual(['gmail', 'a-gmail']);
+    await provider.startConnect('gmail');
+    expect(client.startedWith).toEqual(['mail-home']);
+  });
+
+  it('without set-up dates, keeps the app’s row with the integration that holds accounts', async () => {
+    const { client, provider } = providerOver([
+      { uniqueKey: 'a-first', provider: 'google-mail' },
+      { uniqueKey: 'b-used', provider: 'google-mail' },
+    ]);
+    // The first account lands on the integration that is not the app's yet.
+    const { flowId } = await provider.startConnect('b-used');
+    const poll = await provider.pollConnect(flowId);
+
+    // The sign-in still finishes under the id it started with…
+    expect(poll).toMatchObject({ status: 'connected', account: { toolkit: 'b-used' } });
+    // …and from then on the integration with the account is the app's.
+    const slugs = (await provider.listToolkits()).map((toolkit) => toolkit.slug);
+    expect(slugs).toEqual(['a-first', 'gmail']);
+    await expect(provider.serviceRenames()).resolves.toEqual(new Map([['b-used', 'gmail']]));
+    await provider.startConnect('gmail');
+    expect(client.startedWith).toEqual(['b-used', 'b-used']);
+  });
+
+  it('asks again, never fails, when naming a connected account’s app fails', async () => {
+    const client = new FakeNangoClient([
+      { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
+    ]);
+    const provider = new NangoConnectorProvider({ client });
+    const { flowId } = await provider.startConnect('gmail');
+    const listIntegrations = client.listIntegrations.bind(client);
+    client.listIntegrations = () => Promise.reject(new NangoApiError(503, 'unavailable'));
+
+    await expect(provider.pollConnect(flowId)).resolves.toEqual({ status: 'pending' });
+
+    client.listIntegrations = listIntegrations;
+    await expect(provider.pollConnect(flowId)).resolves.toMatchObject({
+      status: 'connected',
+      account: { toolkit: 'gmail' },
+    });
+  });
+
+  it('keeps a second integration of one app reachable under its own key', async () => {
+    const { client, provider } = providerOver([
+      { uniqueKey: 'mail-home', provider: 'google-mail', displayName: 'Gmail' },
+      { uniqueKey: 'mail-work', provider: 'google-mail', displayName: 'Gmail' },
+    ]);
+
+    const toolkits = await provider.listToolkits();
+    expect(toolkits.map((toolkit) => [toolkit.slug, toolkit.displayName])).toEqual([
+      ['gmail', 'Gmail'],
+      ['mail-work', 'Gmail (mail-work)'],
+    ]);
+    await provider.startConnect('mail-work');
+    await provider.startConnect('gmail');
+    expect(client.startedWith).toEqual(['mail-work', 'mail-home']);
+  });
+
+  it('keeps an integration of an app DorkOS does not know under its own key', async () => {
+    const { client, provider } = providerOver([
+      { uniqueKey: 'acme-crm', provider: 'acme', displayName: 'Acme' },
+    ]);
+
+    await expect(provider.listToolkits()).resolves.toEqual([
+      { slug: 'acme-crm', displayName: 'Acme', authKind: 'oauth2' },
+    ]);
+    const { flowId } = await provider.startConnect('acme-crm');
+    expect(client.startedWith).toEqual(['acme-crm']);
+    expect((await provider.pollConnect(flowId)).account?.toolkit).toBe('acme-crm');
   });
 });
 

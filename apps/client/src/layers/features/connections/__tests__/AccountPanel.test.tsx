@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
@@ -217,6 +217,14 @@ describe('AccountPanel', () => {
   );
 
   it('says why a stalled sign-out is waiting and when it tries again', async () => {
+    // Pin the clock to midday: "five minutes from now" read near midnight is
+    // tomorrow, and the panel then (correctly) names the day, which this
+    // same-day wording check would misread as a failure.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 28, 12, 0));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
     renderPanel(
       transportFor(

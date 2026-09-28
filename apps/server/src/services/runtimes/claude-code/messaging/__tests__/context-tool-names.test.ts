@@ -479,7 +479,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 110 -> 111 for `accounts_usage` (spec `claude-account-fleet` D2): no prompt
     // block names it, so it stays deferred and unprefixed.
     // 111 -> 112 for `accounts_probe` (spec `claude-account-fleet` D3), likewise.
-    expect(advertised.size).toBe(112);
+    // 112 -> 113 for `session_start` (spec `claude-account-fleet` D5): no prompt
+    // block names it, so it stays deferred and unprefixed.
+    expect(advertised.size).toBe(113);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

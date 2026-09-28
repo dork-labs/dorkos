@@ -11,9 +11,10 @@
  */
 import { type FormEvent, useId, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@dork-labs/ui/button';
+import { Input } from '@dork-labs/ui/input';
+import { Label } from '@dork-labs/ui/label';
+import { Textarea } from '@dork-labs/ui/textarea';
 import { cn } from '@/lib/utils';
 
 import { type FeedbackKind, useFeedbackForm } from './use-feedback-form';
@@ -58,7 +59,7 @@ export function FeedbackForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5" noValidate>
+    <form onSubmit={onSubmit} className="light space-y-5" noValidate>
       {/* Kind selector */}
       <div role="radiogroup" aria-label="What kind of feedback" className="flex flex-wrap gap-2">
         {KINDS.map(({ value, label }) => {
@@ -85,9 +86,9 @@ export function FeedbackForm() {
 
       {/* Message */}
       <div className="space-y-1.5">
-        <label htmlFor={messageId} className="text-charcoal font-mono text-sm font-medium">
+        <Label htmlFor={messageId} className="text-charcoal font-mono text-sm font-medium">
           Your message
-        </label>
+        </Label>
         <Textarea
           id={messageId}
           value={message}
@@ -102,9 +103,9 @@ export function FeedbackForm() {
 
       {/* Optional contact */}
       <div className="space-y-1.5">
-        <label htmlFor={contactId} className="text-warm-gray font-mono text-sm">
+        <Label htmlFor={contactId} className="text-warm-gray font-mono text-sm">
           Contact (optional)
-        </label>
+        </Label>
         <Input
           id={contactId}
           type="text"

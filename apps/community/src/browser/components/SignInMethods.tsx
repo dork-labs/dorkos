@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { KeyRound, Link2 } from 'lucide-react';
@@ -83,14 +84,14 @@ export function SignInMethodsPanel({ communityId }: { communityId: string }) {
           : 'You sign in through another service.'}
       </p>
       {error && (
-        <p className="notice error mb-3" role="alert">
+        <Notice tone="error" className="mb-3" role="alert">
           {error}
-        </p>
+        </Notice>
       )}
       {message && (
-        <p className="notice mb-3" role="status">
+        <Notice tone="info" className="mb-3" role="status">
           {message}
-        </p>
+        </Notice>
       )}
       {!methods.password && (
         <form onSubmit={(event) => void addPassword(event)}>
@@ -99,8 +100,8 @@ export function SignInMethodsPanel({ communityId }: { communityId: string }) {
             and other careful actions ask for it.
           </p>
           <div className="field">
-            <label htmlFor="new-account-password">New password</label>
-            <input
+            <Label htmlFor="new-account-password">New password</Label>
+            <Input
               id="new-account-password"
               type="password"
               autoComplete="new-password"
@@ -112,15 +113,21 @@ export function SignInMethodsPanel({ communityId }: { communityId: string }) {
             />
             <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
           </div>
-          <button className="button" disabled={busy}>
+          <Button type="submit" variant="outline" disabled={busy}>
             <KeyRound size={16} aria-hidden="true" /> Add password
-          </button>
+          </Button>
         </form>
       )}
       {label && !methods.oidc && (
-        <button className="button mt-3" type="button" disabled={busy} onClick={() => void link()}>
+        <Button
+          variant="outline"
+          className="mt-3"
+          type="button"
+          disabled={busy}
+          onClick={() => void link()}
+        >
           <Link2 size={16} aria-hidden="true" /> Link {label}
-        </button>
+        </Button>
       )}
     </section>
   );

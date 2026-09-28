@@ -536,6 +536,46 @@ export class ConnectionStore {
       .run();
   }
 
+  /**
+   * Move saved accounts from a service id their provider no longer lists them
+   * under to the one it does, so each keeps matching its app (a Nango Gmail
+   * integration saved as `google-mail` before it joined the popular Gmail row,
+   * DOR-2436). Every row of this instance still under an old id moves,
+   * disconnected ones included, so reconnecting one later still finds it; a
+   * removed row stays as history. A label that was only the old id (the name
+   * an account nobody named carries) follows it; a name the person chose stays.
+   * One transaction, so no reader sees half the accounts moved.
+   *
+   * @param instanceId - The provider instance the accounts belong to.
+   * @param renames - Old service id → new service id.
+   */
+  renameServices(
+    instanceId: ConnectorProviderInstanceId,
+    renames: ReadonlyMap<string, string>
+  ): void {
+    this.assertAvailable();
+    if (renames.size === 0) return;
+    const now = new Date().toISOString();
+    this.db.transaction((tx) => {
+      for (const [from, to] of renames) {
+        tx.update(connections)
+          .set({
+            label: sql`CASE WHEN ${connections.label} = ${connections.toolkit} THEN ${to} ELSE ${connections.label} END`,
+            toolkit: to,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(connections.providerInstanceId, instanceId),
+              eq(connections.toolkit, from),
+              isNull(connections.removedAt)
+            )
+          )
+          .run();
+      }
+    });
+  }
+
   /** Replace the operator-facing label of one stable connection. */
   setLabel(connectionId: ConnectionId, label: string): void {
     this.assertAvailable();

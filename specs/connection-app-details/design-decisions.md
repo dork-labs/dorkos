@@ -1,7 +1,7 @@
 ---
 slug: connection-app-details
 title: 'Connections: app logos, descriptions, actions and a kept app list'
-status: ideation
+status: implemented
 created: 2026-09-27
 linear: [DOR-2463, DOR-2464, DOR-2465]
 builds-on: specs/connections-one-list
@@ -36,6 +36,7 @@ Follows the shipped Connections one-list redesign (`specs/connections-one-list/`
 ## 4. The kept app list (efficiency)
 
 - The server keeps each service's full app list in memory and on disk at `~/.dork/cache/connectors/catalog/`. The copy counts as fresh for 24 hours. After that it keeps serving while it refreshes in the background.
+  - **As built:** freshness depends on the service. Composio 24h (memory and disk), the DorkOS account 15 minutes (its list carries per-app sign-in availability), Nango one minute in memory only (it lists the person's own setups), local tool servers not kept. See [04-implementation.md](04-implementation.md).
 - The copy is dropped right away when that service's key or setup changes, or when the service is removed.
 - Paging, search and the agent lookup all read the kept copy: at most one upstream listing per service while fresh.
 - The file holds no secrets.

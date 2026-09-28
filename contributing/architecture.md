@@ -209,6 +209,10 @@ Session list (sidebar/liveness):
 
 See [Agent UI Control](#agent-ui-control) for the bidirectional UI-command pattern.
 
+## Shared visual primitives
+
+`packages/ui` owns portable visual and interaction behavior; applications own state, routing, validation, permissions and requests. The client imports through its FSD facade, while Community and site forms import public package exports. The standalone catalog renders these same implementations; application feature simulations stay in the client playground. Native controls, framework-owned documentation UI and deliberate marketing/domain composition remain local. See [shared-ui.md](shared-ui.md) for the consumer inventory, CSS and portal contracts, and release procedure.
+
 ## Tabbed Dialog Primitive (`TabbedDialog`)
 
 `apps/client/src/layers/shared/ui/tabbed-dialog.tsx` is the high-level primitive for any sidebar-tabbed dialog in DorkOS. It owns the responsive sidebar, mobile drill-in behavior, animated active-tab pill, deep-link sync via `useDialogTabState`, and extension-slot merging. Both `SettingsDialog` and `AgentDialog` consume it as thin declarative wrappers around a `tabs[]` array.

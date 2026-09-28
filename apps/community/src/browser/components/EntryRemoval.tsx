@@ -9,6 +9,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  Button,
   buttonVariants,
   DropdownMenu,
   DropdownMenuContent,
@@ -45,14 +46,16 @@ export function RemovalMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
+        <Button
           ref={trigger}
           type="button"
-          className={`button ghost removal-trigger ${className}`}
+          variant="ghost"
+          size="icon-sm"
+          className={`removal-trigger ${className}`}
           aria-label={label}
         >
           <MoreHorizontal size={16} aria-hidden="true" />
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem variant="destructive" onSelect={() => onChoose(trigger.current)}>

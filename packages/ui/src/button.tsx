@@ -33,7 +33,7 @@ const buttonVariants = cva(
         destructive:
           'bg-dui-destructive text-dui-destructive-foreground hover:bg-dui-destructive/90 focus-visible:ring-dui-destructive/20 dui-dark:focus-visible:ring-dui-destructive/40 dui-dark:bg-dui-destructive/60',
         outline:
-          'border bg-dui-background shadow-xs hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:bg-dui-input/30 dui-dark:border-dui-input dui-dark:hover:bg-dui-input/50',
+          'border border-dui-border bg-dui-background text-dui-foreground shadow-xs hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:bg-dui-input/30 dui-dark:border-dui-input dui-dark:hover:bg-dui-input/50',
         secondary: 'bg-dui-secondary text-dui-secondary-foreground hover:bg-dui-secondary/80',
         ghost:
           'hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:hover:bg-dui-accent/50',

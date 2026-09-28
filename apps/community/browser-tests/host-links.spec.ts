@@ -165,6 +165,7 @@ test('a host with links shows Terms and Privacy at sign-in, all three in setting
     exact: true,
   });
   await expect(report).toHaveAttribute('target', '_blank');
+  await expect(report).toHaveAttribute('data-slot', 'button');
   const href = new URL((await report.getAttribute('href')) ?? '');
   expect(`${href.origin}${href.pathname}`).toBe(REPORT);
   expect([...href.searchParams.entries()]).toEqual([
@@ -178,6 +179,16 @@ test('a host with links shows Terms and Privacy at sign-in, all three in setting
   await expect(
     hostPanel.getByRole('link', { name: 'Terms (opens in a new tab)', exact: true })
   ).toHaveAttribute('href', TERMS);
+  const styledTerms = hostPanel.getByRole('link', {
+    name: 'Terms (opens in a new tab)',
+    exact: true,
+  });
+  await expect(styledTerms).toHaveAttribute('data-slot', 'button');
+  const linkStyles = await styledTerms.evaluate((element) => ({
+    foreground: getComputedStyle(element).color,
+    background: getComputedStyle(element).backgroundColor,
+  }));
+  expect(linkStyles.foreground).not.toBe(linkStyles.background);
   await expect(hostPanel.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', PRIVACY);
   await expect(hostPanel.getByRole('link', { name: 'Report a problem' })).toHaveAttribute(
     'href',

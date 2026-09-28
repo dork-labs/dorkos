@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CommunityWireErasure,
@@ -63,8 +64,8 @@ function PasswordField({
 }) {
   return (
     <div className="field">
-      <label htmlFor={id}>Confirm password</label>
-      <input
+      <Label htmlFor={id}>Confirm password</Label>
+      <Input
         id={id}
         type="password"
         autoComplete="current-password"
@@ -134,8 +135,8 @@ function EraseMembershipForm({
         </p>
       )}
       <p className="small muted">{CANNOT_REACH}</p>
-      <button
-        className="button"
+      <Button
+        variant="outline"
         type="button"
         hidden={open}
         aria-expanded={open}
@@ -143,12 +144,12 @@ function EraseMembershipForm({
         onClick={() => setOpen(true)}
       >
         Continue to erase
-      </button>
+      </Button>
       {open && (
         <div id={`${idPrefix}-fields`}>
           <div className="field">
-            <label htmlFor={`${idPrefix}-name`}>Enter {communityName}</label>
-            <input
+            <Label htmlFor={`${idPrefix}-name`}>Enter {communityName}</Label>
+            <Input
               ref={nameInput}
               id={`${idPrefix}-name`}
               value={name}
@@ -157,18 +158,18 @@ function EraseMembershipForm({
           </div>
           <PasswordField id={`${idPrefix}-password`} value={password} onChange={setPassword} />
           {error && (
-            <p role="alert" className="notice error">
+            <Notice role="alert" tone="error">
               {error}
-            </p>
+            </Notice>
           )}
-          <button
-            className="button danger"
+          <Button
+            variant="destructive"
             type="button"
             disabled={busy || name !== communityName}
             onClick={() => void submit()}
           >
             Erase my messages
-          </button>
+          </Button>
         </div>
       )}
     </>
@@ -181,18 +182,18 @@ function Scheduled({ erasure, text }: { erasure: CommunityWireErasure; text: str
   const [error, setError] = useState('');
   if (erasure.state === 'running')
     return (
-      <div role="status" className="notice">
+      <Notice role="status" tone="info">
         <p className="mb-0">Erasing now. It can no longer be cancelled.</p>
-      </div>
+      </Notice>
     );
   return (
-    <div role="status" className="notice">
+    <Notice role="status" tone="info">
       <p className="mb-2">
         {text} {when(erasure.executeAfter)}.
       </p>
       {error && <p className="small mb-2">{error}</p>}
-      <button
-        className="button"
+      <Button
+        variant="outline"
         type="button"
         disabled={busy}
         onClick={() => {
@@ -204,8 +205,8 @@ function Scheduled({ erasure, text }: { erasure: CommunityWireErasure; text: str
         }}
       >
         Cancel
-      </button>
-    </div>
+      </Button>
+    </Notice>
   );
 }
 
@@ -328,14 +329,14 @@ export function AccountErasurePanels({
   return (
     <div className="stack mt-6">
       {error && (
-        <p role="alert" className="notice error">
+        <Notice role="alert" tone="error">
           {error}
-        </p>
+        </Notice>
       )}
       {formerError && (
-        <p role="alert" className="notice error">
+        <Notice role="alert" tone="error">
           {formerError}
-        </p>
+        </Notice>
       )}
       {scheduled.length > 0 && (
         <section aria-labelledby="scheduled-erasures-title">
@@ -382,13 +383,14 @@ export function AccountErasurePanels({
                     active={false}
                   />
                 ) : (
-                  <button
-                    className="button mt-2"
+                  <Button
+                    variant="outline"
+                    className="mt-2"
                     type="button"
                     onClick={() => setErasing(membership.communityId)}
                   >
                     Erase your messages here
-                  </button>
+                  </Button>
                 )}
               </li>
             ))}
@@ -417,8 +419,8 @@ export function AccountErasurePanels({
             </p>
             <p className="small muted">{CANNOT_REACH}</p>
             <div className="field">
-              <label htmlFor="delete-account-email">Enter your email</label>
-              <input
+              <Label htmlFor="delete-account-email">Enter your email</Label>
+              <Input
                 id="delete-account-email"
                 type="email"
                 autoComplete="email"
@@ -428,18 +430,18 @@ export function AccountErasurePanels({
             </div>
             <PasswordField id="delete-account-password" value={password} onChange={setPassword} />
             {formError && (
-              <p role="alert" className="notice error">
+              <Notice role="alert" tone="error">
                 {formError}
-              </p>
+              </Notice>
             )}
-            <button
-              className="button danger"
+            <Button
+              variant="destructive"
               type="button"
               disabled={busy || !email}
               onClick={() => void deleteAccount()}
             >
               Delete my account
-            </button>
+            </Button>
           </>
         )}
       </section>

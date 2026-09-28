@@ -187,6 +187,19 @@ export const MCP_TOOL_TIERS = {
     title: "Check a Claude account's usage without running a turn",
   },
 
+  // ── Sessions ────────────────────────────────────────────────────────────
+  // Starts work that runs on its own and can spend an account, so it is an
+  // agent action a person can switch to Ask or Blocked. Nothing is lost if it
+  // goes wrong (the session can be stopped), so `act`, not `destructive`.
+  session_start: {
+    tier: 'act',
+    area: 'agents',
+    // What the card grants: where, on whose bill, with what power (clamped by
+    // the input schema before the gate sees it), as whom, and to do what.
+    approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
+    title: 'Start a new agent session',
+  },
+
   // ── Tasks ───────────────────────────────────────────────────────────────
   tasks_list: {
     tier: 'observe',

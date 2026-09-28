@@ -1,3 +1,4 @@
+import { Button, Notice } from '@dork-labs/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
 import { describeError, RequestError, request } from '../api.js';
@@ -162,15 +163,15 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
           Choose a community
         </h1>
         {routeNotice && (
-          <p role="status" className="notice mb-4">
+          <Notice role="status" tone="info" className="mb-4">
             {ROUTE_NOTICES[routeNotice]}
-          </p>
+          </Notice>
         )}
         {error ? (
-          <div role="alert" className="notice error">
+          <Notice role="alert" tone="error">
             <p className="mb-3">{error}</p>
-            <button
-              className="button"
+            <Button
+              variant="outline"
               type="button"
               onClick={() => {
                 setError('');
@@ -178,8 +179,8 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
               }}
             >
               Try again
-            </button>
-          </div>
+            </Button>
+          </Notice>
         ) : memberships?.length === 0 ? (
           <div>
             <p className="muted">This account does not have a community membership yet.</p>
@@ -199,9 +200,10 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
               const reasonId = `community-choice-${membership.communityId}-reason`;
               return (
                 <li key={membership.communityId}>
-                  <button
+                  <Button
                     type="button"
-                    className="button community-choice"
+                    variant="outline"
+                    className="community-choice"
                     aria-disabled={choice.available ? undefined : true}
                     aria-describedby={choice.reason ? reasonId : undefined}
                     onClick={() => {
@@ -221,7 +223,7 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
                       )}
                     </span>
                     <span className="small muted">{choice.status}</span>
-                  </button>
+                  </Button>
                 </li>
               );
             })}

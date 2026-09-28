@@ -134,6 +134,53 @@ test('owner preflight keeps heading focus and explicit submission', async ({ pag
   );
 });
 
+test('chooser keeps paused memberships focusable with shared controls', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await page.route('**/api/v1/memberships', (route) =>
+    route.fulfill({
+      json: {
+        memberships: [
+          {
+            communityId: 'paused',
+            name: 'Paused place',
+            role: 'member',
+            displayName: 'Alex',
+            lifecycle: 'suspended',
+          },
+        ],
+      },
+    })
+  );
+  await page.goto(`${baseURL}/?account`);
+  const choice = page.getByRole('button', { name: /Paused place/ });
+  await expect(choice).toHaveAttribute('aria-disabled', 'true');
+  await expect(choice).toHaveAttribute('data-slot', 'button');
+  await choice.focus();
+  await expect(choice).toBeFocused();
+  await choice.click({ force: true });
+  await expect(page).toHaveURL(/\?account$/);
+  await expect(choice).toHaveCSS('cursor', 'not-allowed');
+  const unavailableBackground = await choice.evaluate((element) => {
+    const swatch = document.createElement('span');
+    swatch.style.backgroundColor = 'var(--panel-alt)';
+    element.append(swatch);
+    const color = getComputedStyle(swatch).backgroundColor;
+    swatch.remove();
+    return color;
+  });
+  await expect(choice).toHaveCSS('background-color', unavailableBackground);
+  const styles = await choice.evaluate((element) => ({
+    height: element.getBoundingClientRect().height,
+    foreground: getComputedStyle(element).color,
+    background: getComputedStyle(element).backgroundColor,
+    overflow: document.documentElement.scrollWidth > innerWidth,
+  }));
+  expect(styles.height).toBeGreaterThanOrEqual(44);
+  expect(styles.foreground).not.toBe(styles.background);
+  expect(styles.overflow).toBe(false);
+});
+
 test('invited member switches modes, uses social sign-in and recovers joining', async ({
   page,
 }) => {
@@ -179,7 +226,8 @@ test('invited member switches modes, uses social sign-in and recovers joining', 
   await page.getByRole('button', { name: 'Join community', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('The community did not respond.');
   const retry = page.getByRole('button', { name: 'Try again', exact: true });
-  // Unconverted recovery controls retain their existing class styling.
+  // Shared recovery controls retain a comfortable touch target.
+  await expect(retry).toHaveAttribute('data-slot', 'button');
   expect(await retry.evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThanOrEqual(40);
   await retry.click();
   await expect(page.getByRole('heading', { name: 'You’re in UI workshop.' })).toBeFocused();

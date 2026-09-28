@@ -11,6 +11,10 @@ import {
   type Db,
 } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
+import type {
+  ConnectorExternalAccountRef,
+  ConnectorProviderInstanceId,
+} from '@dorkos/shared/connector-provider';
 import type { CredentialProvider, CredentialResolution } from '../../core/credential-provider.js';
 import { ConnectorRegistry } from '../registry.js';
 import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
@@ -97,6 +101,7 @@ describe('ConnectorProviderBootstrapper', () => {
     /** Error the Composio connection check rejects with (the wrong-key branch). */
     composioProbeError?: Error;
     managedCloud?: ConstructorParameters<typeof ConnectorProviderBootstrapper>[0]['managedCloud'];
+    nangoClient?: NangoHttpClient;
   }) {
     return new ConnectorProviderBootstrapper({
       rawMcpPendingConnect: () => undefined,
@@ -107,7 +112,7 @@ describe('ConnectorProviderBootstrapper', () => {
       // Hermetic vendor clients: without these the post-registration connection
       // check would issue a real network request from the test suite.
       makeComposioClient: () => fakeComposioClient(opts?.composioProbeError),
-      makeNangoClient: () => fakeNangoClient(),
+      makeNangoClient: () => opts?.nangoClient ?? fakeNangoClient(),
       ...(opts?.testConnector && { testConnector: opts.testConnector }),
       ...(opts?.onUnregistered && { onUnregistered: opts.onUnregistered }),
       ...(opts?.managedCloud && { managedCloud: opts.managedCloud }),
@@ -169,6 +174,80 @@ describe('ConnectorProviderBootstrapper', () => {
         }),
       }).registerBootProviders();
       expect(registry.resolveProvider('nango')).toBeDefined();
+    });
+
+    describe('saved Nango accounts follow their integration to its popular app (DOR-2436)', () => {
+      const nangoEnv = () => ({
+        baseUrl: 'http://localhost:3003',
+        encryptionKey: VALID_ENCRYPTION_KEY,
+      });
+
+      /** Save two accounts under the integration's own key, one of them disconnected. */
+      function saveUnderOldKey() {
+        const nangoId = legacyDefaultProviderInstanceId('nango') as ConnectorProviderInstanceId;
+        const earlier = new FakeConnectorProvider({ instanceId: nangoId, type: 'nango' });
+        registry.register(earlier);
+        const save = (ref: string) =>
+          registry.recordConnect(earlier, {
+            externalAccountRef: ref as ConnectorExternalAccountRef,
+            toolkit: 'google-mail',
+            label: 'google-mail',
+            status: 'active',
+            custody: 'self-host',
+          });
+        const live = save('nango:conn_1');
+        const disconnected = save('nango:conn_2');
+        registry.recordDisconnect(disconnected.id);
+        secrets.set(NANGO_SECRET_KEY_REF, 'sk-nango-test');
+        return { live, disconnected };
+      }
+
+      const toolkitOf = (id: string) =>
+        db
+          .select({ toolkit: connections.toolkit })
+          .from(connections)
+          .where(eq(connections.id, id))
+          .get()?.toolkit;
+
+      it('moves every account saved under the old key when Nango is set up', async () => {
+        const { live, disconnected } = saveUnderOldKey();
+
+        await makeBootstrapper({
+          nangoEnv,
+          nangoClient: {
+            ...fakeNangoClient(),
+            listIntegrations: () =>
+              Promise.resolve([{ uniqueKey: 'google-mail', provider: 'google-mail' }]),
+          },
+        }).registerBootProviders();
+
+        expect(registry.resolveProvider('nango')).toBeDefined();
+        expect(toolkitOf(live.id)).toBe('gmail');
+        expect(toolkitOf(disconnected.id)).toBe('gmail');
+      });
+
+      it('still registers Nango when moving the accounts fails', async () => {
+        const { live } = saveUnderOldKey();
+        let reads = 0;
+
+        const status = await makeBootstrapper({
+          nangoEnv,
+          nangoClient: {
+            ...fakeNangoClient(),
+            // The connection check reads once; the rename read fails.
+            listIntegrations: () =>
+              ++reads === 1
+                ? Promise.resolve([{ uniqueKey: 'google-mail', provider: 'google-mail' }])
+                : Promise.reject(new Error('Nango went away')),
+          },
+        }).reload('nango');
+
+        // Registered and reported healthy: the move is retried next time.
+        expect(status.registered).toBe(true);
+        expect(status.error).toBeUndefined();
+        expect(registry.resolveProvider('nango')).toBeDefined();
+        expect(toolkitOf(live.id)).toBe('google-mail');
+      });
     });
 
     it('registers the hosted managed provider only while a linked key is configured', async () => {

@@ -426,6 +426,7 @@ import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import {
   createWorkspaceSubsystem,
+  WorkspaceReconcilerLifecycle,
   resolveWorkspaceRoot,
   setWorkspaceManager,
   setWorkspaceRoot,
@@ -746,6 +747,8 @@ let turnEndReprojection: TurnEndReprojection | undefined;
  * the caller uses `?.`.
  */
 let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
+// Passive until workspace bootstrap; disposal stays terminal if startup resumes later.
+const workspaceReconcilerLifecycle = new WorkspaceReconcilerLifecycle();
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
@@ -1634,7 +1637,7 @@ async function start() {
     });
     managedWorkspaces = workspaceStore;
     setWorkspaceManager(workspaceService);
-    workspaceReconciler.start();
+    workspaceReconcilerLifecycle.start(workspaceReconciler);
     logger.info('[Workspace] WorkspaceManager registered');
   }
 
@@ -5541,6 +5544,7 @@ async function start() {
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
+  await workspaceReconcilerLifecycle.dispose();
   logger.info('[DorkOS] shutting down services');
   if (accountUsageStore) {
     accountUsageStore.stop();
@@ -5640,9 +5644,8 @@ async function shutdownServices() {
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.
   await shutdownObservability();
-  // Give up the data directory last, once nothing is still writing to it. The
-  // admin restart path calls this function and then spawns a successor, so the
-  // release has to happen here rather than in shutdown().
+  // Retain the existing final lock release for admin restart's successor handoff.
+  // Workspace disposal alone does not prove that every server writer is quiescent.
   releaseInstanceLock?.();
   releaseInstanceLock = undefined;
 }
@@ -5690,6 +5693,14 @@ process.on('unhandledRejection', (reason) => {
 });
 
 start().catch(async (err) => {
+  try {
+    await workspaceReconcilerLifecycle.dispose();
+  } catch (cleanupError) {
+    logger.error(
+      '[workspace] Reconciliation disposal failed during startup cleanup:',
+      cleanupError
+    );
+  }
   // A later startup failure must not leave the owned offline listener running.
   await testComposioFixture?.close();
   testComposioFixture = undefined;

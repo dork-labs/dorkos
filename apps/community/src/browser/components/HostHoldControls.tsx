@@ -1,3 +1,4 @@
+import { Button, Input, Label } from '@dork-labs/ui';
 import { useState } from 'react';
 import { request } from '../api.js';
 import { FocusDialog } from './CommunityAdministration.js';
@@ -92,34 +93,34 @@ export function HostHoldControls({
       )}
       <div className="row flex-wrap gap-2">
         {holdable && (
-          <button className="button" disabled={busy} onClick={() => setDialog('hold')}>
+          <Button variant="outline" disabled={busy} onClick={() => setDialog('hold')}>
             Hold
-          </button>
+          </Button>
         )}
         {held && (
           <>
-            <button
-              className="button"
+            <Button
+              variant="outline"
               disabled={busy}
               onClick={() =>
                 void perform(() => lifecycle({ action: 'release' }), `Released ${community.name}.`)
               }
             >
               Release hold
-            </button>
-            <button className="button" disabled={busy} onClick={() => setDialog('notice')}>
+            </Button>
+            <Button variant="outline" disabled={busy} onClick={() => setDialog('notice')}>
               {community.deletionNoticeAt ? 'Change notice' : 'Publish deletion notice'}
-            </button>
+            </Button>
             {noticePassed && (
-              <button className="button danger" disabled={busy} onClick={() => setDialog('delete')}>
+              <Button variant="destructive" disabled={busy} onClick={() => setDialog('delete')}>
                 Delete
-              </button>
+              </Button>
             )}
           </>
         )}
         {community.lifecycle === 'deletion_pending' && community.deletionRequestedBy === 'host' && (
-          <button
-            className="button"
+          <Button
+            variant="outline"
             disabled={busy}
             onClick={() =>
               void perform(async () => {
@@ -128,7 +129,7 @@ export function HostHoldControls({
             }
           >
             Cancel deletion
-          </button>
+          </Button>
         )}
       </div>
       {(dialog === 'hold' || dialog === 'notice') && (
@@ -146,7 +147,7 @@ export function HostHoldControls({
                 : 'Members can still read and the owner can still export, but no one can post, join, or change settings. Every connected DorkOS installation and agent loses access now.'}
           </p>
           <div className="field">
-            <label htmlFor={`notice-${community.id}`}>Delete after (optional)</label>
+            <Label htmlFor={`notice-${community.id}`}>Delete after (optional)</Label>
             <input
               id={`notice-${community.id}`}
               type="date"
@@ -156,11 +157,11 @@ export function HostHoldControls({
             />
           </div>
           <div className="row justify-end gap-2">
-            <button className="button" onClick={close}>
+            <Button variant="outline" onClick={close}>
               Cancel
-            </button>
-            <button
-              className={dialog === 'hold' ? 'button danger' : 'button primary'}
+            </Button>
+            <Button
+              variant={dialog === 'hold' ? 'destructive' : 'default'}
               disabled={busy || (day !== '' && day < minimum)}
               onClick={() =>
                 void perform(
@@ -174,7 +175,7 @@ export function HostHoldControls({
               }
             >
               {dialog === 'hold' ? 'Hold community' : day ? 'Save notice' : 'Clear notice'}
-            </button>
+            </Button>
           </div>
         </FocusDialog>
       )}
@@ -185,10 +186,10 @@ export function HostHoldControls({
             can cancel during those seven days. The owner cannot.
           </p>
           <div className="field">
-            <label htmlFor={`delete-suffix-${community.id}`}>
+            <Label htmlFor={`delete-suffix-${community.id}`}>
               Type the last eight characters of its ID ({community.id.slice(-8)})
-            </label>
-            <input
+            </Label>
+            <Input
               id={`delete-suffix-${community.id}`}
               value={suffix}
               autoComplete="off"
@@ -196,11 +197,11 @@ export function HostHoldControls({
             />
           </div>
           <div className="row justify-end gap-2">
-            <button className="button" onClick={close}>
+            <Button variant="outline" onClick={close}>
               Cancel
-            </button>
-            <button
-              className="button danger"
+            </Button>
+            <Button
+              variant="destructive"
               disabled={busy || suffix !== community.id.slice(-8)}
               onClick={() =>
                 void perform(async () => {
@@ -212,7 +213,7 @@ export function HostHoldControls({
               }
             >
               Delete community
-            </button>
+            </Button>
           </div>
         </FocusDialog>
       )}

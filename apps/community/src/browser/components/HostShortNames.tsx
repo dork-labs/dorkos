@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useState } from 'react';
 import { describeError, request } from '../api.js';
 import { FocusDialog } from './CommunityAdministration.js';
@@ -67,9 +68,9 @@ export function HostShortNames({
     >
       <summary className="small cursor-pointer">Web address</summary>
       {error && (
-        <p role="alert" className="notice error small mt-2">
+        <Notice role="alert" tone="error" className="small mt-2">
           {error}
-        </p>
+        </Notice>
       )}
       {!names && !error && <p className="small muted mt-2">Loading address…</p>}
       {names && (
@@ -88,8 +89,8 @@ export function HostShortNames({
           }}
         >
           <div className="field">
-            <label htmlFor={draftId}>Short name</label>
-            <input
+            <Label htmlFor={draftId}>Short name</Label>
+            <Input
               id={draftId}
               value={draft}
               maxLength={32}
@@ -105,9 +106,9 @@ export function HostShortNames({
               3 to 32 lowercase letters, digits, and single hyphens, starting with a letter.
             </span>
           </div>
-          <button className="button" disabled={busy}>
+          <Button type="submit" variant="outline" disabled={busy}>
             Save address
-          </button>
+          </Button>
           <span className="small ml-2" aria-live="polite">
             {message}
           </span>
@@ -120,14 +121,14 @@ export function HostShortNames({
                 {names.retired.map((retired) => (
                   <li key={retired.shortName} className="row justify-between">
                     <span className="font-mono">/{retired.shortName}</span>
-                    <button
+                    <Button
                       type="button"
-                      className="button"
+                      variant="outline"
                       disabled={busy}
                       onClick={() => setReleasing(retired.shortName)}
                     >
                       Release
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -142,12 +143,12 @@ export function HostShortNames({
             community at this address.” After the cool-off, another community can take it.
           </p>
           <div className="row justify-end gap-2">
-            <button type="button" className="button" onClick={() => setReleasing(null)}>
+            <Button type="button" variant="outline" onClick={() => setReleasing(null)}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="button danger"
+              variant="destructive"
               disabled={busy}
               onClick={() => {
                 const shortName = releasing;
@@ -163,7 +164,7 @@ export function HostShortNames({
               }}
             >
               Release address
-            </button>
+            </Button>
           </div>
         </FocusDialog>
       )}

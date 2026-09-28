@@ -1006,6 +1006,22 @@ describe('RuntimeRegistry', () => {
       expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
+    it('discardSessionSettings removes one row, bound or not, and nothing else', async () => {
+      await registry.saveSessionSettings('never-started', { model: 'sonnet' });
+      await registry.persistSessionRuntime('bound-then-dropped', 'test-mode', A_PERSON);
+      await registry.saveSessionSettings('kept', { model: 'sonnet' });
+
+      await registry.discardSessionSettings('never-started');
+      await registry.discardSessionSettings('bound-then-dropped');
+
+      const ids = db
+        .select({ id: sessionMetadata.sessionId })
+        .from(sessionMetadata)
+        .all()
+        .map((r) => r.id);
+      expect(ids).toEqual(['kept']);
+    });
+
     it('updates only provided columns and leaves identity intact on conflict', async () => {
       await registry.persistSessionRuntime('s2', 'test-mode', A_PERSON, '/agent/path');
       await registry.saveSessionSettings('s2', { permissionMode: 'acceptEdits' });

@@ -641,6 +641,22 @@ export class RuntimeRegistry {
   }
 
   /**
+   * Delete a session's `session_metadata` row outright, bound or not.
+   *
+   * For exactly one kind of caller: one that minted the session id itself,
+   * saved settings under it, and then saw the launch refused, throw, or not be
+   * accepted (`session_start`). Nobody else can know that id, so nothing anyone
+   * chose is lost; without this, every refused launch would leave a row for a
+   * session that never existed.
+   *
+   * @param sessionId - The id the caller minted.
+   */
+  async discardSessionSettings(sessionId: string): Promise<void> {
+    const db = this.requireDb('discardSessionSettings');
+    db.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).run();
+  }
+
+  /**
    * The `permission_mode` a CLAIM should write: the stored one if the runtime
    * being bound can actually run it, otherwise the seed, otherwise nothing.
    *

@@ -57,7 +57,12 @@ import {
   UnknownAccountError,
 } from '../services/runtimes/claude-code/accounts/account-probe.js';
 import { logger } from '../lib/logger.js';
-import { isLocalCaller } from '../lib/caller-authority.js';
+import {
+  isLocalCaller,
+  readCallerAuthority,
+  requireOperatorCookieUnderLogin,
+} from '../lib/caller-authority.js';
+import { trustedCaller } from '../services/core/capabilities/index.js';
 
 const router = Router();
 
@@ -495,8 +500,25 @@ router.get('/:runtime/accounts/usage', (req, res) => {
  * account's usage without running a turn (spec `claude-account-fleet` D3). The
  * id is a registry id or `default`. Always 200 once the account is known: a
  * probe that could not read anything says so in `probe` and records nothing.
+ *
+ * It starts the Claude binary in that account's folder, so it holds a person's
+ * bar: with login on, a signed-in person; and never a caller that names itself
+ * an agent. Agents check an account through the `accounts_probe` MCP tool,
+ * which runs through the tool gate like every other `act` tool.
  */
 router.post('/claude-code/accounts/:id/probe', async (req, res) => {
+  const cookieRefusal = requireOperatorCookieUnderLogin(res, "an account's usage check");
+  if (cookieRefusal) {
+    return res
+      .status(cookieRefusal.status)
+      .json({ error: cookieRefusal.error, code: cookieRefusal.code });
+  }
+  if (!trustedCaller(readCallerAuthority(req, res))) {
+    return res.status(403).json({
+      error: 'Only a person can start an account check here. Agents use the accounts_probe tool.',
+      code: 'PERSON_ONLY',
+    });
+  }
   try {
     res.json(await probeAccount(req.params.id));
   } catch (err) {

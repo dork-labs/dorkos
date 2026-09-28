@@ -72,7 +72,7 @@ function SheetContent({
           // design system's overlay row and its easing table. shadcn ships this
           // at 500ms in with `ease-in-out`, which made every drawer in the app
           // hesitate and then take longer than any other motion to finish.
-          'bg-dui-background data-[state=closed]:animate-out data-[state=open]:animate-in fixed z-50 flex flex-col gap-4 shadow-lg transition data-[state=closed]:duration-150 data-[state=closed]:ease-in data-[state=open]:duration-200 data-[state=open]:ease-out motion-reduce:animate-none! motion-reduce:transition-none!',
+          'bg-dui-background text-dui-foreground data-[state=closed]:animate-out data-[state=open]:animate-in fixed z-50 flex flex-col gap-4 shadow-lg transition data-[state=closed]:duration-150 data-[state=closed]:ease-in data-[state=open]:duration-200 data-[state=open]:ease-out motion-reduce:animate-none! motion-reduce:transition-none!',
           side === 'right' &&
             'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right border-dui-border inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm',
           side === 'left' &&

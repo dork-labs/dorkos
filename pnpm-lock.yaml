@@ -958,6 +958,9 @@ importers:
 
   apps/site:
     dependencies:
+      '@dork-labs/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@base-ui/react':
         specifier: ^1.8.0
         version: 1.8.0(@date-fns/tz@1.4.1)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

@@ -66,6 +66,34 @@ export interface DispatchSessionMessageOpts {
    * queue for) ends. Called after the dispatch buffer records the end.
    */
   onSettled?: (outcome: 'ok' | 'failed') => void;
+  /**
+   * Count this launch against {@link AGENT_LAUNCH_MAX_LIVE}: a session nobody
+   * typed into (an agent's `session_start`, an automatic carry-over) holds one
+   * slot from dispatch until its turn settles, and a launch that finds every
+   * slot taken is refused with `LAUNCH_CAP_FULL` before anything is written.
+   */
+  countsTowardLaunchCap?: boolean;
+}
+
+/**
+ * How many sessions nobody typed into (see
+ * {@link DispatchSessionMessageOpts.countsTowardLaunchCap}) may have a live turn
+ * at once. The 2026-09-25 drain reached a machine load near 500 (spec
+ * `claude-account-fleet` D5 "Load cap", D9 "Automatic handoff").
+ */
+export const AGENT_LAUNCH_MAX_LIVE = 8;
+
+/** The sentence a launch refused by the cap answers with. */
+export const AGENT_LAUNCH_CAP_MESSAGE = `Too many agent-started sessions are running (${AGENT_LAUNCH_MAX_LIVE}). Try again when one finishes.`;
+
+/** One entry per capped launch whose turn has not settled yet. */
+const liveCappedLaunches = new Set<symbol>();
+
+/**
+ * Whether every {@link AGENT_LAUNCH_MAX_LIVE} slot is taken right now.
+ */
+export function isAgentLaunchCapFull(): boolean {
+  return liveCappedLaunches.size >= AGENT_LAUNCH_MAX_LIVE;
 }
 
 /**
@@ -78,10 +106,17 @@ export interface DispatchSessionMessageOpts {
  *   room's files, from before room turns moved home (`409`).
  * - `DESK_NOT_OWN` — the turn would stand inside a room's files, or a room's
  *   agent would stand in a folder that is not its own (`409`).
+ * - `LAUNCH_CAP_FULL` — a capped launch found {@link AGENT_LAUNCH_MAX_LIVE}
+ *   turns already live.
  */
 export interface SessionLaunchRefusal {
   /** Which check refused the launch. */
-  refused: 'INVALID_AGENT_PATH' | 'UNKNOWN_RUNTIME' | 'ROOM_SESSION_MOVED' | 'DESK_NOT_OWN';
+  refused:
+    | 'INVALID_AGENT_PATH'
+    | 'UNKNOWN_RUNTIME'
+    | 'ROOM_SESSION_MOVED'
+    | 'DESK_NOT_OWN'
+    | 'LAUNCH_CAP_FULL';
   /** The sentence a caller shows as-is. */
   message: string;
 }
@@ -116,8 +151,16 @@ export function isSessionLaunchRefusal(
  * it: which model and effort a new session starts with is a per-runtime question
  * (`services/session/resolve-session-defaults.ts`), answered against the runtime
  * this returns, and seeded onto the same first write.
+ *
+ * Exported for `session_start`, which has to know the runtime BEFORE it
+ * dispatches: whether the account it was handed means anything, and which
+ * runtime's settings row takes its model and mode, both hang off it.
+ *
+ * @param opts - The caller's explicit hint, and the agent path or cwd whose
+ *   home may name a runtime.
+ * @returns The runtime type to bind the new session to.
  */
-async function resolveRuntimeTypeForNewSession(opts: {
+export async function resolveRuntimeTypeForNewSession(opts: {
   runtimeHint?: string;
   agentPath?: string;
   cwd?: string;
@@ -167,6 +210,37 @@ async function resolveRuntimeTypeForNewSession(opts: {
  *   launch was refused (nothing was started or written).
  */
 export async function dispatchSessionMessage(
+  opts: DispatchSessionMessageOpts
+): Promise<DispatchSessionMessageResult> {
+  if (!opts.countsTowardLaunchCap) return launchSessionMessage(opts);
+  // Taken before any await, so two launches racing for the last slot cannot
+  // both get it.
+  if (isAgentLaunchCapFull()) {
+    return { refused: 'LAUNCH_CAP_FULL', message: AGENT_LAUNCH_CAP_MESSAGE };
+  }
+  const slot = Symbol('capped-launch');
+  liveCappedLaunches.add(slot);
+  const release = () => {
+    liveCappedLaunches.delete(slot);
+  };
+  try {
+    const result = await launchSessionMessage({
+      ...opts,
+      onSettled: (outcome) => {
+        release();
+        opts.onSettled?.(outcome);
+      },
+    });
+    // Nothing is running for a launch that was refused or not accepted.
+    if (isSessionLaunchRefusal(result) || !result.accepted) release();
+    return result;
+  } catch (err) {
+    release();
+    throw err;
+  }
+}
+
+async function launchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
   const { sessionId, clientId, meshCore, roomSessionPlace, origin, onSettled } = opts;

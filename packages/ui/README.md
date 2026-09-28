@@ -8,6 +8,6 @@ Use a `.light` or `.dark` ancestor to select a theme. Without one, the system pr
 
 The package includes form controls, tabs, scrolling, dialogs, popovers and menus. These are DorkOS's maintained Radix components. Import them from the package root or a component subpath, such as `@dork-labs/ui/dialog`.
 
-Overlays use the document body by default. For a nested theme, pass a mounted element to `UiProvider` as `portalContainer`. Keep that element inside the theme region and mounted while an overlay is open. Each provider keeps its own container; an explicit Portal `container` prop takes precedence.
+Overlays use the document body by default. For a nested theme, pass a mounted element to `UiProvider` as `portalContainer`. Keep that element inside the theme region and mounted while an overlay is open. Each provider keeps its own container; an explicit Portal `container` prop takes precedence. Dialogs and side panels supply their own matching text color, even when their host only sets a theme class.
 
 The package owns colors, icon sizes and reduced-motion behavior. Your application owns theme selection, form state, validation and requests. See the repository's [shared UI guide](https://github.com/dork-labs/dorkos/blob/main/contributing/shared-ui.md) for the component boundary, examples and release procedure.
