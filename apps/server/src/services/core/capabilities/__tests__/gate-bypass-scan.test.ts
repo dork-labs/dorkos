@@ -162,20 +162,22 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // `auth.enabled`, at `extensions.approvedToRun`, at anything. It carries no
     // policy, no consent door and no audit line.
     //
-    // No production module under `apps/server/src` calls it today; its callers
-    // are `dorkos config set` and `dorkos config edit`, out in `packages/cli`,
-    // which this scan cannot read (and which are covered instead by the
-    // LOCAL_OPERATOR_AUTHORITY entry above, plus `configManager.setDot`'s own
-    // place in the CLI's flow). So the allowlist is empty ON PURPOSE, the same
+    // Its general-purpose callers are `dorkos config set` and `dorkos config
+    // edit`, out in `packages/cli`, which this scan cannot read (and which are
+    // covered instead by the LOCAL_OPERATOR_AUTHORITY entry above, plus
+    // `configManager.setDot`'s own place in the CLI's flow). So the allowlist is
+    // CLOSED to any server caller that takes its path from a request, the same
     // way `sourceManager.setEnabled(` is: the obvious next route on any router
     // — "let me just set this one path" — arrives ungated and, without this
     // entry, invisible. With it, it turns this red until its author says which
-    // door it is and what refuses an agent at it.
+    // door it is and what refuses an agent at it. The one entry below is a
+    // purpose-built writer: it names a single fixed leaf, behind its own gate,
+    // and leaves a log line.
     what: 'writes ANY config path the caller names, with no bar, no consent door and no audit line — a general-purpose door with none of what a door owes',
     call: 'configManager.setDot(',
     allowed: {
       'routes/runtimes.ts':
-        'POST /claude-code/accounts/found/dismiss, which names ONE fixed path, `runtimes.claudeCode.dismissedFolders`, never a caller-supplied one, so it is not the general-purpose door this entry watches. That leaf is operator-only, so the route runs both bars from `PATCH /api/config` for such a leaf, in the same order (the cookie bar under login, then the agent bar), before reaching here. It appends to a stored list in one synchronous read-modify-write, which a patch cannot do because a patch replaces arrays, and it only ever hides a folder from a prompt (logConfigWrite: "the found-folders route")',
+        'POST /claude-code/accounts/found/dismiss, which names ONE fixed path, `runtimes.claudeCode.dismissedFolders`, never a caller-supplied one, so it is not the general-purpose door this entry watches. That leaf is operator-only, so the route runs both bars from `PATCH /api/config` for such a leaf, in the same order (the cookie bar under login, then the agent bar), before reaching here. It is a purpose-built writer in the sense `config-write.ts` defines (one fixed leaf, its own gate, a log line), and it only ever hides a folder from a prompt (logConfigWrite: "the found-folders route")',
     },
   },
   {

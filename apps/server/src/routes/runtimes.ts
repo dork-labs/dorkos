@@ -579,10 +579,10 @@ router.get('/claude-code/accounts/found', (_req, res) => {
  * it holds the same two bars `PATCH /api/config` holds for such a leaf: with
  * login on, a signed-in person; and never a caller that names itself an agent.
  *
- * The write is `configManager.setDot` on purpose, not `applyConfigPatch`: a
- * patch replaces arrays, and the append has to read the stored list and write
- * it back in one synchronous step. Skipping the patch path also skips its
- * operator-only check, which is why this route enforces that bar itself above.
+ * The write is `configManager.setDot` on purpose, not `applyConfigPatch`: this
+ * is a purpose-built writer in `config-write.ts`'s sense, moving one fixed leaf
+ * as part of its own job, so it keeps its own gate (the two bars above) and
+ * leaves a `logConfigWrite` line instead of re-running the path policy.
  */
 router.post('/claude-code/accounts/found/dismiss', (req, res) => {
   const cookieRefusal = requireOperatorCookieUnderLogin(res, 'which account folders are hidden');

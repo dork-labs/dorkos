@@ -1701,6 +1701,7 @@ Two kinds of writer, and the difference decides what each one owes you.
 | `index.ts` profile router setter              | `profile`    | the profile route                                                                              |
 | `routes/config.ts` `PUT /agents/defaultAgent` | `agents`     | the default-agent route                                                                        |
 | `routes/tunnel.ts` start / stop               | `tunnel`     | the tunnel route                                                                               |
+| `routes/runtimes.ts` found-folders dismiss    | `runtimes`   | the found-folders route                                                                        |
 | `services/core/agent-creator.ts`              | `agents`     | the agent creator                                                                              |
 | `services/core/auth/cloud-link.ts`            | `cloud`      | the account link / unlinking this instance                                                     |
 | `services/core/auth/seed-legacy-mcp-key.ts`   | `mcp`        | the MCP key migration                                                                          |
