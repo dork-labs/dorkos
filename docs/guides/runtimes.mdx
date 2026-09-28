@@ -115,7 +115,7 @@ Open Settings and go to **Runtimes**. On the Claude Code card, under **Billing a
 
 DorkOS also looks for Claude account folders on this computer that you haven't added yet. They appear in a group called **Found on this computer**, each with its folder and when it was last used. Choose **Add** to add one, or **Dismiss** to stop seeing it. A folder that looks like it belongs to a company or school account is marked **managed by an organization**. DorkOS never adds a folder until you click Add.
 
-This computer's own Claude sign-in (usually the `~/.claude` folder) is your main account. DorkOS calls it **Main (this computer's sign-in)** everywhere it names an account. With two or more accounts, it gets its own row in the list, with its usage. It has no remove button, because it is the computer's own sign-in rather than something you added. If you add its folder as an account yourself, that row takes its place. When a row is marked **in use**, that's the account new chats run on. If no row is marked, a line above the list says which folder new chats use.
+This computer's own Claude sign-in (usually the `~/.claude` folder) is your main account. DorkOS calls it **Main (this computer's sign-in)** everywhere it names an account. With two or more accounts, it gets its own row in the list, with its usage. It has no remove button, because it is the computer's own sign-in rather than something you added. If you add its folder as an account yourself, that row takes its place. When a row is marked **in use**, that's the account new chats run on. If the server was started pointing at a folder no row stands for, a line above the list names that folder, and no row is marked.
 
 With two or more accounts, each account has a color, and its dot wears that color everywhere in the app. To change it, click the account's dot in Settings and pick one of 8 colors, or **Default**. Main's dot works the same way.
 
@@ -163,9 +163,9 @@ Every account has usage limits. When a chat's account runs out, the chat can't g
 
 A notice appears above the message box, such as "Acct 4 is out of usage until Tue 3pm." When the 5-hour limit ran out, it says how long to wait instead: "Acct 4 is out of usage · back in 47 min." With one account, or on Codex or OpenCode, the notice names the runtime rather than an account, like "Codex is out of usage until Tue 3pm."
 
-On a Claude Code chat that can move, with two or more accounts, the notice has two buttons: **Continue on another account…** and **Wait for reset**. Otherwise it offers only **Wait for reset**. While the notice waits for you, the message box is paused: "Paused until you continue or the account resets". If DorkOS doesn't know when the limit resets, the message box stays open.
+On a Claude Code chat that can move, the notice usually has two buttons: **Continue on another account…** and **Wait for reset**. Otherwise it offers only **Wait for reset**. Until the limit resets or you move the work, the message box is paused: "Paused until you continue or the account resets". If DorkOS doesn't know when the limit resets, the message box stays open.
 
-The notice is red while an account is out and needs you. It turns grey once there is nothing you need to do: while you wait, after the reset, and after the work has moved.
+The notice is red while the chat needs you, including when only one model is out. It turns grey once there is nothing you need to do: while you wait, after the reset, and after the work has moved.
 
 With two or more Claude accounts, the sidebar shows the same thing in words, in place of the chat's time:
 
@@ -216,7 +216,7 @@ Once the limit is over, the notice goes away and leaves a one-line note in the c
 
 ### On a Flow Run
 
-If flow is running the task and is set to **Hand off automatically**, the notice counts down for 10 seconds before moving the task: "Moving this task to Acct 2 in 10s…". The message box reads "Paused until the task moves or the account resets". Choose **Move now** to skip the wait, **Choose account…** to pick a different account, or **Wait for reset** to stay. After the countdown, the notice says "Moving this task to Acct 2…" until flow reports the move, and then it says the task continued elsewhere.
+If flow is set to **Hand off automatically**, the notice counts down for 10 seconds before moving the task: "Moving this task to Acct 2 in 10s…". The message box reads "Paused until the task moves or the account resets". Choose **Move now** to skip the wait, **Choose account…** to pick a different account, or **Wait for reset** to stay. On a flow run, the notice then says "Moving this task to Acct 2…" until flow reports the move, and after that it says the task continued elsewhere.
 
 Choosing **Wait for reset** on a flow run hands the wait to flow. Flow holds the run, and picks it up again at the reset only when **Continue automatically when it resets** is on.
 
