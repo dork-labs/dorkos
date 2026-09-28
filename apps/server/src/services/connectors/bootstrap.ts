@@ -29,7 +29,9 @@
  * **A way that stops answering comes back by itself.** A check that failed for
  * a reason that can pass (no answer, a timeout, a 5xx) is re-run on its own,
  * waiting longer after each failure in a row ({@link WAY_RECHECK_DELAYS_MS});
- * a refused key (401/403) or a refused setup waits for the person instead. A
+ * a refused key or link credential (401/403) or a refused setup waits for
+ * the person instead; {@link ConnectorProviderBootstrapper.nextWayCheckAt}
+ * says when the next automatic check is due. A
  * registered way whose periodic account listing fails is checked again at
  * once ({@link ConnectorProviderBootstrapper.recheckWay}) and taken down only
  * if it still does not answer. Every successful check lists the way's
@@ -248,7 +250,10 @@ export class ConnectorProviderBootstrapper {
   /** Swaps and re-checks per own-key way, run one after another. */
   private readonly _wayQueues = new Map<string, Promise<void>>();
   /** The waiting automatic check per way (spec type, or the DorkOS account's type). */
-  private readonly _rechecks = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly _rechecks = new Map<
+    string,
+    { timer: ReturnType<typeof setTimeout>; dueAt: number }
+  >();
   /** Failed checks in a row per way, which sets how long the next one waits. */
   private readonly _consecutiveFailures = new Map<string, number>();
   private _stopped = false;
@@ -426,7 +431,7 @@ export class ConnectorProviderBootstrapper {
           error instanceof Error ? error.message : String(error)
         }`
       );
-      this._managedWayFailed();
+      this._managedWayFailed(error);
     }
   }
 
@@ -449,7 +454,7 @@ export class ConnectorProviderBootstrapper {
           error instanceof Error ? error.message : String(error)
         }`
       );
-      this._managedWayFailed();
+      this._managedWayFailed(error);
     }
   }
 
@@ -501,10 +506,34 @@ export class ConnectorProviderBootstrapper {
     return this._queue(spec.type, () => this._recheckLiveOwnKey(spec));
   }
 
+  /**
+   * When DorkOS will next check, on its own, a way that failed its last check
+   * for a reason that can pass (see {@link WAY_RECHECK_DELAYS_MS}): the time a
+   * readiness line can show as "DorkOS will try again at …". `undefined` when
+   * no automatic check is waiting: the way answered, is not set up, or its key
+   * was refused and waits for the owner.
+   *
+   * @param providerInstanceId - The instance the way registers as (the DorkOS
+   *   account's instance, or an own-key way's live or default instance).
+   * @returns The ISO-8601 time of the next automatic check, or `undefined`.
+   */
+  nextWayCheckAt(providerInstanceId: string): string | undefined {
+    const key =
+      this._managedCloud?.instanceId === providerInstanceId
+        ? MANAGED_CLOUD_PROVIDER_TYPE
+        : [...this._specs.values()].find(
+            (spec) =>
+              spec.defaultInstanceId === providerInstanceId ||
+              this._instanceBySpecType.get(spec.type) === providerInstanceId
+          )?.type;
+    const dueAt = key === undefined ? undefined : this._rechecks.get(key)?.dueAt;
+    return dueAt === undefined ? undefined : new Date(dueAt).toISOString();
+  }
+
   /** Stop every waiting re-check; nothing is scheduled after this. */
   stop(): void {
     this._stopped = true;
-    for (const timer of this._rechecks.values()) clearTimeout(timer);
+    for (const { timer } of this._rechecks.values()) clearTimeout(timer);
     this._rechecks.clear();
     this._consecutiveFailures.clear();
   }
@@ -543,7 +572,7 @@ export class ConnectorProviderBootstrapper {
           error instanceof Error ? error.message : String(error)
         }`
       );
-      this._managedWayFailed();
+      this._managedWayFailed(error);
     }
   }
 
@@ -556,9 +585,12 @@ export class ConnectorProviderBootstrapper {
     this._wayFailed(spec.type, () => this._queueSwap(spec));
   }
 
-  /** The DorkOS account's way failed its check: re-check it later while it is still linked. */
-  private _managedWayFailed(): void {
-    if (!this._managedCloud?.configured()) {
+  /**
+   * The DorkOS account's way failed its check: re-check it later while it is
+   * still linked, unless the account refused the link's credential itself.
+   */
+  private _managedWayFailed(err: unknown): void {
+    if (!this._managedCloud?.configured() || isCredentialRefusal(err)) {
       this._clearRecheck(MANAGED_CLOUD_PROVIDER_TYPE);
       return;
     }
@@ -583,13 +615,13 @@ export class ConnectorProviderBootstrapper {
       );
     }, delay);
     timer.unref();
-    this._rechecks.set(key, timer);
+    this._rechecks.set(key, { timer, dueAt: Date.now() + delay });
   }
 
   /** The way answered, or needs the person: forget its failures and any waiting check. */
   private _clearRecheck(key: string): void {
-    const timer = this._rechecks.get(key);
-    if (timer) clearTimeout(timer);
+    const waiting = this._rechecks.get(key);
+    if (waiting) clearTimeout(waiting.timer);
     this._rechecks.delete(key);
     this._consecutiveFailures.delete(key);
   }

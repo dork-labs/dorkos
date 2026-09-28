@@ -183,8 +183,13 @@ export const ProviderConnectedAccountSchema = ConnectedAccountSchema.omit({
 }).extend({
   /** Private provider account reference; the registry never returns it publicly. */
   externalAccountRef: ConnectorExternalAccountRefSchema,
-  /** Provider-reported authentication state; operator pause is stored separately by DorkOS. */
-  status: z.enum(['active', 'expired', 'revoked', 'pending']),
+  /**
+   * Provider-reported authentication state; operator pause is stored separately
+   * by DorkOS. `unknown` when the service's answer does not say (a listing
+   * without a status, or one DorkOS does not recognize): it is no fact at all,
+   * so DorkOS never records a sign-in status from it.
+   */
+  status: z.enum(['active', 'expired', 'revoked', 'pending', 'unknown']),
 });
 /** Provider-owned account metadata before stable DorkOS reconciliation. */
 export type ProviderConnectedAccount = z.infer<typeof ProviderConnectedAccountSchema>;

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(connections): notice when a sign-in stops working and keep way status fresh (DOR-2501)'
+  - 'fix(connections): record a sign-in status only when the service states one (DOR-2501 review)'
 ---
 
 ### Fixed

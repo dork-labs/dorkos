@@ -63,8 +63,10 @@ export interface NangoConnectionRequest {
  * Nango connection lifecycle status. `PENDING` while the user is still
  * completing consent; `ACTIVE` once the stored credentials are usable;
  * `EXPIRED`/`ERROR` are the unusable states (a failed refresh, a revoked grant).
+ * `UNKNOWN` only on a listed connection whose answer says nothing either way
+ * (no status and no `errors`), which DorkOS treats as no fact at all.
  */
-export type NangoConnectionStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'ERROR';
+export type NangoConnectionStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'ERROR' | 'UNKNOWN';
 
 /** One Nango connection, keyed by its random-UUID `connectionId`. */
 export interface NangoConnection {
@@ -337,13 +339,18 @@ interface RawConnectSessionState {
   error?: string;
 }
 
-/** Raw Nango connection JSON (snake_case, partial). */
+/**
+ * Raw Nango connection JSON (snake_case, partial). The documented
+ * `GET /connections` item has no `status`: a problem is reported in `errors`
+ * (`[{ type: 'auth' | 'sync', log_id }]`), and an empty list means none.
+ */
 interface RawConnection {
   connection_id: string;
   provider_config_key?: string;
   end_user?: { display_name?: string; id?: string };
   metadata?: { label?: string };
   status?: string;
+  errors?: Array<{ type?: string; log_id?: string }>;
 }
 
 /** Coerce Nango's status string to a known {@link NangoConnectionStatus}. */
@@ -365,6 +372,34 @@ function normalizeStatus(raw: string | undefined): NangoConnectionStatus {
   }
 }
 
+/**
+ * A connection's sign-in status from what Nango actually said. An explicit
+ * status is honoured when recognized. Without one, `errors` decides: an `auth`
+ * error means the sign-in no longer works (expired), and a list without one
+ * means it does (a `sync` error is about data syncs, not the sign-in). An
+ * unrecognized status, or neither field, is `UNKNOWN`: never a guess, and
+ * never read as signed out.
+ */
+function connectionStatus(raw: RawConnection): NangoConnectionStatus {
+  if (raw.status !== undefined) {
+    switch (raw.status.toUpperCase()) {
+      case 'ACTIVE':
+      case 'OK':
+        return 'ACTIVE';
+      case 'EXPIRED':
+        return 'EXPIRED';
+      case 'PENDING':
+        return 'PENDING';
+      case 'ERROR':
+        return 'ERROR';
+      default:
+        return 'UNKNOWN';
+    }
+  }
+  if (!Array.isArray(raw.errors)) return 'UNKNOWN';
+  return raw.errors.some((error) => error.type === 'auth') ? 'EXPIRED' : 'ACTIVE';
+}
+
 /** Map a raw connection JSON to the client's domain shape. */
 function toDomainConnection(raw: RawConnection): NangoConnection {
   const label = raw.metadata?.label ?? raw.end_user?.display_name ?? raw.end_user?.id;
@@ -372,6 +407,6 @@ function toDomainConnection(raw: RawConnection): NangoConnection {
     connectionId: raw.connection_id,
     integration: raw.provider_config_key ?? '',
     ...(label && { label }),
-    status: normalizeStatus(raw.status),
+    status: connectionStatus(raw),
   };
 }

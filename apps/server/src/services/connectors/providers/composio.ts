@@ -141,8 +141,11 @@ function toPortStatus(status: ComposioAccountStatus): ProviderConnectedAccount['
     case 'INITIATED':
       return 'pending';
     case 'INACTIVE':
-    case 'FAILED':
       return 'revoked';
+    case 'FAILED':
+      // A sign-in attempt that never finished, not one that ended: no fact
+      // about the account's sign-in (the execute check reads it the same way).
+      return 'unknown';
   }
 }
 

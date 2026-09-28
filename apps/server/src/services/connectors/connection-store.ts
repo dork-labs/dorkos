@@ -122,8 +122,8 @@ export interface SignInStatusChange {
   readonly to: SignInStatus;
 }
 
-/** Whether a listed status is a settled sign-in status (not mid-sign-in, not a local pause). */
-function isSignInStatus(status: ConnectedAccountStatus): status is SignInStatus {
+/** Whether a listed status is a settled sign-in status (not mid-sign-in, not unknown). */
+function isSignInStatus(status: ProviderConnectedAccount['status']): status is SignInStatus {
   return status === 'active' || status === 'expired' || status === 'revoked';
 }
 
@@ -448,6 +448,9 @@ export class ConnectionStore {
     // sign-in does not overrule it.
     const restoringDisconnected =
       Boolean(options.restoreDisconnected) && existing?.lifecycle_state === 'disconnected';
+    // Reconcile runs when a sign-in has just finished, which is itself the
+    // fact: a service that does not say a status has still just signed in.
+    const status = account.status === 'unknown' ? 'active' : account.status;
     this.db
       .insert(connections)
       .values({
@@ -456,7 +459,7 @@ export class ConnectionStore {
         externalAccountRef: account.externalAccountRef,
         toolkit: account.toolkit,
         label: account.label,
-        status: account.status,
+        status,
         // A new connection has no grants, so there is nothing to reconcile:
         // it is ready to be granted. Stale access is marked where it arises
         // (a material provider change, a legacy migration), never here.
@@ -471,7 +474,7 @@ export class ConnectionStore {
         set: {
           toolkit: account.toolkit,
           label: account.label,
-          status: account.status,
+          status,
           ...(options.restoreDisconnected && { lifecycleState: 'connected' as const }),
           ...(restoringDisconnected && { enabled: true }),
           updatedAt: now,
@@ -489,7 +492,7 @@ export class ConnectionStore {
           ? 'revoked'
           : !restoringDisconnected && existing?.enabled === 0
             ? 'paused'
-            : account.status,
+            : status,
       custody: account.custody,
     };
   }

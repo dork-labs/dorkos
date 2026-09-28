@@ -1611,5 +1611,66 @@ describe('ConnectorProviderBootstrapper', () => {
       await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS.at(-1)! * 2);
       expect(probes).toBe(3);
     });
+
+    it('says when the next automatic check of a down way is due, and nothing once none is waiting', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-28T12:00:00.000Z'));
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      let failure: Error | undefined = new ComposioApiError(503, 'Service unavailable');
+      const client = scriptedComposioClient(() =>
+        failure ? Promise.reject(failure) : Promise.resolve([])
+      );
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+
+      expect(bootstrapper.nextWayCheckAt(composioInstance)).toBeUndefined();
+      await bootstrapper.registerBootProviders();
+      expect(bootstrapper.nextWayCheckAt(composioInstance)).toBe('2026-09-28T12:00:30.000Z');
+      // Another way's id, or a way DorkOS does not set up, has nothing waiting.
+      expect(bootstrapper.nextWayCheckAt('unknown-instance')).toBeUndefined();
+
+      // Still down after the first wait: the next one is a minute later.
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS[0]);
+      expect(bootstrapper.nextWayCheckAt(composioInstance)).toBe('2026-09-28T12:01:30.000Z');
+
+      // Answers: nothing waiting.
+      failure = undefined;
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS[1]);
+      expect(registry.resolveProvider('composio')).toBeDefined();
+      expect(bootstrapper.nextWayCheckAt(composioInstance)).toBeUndefined();
+
+      // A key the service refuses waits for the owner: nothing to show.
+      failure = new ComposioApiError(401, 'Invalid API key');
+      await bootstrapper.reload('composio');
+      expect(bootstrapper.nextWayCheckAt(composioInstance)).toBeUndefined();
+    });
+
+    it('never re-checks the DorkOS account way by itself when the account refuses the link', async () => {
+      vi.useFakeTimers();
+      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+      let probes = 0;
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      managed.listAccounts = () => {
+        probes += 1;
+        return Promise.reject(Object.assign(new Error('unauthorized'), { status: 401 }));
+      };
+      const bootstrapper = makeBootstrapper({
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => managed,
+        },
+      });
+
+      await bootstrapper.registerBootProviders();
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS.at(-1)! * 3);
+
+      expect(probes).toBe(1);
+      expect(bootstrapper.nextWayCheckAt(instanceId)).toBeUndefined();
+    });
   });
 });
