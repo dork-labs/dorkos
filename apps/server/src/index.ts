@@ -3311,6 +3311,7 @@ async function start() {
     keptLogos: () => catalogLogos.keptServiceIds(),
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
     appConnections: () => connectorBootstrapper.appConnections(),
+    wayProblem: (providerInstanceId) => connectorBootstrapper.wayProblem(providerInstanceId),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),
@@ -3464,7 +3465,8 @@ async function start() {
     {
       revalidatePrincipal: async (principal) =>
         connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
-    }
+    },
+    (providerInstanceId) => connectorBootstrapper.wayProblem(providerInstanceId)
   );
   const connectorBroker = new ConnectorExecutionBroker(
     connectorAuthorization,

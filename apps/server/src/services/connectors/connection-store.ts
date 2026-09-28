@@ -504,6 +504,26 @@ export class ConnectionStore {
   }
 
   /**
+   * Whether any account connected through one provider instance is still kept
+   * (not disconnected, not removed) — the accounts that come back once that
+   * instance works again. A missing instance has none.
+   *
+   * @param providerInstanceId - The instance the accounts were connected through.
+   */
+  hasLiveConnections(providerInstanceId: ConnectorProviderInstanceId): boolean {
+    this.assertAvailable();
+    return (
+      this.db.$client
+        .prepare(
+          `SELECT 1 FROM connections
+           WHERE provider_instance_id = ? AND lifecycle_state = 'connected' AND removed_at IS NULL
+           LIMIT 1`
+        )
+        .get(providerInstanceId) !== undefined
+    );
+  }
+
+  /**
    * Resolve an unambiguous disconnected connection targeted by a new connect
    * flow. A label narrows multi-account providers; without one, exactly one
    * disconnected connection for the provider and toolkit must exist.

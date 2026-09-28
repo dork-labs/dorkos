@@ -41,9 +41,10 @@ import type {
 import type {
   ConnectorAppConnections,
   ConnectorAppWay,
+  ConnectorWayProblem,
 } from '@dorkos/shared/connector-resource-schemas';
 import { logger } from '../../lib/logger.js';
-import { chooseNewAppsWay, signInThroughFor } from './app-connection-way.js';
+import { chooseNewAppsWay, signInThroughFor, wayProblemFor } from './app-connection-way.js';
 import type { CredentialProvider } from '../core/credential-provider.js';
 import { custodyDisclosure, MANAGED_CUSTODY_CANONICAL_SENTENCE } from './custody-disclosure.js';
 import type { ConnectorRegistry } from './registry.js';
@@ -460,8 +461,41 @@ export class ConnectorProviderBootstrapper {
           this._registry.resolveProviderInstance(managed.instanceId)
         )
       );
+    } else if (managed && this._registry.hasLiveConnections(managed.instanceId)) {
+      // Unlinked (by the person, or revoked by the cloud) with apps still kept:
+      // linking again brings them back, which is the fix to name.
+      ways.push({
+        ...this._way('dorkos_account', MANAGED_CLOUD_PROVIDER_TYPE, undefined),
+        status: 'unlinked',
+      });
     }
     return { ways, newApps: chooseNewAppsWay(ways) };
+  }
+
+  /**
+   * Whether the way a connected account goes through is working, and when it
+   * is not, which fix brings the account back ({@link wayProblemFor}).
+   *
+   * @param providerInstanceId - The instance the account was connected through.
+   */
+  wayProblem(providerInstanceId: string): ConnectorWayProblem | undefined {
+    const managed = this._managedCloud;
+    const ownKey = [...this._specs.values()].some(
+      (spec) =>
+        spec.defaultInstanceId === providerInstanceId ||
+        this._instanceBySpecType.get(spec.type) === providerInstanceId
+    );
+    // Only a way this server sets up has a fix to name. Anything else (a raw
+    // MCP server dropped from config) says nothing rather than something wrong.
+    if (!ownKey && managed?.instanceId !== providerInstanceId) return undefined;
+    return wayProblemFor({
+      registered:
+        this._registry.resolveProviderInstance(
+          providerInstanceId as ConnectorProvider['instanceId']
+        ) !== undefined,
+      managed: managed?.instanceId === providerInstanceId,
+      managedLinked: managed?.configured() === true,
+    });
   }
 
   private _way(

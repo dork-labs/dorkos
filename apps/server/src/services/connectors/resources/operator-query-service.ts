@@ -31,6 +31,7 @@ import {
   ConnectorSessionConnectionsSchema,
   type ConnectorAgentConnections,
   type ConnectorAppConnections,
+  type ConnectorWayProblem,
   type ConnectorEveryAgentAccess,
   type ConnectorEveryAgentGrants,
   type ConnectorAuthoritySyncState,
@@ -52,7 +53,7 @@ import type {
   ManagedConnectorUsageRequest,
   ManagedConnectorUsageResponse,
 } from '@dorkos/shared/connector-managed-usage-schemas';
-import { signInThroughFor } from '../app-connection-way.js';
+import { appReachProblem, signInThroughFor, type AppReachProblem } from '../app-connection-way.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
@@ -116,6 +117,8 @@ export interface ConnectorOperatorQueryServiceOptions {
   readonly recoverManagedProvider?: () => Promise<void>;
   /** Every way set up to reach apps, and the one new apps use. */
   readonly appConnections?: () => Promise<ConnectorAppConnections>;
+  /** Whether the way one connected account goes through is working, and if not, why. */
+  readonly wayProblem?: (providerInstanceId: string) => ConnectorWayProblem | undefined;
   /**
    * The service ids whose logo this server already keeps. An app whose own
    * list sends no logo (the DorkOS account's) still shows one another service
@@ -203,15 +206,19 @@ export type ConnectorServiceDirectoryEntry = {
   /** Human-facing service name. */
   readonly displayName: string;
 } & (
-  | { readonly requestable: true }
+  | {
+      readonly requestable: true;
+      /**
+       * `false` for a popular app no way reaches yet. It can still be asked
+       * for: the request's card walks the person through the fix
+       * ({@link ConnectorServiceDirectory.reachProblem}) before sign-in.
+       */
+      readonly reached: boolean;
+    }
   | {
       readonly requestable: false;
-      /**
-       * Why an agent cannot ask for it: `messaging_only` — a chat app the person
-       * sets up themselves; `not_reached` — an app to sign in to that no way
-       * DorkOS is set up with reaches yet (the person's first connect fixes it).
-       */
-      readonly unavailableBecause: 'messaging_only' | 'not_reached';
+      /** Why an agent cannot ask for it: a chat app the person sets up themselves. */
+      readonly unavailableBecause: 'messaging_only';
     }
 );
 
@@ -219,6 +226,8 @@ export type ConnectorServiceDirectoryEntry = {
 export interface ConnectorServiceDirectory {
   /** Every listed service, Messaging-only rows included. */
   readonly services: readonly ConnectorServiceDirectoryEntry[];
+  /** Why no way reaches the services marked `reached: false`. */
+  readonly reachProblem: AppReachProblem;
   /** Non-empty when some route could not list every service it offers. */
   readonly warnings: readonly { readonly code: string; readonly message: string }[];
   /** Type of every registered route, e.g. `composio`. Never a person's label for it. */
@@ -235,6 +244,8 @@ export class ConnectorOperatorQueryService {
   private readonly managedUsage: ConnectorManagedUsageQueryPort | undefined;
   private readonly recoverManagedProvider: (() => Promise<void>) | undefined;
   private readonly appConnections: (() => Promise<ConnectorAppConnections>) | undefined;
+  private readonly wayProblem:
+    ((providerInstanceId: string) => ConnectorWayProblem | undefined) | undefined;
   private readonly keptLogos: (() => Promise<ReadonlySet<string>>) | undefined;
 
   /** Construct owner projections over canonical connector state. */
@@ -247,6 +258,7 @@ export class ConnectorOperatorQueryService {
     this.managedUsage = options.managedUsage;
     this.recoverManagedProvider = options.recoverManagedProvider;
     this.appConnections = options.appConnections;
+    this.wayProblem = options.wayProblem;
     this.keptLogos = options.keptLogos;
   }
 
@@ -284,6 +296,10 @@ export class ConnectorOperatorQueryService {
    * for it. The same read as {@link catalog} — managed recovery, provider
    * paging, Relay rows, warnings — so a service the agent-facing lookup lists is
    * a service an agent request accepts, and one it omits is refused (DOR-2231).
+   *
+   * Every app with an account to sign in to can be asked for, a popular app no
+   * way reaches yet included (DOR-2494): its request's card runs the one-time
+   * step first. Only a chat app, which has no account, is not requestable.
    */
   async serviceDirectory(signal: AbortSignal): Promise<ConnectorServiceDirectory> {
     const { all, warnings } = await this.collectCatalog({
@@ -291,23 +307,24 @@ export class ConnectorOperatorQueryService {
       includeAuthenticationSetup: false,
       signal,
     });
+    // Read after the catalog, which may have just recovered the DorkOS account route.
+    const appConnections = await this.appConnections?.();
     return {
       services: all.map((service): ConnectorServiceDirectoryEntry => {
         const account = service.intents.find((intent) => intent.kind === 'account');
         const base = { serviceSlug: service.serviceSlug, displayName: service.displayName };
-        // A popular app no way reaches yet is listed, but not requestable: an
-        // agent's request needs a route the person can sign in through.
-        if (account?.kind === 'account' && account.routes.length > 0) {
-          return { ...base, requestable: true };
+        if (account?.kind !== 'account') {
+          return { ...base, requestable: false, unavailableBecause: 'messaging_only' };
         }
-        return {
-          ...base,
-          requestable: false,
-          unavailableBecause: account ? 'not_reached' : 'messaging_only',
-        };
+        return { ...base, requestable: true, reached: account.routes.length > 0 };
       }),
       warnings,
       routeTypes: this.registry.listProviders().map((provider) => provider.type),
+      reachProblem: appConnections
+        ? appReachProblem(appConnections.newApps, warnings.length > 0)
+        : this.registry.listProviders().length > 0
+          ? 'app_not_reached'
+          : 'nothing_set_up',
     };
   }
 
@@ -1038,6 +1055,10 @@ export class ConnectorOperatorQueryService {
       .where(eq(connectorEventSubscriptions.connectionId, row.connectionId))
       .all();
     const usage = await this.usageCounts(row, signal);
+    // A disconnected account needs a sign-in whatever its way's state, so only
+    // a kept one is marked as waiting on its way.
+    const wayProblem =
+      row.lifecycleState === 'disconnected' ? undefined : this.wayProblem?.(row.providerInstanceId);
     return ConnectorConnectionSummarySchema.parse({
       connectionId: row.connectionId,
       providerInstanceId: row.providerInstanceId,
@@ -1057,6 +1078,7 @@ export class ConnectorOperatorQueryService {
       subscriptionCount: subscriptions.length,
       usage,
       warnings: [],
+      ...(wayProblem && { wayProblem }),
     });
   }
 

@@ -18,6 +18,12 @@ import { TransportProvider } from '@/layers/shared/model';
 import { AgentRequestCard } from '../ui/agent-request/AgentRequestCard';
 import { ChatAgentRequest } from '../ui/agent-request/ChatAgentRequest';
 
+const openSettings = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSettingsDeepLink: () => ({ open: openSettings }),
+}));
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, search }: { children: React.ReactNode; to: string; search: object }) => (
     <a href={`${to}?${new URLSearchParams(search as Record<string, string>)}`}>{children}</a>
@@ -217,6 +223,43 @@ describe('AgentRequestCard — no account yet', () => {
     await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
     expect(await screen.findByTestId('first-connect-step')).toBeInTheDocument();
     expect(transport.startConnectorAgentRequestAuthentication).not.toHaveBeenCalled();
+  });
+
+  it('says the DorkOS account needs linking again in the one-time step, and offers that first', async () => {
+    const user = userEvent.setup();
+    openSettings.mockClear();
+    const transport = transportWith([]);
+    const appConnections = {
+      ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
+      newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+    };
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [{ ...GMAIL, intents: [{ ...GMAIL.intents[0], routes: [] }] }],
+      warnings: [],
+      appConnections,
+    } as never);
+    vi.mocked(transport.getConnectorProviders).mockResolvedValue({
+      providers: [
+        {
+          type: 'composio',
+          providerInstanceId: 'composio-1',
+          configured: false,
+          registered: false,
+          custody: 'managed',
+          disclosure: 'Composio keeps sign-ins.',
+        },
+      ],
+      appConnections,
+    } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+    const step = await screen.findByTestId('first-connect-step');
+    expect(step).toHaveTextContent('Your DorkOS account needs to be linked again');
+    await user.click(await screen.findByRole('button', { name: 'Link it again in Access' }));
+    expect(openSettings).toHaveBeenCalledWith('access', 'account');
+    // Another way in is still offered.
+    expect(screen.getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
   });
 
   it('answers "Not now" as a denial', async () => {
@@ -449,6 +492,56 @@ describe('ChatAgentRequest', () => {
 });
 
 describe('AgentRequestCard — an account that needs attention first', () => {
+  it('asks to link the DorkOS account again, not to reconnect, when the account’s way is unlinked', async () => {
+    const user = userEvent.setup();
+    openSettings.mockClear();
+    const transport = transportWith([
+      { ...account('connection-1'), mode: 'managed', wayProblem: 'dorkos_account_unlinked' },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    const line = await screen.findByTestId('account-attention');
+    expect(line).toHaveAttribute('data-kind', 'way_down');
+    expect(line).toHaveTextContent('Your DorkOS account needs to be linked again');
+    expect(line).toHaveTextContent('Gmail (work) was connected through it');
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Connect Gmail|Sign in again/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Link it in Access' }));
+    expect(openSettings).toHaveBeenCalledWith('access', 'account');
+  });
+
+  it('sends a key that stopped working to its fix in Settings', async () => {
+    const user = userEvent.setup();
+    openSettings.mockClear();
+    const transport = transportWith([
+      { ...account('connection-1'), wayProblem: 'own_key_unavailable' },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    expect(await screen.findByTestId('account-attention')).toHaveTextContent(
+      'didn’t work the last time DorkOS checked it'
+    );
+    await user.click(screen.getByRole('button', { name: 'Fix the key' }));
+    expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
+  });
+
+  it('offers a fresh check when the linked DorkOS account can’t reach the app right now', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([
+      { ...account('connection-1'), wayProblem: 'dorkos_account_unavailable' },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    expect(await screen.findByTestId('account-attention')).toHaveTextContent(
+      'can’t reach Gmail right now'
+    );
+    const reads = vi.mocked(transport.getConnectorConnections).mock.calls.length;
+    await user.click(screen.getByRole('button', { name: 'Check again' }));
+    await waitFor(() =>
+      expect(vi.mocked(transport.getConnectorConnections).mock.calls.length).toBeGreaterThan(reads)
+    );
+  });
+
   it('asks to resume a paused account before any Allow', async () => {
     const user = userEvent.setup();
     const transport = transportWith([{ ...account('connection-1'), lifecycle: 'paused' }]);

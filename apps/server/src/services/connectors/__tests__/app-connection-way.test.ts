@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectorAppWay } from '@dorkos/shared/connector-resource-schemas';
-import { chooseNewAppsWay, signInThroughFor } from '../app-connection-way.js';
+import {
+  agentAppSetupNote,
+  agentWayProblemNote,
+  appReachProblem,
+  chooseNewAppsWay,
+  signInThroughFor,
+  wayProblemFor,
+} from '../app-connection-way.js';
 
 const dorkosAccount = (status: ConnectorAppWay['status']): ConnectorAppWay => ({
   kind: 'dorkos_account',
@@ -64,6 +71,75 @@ describe('chooseNewAppsWay', () => {
       status: 'setup_needed',
       reason: 'own_key_unavailable',
     });
+    expect(chooseNewAppsWay([dorkosAccount('unlinked'), ownKey('nango', 'unavailable')])).toEqual({
+      status: 'setup_needed',
+      reason: 'dorkos_account_unlinked',
+    });
+  });
+
+  it('uses a working key while the DorkOS account is unlinked', () => {
+    expect(
+      chooseNewAppsWay([dorkosAccount('unlinked'), ownKey('composio', 'ready')])
+    ).toMatchObject({ status: 'ready', way: { kind: 'own_key' } });
+  });
+});
+
+describe('appReachProblem', () => {
+  it('passes a setup reason through, and splits a working way into outage or miss', () => {
+    expect(appReachProblem({ status: 'setup_needed', reason: 'own_key_unavailable' }, true)).toBe(
+      'own_key_unavailable'
+    );
+    const way = ownKey('composio', 'ready');
+    expect(appReachProblem({ status: 'ready', way }, true)).toBe('way_not_answering');
+    expect(appReachProblem({ status: 'ready', way }, false)).toBe('app_not_reached');
+  });
+});
+
+describe('wayProblemFor', () => {
+  it('is nothing while the route is registered, whatever the account link says', () => {
+    expect(
+      wayProblemFor({ registered: true, managed: true, managedLinked: false })
+    ).toBeUndefined();
+  });
+
+  it('tells an unlinked DorkOS account from one that cannot reach apps, and from a key', () => {
+    expect(wayProblemFor({ registered: false, managed: true, managedLinked: false })).toBe(
+      'dorkos_account_unlinked'
+    );
+    expect(wayProblemFor({ registered: false, managed: true, managedLinked: true })).toBe(
+      'dorkos_account_unavailable'
+    );
+    expect(wayProblemFor({ registered: false, managed: false, managedLinked: true })).toBe(
+      'own_key_unavailable'
+    );
+  });
+});
+
+describe('agent notes', () => {
+  it('names the app and says it can still be asked for, for every reason', () => {
+    for (const problem of [
+      'nothing_set_up',
+      'dorkos_account_unlinked',
+      'dorkos_account_unavailable',
+      'own_key_unavailable',
+      'way_not_answering',
+      'app_not_reached',
+    ] as const) {
+      const note = agentAppSetupNote(problem, 'Gmail');
+      expect(note).toContain('Gmail');
+      expect(note).toContain('still request');
+    }
+  });
+
+  it('tells an agent holding an account whose way is down not to ask for it again', () => {
+    for (const problem of [
+      'dorkos_account_unlinked',
+      'dorkos_account_unavailable',
+      'own_key_unavailable',
+    ] as const) {
+      expect(agentWayProblemNote(problem)).toContain('do not ask them to connect it again');
+    }
+    expect(agentWayProblemNote('dorkos_account_unlinked')).toContain('linked again');
   });
 });
 

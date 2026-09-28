@@ -942,6 +942,94 @@ describe('ConnectorProviderBootstrapper', () => {
       });
     });
 
+    it('names the unlinked DorkOS account while apps connected through it are kept', async () => {
+      let linked = true;
+      const managed = new FakeConnectorProvider({
+        instanceId: 'managed-provider' as never,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      const bootstrapper = makeBootstrapper({
+        managedCloud: managedCloud(
+          () => linked,
+          () => managed
+        ),
+      });
+      await bootstrapper.registerBootProviders();
+      db.insert(connections)
+        .values({
+          id: 'connection-managed',
+          providerInstanceId: 'managed-provider',
+          externalAccountRef: 'managed-account',
+          toolkit: 'gmail',
+          label: 'Gmail',
+          status: 'active',
+          lifecycleState: 'connected',
+          enabled: true,
+          grantReconciliationStatus: 'ready',
+          createdAt: '2026-09-28T00:00:00.000Z',
+          updatedAt: '2026-09-28T00:00:00.000Z',
+        })
+        .run();
+      expect(bootstrapper.wayProblem('managed-provider')).toBeUndefined();
+
+      // The cloud revokes the key: the route goes, the Gmail account stays.
+      linked = false;
+      await bootstrapper.reloadManagedCloud();
+
+      await expect(bootstrapper.appConnections()).resolves.toEqual({
+        ways: [
+          {
+            kind: 'dorkos_account',
+            type: 'dorkos-managed',
+            status: 'unlinked',
+            signInThrough: 'Composio',
+          },
+        ],
+        newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+      });
+      expect(bootstrapper.wayProblem('managed-provider')).toBe('dorkos_account_unlinked');
+
+      // Once nothing is kept through it, an unlinked account is simply not set up.
+      db.update(connections)
+        .set({ lifecycleState: 'disconnected' })
+        .where(eq(connections.id, 'connection-managed'))
+        .run();
+      await expect(bootstrapper.appConnections()).resolves.toEqual({
+        ways: [],
+        newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+      });
+    });
+
+    it('says which way an account went through is down', async () => {
+      secrets.set(COMPOSIO_API_KEY_REF, 'uak-wrong-kind');
+      const refusing = new FakeConnectorProvider({
+        instanceId: 'managed-provider' as never,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      Object.defineProperty(refusing, 'listAccounts', {
+        value: () => Promise.reject(new Error('app connections are not available')),
+      });
+      const bootstrapper = makeBootstrapper({
+        composioProbeError: new ComposioApiError(401, 'Invalid API key'),
+        managedCloud: managedCloud(
+          () => true,
+          () => refusing
+        ),
+      });
+      await bootstrapper.registerBootProviders();
+
+      expect(bootstrapper.wayProblem('managed-provider')).toBe('dorkos_account_unavailable');
+      expect(bootstrapper.wayProblem(legacyDefaultProviderInstanceId('composio'))).toBe(
+        'own_key_unavailable'
+      );
+      // Raw MCP is always registered, so it is never a way that is down, and a
+      // route this server does not set up has no fix to name.
+      expect(bootstrapper.wayProblem(registry.resolveProvider('mcp')!.instanceId)).toBeUndefined();
+      expect(bootstrapper.wayProblem('raw-mcp-dropped-from-config')).toBeUndefined();
+    });
+
     it('says why when the saved key failed its check', async () => {
       secrets.set(COMPOSIO_API_KEY_REF, 'uak-wrong-kind');
       const bootstrapper = makeBootstrapper({

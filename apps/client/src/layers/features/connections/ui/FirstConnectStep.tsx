@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, KeyRound } from 'lucide-react';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
-import { useConnectorProviders } from '@/layers/entities/connectors';
+import { useConnectorAppConnections, useConnectorProviders } from '@/layers/entities/connectors';
+import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
   Button,
   Collapsible,
@@ -26,10 +27,14 @@ interface FirstConnectStepProps {
  * The big button is the person's own Composio key: DorkOS account app
  * connections are not available yet (DOR-1798), and when a linked DorkOS
  * account can serve apps it is used without asking, so this step never shows
- * for it. Nango is folded under "Other ways".
+ * for it. Once a linked account has been unlinked with apps still kept through
+ * it, linking it again is offered too, since that brings those apps back.
+ * Nango is folded under "Other ways".
  */
 export function FirstConnectStep({ reason }: FirstConnectStepProps) {
   const providers = useConnectorProviders();
+  const appConnections = useConnectorAppConnections();
+  const settings = useSettingsDeepLink();
   const [showComposio, setShowComposio] = useState(false);
 
   if (providers.isPending) {
@@ -47,6 +52,10 @@ export function FirstConnectStep({ reason }: FirstConnectStepProps) {
   }
   const composio = findStatus(providers.data, 'composio');
   const nango = findStatus(providers.data, 'nango');
+  // Linking the account again brings back every app kept through it, so it is
+  // offered first; a key below is still a way in.
+  const newApps = appConnections.data?.newApps;
+  const relink = newApps?.status === 'setup_needed' && newApps.reason === 'dorkos_account_unlinked';
 
   return (
     <div data-testid="first-connect-step" className="space-y-4">
@@ -56,12 +65,23 @@ export function FirstConnectStep({ reason }: FirstConnectStepProps) {
         </p>
       )}
 
+      {relink && (
+        <Button size="lg" className="w-full" onClick={() => settings.open('access', 'account')}>
+          Link it again in Access
+        </Button>
+      )}
+
       {composio &&
         (showComposio ? (
           <KeyEntry status={composio} />
         ) : (
           <div className="space-y-1.5">
-            <Button size="lg" className="w-full" onClick={() => setShowComposio(true)}>
+            <Button
+              size="lg"
+              variant={relink ? 'outline' : 'default'}
+              className="w-full"
+              onClick={() => setShowComposio(true)}
+            >
               <KeyRound className="size-4" aria-hidden />
               Use my Composio key
             </Button>

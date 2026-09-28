@@ -318,6 +318,17 @@ export class ConnectorRegistry {
   }
 
   /**
+   * Whether accounts connected through one provider instance are still kept,
+   * registered or not. `false` while the connection store is unavailable.
+   *
+   * @param instanceId - The instance the accounts were connected through.
+   */
+  hasLiveConnections(instanceId: ConnectorProviderInstanceId): boolean {
+    if (this._connections.health().status !== 'ready') return false;
+    return this._connections.hasLiveConnections(instanceId);
+  }
+
+  /**
    * Route an active account id to the provider that owns it, via the canonical
    * private binding. Returns `undefined` when the id is unknown, locally paused
    * or disconnected, provider-expired, or its exact provider is unavailable.
