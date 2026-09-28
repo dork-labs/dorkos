@@ -9,7 +9,7 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 # Connections
 
-The **Connections** page is one list of apps. **Yours** shows every app you connected, one row each, with what state it is in and the one thing to do next. **All apps** shows everything you could connect.
+The **Connections** page is one list of apps. **Yours** shows every app you connected, one row each, with its logo, what state it is in, and the one thing to do next. **All apps** shows everything you could connect, also by logo, so you can find the app you want at a glance.
 
 Apps come in two kinds, and both live in the same list:
 
@@ -66,9 +66,11 @@ You can connect several accounts for one service: each account is its own row. T
 
 ## Agents can ask, but you decide
 
-An agent can ask for a service and explain why it needs access. The request does not reveal your private account list and does not grant anything. DorkOS opens an owner review where you choose the connection, actions, notifications, and destination.
+An agent can ask for a service and explain why it needs access. The request does not reveal your private account list and does not grant anything.
 
-If the request is still attached to a live turn, the agent receives the result there. After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
+Most of the time you answer right where the agent asked: a card appears in that chat or room, walking you through signing in (if needed) and then "Let this agent use Gmail?" with the reason it gave. The card is always about that one agent; if it also needs to know when something new happens (like a new email), the card sends you to the full review on Connections instead, so you can choose exactly what it hears about. You can also open **Connections** directly, where every pending request waits in a **Needs you** strip at the top.
+
+If the request is still attached to a live turn, the agent receives the result there, right on the card. After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
 
 ## Actions and notifications are separate
 
@@ -121,6 +123,8 @@ DorkOS does not charge for account actions in this release. Usage records distin
 A local DorkOS installation without login has one local owner. Keep it on a trusted machine and network. Do not expose an installation without login to the public internet.
 
 Program commands still name an agent and can use only that agent's approved connections. Omitting `--agent` never widens access. Through the supported agent and program paths, a request can ask for access but cannot approve itself.
+
+One choice does not have that protection: sharing an app with **Every agent**. DorkOS cannot tell that write apart from one the app itself made, so with login off, something with a shell on this machine could turn on Every agent for itself. Turning login on closes this, because only your signed-in session can make that choice. Until then, "Every agent" is a choice for a machine you trust.
 
 These controls are boundaries inside DorkOS. They do not isolate other software running as your operating-system user. That software can reach the same local files and credentials that you can. The [threat model](/docs/self-hosting/threat-model#connections-and-account-access) explains token lifetime, runtime settings, and this same-user limit.
 

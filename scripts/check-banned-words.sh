@@ -14,11 +14,16 @@
 # with wave-2 for exactly these two words. That gate parses TypeScript and only
 # flags positions that actually reach a screen, which is the right tool there
 # and the reason it can run over files where "cockpit" is also a variable name,
-# a media key and a hundred comments. It deliberately does not read prose:
-# its own header says docs/ is "prose, not a render path". So the split is:
+# a media key and a hundred comments. It deliberately does not read most prose
+# this way — grep is simpler and good enough for a plain substring ban. So the
+# split is:
 #
-#   check-vocab-gate.ts  →  render-path strings in apps/{client,site,server}/src
-#   this script          →  prose and data files an AST walk cannot see
+#   check-vocab-gate.ts  →  render-path strings in apps/{client,site,server}/src,
+#                            PLUS docs/**/*.mdx prose (DOR-2508, wave 4 only —
+#                            see that script's own header)
+#   this script          →  everything else: README/AGENTS.md/CONTRIBUTING.md,
+#                            docs/ and blog/ prose for wave 2, and data files
+#                            an AST walk cannot see
 #
 # Both now run in the `typecheck` workflow, one step apart (DOR-1814 moved the
 # parser half there; before that it rode only its own pin suite, on a workflow
@@ -28,12 +33,14 @@
 # The four nouns ADR 260804-021140 retired for "Connections" — integration,
 # connector, adapter, provider (DOR-1814, wave 4) — are enforced by the parser
 # half ALONE, deliberately: they are ordinary English with legitimate technical
-# senses everywhere this script looks. `docs/integrations/` is a shipped URL
-# path, every release note in the frozen changelog says "integration", and
-# `docs/api/openapi.json` is generated from route descriptions that name
-# `provider` path parameters. A grep here would fire on all of it and teach
-# everyone to skip the gate, which is the failure this file's header warns
-# about two paragraphs up. Sweep docs prose for those four words by hand.
+# senses everywhere this script looks, and `check-vocab-gate.ts`'s docs scan
+# (DOR-2508) needs the allowlist mechanism this whole-line grep does not have
+# to tell `/docs/integrations/` (a legitimate shipped URL path) from a real
+# violation. `docs/api/openapi.json` stays out of both gates: it is generated
+# from route descriptions that name `provider` path parameters and `connectors`
+# path segments, wire naming rather than authored prose either script should
+# sweep. Every release note in the frozen changelog still says "integration"
+# and neither gate touches it — see both scripts' own headers for why.
 #
 # Neither one covers the other's ground, and a word landing in either place
 # fails CI. Do not "simplify" this into a repo-wide grep: grep cannot tell the
