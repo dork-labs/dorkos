@@ -138,10 +138,9 @@ describe('the default account color (runtimes.claudeCode.defaultAccountColor, DO
       id: 'default',
       implicit: true,
       color: '#0d9488',
-      storedColor: '#0d9488',
+      // The contract's `color`: an implicit default has none, choice or not.
+      storedColor: null,
     });
-    // No choice: nothing stored, drawn at its position, as a row would be.
-    expect(defaultOf({ defaultAccountColor: null })).toMatchObject({ storedColor: null });
   });
 
   it('falls back to the positional default when unset, null, empty or not #rrggbb', () => {

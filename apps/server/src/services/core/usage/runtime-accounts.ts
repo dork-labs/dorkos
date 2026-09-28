@@ -84,8 +84,9 @@ export interface RuntimeAccount {
   color: string;
   /**
    * The color the row stores, when it is a valid `#rrggbb`; else `null` (the
-   * contract's `color`). For a standalone Claude Code default, which has no
-   * row, the operator's `runtimes.claudeCode.defaultAccountColor` (DOR-2492).
+   * contract's `color`). Always `null` for an implicit default, which the
+   * contract gives no color: `runtimes.claudeCode.defaultAccountColor` only
+   * reaches {@link RuntimeAccount.color} (DOR-2492).
    */
   storedColor: string | null;
   /** False for a row whose id fails the pattern or is the reserved `default`. */
@@ -296,7 +297,7 @@ export function resolveRuntimeAccounts(
   const read = readRegistered(runtime, inputs.config, inputs.home, realpath);
   const warnings = [...read.warnings];
   const registered = read.accounts;
-  // A standalone default resolves like a row: its stored color
+  // A standalone default is DRAWN like a row: the operator's chosen color
   // (`defaultColorChoice`), else the default for its position, which is after
   // the registered rows. An alias is a row, so it never reaches this.
   const standalone = {
@@ -364,7 +365,10 @@ function implicitAccount(
     // The one rule every row's color follows (`readClaudeAccountSettings`):
     // the stored color, else the default for the position.
     color: resolveAccountColor(position.stored, position.index),
-    storedColor: position.stored,
+    // Always `null`: the contract's `color`, and the contract gives the
+    // implicit default none (marketplace `specs/flow-cli-core` §1.1a). The
+    // operator's choice lives in DorkOS config and only colors the display.
+    storedColor: null,
     routable: true,
     implicit: true,
     isDefault: true,
