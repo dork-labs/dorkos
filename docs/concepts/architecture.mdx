@@ -16,7 +16,7 @@ DorkOS gives you one place for the agents you run. Its main app runs on your com
 
 The arrows name how data travels. HTTP carries requests such as sending a message. WebSockets keep local rooms and sessions up to date. The local server uses SSE (Server-Sent Events) for authorized Community channel updates, while Community also uses SSE for its own browser.
 
-The diagram reflects source reviewed on September 23, 2026. Cloud is under active development; code in the repository does not by itself confirm hosted-service readiness.
+The Cloud paths were reviewed on September 27, 2026. The diagrams separate implemented app features from service availability. A finished service can still need setup before a feature is usable.
 
 ## The app on your machine
 
@@ -42,11 +42,13 @@ Messaging connections such as Slack and Telegram bring conversations into local 
 
 DorkOS Cloud is an optional hosted service. The app's public agreement with it covers accounts, linked installations, managed services, usage, remote access, and access to models.
 
-Cloud-hosted communities are being built. Cloud will manage hosting through Community's administration API, while Community keeps conversations and files. Running your own Community will still work without Cloud.
+Cloud and Community work together without becoming the same service. Cloud manages hosting through Community's administration API. Community keeps its own conversations, files and membership. You can still run your own Community without Cloud.
 
 [![Optional Cloud hosting management and Community-owned conversations](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
 
-The host's administration keys, limits, and usage reports are implemented. Starting or moving a community through Cloud is not yet a complete released path at this snapshot. Shared sign-in is planned separately. A hosting account does not automatically grant access to a community's conversations.
+The local app includes start and move dialogs. Its server handles the hosting requests and sends an exported archive to the destination Community server. The archive does not pass through Cloud. Whether a hosted operation is available depends on the service's response and the destination host's capabilities.
+
+Cloud account pages are another separate surface. The website can send you there for account actions while keeping older app requests working. That handover does not move local conversations or give a hosting account access to Community posts. Shared sign-in with Community remains separate work.
 
 ## Marketplace: packages that run in your setup
 
