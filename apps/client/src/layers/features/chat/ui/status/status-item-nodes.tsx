@@ -111,6 +111,12 @@ export interface StatusItemNodesInput {
   usageSource: UsageSource | null;
   /** When {@link usage} was observed, ISO-8601, or `null` when not known. */
   usageObservedAt: string | null;
+  /**
+   * The moment the line reads freshness from. The same clock that decides
+   * whether the budget pays for "· old" (`usageStale`), so the item and the
+   * budget never disagree about it near the hour.
+   */
+  now: Date;
   /** Whether the runtime declares it can track cost. */
   supportsCostTracking: boolean;
   /**
@@ -316,7 +322,9 @@ export function buildStatusItemNodes(
     (input.supportsCostTracking || input.usageSource === 'account') &&
     !isUsageAbsorbed({ account: accountPromotion })
   ) {
-    nodes.usage = <UsageStatusItem usage={usage} observedAt={input.usageObservedAt} />;
+    nodes.usage = (
+      <UsageStatusItem usage={usage} observedAt={input.usageObservedAt} now={input.now} />
+    );
   }
 
   if (input.liveSubagentCount > 0) {

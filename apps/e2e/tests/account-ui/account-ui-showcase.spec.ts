@@ -113,27 +113,21 @@ test.describe('Claude account UI showcases @smoke', () => {
           await page.keyboard.press('Escape');
           await expect(page.getByRole('dialog')).toHaveCount(0);
 
-          // The usage item's tooltip, inverted, near the limit (the overage
-          // note) and out ("Rate limit reached"): those two lines wear the
-          // tooltip's own text color (04 §13), so they need 4.5:1 there too.
-          // Scoped to the two lines this decision covers.
-          for (const [index, words, slot] of [
-            [1, 'Using overage capacity', 'usage-detail-note'],
-            [2, 'Rate limit reached', 'usage-limit-note'],
-          ] as const) {
-            await page
-              .locator('#usagestatusitem')
-              .getByLabel('Subscription usage')
-              .nth(index)
-              .hover();
+          // Every kind of usage tooltip, whole: the inverted surface, so its
+          // labels, notes and "as of" line all need 4.5:1 there (04 §13).
+          const section = page.locator('#usagestatusitem');
+          const tooltips: [string, ReturnType<typeof section.locator>][] = [
+            ['near the limit', section.getByLabel('Subscription usage').nth(1)],
+            ['out', section.getByLabel('Subscription usage').nth(2)],
+            ['stale', section.locator('[data-stale="true"]').first()],
+            ['pay-as-you-go', section.getByLabel('Session cost').last()],
+          ];
+          for (const [what, trigger] of tooltips) {
+            await trigger.hover();
             const tip = page.locator('[data-slot="tooltip-content"]');
-            await expect(tip.getByText(words)).toBeVisible();
+            await expect(tip).toBeVisible();
             violations.push(
-              ...(await scan(
-                page,
-                `[data-slot="tooltip-content"] [data-slot="${slot}"]`,
-                `the ${words} tooltip line`
-              ))
+              ...(await scan(page, '[data-slot="tooltip-content"]', `the ${what} usage tooltip`))
             );
             await page.keyboard.press('Escape');
             await page.mouse.move(0, 0);

@@ -10,7 +10,7 @@
  */
 import type { GitStatusResponse, UsageStatus } from '@dorkos/shared/types';
 import type { SessionStatusData } from '@/layers/entities/session';
-import { gitPromotionState } from '@/layers/features/status';
+import { gitPromotionState, showsStaleMark } from '@/layers/features/status';
 import type {
   ActiveSubagent,
   SessionDiagnostics,
@@ -196,12 +196,27 @@ const DEGRADED_STATUS: SessionStatusData = {
 export interface StatusScenario {
   /** What this state is, in the words a reviewer would use. */
   label: string;
-  /** Live state the promotion rules read. */
-  ctx: StatusPromotionContext;
-  /** Everything the items need, minus `density`. */
-  input: Omit<StatusItemNodesInput, 'density'>;
+  /** Live state the promotion rules read, minus what the row derives (`usageStale`). */
+  ctx: Omit<StatusPromotionContext, 'usageStale'>;
+  /** Everything the items need, minus `density` and the row's clock (`now`). */
+  input: Omit<StatusItemNodesInput, 'density' | 'now'>;
   /** What the Session panel behind the `⋯` reports for this session. */
   diagnostics: SessionDiagnostics;
+}
+
+/**
+ * A scenario's promotion context, with `usageStale` derived from its own usage
+ * by the rule the usage item draws from (`showsStaleMark`), so a showcase row
+ * can never say one thing in the item and budget for another.
+ *
+ * @param scenario - The row's scenario.
+ * @param now - The row's clock, the same one its items read.
+ */
+export function scenarioContext(scenario: StatusScenario, now: Date): StatusPromotionContext {
+  return {
+    ...scenario.ctx,
+    usageStale: showsStaleMark(scenario.input.usage, scenario.input.usageObservedAt, now),
+  };
 }
 
 const HEALTHY_DIAGNOSTICS: SessionDiagnostics = {
@@ -279,7 +294,6 @@ export const HEALTHY: StatusScenario = {
     runtime: { isDefault: true, canSelect: false },
     account: null,
     usage: USAGE_OK,
-    usageStale: false,
     subagentsInFlight: 0,
   },
   input: {
@@ -369,7 +383,6 @@ export const DEGRADED: StatusScenario = {
     runtime: { isDefault: false, canSelect: false },
     account: null,
     usage: USAGE_WARNING,
-    usageStale: false,
     subagentsInFlight: RUNNING_SUBAGENTS.length,
   },
   input: {
@@ -474,7 +487,6 @@ export const RATE_LIMITED: StatusScenario = {
 export const RATE_LIMITED_STALE: StatusScenario = {
   ...RATE_LIMITED,
   label: 'Rate limited, from a reading two hours old',
-  ctx: { ...RATE_LIMITED.ctx, usageStale: true },
   input: {
     ...RATE_LIMITED.input,
     sessionId: 'showcase-rate-limited-stale',
@@ -567,7 +579,6 @@ export const PLANNING: StatusScenario = {
     runtime: { isDefault: true, canSelect: false },
     account: null,
     usage: USAGE_OK,
-    usageStale: false,
     subagentsInFlight: 0,
   },
   input: {

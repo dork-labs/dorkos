@@ -3,6 +3,7 @@ covers:
   - 'fix(client): say "· old" after a stale usage number and fix four contrast and heading issues'
   - 'fix(client): charge a stale usage item two status slots, and tone its popover rows'
   - 'fix(client): show the usage tooltip notes in its own text color'
+  - 'fix(client): make the usage tooltip''s labels readable and read "· old" from one clock'
 ---
 
 ### Fixed

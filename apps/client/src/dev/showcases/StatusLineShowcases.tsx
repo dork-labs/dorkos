@@ -40,6 +40,7 @@ import {
   WAITING_ON_BACKGROUND_TASKS,
   RATE_LIMITED,
   RATE_LIMITED_STALE,
+  scenarioContext,
   SAMPLED_WIDTHS,
   TIER_WIDTHS,
   type StatusScenario,
@@ -127,15 +128,17 @@ function BudgetedLine({
     budget.density === 'full' && scenario.ctx.contextPercent !== null
       ? { pending: false, onCompact: () => {} }
       : null;
+  // One clock for the row, as in `ChatStatusSection`: the item's "· old" and
+  // the budget's charge for it are read from the same rule at the same moment.
+  const now = new Date();
+  const ctx = scenarioContext(scenario, now);
   const nodes = buildStatusItemNodes({
     ...scenario.input,
     compact: inlineCompact,
     density: budget.density,
+    now,
   });
-  const { items, overflow } = applyStatusBudget(
-    selectPromotedItems({ ctx: scenario.ctx, pins, nodes }),
-    budget
-  );
+  const { items, overflow } = applyStatusBudget(selectPromotedItems({ ctx, pins, nodes }), budget);
 
   return (
     <div className="space-y-1.5">
@@ -166,7 +169,7 @@ function BudgetedLine({
               onOpenChange={panel.onOpenChange}
               diagnostics={scenario.diagnostics}
               controls={panel.controls}
-              promotionContext={scenario.ctx}
+              promotionContext={ctx}
               overflowCount={overflow}
             />
           }
@@ -363,7 +366,7 @@ export function StatusLineShowcases() {
             onOpenChange={plainPanel.onOpenChange}
             diagnostics={DEGRADED.diagnostics}
             controls={plainPanel.controls}
-            promotionContext={DEGRADED.ctx}
+            promotionContext={scenarioContext(DEGRADED, new Date())}
           />
         </ShowcaseDemo>
 
@@ -376,7 +379,7 @@ export function StatusLineShowcases() {
             onOpenChange={countedPanel.onOpenChange}
             diagnostics={DEGRADED.diagnostics}
             controls={countedPanel.controls}
-            promotionContext={DEGRADED.ctx}
+            promotionContext={scenarioContext(DEGRADED, new Date())}
             overflowCount={4}
             urgentAction={{ label: 'Compact conversation — 88% full', onAction: () => {} }}
           />

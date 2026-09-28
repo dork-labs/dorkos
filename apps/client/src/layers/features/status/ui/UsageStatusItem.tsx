@@ -11,6 +11,7 @@ import { cn } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import { formatCost } from '../lib/format-tokens';
 import { showsStaleMark, staleNumberClass } from '../lib/account-usage-status';
+import { MUTED_TEXT, type UsageSurface } from '../lib/usage-surface';
 import { UsageFreshnessLine } from './UsageFreshnessLine';
 
 interface UsageDetailProps {
@@ -22,9 +23,10 @@ interface UsageDetailProps {
    * wear the text-tuned warning and error tokens (4.5:1 or better, both
    * themes). `tooltip` is the inverted tooltip, where no warning or error token
    * reaches 4.5:1 in either theme, so both lines wear the tooltip's own text
-   * color and the words carry the state (04 §13).
+   * color and the words carry the state, and the labels and notes wear its
+   * own muted step (04 §13).
    */
-  surface?: 'panel' | 'tooltip';
+  surface?: UsageSurface;
 }
 
 /** The overage note's and the out-of-usage line's colors, by surface. */
@@ -99,12 +101,15 @@ function costHeading(usage: UsageStatus): string {
 export function UsageCostRows({ usage, surface = 'panel' }: UsageDetailProps) {
   const basisNote = costBasisNote(usage);
   const tone = TONE_BY_SURFACE[surface];
+  const muted = MUTED_TEXT[surface];
   return (
     <>
       {usage.costUsd != null && (
-        <DetailRow label={costHeading(usage)}>{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+        <DetailRow label={costHeading(usage)} labelClassName={muted}>
+          {`$${usage.costUsd.toFixed(2)}`}
+        </DetailRow>
       )}
-      {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
+      {basisNote && <div className={muted}>{basisNote}</div>}
       {usage.detail && (
         <div data-slot="usage-detail-note" className={tone.warning || undefined}>
           {usage.detail}
@@ -129,6 +134,7 @@ export function UsageCostRows({ usage, surface = 'panel' }: UsageDetailProps) {
  */
 export function UsageDetail({ usage, surface = 'panel' }: UsageDetailProps) {
   const basisNote = costBasisNote(usage);
+  const muted = MUTED_TEXT[surface];
   if (usage.kind === 'subscription' && usage.utilization != null) {
     const pct = Math.round(usage.utilization * 100);
     const resetsAtLabel = usage.resetsAt
@@ -138,9 +144,17 @@ export function UsageDetail({ usage, surface = 'panel' }: UsageDetailProps) {
       <div className="space-y-1">
         <div className="text-xs font-medium">Subscription usage</div>
         <div className="text-3xs space-y-0.5">
-          <DetailRow label="Utilization">{`${pct}%`}</DetailRow>
-          {usage.windowLabel && <DetailRow label="Window">{usage.windowLabel}</DetailRow>}
-          {resetsAtLabel && <DetailRow label="Resets at">{resetsAtLabel}</DetailRow>}
+          <DetailRow label="Utilization" labelClassName={muted}>{`${pct}%`}</DetailRow>
+          {usage.windowLabel && (
+            <DetailRow label="Window" labelClassName={muted}>
+              {usage.windowLabel}
+            </DetailRow>
+          )}
+          {resetsAtLabel && (
+            <DetailRow label="Resets at" labelClassName={muted}>
+              {resetsAtLabel}
+            </DetailRow>
+          )}
           <UsageCostRows usage={usage} surface={surface} />
         </div>
       </div>
@@ -152,10 +166,13 @@ export function UsageDetail({ usage, surface = 'panel' }: UsageDetailProps) {
       <div className="text-xs font-medium">{costHeading(usage)}</div>
       <div className="text-3xs space-y-0.5">
         {usage.costUsd != null && (
-          <DetailRow label="Cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+          <DetailRow
+            label="Cost"
+            labelClassName={muted}
+          >{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
         )}
-        {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
-        {usage.detail && <div className="text-muted-foreground">{usage.detail}</div>}
+        {basisNote && <div className={muted}>{basisNote}</div>}
+        {usage.detail && <div className={muted}>{usage.detail}</div>}
       </div>
     </div>
   );
@@ -215,7 +232,9 @@ export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: Usa
         <TooltipContent side="top" className="max-w-56">
           <div className="space-y-1">
             <UsageDetail usage={usage} surface="tooltip" />
-            {observedAt !== null && <UsageFreshnessLine observedAt={observedAt} now={now} />}
+            {observedAt !== null && (
+              <UsageFreshnessLine observedAt={observedAt} now={now} surface="tooltip" />
+            )}
           </div>
         </TooltipContent>
       </Tooltip>
@@ -262,8 +281,8 @@ export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: Usa
       <TooltipContent side="top" className="max-w-56">
         <div className="space-y-1">
           <div className="text-xs font-medium">{label}</div>
-          {basisNote && <div className="text-muted-foreground text-3xs">{basisNote}</div>}
-          {usage.detail && <div className="text-muted-foreground text-3xs">{usage.detail}</div>}
+          {basisNote && <div className={cn(MUTED_TEXT.tooltip, 'text-3xs')}>{basisNote}</div>}
+          {usage.detail && <div className={cn(MUTED_TEXT.tooltip, 'text-3xs')}>{usage.detail}</div>}
         </div>
       </TooltipContent>
     </Tooltip>

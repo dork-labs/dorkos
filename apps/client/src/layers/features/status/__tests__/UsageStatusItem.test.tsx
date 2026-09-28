@@ -329,3 +329,26 @@ describe('UsageDetail — the overage note and "Rate limit reached" on a panel',
     expect(screen.getByText('Rate limit reached')).toHaveClass('text-destructive');
   });
 });
+
+describe('UsageDetail — on the inverted tooltip', () => {
+  it("draws its labels and notes in the tooltip's own muted text, never the page gray", () => {
+    render(
+      <UsageDetail
+        surface="tooltip"
+        usage={{
+          kind: 'subscription',
+          utilization: 0.4,
+          windowLabel: '5-hour window',
+          costUsd: 1,
+          costBasis: 'unknown',
+        }}
+      />
+    );
+    // The page's muted gray read 2.28:1 (light) and 1.87:1 (dark) on the tooltip.
+    for (const label of ['Utilization', 'Window']) {
+      expect(screen.getByText(label)).toHaveClass('text-dui-background/70');
+      expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground');
+    }
+    expect(screen.getByText(/no price was listed/)).toHaveClass('text-dui-background/70');
+  });
+});
