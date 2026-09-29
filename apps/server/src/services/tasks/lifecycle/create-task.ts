@@ -331,7 +331,7 @@ export async function createScheduledTask(
   const accountRefusal = await scheduleAccountRefusal({
     account: data.account,
     runtime: data.runtime,
-    folder: await scheduleRunFolder(home.projectPath),
+    folder: scheduleRunFolder(home.projectPath),
   });
   if (accountRefusal && !trusted) {
     return { ok: false, status: 409, error: accountRefusal.message, code: accountRefusal.code };

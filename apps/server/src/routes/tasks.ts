@@ -392,7 +392,7 @@ export function createTasksRouter(
         ? await scheduleAccountRefusal({
             account: data.account,
             runtime: data.runtime ?? existing.runtime,
-            folder: await scheduleRunFolder(
+            folder: scheduleRunFolder(
               existing.agentId ? meshCore?.getProjectPath(existing.agentId) : null
             ),
           })

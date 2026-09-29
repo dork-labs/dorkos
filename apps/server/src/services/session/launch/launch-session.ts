@@ -283,9 +283,9 @@ async function refusedLaunchAccount(opts: {
   cwd: string;
   hintId: string | undefined;
 }): Promise<AccountNotAllowedError | null> {
-  const runtime = runtimeRegistry.get(opts.runtimeType);
-  if (!isLaunchAccountAware(runtime)) return null;
   try {
+    const runtime = runtimeRegistry.get(opts.runtimeType);
+    if (!isLaunchAccountAware(runtime)) return null;
     if ((await runtimeRegistry.resolveSessionRuntime(opts.sessionId)).bound) return null;
     const launch = await runtime.checkLaunchAccount(opts.sessionId, opts.cwd, opts.hintId);
     return launch.ok ? null : launch.error;

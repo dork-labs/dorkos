@@ -10,9 +10,9 @@
  * - **A run fails with the plain sentence** before either dispatch path starts
  *   anything, so the direct and relay paths say the same thing.
  *
- * The folder is the one a run actually starts in: the agent's folder through
- * the session-cwd chain, or the server's working directory for a schedule
- * that belongs to no agent (`TaskSchedulerService.resolveRunPlacement`).
+ * At save time the folder is the owning agent's (or the server's working
+ * directory); at run time it is the run's own placement
+ * (`TaskSchedulerService.resolveRunPlacement`).
  *
  * @module services/tasks/lifecycle/schedule-account-eligibility
  */
@@ -23,22 +23,19 @@ import {
   refusalFor,
   type AccountNotAllowedError,
 } from '../../core/usage/account-eligibility.js';
-import { resolveSessionCwd } from '../../workspace/resolve-session-cwd.js';
 
 /**
- * The folder a schedule's runs start in.
+ * The folder a schedule's runs start in, as far as its project goes: the
+ * owning agent's folder, or the server's working directory for a schedule
+ * that belongs to no agent. Deliberately not the session-cwd chain: that runs
+ * once, where a turn begins (the scheduler passes the run's own placement),
+ * and an agent's desk is a worktree of the same repository, so the project is
+ * the same.
  *
  * @param agentProjectPath - The owning agent's folder, or null for a schedule with no agent.
  */
-export async function scheduleRunFolder(
-  agentProjectPath: string | null | undefined
-): Promise<string> {
-  if (!agentProjectPath) return process.cwd();
-  try {
-    return (await resolveSessionCwd({ agentPath: agentProjectPath })).cwd;
-  } catch {
-    return agentProjectPath;
-  }
+export function scheduleRunFolder(agentProjectPath: string | null | undefined): string {
+  return agentProjectPath || process.cwd();
 }
 
 /**

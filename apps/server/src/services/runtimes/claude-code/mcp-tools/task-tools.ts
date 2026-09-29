@@ -622,7 +622,7 @@ export function createUpdateScheduleHandler(
       const refusal = await scheduleAccountRefusal({
         account: args.account,
         runtime: args.runtime ?? existing.runtime,
-        folder: await scheduleRunFolder(
+        folder: scheduleRunFolder(
           existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null
         ),
       });
