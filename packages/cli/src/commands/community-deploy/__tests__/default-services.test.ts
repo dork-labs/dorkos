@@ -178,19 +178,25 @@ describe('default Community creation boundaries', () => {
   // Fly's servers never set the bucket's keys on the app; flyctl copies them from the create
   // answer (`setSecretsFromExtension`). The live gate on dorkos@0.92.0 stopped here (DOR-2559).
   describe('putting the bucket keys on the app', () => {
-    it('stages the keys from the create answer once, then proves them by name', async () => {
+    it('stages the keys from the create answer before any other read, then proves them', async () => {
       const credentials = new TigrisBucketCredentials(
         KEYS.AWS_ACCESS_KEY_ID,
         KEYS.AWS_SECRET_ACCESS_KEY
       );
       mocks.createTigris.mockResolvedValueOnce({ identity: tigrisIdentity, credentials });
-      mocks.readFlySecretInventory.mockResolvedValueOnce([]).mockResolvedValueOnce(keyRows);
+      mocks.readFlySecretInventory.mockResolvedValue(keyRows);
       const deps = dependencies();
       await deps.tigris.create();
+      mocks.readFlyApps.mockClear();
       await expect(deps.tigris.inspect('addon_fixture_01')).resolves.toMatchObject({
         id: 'addon_fixture_01',
       });
       expect(mocks.stageFlySecrets).toHaveBeenCalledOnce();
+      // The keys exist only in memory, so nothing that can fail runs before they are staged.
+      const staged = mocks.stageFlySecrets.mock.invocationCallOrder[0]!;
+      for (const read of [mocks.readFlyApps, mocks.readTigris, mocks.readFlySecretInventory]) {
+        expect(read.mock.invocationCallOrder[0]).toBeGreaterThan(staged);
+      }
       expect(mocks.stageFlySecrets).toHaveBeenCalledWith(
         expect.anything(),
         'community-fixture-app',
@@ -200,6 +206,46 @@ describe('default Community creation boundaries', () => {
       expect(mocks.verifyTigrisSecretNames).toHaveBeenCalledWith(keyRows);
       // The keys are dropped as soon as they are on the app.
       await expect(credentials.use(async () => true)).rejects.toThrow();
+    });
+
+    it('has already staged the keys when a read after creation fails', async () => {
+      mocks.createTigris.mockResolvedValueOnce({
+        identity: tigrisIdentity,
+        credentials: new TigrisBucketCredentials(
+          KEYS.AWS_ACCESS_KEY_ID,
+          KEYS.AWS_SECRET_ACCESS_KEY
+        ),
+      });
+      mocks.readTigris.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'TIMEOUT' }));
+      const deps = dependencies();
+      await deps.tigris.create();
+      await expect(deps.tigris.inspect('addon_fixture_01')).rejects.toMatchObject({
+        code: 'TIMEOUT',
+      });
+      expect(mocks.stageFlySecrets).toHaveBeenCalledWith(
+        expect.anything(),
+        'community-fixture-app',
+        KEYS
+      );
+    });
+
+    it('stops with the keys-specific code when staging failed and Fly will not resend them', async () => {
+      mocks.createTigris.mockResolvedValueOnce({
+        identity: tigrisIdentity,
+        credentials: new TigrisBucketCredentials(
+          KEYS.AWS_ACCESS_KEY_ID,
+          KEYS.AWS_SECRET_ACCESS_KEY
+        ),
+      });
+      mocks.stageFlySecrets.mockRejectedValueOnce(
+        Object.assign(new Error('x'), { code: 'TIMEOUT' })
+      );
+      const deps = dependencies();
+      await deps.tigris.create();
+      await expect(deps.tigris.inspect('addon_fixture_01')).rejects.toMatchObject({
+        code: 'MISSING_TIGRIS_SECRETS',
+      });
+      expect(mocks.readTigrisCredentials).toHaveBeenCalledWith('addon_fixture_01');
     });
 
     it('neither reads nor sets keys that are already on the app', async () => {

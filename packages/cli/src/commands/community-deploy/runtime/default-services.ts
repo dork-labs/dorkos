@@ -173,35 +173,51 @@ function tigrisIdentity(
 }
 
 /**
- * Put the bucket's two access keys on the app, unless both are already there.
- *
- * Fly's servers do not set them when the bucket is created; flyctl does it client-side from the
- * add-on's `environment`. The keys come from the create answer held in memory, or, on a resumed
- * launch that lost them, from one exact-ID read. They are staged with the same `secrets import
- * --stage` path as every other app secret, so the first deploy applies them, and are proved by
- * name only. One name without the other is never overwritten: that app holds keys this launch
- * did not set.
+ * Stage a bucket's two access keys on the app with the same `secrets import --stage` path as every
+ * other app secret, so the first deploy applies them, then drop them from memory.
  */
-async function ensureTigrisSecrets(
+async function stageTigrisKeys(
   options: CommunityServiceOptions,
   appName: string,
-  addOnId: string,
-  held: TigrisBucketCredentials | null
+  credentials: TigrisBucketCredentials
 ): Promise<void> {
-  const before = await readFlySecretInventory(options.fly, appName);
-  const present = EXPECTED_TIGRIS_SECRET_NAMES.filter((name) =>
-    before.some((item) => item.name === name)
-  );
-  if (present.length === EXPECTED_TIGRIS_SECRET_NAMES.length) return;
-  if (present.length > 0) throw new TigrisSessionError('MISSING_TIGRIS_SECRETS');
-  const credentials =
-    held ?? (await useTigrisClient(options, (client) => client.readTigrisCredentials(addOnId)));
-  if (!credentials) throw new TigrisSessionError('MISSING_TIGRIS_SECRETS');
   try {
     await credentials.use((values) => stageFlySecrets(options.fly, appName, values));
   } finally {
     credentials.dispose();
   }
+}
+
+/**
+ * Prove the bucket's two access keys are on the app, fetching them once more if they are not.
+ *
+ * Fly's servers do not set them when the bucket is created; flyctl does it client-side from the
+ * add-on's `environment`, and so does `inspect` below, before anything else. This is the check
+ * after that, and the path a resumed launch takes. Keys already there are neither re-read nor
+ * re-set. One name without the other is never overwritten: the app then holds a key this launch
+ * cannot vouch for. When neither is there, the keys are read once more by exact ID; flyctl never
+ * does that, so Fly may return none, and the launch then stops with `MISSING_TIGRIS_SECRETS`, whose
+ * recovery text says how to put the keys on the app by hand.
+ */
+async function ensureTigrisSecrets(
+  options: CommunityServiceOptions,
+  appName: string,
+  addOnId: string
+): Promise<void> {
+  const before = await readFlySecretInventory(options.fly, appName);
+  const present = EXPECTED_TIGRIS_SECRET_NAMES.filter((name) =>
+    before.some((item) => item.name === name)
+  );
+  if (present.length === EXPECTED_TIGRIS_SECRET_NAMES.length) {
+    verifyTigrisSecretNames(before);
+    return;
+  }
+  if (present.length > 0) throw new TigrisSessionError('MISSING_TIGRIS_SECRETS');
+  const credentials = await useTigrisClient(options, (client) =>
+    client.readTigrisCredentials(addOnId)
+  );
+  if (!credentials) throw new TigrisSessionError('MISSING_TIGRIS_SECRETS');
+  await stageTigrisKeys(options, appName, credentials);
   verifyTigrisSecretNames(await readFlySecretInventory(options.fly, appName));
 }
 
@@ -308,17 +324,20 @@ export function createDefaultCommunityCreationDependencies(input: {
         return tigrisIdentity(created.identity, input.plan, exactApp);
       },
       inspect: async (id) => {
+        // The keys exist only in memory, so they go onto the app first: the bucket id is already
+        // in the journal, create() already bound the bucket to this app, and any read below that
+        // fails would otherwise lose them for good. A failed stage is not fatal here: the keys may
+        // have landed, and the name check below decides.
         const held = tigrisCredentials;
         tigrisCredentials = null;
-        try {
-          const exactApp = await app();
-          const found = await useTigrisClient(input.options, (client) => client.readTigris(id));
-          const result = tigrisIdentity(found, input.plan, exactApp);
-          await ensureTigrisSecrets(input.options, input.plan.fly.appName, found.addOnId, held);
-          return result;
-        } finally {
-          held?.dispose();
+        if (held) {
+          await stageTigrisKeys(input.options, input.plan.fly.appName, held).catch(() => undefined);
         }
+        const exactApp = await app();
+        const found = await useTigrisClient(input.options, (client) => client.readTigris(id));
+        const result = tigrisIdentity(found, input.plan, exactApp);
+        await ensureTigrisSecrets(input.options, input.plan.fly.appName, found.addOnId);
+        return result;
       },
     },
   };
