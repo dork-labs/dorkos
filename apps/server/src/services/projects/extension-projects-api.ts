@@ -5,10 +5,12 @@
  * Scoped to the calling extension, so an extension does not learn every
  * folder the person works in: `list()` answers only the projects that hold a
  * copy of it and the ones it reported itself. `resolve()` and `report()` both
- * pass the directory boundary and need a git repository; a project an
- * extension names that core had not seen is recorded as `reported`, which
- * never widens where core looks for extension code. Only `report()` adds a
- * project to the extension's own list.
+ * apply the directory boundary to the folder and to its root, and need a git
+ * repository; a project an extension names that core had not seen is recorded
+ * as `reported`, which never widens where core looks for extension code and
+ * stays out of the person's list, and counts against the extension's cap of
+ * `MAX_REPORTED_ROOTS_PER_EXTENSION`. Only `report()` adds a project to the
+ * extension's own list.
  *
  * @module services/projects/extension-projects-api
  */
@@ -32,9 +34,10 @@ export function createProjectsApi(
 
   const projects: ProjectsApi = {
     resolve(cwd) {
-      return typeof cwd === 'string' && cwd.length > 0
-        ? registry.resolveForExtension(cwd)
-        : Promise.resolve(null);
+      if (typeof cwd !== 'string' || cwd.length === 0) return Promise.resolve(null);
+      return registry
+        .resolveWithin(cwd, extensionId)
+        .then((project) => (project === 'outside' ? null : project));
     },
     list() {
       return registry.listForExtension(extensionId);

@@ -30,7 +30,8 @@ export function registerProjectsOpenApi(registry: OpenAPIRegistry): void {
     summary: 'List the projects this machine knows',
     description:
       'Every git main checkout the server has seen as a session, agent, workspace or install ' +
-      'folder, or that an extension reported, whose folder exists right now, sorted by name. A ' +
+      'folder whose folder exists right now, sorted by name. A root only an extension reported ' +
+      'or a lookup named is not listed until it is seen. A ' +
       'project whose folder is gone is hidden, not forgotten (a drive may be unplugged). Each ' +
       "project's `name` is URL-safe, unique, and never changes once given: the folder's name, or " +
       '`name~parent` when another project already had it. `originRepo` is the `owner/name` of a ' +
@@ -52,9 +53,10 @@ export function registerProjectsOpenApi(registry: OpenAPIRegistry): void {
     description:
       'The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, ' +
       'and a bare repository is its own project. A folder in no repository answers ' +
-      '`{ "project": null }`, including one that only holds several repositories. The project is ' +
-      'remembered, so it appears in `GET /api/projects` from then on. The folder must be inside ' +
-      "the server's directory boundary.",
+      '`{ "project": null }`, including one that only holds several repositories. A lookup never ' +
+      'marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and ' +
+      "the repository it belongs to must be inside the server's directory boundary (a worktree " +
+      'of an outside repository is refused).',
     request: { query: ProjectResolveQuerySchema },
     responses: {
       200: {
@@ -62,7 +64,9 @@ export function registerProjectsOpenApi(registry: OpenAPIRegistry): void {
         content: { 'application/json': { schema: ProjectResolveResponseSchema } },
       },
       400: error('`cwd` is missing or empty'),
-      403: error("`cwd` is outside the server's directory boundary"),
+      403: error(
+        "`cwd`, or the repository it belongs to, is outside the server's directory boundary"
+      ),
       500: error('The project could not be resolved'),
     },
   });

@@ -1079,6 +1079,11 @@ async function start() {
   // restart, so what that receipt points at has to survive one too (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
 
+  // The project registry's saved names (spec `flow-multiproject` §6.1). Loaded
+  // here, before extensions start, because a name handed out earlier could
+  // belong to a saved project and would change on the next read.
+  projectRegistry.attachStore(new KnownProjectsStore(db));
+
   // A session's usage limit, kept so a restart or an idle eviction does not
   // turn a limited session back into a merely failed one (spec
   // claude-account-fleet D4).
@@ -4145,10 +4150,10 @@ async function start() {
   // the background and its next event carries the items.
   sessionListBroadcaster.setTrackerItemsOverlay(applyTrackerItemsLive);
 
-  // The project registry (spec `flow-multiproject` §6.1): every git main
-  // checkout this machine has seen, each with one stable short name. Seeded
-  // from agents, workspaces and installs, then fed by every live session.
-  startProjectRegistry(projectRegistry, new KnownProjectsStore(db), {
+  // The project registry's feeds (spec `flow-multiproject` §6.1): seeded from
+  // agents, workspaces and installs, then fed by every live session. Its store
+  // was attached right after the database opened.
+  startProjectRegistry(projectRegistry, {
     dorkHome,
     agentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
     workspaceSources: () => managedWorkspaces?.list().map((workspace) => workspace.source) ?? [],

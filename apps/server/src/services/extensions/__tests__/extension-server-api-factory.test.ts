@@ -510,7 +510,7 @@ describe('createDataProviderContext', () => {
     it('scopes list, resolve and report to the calling extension', async () => {
       const list = vi.spyOn(projectRegistry, 'listForExtension').mockResolvedValue([]);
       const report = vi.spyOn(projectRegistry, 'report').mockResolvedValue(null);
-      const resolve = vi.spyOn(projectRegistry, 'resolveForExtension').mockResolvedValue(null);
+      const resolve = vi.spyOn(projectRegistry, 'resolveWithin').mockResolvedValue('outside');
       const { ctx } = buildCtx();
       await ctx.projects.list();
       await ctx.projects.report('/some/repo');
@@ -519,7 +519,9 @@ describe('createDataProviderContext', () => {
       expect(report).toHaveBeenCalledWith('/some/repo', extensionId);
       // Resolving goes through the boundary-checked extension path, never the
       // core `resolve` that would mark a folder as seen.
-      expect(resolve).toHaveBeenCalledWith('/some/repo/src');
+      expect(resolve).toHaveBeenCalledWith('/some/repo/src', extensionId);
+      // Refused by the boundary reads as no project to the extension.
+      await expect(ctx.projects.resolve('/some/repo/src')).resolves.toBeNull();
       await expect(ctx.projects.report('')).resolves.toBeNull();
       list.mockRestore();
       report.mockRestore();

@@ -5,10 +5,20 @@
  * A project is a git main checkout ({@link resolveProjectRoot}). The registry
  * remembers the ones it has seen: every session folder the server resolves,
  * every agent's folder, every workspace source and every project a package was
- * installed into. Extensions may add one with `ctx.projects.report`, and such a
- * root is second-class: it is stored as `reported`, it never widens where core
- * looks for extension code, and seeing it later as a session, agent, workspace
- * or install folder upgrades it to `seen`.
+ * installed into. Extensions may add one with `ctx.projects.report` (or name one
+ * with `ctx.projects.resolve`), and a person may look one up; such a root is
+ * second-class. It is stored as `reported`, it never widens where core looks for
+ * extension code, it stays out of the person's project list, and seeing it
+ * later as a session, agent, workspace or install folder upgrades it to `seen`.
+ * An extension can name at most {@link MAX_REPORTED_ROOTS_PER_EXTENSION} roots,
+ * so it cannot squat names at scale.
+ *
+ * ## The boundary
+ *
+ * Anything an extension or a person names is checked twice: the folder they
+ * gave, and the root git answers with. A worktree inside the boundary whose
+ * repository lives outside it (or a `.git` file pointing out) would otherwise
+ * reveal and register a folder the boundary exists to keep out.
  *
  * ## Names
  *
@@ -21,7 +31,10 @@
  * ## Cost
  *
  * The rows live in memory (a machine knows tens of projects, not thousands) and
- * write through to `known_projects`. Resolving a folder costs one `git` the
+ * write through to `known_projects`; a row storage refuses is never kept in
+ * memory, so a name in memory is always the name on disk. Seeding records a
+ * batch in sorted root order after every origin lookup, so first-boot names do
+ * not depend on which git call finished first. Resolving a folder costs one `git` the
  * first time and nothing after. `lastSeenAt` is written at most every ten
  * minutes per project, so a busy session does not write on every turn.
  *
@@ -35,7 +48,11 @@ import type { ProjectInfo, ProjectRef } from '@dorkos/shared/project-schemas';
 import { validateBoundary } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
 import { runGit } from '../workspace/providers/git.js';
-import type { KnownProject, KnownProjectsPort } from './known-projects-store.js';
+import type {
+  KnownProject,
+  KnownProjectReporter,
+  KnownProjectsPort,
+} from './known-projects-store.js';
 import { parseOriginRepo } from './origin-repo.js';
 import { peekProjectRoot, resolveProjectRoot } from './resolve-project-root.js';
 
@@ -47,6 +64,12 @@ const SOURCES_REFRESH_INTERVAL_MS = 60_000;
 
 /** How long an extension's scoped list is reused before its folders are checked again. */
 const EXTENSION_SCOPE_TTL_MS = 60_000;
+
+/**
+ * The most roots one extension may name (report or resolve) that core had not
+ * seen. Past it, naming a new root answers null and records nothing.
+ */
+export const MAX_REPORTED_ROOTS_PER_EXTENSION = 200;
 
 /** Timeout for `git remote get-url origin`. */
 const ORIGIN_GIT_TIMEOUT_MS = 5_000;
@@ -170,6 +193,12 @@ export async function holdsExtensionCopy(root: string, extensionId: string): Pro
   return false;
 }
 
+/** How a root became known when it is recorded. */
+type RecordHow = 'seen' | 'reported';
+
+/** What {@link ProjectRegistry.resolveWithin} answers: a project, none, or refused. */
+export type BoundedResolution = ProjectRef | null | 'outside';
+
 /** Every project the server knows. See the module documentation. */
 export class ProjectRegistry {
   private readonly deps: ProjectRegistryDeps;
@@ -180,8 +209,8 @@ export class ProjectRegistry {
   private readonly recording = new Map<string, Promise<KnownProject>>();
   /** When each root's `lastSeenAt` was last written. */
   private readonly lastWritten = new Map<string, number>();
-  /** Extension ids that reported each root in this process, beyond `reportedBy`. */
-  private readonly reporters = new Map<string, Set<string>>();
+  /** Root to the extensions that named it, and how. */
+  private readonly reporters = new Map<string, Map<string, KnownProjectReporter['kind']>>();
   private readonly listeners = new Set<() => void>();
   private sources: ProjectSources | undefined;
   private sourcesReadAt: number | undefined;
@@ -199,30 +228,38 @@ export class ProjectRegistry {
 
   /**
    * Load the stored projects and write through to `store` from now on.
-   * Called once at boot, before any seed.
+   * Called once at boot, BEFORE extensions start: a name handed out before the
+   * stored names are loaded could belong to a saved project.
    *
    * @param store - Where projects are kept.
    */
   attachStore(store: KnownProjectsPort): void {
-    // Anything recorded before the store existed (a boot-time read that ran
-    // first) is kept, but the stored rows win: their names came first.
+    // Anything recorded before the store existed is kept only if storage takes
+    // it; the stored rows win, since their names came first.
     const early = [...this.byRoot.values()];
+    const earlyReporters = [...this.reporters.entries()];
     this.store = store;
     this.byRoot.clear();
     this.names.clear();
+    this.reporters.clear();
     for (const project of store.all()) {
       this.byRoot.set(project.root, project);
       this.names.add(project.name);
     }
+    for (const reporter of store.reporters()) this.noteReporter(reporter);
     for (const project of early) {
       if (this.byRoot.has(project.root)) continue;
-      const kept: KnownProject = {
-        ...project,
-        name: assignProjectName(project.root, (name) => this.names.has(name)),
-      };
-      this.byRoot.set(kept.root, kept);
-      this.names.add(kept.name);
-      this.persist(() => store.insert(kept), `record ${kept.root}`);
+      try {
+        this.insert({
+          ...project,
+          name: assignProjectName(project.root, (name) => this.names.has(name)),
+        });
+      } catch (err) {
+        this.warn(`could not record ${project.root}`, err);
+      }
+    }
+    for (const [root, byExtension] of earlyReporters) {
+      for (const [extensionId, kind] of byExtension) this.addReporter(root, extensionId, kind);
     }
   }
 
@@ -240,7 +277,9 @@ export class ProjectRegistry {
   }
 
   /**
-   * The project a folder belongs to, remembered as seen.
+   * The project a folder belongs to, remembered as seen. For core's own
+   * folders only (a session, agent, workspace or install folder); anything a
+   * person or an extension names goes through {@link resolveWithin}.
    *
    * @param cwd - Any absolute folder.
    * @returns The project, or null when the folder is in no repository.
@@ -248,7 +287,7 @@ export class ProjectRegistry {
   async resolve(cwd: string): Promise<ProjectRef | null> {
     const root = await this.deps.resolveRoot(cwd);
     if (root === null) return null;
-    return toRef(await this.remember(root, { source: 'seen' }));
+    return toRef(await this.remember(root, 'seen'));
   }
 
   /**
@@ -272,66 +311,62 @@ export class ProjectRegistry {
   }
 
   /**
-   * An extension's hint about a project core may not have seen. The path must
-   * pass the directory boundary and be inside a git repository; otherwise
-   * nothing is recorded.
+   * The project of a folder a person or an extension named, never promoting
+   * it to seen (`GET /api/projects/resolve`, `ctx.projects.resolve`).
+   *
+   * Both the folder and the root git answers with must be inside the
+   * directory boundary. A root core had not seen is recorded as `reported`;
+   * for an extension it counts against its cap, and it does not join the
+   * extension's own list (only {@link report} does that).
+   *
+   * @param dir - Any folder.
+   * @param extensionId - The extension asking, or undefined for a person.
+   * @returns The project, null (no repository, or the extension is at its
+   *   cap), or `'outside'` when the folder or its root is outside the boundary.
+   */
+  async resolveWithin(dir: string, extensionId?: string): Promise<BoundedResolution> {
+    const root = await this.boundedRoot(dir);
+    if (root === 'outside' || root === null) return root;
+    const known = this.byRoot.get(root);
+    if (known) return toRef(known);
+    if (extensionId !== undefined && this.atCap(extensionId, root)) return null;
+    const project = await this.remember(root, 'reported');
+    if (extensionId !== undefined) this.addReporter(root, extensionId, 'resolve');
+    return toRef(project);
+  }
+
+  /**
+   * An extension's hint about a project core may not have seen. The folder and
+   * its root must pass the directory boundary, the folder must be inside a git
+   * repository, and the extension must be under its cap for new roots;
+   * otherwise nothing is recorded.
    *
    * @param dir - Any folder inside the project.
    * @param extensionId - The extension reporting it.
    * @returns The project, or null.
    */
   async report(dir: string, extensionId: string): Promise<ProjectRef | null> {
-    let checked: string;
-    try {
-      checked = await this.deps.checkBoundary(dir);
-    } catch {
-      return null;
-    }
-    const root = await this.deps.resolveRoot(checked);
-    if (root === null) return null;
-    let reporters = this.reporters.get(root);
-    if (!reporters) this.reporters.set(root, (reporters = new Set()));
-    const firstReport = !reporters.has(extensionId);
-    reporters.add(extensionId);
-    const project = await this.remember(root, { source: 'reported', reportedBy: extensionId });
-    if (firstReport) this.invalidateScopes();
+    const root = await this.boundedRoot(dir);
+    if (root === 'outside' || root === null) return null;
+    if (this.atCap(extensionId, root)) return null;
+    const project = await this.remember(root, 'reported');
+    this.addReporter(root, extensionId, 'report');
     return toRef(project);
   }
 
   /**
-   * The project a folder an extension named belongs to (`ctx.projects.resolve`).
-   *
-   * Unlike {@link resolve}, the folder must pass the directory boundary, and a
-   * root core had not seen is recorded as `reported` (with no reporter), so an
-   * extension resolving a folder never makes it `seen` and never widens where
-   * core looks for extension code. Unlike {@link report}, it does not add the
-   * project to the extension's own {@link listForExtension}.
-   *
-   * @param dir - Any folder.
-   * @returns The project, or null outside the boundary or outside a repository.
-   */
-  async resolveForExtension(dir: string): Promise<ProjectRef | null> {
-    let checked: string;
-    try {
-      checked = await this.deps.checkBoundary(dir);
-    } catch {
-      return null;
-    }
-    const root = await this.deps.resolveRoot(checked);
-    if (root === null) return null;
-    const known = this.byRoot.get(root);
-    if (known) return toRef(known);
-    return toRef(await this.remember(root, { source: 'reported', reportedBy: null }));
-  }
-
-  /**
-   * Every known project whose folder exists, by name. Folders that are gone
-   * are hidden and kept (a drive may be unplugged).
+   * Every project the person works in whose folder exists, by name: the ones
+   * core has seen. A root only an extension or a one-off lookup named stays
+   * out until it is seen. Folders that are gone are hidden and kept (a drive
+   * may be unplugged).
    */
   async list(): Promise<ProjectInfo[]> {
     await this.refreshSources();
     const present = await this.present();
-    return present.map(toInfo).sort(byName);
+    return present
+      .filter((p) => p.source === 'seen')
+      .map(toInfo)
+      .sort(byName);
   }
 
   /**
@@ -370,8 +405,8 @@ export class ProjectRegistry {
   }
 
   /**
-   * Whether a root is known only because an extension reported it. Such a
-   * root must never widen where core looks for extension code (§6.1).
+   * Whether a root is known only because an extension or a lookup named it.
+   * Such a root must never widen where core looks for extension code (§6.1).
    *
    * @param root - A project root, canonical.
    */
@@ -392,13 +427,66 @@ export class ProjectRegistry {
     };
   }
 
+  /** The root of a named folder, with the boundary applied to both ends. */
+  private async boundedRoot(dir: string): Promise<string | null | 'outside'> {
+    let checked: string;
+    try {
+      checked = await this.deps.checkBoundary(dir);
+    } catch {
+      return 'outside';
+    }
+    const root = await this.deps.resolveRoot(checked);
+    if (root === null) return null;
+    try {
+      await this.deps.checkBoundary(root);
+    } catch {
+      return 'outside';
+    }
+    return root;
+  }
+
+  /** Whether naming `root` would take an extension past its cap. */
+  private atCap(extensionId: string, root: string): boolean {
+    if (this.reporters.get(root)?.has(extensionId)) return false;
+    let named = 0;
+    for (const byExtension of this.reporters.values()) if (byExtension.has(extensionId)) named++;
+    return named >= MAX_REPORTED_ROOTS_PER_EXTENSION;
+  }
+
+  private noteReporter(reporter: Pick<KnownProjectReporter, 'root' | 'extensionId' | 'kind'>) {
+    let byExtension = this.reporters.get(reporter.root);
+    if (!byExtension) this.reporters.set(reporter.root, (byExtension = new Map()));
+    if (byExtension.get(reporter.extensionId) !== 'report') {
+      byExtension.set(reporter.extensionId, reporter.kind);
+    }
+  }
+
+  /** Record that an extension named a root; persisted first, then kept. */
+  private addReporter(root: string, extensionId: string, kind: KnownProjectReporter['kind']) {
+    const current = this.reporters.get(root)?.get(extensionId);
+    if (current === 'report' || current === kind) return;
+    const reporter: KnownProjectReporter = {
+      root,
+      extensionId,
+      kind,
+      reportedAt: new Date(this.deps.now()).toISOString(),
+    };
+    try {
+      this.store?.addReporter(reporter);
+    } catch (err) {
+      this.warn(`could not record that ${extensionId} named ${root}`, err);
+      return;
+    }
+    this.noteReporter(reporter);
+    if (kind === 'report') this.scoped.delete(extensionId);
+  }
+
   private async scopeFor(extensionId: string, present: KnownProject[]): Promise<Set<string>> {
     const allowed = new Set<string>();
     await Promise.all(
       present.map(async (project) => {
         if (
-          project.reportedBy === extensionId ||
-          this.reporters.get(project.root)?.has(extensionId) ||
+          this.reporters.get(project.root)?.get(extensionId) === 'report' ||
           (await holdsExtensionCopy(project.root, extensionId))
         ) {
           allowed.add(project.root);
@@ -429,11 +517,7 @@ export class ProjectRegistry {
     this.sourcesRead = (async () => {
       try {
         const folders = [...new Set(await sources())].filter((dir) => path.isAbsolute(dir));
-        await Promise.all(
-          folders.map((dir) =>
-            this.resolve(dir).catch((err) => this.warn(`could not resolve ${dir}`, err))
-          )
-        );
+        await this.seedBatch(folders);
       } catch (err) {
         this.warn('could not read the folders to seed projects from', err);
       } finally {
@@ -443,75 +527,105 @@ export class ProjectRegistry {
     return this.sourcesRead;
   }
 
-  private remember(
-    root: string,
-    how: { source: 'seen' } | { source: 'reported'; reportedBy: string | null }
-  ): Promise<KnownProject> {
+  /**
+   * Record a batch of core folders as seen, deterministically: every root and
+   * origin is looked up first, then new roots are named in sorted root order,
+   * so which project gets a contested name does not depend on git timing.
+   */
+  private async seedBatch(folders: string[]): Promise<void> {
+    const roots = await Promise.all(
+      folders.map((dir) =>
+        this.deps.resolveRoot(dir).catch((err) => {
+          this.warn(`could not resolve ${dir}`, err);
+          return null;
+        })
+      )
+    );
+    const distinct = [...new Set(roots.filter((root): root is string => root !== null))].sort();
+    const fresh = distinct.filter((root) => !this.byRoot.has(root) && !this.recording.has(root));
+    const origins = await Promise.all(fresh.map((root) => this.deps.readOriginRepo(root)));
+    fresh.forEach((root, i) => {
+      if (this.byRoot.has(root) || this.recording.has(root)) return;
+      try {
+        this.insert(this.newProject(root, 'seen', origins[i] ?? null));
+      } catch (err) {
+        this.warn(`could not record ${root}`, err);
+      }
+    });
+    for (const root of distinct) {
+      const project = this.byRoot.get(root);
+      if (project) this.touch(project, 'seen');
+    }
+  }
+
+  private remember(root: string, how: RecordHow): Promise<KnownProject> {
     const existing = this.byRoot.get(root);
-    if (existing) return Promise.resolve(this.touch(existing, how.source));
+    if (existing) return Promise.resolve(this.touch(existing, how));
     const inFlight = this.recording.get(root);
-    if (inFlight) return inFlight.then((project) => this.touch(project, how.source));
+    if (inFlight) return inFlight.then((project) => this.touch(project, how));
     const recorded = this.record(root, how).finally(() => this.recording.delete(root));
     this.recording.set(root, recorded);
     return recorded;
   }
 
-  private async record(
-    root: string,
-    how: { source: 'seen' } | { source: 'reported'; reportedBy: string | null }
-  ): Promise<KnownProject> {
+  private async record(root: string, how: RecordHow): Promise<KnownProject> {
     const originRepo = await this.deps.readOriginRepo(root);
-    const at = new Date(this.deps.now()).toISOString();
-    const project: KnownProject = {
-      root,
-      name: assignProjectName(root, (name) => this.names.has(name)),
-      originRepo,
-      source: how.source,
-      reportedBy: how.source === 'reported' ? how.reportedBy : null,
-      firstSeenAt: at,
-      lastSeenAt: at,
-    };
-    this.byRoot.set(root, project);
-    this.names.add(project.name);
-    this.lastWritten.set(root, this.deps.now());
-    this.persist(() => this.store?.insert(project), `record ${root}`);
-    this.changed();
+    // A batch may have recorded it while the origin was read.
+    const meanwhile = this.byRoot.get(root);
+    if (meanwhile) return this.touch(meanwhile, how);
+    const project = this.newProject(root, how, originRepo);
+    this.insert(project);
     return project;
   }
 
-  private touch(project: KnownProject, source: 'seen' | 'reported'): KnownProject {
+  private newProject(root: string, how: RecordHow, originRepo: string | null): KnownProject {
+    const at = new Date(this.deps.now()).toISOString();
+    return {
+      root,
+      name: assignProjectName(root, (name) => this.names.has(name)),
+      originRepo,
+      source: how,
+      firstSeenAt: at,
+      lastSeenAt: at,
+    };
+  }
+
+  /**
+   * Store a new project, then keep it in memory. Storage first: a row it
+   * refuses (a clash, a full disk) is never held under a name the table does
+   * not have, so the throw reaches the caller and nothing is kept.
+   */
+  private insert(project: KnownProject): void {
+    this.store?.insert(project);
+    this.byRoot.set(project.root, project);
+    this.names.add(project.name);
+    this.lastWritten.set(project.root, this.deps.now());
+    this.changed();
+  }
+
+  private touch(project: KnownProject, how: RecordHow): KnownProject {
     const now = this.deps.now();
-    const upgrade = source === 'seen' && project.source === 'reported';
+    const upgrade = how === 'seen' && project.source === 'reported';
     const stale = now - (this.lastWritten.get(project.root) ?? 0) >= LAST_SEEN_WRITE_INTERVAL_MS;
     if (!upgrade && !stale) return project;
     const lastSeenAt = new Date(now).toISOString();
-    const next: KnownProject = { ...project, lastSeenAt, ...(upgrade ? { source: 'seen' } : {}) };
+    const patch = { lastSeenAt, ...(upgrade ? { source: 'seen' as const } : {}) };
+    try {
+      this.store?.update(project.root, patch);
+    } catch (err) {
+      // Memory keeps what storage has; the next sighting tries again.
+      this.warn(`could not update ${project.root}`, err);
+      return project;
+    }
+    const next: KnownProject = { ...project, ...patch };
     this.byRoot.set(project.root, next);
     this.lastWritten.set(project.root, now);
-    this.persist(
-      () =>
-        this.store?.update(project.root, { lastSeenAt, ...(upgrade ? { source: 'seen' } : {}) }),
-      `update ${project.root}`
-    );
     if (upgrade) this.changed();
     return next;
   }
 
-  private persist(write: () => void, what: string): void {
-    try {
-      write();
-    } catch (err) {
-      // The registry keeps working from memory; it only forgets on restart.
-      this.warn(`could not ${what}`, err);
-    }
-  }
-
-  private invalidateScopes(): void {
-    this.scoped.clear();
-  }
-
   private changed(): void {
-    this.invalidateScopes();
+    this.scoped.clear();
     for (const listener of [...this.listeners]) {
       try {
         listener();

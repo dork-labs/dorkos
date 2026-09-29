@@ -6,8 +6,11 @@
  *   answers the person, so it is not scoped the way `ctx.projects.list()` is
  *   for an extension.
  * - `GET /api/projects/resolve?cwd=` names the project a folder belongs to.
- *   The folder must pass the directory boundary (`403` otherwise), so the
- *   route cannot be used to probe folders outside it.
+ *   The folder AND the root git answers with must pass the directory boundary
+ *   (`403` otherwise), so a worktree or a `.git` file pointing outside cannot
+ *   reveal a folder the boundary keeps out. A lookup never marks a project as
+ *   seen: only a real session, agent, workspace or install folder does, so a
+ *   folder looked up here stays out of `GET /api/projects` until then.
  *
  * @module routes/projects
  */
@@ -37,7 +40,14 @@ router.get('/resolve', async (req, res) => {
   }
   try {
     const cwd = await validateBoundary(parsed.data.cwd);
-    return res.json({ project: await projectRegistry.resolve(cwd) });
+    const project = await projectRegistry.resolveWithin(cwd);
+    if (project === 'outside') {
+      return res.status(403).json({
+        error: 'Access denied: that folder belongs to a repository outside the directory boundary',
+        code: 'OUTSIDE_BOUNDARY',
+      });
+    }
+    return res.json({ project });
   } catch (err) {
     if (err instanceof BoundaryError) {
       return res.status(403).json({ error: err.message, code: err.code });

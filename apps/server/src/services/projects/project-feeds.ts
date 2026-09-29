@@ -19,7 +19,6 @@ import path from 'node:path';
 import { logger } from '../../lib/logger.js';
 import { readProjectInstalls } from '../marketplace/lib/project-install-index.js';
 import { onProjectorStatusChange } from '../session/session-state-projector.js';
-import type { KnownProjectsPort } from './known-projects-store.js';
 import type { ProjectRegistry } from './project-registry.js';
 
 /** What {@link startProjectRegistry} reads the seed folders from. */
@@ -45,20 +44,19 @@ async function installedProjectPaths(dorkHome: string): Promise<string[]> {
 }
 
 /**
- * Attach the registry's store, seed it, and keep it fed from live sessions.
- * Called once at boot, after the database and the agent registry exist.
+ * Seed the registry and keep it fed from live sessions. Called once at boot,
+ * after the agent registry exists. The store is attached much earlier, before
+ * extensions start (`index.ts`), so no name is handed out before the saved
+ * names are loaded.
  *
- * @param registry - The server's project registry.
- * @param store - Where projects are kept.
+ * @param registry - The server's project registry, its store already attached.
  * @param sources - Where the seed folders come from.
  * @returns Stops the live-session feed.
  */
 export function startProjectRegistry(
   registry: ProjectRegistry,
-  store: KnownProjectsPort,
   sources: ProjectFeedSources
 ): () => void {
-  registry.attachStore(store);
   void registry.setSources(async () => [
     ...sources.agentPaths(),
     // A workspace source may be a remote address; only a folder names a project.

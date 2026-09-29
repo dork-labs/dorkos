@@ -198,6 +198,7 @@ describe('Database Migrations', () => {
       'connector_usage_terminal_receipts',
       'handle_tombstones',
       // The project registry (spec flow-multiproject §6.1, migration 0125).
+      'known_project_reporters',
       'known_projects',
       'mesh_namespace_rules',
       // The message-search index and its frontier: a derived, rebuildable

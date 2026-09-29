@@ -7,7 +7,7 @@
  * are real, so "does it exist" and "does it hold a copy" are real reads. The
  * store is the real SQLite table, so persistence is what a restart sees.
  */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ import { KnownProjectsStore } from '../known-projects-store.js';
 import { parseOriginRepo } from '../origin-repo.js';
 import {
   assignProjectName,
+  MAX_REPORTED_ROOTS_PER_EXTENSION,
   ProjectRegistry,
   sanitizeNameSegment,
   type ProjectRegistryDeps,
@@ -220,8 +221,26 @@ describe('reported roots are second-class', () => {
     const outside = repo('elsewhere', 'secret');
     const reg = registry({}, db);
     expect(await reg.report(outside, 'flow')).toBeNull();
-    expect(await reg.resolveForExtension(outside)).toBeNull();
-    expect(await reg.list()).toEqual([]);
+    expect(await reg.resolveWithin(outside, 'flow')).toBe('outside');
+    expect(await reg.resolveWithin(outside)).toBe('outside');
+    expect(new KnownProjectsStore(db).all()).toEqual([]);
+  });
+
+  it('refuses a folder inside the boundary whose root is outside it, and records nothing', async () => {
+    // A worktree (or a `.git` file) inside the boundary whose repository
+    // lives outside it. The real-git version is in routes/__tests__/projects.test.ts.
+    const inside = folder('home', 'dev', 'wt-of-outside');
+    const outsideRoot = repo('elsewhere', 'private');
+    const reg = registry(
+      {
+        resolveRoot: async (cwd) => (cwd.startsWith(inside) ? outsideRoot : null),
+      },
+      db
+    );
+    expect(await reg.report(inside, 'flow')).toBeNull();
+    expect(await reg.resolveWithin(inside, 'flow')).toBe('outside');
+    expect(await reg.resolveWithin(inside)).toBe('outside');
+    expect(new KnownProjectsStore(db).all()).toEqual([]);
   });
 
   it('refuses a folder in no repository', async () => {
@@ -239,14 +258,60 @@ describe('reported roots are second-class', () => {
     await reg.resolve(root);
     expect(reg.isReportedOnly(root)).toBe(false);
     const stored = new KnownProjectsStore(db).all().find((p) => p.root === root);
-    expect(stored).toMatchObject({ source: 'seen', reportedBy: 'flow' });
+    expect(stored).toMatchObject({ source: 'seen' });
   });
 
-  it('an extension resolving a folder never makes it seen', async () => {
-    const root = repo('home', 'dev', 'resolved-by-ext');
+  it('a lookup, by an extension or a person, never makes a folder seen', async () => {
+    const byExtension = repo('home', 'dev', 'resolved-by-ext');
+    const byPerson = repo('home', 'dev', 'looked-up');
     const reg = registry({}, db);
-    expect(await reg.resolveForExtension(root)).toEqual({ root, name: 'resolved-by-ext' });
-    expect(reg.isReportedOnly(root)).toBe(true);
+    expect(await reg.resolveWithin(byExtension, 'flow')).toEqual({
+      root: byExtension,
+      name: 'resolved-by-ext',
+    });
+    expect(await reg.resolveWithin(byPerson)).toEqual({ root: byPerson, name: 'looked-up' });
+    expect(reg.isReportedOnly(byExtension)).toBe(true);
+    expect(reg.isReportedOnly(byPerson)).toBe(true);
+  });
+
+  it("keeps roots only extensions or lookups named out of the person's list until they are seen", async () => {
+    const seen = repo('home', 'plist', 'seen-one');
+    const reported = repo('home', 'plist', 'reported-one');
+    const looked = repo('home', 'plist', 'looked-one');
+    const reg = registry({}, db);
+    await reg.resolve(seen);
+    await reg.report(reported, 'flow');
+    await reg.resolveWithin(looked);
+    expect((await reg.list()).map((p) => p.name)).toEqual(['seen-one']);
+    await reg.resolve(reported);
+    expect((await reg.list()).map((p) => p.name)).toEqual(['reported-one', 'seen-one']);
+  });
+
+  it(`caps the new roots one extension can name at ${MAX_REPORTED_ROOTS_PER_EXTENSION}`, async () => {
+    // A root per call, straight from the stub, so the cap is what is tested.
+    let n = 0;
+    const reg = registry(
+      {
+        resolveRoot: async (cwd) => cwd,
+        checkBoundary: async (dir) => dir,
+        exists: async () => true,
+      },
+      db
+    );
+    for (; n < MAX_REPORTED_ROOTS_PER_EXTENSION; n++) {
+      const half = n % 2 === 0;
+      const dir = path.join(boundary, 'cap', `r${n}`);
+      const ok = half ? await reg.report(dir, 'greedy') : await reg.resolveWithin(dir, 'greedy');
+      expect(ok).not.toBeNull();
+    }
+    const past = path.join(boundary, 'cap', 'one-too-many');
+    expect(await reg.report(past, 'greedy')).toBeNull();
+    expect(await reg.resolveWithin(past, 'greedy')).toBeNull();
+    // Nothing was recorded for the refused one, and another extension is unaffected.
+    expect(reg.get(past)).toBeUndefined();
+    expect(await reg.report(past, 'modest')).not.toBeNull();
+    // Re-reporting one it already named is not a new root.
+    expect(await reg.report(path.join(boundary, 'cap', 'r0'), 'greedy')).not.toBeNull();
   });
 });
 
@@ -289,21 +354,96 @@ describe('listForExtension', () => {
       'flow'
     );
     const reported = repo('home', 'scope', 'reported');
+    const alsoReported = repo('home', 'scope', 'also-reported');
 
     const reg = registry({}, db);
     for (const root of [direct, viaPlugin, other, unrelated]) await reg.resolve(root);
     await reg.report(reported, 'flow');
+    // A second reporter is kept too, not only the first.
+    await reg.report(reported, 'hello');
+    await reg.report(alsoReported, 'hello');
+    await reg.report(alsoReported, 'flow');
     // Resolving is not reporting: it does not widen the extension's list.
-    await reg.resolveForExtension(unrelated);
+    await reg.resolveWithin(unrelated, 'flow');
 
-    expect((await reg.listForExtension('flow')).map((p) => p.name)).toEqual([
-      'direct',
-      'reported',
-      'via-plugin',
-    ]);
-    expect((await reg.listForExtension('hello')).map((p) => p.name)).toEqual(['other']);
-    // The person's own list is not scoped.
-    expect((await reg.list()).map((p) => p.name)).toHaveLength(5);
+    const flowList = ['also-reported', 'direct', 'reported', 'via-plugin'];
+    const helloList = ['also-reported', 'other', 'reported'];
+    expect((await reg.listForExtension('flow')).map((p) => p.name)).toEqual(flowList);
+    expect((await reg.listForExtension('hello')).map((p) => p.name)).toEqual(helloList);
+
+    // A restart keeps every reporter, so neither extension loses a root.
+    const after = registry({}, db);
+    expect((await after.listForExtension('flow')).map((p) => p.name)).toEqual(flowList);
+    expect((await after.listForExtension('hello')).map((p) => p.name)).toEqual(helloList);
+  });
+});
+
+describe('boot order and naming', () => {
+  it('never hands out a saved name before the store is attached, once it is attached first', async () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const first = repo('home', 'boot', 'dev', 'dorkos');
+    const second = repo('home', 'boot', 'work', 'dorkos');
+    // A previous run saved both: /dev/dorkos is `dorkos`, /work/dorkos is `dorkos~work`.
+    const before = registry({}, db);
+    await before.resolve(first);
+    await before.resolve(second);
+
+    // This boot: the store is attached before anything (an extension) asks.
+    const reg = registry({}, db);
+    expect(await reg.resolveWithin(second, 'flow')).toEqual({
+      root: second,
+      name: 'dorkos~work',
+    });
+  });
+
+  it('attaches the store before extensions start (index.ts boot order)', () => {
+    const index = readFileSync(path.resolve(import.meta.dirname, '../../../index.ts'), 'utf8');
+    const attach = index.indexOf('projectRegistry.attachStore(');
+    const extensions = index.indexOf('extensionManager.initialize(');
+    expect(attach).toBeGreaterThan(-1);
+    expect(extensions).toBeGreaterThan(-1);
+    expect(attach).toBeLessThan(extensions);
+  });
+
+  it('names a first-boot batch in sorted root order, whatever order git answers in', async () => {
+    const roots = ['/b/zeta/app', '/a/alpha/app', '/c/mid/app'];
+    const names = async (delays: number[]) => {
+      const reg = new ProjectRegistry({
+        resolveRoot: (cwd) =>
+          new Promise((resolve) => setTimeout(() => resolve(cwd), delays[roots.indexOf(cwd)])),
+        peekRoot: () => undefined,
+        readOriginRepo: async () => null,
+        exists: async () => true,
+        checkBoundary: async (dir) => dir,
+      });
+      await reg.setSources(() => roots);
+      return (await reg.list()).map((p) => `${p.root}=${p.name}`);
+    };
+    const expected = ['/a/alpha/app=app', '/b/zeta/app=app~zeta', '/c/mid/app=app~mid'].sort();
+    expect((await names([30, 1, 15])).sort()).toEqual(expected);
+    expect((await names([1, 30, 15])).sort()).toEqual(expected);
+  });
+
+  it('keeps nothing in memory that storage refused', async () => {
+    let full = true;
+    const insert = vi.fn((): void => {
+      if (full) throw new Error('disk full');
+    });
+    const reg = registry();
+    reg.attachStore({
+      all: () => [],
+      reporters: () => [],
+      insert,
+      update: vi.fn(),
+      addReporter: vi.fn(),
+    });
+    const root = repo('home', 'refused', 'app');
+    await expect(reg.resolve(root)).rejects.toThrow('disk full');
+    expect(reg.get(root)).toBeUndefined();
+    // Storage recovers: the root is recorded under the name it would have had.
+    full = false;
+    expect(await reg.resolve(root)).toEqual({ root, name: 'app' });
   });
 });
 

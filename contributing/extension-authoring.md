@@ -596,7 +596,9 @@ if (ctx.projects !== undefined) {
 ```
 
 - **`list()` is scoped to you.** It answers the projects that hold a copy of your extension (`.dork/extensions/<id>` or a plugin's `.dork/plugins/*/.dork/extensions/<id>`) and the ones you reported. You do not learn every folder the person works in.
-- **`resolve` and `report` pass the directory boundary and need a git repository**, else they answer `null` and record nothing. A project known only because an extension reported it is second-class: core never looks for extension code there. Only `report` adds a project to your own `list()`.
+- **`resolve` and `report` pass the directory boundary and need a git repository**, else they answer `null` and record nothing. The boundary is checked twice: on the folder you name and on the repository it belongs to, so a worktree or a `.git` file inside the boundary that points at a repository outside it answers `null`. Only `report` adds a project to your own `list()`.
+- **A project only extensions named is second-class.** Core never looks for extension code there, and it stays out of the person's own project list until a session, agent, workspace or install is seen in it.
+- **At most 200 new projects per extension.** Each project core had not seen that you `report` or `resolve` counts once; past 200, naming another new one answers `null` and records nothing. Projects core already knows, and ones you named before, do not count.
 - **Probe before use.** `ctx.projects` is absent on hosts from before it; check `ctx.projects !== undefined` rather than a host version. Change listeners are removed on shutdown and reload.
 
 ### Route Conventions

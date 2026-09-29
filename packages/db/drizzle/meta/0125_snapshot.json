@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "20af0ef8-071d-4b04-a5d3-4910b209be40",
+  "id": "b8874930-9e56-4b9a-a50a-763e5628ec9f",
   "prevId": "33555465-cc33-48b6-a752-25ac24d32f07",
   "tables": {
     "a2a_tasks": {
@@ -9424,6 +9424,79 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "known_project_reporters": {
+      "name": "known_project_reporters",
+      "columns": {
+        "root": {
+          "name": "root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "extension_id": {
+          "name": "extension_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reported_at": {
+          "name": "reported_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "known_project_reporters_extension_idx": {
+          "name": "known_project_reporters_extension_idx",
+          "columns": [
+            "extension_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "known_project_reporters_root_known_projects_root_fk": {
+          "name": "known_project_reporters_root_known_projects_root_fk",
+          "tableFrom": "known_project_reporters",
+          "tableTo": "known_projects",
+          "columnsFrom": [
+            "root"
+          ],
+          "columnsTo": [
+            "root"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "known_project_reporters_root_extension_id_pk": {
+          "columns": [
+            "root",
+            "extension_id"
+          ],
+          "name": "known_project_reporters_root_extension_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "known_project_reporters_kind": {
+          "name": "known_project_reporters_kind",
+          "value": "\"known_project_reporters\".\"kind\" IN ('report', 'resolve')"
+        }
+      }
+    },
     "known_projects": {
       "name": "known_projects",
       "columns": {
@@ -9453,13 +9526,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "reported_by": {
-          "name": "reported_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "first_seen_at": {

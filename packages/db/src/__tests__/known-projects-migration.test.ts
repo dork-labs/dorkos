@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createDb, runMigrations, type Db } from '../index.js';
-import { knownProjects } from '../schema/projects.js';
+import { knownProjectReporters, knownProjects } from '../schema/projects.js';
 
 const NOW = '2026-09-28T09:00:00.000Z';
 
@@ -17,7 +17,6 @@ function row(overrides: Partial<typeof knownProjects.$inferInsert> = {}) {
     name: 'dorkos',
     originRepo: 'dork-labs/dorkos',
     source: 'seen' as const,
-    reportedBy: null,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
     ...overrides,
@@ -66,11 +65,30 @@ describe('known_projects', () => {
     ).toThrow(/CHECK/i);
   });
 
-  it('keeps who reported a reported-only root', () => {
+  it('keeps every extension that named a project, once each, and drops them with it', () => {
     db.insert(knownProjects)
-      .values(row({ source: 'reported', reportedBy: 'flow', originRepo: null }))
+      .values(row({ source: 'reported', originRepo: null }))
       .run();
-    const [stored] = db.select().from(knownProjects).all();
-    expect(stored).toMatchObject({ source: 'reported', reportedBy: 'flow', originRepo: null });
+    const reporter = (extensionId: string, kind: 'report' | 'resolve' = 'report') => ({
+      root: '/Users/kai/dev/dorkos',
+      extensionId,
+      kind,
+      reportedAt: NOW,
+    });
+    db.insert(knownProjectReporters).values(reporter('flow')).run();
+    db.insert(knownProjectReporters).values(reporter('hello', 'resolve')).run();
+    expect(() => db.insert(knownProjectReporters).values(reporter('flow')).run()).toThrow(
+      /UNIQUE|PRIMARY/i
+    );
+    expect(() =>
+      db
+        .insert(knownProjectReporters)
+        .values(reporter('other', 'guessed' as 'report'))
+        .run()
+    ).toThrow(/CHECK/i);
+    expect(db.select().from(knownProjectReporters).all()).toHaveLength(2);
+
+    db.delete(knownProjects).run();
+    expect(db.select().from(knownProjectReporters).all()).toEqual([]);
   });
 });
