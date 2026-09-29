@@ -1,5 +1,5 @@
 /**
- * Upgrade to 0125: every paused account learns who paused it, an account a
+ * Upgrade to 0126: every paused account learns who paused it, an account a
  * finished "Sign in again" left paused is given back, and refused hosted
  * commands learn why they were refused.
  */
@@ -13,7 +13,7 @@ import { createDb, runMigrations } from '../index.js';
 
 const NOW = '2026-09-28T12:00:00.000Z';
 
-describe('0125 connection paused_by migration', () => {
+describe('0126 connection paused_by migration', () => {
   let directory: string;
   let db: ReturnType<typeof createDb>;
 
@@ -22,7 +22,7 @@ describe('0125 connection paused_by migration', () => {
     const migrations = fileURLToPath(new URL('../../drizzle/', import.meta.url));
     mkdirSync(join(directory, 'meta'));
     const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
-    journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= 124);
+    journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= 125);
     for (const entry of journal.entries)
       copyFileSync(join(migrations, `${entry.tag}.sql`), join(directory, `${entry.tag}.sql`));
     writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify(journal));

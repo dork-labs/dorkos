@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e95b4ddf-fa45-4039-992e-df5a0938a25f",
-  "prevId": "33555465-cc33-48b6-a752-25ac24d32f07",
+  "id": "cf5c90e8-bc16-4680-b111-dcea813c7b8f",
+  "prevId": "e95b4ddf-fa45-4039-992e-df5a0938a25f",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -3594,6 +3594,49 @@
           "autoincrement": false,
           "default": true
         },
+        "paused_by": {
+          "name": "paused_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "closed_because": {
+          "name": "closed_because",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "external_cleanup_attempts": {
+          "name": "external_cleanup_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "external_cleanup_retry_at": {
+          "name": "external_cleanup_retry_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "external_cleanup_key": {
+          "name": "external_cleanup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "account_key": {
+          "name": "account_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "auth_config_ref": {
           "name": "auth_config_ref",
           "type": "text",
@@ -6270,14 +6313,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "reconnect_was_paused": {
-          "name": "reconnect_was_paused",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
         "cleanup_snapshot_json": {
           "name": "cleanup_snapshot_json",
           "type": "text",
@@ -6528,6 +6563,13 @@
         },
         "safe_reason": {
           "name": "safe_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rejection_code": {
+          "name": "rejection_code",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

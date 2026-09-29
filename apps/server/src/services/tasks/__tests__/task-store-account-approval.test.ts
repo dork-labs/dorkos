@@ -172,7 +172,9 @@ describe('the account is part of the approval', () => {
       status: 'pending_approval',
       reason: AGENT_SETTINGS_CHANGE_REASON,
     });
-    expect(parked.approvalChanges).toEqual([{ field: 'account', from: null, to: 'work' }]);
+    expect(parked.approvalChanges).toEqual([
+      { field: 'account', from: null, to: 'work', via: 'schedule' },
+    ]);
   });
 
   it('moves the approval with a person’s change of account', () => {
