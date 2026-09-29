@@ -12,10 +12,10 @@ import { openFromCommandPalette } from '../../pages/command-palette.js';
  * ("Started by the Hello World extension: …"). What it was asked is folded under one quiet
  * line, so no prompt or slash command is ever the headline.
  *
- * Runs in the `chromium-extension-start-work` project against the test-mode
- * leg, so neither chat can bill a model, after the seams project (both turn
- * `hello-world` on for their tests and back off afterwards, and must not
- * overlap).
+ * Runs in the `chromium-extension-seams` project against the test-mode leg,
+ * so neither chat can bill a model. That project runs one worker: this file
+ * and the seams spec both turn `hello-world` on for their tests and back off
+ * afterwards, and must not overlap.
  */
 
 // eslint-disable-next-line no-restricted-syntax -- E2E test config; no env.ts available
