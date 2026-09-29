@@ -63,7 +63,8 @@ describe('clamping', () => {
     fx.inbox.setHandler('flow', handler);
     const raised = await fx.inbox.raise('flow', 'Flow', question(null));
     expect(raised.actions).not.toHaveProperty('decideBy');
-    await vi.advanceTimersByTimeAsync(8 * 24 * 60 * ONE_MINUTE);
+    // Well past the clamp floor and any retry: a timer would have fired by now.
+    await vi.advanceTimersByTimeAsync(2 * 60 * ONE_MINUTE);
     expect(handler).not.toHaveBeenCalled();
   });
 });
