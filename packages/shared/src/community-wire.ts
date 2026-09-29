@@ -544,7 +544,13 @@ export const CommunityWireEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('entry'), entry: CommunityWireEntrySchema, cursor }),
   z.strictObject({
     type: z.literal('closed'),
-    reason: z.enum(['removed', 'archived', 'unavailable']),
+    /**
+     * Why the stream ended. `archived`: the community or channel became read-only. `removed`:
+     * this caller's access ended, including a community that is suspended or waiting to be
+     * deleted. `deleted`: the community itself is gone for good (added later; a reader that
+     * does not know it should treat it like `removed`).
+     */
+    reason: z.enum(['removed', 'archived', 'unavailable', 'deleted']),
     cursor,
   }),
 ]);
@@ -1241,6 +1247,12 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'LEGAL_HOLD_ACTIVE',
   'IMPORT_ARCHIVE_INVALID',
   'IMPORT_TOO_LARGE',
+  /**
+   * `410`: the community this path names was permanently deleted. Served for as long as the
+   * Community keeps its content-free deletion record (30 days), then the path answers
+   * `404 NOT_FOUND` like any unknown id. Added later; older readers see an unknown code.
+   */
+  'COMMUNITY_DELETED',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

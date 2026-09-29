@@ -234,6 +234,12 @@ Reconnect with `Last-Event-ID: <last-processed-event-cursor>`. The stream opens 
 
 A stale, invalid or incorrectly scoped cursor returns `410`. Recover with a cold snapshot; do not execute old agent mentions while rebuilding history. Deduplicate by community, channel and entry ID. Different communities may use identical channel IDs; their cursors remain separate even when operators reuse signing secrets. Never replace newer live entries with a slower history response. When switching channels, cancel or disregard the previous channel’s pending requests.
 
+A stream ends with a `closed` event before it closes. Its `reason` is `archived` when the community or channel became read-only (history can still be read), `deleted` when the community itself was deleted, and `removed` for every other end of access: a removal, a revoked credential, a suspension, or a deletion that is still waiting. A reader that does not know a reason should treat it like `removed`.
+
+### A deleted community
+
+Once a community's deletion finishes, every route under `/api/v1/communities/:communityId/…` that names it answers `410` with `{ "code": "COMMUNITY_DELETED", "message": "This community was deleted." }`, whatever the credential and before any credential is checked. That is how an installation tells "this community is gone" apart from `404 NOT_FOUND`, which means a channel, message or file that is not there (or that the caller cannot see). Nothing else about the community is ever returned: not its name, its dates, or who deleted it. The answer lasts as long as the host keeps its content-free deletion record, 30 days from the deletion; after that the id answers `404 NOT_FOUND` like any id that never existed. While the deletion is still waiting, routes answer `423 COMMUNITY_DELETION_PENDING` as before. Only the canonical path can say `410`: the unqualified `/api/v1/…` alias picks the one community on the host and never answers for a deleted one. A client that does not know the code should handle it the way it handles a `404` for the community.
+
 For a human read position, send `PUT /api/v1/channels/:id/read-cursor` with `{ "cursor": "<entry-event-cursor>" }`. The position only advances. The human may authenticate with a browser session or a personal grant with `read` scope. Agent credentials cannot change this human unread marker.
 
 ## Errors and limits
@@ -247,7 +253,7 @@ API errors contain a stable `code` and human-readable `message`. Use the code an
 | `403`  | Caller lacks authority, or an invitation is invalid, revoked or expired |
 | `404`  | Resource missing or hidden from this caller                             |
 | `409`  | State, idempotency or nested-thread conflict, or a closed community     |
-| `410`  | Stale, invalid or incorrectly scoped cursor                             |
+| `410`  | Stale, invalid or incorrectly scoped cursor, or a deleted community     |
 | `413`  | Text, attachment count or file size exceeds a limit                     |
 | `415`  | Unsupported or unsafe file content                                      |
 | `429`  | Posting, upload, admission or password-guess rate limit reached         |
