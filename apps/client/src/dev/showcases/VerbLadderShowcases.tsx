@@ -129,6 +129,8 @@ function useSeededLadder(): void {
           runningSubagentCount: 0,
           lifecycle: rung.lifecycle,
           lastError: null,
+          limit: null,
+          accountUsage: null,
           activity: rung.activity,
         },
       });

@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { legacyDefaultProviderInstanceId } from '../../legacy-connection-migration.js';
 import {
+  COMPOSIO_FIXTURE_DESCRIPTION,
+  COMPOSIO_FIXTURE_LOGO,
   COMPOSIO_FIXTURE_KEY,
   COMPOSIO_FIXTURE_USER,
   COMPOSIO_FIXTURE_VERSION,
@@ -13,6 +15,7 @@ import {
   COMPOSIO_FIXTURE_EVENTS,
   fixtureDefinitions,
   fixtureOperation,
+  fixtureOperations,
 } from './data.js';
 
 const accountInput = z
@@ -139,7 +142,11 @@ export async function startTestComposioFixture(options: {
     name: 'Gmail',
     auth_schemes: ['OAUTH2'],
     no_auth: false,
-    meta: { version: COMPOSIO_FIXTURE_VERSION },
+    meta: {
+      version: COMPOSIO_FIXTURE_VERSION,
+      description: COMPOSIO_FIXTURE_DESCRIPTION,
+      logo: COMPOSIO_FIXTURE_LOGO,
+    },
   };
   app.get('/api/v3.1/toolkits', (_req, res) => res.json(page([toolkit])));
   app.get('/api/v3.1/toolkits/gmail', (_req, res) => res.json(toolkit));
@@ -185,7 +192,7 @@ export async function startTestComposioFixture(options: {
   app.get('/api/v3.1/tools', (req, res) => {
     if (req.query.toolkit_slug !== 'gmail' || !versionMatches(req.query))
       return void res.sendStatus(400);
-    res.json(page([fixtureOperation()]));
+    res.json(page(fixtureOperations()));
   });
   app.get('/api/v3.1/tools/GMAIL_FETCH_EMAILS', (req, res) => {
     if (req.query.version !== COMPOSIO_FIXTURE_VERSION) return void res.sendStatus(400);

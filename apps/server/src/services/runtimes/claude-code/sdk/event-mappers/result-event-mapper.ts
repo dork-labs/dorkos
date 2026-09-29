@@ -10,6 +10,9 @@ import {
 } from '../sdk-error-mapping.js';
 import { sumContextTokens } from '../context-tokens.js';
 import { advanceUsageLedger, readModelUsageTotals, type TurnUsage } from '../turn-usage.js';
+import type { LedgerWindowObservation } from '@dorkos/shared/account-usage';
+import { recordSessionUsage, sessionSubscriptionUsage } from '../../accounts/account-usage-feed.js';
+import { rejectionStopsTurn, reportSessionLimit } from '../../accounts/session-limit.js';
 
 /**
  * Map a Claude rate-limit type to a human-readable window label. Authored
@@ -32,6 +35,33 @@ function formatLimitType(type?: string): string | undefined {
     default:
       return type;
   }
+}
+
+/**
+ * One `rate_limit_event` as a usage-ledger reading (shared contract §1.2, the
+ * `sdk_event` row): keyed by `rateLimitType` verbatim (`overage` and
+ * `seven_day_overage_included` included), `usedPct` from the event's 0..1
+ * `utilization`, `resetsAt` from epoch seconds. An event with no type names no
+ * window, so it is not recorded.
+ */
+function rateLimitObservation(
+  info: Record<string, unknown>,
+  now: Date
+): LedgerWindowObservation | null {
+  const key = info.rateLimitType;
+  if (typeof key !== 'string' || key.length === 0) return null;
+  const utilization = info.utilization;
+  const resetsAt = info.resetsAt;
+  const status = info.status;
+  return {
+    key,
+    usedPct: typeof utilization === 'number' ? utilization * 100 : null,
+    resetsAt: typeof resetsAt === 'number' ? new Date(resetsAt * 1000).toISOString() : null,
+    status:
+      status === 'allowed' || status === 'allowed_warning' || status === 'rejected' ? status : null,
+    observedAt: now.toISOString(),
+    source: 'sdk_event',
+  };
 }
 
 /**
@@ -143,10 +173,41 @@ export async function* mapResultEvent(
         ...(info.isUsingOverage ? { detail: 'Using overage capacity' } : {}),
       };
       session.lastSubscriptionUsage = usage;
+      // The same reading, account-wide: it lands in the account's usage ledger,
+      // which every session on that account (and flow) reads.
+      const observation = rateLimitObservation(info, new Date());
+      if (observation) recordSessionUsage(session, [observation]);
+      // A window that said `rejected` this turn is the one a limit names, even
+      // one extra usage is covering: if the turn still stops, the error that
+      // follows reports this window rather than a guess.
+      if (observation && observation.status === 'rejected') {
+        session.rejectedLimitThisTurn = {
+          window: observation.key,
+          resetsAt: observation.resetsAt ?? null,
+        };
+      }
+      // What the session shows is the ACCOUNT's binding window, read back from
+      // the store the reading just merged into (spec §6 U), so every session on
+      // the account agrees. This event's own mapping stays as the fallback
+      // while the store has no plan window for the account.
+      const fromStore = sessionSubscriptionUsage(session);
       yield {
         type: 'session_status',
-        data: { sessionId, usage },
+        data: {
+          sessionId,
+          usage: fromStore
+            ? { ...fromStore, ...(usage.detail ? { detail: usage.detail } : {}) }
+            : usage,
+        },
       };
+      // The turn stopped on a hard limit (spec claude-account-fleet D4). Not
+      // when extra usage is carrying on in its place: the SDK sends `rejected`
+      // then too, and the turn continues. The ledger above recorded the event
+      // either way, as it came.
+      if (rejectionStopsTurn(info)) {
+        const limitStatus = reportSessionLimit(session, sessionId);
+        if (limitStatus) yield limitStatus;
+      }
     }
     return;
   }
@@ -216,15 +277,19 @@ export async function* mapResultEvent(
     // guess instead of rendering all of them with the same confidence. Attached
     // only beside a cost, because a basis with no figure under it describes
     // nothing.
+    //
+    // The subscription fields come from the account's record in the usage store
+    // (spec `claude-account-fleet` §6 U): the account's binding window, which
+    // this turn's usage call has just fed. The session's own last reading is
+    // only the fallback while the store holds no plan window for the account.
+    const subscription = sessionSubscriptionUsage(session) ?? session.lastSubscriptionUsage;
     let usage: UsageStatus | undefined;
     if (costUsd !== undefined) {
       const costBasis = resolveCostBasis(modelUsageMap);
       const cost = { costUsd, ...(costBasis ? { costBasis } : {}) };
-      usage = session.lastSubscriptionUsage
-        ? { ...session.lastSubscriptionUsage, ...cost }
-        : { kind: 'pay-as-you-go', ...cost };
+      usage = subscription ? { ...subscription, ...cost } : { kind: 'pay-as-you-go', ...cost };
     } else {
-      usage = session.lastSubscriptionUsage;
+      usage = subscription;
     }
 
     // The stop record this turn's ending is read beside. Resolved ONCE and used
@@ -347,6 +412,12 @@ export async function* mapResultEvent(
         },
       };
     }
+
+    // The turn is over, so its once-per-turn limit report is spent. The turn
+    // starts reset these too; this covers a turn the agent woke itself for,
+    // which no dispatch opened.
+    session.limitReportedThisTurn = false;
+    session.rejectedLimitThisTurn = undefined;
 
     // Always emit done to trigger client cleanup
     yield {

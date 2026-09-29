@@ -27,7 +27,20 @@ import { CompactPendingRow } from '../primitives';
 import { AutoHideThinking, ToolCallWithApp } from './auto-hiding-parts';
 import { CollapsibleRun } from './CollapsibleRun';
 import { TouchChipStrip } from '../chips';
+import { approvalHeading } from '@dorkos/shared/approval-schemas';
 import { ApprovalCard } from '@/layers/features/approvals';
+import { ChatAgentRequest, isConnectionRequestTool } from '@/layers/features/connections';
+
+/**
+ * Whether a part folds into a run of finished work. Questions, approvals and an
+ * agent's request for an app never do: each asks the reader for something.
+ */
+function isCollapsiblePart(part: NonNullable<ChatMessage['parts']>[number]): boolean {
+  if (part.type === 'thinking') return true;
+  return (
+    part.type === 'tool_call' && !part.interactiveType && !isConnectionRequestTool(part.toolName)
+  );
+}
 
 /**
  * Renders assistant message content by mapping over message parts.
@@ -111,6 +124,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           message={part.message}
           category={part.category}
           details={part.details}
+          // A `rate_limit` part becomes the out-of-usage marker, found by the
+          // message's time (spec `claude-account-ui` §6.7).
+          code={part.code}
+          at={message.timestamp}
           // Retry inside the transcript re-sends the session's LAST user
           // message, so a card only earns the button by passing BOTH tests
           // below. Neither is the other in disguise, and each was found the
@@ -231,7 +248,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         return (
           <CapabilityApprovalTimedOut
             key={`capability-approval-${part.approval.approvalId}`}
-            title={part.approval.capabilityTitle}
+            title={approvalHeading(part.approval)}
           />
         );
       }
@@ -369,6 +386,26 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         />
       );
     }
+    // An agent asking the owner for an app: the owner's card sits where it
+    // asked (DOR-2415). Anyone who cannot answer it sees the plain call.
+    if (isConnectionRequestTool(toolPart.toolName)) {
+      return (
+        <ChatAgentRequest
+          key={toolPart.toolCallId}
+          sessionId={sessionId}
+          input={toolPart.input}
+          result={toolPart.result}
+          fallback={
+            <ToolCallWithApp
+              part={toolPart}
+              sessionId={sessionId}
+              autoHide={autoHideToolCalls}
+              expandToolCalls={expandToolCalls}
+            />
+          }
+        />
+      );
+    }
     // A plain tool call: its card, plus the inline MCP App (SEP-1865) when its
     // completed result carries a `ui://` reference.
     return (
@@ -390,7 +427,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
 
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i];
-    const isCollapsible = p.type === 'thinking' || (p.type === 'tool_call' && !p.interactiveType);
+    const isCollapsible = isCollapsiblePart(p);
     if (isCollapsible) {
       currentRun.push(i);
     } else {
@@ -418,9 +455,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
       {segments.map((seg) => {
         if (seg.type === 'single') {
           const part = parts[seg.index];
-          const isCollapsible =
-            part.type === 'thinking' || (part.type === 'tool_call' && !part.interactiveType);
-          if (isCollapsible) {
+          if (isCollapsiblePart(part)) {
             // Single collapsible item still gets vertical breathing room from text
             return (
               <div key={`spacer-${seg.index}`} className="my-3">

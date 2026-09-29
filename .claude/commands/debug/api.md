@@ -18,7 +18,7 @@ Debug data-related issues by systematically tracing through the project's data f
 +-------------------+
 |  TanStack Query   |  <- Client-side caching & fetching
 +-------------------+
-|  Transport Layer  |  <- HttpTransport (REST/SSE) or DirectTransport (Obsidian)
+|  Transport Layer  |  <- HttpTransport (HTTP and durable streams)
 +-------------------+
 |  Express Route    |  <- HTTP endpoints (Zod validation, boundary checks)
 +-------------------+

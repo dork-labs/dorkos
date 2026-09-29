@@ -12,6 +12,8 @@ export const connectorKeys = {
     [...connectorKeys.connections(), 'authentication-flow', flowId] as const,
 
   catalog: (query: string) => [...connectorKeys.all, 'catalog', { query }] as const,
+  appActions: (providerInstanceId: string, toolkit: string) =>
+    [...connectorKeys.all, 'app-actions', providerInstanceId, toolkit] as const,
 
   connections: () => [...connectorKeys.all, 'connections'] as const,
   connection: (connectionId: string) =>
@@ -27,6 +29,7 @@ export const connectorKeys = {
   usage: (connectionId: string) => [...connectorKeys.connection(connectionId), 'usage'] as const,
   agentConnections: (agentId: string) =>
     [...connectorKeys.connections(), 'agent', agentId] as const,
+  everyAgentGrants: () => [...connectorKeys.connections(), 'every-agent'] as const,
   sessionConnections: (sessionId: string) =>
     [...connectorKeys.connections(), 'session', sessionId] as const,
 
@@ -39,6 +42,8 @@ export const connectorKeys = {
   agentRequests: () => [...connectorKeys.all, 'agent-requests'] as const,
   agentRequestList: (state?: 'pending' | 'resolved') =>
     [...connectorKeys.agentRequests(), 'list', state ?? 'all'] as const,
+  sessionAgentRequests: (sessionId: string) =>
+    [...connectorKeys.agentRequests(), 'session', sessionId] as const,
   agentRequest: (requestId: string) =>
     [...connectorKeys.agentRequests(), 'detail', requestId] as const,
   agentRequestAuthentication: (requestId: string, flowId: string) =>

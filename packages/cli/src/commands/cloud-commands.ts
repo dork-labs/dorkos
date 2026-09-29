@@ -28,6 +28,12 @@ export interface InstanceDescriptor {
    * otherwise; its presence on the wire is the opt-in signal the cloud reads.
    */
   telemetryInstanceId?: string;
+  /**
+   * Proof of the instance key this install held before this link request,
+   * included only when one is known. Its presence asks the cloud to continue
+   * that link, and the apps connected through it, for the same DorkOS account.
+   */
+  previousLinkProof?: string;
 }
 
 /** The `POST /api/auth/device/code` success body (RFC 8628). */
@@ -58,6 +64,8 @@ export type HeartbeatResult =
 export interface CloudFlowClient {
   resolveCloudBaseUrl(): string;
   buildInstanceDescriptor(telemetryInstanceId?: string): InstanceDescriptor;
+  /** Relink proof for an instance key (HMAC-SHA256 over `dorkos-relink-v1`, base64url, no padding). */
+  linkProofForKey(instanceKey: string): string;
   requestDeviceCode(opts: {
     baseUrl: string;
     descriptor: InstanceDescriptor;
@@ -113,9 +121,15 @@ export async function runCloudLogin(deps: CloudCommandDeps): Promise<number> {
   const openUrl = deps.openUrl ?? (() => {});
   const isTty = deps.isTty ?? false;
 
-  if (configStore.getDot('cloud.instanceToken')) {
+  const heldToken = configStore.getDot('cloud.instanceToken') as string | null;
+  if (heldToken) {
     io.log('This instance is already linked. Re-linking will replace the current link.');
   }
+  // The key held right now wins (re-linking while linked); otherwise the proof
+  // kept from the last logout or unlink. Absent from older configs = none.
+  const previousLinkProof = heldToken
+    ? client.linkProofForKey(heldToken)
+    : ((configStore.getDot('cloud.previousLinkProof') as string | null | undefined) ?? null);
 
   const baseUrl = client.resolveCloudBaseUrl();
   // Resolve the analytics-merge opt-in before building the descriptor: the id is
@@ -123,7 +137,10 @@ export async function runCloudLogin(deps: CloudCommandDeps): Promise<number> {
   const telemetryInstanceId = deps.resolveTelemetryInstanceId
     ? await deps.resolveTelemetryInstanceId()
     : undefined;
-  const descriptor = client.buildInstanceDescriptor(telemetryInstanceId);
+  const descriptor: InstanceDescriptor = {
+    ...client.buildInstanceDescriptor(telemetryInstanceId),
+    ...(previousLinkProof ? { previousLinkProof } : {}),
+  };
   const codes = await client.requestDeviceCode({ baseUrl, descriptor });
 
   io.log('');
@@ -157,6 +174,8 @@ export async function runCloudLogin(deps: CloudCommandDeps): Promise<number> {
   // Persist the scoped instance key via the config layer (sensitive-field path).
   configStore.setDot('cloud.instanceToken', result.accessToken);
   configStore.setDot('cloud.instanceName', descriptor.name);
+  // The new link has consumed the previous key's proof.
+  configStore.setDot('cloud.previousLinkProof', null);
 
   // Best-effort registration heartbeat so the instance appears in the account
   // registry immediately. A failure here never undoes the successful link — the
@@ -172,7 +191,7 @@ export async function runCloudLogin(deps: CloudCommandDeps): Promise<number> {
 
 /**
  * `dorkos cloud logout` — best-effort server-side revoke, then clear the local
- * cloud config fields.
+ * cloud config fields, keeping only a proof of the dropped key.
  *
  * @param deps - Injected flow client, config store, and IO.
  * @returns Process exit code (`0`).
@@ -185,6 +204,9 @@ export async function runCloudLogout(deps: CloudCommandDeps): Promise<number> {
     return 0;
   }
   await client.revokeInstanceKey({ baseUrl: client.resolveCloudBaseUrl(), accessToken: token });
+  // Keep a one-way proof of the dropped key (written before the key is
+  // cleared) so the next `dorkos cloud login` can ask to continue this link.
+  configStore.setDot('cloud.previousLinkProof', client.linkProofForKey(token));
   configStore.setDot('cloud.instanceToken', null);
   configStore.setDot('cloud.instanceName', null);
   configStore.setDot('cloud.linkedAccountLabel', null);

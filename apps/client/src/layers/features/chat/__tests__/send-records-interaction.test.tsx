@@ -34,6 +34,7 @@ vi.mock('@/layers/shared/lib/transport', async (importOriginal) => ({
     releaseSession: vi.fn(),
     getAttachedSessionId: vi.fn().mockReturnValue(null),
     subscribeListConnectionState: vi.fn().mockReturnValue(() => {}),
+    subscribeEvent: vi.fn().mockReturnValue(() => {}),
   },
 }));
 
@@ -120,6 +121,8 @@ function announceRekey(retired: string, canonical: string): void {
       runningSubagentCount: 0,
       lifecycle: 'streaming',
       lastError: null,
+      limit: null,
+      accountUsage: null,
     },
   });
 }

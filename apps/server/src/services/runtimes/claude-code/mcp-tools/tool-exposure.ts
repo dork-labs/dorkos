@@ -212,6 +212,13 @@ export function inSessionToolName(bare: string): string {
  * that say?" needs it inside the reply somebody is waiting on. Merging is the
  * opposite turn — it follows work already committed, so its lookup lands among
  * the git commands the agent is already running.
+ *
+ * **`request_permission` IS here** (spec `agent-permissions` D8, D15). A Blocked
+ * area's tools are left out of the list, and the one line that replaces them
+ * tells the agent to ask with the tool ending in `request_permission`. That is
+ * the DOR-1292 rule exactly: a prompt that names a tool the SDK defers costs a
+ * search on the very turn the agent is already stuck. `list_my_permissions`
+ * is named by nothing and stays deferred.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',
@@ -223,6 +230,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'read_canvas',
   'list_capabilities',
   'memory_write',
+  'request_permission',
 ]);
 
 /**

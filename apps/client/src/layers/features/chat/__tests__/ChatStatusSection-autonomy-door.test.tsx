@@ -27,7 +27,7 @@ import { useSessionChatStore } from '@/layers/entities/session';
 
 /** The standing acknowledgement this suite pretends is on file. */
 const standingAck = { current: null as string | null };
-/** Whether the transport behind this suite can store one at all (false = Obsidian). */
+
 const canRemember = { current: true };
 const acknowledge = vi.fn();
 vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
@@ -65,6 +65,7 @@ const CAPS: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  supportsAccounts: true,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -178,7 +179,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   return {
     ...actual,
     useQuery: vi.fn(() => ({ data: undefined })),
-    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn(), getQueryData: vi.fn() })),
   };
 });
 
@@ -355,10 +356,6 @@ describe('the standing acknowledgement is offered, not assumed', () => {
 
 describe('nothing is offered that could not be kept', () => {
   it('withholds the checkbox where the answer could not be stored', () => {
-    // Obsidian. `DirectTransport.updateConfig` is a documented no-op and its
-    // `getConfig` returns no `ui` block, so a tick there would save nothing,
-    // report nothing, and ask again forever. The dialog still works — it just
-    // asks every time, which is what it did before any of this existed.
     canRemember.current = false;
     renderSection();
 

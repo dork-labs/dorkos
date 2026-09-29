@@ -7,7 +7,17 @@
  *
  * @module features/marketplace/lib/format-permissions
  */
-import { describeHookEvent, type PermissionPreview } from '@dorkos/shared/marketplace-schemas';
+import {
+  describeHookEvent,
+  describeProgramLine,
+  PLUGIN_PROGRAMS_SCOPE_NOTE,
+  revealHiddenCharacters,
+  skillCommandKind,
+  type DisclosedEffects,
+  type PermissionPreview,
+  type PreviewSchedule,
+  type SchedulePermissionMode,
+} from '@dorkos/shared/marketplace-schemas';
 import { describePreviewSchedule, runsUnattended } from '@/layers/entities/marketplace';
 
 // ---------------------------------------------------------------------------
@@ -97,6 +107,20 @@ export interface FormattedPermissionGroups {
   /** Conflicts with already-installed packages. */
   conflicts: FormattedPermission[];
 }
+
+/** The parts of a preview that run on their own, and what of them could not be read. */
+type RunnableParts = Pick<
+  PermissionPreview,
+  | 'hooks'
+  | 'unreadableHooks'
+  | 'mcpServers'
+  | 'lspServers'
+  | 'monitors'
+  | 'executables'
+  | 'skillTools'
+  | 'skillCommands'
+  | 'unreadableDeclarations'
+>;
 
 // ---------------------------------------------------------------------------
 // Helpers — file paths
@@ -328,11 +352,24 @@ function formatEffects(
     });
   }
 
+  // Shortcuts in the package are not installed (DOR-2319); say which, so a
+  // skill folder is not silently missing afterwards.
+  for (const link of preview.skippedLinks) {
+    rows.push({
+      icon: 'alert-triangle',
+      label: "Part of this package won't be installed",
+      description: link.message,
+      severity: 'warning' satisfies PermissionSeverity,
+    });
+  }
+
   return rows;
 }
 
 /**
- * Format the `hooks` and `unreadableHooks` fields into the `commands` group.
+ * Format the `hooks` and every program the package starts on its own (MCP and
+ * language servers, monitors, `bin/` commands), plus whatever could not be
+ * read, into the `commands` group.
  *
  * The label is the shell command exactly as the package wrote it — this is the
  * one fact a person needs to judge whether to trust the package, so it is never
@@ -343,15 +380,36 @@ function formatEffects(
  * "declares no commands", and those are very different things to be told right
  * before you click Install.
  *
- * @param preview - Full permission preview from the server.
+ * @param preview - The runnable parts of a permission preview.
+ * @param scopeNote - When the plugin's own programs start, in one sentence.
  */
-function formatCommands(preview: PermissionPreview): FormattedPermission[] {
+function formatCommands(
+  preview: RunnableParts,
+  scopeNote: string = PLUGIN_PROGRAMS_SCOPE_NOTE
+): FormattedPermission[] {
   const rows: FormattedPermission[] = preview.hooks.map((hook) => ({
     icon: 'terminal',
-    label: hook.command,
-    description: `Runs ${describeHookEvent(hook.event, hook.matcher)}`,
+    label: revealHiddenCharacters(hook.command),
+    description: hook.source
+      ? `Runs ${describeHookEvent(hook.event, hook.matcher)}, while ${revealHiddenCharacters(hook.source)} is in use`
+      : `Runs ${describeHookEvent(hook.event, hook.matcher)}`,
     mono: true,
   }));
+
+  // Commands written into a skill's or command's text: Claude Code runs them
+  // as it loads that skill, before the model sees it (DOR-2327).
+  for (const entry of preview.skillCommands) {
+    const kind = skillCommandKind(entry.source);
+    rows.push({
+      icon: 'terminal',
+      label: revealHiddenCharacters(entry.command),
+      description:
+        `Runs when the ${kind} "${revealHiddenCharacters(entry.skill)}" is used (${revealHiddenCharacters(entry.source)})` +
+        // Filled in before the command runs, so what runs depends on it.
+        (entry.usesArguments ? '. It uses the text typed after the command' : ''),
+      mono: true,
+    });
+  }
 
   for (const unreadable of preview.unreadableHooks) {
     rows.push({
@@ -359,6 +417,71 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
       label: 'This package sets up a command to run, but we could not read it',
       description: unreadable.event
         ? `${unreadable.path} declares "${unreadable.event}" in a form DorkOS cannot read`
+        : `${unreadable.path} is not readable`,
+      severity: 'warning' satisfies PermissionSeverity,
+    });
+  }
+
+  // The programs a plugin starts on its own sit beside the hook commands, each
+  // part quoted exactly as it is passed, never paraphrased. Whether they start
+  // at all depends on where the plugin is installed, which the description says.
+  const programRow = (label: string, name: string, local = true): FormattedPermission => ({
+    icon: local ? 'terminal' : 'globe',
+    label,
+    description: `${name}. ${scopeNote}`,
+    mono: true,
+  });
+  for (const server of preview.mcpServers) {
+    rows.push(
+      server.command !== undefined
+        ? programRow(
+            describeProgramLine(server.command, server.args),
+            `MCP server "${server.name}"`
+          )
+        : programRow(
+            revealHiddenCharacters(JSON.stringify(server.url ?? '')),
+            `Remote MCP server "${server.name}"`,
+            false
+          )
+    );
+  }
+  for (const server of preview.lspServers) {
+    rows.push(
+      programRow(
+        describeProgramLine(server.command, server.args),
+        `Language server "${server.name}"`
+      )
+    );
+  }
+  for (const monitor of preview.monitors) {
+    rows.push(
+      programRow(
+        describeProgramLine(monitor.command),
+        `Background monitor "${monitor.name}"${monitor.when ? `, ${monitor.when}` : ''}`
+      )
+    );
+  }
+  for (const name of preview.executables) {
+    rows.push(programRow(describeProgramLine(name), "Added to the agent's commands (bin/)"));
+  }
+
+  // A skill is picked by the model from its description, so the tools it may
+  // use without asking are permission the package grants itself.
+  for (const entry of preview.skillTools) {
+    rows.push({
+      icon: 'key',
+      label: entry.tools.map((t) => revealHiddenCharacters(JSON.stringify(t))).join(', '),
+      description: `Skill "${revealHiddenCharacters(entry.skill)}" may use these without asking you`,
+      mono: true,
+    });
+  }
+
+  for (const unreadable of preview.unreadableDeclarations) {
+    rows.push({
+      icon: 'alert-triangle',
+      label: 'This package sets up a program to run, but we could not read it',
+      description: unreadable.entry
+        ? `${unreadable.path} declares "${unreadable.entry}" in a form DorkOS cannot read`
         : `${unreadable.path} is not readable`,
       severity: 'warning' satisfies PermissionSeverity,
     });
@@ -377,9 +500,9 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
  * severity here, which is this dialog's own concern: the arrival confirm's
  * ledger has no severity column.
  *
- * @param preview - Full permission preview from the server.
+ * @param preview - The scheduled jobs of a permission preview.
  */
-function formatSchedules(preview: PermissionPreview): FormattedPermission[] {
+function formatSchedules(preview: Pick<PermissionPreview, 'schedules'>): FormattedPermission[] {
   return preview.schedules.map((schedule) => ({
     icon: 'clock',
     label: schedule.name,
@@ -447,13 +570,26 @@ export function summarizePermissionPreview(preview: PermissionPreview): string {
   });
   const files = clauses.length === 0 ? 'Changes no files' : joinClauses(clauses);
 
-  const commands = preview.hooks.length + preview.unreadableHooks.length;
+  const commands =
+    preview.hooks.length + preview.skillCommands.length + preview.unreadableHooks.length;
   const declares =
     commands === 0
       ? 'Declares no commands'
       : `Declares ${commands} ${commands === 1 ? 'command' : 'commands'}`;
 
-  return `${files}. ${declares}.`;
+  // Only what it could read: an unreadable declaration has its own warning row,
+  // and counting it here would claim a program is known to start.
+  const programs =
+    preview.mcpServers.length +
+    preview.lspServers.length +
+    preview.monitors.length +
+    preview.executables.length;
+  const own =
+    programs === 0
+      ? ''
+      : ` Declares ${programs} ${programs === 1 ? 'program' : 'programs'} of its own.`;
+
+  return `${files}. ${declares}.${own}`;
 }
 
 /**
@@ -507,4 +643,176 @@ export function formatPermissionPreview(
       severity: (conflict.level === 'error' ? 'error' : 'warning') satisfies PermissionSeverity,
     })),
   };
+}
+
+/** Where an update lands, which decides whether its own programs start at all. */
+export type DisclosureScope = 'global' | 'project';
+
+/**
+ * When a plugin's own programs start, for an update in a known place: a global
+ * package is loaded into every session; a project's copy is written as files
+ * for the project's agent tools, and its servers, monitors and `bin/` commands
+ * are not started from it.
+ */
+const PROGRAMS_START: Record<DisclosureScope, string> = {
+  global: 'Starts in every session.',
+  project: 'Declared, but not started for a project install.',
+};
+
+/**
+ * Rows for everything a disclosure says a new version runs: each command and
+ * when it runs, each program with where it starts, each skill's tools, and each
+ * scheduled job. The same rows, in the same words, as the install preview's
+ * commands and schedules groups, so a person reads one vocabulary on every
+ * consent surface. The update confirm shows these under each package, and the
+ * apply sends the same disclosure back, so what a person approves is what
+ * they read (DOR-2306).
+ *
+ * @param effects - What a new version runs, as the update check reported it.
+ * @param scope - Where the installation is, which decides when programs start.
+ * @returns One row per thing it runs; empty when it runs nothing on its own.
+ */
+export function formatDisclosedEffects(
+  effects: DisclosedEffects,
+  scope: DisclosureScope
+): FormattedPermission[] {
+  const parts: RunnableParts = {
+    hooks: effects.hooks.map((hook) => ({
+      event: hook.event,
+      ...(hook.matcher !== null && { matcher: hook.matcher }),
+      command: hook.command,
+      ...(hook.source !== null && { source: hook.source }),
+    })),
+    unreadableHooks: [],
+    mcpServers: effects.mcpServers.map((server) => ({
+      name: server.name,
+      transport: server.transport,
+      ...(server.command !== null && { command: server.command, args: server.args }),
+      ...(server.url !== null && { url: server.url }),
+    })),
+    lspServers: effects.lspServers.map(({ name, command, args }) => ({ name, command, args })),
+    monitors: effects.monitors.map(({ name, command, when }) => ({
+      name,
+      command,
+      ...(when !== null && { when }),
+    })),
+    executables: effects.executables,
+    skillTools: effects.skillTools,
+    skillCommands: effects.skillCommands,
+    unreadableDeclarations: [],
+  };
+  const schedules: PreviewSchedule[] = effects.schedules.map((job) => ({
+    name: job.name,
+    cron: job.cron,
+    // The server clamps a packaged job's mode before disclosing it, so it is
+    // always one of the known modes; the wire carries it as a plain string.
+    permissionMode: job.permissionMode as SchedulePermissionMode,
+    startsEnabled: job.startsEnabled,
+  }));
+  return [...formatCommands(parts, PROGRAMS_START[scope]), ...formatSchedules({ schedules })];
+}
+
+/** How one thing a new version runs compares with the version installed now. */
+export type DisclosureChange = 'new' | 'changed' | 'unchanged' | 'unknown';
+
+/** One row of what a new version runs, and how it compares with what is installed. */
+export interface DisclosureRow {
+  /** The row, formatted exactly as the install preview formats it. */
+  row: FormattedPermission;
+  /**
+   * `new` for something the installed version does not run, `changed` for a
+   * named server, monitor, skill or job it runs differently, `unchanged` for
+   * something it runs exactly so, `unknown` when what is installed could not
+   * be read.
+   */
+  change: DisclosureChange;
+  /**
+   * For a `changed` row: the same named item as the installed version runs
+   * it, formatted the same way, so the person sees the old value beside the
+   * new one rather than only being told it changed.
+   */
+  previous?: FormattedPermission;
+}
+
+/** A disclosure with nothing in it, to hold one item at a time. */
+const NOTHING_DISCLOSED: DisclosedEffects = {
+  hooks: [],
+  schedules: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+  skillCommands: [],
+};
+
+/** The kinds of things a disclosure lists, in the order rows are shown. */
+const DISCLOSURE_KINDS = [
+  'hooks',
+  'skillCommands',
+  'mcpServers',
+  'lspServers',
+  'monitors',
+  'executables',
+  'skillTools',
+  'schedules',
+] as const;
+
+/** The name a named item goes by, so a changed one is told from a new one. */
+function nameOf(kind: (typeof DISCLOSURE_KINDS)[number], item: unknown): string | undefined {
+  // A command is its own identity: an edited one reads as new, beside the old.
+  if (kind === 'hooks' || kind === 'skillCommands' || kind === 'executables') return undefined;
+  if (kind === 'skillTools') return (item as { source: string }).source;
+  return (item as { name: string }).name;
+}
+
+/**
+ * Everything a new version runs, one row per thing, each marked against the
+ * version installed now, so a confirm step can lead with what is new and fold
+ * what is not. The rows are the same ones {@link formatDisclosedEffects} makes,
+ * so the list a person approves is unchanged: only its order and marks differ.
+ *
+ * @param next - What the new version runs.
+ * @param installed - What the installed version runs; `null` or absent when it
+ *   could not be read, which marks every row `unknown`.
+ * @param scope - Where the installation is, which decides when programs start.
+ * @returns One row per thing the new version runs, in the preview's order.
+ */
+export function formatDisclosureChanges(
+  next: DisclosedEffects,
+  installed: DisclosedEffects | null | undefined,
+  scope: DisclosureScope
+): DisclosureRow[] {
+  const rows: DisclosureRow[] = [];
+  const formatOne = (kind: (typeof DISCLOSURE_KINDS)[number], item: unknown) =>
+    formatDisclosedEffects({ ...NOTHING_DISCLOSED, [kind]: [item] } as DisclosedEffects, scope)[0];
+  for (const kind of DISCLOSURE_KINDS) {
+    for (const item of next[kind] as unknown[]) {
+      const row = formatOne(kind, item);
+      if (!row) continue;
+      const change = changeOf(kind, item, installed);
+      const before =
+        change === 'changed'
+          ? (installed![kind] as unknown[]).find((old) => nameOf(kind, old) === nameOf(kind, item))
+          : undefined;
+      const previous = before === undefined ? undefined : formatOne(kind, before);
+      rows.push({ row, change, ...(previous && { previous }) });
+    }
+  }
+  return rows;
+}
+
+/** How one item compares with what is installed. */
+function changeOf(
+  kind: (typeof DISCLOSURE_KINDS)[number],
+  item: unknown,
+  installed: DisclosedEffects | null | undefined
+): DisclosureChange {
+  if (!installed) return 'unknown';
+  const before = installed[kind] as unknown[];
+  const same = JSON.stringify(item);
+  if (before.some((old) => JSON.stringify(old) === same)) return 'unchanged';
+  const name = nameOf(kind, item);
+  if (name !== undefined && before.some((old) => nameOf(kind, old) === name)) return 'changed';
+  return 'new';
 }

@@ -36,6 +36,10 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@dorkos/shared/convention-files')>()),
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  writeConventionFileIfAbsent: async (...args: unknown[]) => {
+    mockWriteConventionFile(...args);
+    return true;
+  },
   buildSoulContent: vi.fn(
     (traitBlock: string, prose: string) =>
       `<!-- TRAITS:START -->\n${traitBlock}\n<!-- TRAITS:END -->\n\n${prose}`
@@ -49,6 +53,10 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
 vi.mock('@dorkos/shared/convention-files-io', () => ({
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  writeConventionFileIfAbsent: async (...args: unknown[]) => {
+    mockWriteConventionFile(...args);
+    return true;
+  },
 }));
 
 vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
@@ -56,8 +64,13 @@ vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
   renderTraits: vi.fn(() => 'rendered-traits'),
 }));
 
-vi.mock('ulidx', () => ({
+vi.mock('ulidx', async (importOriginal) => ({
+  // The real factory: the agents route now reaches modules that mint ids with it.
+  monotonicFactory: (await importOriginal<typeof import('ulidx')>()).monotonicFactory,
   ulid: vi.fn(() => 'MOCK_ULID_001'),
+  // The route's caller check (lib/caller-authority) reaches the capability
+  // registry, whose relay imports build a monotonic ULID factory at load.
+  monotonicFactory: vi.fn(() => vi.fn(() => 'MOCK_ULID_001')),
 }));
 
 vi.mock('@dorkos/shared/dorkbot-templates', () => ({
@@ -83,6 +96,16 @@ import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+  registerTestHomes,
+} from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 // Build a minimal Express app with just the agents router
 const app = express();
@@ -151,6 +174,95 @@ describe('Agents Routes', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+  });
+
+  describe('a checkout of an agent`s repo reads and writes the HOME (DOR-2355)', () => {
+    // A managed checkout (or a git worktree) of Ana's repo carries a committed
+    // `.dork/` of its own. An editor opened on it must show and change Ana,
+    // never that copy (spec `agent-home-desk` §3.2 row 9).
+    const HOME = '/agents/ana';
+    const CHECKOUT = '/ws/ana-fix';
+    const stale: AgentManifest = { ...mockManifest, name: 'stale-copy' };
+    const atHome: AgentManifest = { ...mockManifest, name: 'ana' };
+
+    beforeEach(() => {
+      registerTestHomes([HOME], { managed: { [CHECKOUT]: HOME } });
+      mockReadManifest.mockImplementation(async (dir: string) =>
+        dir === HOME ? atHome : dir === CHECKOUT ? stale : null
+      );
+    });
+
+    it('GET answers with the home manifest and convention files', async () => {
+      const res = await request(testServer).get('/api/agents/current').query({ path: CHECKOUT });
+
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe('ana');
+      expect(mockReadManifest).not.toHaveBeenCalledWith(CHECKOUT);
+      expect(mockReadConventionFile).toHaveBeenCalledWith(HOME, expect.anything());
+      expect(mockReadConventionFile).not.toHaveBeenCalledWith(CHECKOUT, expect.anything());
+    });
+
+    it('PATCH writes the home, never the checkout`s copy', async () => {
+      const res = await request(testServer)
+        .patch('/api/agents/current')
+        .query({ path: CHECKOUT })
+        .send({ displayName: 'Ana' });
+
+      expect(res.status).toBe(200);
+      expect(mockWriteManifest).toHaveBeenCalledWith(HOME, expect.anything());
+      expect(mockWriteManifest).not.toHaveBeenCalledWith(CHECKOUT, expect.anything());
+    });
+
+    it('finds an agent registered through a symlinked agents folder (the boundary answers realpaths)', async () => {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agents-route-link-')));
+      try {
+        fs.mkdirSync(path.join(scratch, 'real', 'ana'), { recursive: true });
+        fs.symlinkSync(path.join(scratch, 'real'), path.join(scratch, 'agents'));
+        const registered = path.join(scratch, 'agents', 'ana');
+        const real = path.join(scratch, 'real', 'ana');
+        registerTestHomes([registered]);
+        vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue(real);
+        mockReadManifest.mockImplementation(async (dir: string) =>
+          dir === registered ? atHome : null
+        );
+
+        const get = await request(testServer)
+          .get('/api/agents/current')
+          .query({ path: registered });
+        expect(get.status).toBe(200);
+        expect(get.body.name).toBe('ana');
+
+        const patch = await request(testServer)
+          .patch('/api/agents/current')
+          .query({ path: registered })
+          .send({ displayName: 'Ana' });
+        expect(patch.status).toBe(200);
+        expect(mockWriteManifest).toHaveBeenCalledWith(registered, expect.anything());
+      } finally {
+        vi.mocked(validateBoundaryOrDorkHome).mockImplementation(async (p: string) => p);
+        fs.rmSync(scratch, { recursive: true, force: true });
+      }
+    });
+
+    it('a folder that is no agent`s home is nobody, whatever `.dork/` it carries', async () => {
+      mockReadManifest.mockResolvedValue(stale);
+
+      const get = await request(testServer)
+        .get('/api/agents/current')
+        .query({ path: '/somewhere/else' });
+      expect(get.status).toBe(200);
+      expect(get.body).toBeNull();
+
+      const patch = await request(testServer)
+        .patch('/api/agents/current')
+        .query({ path: '/somewhere/else' })
+        .send({ displayName: 'Hijack' });
+      expect(patch.status).toBe(404);
+      expect(mockWriteManifest).not.toHaveBeenCalled();
     });
   });
 
@@ -438,6 +550,43 @@ describe('Agents Routes', () => {
       );
     });
 
+    it.each([
+      ['runtime', 'codex'],
+      ['model', 'opus'],
+      ['effort', 'max'],
+      ['model', null],
+    ])(
+      'refuses an AGENT changing %s (%s), pointing at the tool that asks a person (DOR-2328)',
+      async (field, value) => {
+        // Purpose: every schedule that follows the agent would run differently,
+        // so an agent's own request must go past a person first.
+        mockReadManifest.mockResolvedValue(mockManifest);
+
+        const res = await request(testServer)
+          .patch('/api/agents/current')
+          .query({ path: '/home/user/project' })
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .send({ displayName: 'Also this', [field]: value });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('NEEDS_APPROVAL');
+        expect(res.body.error).toContain('update_agent_execution');
+        expect(mockWriteManifest).not.toHaveBeenCalled();
+      }
+    );
+
+    it('still lets an agent change fields that are not execution defaults', async () => {
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(testServer)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ displayName: 'Renamed by itself' });
+
+      expect(res.status).toBe(200);
+    });
+
     it('drops them back to inherited when sent as null', async () => {
       mockReadManifest.mockResolvedValue({ ...mockManifest, model: 'sonnet', effort: 'low' });
 
@@ -616,11 +765,10 @@ describe('Agents Routes', () => {
       expect(res.body.error).toContain('displayName');
     });
 
-    it('refuses an agent restoring its own tool-context blocks (DOR-1506)', async () => {
-      // The issue, through the real route. A person turns an agent's tool
-      // context off in Settings → Tools (`agentContext.*`, operator-only at the
-      // config seam since DOR-1497), and the agent writes a PER-AGENT value,
-      // which `resolveToolConfig` prefers over the global switch.
+    it('refuses a retired permission field, pointing at the Permissions page', async () => {
+      // `enabledToolGroups` folded into the agent's permissions (spec
+      // `agent-permissions` D13), which only a person sets. Stripped silently,
+      // this patch would have reported a change that never happened.
       mockReadManifest.mockResolvedValue(mockManifest);
 
       const res = await request(testServer)
@@ -629,7 +777,7 @@ describe('Agents Routes', () => {
         .send({ displayName: 'Sneaky', enabledToolGroups: { relay: true, mesh: true } });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Tools settings');
+      expect(res.body.error).toContain('Permissions page');
       // Whole-patch: the legitimate half did not land either.
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });

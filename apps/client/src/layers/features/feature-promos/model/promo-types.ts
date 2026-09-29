@@ -3,12 +3,12 @@ import type { LucideIcon } from 'lucide-react';
 /**
  * Placement slots where promos can render.
  *
- * Both are compact sidebar stacks. The `dashboard-main` grid went with the
+ * The app uses a compact sidebar stack. The `dashboard-main` grid went with the
  * dashboard itself (team-room-home task 1.5); the quiet-state suggestion is its
  * successor on home, and it reads {@link PromoContent.suggestion} rather than
  * taking a placement of its own.
  */
-export type PromoPlacement = 'dashboard-sidebar' | 'agent-sidebar';
+export type PromoPlacement = 'dashboard-sidebar';
 
 /** Props passed to dialog content components rendered inside the PromoDialog shell. */
 export interface PromoDialogProps {

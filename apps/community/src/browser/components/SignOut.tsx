@@ -1,3 +1,4 @@
+import { Button, Notice } from '@dork-labs/ui';
 import { useEffect, useRef, useState } from 'react';
 import { LogOut } from 'lucide-react';
 import { describeError, hostRequest } from '../api.js';
@@ -33,13 +34,13 @@ export function SignOutButton({ onSignedOut }: { onSignedOut: () => void }) {
   return (
     <>
       {error && (
-        <p className="notice error mb-3" role="alert">
+        <Notice tone="error" className="mb-3" role="alert">
           {error}
-        </p>
+        </Notice>
       )}
-      <button className="button" type="button" disabled={busy} onClick={() => void signOut()}>
+      <Button variant="outline" type="button" disabled={busy} onClick={() => void signOut()}>
         <LogOut size={16} /> Sign out of this browser
-      </button>
+      </Button>
     </>
   );
 }
@@ -59,13 +60,9 @@ export function SignedOutPanel() {
         <p className="muted">
           Your memberships did not change. DorkOS installations you connected keep working.
         </p>
-        <button
-          className="button primary"
-          type="button"
-          onClick={() => window.location.assign('/')}
-        >
+        <Button variant="default" type="button" onClick={() => window.location.assign('/')}>
           Sign in again
-        </button>
+        </Button>
       </section>
     </main>
   );

@@ -238,3 +238,40 @@ export function wireLiveChangeBroadcasts(deps: LiveChangeBroadcastDeps): void {
     eventFanOut.broadcast('community_connections_changed', event, operatorAudience);
   });
 }
+
+/**
+ * What `connector_agent_requests_changed` puts on the wire: a stamp and nothing
+ * else.
+ *
+ * An agent asked for an app, or a request it made was answered, expired or
+ * failed. The request names an agent, a service and the agent's own reason,
+ * and none of that belongs on a stream every connection shares, so each window
+ * re-reads its owner-scoped `GET /api/connectors/agent-requests` instead. That
+ * is what keeps the chat card, the room card and the Connections page's Needs you strip in
+ * step across windows: answering in one retires the card in the others.
+ */
+export interface ConnectorAgentRequestsChangedEvent {
+  /** When the change committed. */
+  changedAt: string;
+}
+
+/**
+ * The announcer the agent request service calls on every change.
+ *
+ * ADDRESSED under `operatorAudience`, like `community_connections_changed`: a
+ * request is the owner's to answer, and an agent must not learn from the global
+ * stream that another agent asked for something.
+ *
+ * @param eventFanOut - Where the event is written.
+ * @param now - The clock, for the `changedAt` stamp. Overridden only by tests.
+ * @returns A function to call once per committed change.
+ */
+export function connectorAgentRequestsChangedAnnouncer(
+  eventFanOut: BroadcastSink,
+  now: () => string = () => new Date().toISOString()
+): () => void {
+  return () => {
+    const event: ConnectorAgentRequestsChangedEvent = { changedAt: now() };
+    eventFanOut.broadcast('connector_agent_requests_changed', event, operatorAudience);
+  };
+}

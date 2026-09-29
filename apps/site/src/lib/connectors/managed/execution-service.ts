@@ -23,6 +23,7 @@ import { and, eq, exists, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-or
 
 import { schema } from '@/db/client';
 import {
+  grantRowAgentId,
   managedRequestHash,
   type ManagedConnectorDatabase,
   type ManagedConnectorPrincipal,
@@ -152,6 +153,8 @@ async function loadAuthorizedExecution(
     .limit(2);
   if (revisions.length !== 1) return null;
   const revision = revisions[0];
+  const grantAgentId = grantRowAgentId(request);
+  if (grantAgentId === null) return null;
   const [grant] = await db
     .select()
     .from(schema.managedConnectorGrant)
@@ -160,7 +163,7 @@ async function loadAuthorizedExecution(
         eq(schema.managedConnectorGrant.tenantId, principal.tenantId),
         eq(schema.managedConnectorGrant.instanceId, principal.instanceId),
         eq(schema.managedConnectorGrant.connectionId, request.managedConnectionId),
-        eq(schema.managedConnectorGrant.agentId, request.agentId),
+        eq(schema.managedConnectorGrant.agentId, grantAgentId),
         eq(schema.managedConnectorGrant.operationRevisionId, revision.id),
         eq(schema.managedConnectorGrant.scopeVersion, request.grantScopeVersion),
         eq(schema.managedConnectorGrant.active, true),
@@ -200,6 +203,7 @@ async function authorizeAndMarkDispatch(input: {
   authorized: AuthorizedExecution;
 }): Promise<boolean> {
   const now = new Date();
+  const grantAgentId = grantRowAgentId(input.request);
   const [updated] = await input.db
     .update(schema.managedConnectorExecutionAttempt)
     .set({
@@ -330,7 +334,9 @@ async function authorizeAndMarkDispatch(input: {
                 eq(schema.managedConnectorGrant.tenantId, input.principal.tenantId),
                 eq(schema.managedConnectorGrant.instanceId, input.principal.instanceId),
                 eq(schema.managedConnectorGrant.connectionId, input.request.managedConnectionId),
-                eq(schema.managedConnectorGrant.agentId, input.request.agentId),
+                grantAgentId === null
+                  ? sql`false`
+                  : eq(schema.managedConnectorGrant.agentId, grantAgentId),
                 eq(schema.managedConnectorGrant.scopeVersion, input.request.grantScopeVersion),
                 eq(schema.managedConnectorGrant.active, true),
                 isNull(schema.managedConnectorGrant.revokedAt),

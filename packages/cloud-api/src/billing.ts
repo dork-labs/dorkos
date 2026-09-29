@@ -1,11 +1,24 @@
 import { z } from 'zod';
 
 import {
+  CreditMicroSchema,
+  DenominationSchema,
   IdSchema,
-  MicroAmountSchema,
-  PositiveMicroAmountSchema,
+  MoneyMicroSchema,
+  PositiveMoneyMicroSchema,
   TimestampSchema,
+  tolerantEnum,
 } from './primitives.js';
+
+/**
+ * The optional `denomination` every amount-bearing response carries.
+ *
+ * Optional so a response from an older service still parses. A client that
+ * receives none must not guess a unit.
+ */
+const denominationField = DenominationSchema.optional().describe(
+  'The unit these amounts are in. Absent from an older service; a client that receives none must not guess one.'
+);
 
 /**
  * How remote access works for the caller.
@@ -89,7 +102,7 @@ export const EntitlementLimitsSchema = z
   .object({
     personSeatsIncluded: z.number().int().nonnegative(),
     agentSeatsIncluded: z.number().int().nonnegative(),
-    includedCreditsMicro: MicroAmountSchema,
+    includedCreditsMicro: CreditMicroSchema,
     cloudHours: z.number().nonnegative(),
     storageGb: z.number().nonnegative(),
     remoteAccess: RemoteAccessCapabilitySchema,
@@ -148,6 +161,7 @@ export const EntitlementsSchema = z
     canCreateSeat: z.boolean(),
     canInviteMember: z.boolean(),
     staleAt: TimestampSchema.describe('When this snapshot should be refetched.'),
+    denomination: denominationField,
   })
   .describe(
     'What the caller is allowed to do. A caller with no subscription gets the free entitlement, never a 404.'
@@ -167,12 +181,12 @@ export type Entitlements = z.infer<typeof EntitlementsSchema>;
 export const BalanceSchema = z
   .object({
     allowance: z.object({
-      grantedMicro: MicroAmountSchema,
-      remainingMicro: MicroAmountSchema,
+      grantedMicro: CreditMicroSchema,
+      remainingMicro: CreditMicroSchema,
       resetsAt: TimestampSchema,
     }),
     purchased: z.object({
-      remainingMicro: MicroAmountSchema,
+      remainingMicro: CreditMicroSchema,
       holds: z
         .number()
         .int()
@@ -182,20 +196,21 @@ export const BalanceSchema = z
           'How many first-purchase holds are in force. Absent means the server did not say; zero means none.'
         ),
     }),
-    pendingMicro: MicroAmountSchema.optional().describe(
+    pendingMicro: CreditMicroSchema.optional().describe(
       'Credit the caller has paid for that is not spendable yet, because a hold is still in force. Absent means the server did not say.'
     ),
-    heldMicro: MicroAmountSchema.describe('Reserved against turns currently running.'),
-    owedMicro: MicroAmountSchema.describe(
+    heldMicro: CreditMicroSchema.describe('Reserved against turns currently running.'),
+    owedMicro: CreditMicroSchema.describe(
       'Debt from a turn that overran its reservation. May be "0"; when it is not, show it.'
     ),
     autoReload: z.object({
       enabled: z.boolean(),
-      ceilingMicro: MicroAmountSchema.nullable(),
+      ceilingMicro: MoneyMicroSchema.nullable(),
     }),
+    denomination: denominationField,
   })
   .describe(
-    'The caller`s credit position. Every amount is an exact integer of micro-units carried as a string.'
+    'The caller`s credit position. Every amount is an exact integer of micro-units carried as a string, counted as credits except the auto-reload ceiling, which is money.'
   );
 
 /** The caller`s credit position. */
@@ -267,8 +282,8 @@ export const UsageRowSchema = z
       .nonnegative()
       .describe('How much was used, in the unit the row is measured in.'),
     unit: z.string().describe('What `units` counts, as a server-supplied string.'),
-    listPriceMicro: MicroAmountSchema.describe('The upstream list price for this row.'),
-    dorkosPriceMicro: MicroAmountSchema.describe('What DorkOS charged for this row.'),
+    listPriceMicro: MoneyMicroSchema.describe('The upstream list price for this row.'),
+    dorkosPriceMicro: CreditMicroSchema.describe('What DorkOS charged for this row.'),
     costBasis: CostBasisSchema,
   })
   .describe(
@@ -284,9 +299,10 @@ export const UsageResponseSchema = z
     state: UsageStateSchema,
     rows: z.array(UsageRowSchema),
     totals: z.object({
-      listPriceMicro: MicroAmountSchema,
-      dorkosPriceMicro: MicroAmountSchema,
+      listPriceMicro: MoneyMicroSchema,
+      dorkosPriceMicro: CreditMicroSchema,
     }),
+    denomination: denominationField,
   })
   .describe('The caller`s own usage for a window, grouped as asked.');
 
@@ -301,8 +317,14 @@ export const PriceListEntrySchema = z
     ),
     displayName: z.string(),
     unit: z.string().describe('What the prices below are per, as a server-supplied string.'),
-    inputMicro: MicroAmountSchema,
-    outputMicro: MicroAmountSchema,
+    inputMicro: CreditMicroSchema,
+    outputMicro: CreditMicroSchema,
+    cacheReadMicro: CreditMicroSchema.optional().describe(
+      'The rate for reading prompt-cached input, in the entry`s existing unit. Absent means the service did not say.'
+    ),
+    cacheWriteMicro: CreditMicroSchema.optional().describe(
+      'The rate for writing input to the prompt cache, in the entry`s existing unit. Absent means the service did not say.'
+    ),
   })
   .describe('One entry of the published price list.');
 
@@ -319,10 +341,9 @@ export const PriceListResponseSchema = z
     version: z.string().describe('An opaque version string for this list.'),
     effectiveFrom: TimestampSchema,
     entries: z.array(PriceListEntrySchema),
+    denomination: denominationField,
   })
-  .describe(
-    'The published per-model price list. The only route in this contract that carries a price.'
-  );
+  .describe('The published per-model price list.');
 
 /**
  * `GET /v1/nudge` — one already-computed comparison, delivered reduced.
@@ -334,13 +355,14 @@ export const PriceListResponseSchema = z
  */
 export const NudgeSchema = z
   .object({
-    trailing30Micro: MicroAmountSchema,
+    trailing30Micro: CreditMicroSchema,
     suggestedPlanId: IdSchema.describe('An opaque identifier. Never switch on this value.'),
     suggestedPlanDisplayName: z.string(),
-    suggestedPlanPriceMicro: MicroAmountSchema,
-    savingMicro: MicroAmountSchema.describe('The subtraction the server already did.'),
+    suggestedPlanPriceMicro: MoneyMicroSchema,
+    savingMicro: MoneyMicroSchema.describe('The subtraction the server already did.'),
     computedAt: TimestampSchema,
     dismissible: z.literal(true),
+    denomination: denominationField,
   })
   .describe('One already-computed comparison. 404 from this route means "no nudge", not an error.');
 
@@ -348,16 +370,96 @@ export const NudgeSchema = z
 export type Nudge = z.infer<typeof NudgeSchema>;
 
 /**
+ * How often an offer recurs.
+ *
+ * Mechanism, not catalog: it says how a charge repeats, not what is on sale.
+ */
+export const OfferIntervalSchema = z
+  .enum(['month', 'year'])
+  .describe('How often an offer recurs: every month, or every year.');
+
+/** How often an offer recurs. */
+export type OfferInterval = z.infer<typeof OfferIntervalSchema>;
+
+/**
+ * One thing the service will sell the caller, as `GET /v1/offers` lists it.
+ *
+ * It is the only place a client is handed a `skuId`, which is the string
+ * `POST /v1/checkout` takes back. `skuId` and `planId` are different identifier
+ * spaces and neither can stand in for the other: one subscription has one
+ * `planId` and one `skuId` per interval. `planId` is the same opaque token
+ * `GET /v1/entitlements` publishes, so a page compares the two to mark what the
+ * caller is on; this shape deliberately carries no "current" flag of its own.
+ *
+ * It carries no "recommended" flag and no badge. Render the offers in the order
+ * the service sends them and do not re-sort them; the order carries no meaning
+ * beyond that.
+ *
+ * `interval` is tolerant: an interval added in a later release reads as
+ * `unrecognised`, so one new offer cannot fail the whole list. Generate the JSON
+ * Schema with `{ io: 'input' }`. `limits` is the published entitlement-limits
+ * shape itself, so its own description speaks of an entitlement.
+ */
+export const OfferSchema = z
+  .object({
+    skuId: IdSchema.describe(
+      'The opaque identifier `POST /v1/checkout` takes back. Never constructed, parsed or enumerated by a client.'
+    ),
+    planId: IdSchema.describe(
+      'The opaque identifier `GET /v1/entitlements` publishes for the same subscription. Not interchangeable with `skuId`. Never switch on this value.'
+    ),
+    displayName: z.string().describe('The server-supplied string to show a person.'),
+    interval: tolerantEnum(OfferIntervalSchema).describe(
+      'How often the offer recurs. An interval this release does not know reads as unrecognised.'
+    ),
+    amountMicro: MoneyMicroSchema.describe(
+      'The price for one interval, in micro-units of money. Rendered, never computed with.'
+    ),
+    // The published limits shape itself, by reference: one shape, one place to
+    // extend. A `.describe()` here would make a copy.
+    limits: EntitlementLimitsSchema,
+  })
+  .describe('One thing the service will sell the caller.');
+
+/** One thing the service will sell the caller. */
+export type Offer = z.infer<typeof OfferSchema>;
+
+/**
+ * `GET /v1/offers` — everything the service will sell the caller right now.
+ *
+ * A bearer token or the person's own browser session. An account with nothing
+ * on sale gets 200 and an empty list, never a 404: nothing on sale is a normal
+ * state, and a client that met a 404 would report an outage.
+ */
+export const OffersResponseSchema = z
+  .object({
+    offers: z.array(OfferSchema),
+    denomination: denominationField,
+  })
+  .describe(
+    'Everything the service will sell the caller right now. An empty list is a normal answer, never a 404.'
+  );
+
+/** Everything the service will sell the caller right now. */
+export type OffersResponse = z.infer<typeof OffersResponseSchema>;
+
+/**
  * A request for a hosted page.
  *
- * `skuId` is an identifier the client received from the server. A client never
- * constructs one and never enumerates the set. The amount and its rendering
- * belong to the hosted page, not to this contract.
+ * `skuId` is an identifier the client received from the server, from
+ * `GET /v1/offers` ({@link OffersResponseSchema}). A client never constructs one
+ * and never enumerates the set. The amount and its rendering belong to the
+ * hosted page, not to this contract.
+ *
+ * `POST /v1/checkout` and `POST /v1/portal` accept either credential: a bearer
+ * token, or the person's own browser session. Their request and response shapes
+ * are the same either way. A request authenticated by a browser session must
+ * come from an origin the service trusts, or it is refused with `forbidden`.
  */
 export const HostedPageRequestSchema = z
   .object({
     skuId: IdSchema.optional().describe(
-      'An opaque identifier the server supplied earlier. Clients never construct or enumerate one.'
+      'An opaque identifier the server supplied earlier, from `GET /v1/offers`. Clients never construct or enumerate one.'
     ),
     returnUrl: z
       .string()
@@ -384,14 +486,61 @@ export const StatementQuerySchema = z
   })
   .describe('Which billing period to fetch a statement for.');
 
-/** `GET /v1/statement` — a download link for the caller`s itemised statement. */
+/**
+ * `GET /v1/statement` — the caller`s own statement for one period: a download
+ * link, and optionally its lines and totals.
+ *
+ * `lines` and `totals` are the same projection `GET /v1/usage` publishes, one
+ * line per model for the statement's period. They cover inference usage only:
+ * any other charge in the period appears in the downloadable statement, not
+ * here, so `totals` is not the whole bill when there are other charges.
+ *
+ * `from` and `to` are the window the period covers. A period is labelled by a
+ * month, but it need not be a calendar month, so a client never derives the
+ * window from the label.
+ *
+ * All four are optional, and a service sends `lines` and `totals` together or
+ * not at all. A service that predates them answers with the link alone; a client
+ * that meets no `lines` but has `from` and `to` can read the same projection
+ * from `GET /v1/usage` with `groupBy=model` for that window.
+ *
+ * `totals` is the exact sum of the lines. Render it from the exact figures, never
+ * by adding rounded lines.
+ */
 export const StatementResponseSchema = z
   .object({
     period: z.string(),
     downloadUrl: z.string().url(),
     expiresAt: TimestampSchema.describe('When the download link stops working.'),
+    from: TimestampSchema.optional().describe(
+      'The start of the window this period covers. Absent from an older service.'
+    ),
+    to: TimestampSchema.optional().describe(
+      'The end of the window this period covers. Absent from an older service.'
+    ),
+    lines: z
+      .array(UsageRowSchema)
+      .optional()
+      .describe(
+        'The statement`s inference usage, one line per model, in the shape `GET /v1/usage` publishes. Other charges are only in the download. Sent together with `totals`, or neither. Absent from an older service.'
+      ),
+    totals: z
+      .object({
+        listPriceMicro: MoneyMicroSchema.describe('The upstream list price across every line.'),
+        dorkosPriceMicro: CreditMicroSchema.describe('What DorkOS charged across every line.'),
+      })
+      .optional()
+      .describe(
+        'The exact totals of the lines, which is inference usage only. Sent together with `lines`, or neither. Absent from an older service.'
+      ),
+    denomination: denominationField,
   })
-  .describe('A short-lived download link for the caller`s own itemised usage statement.');
+  .describe(
+    'The caller`s own statement for one period: a short-lived download link, and optionally its lines and totals.'
+  );
+
+/** The caller`s own statement for one period. */
+export type StatementResponse = z.infer<typeof StatementResponseSchema>;
 
 /**
  * `POST /v1/topup` — buy credit, answered with {@link HostedPageResponseSchema}.
@@ -415,7 +564,9 @@ export const StatementResponseSchema = z
  */
 export const TopupRequestSchema = z
   .object({
-    amountMicro: PositiveMicroAmountSchema.describe('How much credit to buy, in micro-units.'),
+    amountMicro: PositiveMoneyMicroSchema.describe(
+      'How much to pay for credit, in micro-units of money.'
+    ),
     returnUrl: z
       .string()
       .url()
@@ -430,31 +581,58 @@ export const TopupRequestSchema = z
 export type TopupRequest = z.infer<typeof TopupRequestSchema>;
 
 /**
- * `POST /v1/refunds` — ask for one charge to be refunded.
+ * Why the two refund shapes below are withdrawn, and why they are still here.
  *
- * Opaque identifiers only. The amount is the charge`s own, so the request never
- * names one, and a refund asked for after the window has closed is refused with
- * `refund_window_closed`. How long the window is is server policy and is not
- * published here.
+ * DorkOS Cloud does not offer refunds through this API. No release of the
+ * service ever served `POST /v1/refunds`; it answers `not_found`.
+ *
+ * The shapes stay exported because this package is additive within `/v1`:
+ * deleting an export would break the build of anyone who imported it from an
+ * earlier release, and that is a `/v2` change. They are marked deprecated in the
+ * types and in the JSON Schema, and they go when `/v2` does.
+ */
+const REFUNDS_WITHDRAWN =
+  'Withdrawn: DorkOS Cloud does not offer refunds through this API, and no release of the service answers this route. Kept only so imports from an earlier release keep compiling.';
+
+/**
+ * `POST /v1/refunds` — withdrawn. A request no release of the service accepts.
+ *
+ * @deprecated DorkOS Cloud does not offer refunds through this API, and the
+ * route answers `not_found`. Kept only so an import from an earlier release
+ * still compiles; it is removed in `/v2`.
  */
 export const RefundRequestSchema = z
   .object({
     chargeId: IdSchema.describe('The charge to refund, as an opaque identifier the server issued.'),
   })
-  .describe('Ask for one charge to be refunded. Opaque identifiers only, and no amount.');
+  .meta({ description: REFUNDS_WITHDRAWN, deprecated: true });
 
-/** Ask for one charge to be refunded. */
+/**
+ * A withdrawn refund request.
+ *
+ * @deprecated See {@link RefundRequestSchema}.
+ */
 export type RefundRequest = z.infer<typeof RefundRequestSchema>;
 
-/** `POST /v1/refunds` — the accepted refund. */
+/**
+ * `POST /v1/refunds` — withdrawn. An answer no release of the service sends.
+ *
+ * @deprecated DorkOS Cloud does not offer refunds through this API, and the
+ * route answers `not_found`. Kept only so an import from an earlier release
+ * still compiles; it is removed in `/v2`.
+ */
 export const RefundResponseSchema = z
   .object({
     refundId: IdSchema,
     chargeId: IdSchema,
-    refundedMicro: MicroAmountSchema.describe('How much came back, in micro-units.'),
+    refundedMicro: MoneyMicroSchema.describe('How much came back, in micro-units.'),
     refundedAt: TimestampSchema,
   })
-  .describe('The accepted refund: which charge it settles, how much came back, and when.');
+  .meta({ description: REFUNDS_WITHDRAWN, deprecated: true });
 
-/** The accepted refund. */
+/**
+ * A withdrawn refund answer.
+ *
+ * @deprecated See {@link RefundResponseSchema}.
+ */
 export type RefundResponse = z.infer<typeof RefundResponseSchema>;

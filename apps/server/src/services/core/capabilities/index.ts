@@ -10,29 +10,33 @@ export {
   type CapabilityDefinition,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityToolGroup,
 } from './capability-definition.js';
-export {
-  // `enforceToolGroupGrant` is deliberately NOT re-exported, for the same reason
-  // `enforceCapabilityTier` is not: the gate is reached through `registry.invoke`
-  // and there is no second supported caller.
-  initToolGroupGate,
-  resetToolGroupGate,
-  type ToolGroupGateOptions,
-  type ToolGroupGrantLookup,
-} from './tool-group-enforcement.js';
-export { manifestToolGroupGrants } from './tool-group-grants.js';
 export {
   composeRegistry,
   serializeCapability,
   computeCatalogVersion,
   type CapabilityRegistry,
   type CapabilityHandlerContext,
+  type HandToolReach,
   type CapabilityInvocationContext,
   type CapabilityInvocationObserver,
   type CapabilityPreflightResult,
 } from './registry.js';
 export { isTrustedCaller, trustedCaller, type TrustedCaller } from './trusted-caller.js';
+export {
+  // `resolveCallPermission` is exported for the tool-list builders, which hide a
+  // Blocked action from the agent; the gate itself reads it inside its callers.
+  canRaiseApproval,
+  initPermissionGate,
+  permissionAreaLabel,
+  REQUEST_PERMISSION_TOOL,
+  permissionGateSources,
+  resetPermissionGate,
+  resolveCallPermission,
+  type CallPermission,
+  type PermissionGateSources,
+  type PermissionListedAction,
+} from './permission-enforcement.js';
 export {
   // `enforceCapabilityTier` is deliberately NOT re-exported: the gate is reached
   // through `registry.invoke`, or through `authorizeCapability` by the one kind of
@@ -51,7 +55,6 @@ export {
   type AutoApprovedAttempt,
   type CapabilityTierGateOptions,
   type GrantedApproval,
-  type StandingGrantLookup,
   type TierDeniedPayload,
   type TierDeniedReason,
   type TierEnforcementAttempt,

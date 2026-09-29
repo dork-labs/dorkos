@@ -1,0 +1,72 @@
+<style>
+  .card-image{display:block!important;height:auto!important;min-height:0!important;aspect-ratio:auto!important;overflow:visible!important;background:#fafafa!important;padding:16px!important;text-align:left}
+  .sheet{background:#fff;border:1px solid #d4d4d4;border-radius:12px;padding:16px;max-width:380px;margin:0 auto;font-size:13px}
+  .t{font-weight:700;font-size:15px;display:flex;gap:8px;align-items:center;margin-bottom:12px}
+  .logo{width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:12px;background:#ea4335}
+  .rad{display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border:1px solid #eee;border-radius:9px;margin:6px 0}
+  .rad.on{border-color:#111;background:#fafafa}
+  .rad small{display:block;color:#888;font-size:11px}
+  .sub{margin:4px 0 0 26px}
+  .sub div{margin:3px 0}
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin:14px 0 4px}
+  .seg{display:flex;background:#f1f1f1;border-radius:8px;padding:3px}
+  .seg span{flex:1;text-align:center;padding:6px;border-radius:6px;font-size:12px;color:#666}
+  .seg span.on{background:#fff;color:#111;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12px;margin-top:8px}
+  .b{display:inline-block;font-size:12px;padding:6px 12px;border-radius:7px;border:1px solid #ddd;background:#fff;margin:12px 4px 0 0}
+  .b.d{background:#111;color:#fff;border-color:#111}
+  .muted{color:#888}
+  .note{font-size:12px;color:#6d28d9;margin-top:10px}
+  .mini{background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:12px;font-size:12px;max-width:380px;margin:10px auto 0}
+</style>
+
+<h2>Step 4 — "Who can use it?" with an "every agent" option</h2>
+<p class="subtitle">Yes, I think it belongs. But "every agent, including future ones" is the biggest yes you can give, so it needs two guardrails. Pick which version feels right.</p>
+
+<div class="cards">
+  <div class="card" data-choice="guarded" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sheet">
+        <div class="t"><span class="logo">M</span>Who can use Gmail?</div>
+        <div class="rad"><span>○</span><div>Only agents I pick</div></div>
+        <div class="rad on"><span>◉</span><div>Every agent<small>Including agents you add later</small></div></div>
+        <div class="lbl">They can</div>
+        <div class="seg"><span class="on">Read email</span><span>Read and send</span></div>
+        <div class="warn" style="opacity:.45">⚠ Every agent — including ones you add later — could send email as you.</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">↑ Appears only if you pick "Read and send"</div>
+        <span class="b d">Save</span><span class="b">Skip</span>
+      </div>
+      <div class="mini"><b>Later, when you add a new agent:</b><br><span class="muted">"Research Bot will get: Gmail (read), Calendar (read). <u>Change</u>"</span></div>
+      <div class="note">Guardrail 1: a plain warning, only when it matters (sending, writing, deleting).<br>Guardrail 2: new agents tell you what they're getting, the moment they arrive.</div>
+    </div>
+    <div class="card-body">
+      <h3>A · Every agent, with guardrails (recommended)</h3>
+      <p>Two plain choices. One click for people who trust all their agents. The warning only shows for risky access. New agents never get access silently.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="three-way" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sheet">
+        <div class="t"><span class="logo">M</span>Who can use Gmail?</div>
+        <div class="rad"><span>○</span><div>Only agents I pick</div></div>
+        <div class="rad"><span>○</span><div>All my agents today<small>35 agents. New ones must ask.</small></div></div>
+        <div class="rad on"><span>◉</span><div>Every agent, always<small>Including agents you add later</small></div></div>
+        <div class="lbl">They can</div>
+        <div class="seg"><span class="on">Read email</span><span>Read and send</span></div>
+        <span class="b d">Save</span><span class="b">Skip</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Three choices: some, all today, all forever</h3>
+      <p>More control. But "all today" vs "all forever" is a subtle difference most people won't get on first read, and it's one more thing to think about.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:22px;max-width:860px">
+  <p class="label">How it shows up afterwards</p>
+  <p style="font-size:13px;color:#555">The row says <b>"Every agent"</b> instead of a count. The chat card never offers "every agent" — in chat you're answering for one agent, so it stays one agent. "Every agent" is a planning choice, so it lives on the page.</p>
+  <p class="label" style="margin-top:14px">Heads up — this is new server work</p>
+  <p style="font-size:13px;color:#555">Today, access is always granted to one named agent at a time (spec: <code>specs/white-label-connections/</code>). "Every agent, including future ones" needs a new kind of grant. That's doable, and it should get a short decision record, since the spec chose one-agent-at-a-time on purpose.</p>
+</div>

@@ -25,8 +25,11 @@ import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync';
 import { ChannelComposer } from './ChannelComposer';
 import { RoomFlow, RoomHistorySkeleton } from './RoomFlow';
+import { RoomApprovalCards } from './RoomApprovalCards';
+import { RoomAgentRequests } from './RoomAgentRequests';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
+import { RoomThreadSplit } from './RoomThreadSplit';
 
 /** What {@link RoomSurface} needs to draw a room. */
 export interface RoomSurfaceProps {
@@ -363,6 +366,7 @@ export function RoomSurface({
         viewerAuthorId={room.viewerAuthorId}
         entries={entries}
         members={room.members}
+        formerAuthors={room.formerAuthors}
         lastReadSeq={frozenReadSeq}
         reactionFrequents={room.reactionFrequents}
         streamStalled={stream.stalled}
@@ -396,6 +400,10 @@ export function RoomSurface({
           Scoped to everything OUTSIDE the open thread, so an agent working on a
           thread reply is announced in the panel instead of here — one claim, one
           line, in the place the work is happening. */}
+      {/* A request this room's own turn raised, at the live end of the room
+          where that turn is (spec `agent-permissions` D7). */}
+      <RoomApprovalCards roomId={room.id} />
+      <RoomAgentRequests roomId={room.id} />
       <RoomLiveLane
         room={room}
         entries={entries}
@@ -487,10 +495,7 @@ export function RoomSurface({
 
   return (
     <Conversation.Root {...conversation}>
-      <div className="flex h-full overflow-hidden">
-        {roomColumn}
-        {panel}
-      </div>
+      <RoomThreadSplit room={roomColumn} thread={panel} />
     </Conversation.Root>
   );
 }

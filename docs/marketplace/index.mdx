@@ -54,7 +54,7 @@ Browse [dorkos.ai/marketplace](https://dorkos.ai/marketplace) to find a package 
 ### Install it
 
 ```bash
-dorkos install code-review-suite
+dorkos marketplace install code-review-suite
 ```
 
 DorkOS fetches the package, verifies its manifest, shows you the requested permissions, and asks for confirmation before writing any files.
@@ -66,14 +66,18 @@ DorkOS fetches the package, verifies its manifest, shows you the requested permi
 ### Manage it
 
 ```bash
-dorkos update code-review-suite     # check for an update
-dorkos update --apply               # apply every available update
-dorkos uninstall code-review-suite
+dorkos marketplace installed                    # list what you have, and where
+dorkos marketplace outdated                     # list only what has an update
+dorkos marketplace update code-review-suite     # check one package for an update
+dorkos marketplace update --apply               # apply every available update
+dorkos marketplace uninstall code-review-suite
 ```
 
-There's no CLI command that lists everything you've installed. For that, open the **Installed** panel in DorkOS (see the other tab).
+`dorkos install`, `dorkos update` and `dorkos uninstall` are shorter names for the same commands.
 
-`dorkos update` tells you one of three things about each package:
+In DorkOS, the **Installed** tab of Marketplace shows the same list and which packages have an update waiting (see the other tab).
+
+`dorkos marketplace update` tells you one of three things about each package:
 
 - **A newer version is available.** For example, `flow  0.7.2 → 0.7.3  (dorkos-community)`. Run the command again with `--apply` to install it.
 - **It's up to date.** For example, `flow  up to date (0.7.3)`.
@@ -82,6 +86,22 @@ There's no CLI command that lists everything you've installed. For that, open th
 Leave out the package name to check every package you have, wherever it's installed. A package installed for one agent shows that agent's name, like `flow [Alpha]  0.7.2 → 0.7.3`, so the same package in two places shows up as two lines. A problem with one package doesn't stop the rest. With `--apply`, the command lists what it updated and anything it couldn't update, with the reason.
 
 `--apply` updates each package where it's installed. If you add `--project` to update a package that's installed for everything, it stays installed for everything. It isn't moved into that project.
+
+Before `--apply` installs anything, it prints everything each new version runs on its own: the commands it runs and when, the servers and programs it starts, and the skills it lets use tools without asking. Then it asks you. Add `--yes` to skip the question. DorkOS installs exactly what it printed. If a new version changes what it runs before the install happens, nothing is updated and the command tells you to look again. When an agent runs the update for you, DorkOS shows you an approval card first and changes nothing until you allow it.
+
+A package you install for all your projects loads into every session. If it runs commands or programs of its own, it only loads after you approve the exact copy that was installed, files included. Installing or updating it yourself counts as that approval. If a different copy arrives another way (for example, an agent installs or updates it), DorkOS holds it back from the next message on and asks you with an approval card. A held-back package says so on its row in **Installed**, with a **Review** button to ask again. In a terminal, `dorkos marketplace held-back` lists them, and `--allow <name>` or `--refuse <name>` decides one after printing everything it runs. If you turned on sign-in, decide in the app instead: the terminal points you to the **Review** button. `dorkos harness hooks --list` shows every answer you have given, and `--revoke <name>` forgets one.
+
+What this protects: code that arrives through installs and updates. It does not watch the files on your computer. A program already running as you, like an agent working in a shell, can change files and settings on your computer anyway, so DorkOS does not check the installed files again after they land.
+
+A few cases work a little differently:
+
+- **Packages installed before this check existed** are held back once, with the note "installed before approvals were recorded; review it." Review shows the package as it is now.
+- **A linked package** (a folder you linked in while building a plugin) is approved by its folder. After you approve it, it runs whatever is in that folder, and its row and approval card say so.
+- **A package that ships its own settings, secrets or install record** (the files DorkOS keeps under its `.dork` folder) is not installed at all. DorkOS never checks those files, so a package could hide code in them.
+
+When an agent installs a package for all your projects that runs commands of its own, or one that replaces a package you have, DorkOS shows you an approval card first, naming the agent, the version and where the package comes from.
+
+`dorkos marketplace outdated` prints only the packages that are behind, and changes nothing. It ends with exit code `1` when something has an update, so a script or a scheduled job can check for you. See [the CLI guide](/docs/guides/cli-usage#marketplace) for all three exit codes.
 
 </Step>
 
@@ -113,7 +133,7 @@ The featured rail at the top highlights curated agents. Below it, the package gr
 
 ### Review and install
 
-Click a package to open the detail sheet. You'll see the requested permissions, the external hosts the package needs to reach (for example, a Discord adapter reaching Discord's API), and an install button. Review the permission preview and confirm. DorkOS handles the rest, and if anything goes wrong partway through, it puts things back exactly as they were.
+Click a package to open the detail sheet. You'll see the requested permissions, the external hosts the package needs to reach (for example, a Discord bridge reaching Discord's API), and an install button. Review the permission preview and confirm. DorkOS handles the rest, and if anything goes wrong partway through, it puts things back exactly as they were.
 
 By default a package installs **globally**, for every agent. To scope it to one agent, pick **Specific agent** in the install dialog and choose the agent. The preview updates to show exactly what that install will do. An agent-scoped plugin's commands, skills, and hooks become available in that agent's sessions from its next message.
 
@@ -129,6 +149,12 @@ By default a package installs **globally**, for every agent. To scope it to one 
   Most people stop here. Read on if you want to manage installs across multiple agents, add a
   private source, or publish your own package.
 </Callout>
+
+## How large a package can be
+
+DorkOS won't install a package larger than 250 MB in total, with more than 20,000 files and folders, or with any single file over 50 MB. It checks this before showing you what the package will do, so you never approve something it then refuses. Real packages are far smaller: the largest we've seen is about 12 MB.
+
+If you install from a folder on your computer, DorkOS copies the folder as it is, including any `node_modules` folder inside it. A project with its libraries installed can pass these limits. The message says how much of it is in `node_modules`, so you can remove that folder or install from the package's repository instead.
 
 ## Browsing in DorkOS
 
@@ -146,6 +172,28 @@ The browse surface has three sections:
 - **Detail sheet**: opens when you click a package. Shows the permission preview, install instructions, and related packages.
 
 The install confirmation dialog always shows you exactly what the package wants to do (which files it will write, which network hosts it needs to reach, which permissions it will request) before any state changes. You can deny at any point and DorkOS leaves your installation untouched.
+
+That includes commands written into a skill or command's text. A skill can ask Claude Code to run a shell command the moment it is used, before the agent reads it, so each of those commands is listed with the skill it comes from. A new version that adds or changes one asks you again.
+
+## Keeping packages up to date
+
+The **Installed** tab of Marketplace lists every package you've installed, in every place it's installed. When you open Marketplace, DorkOS checks all of them for a newer version at once. The **Installed** tab shows how many have an update waiting, so you can see it from Browse too.
+
+Each package says where it stands:
+
+- **Update available: v1.2.0 → v1.3.0.** Its **Update to v1.3.0** button installs the new version in the same place. If the new version runs commands or programs of its own, the button first shows you what they are and asks you to confirm.
+- **Up to date.** There's nothing to install, so there's no Update button.
+- **Couldn't check for updates, and why.** For example, "couldn't reach github.com" when you're offline, or "linked install — update its source instead" for a package linked to a folder on your computer. DorkOS never calls a package up to date when it couldn't check it.
+
+While the check runs, each package says **Checking for updates…**. It can take a moment when many packages are installed.
+
+**Update all…** opens a list of every package it will update, where each one is installed (all agents, or a named agent), and which version it moves to. Under each package it lists what the new version runs on its own: each command and when it runs, each server or program and whether it starts in every session. What is new or changed since the version you have is marked and comes first; what is the same is folded under a count you can open. A line at the top says how many of the packages run things on their own and how many add something. Nothing changes until you confirm, and then only those packages are updated, exactly as listed. If a package changes what it runs after you opened the list, DorkOS updates nothing and asks you to review it again. If one fails, the others still update, and the failed one shows why. **Check again** runs the check again whenever you like.
+
+A package whose files you or an agent changed since it was installed says how many, for example **3 files changed since install (2 edited, 1 added)**. Open it to see which ones, grouped as edited, added and removed. When an update is waiting, it also says what the update will do: it replaces files you edited and keeps your copies beside them, keeps files you added, and puts back files you removed. **Update all…** says the same for each package it affects.
+
+A package installed by an older version of DorkOS says **Installed by an older DorkOS**, because that version didn't record which files were the package's. DorkOS checks them for you in the background after it starts: it compares the package with the exact version you installed, and records its files only when every file still matches. If that couldn't happen, for example because you were offline, press **Check files** to try again. It compares this package with the version you installed, so updates keep your edits. If the files differ, the package says so, with **Try again** for when you've put things back; its next update still keeps your copies either way. A package installed from a folder on your computer has no version to compare with, so reinstall it to start tracking its files.
+
+If you update or remove such a package when DorkOS can't get the version you had, for example because you're offline, DorkOS can't tell which of its files are yours. It keeps every one it can't account for, never deletes them, and tells you which files they are. After an update, the package says **Kept 2 files DorkOS couldn't sort after an update**. Open it to see the files. Once you're online, press **Check files**. It sets aside the files that are exactly what the earlier version shipped, which the update would have replaced anyway, by renaming each to end in `.dork-old` so it no longer runs, and keeps the rest as yours. Nothing is deleted. Until you do, the package keeps listing those files, even through later updates. If some of them sit where a package keeps what it runs, such as an old skill or command, the note says **2 of them still run** and lists them apart, because they still work in your sessions. A package installed for all projects that still runs such a file won't load until you approve it; its note names the files and points you to **Check files**. After removing a package, the kept files are simply yours: delete any you don't need.
 
 ## Managing installed packages
 
@@ -175,8 +223,19 @@ To add the package to another scope (for example, you have it globally and want 
   affects every agent, and uninstalling it from one agent disables those extensions everywhere.
   Skills and commands, by contrast, do respect scope: an agent-scoped install's skills and commands
   only run for that agent. DorkOS warns you in the install dialog whenever the global-extensions
-  caveat applies.
+  caveat applies. An extension that arrives in a plugin shows up in **Settings → Extensions** and
+  waits for your OK before it runs. Your OK belongs to that copy: if a different plugin brings an
+  extension with the same name, DorkOS asks you again.
 </Callout>
+
+## What updating, reinstalling and uninstalling keep
+
+A package's folder can hold your own files as well as the package's: settings you filled in, notes, a folder an agent works in. DorkOS keeps track of which files the package itself put there, and only ever replaces or removes those.
+
+- **Updating or reinstalling** keeps every file you or your agents added. The package's own files are swapped for the new version's.
+- **If you changed one of the package's own files**, the new version replaces it and your copy is saved next to it with `.dork-old` on the end, for example `SKILL.md.dork-old`. Some packages mark a file as yours to edit, such as a settings file. For those, your copy stays, and if the package changed its default, the new default is saved next to it with `.dork-new` on the end. The update tells you about each of these.
+- **Uninstalling** keeps the files you and your agents added or changed and lists them. Installing the package again later picks them up. `dorkos uninstall <name> --purge` deletes them too.
+- **Uninstalling a marketplace agent** also removes that agent from your team, as removing any agent does. Its rooms, schedules, sign-ins, access tokens, community memberships and connection access go with it. Its memory and persona files stay in its folder. Reinstalling the same package brings back the agent's identity, but not those things; you set them up again.
 
 ## When a new plugin switches on in a chat that's already open
 
@@ -254,6 +313,22 @@ dorkos marketplace list
 # Remove a source
 dorkos marketplace remove my-team
 ```
+
+Adding a source also fetches its listing, so you can install from it straight away. If DorkOS can't
+reach it right then, the source is still added: `dorkos marketplace add` tells you why the listing
+isn't there yet, and `dorkos marketplace refresh my-team` tries again. On the sources page in the
+app, the same reason shows on the source's row, with a **Try again** button beside it.
+
+A refresh always checks the source again. If DorkOS can't reach it but has an earlier copy of its
+listing, it says so and tells you when that copy is from, rather than calling it refreshed.
+
+DorkOS remembers how each source's last check went, whether it came from adding the source, a
+refresh or browsing. `dorkos marketplace list` shows how many packages each source has, or that
+they didn't load and why. The sources page in the app shows the same, even after you reload it or
+open it in another window.
+
+A source's name can use letters, numbers, dots, dashes and underscores, and starts with a letter or
+number.
 
 A source address is either an `https://` link to a git repository, or a folder on this machine
 written as `file:///path/to/folder`. Nothing else works: DorkOS reads a marketplace's listing over

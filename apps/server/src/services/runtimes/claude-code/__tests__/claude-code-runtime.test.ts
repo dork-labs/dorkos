@@ -13,31 +13,24 @@ import {
 } from '../messaging/plugin-reload-policy.js';
 
 // Hoist shared mock functions so the test and ClaudeCodeRuntime share the same
-// vi.fn() instances for context-builder and tool-filter.
-const {
-  _mockBuildSystemPromptAppend,
-  _mockRenderContextEntry,
-  _mockResolveToolConfig,
-  contextBuilderFactory,
-  toolFilterFactory,
-} = vi.hoisted(() => {
-  const bspa = vi.fn().mockResolvedValue({
-    text: '<env>\nWorking directory: /mock\n</env>',
-    stable: '<env>\nWorking directory: /mock\n</env>',
-  });
-  const render = vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`);
-  const rtc = vi.fn().mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true });
-  return {
-    _mockBuildSystemPromptAppend: bspa,
-    _mockRenderContextEntry: render,
-    _mockResolveToolConfig: rtc,
-    contextBuilderFactory: () => ({
-      buildSystemPromptAppend: bspa,
-      renderContextEntry: render,
-    }),
-    toolFilterFactory: () => ({ resolveToolConfig: rtc }),
-  };
-});
+// vi.fn() instances for context-builder.
+const { _mockBuildSystemPromptAppend, _mockRenderContextEntry, contextBuilderFactory } = vi.hoisted(
+  () => {
+    const bspa = vi.fn().mockResolvedValue({
+      text: '<env>\nWorking directory: /mock\n</env>',
+      stable: '<env>\nWorking directory: /mock\n</env>',
+    });
+    const render = vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`);
+    return {
+      _mockBuildSystemPromptAppend: bspa,
+      _mockRenderContextEntry: render,
+      contextBuilderFactory: () => ({
+        buildSystemPromptAppend: bspa,
+        renderContextEntry: render,
+      }),
+    };
+  }
+);
 
 // Mock the SDK before importing agent-manager
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -71,7 +64,6 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 // Mock the canonical paths so that ClaudeCodeRuntime's direct imports are intercepted.
 vi.mock('../messaging/context-builder.js', contextBuilderFactory);
-vi.mock('../tooling/tool-filter.js', toolFilterFactory);
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));
@@ -124,15 +116,22 @@ vi.mock('../../../core/event-fan-out.js', () => ({
 }));
 // Mock the dynamic imports refreshActivatedPlugins() pulls in so the plugin-set
 // swap is deterministic and never touches the real filesystem.
-const { _mockListEnabledPluginNames, _mockBuildPluginsArray } = vi.hoisted(() => ({
-  _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
-  _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
-}));
+const { _mockListEnabledPluginNames, _mockListConsentedPluginNames, _mockBuildPluginsArray } =
+  vi.hoisted(() => ({
+    _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
+    _mockListConsentedPluginNames: vi.fn().mockResolvedValue([]),
+    _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
+  }));
 vi.mock('../../../../lib/dork-home.js', () => ({
   resolveDorkHome: vi.fn().mockReturnValue('/tmp/dorkos-test'),
 }));
 vi.mock('../../../marketplace/installed-scanner.js', () => ({
   listEnabledPluginNames: _mockListEnabledPluginNames,
+}));
+// Which global packages a person approved is decided in the marketplace layer
+// (DOR-2306); the runtime must hand the SDK that list and nothing wider.
+vi.mock('../../../marketplace/global-plugin-consent.js', () => ({
+  listConsentedPluginNames: _mockListConsentedPluginNames,
 }));
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: _mockBuildPluginsArray,
@@ -152,6 +151,12 @@ describe('ClaudeCodeRuntime', () => {
     }));
     const mod = await import('../claude-code-runtime.js');
     agentManager = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
+    // Every scratch folder counts as a registered home here, so this suite's
+    // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+    // Wired on the module instance the runtime just loaded (`resetModules`).
+    const { registerEveryFolderAsHome } =
+      await import('../../../core/agent-identity/__tests__/agent-home-fixture.js');
+    registerEveryFolderAsHome();
   });
 
   afterEach(async () => {
@@ -239,6 +244,28 @@ describe('ClaudeCodeRuntime', () => {
   });
 
   describe('sendMessage()', () => {
+    it('holds a turn unattended only while that turn runs', async () => {
+      // An automatic carry-over's first turn has nobody to ask; a person's next
+      // message in the same session must be able to ask them again.
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const seen: (boolean | undefined)[] = [];
+      agentManager.setMcpServerFactory((session) => {
+        seen.push((session as { unattendedTurn?: boolean }).unattendedTurn);
+        return {};
+      });
+      (mockedQuery as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(wrapSdkQuery(sdkSimpleText('first')))
+        .mockReturnValueOnce(wrapSdkQuery(sdkSimpleText('second')));
+
+      agentManager.ensureSession('carried', { permissionMode: 'default' });
+      for await (const event of agentManager.sendMessage('carried', 'go on', { unattended: true }))
+        void event;
+      for await (const event of agentManager.sendMessage('carried', 'thanks, one more thing'))
+        void event;
+
+      expect(seen).toEqual([true, false]);
+    });
+
     it.each(['hello', '  /help'])(
       'opens lazily and keeps slash commands free of Accounts context: %s',
       async (content) => {
@@ -325,6 +352,86 @@ describe('ClaudeCodeRuntime', () => {
         expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
       }
     );
+
+    describe('which agent a room turn opens its connections as (DOR-2091)', () => {
+      // A room turn names the agent it is for. The connections binding is opened
+      // for the agent the directory anchors to, and only when that is the
+      // turn's agent — a turn for Ben that stands in Ana's folder must never
+      // open Ana's connections. Seeded: `agentPath = cwdKey` (no anchor, no
+      // cross-check) reddens the refusal row.
+      const ANA = '/agents/ana';
+
+      async function turnFor(cwd: string, forAgent: string) {
+        const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+        const principals: ConnectorRuntimePrincipalPort = {
+          openTurn: vi.fn().mockResolvedValue({
+            bindingId: 'binding-1',
+            bearer: 'turn-secret',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            renewalPermit: {} as never,
+          }),
+          renew: vi.fn(),
+          resolve: vi.fn().mockResolvedValue({
+            status: 'resolved',
+            principal: { claims: { kind: 'runtime' } } as ServerPrincipalProof,
+          }),
+          revoke: vi.fn().mockResolvedValue(undefined),
+        };
+        agentManager.setMeshCore({
+          getByPath: (p: string) => (p === ANA ? { id: 'agent-ana', name: 'ana' } : undefined),
+          listWithPaths: () => [],
+          updateLastSeen: () => undefined,
+        });
+        agentManager.setConnectorRuntimeTools({
+          principals,
+          listenerUrl: 'http://127.0.0.1:4341/mcp',
+          isConnectorCapabilityId: (id) => id === 'connectors.execute_read',
+          accessSnapshot: vi.fn().mockResolvedValue({ accountCount: 0, revision: 'r' }),
+        });
+        let connectorTurn: { resolvePrincipal(): Promise<ServerPrincipalProof> } | undefined;
+        agentManager.setMcpServerFactory((session) => {
+          connectorTurn = session.connectorTurn;
+          return {};
+        });
+        const source = sdkSimpleText('ok', 'canonical-room-session');
+        (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
+          wrapSdkQuery(
+            (async function* () {
+              for await (const message of source) {
+                yield message;
+                if (message.type === 'system' && message.subtype === 'init') {
+                  await connectorTurn?.resolvePrincipal();
+                }
+              }
+            })()
+          )
+        );
+        agentManager.ensureSession('room-session', { permissionMode: 'default', cwd });
+        for await (const event of agentManager.sendMessage('room-session', 'hi', {
+          cwd,
+          roomTurn: { roomId: '01ROOM', authorId: 'a-1', turnId: 't-1', cwd, agentPath: forAgent },
+        }))
+          void event;
+        return { principals, connectorTurn };
+      }
+
+      it('opens the connections as the agent, standing in its home', async () => {
+        // A room turn stands at home (spec `agent-home-desk` §5.1).
+        const { principals } = await turnFor(ANA, ANA);
+
+        expect(principals.openTurn).toHaveBeenCalledWith(
+          expect.objectContaining({ agentPath: ANA, canonicalCwd: ANA }),
+          expect.anything()
+        );
+      });
+
+      it("opens nothing for a turn for Ben that stands in Ana's own folder", async () => {
+        const { principals, connectorTurn } = await turnFor(ANA, '/agents/ben');
+
+        expect(connectorTurn).toBeUndefined();
+        expect(principals.openTurn).not.toHaveBeenCalled();
+      });
+    });
 
     it('auto-creates session if not in memory', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
@@ -1329,44 +1436,13 @@ describe('ClaudeCodeRuntime', () => {
     });
   });
 
-  describe('sendMessage() tool-group resolution', () => {
+  describe('sendMessage() tool-doc gates', () => {
     /** SDK mock that yields init + result (minimal successful flow). */
     function mockSuccessFlow() {
       return wrapSdkQuery(sdkSimpleText(''));
     }
 
-    it('calls resolveToolConfig with manifest enabledToolGroups', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const { readManifest } = await import('@dorkos/shared/manifest');
-      const { resolveToolConfig } = await import('../tooling/tool-filter.js');
-
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
-      (readManifest as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'test-id',
-        name: 'test',
-        enabledToolGroups: { tasks: false },
-      });
-
-      agentManager.ensureSession('tf-1', { permissionMode: 'default' });
-      const events = [];
-      for await (const event of agentManager.sendMessage('tf-1', 'hello')) {
-        events.push(event);
-      }
-
-      expect(resolveToolConfig).toHaveBeenCalledWith(
-        { tasks: false },
-        expect.objectContaining({
-          tasksEnabled: expect.any(Boolean),
-          relayEnabled: expect.any(Boolean),
-          globalConfig: expect.objectContaining({
-            tasksTools: true,
-            relayTools: true,
-          }),
-        })
-      );
-    });
-
-    it('passes toolConfig to buildSystemPromptAppend', async () => {
+    it('passes the tool-doc gates to buildSystemPromptAppend', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       const { buildSystemPromptAppend } = await import('../messaging/context-builder.js');
 
@@ -1381,39 +1457,27 @@ describe('ClaudeCodeRuntime', () => {
 
       expect(buildSystemPromptAppend).toHaveBeenCalledTimes(1);
       const callArgs = (buildSystemPromptAppend as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(typeof callArgs[0]).toBe('string'); // cwd
-      expect(callArgs[1]).toEqual(
+      expect(typeof callArgs[0]).toBe('string'); // home
+      expect(typeof callArgs[1]).toBe('string'); // cwd
+      expect(callArgs[2]).toEqual(
         expect.objectContaining({
           tasks: expect.any(Boolean),
           relay: expect.any(Boolean),
           mesh: expect.any(Boolean),
           adapter: expect.any(Boolean),
+          packages: expect.any(Boolean),
         })
       );
     });
 
-    // Regression guard for DOR-519. The toggles used to feed the SDK's `allowedTools`,
-    // which auto-approves the names in it rather than restricting them, and the list
-    // was only non-empty once a group was turned OFF. Switching a group off therefore
-    // widened the agent's auto-approval. Nothing may put DorkOS tools back on that
-    // option: `canUseTool` is the only place allowed to decide what skips a prompt.
-    it('never sets allowedTools, not even when a tool group is turned off', async () => {
+    // Regression guard for DOR-519. The retired tool-group toggles used to feed the
+    // SDK's `allowedTools`, which auto-approves the names in it rather than
+    // restricting them. Nothing may put DorkOS tools back on that option:
+    // `canUseTool` is the only place allowed to decide what skips a prompt.
+    it('never sets allowedTools', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const { readManifest } = await import('@dorkos/shared/manifest');
-      const { resolveToolConfig } = await import('../tooling/tool-filter.js');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
-      (readManifest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        id: 'test-id',
-        name: 'test',
-        enabledToolGroups: { relay: false, tasks: false, mesh: false, adapter: false },
-      });
-      (resolveToolConfig as ReturnType<typeof vi.fn>).mockReturnValueOnce({
-        tasks: false,
-        relay: false,
-        mesh: false,
-        adapter: false,
-      });
 
       agentManager.ensureSession('tf-3', { permissionMode: 'default' });
       const events = [];
@@ -1425,10 +1489,9 @@ describe('ClaudeCodeRuntime', () => {
       expect(callArgs.options.allowedTools).toBeUndefined();
     });
 
-    it('uses global config defaults when no agent manifest exists', async () => {
+    it('still launches when no agent manifest exists', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       const { readManifest } = await import('@dorkos/shared/manifest');
-      const { resolveToolConfig } = await import('../tooling/tool-filter.js');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
       // readManifest throws (no .dork/agent.json)
@@ -1440,9 +1503,6 @@ describe('ClaudeCodeRuntime', () => {
         events.push(event);
       }
 
-      // Should pass undefined for agentConfig (no manifest)
-      expect(resolveToolConfig).toHaveBeenCalledWith(undefined, expect.any(Object));
-      // Should still complete without errors
       expect(events.find((e) => e.type === 'done')).toBeDefined();
       expect(events.find((e) => e.type === 'error')).toBeUndefined();
     });
@@ -1580,7 +1640,51 @@ describe('ClaudeCodeRuntime', () => {
     beforeEach(() => {
       _mockBroadcast.mockClear();
       _mockListEnabledPluginNames.mockResolvedValue([]);
+      _mockListConsentedPluginNames.mockResolvedValue([]);
       _mockBuildPluginsArray.mockResolvedValue([]);
+    });
+
+    it('hands the SDK only the global packages a person approved (DOR-2306)', async () => {
+      // Purpose: every installed global package is a candidate, but one whose
+      // programs nobody approved must never reach a session.
+      _mockListEnabledPluginNames.mockResolvedValue(['approved', 'held-back']);
+      _mockListConsentedPluginNames.mockResolvedValue(['approved']);
+
+      await agentManager.refreshActivatedPlugins();
+
+      expect(_mockBuildPluginsArray).toHaveBeenCalledWith(
+        expect.objectContaining({ enabledPluginNames: ['approved'] })
+      );
+    });
+
+    it('drops every global plugin when the approval check itself fails, never keeping the old list (DOR-2306, I-1)', async () => {
+      // Purpose: a refresh that cannot say which packages are approved must not
+      // leave the previous approved set loading into every session.
+      _mockListConsentedPluginNames.mockResolvedValue(['approved']);
+      _mockBuildPluginsArray.mockImplementation(async ({ enabledPluginNames }) =>
+        (enabledPluginNames as string[]).map((name) => ({
+          type: 'local',
+          path: `/h/plugins/${name}`,
+        }))
+      );
+      await agentManager.refreshActivatedPlugins();
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const optionsOfLastTurn = async (sessionId: string) => {
+        (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('')));
+        agentManager.ensureSession(sessionId, { permissionMode: 'default' });
+        for await (const _ of agentManager.sendMessage(sessionId, 'hello')) {
+          // drain
+        }
+        return (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]?.options;
+      };
+      expect((await optionsOfLastTurn('partition-ok'))?.plugins).toEqual([
+        { type: 'local', path: '/h/plugins/approved' },
+      ]);
+
+      _mockListConsentedPluginNames.mockRejectedValue(new Error('settings unreadable'));
+      await agentManager.refreshActivatedPlugins();
+
+      expect((await optionsOfLastTurn('partition-threw'))?.plugins ?? []).toEqual([]);
     });
 
     it('broadcasts commands_changed so clients re-fetch the registry', async () => {

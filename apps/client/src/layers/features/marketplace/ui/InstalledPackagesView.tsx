@@ -1,27 +1,54 @@
 import { useState } from 'react';
-import { Trash2, RefreshCw, FolderOpen, Bot, Shapes, AlertTriangle } from 'lucide-react';
-import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
-import { useInstalledPackages } from '@/layers/entities/marketplace';
+import {
+  Trash2,
+  RefreshCw,
+  FolderOpen,
+  Bot,
+  Shapes,
+  AlertTriangle,
+  ShieldAlert,
+  FileCheck2,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  disclosesAnything,
+  type InstallIntegrity,
+  type InstalledPackage,
+} from '@dorkos/shared/marketplace-schemas';
+import {
+  useApplyingInstallPaths,
+  useInstalledIntegrity,
+  useInstalledPackages,
+  useReviewHeldBackPackage,
+} from '@/layers/entities/marketplace';
 import { useShapes } from '@/layers/entities/shapes';
 import { Badge, Button } from '@/layers/shared/ui';
 import { humanizePackageName } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
-import { useUpdateWithToast } from '../model/use-update-with-toast';
+import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
+import { useCheckFilesWithToast } from '../model/use-check-files-with-toast';
+import { useInstalledUpdatesView } from '../model/use-installed-updates-view';
+import { useFocusRescue, type FocusRescue } from '../model/use-focus-rescue';
+import {
+  formatCheckVersion,
+  installationPlace,
+  rowUpdateState,
+  type RowUpdateState,
+  type StaleInstallation,
+} from '../lib/installed-updates';
 import { PackageTypeBadge } from './PackageTypeBadge';
 import { PackageLoadingSkeleton } from './PackageLoadingSkeleton';
 import { PackageEmptyState } from './PackageEmptyState';
 import { PackageErrorState } from './PackageErrorState';
+import { InstalledUpdatesSummary } from './InstalledUpdatesSummary';
+import { InstallationUpdateStatus } from './InstallationUpdateStatus';
+import { ConfirmUpdatesDialog } from './ConfirmUpdatesDialog';
+import { canCheckFiles, InstallationIntegrityNote } from './InstallationIntegrityNote';
 
 // ---------------------------------------------------------------------------
 // Package row sub-component
 // ---------------------------------------------------------------------------
-
-/** Display name for an agent-scoped installation's owner. */
-function agentLabel(pkg: InstalledPackage): string | null {
-  if (pkg.scope !== 'agent-local' && pkg.scope !== 'override') return null;
-  return pkg.agentName ?? pkg.agentPath?.split('/').filter(Boolean).pop() ?? 'agent';
-}
 
 interface PackageRowProps {
   installation: InstalledPackage;
@@ -29,11 +56,108 @@ interface PackageRowProps {
   isActiveShape: boolean;
   isConfirmingUninstall: boolean;
   isUninstalling: boolean;
-  isUpdating: boolean;
+  /** Where this installation stands with respect to updates. */
+  updateState: RowUpdateState;
+  /** Whether its files still match what was installed, once verification answers. */
+  integrity?: InstallIntegrity;
+  /** This installation's files are being checked (DOR-2320). */
+  isCheckingFiles: boolean;
+  /** Check the files of an installation an older DorkOS made against the version installed. */
+  onCheckFilesClick: () => void;
   /** Open the Shape switcher to apply this Shape (Shapes only). */
   onApplyClick: () => void;
+  /** Update this installation (offered only when an update is available). */
   onUpdateClick: () => void;
   onUninstallClick: () => void;
+  /** Raise the approval card for a held-back global package (DOR-2306). */
+  onReviewClick: () => void;
+  /** True while that card is being raised. */
+  isRaisingReview: boolean;
+}
+
+/**
+ * Says a global package is held back from every session, why, and (when it can
+ * be put on a card) offers to ask again, so a package never just vanishes from
+ * sessions without a word (DOR-2306).
+ */
+function HeldBackNotice({
+  heldBack,
+  label,
+  onReviewClick,
+  isRaisingReview,
+}: {
+  heldBack: NonNullable<InstalledPackage['heldBack']>;
+  label: string;
+  onReviewClick: () => void;
+  isRaisingReview: boolean;
+}) {
+  return (
+    // On a phone the note takes the row and Review sits on its own line under
+    // it, lined up with the text; from `sm` up they share one line.
+    <div className="text-status-warning-fg mt-1.5 flex flex-col items-start gap-1.5 text-xs sm:flex-row sm:gap-2">
+      <div className="flex min-w-0 items-start gap-2">
+        <ShieldAlert className="mt-0.5 size-3 shrink-0" aria-hidden />
+        {/* A linked install's note names a folder path, which must wrap. */}
+        <span className="min-w-0 [overflow-wrap:anywhere]">{heldBack.note}</span>
+      </div>
+      {heldBack.reviewable && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-5 h-6 shrink-0 px-2 text-xs sm:ml-0"
+          onClick={onReviewClick}
+          disabled={isRaisingReview}
+          aria-label={`Review ${label}`}
+        >
+          {isRaisingReview ? 'Asking…' : 'Review'}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The row's Update button. It exists only when there is something to install,
+ * and names the version it installs, so it can never be a blind guess. While
+ * this installation is being updated it stays the same element, marked
+ * `aria-disabled` rather than `disabled`, so a keyboard user who pressed it
+ * keeps focus on it instead of being dropped to the page.
+ */
+function UpdateButton({
+  state,
+  label,
+  onClick,
+  focusProps,
+}: {
+  state: RowUpdateState;
+  /** "Reviewer" or "Reviewer on Alpha", for the accessible name. */
+  label: string;
+  onClick: () => void;
+  /** From the row's focus rescue, so leaving does not drop focus. */
+  focusProps: FocusRescue<HTMLDivElement>['controlProps'];
+}) {
+  if (state.kind !== 'update-available' && state.kind !== 'applying') return null;
+  const applying = state.kind === 'applying';
+  const { check } = state;
+  const from = check && formatCheckVersion(check.installedVersion, check.installedVersionSource);
+  const to = check && formatCheckVersion(check.latestVersion, check.latestVersionSource);
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      aria-disabled={applying || undefined}
+      className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+      onClick={applying ? undefined : onClick}
+      aria-label={applying ? `Updating ${label}` : `Update ${label} from ${from} to ${to}`}
+      {...focusProps}
+    >
+      <RefreshCw
+        className={`mr-1 size-3 ${applying ? 'animate-spin motion-reduce:animate-none' : ''}`}
+        aria-hidden
+      />
+      {applying ? 'Updating…' : `Update to ${to}`}
+    </Button>
+  );
 }
 
 function PackageRow({
@@ -41,10 +165,15 @@ function PackageRow({
   isActiveShape,
   isConfirmingUninstall,
   isUninstalling,
-  isUpdating,
+  updateState,
+  integrity,
+  isCheckingFiles,
+  onCheckFilesClick,
   onApplyClick,
   onUpdateClick,
   onUninstallClick,
+  onReviewClick,
+  isRaisingReview,
 }: PackageRowProps) {
   const { name, version, type, scope, installedFrom, installedAt, adapterType } = installation;
   const dependencyWarnings = installation.dependencyWarnings ?? [];
@@ -59,15 +188,29 @@ function PackageRow({
         day: 'numeric',
       })
     : null;
-  const agent = agentLabel(installation);
+  const agent = installationPlace(installation);
+  const label = agent ? `${displayName} on ${agent}` : displayName;
+  // When Update leaves (the package is now current), focus goes to the line
+  // that says so rather than to the page.
+  const { targetRef: rescueTarget, controlProps: rescueProps } = useFocusRescue<HTMLDivElement>(
+    updateState.kind === 'update-available' || updateState.kind === 'applying'
+  );
 
   return (
-    <div className="bg-card flex items-center justify-between gap-4 rounded-xl border p-6">
+    <div className="bg-card flex flex-col gap-3 rounded-xl border p-4 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-4 @2xl:p-6">
       {/* Left: metadata */}
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold">{displayName}</span>
           <PackageTypeBadge type={type} adapterType={adapterType} />
+          {installation.heldBack && (
+            <Badge
+              variant="outline"
+              className="border-amber-500/60 text-amber-700 dark:text-amber-300"
+            >
+              Held back
+            </Badge>
+          )}
           {isActiveShape && <Badge variant="secondary">Active</Badge>}
           <Badge variant="outline" className="font-mono">
             v{version}
@@ -98,6 +241,31 @@ function PackageRow({
           )}
           {formattedDate && <span>Installed {formattedDate}</span>}
         </div>
+        <div
+          ref={rescueTarget}
+          tabIndex={-1}
+          data-testid="installation-update-status"
+          className="focus-visible:ring-ring/50 mt-1.5 rounded-sm outline-none focus-visible:ring-2"
+        >
+          <InstallationUpdateStatus state={updateState} />
+        </div>
+        {installation.heldBack && (
+          <HeldBackNotice
+            heldBack={installation.heldBack}
+            label={label}
+            onReviewClick={onReviewClick}
+            isRaisingReview={isRaisingReview}
+          />
+        )}
+        <InstallationIntegrityNote
+          integrity={integrity}
+          updateAvailable={
+            updateState.kind === 'update-available' || updateState.kind === 'applying'
+          }
+          label={label}
+          onCheckFiles={onCheckFilesClick}
+          isCheckingFiles={isCheckingFiles}
+        />
         {/* A package whose npm libraries did not install is on disk and usable
             but incomplete, and that outlives the toast the person dismissed at
             install time. The note carries its own remedy, so it is shown in
@@ -105,10 +273,7 @@ function PackageRow({
         {dependencyWarnings.length > 0 && (
           <div className="mt-1 space-y-0.5">
             {dependencyWarnings.map((warning) => (
-              <p
-                key={warning}
-                className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-400"
-              >
+              <p key={warning} className="text-status-warning-fg flex items-start gap-1 text-xs">
                 <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
                 <span>{warning}</span>
               </p>
@@ -118,7 +283,7 @@ function PackageRow({
       </div>
 
       {/* Right: actions */}
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         {/* Apply lands the user on this Shape in the switcher. The active Shape
             already reads "Active"; re-apply/reset lives in the switcher, so its
             row shows no Apply — the badge is the state, no redundant button. */}
@@ -134,16 +299,31 @@ function PackageRow({
           </Button>
         )}
 
-        <Button
-          size="sm"
-          variant="outline"
+        {/* An install an older DorkOS made has no record of its files until
+            they are checked against the version installed (DOR-2320). Offered
+            only when that can help: not for a package installed from a folder,
+            and not once its files were found to differ (the note says why). */}
+        {canCheckFiles(integrity) && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCheckFilesClick}
+            disabled={isCheckingFiles}
+            aria-label={
+              isCheckingFiles ? `Checking the files of ${label}` : `Check the files of ${label}`
+            }
+          >
+            <FileCheck2 className="mr-1 size-3" aria-hidden />
+            {isCheckingFiles ? 'Checking…' : 'Check files'}
+          </Button>
+        )}
+
+        <UpdateButton
+          state={updateState}
+          label={label}
           onClick={onUpdateClick}
-          disabled={isUpdating}
-          aria-label={`Check for updates to ${displayName}${agent ? ` on ${agent}` : ''}`}
-        >
-          <RefreshCw className={`mr-1 size-3 ${isUpdating ? 'animate-spin' : ''}`} aria-hidden />
-          {isUpdating ? 'Updating…' : 'Update'}
-        </Button>
+          focusProps={rescueProps}
+        />
 
         <Button
           size="sm"
@@ -177,15 +357,19 @@ const CONFIRM_WINDOW_MS = 3_000;
 // ---------------------------------------------------------------------------
 
 /**
- * "Manage Installed" surface — lists every installed marketplace package with
- * per-row update and uninstall actions.
+ * "Manage Installed" surface — lists every installed marketplace package, says
+ * which ones have a newer version, and updates or uninstalls each one.
  *
- * Update is advisory by default and applies the reinstall when the user clicks
- * the Update button (passes `apply: true`). Uninstall requires a two-click
- * confirmation: the first click opens a 3-second confirm window; a second
- * click within that window fires the mutation with `purge: false` (data is
- * preserved). If the window expires without a second click the row resets
- * silently.
+ * Updates: one check for every installation runs when the Marketplace opens
+ * (`useInstalledUpdatesView`, shared with the tab's count). Each row says where
+ * it stands, and offers "Update to vX" only when there is something to install.
+ * "Update all…" opens a confirm step naming each installation, and applies
+ * exactly those. A row's Update uses the same door, for that one installation.
+ *
+ * Uninstall requires a two-click confirmation: the first click opens a
+ * 3-second confirm window; a second click within that window fires the
+ * mutation with `purge: false` (data is preserved). If the window expires
+ * without a second click the row resets silently.
  *
  * Renders loading, error, empty, and populated states via shared primitives
  * (`PackageLoadingSkeleton`, `PackageErrorState`, `PackageEmptyState`).
@@ -199,11 +383,22 @@ export function InstalledPackagesView() {
   const activeShapeName = shapes?.find((s) => s.active)?.name;
   const openShapeSwitcherToShape = useAppStore((s) => s.openShapeSwitcherToShape);
   const uninstall = useUninstallWithToast();
-  const update = useUpdateWithToast();
+  const updates = useInstalledUpdatesView();
+  const applying = useApplyingInstallPaths();
+  const { apply } = useApplyUpdatesWithToast();
+  const review = useReviewHeldBackPackage();
+  // Whether each installation's files still match what was installed
+  // (DOR-2197): one verified request beside the list, never one per row.
+  const { data: integrityByPath } = useInstalledIntegrity();
+  const checkFiles = useCheckFilesWithToast();
 
   // Track which installation (by installPath — unique per scope, unlike the
   // package name) is in the confirm-uninstall window.
   const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
+  // What the confirm step is asking about ("Update all", or one row whose new
+  // version runs something), snapshotted when the dialog opens, so a check
+  // that lands meanwhile cannot change what the person confirms.
+  const [confirmingUpdate, setConfirmingUpdate] = useState<StaleInstallation[] | null>(null);
 
   // ---------------------------------------------------------------------------
   // Guards
@@ -230,13 +425,6 @@ export function InstalledPackagesView() {
   // Handlers
   // ---------------------------------------------------------------------------
 
-  function handleUpdate(pkg: InstalledPackage) {
-    update.mutate({
-      name: pkg.name,
-      options: { apply: true, ...(pkg.agentPath && { projectPath: pkg.agentPath }) },
-    });
-  }
-
   function handleUninstallClick(pkg: InstalledPackage) {
     if (confirmingPath === pkg.installPath) {
       // Second click within the window — fire the mutation, scoped to this
@@ -244,7 +432,7 @@ export function InstalledPackagesView() {
       uninstall.mutate({
         name: pkg.name,
         options: { purge: false, ...(pkg.agentPath && { projectPath: pkg.agentPath }) },
-        where: agentLabel(pkg) ?? undefined,
+        where: installationPlace(pkg) ?? undefined,
       });
       setConfirmingPath(null);
     } else {
@@ -256,12 +444,49 @@ export function InstalledPackagesView() {
     }
   }
 
-  /** Whether an in-flight mutation's variables target this exact installation. */
-  function targetsInstallation(
-    variables: { name: string; options?: { projectPath?: string } } | undefined,
-    pkg: InstalledPackage
-  ): boolean {
+  function handleReview(pkg: InstalledPackage) {
+    review.mutate(pkg.name, {
+      onSuccess: () =>
+        toast.info(`Review ${humanizePackageName(pkg.name)} on the approval card`, {
+          description: 'It stays held back until you allow it there.',
+        }),
+      onError: (err) =>
+        toast.error(`Couldn’t ask about ${humanizePackageName(pkg.name)}`, {
+          description: err.message,
+        }),
+    });
+  }
+
+  function handleConfirmUpdate(stale: StaleInstallation[]) {
+    setConfirmingUpdate(null);
+    apply(stale);
+  }
+
+  function handleCheckFilesClick(pkg: InstalledPackage) {
+    checkFiles.mutate({
+      name: pkg.name,
+      options: {
+        installRoot: pkg.installPath,
+        ...(pkg.agentPath && { projectPath: pkg.agentPath }),
+      },
+      where: installationPlace(pkg) ?? undefined,
+    });
+  }
+
+  /** Whether the in-flight file check targets this exact installation. */
+  function isCheckingFiles(pkg: InstalledPackage): boolean {
     return (
+      checkFiles.isPending &&
+      checkFiles.variables?.name === pkg.name &&
+      (checkFiles.variables?.options?.installRoot ?? pkg.installPath) === pkg.installPath
+    );
+  }
+
+  /** Whether the in-flight uninstall targets this exact installation. */
+  function isUninstalling(pkg: InstalledPackage): boolean {
+    const variables = uninstall.variables;
+    return (
+      uninstall.isPending &&
       variables?.name === pkg.name &&
       (variables?.options?.projectPath ?? undefined) === (pkg.agentPath ?? undefined)
     );
@@ -271,22 +496,61 @@ export function InstalledPackagesView() {
   // Render
   // ---------------------------------------------------------------------------
 
+  const flags = { isChecking: updates.isChecking, applying };
+
   return (
-    <div className="space-y-3" role="list" aria-label="Installed packages">
-      {installed.map((pkg) => (
-        <div key={pkg.installPath} role="listitem">
-          <PackageRow
-            installation={pkg}
-            isActiveShape={pkg.type === 'shape' && pkg.name === activeShapeName}
-            isConfirmingUninstall={confirmingPath === pkg.installPath}
-            isUninstalling={uninstall.isPending && targetsInstallation(uninstall.variables, pkg)}
-            isUpdating={update.isPending && targetsInstallation(update.variables, pkg)}
-            onApplyClick={() => openShapeSwitcherToShape(pkg.name)}
-            onUpdateClick={() => handleUpdate(pkg)}
-            onUninstallClick={() => handleUninstallClick(pkg)}
-          />
-        </div>
-      ))}
+    <div className="space-y-3">
+      <InstalledUpdatesSummary
+        summary={updates.summary}
+        isChecking={updates.isChecking}
+        error={updates.error}
+        isApplying={applying.size > 0}
+        onUpdateAll={() => setConfirmingUpdate(updates.summary.available)}
+        onRecheck={updates.recheck}
+      />
+
+      <div className="@container space-y-3" role="list" aria-label="Installed packages">
+        {installed.map((pkg) => {
+          const updateState = rowUpdateState(pkg, updates.checks, flags);
+          return (
+            <div key={pkg.installPath} role="listitem">
+              <PackageRow
+                installation={pkg}
+                isActiveShape={pkg.type === 'shape' && pkg.name === activeShapeName}
+                isConfirmingUninstall={confirmingPath === pkg.installPath}
+                isUninstalling={isUninstalling(pkg)}
+                updateState={updateState}
+                integrity={integrityByPath?.get(pkg.installPath)}
+                isCheckingFiles={isCheckingFiles(pkg)}
+                onCheckFilesClick={() => handleCheckFilesClick(pkg)}
+                onApplyClick={() => openShapeSwitcherToShape(pkg.name)}
+                onUpdateClick={() => {
+                  if (updateState.kind !== 'update-available') return;
+                  const item = { installation: pkg, check: updateState.check };
+                  // A new version that runs anything on its own is confirmed
+                  // first, with what it runs listed; one that runs nothing
+                  // updates straight away (DOR-2306).
+                  if (disclosesAnything(updateState.check.disclosed)) {
+                    setConfirmingUpdate([item]);
+                  } else {
+                    apply([item]);
+                  }
+                }}
+                onUninstallClick={() => handleUninstallClick(pkg)}
+                onReviewClick={() => handleReview(pkg)}
+                isRaisingReview={review.isPending && review.variables === pkg.name}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <ConfirmUpdatesDialog
+        stale={confirmingUpdate}
+        integrityByPath={integrityByPath}
+        onCancel={() => setConfirmingUpdate(null)}
+        onConfirm={handleConfirmUpdate}
+      />
     </div>
   );
 }

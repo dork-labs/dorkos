@@ -5,7 +5,12 @@
  * ## What an entry is
  *
  * `<packageName>@<digest>`, where the digest covers the resolved project path
- * and every hook — command, event and matcher. The name is in front so a person
+ * and every hook — command, event and matcher. The same two lists also hold a
+ * second kind of entry, `<packageName>@global-<digest>`: a person's decision
+ * about a GLOBALLY installed package's programs, which load into every session
+ * (`marketplace/global-plugin-consent.ts`, DOR-2306). It is the same decision —
+ * let an installed package run commands automatically — so it lives in the same
+ * operator-only store and is listed and revoked the same way. The name is in front so a person
  * can read their own `~/.dork/config.json` and see which packages they have
  * decided about; the digest behind it is what makes the entry stop matching the
  * moment any of those change. Binding the command text alone would let a package
@@ -141,6 +146,24 @@ export function hookApprovalEntry(request: HookProjectionRequest): string {
     )
     .digest('hex');
   return `${request.packageName}@${digest}`;
+}
+
+/**
+ * What separates a package name from the digest in a GLOBAL package's entry
+ * (`<name>@global-<digest>`, `marketplace/global-plugin-consent.ts`), so a
+ * reader of the lists can tell the two kinds of decision apart.
+ */
+export const GLOBAL_ACTIVATION_ENTRY_MARKER = '@global-';
+
+/**
+ * Whether a stored decision is about a globally installed package's programs,
+ * which load into every session, rather than a project's hooks.
+ *
+ * @param entry - A stored `<packageName>@<digest>` entry.
+ * @returns True for a `<name>@global-<digest>` entry.
+ */
+export function isGlobalActivationEntry(entry: string): boolean {
+  return entry.lastIndexOf(GLOBAL_ACTIVATION_ENTRY_MARKER) > 0;
 }
 
 /**
@@ -282,12 +305,63 @@ function writeDecisions(reason: string, approved: string[], refused: string[]): 
  * @param request - The projection that was allowed.
  */
 export function recordHookApproval(request: HookProjectionRequest): void {
-  const entry = hookApprovalEntry(request);
+  recordApprovedEntry(hookApprovalEntry(request), 'approving a package hook');
+}
+
+/**
+ * Record a yes for one stored entry, whatever decision it identifies: a hook
+ * projection ({@link hookApprovalEntry}) or a global plugin's programs
+ * (`globalActivationEntry` in `marketplace/global-plugin-consent.ts`). One
+ * writer, so "never on both lists" holds for every kind of entry.
+ *
+ * @param entry - The `<packageName>@<digest>` entry to allow.
+ * @param reason - What the audit log says was happening.
+ * @param replacing - Earlier yeses this one supersedes, removed in the same
+ *   write (a global package keeps one approval: the one for what is installed).
+ */
+export function recordApprovedEntry(
+  entry: string,
+  reason: string,
+  replacing: (stored: string) => boolean = () => false
+): void {
+  const { approved, refused } = storedHookDecisions();
+  const kept = approved.filter((stored) => stored === entry || !replacing(stored));
+  writeDecisions(
+    reason,
+    kept.includes(entry) ? kept : [...kept, entry],
+    refused.filter((stored) => stored !== entry)
+  );
+}
+
+/**
+ * Forget every stored yes a predicate matches, leaving every no in place.
+ * Used when a global package is replaced or removed, so an old approval can
+ * never cover the same bytes coming back later (a downgrade).
+ *
+ * @param matches - Which approved entries to forget.
+ * @param reason - What the audit log says was happening.
+ */
+export function forgetApprovedEntries(matches: (stored: string) => boolean, reason: string): void {
   const { approved, refused } = storedHookDecisions();
   writeDecisions(
-    'approving a package hook',
-    approved.includes(entry) ? [...approved] : [...approved, entry],
-    refused.filter((stored) => stored !== entry)
+    reason,
+    approved.filter((stored) => !matches(stored)),
+    [...refused]
+  );
+}
+
+/**
+ * Record a no for one stored entry; the counterpart of {@link recordApprovedEntry}.
+ *
+ * @param entry - The `<packageName>@<digest>` entry to turn down.
+ * @param reason - What the audit log says was happening.
+ */
+export function recordRefusedEntry(entry: string, reason: string): void {
+  const { approved, refused } = storedHookDecisions();
+  writeDecisions(
+    reason,
+    approved.filter((stored) => stored !== entry),
+    refused.includes(entry) ? [...refused] : [...refused, entry]
   );
 }
 
@@ -302,13 +376,7 @@ export function recordHookApproval(request: HookProjectionRequest): void {
  * @param request - The projection that was turned down.
  */
 export function recordHookRefusal(request: HookProjectionRequest): void {
-  const entry = hookApprovalEntry(request);
-  const { approved, refused } = storedHookDecisions();
-  writeDecisions(
-    'turning down a package hook',
-    approved.filter((stored) => stored !== entry),
-    refused.includes(entry) ? [...refused] : [...refused, entry]
-  );
+  recordRefusedEntry(hookApprovalEntry(request), 'turning down a package hook');
 }
 
 /** One stored decision, removed by {@link revokeHookDecisions}. */

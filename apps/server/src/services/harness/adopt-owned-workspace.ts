@@ -2,12 +2,14 @@
  * The one place the server consults `harness.autoAdopt`, and the only place it
  * moves a skill without anybody asking.
  *
- * **It is called from exactly two sites, and both of them have already
- * established that DorkOS owns the directory they are standing in**
+ * **It is called from exactly one site, which has already established that
+ * DorkOS owns the directory it is standing in**
  * ({@link https://linear.app/dorkspace/issue/DOR-1853 DOR-1853}, contract §16
  * D3): `backfillAgentWorkspaceSkills` per workspace that passed
- * {@link isAgentHome}, and `RoomWorktreeManager`'s seed-and-project pairing per
- * worktree under `<dorkHome>/rooms/<roomId>/worktrees/`. `runAutoProjection`,
+ * {@link isAgentHome}. `RoomWorktreeManager`'s seed-and-project pairing was the
+ * second until room turns moved to the agent's home (spec `agent-home-desk`),
+ * which left nothing to seed or project into a room worktree; the
+ * `room-worktree` ownership stays for the engine's own refusals. `runAutoProjection`,
  * `projectOnAgentCreated` and the `.agents/skills` watcher all run in
  * directories a PERSON owns and none of them calls this at all — so a `true` in
  * a plain project is inert by construction rather than by a check somebody could

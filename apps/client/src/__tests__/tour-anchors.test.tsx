@@ -45,7 +45,7 @@ import { TasksList } from '@/layers/features/tasks';
 import { TeamRosterGrid } from '@/layers/features/team-roster';
 import { HomeSurfaceLayout } from '@/layers/widgets/home';
 import { HomeSurfaceBar } from '@/layers/widgets/one-bar';
-import { MessagingRegion } from '@/layers/widgets/connections';
+import { ConnectionsPage } from '@/layers/widgets/connections';
 import { HomeRoomPage } from '../app/HomeRoomPage';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 
@@ -166,7 +166,7 @@ const TOUR_SURFACES: Record<TourId, () => ReactNode> = {
     </>
   ),
   tasks: () => <TasksList tasks={[]} isLoading={false} agentMap={new Map()} onEditTask={vi.fn()} />,
-  relay: () => <MessagingRegion />,
+  relay: () => <ConnectionsPage />,
   mesh: () => <TeamRosterGrid members={ROSTER} roster={ROSTER} grouped={false} />,
 };
 

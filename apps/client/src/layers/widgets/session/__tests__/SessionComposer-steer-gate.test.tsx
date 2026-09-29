@@ -26,6 +26,16 @@ import type { ReactNode } from 'react';
 // Rendered inline instead — `importActual` keeps every other shared/ui export
 // real, because the composer's own chrome is on this path and must not be
 // replaced by a stub.
+// The out-of-usage banner and its composer pause read the session's account
+// (spec claude-account-ui §6.7); they have their own tests, and this file's
+// narrow mocks do not carry what they read.
+vi.mock('@/layers/features/continue-on-account', () => ({
+  AccountLimitBanner: () => null,
+  AccountLimitMarker: () => null,
+  useLimitComposer: () => ({ canSubmit: true, placeholder: null }),
+  useSessionHasLimit: () => false,
+}));
+
 vi.mock('@/layers/shared/ui', async (importActual) => {
   const actual = await importActual<typeof import('@/layers/shared/ui')>();
   return {

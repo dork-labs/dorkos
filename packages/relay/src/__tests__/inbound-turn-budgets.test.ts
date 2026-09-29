@@ -350,7 +350,7 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
     return {
       id: '01TASK',
       subject: 'relay.system.tasks.nightly',
-      from: 'relay.system.scheduler',
+      from: 'relay.system.tasks.scheduler',
       budget: budget({ callBudgetRemaining: 7 }),
       createdAt: new Date(EPOCH).toISOString(),
       payload: {

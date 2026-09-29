@@ -1,7 +1,6 @@
 /**
  * Transport interface — the hexagonal architecture port that decouples the React client
- * from its backend. Two adapters exist: `HttpTransport` (standalone web, HTTP/SSE to Express)
- * and `DirectTransport` (Obsidian plugin, in-process services).
+ * from its backend. The supported `HttpTransport` uses HTTP/SSE to Express.
  *
  * Injected via React Context (`TransportProvider`).
  *
@@ -63,7 +62,7 @@ import type {
   AgentManifest,
   AgentManifestUpdate,
   AgentPathEntry,
-  CreateAgentOptions,
+  CreateAgentRequestBody,
   DiscoveryCandidate,
   DenialRecord,
   AgentHealth,
@@ -120,11 +119,29 @@ import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
 import type {
+  ApprovalAnswer,
   ApprovalDecisionResponse,
   PendingApprovalsResponse,
-  RevokeStandingPermissionResponse,
-  StandingPermissionsResponse,
 } from './approval-schemas.js';
+import type {
+  AgentPermissionsResponse,
+  PatchAgentPermissionsBody,
+  PatchPermissionDefaultsBody,
+  PermissionChange,
+  PermissionHistoryResponse,
+  UndoPermissionChangeBody,
+  UndoPermissionChangeResponse,
+  PermissionsResponse,
+  SetPermissionPresetBody,
+} from './permissions/index.js';
+
+/** What every permission write answers with: the changes and the fresh view. */
+export interface PermissionWriteResult<T> {
+  /** Every change the write made (empty when nothing moved). */
+  changes: PermissionChange[];
+  /** The permissions as they stand after the write. */
+  permissions: T;
+}
 import type {
   DeletePushSubscriptionResponse,
   ListNotificationsQuery,
@@ -142,12 +159,17 @@ import type {
   InstallOptions,
   InstallResult,
   UninstallOptions,
+  ListInstalledOptions,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
-  UpdateOptions,
-  UpdateResult,
+  ApplyUpdatesOptions,
+  InstallationUpdatesResult,
   InstalledPackage,
-  MarketplaceSource,
   AddSourceInput,
+  AddedMarketplaceSource,
+  ListedMarketplaceSource,
+  RefreshedMarketplaceSource,
   InstalledShapeSummary,
   ApplyShapeResult,
   ForkShapeResult,
@@ -157,6 +179,12 @@ import type {
   HarnessStatusResponse,
   HarnessSyncResponse,
 } from './harness-schemas.js';
+import type {
+  AccountUsage,
+  ContinueOptionsResponse,
+  FoundClaudeFolder,
+  LimitHistoryEntry,
+} from './account-usage.js';
 import type { RoomTransport } from './transport-rooms.js';
 import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';
@@ -210,6 +238,7 @@ import type {
   ConnectorProgramExecutionRequest,
   ConnectorReconciliationApplyRequest,
   ConnectorReconciliationApplyResponse,
+  ConnectorEveryAgentRevokeResponse,
   ConnectorReconciliationPreview,
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
@@ -217,15 +246,19 @@ import type {
 import type { SearchQuery, SearchResponse } from './search-schemas.js';
 import type {
   ConnectorAgentConnections,
+  ConnectorEveryAgentGrants,
   ConnectorAuthenticationFlowCreateRequest,
   ConnectorAuthenticationFlowState,
   ConnectorCatalogResourcePage,
   ConnectorConnectionDetail,
   ConnectorConnectionListResource,
   ConnectorConnectionPatch,
+  ConnectorAppActions,
   ConnectorDisconnectImpact,
   ConnectorLifecycleResult,
+  ConnectorProvidersResource,
   ConnectorReconnectRequest,
+  ConnectorSessionAccessUpdate,
   ConnectorSessionConnections,
 } from './connector-resource-schemas.js';
 import type {
@@ -618,16 +651,13 @@ export interface Transport
   readonly clientId?: string;
   /**
    * Whether this transport can attach an embedded terminal (a server-side PTY
-   * over a WebSocket byte channel). `true` for the HTTP transport, `false` for
-   * the in-process Obsidian transport — the terminal is a web-only surface, so
-   * the terminal tab is gated on this flag rather than attempted-and-failed.
+   * over a WebSocket byte channel). The terminal tab is gated on this flag.
    */
   readonly supportsTerminal: boolean;
   /**
    * Whether this transport can hand the embedded browser a page to frame —
    * {@link createServeUrl} for a local file and {@link createProxyUrl} for a dev
-   * server. `true` for the HTTP transport, `false` for the in-process Obsidian
-   * transport, whose host has neither route nor preview listener.
+   * server. The HTTP transport can offer both routes.
    *
    * The Browser right-panel tab is gated on this flag, the same posture as
    * {@link Transport.supportsTerminal}: a tab that could only ever show an error
@@ -736,8 +766,7 @@ export interface Transport
   /**
    * Subscribe to a session's normalized, monotonically-seq'd event stream.
    *
-   * HTTP maps this to `GET /api/sessions/:id/events` (SSE); Direct/Obsidian maps
-   * it to in-process async iteration. Pass `sinceCursor` to resume after a gap,
+   * HTTP maps this to `GET /api/sessions/:id/events` (SSE). Pass `sinceCursor` to resume after a gap,
    * receiving only events with `seq` greater than the cursor.
    *
    * @param sessionId - Target session ID
@@ -758,8 +787,7 @@ export interface Transport
    * Subscribe to the global session-list stream — discovery + liveness across
    * all observable sessions, feeding the sidebar and fleet-wide status view.
    *
-   * HTTP maps this to `GET /api/events` (SSE); Direct/Obsidian maps it to
-   * in-process async iteration.
+   * HTTP maps this to `GET /api/events` (SSE).
    */
   subscribeSessionList(): AsyncIterable<SessionListEvent>;
   /**
@@ -834,9 +862,9 @@ export interface Transport
    * Trigger a RUNTIME-fulfilled command intent (currently `compact`) for a
    * session and resolve to the canonical session id.
    *
-   * The single client path all four surfaces share to fulfill a runtime intent:
+   * The client path to fulfill a runtime intent:
    * `HttpTransport` POSTs `/sessions/:id/command-intents/:intent` (trigger-only,
-   * `202`), `DirectTransport` calls the same server service in-process. The
+   * `202`). The
    * outcome — a compaction — is delivered out-of-band over the durable `/events`
    * stream (e.g. a `compact_boundary`), NOT in this response, exactly like
    * {@link postMessage}. Callers must first gate on the active runtime's
@@ -1031,8 +1059,8 @@ export interface Transport
    * a session's working directory, for use as an `<img>`/`<object>` source in the
    * canvas. The path is resolved within and confined to `cwd` server-side, and
    * only image and PDF content types are served. Returns `null` when the
-   * transport cannot serve local files over a URL (e.g. the in-process Obsidian
-   * transport) so callers fall back to an "unavailable here" state.
+   * transport cannot serve local files over a URL, so callers fall back to an
+   * "unavailable here" state.
    *
    * @param cwd - Session working directory the path is resolved within.
    * @param filePath - File path, absolute or relative to `cwd`.
@@ -1136,8 +1164,8 @@ export interface Transport
    * page, yet the page can never call `/api/*` as the user. The path is confined
    * to `cwd` server-side; a `..`/symlink escape is rejected.
    *
-   * Returns `null` when the transport cannot serve local files over a URL (the
-   * in-process Obsidian transport), so the browser falls back to an
+   * Returns `null` when the transport cannot serve local files over a URL,
+   * so the browser falls back to an
    * "unavailable here" state.
    *
    * @param cwd - Session working directory the served files are confined to.
@@ -1156,7 +1184,7 @@ export interface Transport
    *
    * The response's `url` is `null` when no origin can be offered, with
    * `unavailable` saying why, so the browser can explain it. The whole response
-   * is `null` on the in-process Obsidian transport (web-only surface).
+   * is `null` when no preview service is available.
    *
    * @param port - Localhost port of the dev server to preview (1–65535).
    */
@@ -1171,8 +1199,8 @@ export interface Transport
    * input (the host is pinned to loopback server-side, so there is no way to
    * point this at another machine).
    *
-   * Returns `null` when the transport has no server to ask (the in-process
-   * Obsidian transport); the caller treats that as "unknown" and carries on.
+   * Returns `null` when the transport has no server to ask; the caller treats
+   * that as "unknown" and carries on.
    *
    * @param port - Loopback port to check (1–65535).
    */
@@ -1184,8 +1212,7 @@ export interface Transport
    * The injected in-page shim posts captures to the client (`window.parent`),
    * never to `/api/*`; this client — same-origin and authenticated — is the
    * credentialed party that forwards them here. Best-effort and fire-and-forget:
-   * a preview that can't be reached simply produces no capture. `DirectTransport`
-   * no-ops (the embedded browser is web-only already).
+   * a preview that can't be reached simply produces no capture.
    *
    * @param sessionId - The session whose preview produced the batch.
    * @param batch - The validated console/network (and navigation) capture batch.
@@ -1211,8 +1238,7 @@ export interface Transport
    * Separate from {@link Transport.ingestDevtoolsCapture} because it is posted
    * the moment it exists: an agent's tool call is awaiting this `requestId`
    * server-side, and a result folded into the 300ms capture debounce is a
-   * result that can arrive after the tool gave up. `DirectTransport` no-ops
-   * (the embedded browser is web-only already).
+   * result that can arrive after the tool gave up.
    *
    * @param sessionId - The session whose preview was driven.
    * @param result - The validated result relayed from the in-page shim.
@@ -1230,7 +1256,7 @@ export interface Transport
    *
    * Unlike the two calls above this one is NOT fire-and-forget: a tool call is
    * blocked on it, and a failure here has to become the sentence that tool
-   * answers with. `DirectTransport` rejects (the embedded browser is web-only).
+   * answers with.
    *
    * @param sessionId - The session whose preview was recorded.
    * @param upload - The round trip id, the frame count, the length, and the two
@@ -1280,9 +1306,7 @@ export interface Transport
    *
    * The returned `currentHash` is the optimistic-concurrency token a later reject
    * write (`writeFile` with `expectedHash`) passes, so a file that changed under
-   * the diff yields a conflict rather than a blind clobber. Under the in-process
-   * transport this works from the in-process baseline store (git via
-   * `child_process`), so text diff is available in Obsidian.
+   * the diff yields a conflict rather than a blind clobber.
    *
    * @param cwd - Session working directory the path is resolved within.
    * @param filePath - File path, absolute or relative to `cwd`.
@@ -1314,9 +1338,8 @@ export interface Transport
    * served (the raw-file allowlist); the URL 404s when no baseline exists,
    * which the viewer reads as "this image is new".
    *
-   * Returns `null` when the transport cannot serve bytes over a URL (the
-   * in-process Obsidian transport) — image diff is a web-only surface,
-   * mirroring the shipped {@link mediaUrl} gap.
+   * Returns `null` when the transport cannot serve bytes over a URL,
+   * mirroring the {@link mediaUrl} availability check.
    *
    * @param cwd - Session working directory the path is resolved within.
    * @param filePath - File path, absolute or relative to `cwd`.
@@ -1395,10 +1418,8 @@ export interface Transport
    */
   copyEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse>;
   /**
-   * Whether {@link revealEntry} can actually open a file manager. False for the
-   * in-process Obsidian transport, which has no way to drive the desktop shell
-   * — surfaces hide the "Reveal in Finder" action rather than offering one that
-   * fails, the same posture as {@link Transport.supportsTerminal}.
+   * Whether {@link revealEntry} can actually open a file manager. Surfaces hide
+   * the action when unavailable, as with {@link Transport.supportsTerminal}.
    */
   readonly supportsReveal: boolean;
   /**
@@ -1430,8 +1451,7 @@ export interface Transport
    * abort `signal` to tear the attachment down deterministically (the server
    * kills the PTY on idle/exit regardless).
    *
-   * `DirectTransport` throws `'unsupported'` — gate calls on
-   * {@link Transport.supportsTerminal}.
+   * Gate calls on {@link Transport.supportsTerminal}.
    *
    * @param cwd - Working directory to spawn the shell in (boundary-confined).
    * @param signal - Aborts the attachment and closes the underlying socket.
@@ -1449,8 +1469,7 @@ export interface Transport
    * treat a rejection as "gone" and fall back to {@link openTerminal} to spawn a
    * fresh shell, seamlessly and with no user-visible error.
    *
-   * `DirectTransport` throws `'unsupported'` — gate calls on
-   * {@link Transport.supportsTerminal}.
+   * Gate calls on {@link Transport.supportsTerminal}.
    *
    * @param id - A terminal id returned by a prior {@link openTerminal}.
    * @param signal - Aborts the attachment and closes the underlying socket.
@@ -1463,8 +1482,7 @@ export interface Transport
    * stays re-attachable across a reload (DOR-225). Idempotent and best-effort:
    * a closed/already-gone PTY resolves cleanly.
    *
-   * `DirectTransport` throws `'unsupported'` — gate calls on
-   * {@link Transport.supportsTerminal}.
+   * Gate calls on {@link Transport.supportsTerminal}.
    *
    * @param id - A terminal id returned by a prior {@link openTerminal}.
    */
@@ -1520,8 +1538,7 @@ export interface Transport
    * (DOR-318). Fire-and-forget and best-effort: it must never throw or surface
    * to the user. The server rebuilds and scrubs the report and only sends it
    * onward when error reporting is opted in — the client neither scrubs nor
-   * gates. `DirectTransport` (Obsidian, in-process) no-ops: crash reporting is a
-   * web-cockpit surface.
+   * gates.
    *
    * @param report - The untrusted `{ name, message, stack }` from the caught error.
    */
@@ -1549,28 +1566,24 @@ export interface Transport
   /**
    * Read the Capability Registry's self-description catalog.
    *
-   * The one place the cockpit can learn what a capability DECLARES — including
-   * the per-agent `toolGroup` a grant-bearing capability carries (DOR-1611). The
-   * Tools tabs read the tool names behind a grant from here rather than from a
-   * hand-kept list, because three hand-kept copies of that same fact all drifted
-   * once already (DOR-499) and a fourth would have no better odds.
+   * The one place a client can learn what a capability DECLARES, including the
+   * permission `area` each one belongs to (spec `agent-permissions` D2).
    *
    * **Narrow it, always, when you know what you are after.** The catalog is
-   * paginated and served COMPACT by default — no surfaces and no `toolGroup` —
-   * so an unfiltered read is both large and missing the field this exists for.
-   * `toolGroup` is the filter the cockpit uses: a handful of matches come back
-   * in full, in one page, with the tool names on them.
+   * paginated and served COMPACT by default — no surfaces and no `area` — so an
+   * unfiltered read is both large and missing the fields this exists for.
+   * `area` is the filter: a handful of matches come back in full, in one page.
    *
    * Deliberately NOT the per-runtime capability matrix next door
    * ({@link Transport.getCapabilities}), which answers a different question — what
    * a RUNTIME can do — and shares only a word.
    *
-   * @param opts.toolGroup - Return only the capabilities behind this per-agent
-   *   grant. Omit for the whole catalog.
+   * @param opts.area - Return only the capabilities in this permission area.
+   *   Omit for the whole catalog.
    * @returns The catalog: the matching capabilities, with a stable
    *   `catalogVersion` content hash safe to cache on.
    */
-  getCapabilityCatalog(opts?: { toolGroup?: string }): Promise<CapabilityCatalog>;
+  getCapabilityCatalog(opts?: { area?: string }): Promise<CapabilityCatalog>;
   /**
    * Get capabilities for all registered runtimes.
    *
@@ -1943,7 +1956,7 @@ export interface Transport
    *
    * `AgentManifestUpdate`, not `Partial<AgentManifest>`, because the route's
    * own schema ({@link UpdateAgentRequestSchema}) accepts `null` on `model`,
-   * `effort`, `account`, `tierCeiling`, `color` and `icon` to mean "go back to
+   * `effort`, `account`, `color` and `icon` to mean "go back to
    * inheriting" — and `undefined` cannot travel over JSON. The narrower type
    * left the one surface that has to say it (the profile's Account row) unable
    * to spell its own restore action.
@@ -1993,7 +2006,7 @@ export interface Transport
   /** Update an agent's fields by path. Returns the updated manifest. */
   updateAgentByPath(path: string, updates: AgentManifestUpdate): Promise<AgentManifest>;
   /** Create a new agent: mkdir + scaffold files + register. Returns the created manifest and resolved path. */
-  createAgent(opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }>;
+  createAgent(opts: CreateAgentRequestBody): Promise<AgentManifest & { _path: string }>;
 
   // --- Discovery ---
 
@@ -2217,9 +2230,8 @@ export interface Transport
    * - `HttpTransport` cannot synchronously resolve capabilities, so it always
    *   returns a concrete handle. Invocations against non-Claude runtimes are
    *   rejected by the server route (501).
-   * - `DirectTransport` has synchronous access to the embedded runtime's
-   *   capabilities and returns `null` as a secondary guard when plugins are
-   *   unsupported. This null-return is a defense-in-depth optimization, NOT
+   * A `null` result is a secondary guard when plugins are unsupported. It is a
+   * defense-in-depth optimization, NOT
    *   the primary capability gate.
    *
    * Either way: callers must check `supportsPlugins` at the UI layer first.
@@ -2311,14 +2323,36 @@ export interface Transport
   uninstallMarketplacePackage(name: string, opts?: UninstallOptions): Promise<UninstallResult>;
 
   /**
-   * Check for (and optionally apply) updates to a marketplace package.
+   * Check every installation in view for a newer version, in one request.
    *
-   * Advisory by default — pass `{ apply: true }` to reinstall in place.
+   * Advisory: nothing installed changes. One check per installation, keyed by
+   * `installPath` (the same key `listInstalledPackages` rows carry); a check
+   * that could not answer is `unknown` with its reason, never dropped.
    *
-   * @param name - Package name. Will be URL-encoded.
-   * @param opts - Update options (apply, projectPath).
+   * @param projectPath - Omit for every scope (the Installed view's listing);
+   *   pass a project for that project's merged view.
    */
-  updateMarketplacePackage(name: string, opts?: UpdateOptions): Promise<UpdateResult>;
+  checkMarketplaceUpdates(projectPath?: string): Promise<InstallationUpdatesResult>;
+
+  /**
+   * Reinstall exactly the named installations at their newest version, each in
+   * the scope it is installed in. An installation that is already current is
+   * left alone; one that fails carries `applyError` while the rest continue.
+   *
+   * @param opts - The installations to update (at least one target), and the
+   *   project whose view they came from, if any.
+   */
+  applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult>;
+
+  /**
+   * Raise the approval card again for a global package held back from every
+   * session (`POST /api/marketplace/held-back/:name/review`, DOR-2306). The
+   * person decides on the card. Rejects with the reason when the package
+   * cannot be put on a card (it could not be read, or runs too much to show).
+   *
+   * @param name - The held-back package's name.
+   */
+  reviewHeldBackPackage(name: string): Promise<void>;
 
   /**
    * List installed marketplace packages.
@@ -2330,8 +2364,22 @@ export interface Transport
    * reinstall detection in the install dialog.
    *
    * @param projectPath - Optional agent project path for the merged view.
+   * @param opts - `verify` adds each installation's `integrity` (DOR-2197).
    */
-  listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]>;
+  listInstalledPackages(
+    projectPath?: string,
+    opts?: ListInstalledOptions
+  ): Promise<InstalledPackage[]>;
+
+  /**
+   * Give an installation an older DorkOS made its installed-files record, from
+   * the exact commit it was installed at, or say why not (DOR-2320). Writes
+   * only when that commit matches the installed files byte for byte.
+   *
+   * @param name - Installed package name. Will be URL-encoded.
+   * @param opts - The installation to check (`installRoot`) and its scope.
+   */
+  checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult>;
 
   /**
    * List every installation of a single package across all scopes (global +
@@ -2344,15 +2392,24 @@ export interface Transport
    */
   listPackageInstallations(name: string): Promise<InstalledPackage[]>;
 
-  /** List all configured marketplace sources. */
-  listMarketplaceSources(): Promise<MarketplaceSource[]>;
+  /** List all configured marketplace sources, with how each one's last listing fetch went. */
+  listMarketplaceSources(): Promise<ListedMarketplaceSource[]>;
 
   /**
-   * Add a new marketplace source.
+   * Add a new marketplace source. The server fetches the new source's listing
+   * once after saving it; `listing` says whether that worked, and a failed
+   * fetch never undoes the add.
    *
    * @param input - Source name, URL, and optional enabled flag.
    */
-  addMarketplaceSource(input: AddSourceInput): Promise<MarketplaceSource>;
+  addMarketplaceSource(input: AddSourceInput): Promise<AddedMarketplaceSource>;
+
+  /**
+   * Fetch a source's listing again, the way `dorkos marketplace refresh` does.
+   *
+   * @param name - Source name. Will be URL-encoded.
+   */
+  refreshMarketplaceSource(name: string): Promise<RefreshedMarketplaceSource>;
 
   /**
    * Remove a configured marketplace source by name.
@@ -2416,19 +2473,18 @@ export interface Transport
    * Allow a pending approval, letting the requester spend its token once on
    * exactly the action it was granted for.
    *
-   * With `standing: true` it also opens a standing permission, so DorkOS stops
-   * asking about that agent doing that thing until the window closes. The two
-   * travel together on purpose: a caller that asked for both and can only have
-   * one is refused outright rather than quietly given the one-time yes, because
-   * a silent fallback would leave a person believing they created a permission
-   * that does not exist (spec `agent-approval-settings` §3.5).
+   * With `answer: 'always'` it also sets that action to Allowed for the agent
+   * that asked (spec `agent-permissions` D7), written through the permission
+   * service before the agent is told, so the resumed call and the new setting
+   * agree. Refused outright (409 `ALWAYS_NOT_OFFERED`) where the card's
+   * `alwaysOffered` is false, rather than quietly downgraded to a one-time yes.
    *
    * @param approvalId - The approval's id, from {@link listPendingApprovals}.
-   * @param options - Set `standing` to also stop being asked about this pair.
+   * @param options - `answer`: `'once'` (default) or `'always'`.
    */
   grantApproval(
     approvalId: string,
-    options?: { standing?: boolean }
+    options?: { answer?: ApprovalAnswer }
   ): Promise<ApprovalDecisionResponse>;
 
   /**
@@ -2440,22 +2496,85 @@ export interface Transport
   denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse>;
 
   /**
-   * The standing permissions that are live right now, soonest to expire first.
+   * "Not now" on a card that suggests Always allow: the suggestion never comes
+   * back for this agent and action. Only a person can call this.
    *
-   * A permission a person cannot find is a dark pattern, so this is what both
-   * places that list one read (spec `agent-approval-settings` §3.7).
+   * @param approvalId - The approval whose card suggested it.
    */
-  listStandingPermissions(): Promise<StandingPermissionsResponse>;
+  dismissAlwaysSuggestion(approvalId: string): Promise<{ ok: true; approvalId: string }>;
+
+  // --- Permissions (spec `agent-permissions`) ---
 
   /**
-   * End one standing permission, so DorkOS asks again next time.
-   *
-   * Ending one stops the next action; it does not reverse anything that already
-   * ran.
-   *
-   * @param grantId - The permission's id, from {@link listStandingPermissions}.
+   * What agents may do by default: the preset, the changes on top of it, every
+   * area with its actions, and the agents that are set differently.
    */
-  revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse>;
+  getPermissions(): Promise<PermissionsResponse>;
+
+  /**
+   * One agent's permissions: its resolved state per area and action, where each
+   * came from, and what it would inherit without its own settings.
+   *
+   * @param agentId - The agent's id.
+   */
+  getAgentPermissions(agentId: string): Promise<AgentPermissionsResponse>;
+
+  /**
+   * Choose a preset. Clears the changes on top of the old one; `applyToAgents`
+   * also clears those agents' own settings. Only a person can call this.
+   *
+   * @param body - The preset, the agents to bring along, and where it came from.
+   */
+  setPermissionPreset(
+    body: SetPermissionPresetBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>>;
+
+  /**
+   * Change the defaults; `null` removes a change. `applyToAgents` removes those
+   * agents' own settings for the same keys. Only a person can call this.
+   *
+   * @param body - The changes, the agents to bring along, and where it came from.
+   */
+  patchPermissionDefaults(
+    body: PatchPermissionDefaultsBody
+  ): Promise<PermissionWriteResult<PermissionsResponse>>;
+
+  /**
+   * Change one agent's own settings; `null` puts one back to the default. Only a
+   * person can call this.
+   *
+   * @param agentId - The agent's id.
+   * @param body - The changes and where they came from.
+   */
+  patchAgentPermissions(
+    agentId: string,
+    body: PatchAgentPermissionsBody
+  ): Promise<PermissionWriteResult<AgentPermissionsResponse>>;
+
+  /**
+   * The permission history, newest first; with `agentId`, the changes that
+   * touched that agent.
+   *
+   * @param query - Optional agent, cursor and page size.
+   */
+  getPermissionHistory(query?: {
+    agentId?: string;
+    before?: string;
+    limit?: number;
+  }): Promise<PermissionHistoryResponse>;
+
+  /**
+   * Undo one change from the permission history, as a new change. Rejects with
+   * `code: 'UNDO_CONFLICT'` (409, the conflicts on the error's `body`) when a
+   * key changed since; `force` sets it back anyway. Only a person can call this.
+   *
+   * @param eventId - The `permission.changed` event, from the history.
+   * @param body - `force`, and the Full autonomy acknowledgement when needed.
+   */
+  undoPermissionChange(
+    eventId: string,
+    body?: UndoPermissionChangeBody
+  ): Promise<UndoPermissionChangeResponse>;
 
   // --- The Inbox (spec `notification-system`) ---
 
@@ -2881,7 +3000,7 @@ export interface Transport
    * for the reasoning). It still rides the one owned ingest.
    *
    * `HttpTransport` POSTs `/feedback` (the server fills surface/version/id and
-   * forwards to the ingest); `DirectTransport` forwards in-process. The result is
+   * forwards to the ingest). The result is
    * an honest `{ ok }` so the UI can toast truthfully — a network failure resolves
    * `{ ok: false }` rather than throwing, since best-effort delivery is not an
    * error the user must handle.
@@ -2897,10 +3016,7 @@ export interface Transport
    * pseudonymous `instanceId` so no login is required.
    *
    * `HttpTransport` calls the local server's `GET /api/feedback/mine` proxy,
-   * which forwards to the site (never a cross-origin request from the
-   * client). `DirectTransport` (Obsidian) has no site-backed tracking store
-   * to read — it resolves `[]`, matching the empty state the view already
-   * has to handle.
+   * which forwards to the site (never a cross-origin request from the client).
    *
    * Unlike {@link sendFeedback}'s honest `{ ok }` posture, this **rejects**
    * on failure — it is a read the tracking view's own loading/error UI
@@ -2913,9 +3029,10 @@ export interface Transport
   /**
    * Read every connector provider's setup state (configured, registered,
    * custody stance, disclosure copy, and the honest error text when a
-   * configured provider refused to register). Reference-free by construction.
+   * configured provider refused to register), plus how DorkOS reaches apps
+   * right now and which way new apps use. Reference-free by construction.
    */
-  getConnectorProviders(): Promise<ConnectorProviderStatus[]>;
+  getConnectorProviders(): Promise<ConnectorProvidersResource>;
 
   /**
    * Store a provider's vendor key and reload the provider live — no restart.
@@ -3007,6 +3124,13 @@ export interface Transport
   /** Read the exact local authority affected by disconnecting one connection. */
   getConnectorDisconnectImpact(connectionId: string): Promise<ConnectorDisconnectImpact>;
 
+  /**
+   * Read what one app lets agents do through one configured way: every action
+   * with the safety classification the grant review enforces, or `unlisted`
+   * when that way cannot list trusted actions.
+   */
+  getConnectorAppActions(toolkit: string, providerInstanceId: string): Promise<ConnectorAppActions>;
+
   /** Disconnect one stable connection with local close-first semantics. */
   disconnectConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult>;
 
@@ -3016,8 +3140,25 @@ export interface Transport
   /** Read the current exact connection grants for one owned agent. */
   getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections>;
 
+  /**
+   * Read what every agent, including one not created yet, inherits from the
+   * owner's every-agent grants.
+   */
+  getEveryAgentConnectorGrants(): Promise<ConnectorEveryAgentGrants>;
+
   /** Read effective connector access for one canonical session. */
   getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections>;
+
+  /**
+   * Turn one app on or off for one chat's agent (owner only). On only undoes
+   * off, putting back the access this chat had and never more; off hides the app
+   * in this chat alone. Resolves to the chat's access after the change.
+   */
+  setSessionConnectorAccess(
+    sessionId: string,
+    connectionId: string,
+    update: ConnectorSessionAccessUpdate
+  ): Promise<ConnectorSessionConnections>;
 
   /** List the exact connections currently usable by one owned agent. */
   getAccessibleConnectorConnections(
@@ -3057,6 +3198,14 @@ export interface Transport
     input: ConnectorReconciliationApplyRequest
   ): Promise<ConnectorReconciliationApplyResponse>;
 
+  /**
+   * Stop sharing one connection with every agent, at once and without a
+   * permission review (owner only).
+   */
+  stopSharingConnectorWithEveryAgent(
+    connectionId: string
+  ): Promise<ConnectorEveryAgentRevokeResponse>;
+
   /** Submit a strict connector management action for an owner decision. */
   createConnectorManagementReview(
     input: ConnectorManagementReviewCreateRequest
@@ -3076,8 +3225,14 @@ export interface Transport
     input: ConnectorManagementReviewDecision
   ): Promise<ConnectorManagementReviewDecisionResult>;
 
-  /** List owner-visible service requests raised by runtime agents. */
-  getConnectorAgentRequests(state?: 'pending' | 'resolved'): Promise<ConnectorAgentRequestItem[]>;
+  /**
+   * List owner-visible service requests raised by runtime agents, by lifecycle
+   * group, and only one conversation's when `sessionId` is given (its chat cards).
+   */
+  getConnectorAgentRequests(
+    state?: 'pending' | 'resolved',
+    sessionId?: string
+  ): Promise<ConnectorAgentRequestItem[]>;
 
   /** Read one exact owner-visible agent service request. */
   getConnectorAgentRequest(requestId: string): Promise<ConnectorAgentRequestItem>;
@@ -3160,21 +3315,10 @@ export interface Transport
   /**
    * Find messages by what was said in them (spec `message-search` §8).
    *
-   * **A port method rather than a `fetch`**, because a surface that reached the
-   * route directly would work on the web and answer nothing in the Obsidian
-   * embed — and an empty result list is indistinguishable from "no matches",
-   * which is the silent failure this feature refuses everywhere else.
-   *
-   * **One contract, two adapters** (DOR-691). `HttpTransport` calls
-   * `GET /api/search`. `DirectTransport` reads an index a host wired into it, in
-   * that host's own process, under the same operator scope the route resolves —
-   * so where a host provides one, the two answer identically for the same query.
-   * No shipped host does yet, and the embed's search surfaces are gated off for
-   * exactly that reason.
-   *
-   * Neither adapter ever answers `[]` for a search it could not run: a request it
-   * cannot honour REJECTS, carrying the same `message`, `code` and `status` on
-   * either transport.
+   * A port method keeps search behind the client transport. `HttpTransport`
+   * calls `GET /api/search` under the scope the server resolves.
+   * A request that cannot run rejects with `message`, `code` and `status`
+   * rather than returning an empty result.
    *
    * The response is the route's envelope untouched, `warnings` included: a
    * source that could not be indexed contributes zero hits and one warning
@@ -3189,4 +3333,84 @@ export interface Transport
    *   source to look in.
    */
   search(query: SearchQuery): Promise<SearchResponse>;
+
+  // --- Account usage and carrying a limited session over (spec `claude-account-ui` §6.0) ---
+
+  /**
+   * Read how much of each of a runtime's accounts is used
+   * (`GET /api/runtimes/:runtime/accounts/usage`). Claude Code answers one row
+   * per account; Codex and OpenCode answer their implicit `default` row. Each
+   * row carries its `runtime`.
+   *
+   * @param runtime - The runtime slug: `claude-code`, `codex` or `opencode`.
+   */
+  getAccountUsage(runtime: string): Promise<{ accounts: AccountUsage[] }>;
+
+  /**
+   * Read where a session whose account ran out can carry over to
+   * (`GET /api/sessions/:id/continue-options`): the limit's plan and the
+   * server's ranking of the other accounts. The client displays the ranking
+   * and decides nothing from it.
+   *
+   * @param sessionId - The limited session.
+   */
+  getContinueOptions(sessionId: string): Promise<ContinueOptionsResponse>;
+
+  /**
+   * Carry a limited session over to another account (`POST
+   * /api/sessions/:id/continue`, answered `202`). The server names the new
+   * session when it already exists. A refusal (such as a `409` while a turn is
+   * running) rejects with the server's `message` and the HTTP `status`, which
+   * the picker shows as is.
+   *
+   * @param sessionId - The limited session.
+   * @param body - The account to move to, and optionally a model or another runtime.
+   */
+  continueSession(
+    sessionId: string,
+    body: { account?: string; model?: string; runtime?: string }
+  ): Promise<{ sessionId?: string }>;
+
+  /**
+   * Choose to wait for a limited session's account to reset (`POST
+   * /api/sessions/:id/wait`). Rejects with the server's `message` and `status`.
+   *
+   * @param sessionId - The limited session.
+   * @param body - Whether to resume on its own once the account resets.
+   */
+  waitForReset(sessionId: string, body: { autoResume?: boolean }): Promise<void>;
+
+  /**
+   * Stop a scheduled automatic carry-over (`POST
+   * /api/sessions/:id/continue/cancel`). Rejects with the server's `message`
+   * and `status`.
+   *
+   * @param sessionId - The limited session.
+   */
+  cancelAutoContinue(sessionId: string): Promise<void>;
+
+  /**
+   * Read a session's resolved usage-limit episodes, oldest first (`GET
+   * /api/sessions/:id/limit-history`), for the transcript marker.
+   *
+   * @param sessionId - The session.
+   */
+  getLimitHistory(sessionId: string): Promise<{ entries: LimitHistoryEntry[] }>;
+
+  /**
+   * Read the Claude account folders found on this computer that are not
+   * registered, the machine default or dismissed (`GET
+   * /api/runtimes/claude-code/accounts/found`), for Settings' "Found on this
+   * computer" list. Nothing is registered until a person clicks Add.
+   */
+  getFoundClaudeFolders(): Promise<{ folders: FoundClaudeFolder[] }>;
+
+  /**
+   * Stop offering one found folder, across restarts (`POST
+   * /api/runtimes/claude-code/accounts/found/dismiss`). Rejects with the
+   * server's `message` and `status`.
+   *
+   * @param path - The folder, as the found list gave it.
+   */
+  dismissFoundClaudeFolder(path: string): Promise<void>;
 }

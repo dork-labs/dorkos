@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TaskFileWatcher } from '../task-file-watcher.js';
@@ -12,6 +12,12 @@ import { TASK_TEMPLATES_DIRNAME } from '../task-templates.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../lib/logger.js';
 import type { Db } from '@dorkos/db';
+import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
+import {
+  computeInstalledFiles,
+  readInstalledFiles,
+  writeInstalledFiles,
+} from '../../marketplace/lib/installed-files.js';
 
 // Mocked wholesale rather than spied on, matching `task-file-watcher.test.ts`:
 // one case here reads the watcher's own failure lines to tell a broken watch
@@ -108,9 +114,9 @@ describe('TaskFileWatcher (real chokidar)', () => {
 
     watcher.watch(skillsRoot(skillsDir, 'global'));
 
-    await waitUntil(() => store.getByFilePath(realTask) !== null, 'real-task to sync');
+    await waitUntil(() => store.fileSync.getByFilePath(realTask) !== null, 'real-task to sync');
     await holdsFor(
-      () => store.getByFilePath(reservedSlot) === null,
+      () => store.fileSync.getByFilePath(reservedSlot) === null,
       'reserved slot to stay unsynced'
     );
 
@@ -125,7 +131,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     await mkdir(path.join(skillsDir, 'probe'), { recursive: true });
     const probe = path.join(skillsDir, 'probe', 'SKILL.md');
     await writeFile(probe, skillFile('probe'), 'utf-8');
-    await waitUntil(() => store.getByFilePath(probe) !== null, 'the watch to be live');
+    await waitUntil(() => store.fileSync.getByFilePath(probe) !== null, 'the watch to be live');
 
     // The sibling arrives as a live event, then a normal task as the barrier.
     const siblingDir = path.join(
@@ -139,9 +145,12 @@ describe('TaskFileWatcher (real chokidar)', () => {
     const realTask = path.join(skillsDir, 'real-task', 'SKILL.md');
     await writeFile(realTask, skillFile('real-task'), 'utf-8');
 
-    await waitUntil(() => store.getByFilePath(realTask) !== null, 'real-task to sync');
-    await holdsFor(() => store.getByFilePath(sibling) === null, 'sibling to stay unsynced');
-    expect(store.getByFilePath(sibling)).toBeNull();
+    await waitUntil(() => store.fileSync.getByFilePath(realTask) !== null, 'real-task to sync');
+    await holdsFor(
+      () => store.fileSync.getByFilePath(sibling) === null,
+      'sibling to stay unsynced'
+    );
+    expect(store.fileSync.getByFilePath(sibling)).toBeNull();
   });
 
   // DOR-1908, hole 1. Measured on this machine against chokidar 5 before the
@@ -170,7 +179,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
 
     try {
       await waitUntil(
-        () => store.getByFilePath(file) !== null,
+        () => store.fileSync.getByFilePath(file) !== null,
         'the schedule in the newly created root',
         2000
       );
@@ -198,7 +207,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     await writeFile(file, skillFile('edited'), 'utf-8');
     live.watch(skillsRoot(skillsDir, 'global'));
     await live.ready();
-    expect(store.getByFilePath(file)).not.toBeNull();
+    expect(store.fileSync.getByFilePath(file)).not.toBeNull();
 
     // An edit AFTER the catch-up scan has run: only a live event can carry it.
     await writeFile(file, skillFile('edited').replace("'0 9 * * *'", "'0 10 * * *'"), 'utf-8');
@@ -206,7 +215,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     try {
       await waitUntil(
         () => {
-          const row = store.getByFilePath(file);
+          const row = store.fileSync.getByFilePath(file);
           return row !== null && row.cron === '0 10 * * *';
         },
         'the watch to deliver the edit',
@@ -234,6 +243,67 @@ describe('TaskFileWatcher (real chokidar)', () => {
     ctx.skip('watch descriptors exhausted (EMFILE/ENOSPC); the reconciler is what covers this');
   });
 
+  it("writes a kept OFF switch into a file that has just stopped being a package's (DOR-2272)", async () => {
+    // The watcher's half of the lapse rule the reconciler test pins: a change
+    // event on a file whose install no longer lists it must not switch the
+    // person's schedule back on, and must leave the file saying it is off.
+    const agentDir = path.join(dorkHome, 'repo', '.dork', 'agents', 'helper');
+    const agentSkills = path.join(agentDir, '.agents', 'skills');
+    const shipped = path.join(agentSkills, 'nightly', 'SKILL.md');
+    await mkdir(path.dirname(shipped), { recursive: true });
+    await writeFile(shipped, skillFile('nightly'), 'utf-8');
+    await mkdir(path.join(agentDir, '.dork'), { recursive: true });
+    await writeFile(path.join(agentDir, '.dork', 'manifest.json'), '{}', 'utf-8');
+    await writeInstalledFiles(
+      agentDir,
+      await computeInstalledFiles(agentDir, {
+        identity: { name: 'helper', type: 'agent' },
+        userEditable: [],
+        npmRan: false,
+      })
+    );
+    watcher.watch(skillsRoot(agentSkills, 'project', agentDir, 'agent-helper'));
+    await waitUntil(
+      () => store.fileSync.getByFilePath(shipped)?.packageOwned === 'record',
+      'discovery'
+    );
+    const meshCore = { getProjectPath: () => agentDir };
+    const edit = async (data: Record<string, unknown>) => {
+      const existing = store.fileSync.getByFilePath(shipped)!;
+      const outcome = await applyTaskFileUpdate({ dorkHome, meshCore } as never, {
+        existing,
+        data: data as never,
+      });
+      if (!outcome.ok) throw new Error(outcome.error);
+      store.updateTask(existing.id, data as never, { timingLandsOn: outcome.timingLandsOn });
+    };
+    await edit({ status: 'active' });
+    await edit({ enabled: false });
+
+    const record = (await readInstalledFiles(agentDir))!;
+    const { ['.agents/skills/nightly/SKILL.md']: _released, ...files } = record.files;
+    await writeInstalledFiles(agentDir, { ...record, files });
+    // A change the approval does not cover, so only the ownership lapse is new.
+    await writeFile(
+      shipped,
+      skillFile('nightly').replace('A task named', 'The task named'),
+      'utf-8'
+    );
+
+    await waitUntil(
+      () => store.fileSync.getByFilePath(shipped)?.packageOwned === null,
+      'the lapse'
+    );
+    expect(store.fileSync.getByFilePath(shipped)!.enabled).toBe(false);
+    await vi.waitFor(
+      async () => expect(await readFile(shipped, 'utf-8')).toContain('enabled: false'),
+      {
+        timeout: 5000,
+      }
+    );
+    expect(store.fileSync.getByFilePath(shipped)!.enabled).toBe(false);
+  });
+
   it('still syncs the templates the container legitimately holds, as templates', async () => {
     // `templates/{slug}/SKILL.md` is a template, not a task: it is two levels
     // down, so it was already out of scope, and must stay that way.
@@ -247,7 +317,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
 
     watcher.watch(skillsRoot(skillsDir, 'global'));
 
-    await waitUntil(() => store.getByFilePath(realTask) !== null, 'real-task to sync');
+    await waitUntil(() => store.fileSync.getByFilePath(realTask) !== null, 'real-task to sync');
     await holdsFor(() => store.getTasks().length === 1, 'only the real task to be synced');
   });
 });

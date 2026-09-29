@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Nightly Docker orphan sweep for macOS: a TEMPLATE, not installed by anything.
+
+  It runs scripts/sweep-docker-orphans.sh every night at 03:17 local time and
+  appends its output to ~/Library/Logs/dorkos-docker-sweep.log. If the Mac is
+  asleep at 03:17, launchd runs it once on wake. When Docker is not running the
+  sweep prints a notice and exits 0.
+
+  To install, from the repo root:
+
+    sed -e "s|__REPO__|$PWD|g" -e "s|__HOME__|$HOME|g" \
+      scripts/launchd/ai.dorkos.docker-orphan-sweep.plist.example \
+      > ~/Library/LaunchAgents/ai.dorkos.docker-orphan-sweep.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.dorkos.docker-orphan-sweep.plist
+
+  Run it once now:  launchctl kickstart gui/$(id -u)/ai.dorkos.docker-orphan-sweep
+  Uninstall:        launchctl bootout gui/$(id -u)/ai.dorkos.docker-orphan-sweep
+  Reinstall:        bootout first; bootstrap refuses a job that is already loaded.
+  The log is appended to and never rotated; it grows by a few lines a night.
+
+  Point __REPO__ at a checkout that stays put (the main checkout, not a
+  worktree that will be removed). Run the script by hand in its dry-run mode
+  first to see what it would remove. (The flag itself cannot be spelled here:
+  an XML comment may not contain two hyphens in a row.)
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.dorkos.docker-orphan-sweep</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/scripts/sweep-docker-orphans.sh</string>
+  </array>
+
+  <!-- launchd starts jobs with a bare PATH; the docker CLI lives in one of these. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:__HOME__/.docker/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>17</integer>
+  </dict>
+
+  <!-- A sweep is background housekeeping; let it yield to real work. -->
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/dorkos-docker-sweep.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/dorkos-docker-sweep.log</string>
+</dict>
+</plist>

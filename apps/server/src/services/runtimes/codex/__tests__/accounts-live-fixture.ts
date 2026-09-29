@@ -79,7 +79,7 @@ try {
     const text = typeof input === 'string' ? input : JSON.stringify(input);
     deliveredContexts.push({
       turn,
-      zeroAccounts: text.includes('Currently granted accounts for this agent session: 0.'),
+      zeroAccounts: text.includes('Accounts this agent session can use right now: 0.'),
     });
     return originalRunStreamed.call(this, input, options);
   };

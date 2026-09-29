@@ -22,7 +22,9 @@ vi.mock('@dorkos/shared/secret-file', async (importOriginal) => {
   };
 });
 
+import { WebPushError } from 'web-push';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { logger } from '../../../lib/logger.js';
 import type { WebPushPayload } from '@dorkos/shared/notification-schemas';
 import { PushSubscriptionStore } from '../push-subscription-store.js';
 import { WebPushChannel, vapidKeyPath, type WebPushSender } from '../channels/web-push.js';
@@ -209,6 +211,44 @@ describe('sending', () => {
     expect(result).toMatchObject({ delivered: 0, pruned: 0 });
     expect(subscriptions.list()).toHaveLength(1);
   });
+
+  it.each([500, 429])(
+    'keeps the push endpoint out of the log when a push fails with %i',
+    async (statusCode) => {
+      // The library's error carries the endpoint, the response headers and the
+      // body as own properties, and the log serializer keeps own properties. The
+      // endpoint is a capability URL for someone's phone: it must never reach a
+      // log file people attach to bug reports.
+      const endpoint = 'https://fcm.googleapis.com/fcm/send/secret-device-token';
+      const id = subscribe(endpoint);
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const { channel } = sender(() =>
+        Promise.reject(
+          new WebPushError(
+            'Received unexpected response code',
+            statusCode,
+            { 'retry-after': '30' },
+            'upstream said no',
+            endpoint
+          )
+        )
+      );
+
+      await channel.sendToAll(PAYLOAD);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [, context] = warn.mock.calls[0]!;
+      expect(context).toEqual({
+        id,
+        statusCode,
+        error: 'Received unexpected response code',
+      });
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).not.toContain('secret-device-token');
+      expect(logged).not.toContain('retry-after');
+      expect(logged).not.toContain('upstream said no');
+    }
+  );
 
   it('one dead device does not stop the others being reached', async () => {
     subscribe('https://fcm.googleapis.com/dead');

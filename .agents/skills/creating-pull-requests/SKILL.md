@@ -31,6 +31,13 @@ exists**. Opening the PR is the last step, not the first:
 6. **Then** open the PR, already reviewed, so the repo's automated review spends
    its single pass on final content.
 
+**A pushed branch that will not become a PR is yours to delete.** GitHub removes a
+branch from origin only when its PR merges, so a review branch you abandon, or an
+attempt that lost to a sibling, stays forever, and each one keeps a Neon preview
+database alive. Delete it from origin (`git push origin --delete <branch>`) the
+moment it is abandoned or superseded. A `codex/archive/*` twin goes the same way
+once the PR it certifies has merged.
+
 Every reason below is a cost measured on 2026-07-27/28, not a preference:
 
 - **Merge churn.** A PR held open across review rounds watches `main` move under
@@ -441,6 +448,11 @@ removes what it can prove is safe, which is exactly two shapes:
 Anything uncommitted, unpushed, still open, or unaskable is left alone with a
 reason. If it cannot reach GitHub it reports `pr-state-unknown` for every branch
 and removes nothing.
+
+Branches on origin that never had a PR are a separate, opt-in pass:
+`bash scripts/worktree-janitor.sh --origin` lists every origin branch with no open
+PR and no worktree here; `--origin --fix` deletes only the ones already in `main`
+or whose merged PR had the same tip. The rest it reports for you to decide.
 
 On 2026-08-01 the accumulated cost of not doing this was 116 worktrees at ~3.5 GB
 each, 193 local branches, and 414 branches on origin, against 5 open PRs. Method

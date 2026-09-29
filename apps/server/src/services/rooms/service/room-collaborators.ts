@@ -15,6 +15,7 @@
  *
  * @module server/services/rooms/service/room-collaborators
  */
+import { nameForAgents } from '../room-context.js';
 import { RoomAuthority } from './room-authority.js';
 import { RoomBridgeCreation } from '../manage/room-bridge-create.js';
 import { RoomBridgeLifecycle } from '../manage/room-bridge-lifecycle.js';
@@ -24,6 +25,7 @@ import { RoomEntryWriter } from '../messages/room-entry-writer.js';
 import { RoomLifecycle } from '../manage/room-lifecycle.js';
 import { RoomMemberDirectory } from '../manage/room-member-directory.js';
 import { RoomMembership } from '../manage/room-membership.js';
+import { RoomDepartures } from '../manage/room-departures.js';
 import { RoomMessageNotifier } from '../messages/room-message-notifier.js';
 import { RoomPosting } from '../messages/room-posting.js';
 import { RoomProjection } from './room-projection.js';
@@ -69,6 +71,8 @@ export interface RoomCollaborators {
   readonly bridgeLifecycle: RoomBridgeLifecycle;
   /** Who is in a room. */
   readonly membership: RoomMembership;
+  /** Agents leaving your team, and coming back (DOR-2095). */
+  readonly departures: RoomDepartures;
   /** The lists the app draws, and where each reader has got to in them. */
   readonly directory: RoomDirectory;
   /** The rooms an agent can find its own way around. */
@@ -103,12 +107,14 @@ export function createRoomCollaborators(
   const authority = new RoomAuthority(core);
   const projection = new RoomProjection(core);
   const publisher = new RoomPublisher(core);
-  const updates = new RoomUpdates(core, visibility, authority, projection);
-  const lifecycle = new RoomLifecycle(core, visibility, authority, projection, updates);
   const notifier = new RoomMessageNotifier(core);
   const writer = new RoomEntryWriter(core, publisher, notifier);
   const posting = new RoomPosting(core, visibility, writer);
   const systemPosts = new RoomSystemPosts(core, visibility, publisher, posting);
+  // After `systemPosts`: an agent archiving a channel posts the room's notice
+  // before the archive lands (spec `agent-permissions` D12).
+  const updates = new RoomUpdates(core, visibility, authority, projection, systemPosts);
+  const lifecycle = new RoomLifecycle(core, visibility, authority, projection, updates);
   const bridgeCreation = new RoomBridgeCreation(core, projection);
   const bridgeLifecycle = new RoomBridgeLifecycle(
     core,
@@ -129,7 +135,10 @@ export function createRoomCollaborators(
     broadcaster: core.broadcaster,
     maxOpsPerTurn: core.maxCanvasOpsPerTurn,
     postCanvasEvent: (roomId, input, bind) => systemPosts.postCanvasEvent(roomId, input, bind),
-    displayNameFor: (authorId) => core.authors.getById(authorId)?.displayName ?? 'Somebody',
+    // Canvas sentences are stored and read back by the next turn, so they name
+    // the operator the way an agent must read them (DOR-2458).
+    displayNameFor: (authorId) =>
+      nameForAgents(core, authorId, { sentenceStart: true }) ?? 'Somebody',
     roomRepoPath: core.roomRepoPath,
     ...(core.canvasNow ? { now: core.canvasNow } : {}),
   });
@@ -156,6 +165,7 @@ export function createRoomCollaborators(
     bridgeCreation,
     bridgeLifecycle,
     membership,
+    departures: new RoomDepartures(core, membership),
     follow,
     directory: new RoomDirectory(core, visibility, projection),
     memberDirectory: new RoomMemberDirectory(core, visibility),

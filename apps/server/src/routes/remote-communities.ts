@@ -48,6 +48,7 @@ import {
   remoteOriginIdempotencyKeyOf,
   remoteRoomAccessOf,
   remoteSequenceOf,
+  remoteThreadReplySeqOf,
 } from '../services/communities/remote/remote-community-adapter.js';
 import {
   RemoteConnectionAuthorizationError,
@@ -190,12 +191,14 @@ function remoteEntry(entry: CommunityEntry, ownerAuthorId?: string) {
           entry.id
         ) ?? remoteOriginIdempotencyKeyOf(entry))
       : null;
+  const threadLastReplySeq = entry.thread ? remoteThreadReplySeqOf(entry) : undefined;
   return {
     ...entry,
     remoteSeq: seq,
     authorDisplayName: author.displayName,
     authorKind: author.kind,
     ...(originIdempotencyKey ? { originIdempotencyKey } : {}),
+    ...(threadLastReplySeq === undefined ? {} : { threadLastReplySeq }),
   };
 }
 

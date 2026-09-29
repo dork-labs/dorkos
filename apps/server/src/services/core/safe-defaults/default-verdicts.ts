@@ -40,8 +40,8 @@
  * ## Not the same question as carryover
  *
  * `protected-state.ts` asks what must SURVIVE a wipe; this asks what a default
- * IS. They overlap but do not coincide: `approvals.standingGrants` defaults
- * `safe` and needs no carryover rule, while `rooms.maxTurnsPerAgentPerCascade`
+ * IS. They overlap but do not coincide: `auth.enabled` defaults `permissive`
+ * and a protective value carries, while `rooms.maxTurnsPerAgentPerCascade`
  * defaults to a real bound (`safe`) and still needs one, because a person may
  * have tightened it further. The guard checks the one relationship that must hold: a carryover
  * rule only makes sense for a leaf that can lose something.
@@ -137,6 +137,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // outcome and costs one dialog.
   'ui.fullPowerDecidedAt',
   'ui.fullPowerChoice',
+  // Bookkeeping for the one-shot permission upgrade sweep: which server version
+  // already ran it. It grants nothing and no gate reads it.
+  'permissions.upgradeSweptVersion',
   // How loud DorkOS is, and how long before it tries a louder channel. No data
   // moves on any of these: the sounds and the browser notification are this
   // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
@@ -193,6 +196,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'profile.displayNameSource.kind',
   'profile.displayNameSource.agentName',
   'profile.rolePromptDismissedAt',
+  'profile.identityPromptDismissedAt',
   'agents.defaultDirectory',
   'agents.defaultAgent',
   'workspace.enabled',
@@ -227,6 +231,16 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.claudeCode.accounts[].id',
   'runtimes.claudeCode.accounts[].path',
   'runtimes.claudeCode.accounts[].label',
+  // A display color, `null` meaning the default for its position: it only
+  // changes how an account is drawn (DOR-2379).
+  'runtimes.claudeCode.accounts[].color',
+  // The standalone default account's color, `null` meaning the default for its
+  // position (DOR-2492). Display only, like a row's color.
+  'runtimes.claudeCode.defaultAccountColor',
+  // Found account folders a person hid from Settings (spec claude-account-ui
+  // §7.4). Ships EMPTY, so every found folder is offered; a hidden one only
+  // stops being suggested. Nothing is registered, sent or granted either way.
+  'runtimes.claudeCode.dismissedFolders',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,
@@ -253,12 +267,17 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
  *
  * Most need no carryover rule in `protected-state.ts` — a wipe lands on them for
  * free. **Several do have one anyway**, and the distinction matters: the
- * `rooms.*` bounds, `approvals.trustWindowMinutes` and
- * `approvals.standingGrantsVoidBefore` all ship at a real bound, and a person
- * can tighten PAST it. Landing back on the shipped default would still loosen
+ * `rooms.*` bounds all ship at a real bound, and a person can tighten PAST
+ * them. Landing back on the shipped default would still loosen
  * what they set.
  */
 export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  // No permission preset chosen: every action keeps exactly the behavior it had
+  // before permissions existed, which grants nothing new (Rooms stays Blocked),
+  // and the person's own defaults start empty (spec `agent-permissions`).
+  'permissions.preset': null,
+  'permissions.defaults.areas': {},
+  'permissions.defaults.actions': {},
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
@@ -321,6 +340,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // A real bound of the same kind, and the tightest a person might want is
   // lower, which is why it carries.
   'rooms.maxCanvasOpsPerTurn': 3,
+  // How many conversations one agent may work in at once. A bound that starts
+  // on — well short of the six writers per folder DOR-500 measured as damaging —
+  // and the tightest a person might want is `1`, which is why it carries.
+  'rooms.maxConcurrentTurnsPerAgent': 3,
   // The two welcome-back bounds (spec `team-room-home`, D5.2). Both bound the
   // noise a return can produce: four hours before an absence counts at all, and
   // at most three posts when it does. Both carry across a wipe, in opposite
@@ -344,9 +367,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'extensions.enabled': [],
   'extensions.disabled': [],
   'extensions.approvedToRun': [],
+  'extensions.approvedSources': {},
   // DorkOS never moves a skill out of an agent tool's own folder on its own
   // until a person turns this on, and even then only inside the agent folders
-  // and room folders DorkOS owns (DOR-1853). A gate that starts closed on a real
+  // DorkOS owns (DOR-1853). A gate that starts closed on a real
   // safety axis: the move shares a skill with five agent tools and nothing can
   // un-share it.
   'harness.autoAdopt': false,
@@ -385,11 +409,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.opencode.baseURL': null,
   'runtimes.codex.credentialRef': null,
   providers: {},
-  // Standing permissions cannot exist until asked for; the void floor is
-  // vacuously null because no grant exists yet on a fresh install.
-  'approvals.standingGrants': false,
-  'approvals.trustWindowMinutes': 480,
-  'approvals.standingGrantsVoidBefore': null,
   // No standing answer to "how much may a new session do without asking", so
   // every runtime keeps its own default — and no shipped runtime defaults to a
   // stop that stops asking (pinned across the whole set by
@@ -410,6 +429,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'cloud.instanceToken': null,
   'cloud.instanceName': null,
   'cloud.linkedAccountLabel': null,
+  // No earlier link to continue, so a first link asks for nothing it did not have.
+  'cloud.previousLinkProof': null,
 };
 
 /**
@@ -430,26 +451,6 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: true,
     reason:
       'The external tool endpoint answers by default because wiring an agent to DorkOS is the product. It is not ungated: `mcp-auth.ts` fails closed for everything but the handshake and read-only tools, and the per-instance local token gates the rest.',
-  },
-  'agentContext.relayTools': {
-    value: true,
-    reason:
-      'Agent-to-agent messaging is the coordination layer DorkOS exists to provide; an agent that cannot reach the bus cannot do the job it was installed for. Scoped to this machine and subject to the same tier gate as every other capability.',
-  },
-  'agentContext.meshTools': {
-    value: true,
-    reason:
-      'Agent discovery is the coordination layer DorkOS exists to provide. Local-only, and read-mostly.',
-  },
-  'agentContext.adapterTools': {
-    value: true,
-    reason:
-      'Chat-adapter tools let an agent answer on the channel it was addressed from. The adapters themselves start disconnected and need credentials, so this flag alone reaches nothing.',
-  },
-  'agentContext.tasksTools': {
-    value: true,
-    reason:
-      'Scheduled-work tools are core to unattended operation. Task creation through the API and MCP surfaces parks at `pending_approval` regardless of this flag.',
   },
   'uploads.allowedTypes': {
     value: ['*/*'],

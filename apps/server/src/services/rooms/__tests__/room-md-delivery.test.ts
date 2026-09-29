@@ -148,9 +148,10 @@ function request(): RoomTurnRequest {
     authorId: 'author-ana',
     externalAuthor: false,
     agentPath: '/repo/ana',
-    // No worktree manager is wired here, so the cwd rung lands on the agent's
-    // own directory — what every room without a working copy resolves to.
+    // A room turn stands at home (spec `agent-home-desk` §5.1).
     cwd: '/repo/ana',
+    additionalDirectories: [],
+    worktree: null,
     sessionId: null,
     entry,
     prompt: entry.body.text,

@@ -277,6 +277,13 @@ vi.mock('@/layers/entities/mesh', async (importOriginal) => ({
   useAgentsSync: () => {},
 }));
 
+// The live agent-request subscriber reads the event stream this suite does not
+// provide; nothing here is about agent requests.
+vi.mock('@/layers/entities/connectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/connectors')>()),
+  useConnectorAgentRequestsSync: () => {},
+}));
+
 vi.mock('@/layers/entities/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/config')>()),
   useConfigSync: () => {},
@@ -288,6 +295,13 @@ vi.mock('@/layers/entities/config', async (importOriginal) => ({
 vi.mock('@/layers/entities/community', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/community')>()),
   useCommunityConnectionsSync: () => {},
+}));
+
+// Account usage updates ride the same stream too; the rest of the shared model
+// stays real.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useAccountUsageSync: () => {},
 }));
 
 vi.mock('react-resizable-panels', () => ({

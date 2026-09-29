@@ -8,14 +8,6 @@
  * this stream deliberately skips, and so would never reach the reader. An empty
  * room resumes from `0`, which the server serves as "replay nothing, go live".
  *
- * A dropped stream is retried here, in the hook, rather than below it. The
- * `WSConnection` that carries the session stream's resilience speaks the wire
- * directly and cannot be reached through the Transport port, so wiring this to
- * it would leave embedded mode (Obsidian's `DirectTransport`, which has no HTTP
- * server) with the only unreliable room stream. The port stays contract-level —
- * one subscription, no retries, the same line `session-stream-methods.ts` draws
- * — and resilience sits above it, where both adapters inherit it.
- *
  * With one deliberate exception, in the other direction: DETECTING a dead
  * socket lives in the HTTP adapter's `subscribeRoom`, because the server's
  * heartbeat is an SSE comment the adapter drops. Up here a silent socket and a
@@ -399,9 +391,6 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
     };
   }, [roomId, wake]);
 
-  // Which room's table is live in this browser — the one fact the right panel's
-  // tab strip needs and cannot work out for itself (it draws in the embed and in
-  // tests with neither router nor transport behind it).
   useEffect(() => {
     useAppStore.getState().setRoomCanvasLiveRoom(roomId);
     return () => useAppStore.getState().setRoomCanvasLiveRoom(null);

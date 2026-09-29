@@ -65,9 +65,10 @@ export const useThemeStore = create<ThemeStore>((set) => ({
 }));
 
 /** Reflect the resolved scheme onto the document root — the single class mutation. */
-function applyDark(dark: boolean): void {
+function applyResolvedTheme(dark: boolean): void {
   if (typeof document !== 'undefined') {
     document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.classList.toggle('light', !dark);
   }
 }
 
@@ -77,9 +78,9 @@ function applyDark(dark: boolean): void {
 // there is never more than a single listener regardless of how many consumers
 // mount.
 const initialState = useThemeStore.getState();
-applyDark(resolveTheme(initialState.theme, initialState.systemDark) === 'dark');
+applyResolvedTheme(resolveTheme(initialState.theme, initialState.systemDark) === 'dark');
 useThemeStore.subscribe((state) =>
-  applyDark(resolveTheme(state.theme, state.systemDark) === 'dark')
+  applyResolvedTheme(resolveTheme(state.theme, state.systemDark) === 'dark')
 );
 if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
   window

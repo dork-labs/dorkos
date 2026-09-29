@@ -252,3 +252,94 @@ describe('a pending autosave when the edit ends from outside', () => {
     expect(activeDoc().editing).toBe(true);
   });
 });
+
+/**
+ * The editor's own autosave, echoed back on the session stream, is not the
+ * agent's change (DOR-2213).
+ *
+ * Every debounced save writes the document through to the server, and the
+ * server answers with a `canvas` frame at a newer `rev`. Edit-protection held
+ * that frame like any other, so a person typing in a file-backed document was
+ * told "Your agent changed this while you were editing" about their own
+ * keystrokes — and the product-media capture could only be taken by a driver
+ * that clicked Keep mine in a loop.
+ */
+describe('the echo of the editor’s own autosave', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear();
+    transport = createMockTransport();
+    useAppStore.setState({
+      canvasOpen: false,
+      openDocuments: [],
+      activeCanvasDocumentId: null,
+      activeBrowserDocumentId: null,
+      canvasSessionId: 'sess-1',
+      selectedCwd: null,
+    });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  /** Deliver a `canvas` frame for the active document, as the stream would. */
+  function frameArrives(content: UiCanvasContent): void {
+    const doc = activeDoc();
+    act(() =>
+      useAppStore.getState().applyCanvasEvent('sess-1', {
+        documentId: doc.id,
+        document: {
+          id: doc.id,
+          scope: 'session:sess-1',
+          roomId: null,
+          content,
+          title: 'notes.md',
+          contentType: content.type,
+          authorId: 'owner',
+          pinned: false,
+          rev: doc.rev + 1,
+          lastTouchedBy: 'owner',
+          lastTouchedAt: '2026-09-25T00:00:00.000Z',
+          openedAt: '2026-09-25T00:00:00.000Z',
+          lastActiveAt: '2026-09-25T00:00:00.000Z',
+        },
+        change: 'updated',
+      })
+    );
+  }
+
+  /** Whether the "your agent changed this" notice is on screen. */
+  function bannerShown(): boolean {
+    return screen.queryByText(/changed this while you were editing/) !== null;
+  }
+
+  it('raises no held-update banner', async () => {
+    await editWithAPendingSave();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS + 50);
+    });
+    // The save really went through the canvas, so an echo is really coming.
+    expect(transport.updateSessionCanvasDocument).toHaveBeenCalledWith('sess-1', activeDoc().id, {
+      content: { ...MINE, content: 'my draft, still unsaved' },
+    });
+
+    frameArrives({ ...MINE, content: 'my draft, still unsaved' });
+
+    expect(bannerShown()).toBe(false);
+    expect(activeDoc().heldUpdate).toBeNull();
+    expect(activeDoc().editing).toBe(true);
+  });
+
+  it('still raises it for the agent’s change that follows', async () => {
+    await editWithAPendingSave();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS + 50);
+    });
+    frameArrives({ ...MINE, content: 'my draft, still unsaved' });
+    frameArrives(THEIRS);
+
+    expect(bannerShown()).toBe(true);
+    expect(activeDoc().heldUpdate).toEqual(THEIRS);
+  });
+});

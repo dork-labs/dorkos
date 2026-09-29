@@ -439,6 +439,11 @@ export interface TriggerTurnOpts {
    */
   roomTurn?: MessageOpts['roomTurn'];
   /**
+   * The home of the agent this turn is dispatched as, when a server path names
+   * one — handed to the runtime beside `roomTurn` ({@link MessageOpts.forAgent}).
+   */
+  forAgent?: string;
+  /**
    * Background the caller attached to this turn — the agent reads it, the person
    * never sees it. Passed straight to the assembler, which renders it into the
    * neutral bag as a `seed_context` entry; `content` is untouched.
@@ -471,6 +476,24 @@ export interface TriggerTurnOpts {
    * pins (`project-rooms` §3.3).
    */
   systemPromptAppend?: string;
+  /**
+   * The folders this turn may reach beyond its cwd, computed by the caller for
+   * THIS turn (spec `agent-home-desk` §4). Passed straight to the runtime, which
+   * hands exactly this set to its backend; absent means none.
+   */
+  additionalDirectories?: MessageOpts['additionalDirectories'];
+  /**
+   * Work that must happen at the moment this turn LAUNCHES — after its write
+   * lock is held and any turn still open on the session has settled, before
+   * the room context is rendered and the runtime is called (spec
+   * `agent-home-desk` §5.9, §6.1). What it returns is merged into the turn.
+   *
+   * Launch, not acceptance: a turn can wait in the queue behind another turn
+   * on the same session, and work done while it waited would happen under that
+   * running turn. A rejection is logged and the turn runs as it was accepted —
+   * nothing here may cost a person their answer.
+   */
+  prepareLaunch?: () => Promise<Partial<Pick<TriggerTurnOpts, 'roomContext'>>>;
   /**
    * Which billing account this LAUNCH should run on, as a Claude account
    * registry id. Set only by the route that accepted a person's pre-launch
@@ -532,6 +555,14 @@ export interface TriggerTurnOpts {
   messageId?: string;
   /** Server-owned receipt for a protected automatic follow-up. */
   privateReceiptId?: string;
+  /**
+   * Nobody is watching THIS turn (an automatic carry-over to another
+   * account): an approval card does not hold it (spec `agent-permissions` D6)
+   * and an ask raised in it is refused at once. Sent as the runtime's
+   * per-turn `unattendedApprovals` and `unattended`, so a person's next turn
+   * in the same session asks and holds as usual.
+   */
+  unattended?: boolean;
   /** The projector for `sessionId` (keyed by the client-facing id, which is stable). */
   projector: SessionStateProjector;
   deps: TriggerTurnDeps;
@@ -589,6 +620,28 @@ export interface TriggerTurnResult {
 }
 
 /**
+ * Run a turn's {@link TriggerTurnOpts.prepareLaunch}, never letting it fail the
+ * turn: a rejection is logged and the turn launches as it was accepted.
+ *
+ * @param prepare - The caller's launch-time step.
+ * @param sessionId - For the log line.
+ */
+async function runPrepareLaunch(
+  prepare: NonNullable<TriggerTurnOpts['prepareLaunch']>,
+  sessionId: string
+): Promise<Partial<Pick<TriggerTurnOpts, 'roomContext'>>> {
+  try {
+    return await prepare();
+  } catch (err) {
+    logger.warn('[turn] launch preparation failed; starting the turn as it was accepted', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return {};
+  }
+}
+
+/**
  * Acquire the lock, start a detached turn feeding the projector, and resolve the
  * canonical session id for the 202 response. The returned promise settles as
  * soon as the lock is taken and the canonical id is known (or the timeout
@@ -620,11 +673,11 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     content,
     cwd,
     context,
-    roomContext,
     roomTurn,
     seedContext,
     approvalVerdict,
     systemPromptAppend,
+    additionalDirectories,
     accountHint,
     settings,
     projector,
@@ -725,6 +778,14 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // unguarded, one throwing context assembly would hold the lock to its TTL and
   // wedge every later turn this client sends to this session (DOR-1088).
   try {
+    // Launch-time preparation, under this turn's write lock — so no other turn
+    // on this session is running — see `prepareLaunch`. Its result replaces the
+    // accepted room context BEFORE the bag below renders it, so what the model
+    // is told matches what is on disk as it starts.
+    const prepared = opts.prepareLaunch
+      ? await runPrepareLaunch(opts.prepareLaunch, sessionId)
+      : {};
+    const roomContext = prepared.roomContext ?? opts.roomContext;
     // Assemble the neutral context bag once, server-side: git_status is derived
     // here (identical for every runtime), client signals are normalized, and any
     // kind the runtime injects natively is omitted. `content` is passed through
@@ -799,9 +860,20 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // runtime draws here, and passing it always is what makes the clearing
         // path exist at all.
         roomTurn,
+        ...(opts.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
         ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
+        ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
+        // A protected message is a connector's (an event, or an agent request's
+        // continuation), never a person typing, so nobody is watching this turn
+        // for an approval card and it must not hold for one (spec
+        // `agent-permissions` D6). The card still reaches the inbox, and the
+        // verdict wakes the session.
+        ...(opts.privateReceiptId !== undefined || opts.unattended === true
+          ? { unattendedApprovals: true }
+          : {}),
+        ...(opts.unattended === true ? { unattended: true } : {}),
         ...settings,
         // After `settings`, and it cannot collide with it: that type has no
         // permission key. See the field's docblock for why it is not in there.

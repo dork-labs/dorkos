@@ -16,6 +16,12 @@ import {
   sessionConnectionOverrides,
   type Db,
 } from '@dorkos/db';
+import {
+  liveEveryAgentConnections,
+  revokeEveryAgentGrants,
+  type EndedEveryAgentGrant,
+} from './every-agent-grants.js';
+import { notifyEveryAgentEnded } from './every-agent-activity.js';
 import type {
   ConnectedAccount,
   ConnectedAccountStatus,
@@ -31,6 +37,17 @@ import {
   type ConnectorMigrationResult,
   type LegacyConnectionMigrationInput,
 } from './legacy-connection-migration.js';
+
+/**
+ * The test-mode provider type the credential route accepts under
+ * `DORKOS_TEST_RUNTIME`. Defined here — the lowest layer that needs it — and
+ * re-exported from `bootstrap.js`, which is where every other consumer
+ * (`test-mode.ts`, `index.ts`) already imports it from; this store is what
+ * enforces {@link ConnectionStore.purgeTestConnectorConnections}'s "only this
+ * type" guard, so it owns the constant rather than reaching up into
+ * `bootstrap.ts` for it.
+ */
+export const TEST_CONNECTOR_PROVIDER_TYPE = 'test-connector';
 
 /** Raised when connector identity migration failed and mixed-store writes are blocked. */
 export class ConnectorMigrationUnavailableError extends Error {
@@ -82,6 +99,34 @@ export interface ConnectionStoreOptions {
 /** Server-owned deployment and payer mode for a configured provider instance. */
 export type ConnectorProviderDeploymentMode = 'managed' | 'byo';
 
+/** One account {@link ConnectionStore.closeUnlistedConnections} closed. */
+export interface ClosedConnection {
+  /** Stable connection id. */
+  readonly connectionId: ConnectionId;
+  /** The service, e.g. `gmail`. */
+  readonly toolkit: string;
+  /** The owner's label for the account. */
+  readonly label: string;
+}
+
+/** A sign-in status the service reports once an account is connected; `pending` is mid-sign-in. */
+export type SignInStatus = Extract<ConnectedAccountStatus, 'active' | 'expired' | 'revoked'>;
+
+/** One kept account whose sign-in status a fresh fact from the service changed. */
+export interface SignInStatusChange {
+  /** Stable connection id. */
+  readonly connectionId: ConnectionId;
+  /** The status recorded before. */
+  readonly from: ConnectedAccountStatus;
+  /** The status the service reports now. */
+  readonly to: SignInStatus;
+}
+
+/** Whether a listed status is a settled sign-in status (not mid-sign-in, not unknown). */
+function isSignInStatus(status: ProviderConnectedAccount['status']): status is SignInStatus {
+  return status === 'active' || status === 'expired' || status === 'revoked';
+}
+
 /** Stable connection store and sole writer after the application backfill. */
 export class ConnectionStore {
   private readonly db: Db;
@@ -120,7 +165,8 @@ export class ConnectionStore {
     this.assertAvailable();
     const capabilities = provider.getCapabilities();
     const now = new Date().toISOString();
-    return this.db.transaction((tx) => {
+    let ended: EndedEveryAgentGrant[] = [];
+    const generation = this.db.transaction((tx) => {
       const existing = tx
         .select({
           createdAt: connectorProviderInstances.createdAt,
@@ -184,13 +230,40 @@ export class ConnectionStore {
         })
         .run();
       if (materialChanged) {
+        // Only access someone was given can have gone stale. A connection
+        // nobody holds a live grant on (named, session or every-agent) has
+        // nothing to re-check, so it stays ready and usable to grant.
         tx.update(connections)
           .set({ grantReconciliationStatus: 'migration_needs_reconcile', updatedAt: now })
-          .where(eq(connections.providerInstanceId, provider.instanceId))
+          .where(
+            and(
+              eq(connections.providerInstanceId, provider.instanceId),
+              sql`EXISTS (SELECT 1 FROM ${connectionOperationGrants}
+                WHERE ${connectionOperationGrants.connectionId} = ${connections.id}
+                AND ${connectionOperationGrants.revokedAt} IS NULL)`
+            )
+          )
           .run();
+      }
+      if (existing && existing.mode !== 'managed' && mode === 'managed') {
+        // A grant given on the owner's own key was never sent to hosted
+        // authority, which now decides every call (ADR 260926-192625). Moving
+        // an instance to managed ends it for good rather than leaving it
+        // dormant to reappear if the instance ever moves back; the owner shares
+        // again through a review, which reaches hosted authority (DOR-2439).
+        const instanceConnections = tx
+          .select({ id: connections.id })
+          .from(connections)
+          .where(eq(connections.providerInstanceId, provider.instanceId))
+          .all()
+          .map((row) => row.id);
+        ended = liveEveryAgentConnections(tx, instanceConnections);
+        revokeEveryAgentGrants(tx, instanceConnections, now);
       }
       return executionConfigGeneration;
     });
+    notifyEveryAgentEnded(ended, 'moved_to_dorkos_account');
+    return generation;
   }
 
   /** Read the material generation for one configured provider instance. */
@@ -202,6 +275,23 @@ export class ConnectionStore {
       .get()?.generation;
   }
 
+  /**
+   * The execution-material fingerprint last stored for one instance, kept
+   * across unregistering and restarts; `undefined` for an instance never
+   * registered.
+   *
+   * @param instanceId - The configured instance.
+   */
+  storedExecutionConfigDigest(instanceId: ConnectorProviderInstanceId): string | undefined {
+    return (
+      this.db
+        .select({ digest: connectorProviderInstances.executionConfigDigest })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.id, instanceId))
+        .get()?.digest ?? undefined
+    );
+  }
+
   /** Mark a provider unavailable while retaining its identity and connections. */
   unregisterProvider(instanceId: ConnectorProviderInstanceId): void {
     this.assertAvailable();
@@ -210,6 +300,100 @@ export class ConnectionStore {
       .set({ status: 'unavailable', updatedAt: new Date().toISOString() })
       .where(eq(connectorProviderInstances.id, instanceId))
       .run();
+  }
+
+  /**
+   * Tombstone every live connection ONE `test-connector` provider instance
+   * ever reconciled, and revoke or drop everything that hangs off one
+   * (grants, agent attachments, session overrides, event subscriptions) — the
+   * deliberate opposite of {@link unregisterProvider}, which keeps a real
+   * provider's history on purpose so re-entering a rotated key doesn't forget
+   * which accounts were connected. `connections` rows cannot be hard-deleted
+   * (a DB trigger enforces tombstone-only), so this sets `removedAt` exactly
+   * as an owner's own remove would, rather than deleting the row — but unlike
+   * an owner's remove, it writes no audit trail or Activity record: this is a
+   * blunt test-isolation reset nobody asked for on purpose, not a user action
+   * worth narrating back to them.
+   *
+   * Refuses (throws) an instance whose persisted type is not
+   * `TEST_CONNECTOR_PROVIDER_TYPE` — this is a scripted-provider-only reset,
+   * never a general-purpose "erase a provider's connections" tool a real
+   * (`composio`/`nango`) instance could reach by a wrong id.
+   *
+   * For an ephemeral, scripted provider only, whose own reload already
+   * promises a clean slate (the test-mode connector's account map is
+   * in-memory and starts fresh on every credential save). Once its account
+   * ids stopped repeating across key saves (DOR-2451), a stale row from an
+   * earlier key save would otherwise sit there — still `removedAt IS NULL`,
+   * still joined into every owner and agent query — under a
+   * `providerInstanceId` that outlives any one save: forever a second
+   * "Gmail (work)" no test ever asked for.
+   *
+   * @param instanceId - The ephemeral `test-connector` instance whose connections to tombstone.
+   * @throws {Error} If a persisted provider instance exists at `instanceId` and its type isn't `test-connector`.
+   */
+  purgeTestConnectorConnections(instanceId: ConnectorProviderInstanceId): void {
+    this.assertAvailable();
+    const provider = this.db
+      .select({ type: connectorProviderInstances.type })
+      .from(connectorProviderInstances)
+      .where(eq(connectorProviderInstances.id, instanceId))
+      .get();
+    if (provider && provider.type !== TEST_CONNECTOR_PROVIDER_TYPE) {
+      throw new Error(
+        `purgeTestConnectorConnections refuses provider type '${provider.type}' — only '${TEST_CONNECTOR_PROVIDER_TYPE}' connections may be purged this way.`
+      );
+    }
+    const now = new Date().toISOString();
+    this.db.transaction((tx) => {
+      const ids = tx
+        .select({ id: connections.id })
+        .from(connections)
+        .where(and(eq(connections.providerInstanceId, instanceId), isNull(connections.removedAt)))
+        .all()
+        .map((row) => row.id);
+      if (ids.length === 0) return;
+      tx.update(connections)
+        .set({
+          lifecycleState: 'disconnected',
+          externalCleanupState: 'not_required',
+          enabled: false,
+          removedAt: now,
+          cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+          updatedAt: now,
+        })
+        .where(inArray(connections.id, ids))
+        .run();
+      tx.delete(agentConnectionAttachments)
+        .where(inArray(agentConnectionAttachments.connectionId, ids))
+        .run();
+      tx.delete(sessionConnectionOverrides)
+        .where(inArray(sessionConnectionOverrides.connectionId, ids))
+        .run();
+      tx.update(connectionOperationGrants)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            inArray(connectionOperationGrants.connectionId, ids),
+            isNull(connectionOperationGrants.revokedAt)
+          )
+        )
+        .run();
+      tx.update(connectorEventSubscriptions)
+        .set({
+          enabled: false,
+          revokedAt: now,
+          scopeVersion: sql`${connectorEventSubscriptions.scopeVersion} + 1`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(connectorEventSubscriptions.connectionId, ids),
+            isNull(connectorEventSubscriptions.revokedAt)
+          )
+        )
+        .run();
+    });
   }
 
   /** Reconcile one private provider account to a stable DorkOS connection. */
@@ -264,6 +448,9 @@ export class ConnectionStore {
     // sign-in does not overrule it.
     const restoringDisconnected =
       Boolean(options.restoreDisconnected) && existing?.lifecycle_state === 'disconnected';
+    // Reconcile runs when a sign-in has just finished, which is itself the
+    // fact: a service that does not say a status has still just signed in.
+    const status = account.status === 'unknown' ? 'active' : account.status;
     this.db
       .insert(connections)
       .values({
@@ -272,8 +459,11 @@ export class ConnectionStore {
         externalAccountRef: account.externalAccountRef,
         toolkit: account.toolkit,
         label: account.label,
-        status: account.status,
-        grantReconciliationStatus: 'migration_needs_reconcile',
+        status,
+        // A new connection has no grants, so there is nothing to reconcile:
+        // it is ready to be granted. Stale access is marked where it arises
+        // (a material provider change, a legacy migration), never here.
+        grantReconciliationStatus: 'ready',
         createdAt: existing?.created_at ?? now,
         updatedAt: now,
         lastVerifiedAt: now,
@@ -284,7 +474,7 @@ export class ConnectionStore {
         set: {
           toolkit: account.toolkit,
           label: account.label,
-          status: account.status,
+          status,
           ...(options.restoreDisconnected && { lifecycleState: 'connected' as const }),
           ...(restoringDisconnected && { enabled: true }),
           updatedAt: now,
@@ -302,20 +492,9 @@ export class ConnectionStore {
           ? 'revoked'
           : !restoringDisconnected && existing?.enabled === 0
             ? 'paused'
-            : account.status,
+            : status,
       custody: account.custody,
     };
-  }
-
-  /** Whether an account has been removed from owner and agent inventory. */
-  isRemoved(connectionId: string): boolean {
-    return Boolean(
-      this.db
-        .select({ removedAt: connections.removedAt })
-        .from(connections)
-        .where(eq(connections.id, connectionId))
-        .get()?.removedAt
-    );
   }
 
   /** Read one private binding by stable public connection id. */
@@ -362,6 +541,25 @@ export class ConnectionStore {
   }
 
   /**
+   * Whether any account connected through one provider instance is still kept
+   * (not disconnected, not removed). A missing instance has none.
+   *
+   * @param providerInstanceId - The instance the accounts were connected through.
+   */
+  hasLiveConnections(providerInstanceId: ConnectorProviderInstanceId): boolean {
+    this.assertAvailable();
+    return (
+      this.db.$client
+        .prepare(
+          `SELECT 1 FROM connections
+           WHERE provider_instance_id = ? AND lifecycle_state = 'connected' AND removed_at IS NULL
+           LIMIT 1`
+        )
+        .get(providerInstanceId) !== undefined
+    );
+  }
+
+  /**
    * Resolve an unambiguous disconnected connection targeted by a new connect
    * flow. A label narrows multi-account providers; without one, exactly one
    * disconnected connection for the provider and toolkit must exist.
@@ -394,6 +592,46 @@ export class ConnectionStore {
       .run();
   }
 
+  /**
+   * Move saved accounts from a service id their provider no longer lists them
+   * under to the one it does, so each keeps matching its app (a Nango Gmail
+   * integration saved as `google-mail` before it joined the popular Gmail row,
+   * DOR-2436). Every row of this instance still under an old id moves,
+   * disconnected ones included, so reconnecting one later still finds it; a
+   * removed row stays as history. A label that was only the old id (the name
+   * an account nobody named carries) follows it; a name the person chose stays.
+   * One transaction, so no reader sees half the accounts moved.
+   *
+   * @param instanceId - The provider instance the accounts belong to.
+   * @param renames - Old service id → new service id.
+   */
+  renameServices(
+    instanceId: ConnectorProviderInstanceId,
+    renames: ReadonlyMap<string, string>
+  ): void {
+    this.assertAvailable();
+    if (renames.size === 0) return;
+    const now = new Date().toISOString();
+    this.db.transaction((tx) => {
+      for (const [from, to] of renames) {
+        tx.update(connections)
+          .set({
+            label: sql`CASE WHEN ${connections.label} = ${connections.toolkit} THEN ${to} ELSE ${connections.label} END`,
+            toolkit: to,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(connections.providerInstanceId, instanceId),
+              eq(connections.toolkit, from),
+              isNull(connections.removedAt)
+            )
+          )
+          .run();
+      }
+    });
+  }
+
   /** Replace the operator-facing label of one stable connection. */
   setLabel(connectionId: ConnectionId, label: string): void {
     this.assertAvailable();
@@ -407,26 +645,188 @@ export class ConnectionStore {
   /** Tombstone a connection and synchronously revoke local active access. */
   revokeConnection(connectionId: ConnectionId): void {
     this.assertAvailable();
+    this.closeConnections([connectionId]);
+  }
+
+  /**
+   * Close every kept account of one instance that a complete, successful
+   * listing from that instance no longer contains: the route cannot reach it,
+   * so nothing here can use it and the owner connects the app again. The
+   * account may still be live at the service — the listing only shows what
+   * this route can reach — so cleanup there is still owed and cannot be done
+   * from here: it is recorded as `unknown`, exactly as a local revoke is.
+   * Closed, not removed, so the account's history stays. Callers pass only a
+   * listing that succeeded in full — a failed or partial read must never
+   * reach here.
+   *
+   * @param instanceId - The instance the listing came from.
+   * @param listedRefs - Every account the listing returned.
+   * @returns The accounts closed, for the caller's record of it.
+   */
+  closeUnlistedConnections(
+    instanceId: ConnectorProviderInstanceId,
+    listedRefs: ReadonlySet<string>
+  ): ClosedConnection[] {
+    this.assertAvailable();
+    const unlisted = this.db
+      .select({
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        externalAccountRef: connections.externalAccountRef,
+      })
+      .from(connections)
+      .where(
+        and(
+          eq(connections.providerInstanceId, instanceId),
+          eq(connections.lifecycleState, 'connected'),
+          isNull(connections.removedAt)
+        )
+      )
+      .all()
+      .filter((row) => !listedRefs.has(row.externalAccountRef))
+      .map(({ connectionId, toolkit, label }) => ({
+        connectionId: connectionId as ConnectionId,
+        toolkit,
+        label,
+      }));
+    if (unlisted.length > 0) {
+      this.closeConnections(
+        unlisted.map((row) => row.connectionId),
+        { status: 'revoked', enabled: false }
+      );
+    }
+    return unlisted;
+  }
+
+  /**
+   * Record the sign-in status a successful account listing from one instance
+   * reports for each kept account it lists, and when the service said so
+   * (`lastVerifiedAt`). Only the status and that time change: never the label,
+   * the app, the owner's pause or whether the account is kept. An account the
+   * listing leaves out is untouched, so a partial listing is safe; one it
+   * reports mid-sign-in (`pending`) is untouched too. A fact recorded after
+   * the listing began (a sign-in finishing, an action the service refused for
+   * an ended sign-in) is fresher than the listing and wins over it. Callers
+   * pass only a listing that succeeded: a failed one never reaches here.
+   *
+   * @param instanceId - The instance the listing came from.
+   * @param listed - Every account that listing returned.
+   * @param listingStartedAt - When the listing was requested (ISO-8601).
+   * @returns The accounts whose recorded status changed.
+   */
+  refreshSignInStatus(
+    instanceId: ConnectorProviderInstanceId,
+    listed: readonly ProviderConnectedAccount[],
+    listingStartedAt: string
+  ): SignInStatusChange[] {
+    this.assertAvailable();
+    const reported = new Map<string, SignInStatus>();
+    for (const account of listed) {
+      if (isSignInStatus(account.status)) reported.set(account.externalAccountRef, account.status);
+    }
+    if (reported.size === 0) return [];
     const now = new Date().toISOString();
-    this.db.transaction((tx) => {
+    return this.db.transaction((tx) => {
+      const kept = tx
+        .select({
+          connectionId: connections.id,
+          externalAccountRef: connections.externalAccountRef,
+          status: connections.status,
+          lastVerifiedAt: connections.lastVerifiedAt,
+        })
+        .from(connections)
+        .where(
+          and(
+            eq(connections.providerInstanceId, instanceId),
+            eq(connections.lifecycleState, 'connected'),
+            isNull(connections.removedAt)
+          )
+        )
+        .all();
+      const changes: SignInStatusChange[] = [];
+      for (const row of kept) {
+        const status = reported.get(row.externalAccountRef);
+        if (status === undefined) continue;
+        if (row.lastVerifiedAt !== null && row.lastVerifiedAt > listingStartedAt) continue;
+        const changed = row.status !== status;
+        tx.update(connections)
+          .set({ status, lastVerifiedAt: now, ...(changed && { updatedAt: now }) })
+          .where(eq(connections.id, row.connectionId))
+          .run();
+        if (changed) {
+          changes.push({
+            connectionId: row.connectionId as ConnectionId,
+            from: row.status,
+            to: status,
+          });
+        }
+      }
+      return changes;
+    });
+  }
+
+  /**
+   * Record that the service refused an action because this account's sign-in
+   * has ended. Only a kept account still recorded as signed in changes; the
+   * owner's pause and whether the account is kept are left alone.
+   *
+   * @param connectionId - The account the action used.
+   * @param status - What the service reported: expired, or turned off.
+   * @returns Whether the recorded status changed.
+   */
+  markSignInEnded(connectionId: ConnectionId, status: 'expired' | 'revoked'): boolean {
+    this.assertAvailable();
+    const now = new Date().toISOString();
+    const result = this.db
+      .update(connections)
+      .set({ status, lastVerifiedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(connections.id, connectionId),
+          eq(connections.status, 'active'),
+          eq(connections.lifecycleState, 'connected'),
+          isNull(connections.removedAt)
+        )
+      )
+      .run();
+    return result.changes > 0;
+  }
+
+  /**
+   * Mark connections disconnected with their external cleanup `unknown`, and
+   * synchronously end every local authority hanging off them: agent
+   * attachments, session overrides, grants and event subscriptions.
+   */
+  private closeConnections(
+    ids: readonly ConnectionId[],
+    close: { status?: 'revoked'; enabled?: false } = {}
+  ): void {
+    const now = new Date().toISOString();
+    // Read before the connection-wide revoke below ends it, so the owner is
+    // told sharing with every agent stopped (ADR 260926-192625).
+    const ended = this.db.transaction((tx) => {
+      const endedSharing = liveEveryAgentConnections(tx, [...ids]);
       tx.update(connections)
         .set({
           lifecycleState: 'disconnected',
           externalCleanupState: 'unknown',
+          ...(close.status && { status: close.status }),
+          ...(close.enabled === false && { enabled: false }),
           cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
           updatedAt: now,
         })
-        .where(eq(connections.id, connectionId))
+        .where(inArray(connections.id, [...ids]))
         .run();
       tx.delete(agentConnectionAttachments)
-        .where(eq(agentConnectionAttachments.connectionId, connectionId))
+        .where(inArray(agentConnectionAttachments.connectionId, [...ids]))
         .run();
       tx.delete(sessionConnectionOverrides)
-        .where(eq(sessionConnectionOverrides.connectionId, connectionId))
+        .where(inArray(sessionConnectionOverrides.connectionId, [...ids]))
         .run();
       tx.update(connectionOperationGrants)
         .set({ revokedAt: now })
-        .where(eq(connectionOperationGrants.connectionId, connectionId))
+        .where(inArray(connectionOperationGrants.connectionId, [...ids]))
         .run();
       tx.update(connectorEventSubscriptions)
         .set({
@@ -437,12 +837,14 @@ export class ConnectionStore {
         })
         .where(
           and(
-            eq(connectorEventSubscriptions.connectionId, connectionId),
+            inArray(connectorEventSubscriptions.connectionId, [...ids]),
             isNull(connectorEventSubscriptions.revokedAt)
           )
         )
         .run();
+      return endedSharing;
     });
+    notifyEveryAgentEnded(ended, 'disconnected');
   }
 
   /** Revoke every connection authority row owned by one removed agent. */

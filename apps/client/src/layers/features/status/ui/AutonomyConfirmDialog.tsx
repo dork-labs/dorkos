@@ -108,13 +108,6 @@ interface AutonomyConfirmDialogProps {
  *
  * ## Where the checkbox is not offered
  *
- * `canRemember` is `false` in Obsidian, where the cockpit runs on the in-process
- * `DirectTransport` and there is no config file behind it: `updateConfig` is a
- * documented no-op and `getConfig` returns no `ui` block. A checkbox there would
- * tick, save nothing, report no error, and ask again forever — a promise the
- * product cannot keep, which is worse than not offering it. So the row is
- * absent, and the dialog simply asks each time, as it did before this existed.
- *
  * @param props - The mode being confirmed, the two answers, and whether a
  *   standing acknowledgement can be kept.
  */

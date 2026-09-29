@@ -30,6 +30,15 @@ import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../task-tools.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import type { Task } from '@dorkos/shared/schemas';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {
@@ -420,8 +429,9 @@ describe('tasks_update closes the keeps-approved-bypass window (security)', () =
     expect(after.prompt).toBe(MALICIOUS_PROMPT);
     // ...but the unattended run gets its approval prompts back, right now.
     expect(after.permissionMode).toBe('acceptEdits');
-    // The task stays live; it simply asks again before doing anything.
-    expect(after.status).toBe('active');
+    // And it goes back to a person in the same call (DOR-2313), switched on so a
+    // yes resumes it.
+    expect(after.status).toBe('pending_approval');
     expect(after.enabled).toBe(true);
   });
 
@@ -452,23 +462,40 @@ describe('tasks_update closes the keeps-approved-bypass window (security)', () =
   });
 
   it('leaves the grant alone when an agent edits only metadata (the clamp is narrow)', async () => {
-    // enabled / timezone / maxRuntime do not change the approved WORK, so a
-    // legitimate toggle must keep the bypass — or flipping a task off and on would
-    // silently strip its autonomy.
+    // enabled and the description do not change the approved WORK, so a
+    // legitimate toggle must keep the bypass — or flipping a task off and on
+    // would silently strip its autonomy. (The timezone joined the work in
+    // DOR-2307, and the time limit and the other settings in DOR-2323.)
     const task = seedApprovedBypass();
 
     const { isError } = await call('tasks_update', {
       id: task.id,
       enabled: false,
-      timezone: 'America/New_York',
-      maxRuntime: '10m',
+      description: 'Tidier words',
     });
     expect(isError).toBe(false);
 
     const after = store.getTask(task.id)!;
     expect(after.enabled).toBe(false);
-    expect(after.timezone).toBe('America/New_York');
     expect(after.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('drops the bypass when an agent moves the timezone (DOR-2307)', async () => {
+    // Purpose: the same cron in another zone runs at another time, so an agent
+    // changing only the timezone is rewriting the approved work and must not
+    // keep a full-power grant made for the old one.
+    const task = seedApprovedBypass();
+
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      timezone: 'Pacific/Kiritimati',
+    });
+    expect(isError).toBe(false);
+
+    const after = store.getTask(task.id)!;
+    expect(after.timezone).toBe('Pacific/Kiritimati');
+    expect(after.permissionMode).toBe('acceptEdits');
+    expect(payload.needsReapproval).toBe(true);
   });
 
   it('leaves the grant alone when prompt/cron/name are re-sent unchanged', async () => {

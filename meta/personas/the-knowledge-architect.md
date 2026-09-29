@@ -1,5 +1,7 @@
 # Priya Sharma — The Knowledge Architect
 
+> **2026-09-25 product update:** The Obsidian plugin is retired. In-vault features and plugin-based journeys described below are historical research, not current product promises. Priya remains a target persona; the current path is the normal DorkOS app working with her vault folder, subject to ordinary permissions. See [retirement and migration](../../docs/guides/obsidian-plugin.mdx).
+
 **Role**: Secondary persona
 **Confidence**: Proto-persona (assumption-based)
 **Created**: 2026-02-27

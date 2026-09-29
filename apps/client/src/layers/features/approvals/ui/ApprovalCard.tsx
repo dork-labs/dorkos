@@ -1,19 +1,20 @@
 import { motion, useReducedMotion } from 'motion/react';
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
+import { getPermissionArea, isFloorArea } from '@dorkos/shared/permissions';
 import { Badge, Button } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { AskCard, askExitTransition, formatTimeLeft } from '@/layers/features/ask';
-import { formatTrustWindow } from '../lib/format-trust-window';
 import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
+import { useDismissSuggestion, useSuggestionDismissed } from '../model/use-dismiss-suggestion';
 import {
   holdDecidedApproval,
   releaseDecidedApproval,
   useRecordedApprovalDecision,
   type ApprovalDecision,
 } from '../model/settling-approvals';
-import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
+import { ApprovalServiceAction } from './ApprovalServiceAction';
 import { ApprovalSubject } from './ApprovalSubject';
 import { RequestingAgent } from './RequestingAgent';
 
@@ -29,8 +30,43 @@ const TIER_LABEL = {
   destructive: 'Cannot be undone',
 } as const;
 
-/** The touch target a small button gets on a phone, without growing the button. */
-const TOUCH_TARGET = 'relative after:absolute after:-inset-3 md:after:hidden';
+/**
+ * The answer buttons: 44px tall and full width on a phone, where they stack
+ * with Allow first; small and in a row from the tablet breakpoint up, where
+ * they sit beside the summary. `md:h-7` has to be stated because the Button
+ * base carries its own `md:h-8`.
+ */
+const ANSWER_BUTTON = 'h-11 w-full px-2.5 text-xs md:h-7 md:w-auto';
+
+/** The line a floor-area card shows in place of Always allow. */
+export const FLOOR_AREA_LINE =
+  "Always allow isn't offered here. Changing this needs your yes every time.";
+
+/**
+ * The line a card suggesting Always allow shows: the true count, from the
+ * server.
+ *
+ * @param count - One-time Allows for this agent and action in the last week.
+ */
+function suggestionLine(count: number): string {
+  return `You've allowed this ${count} ${count === 1 ? 'time' : 'times'} this week.`;
+}
+
+/**
+ * The receipt line after an answer.
+ *
+ * @param decision - What the person answered.
+ * @param agentLabel - Who asked, as the card names them.
+ * @param title - The action, as the card names it.
+ */
+function receiptFor(
+  decision: NonNullable<ReturnType<typeof useRecordedApprovalDecision>>,
+  agentLabel: string,
+  title: string
+): string {
+  if (decision === 'granted-always') return `Always allowed for ${agentLabel}: ${title}`;
+  return decision === 'granted' ? 'Allowed once' : 'Not allowed';
+}
 
 export interface ApprovalCardProps {
   /** The approval waiting on a decision. */
@@ -46,12 +82,14 @@ export interface ApprovalCardProps {
 }
 
 /**
- * One thing an agent wants to do, and the two buttons that answer it.
+ * One thing an agent wants to do, and the three answers to it: Allow, Always
+ * allow, Deny (spec `agent-permissions` D7). This is the request card.
  *
  * Everything a person needs to decide is on the card: what would run, in plain
  * words, which agent asked, how consequential it is, and how long they have.
- * Nothing is pre-selected and neither button is styled as the safe default —
- * approving and refusing are both first-class answers.
+ * Nothing is pre-selected. Allow is the filled button, because a one-time yes is
+ * the easy answer to give; Always allow is quieter, because it is a setting
+ * that outlives this card; Deny is a first-class answer beside them.
  *
  * ## The layout follows the CONTAINER, never the viewport
  *
@@ -64,7 +102,7 @@ export interface ApprovalCardProps {
  * the irreversible action. So the breakpoint is a container query
  * (`@[34rem]/approval`), which stacks in the narrow panel and only goes horizontal
  * where a row genuinely fits. It also keeps the unclamped destructive summary
- * (below) from pushing Allow and Don't allow down a narrow panel, since in the
+ * (below) from pushing the answers down a narrow panel, since in the
  * stacked layout they already sit under the text.
  *
  * ## The answer lands before the server says so
@@ -78,26 +116,50 @@ export interface ApprovalCardProps {
  * not accept puts the buttons back rather than leaving a checkmark over a
  * request that is still sitting there answerable.
  *
- * ## "Stop asking me" is offered, or explained, never silently missing
+ * ## Always allow is offered, or explained, never silently missing
  *
- * The third answer opens a standing permission alongside the one-time yes. It
- * needs two settings on and an attributable agent, so on most installs it is not
- * there — and until DOR-2102 the card said nothing about why. That absence is
- * the product teaching somebody the wrong thing: a person who has never seen the
- * button concludes DorkOS has no way to stop asking, when it has one and it is
- * two clicks away. So where the settings are the only thing missing, the card
- * names the one place that fixes it instead of drawing a gap.
+ * Always allow writes this action as Allowed for this agent, through the same
+ * permission service Settings uses. The server says whether a card may offer it
+ * (`alwaysOffered`), by the same three rules the grant route refuses on, so this
+ * card never re-derives them. On a floor area (Safety limits, Permissions,
+ * Reach & secrets) one line says why it is missing instead of drawing a gap. On
+ * a request DorkOS cannot attribute to an agent, or an action with no area, it
+ * is simply absent: no setting would help, and the card already says who asked.
  *
- * It stays quiet on a request with no agent path, and that is not an oversight.
- * Permissions key on the agent path, so no setting would help, and pointing that
- * person at Settings would be a dead end dressed as a fix.
+ * ## After three one-time Allows, Always allow is suggested, once
+ *
+ * When the server says so (`suggestAlways`: this person answered Allow three
+ * times in a week for this same agent and action, and never said "Not now"),
+ * Always allow gets a quiet highlight and one line says why, with a "Not now"
+ * that turns it off for that agent and action for good. Allow stays first and
+ * stays the filled button: the suggestion makes the lasting answer easy to
+ * see, never the easy one to hit by accident. It is never a badge, never
+ * counted anywhere, and never on a floor area, where Always allow is not
+ * offered at all.
+ *
+ * ## A request past Blocked says so, in the agent's own words
+ *
+ * When an agent asked past a Blocked permission with `request_permission`, the
+ * card says the area is blocked for it and quotes the reason it gave. Quoted,
+ * never paraphrased: it is the agent's claim, and the card must not dress it up
+ * as DorkOS's own.
+ *
+ * ## A connected-app action says what it does
+ *
+ * When the server describes the action (`serviceAction`: a Gmail deletion, a
+ * Slack post), the heading is the action in plain words, and under it sit the
+ * app's logo and the account, the arguments as label and value, and, when it
+ * can't be undone, one line saying so (DOR-2504). That block takes the
+ * summary's place: the summary says the same thing in one sentence for the
+ * surfaces that have no card.
  */
 export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   const now = useNow(30_000);
   const grant = useGrantApproval();
   const deny = useDenyApproval();
+  const dismissSuggestion = useDismissSuggestion();
+  const suggestionDismissed = useSuggestionDismissed(approval.approvalId);
   const deciding = grant.isPending || deny.isPending;
-  const { canGrant, windowMinutes, isResolved } = useStandingGrantPolicy();
   const reducedMotion = useReducedMotion();
   // **The answer is read, never stored.** There is no local decision state here
   // on purpose: an answer belongs to the request, not to one mounted card, and
@@ -128,31 +190,14 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
     });
   };
 
-  // Both conditions are needed and neither implies the other. `canGrant` is a
-  // setting (and login being on); `hasAgentPath` is a property of THIS request.
-  // Offering the button on a request DorkOS cannot attribute would draw a control
-  // the server refuses — permissions key on the agent path, and an anonymous
-  // request has none to key on.
-  const offerStanding = canGrant && approval.hasAgentPath;
-  // The same question answered the other way (DOR-2102). A card that simply drew
-  // nothing taught the wrong lesson: the person concludes there IS no way to stop
-  // being asked, when there is one and it is two clicks away. So the absence
-  // explains itself instead.
-  //
-  // Three conditions, and each rules out a DIFFERENT kind of dishonesty:
-  //
-  // - `!canGrant` is the case this exists for — a switch that is off, with a
-  //   place to turn it on.
-  // - `isResolved` because both flags read `false` until the config lands, and
-  //   the hook's own doc draws exactly this line: that default is right for
-  //   anything that OFFERS and wrong for anything that EXPLAINS. Without it the
-  //   card states a reason that may not be true and then flips.
-  // - `hasAgentPath` because on a request DorkOS cannot attribute, no setting
-  //   fixes anything: permissions key on the agent path, so Settings would be a
-  //   dead end dressed as a fix. That card already says DorkOS does not know who
-  //   asked, which is the honest whole answer there.
-  const explainStanding = !canGrant && isResolved && approval.hasAgentPath;
   const agentLabel = approval.requestedBy ? agentLabelFrom(approval.requestedBy) : 'this agent';
+  const heading = approval.serviceAction?.actionName ?? approval.capabilityTitle;
+  const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
+  // A floor area never offers Always allow, and says why; every other reason it
+  // is absent needs no sentence (see the component docblock).
+  const floor = approval.area !== null && isFloorArea(approval.area);
+  const suggest =
+    approval.alwaysOffered && approval.suggestAlways === true && !suggestionDismissed && !decision;
 
   return (
     // The container is declared HERE, on the wrapper, and queried on the card
@@ -184,20 +229,38 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
         className="border-status-warning-border bg-background/60 flex min-w-0 flex-col gap-2 rounded-lg border p-3 @[34rem]/approval:flex-row @[34rem]/approval:items-center"
       >
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="text-foreground truncate text-sm font-medium">
-              {approval.capabilityTitle}
-            </span>
-            <Badge
-              size="xs"
-              variant="outline"
+          {/* A connected-app action's heading IS the action ("Delete message"),
+              so on a narrow card it wraps, and the badge moves under it, rather
+              than cutting the action's name short. */}
+          <div
+            className={cn(
+              'flex min-w-0 items-center gap-2',
+              approval.serviceAction && 'flex-wrap gap-y-0.5'
+            )}
+          >
+            <span
               className={cn(
-                'shrink-0',
-                approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
+                'text-foreground text-sm font-medium',
+                approval.serviceAction ? 'min-w-0 break-words' : 'truncate'
               )}
             >
-              {TIER_LABEL[approval.tier]}
-            </Badge>
+              {heading}
+            </span>
+            {/* A connected-app action that can't be undone says so once, in a
+                sentence naming the app (`ApprovalServiceAction`), so the badge
+                would only repeat it. */}
+            {!(approval.serviceAction && approval.tier === 'destructive') && (
+              <Badge
+                size="xs"
+                variant="outline"
+                className={cn(
+                  'shrink-0',
+                  approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
+                )}
+              >
+                {TIER_LABEL[approval.tier]}
+              </Badge>
+            )}
           </div>
           {/* WHAT this would act on, named, directly under the title — the first
               thing the eye lands on after "cannot be undone". Above the summary
@@ -205,7 +268,28 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               and on a destructive card it is still never clamped. Absent when
               the server could not name the target, in which case the card reads
               exactly as it did before this existed. */}
+          {/* A request past Blocked says so first, and quotes the agent. */}
+          {approval.blockedRequest && (
+            <p data-slot="approval-blocked-request" className="text-foreground mt-0.5 text-xs">
+              {areaLabel
+                ? `${agentLabel} is blocked from ${areaLabel} and is asking to be allowed.`
+                : `${agentLabel} is asking to be allowed.`}
+              {approval.requestReason && (
+                <>
+                  {' '}
+                  It says:{' '}
+                  <q className="text-muted-foreground break-words">{approval.requestReason}</q>
+                </>
+              )}
+            </p>
+          )}
           {approval.subject && <ApprovalSubject subject={approval.subject} />}
+          {approval.serviceAction && (
+            <ApprovalServiceAction
+              action={approval.serviceAction}
+              destructive={approval.tier === 'destructive'}
+            />
+          )}
           {/* Never clamped for an action that cannot be undone: truncating the
             consequence is how a padded argument used to push the real one out of
             view. The server caps each value and the whole sentence, so showing it
@@ -217,17 +301,19 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             — a wall of text exactly where a person is deciding. The server sends
             the remainder instead (`otherArguments`), and when nothing remains the
             card says nothing rather than repeating itself. Without a subject this
-            is the whole summary, unchanged. */}
-          {(approval.subject ? approval.otherArguments : approval.summary) !== undefined && (
-            <p
-              className={cn(
-                'text-muted-foreground mt-0.5 text-xs break-words',
-                approval.tier !== 'destructive' && 'line-clamp-2'
-              )}
-            >
-              {approval.subject ? approval.otherArguments : approval.summary}
-            </p>
-          )}
+            is the whole summary, unchanged. A connected-app action draws none of
+            it: its own block above already says everything the sentence would. */}
+          {!approval.serviceAction &&
+            (approval.subject ? approval.otherArguments : approval.summary) !== undefined && (
+              <p
+                className={cn(
+                  'text-muted-foreground mt-0.5 text-xs break-words',
+                  approval.tier !== 'destructive' && 'line-clamp-2'
+                )}
+              >
+                {approval.subject ? approval.otherArguments : approval.summary}
+              </p>
+            )}
           {/* The one argument that IS the decision, shown whole (DOR-1698).
               The summary above caps every value at 80 characters so no argument
               can crowd out another — right for a package name, wrong when the
@@ -235,11 +321,14 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               scrollable rather than clamped: a person answering this has to be
               able to read all of it, and a long one must not push the buttons
               off the card. `whitespace-pre-wrap` keeps the author's own line
-              breaks without letting a single long line widen the layout. */}
+              breaks without letting a single long line widen the layout. On a
+              phone it gets up to half the screen: the card is full width there,
+              and a settings file or a script is otherwise read a few lines at a
+              time (DOR-2325). */}
           {approval.detail !== undefined && (
             <pre
               data-slot="approval-detail"
-              className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-56 overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap"
+              className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
             >
               {approval.detail}
             </pre>
@@ -256,120 +345,99 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
           </div>
         </div>
 
-        {/* A column so the standing answer can sit UNDER the two one-time ones in
-            both layouts: start-aligned when the card is stacked, end-aligned under
-            Allow when it is horizontal.
-
-            `items-start` rather than the default `stretch` is a measured choice,
-            not tidiness. The standing button's label is a whole sentence, so
-            stretched it spanned the card — 380px against Allow's 52px in the 424px
-            header panel, which is quiet in colour and loud in area. Shrink-wrapped
-            it is 271px and stops running the full width. The remaining size
-            difference is not removable: §3.7 requires the label to name the whole
-            scope so nobody learns afterwards what they granted, and a sentence is
-            simply bigger than the word "Allow". Prominence is carried by fill,
-            colour, weight, and order instead — see the button itself. */}
-        <div className="flex min-w-0 shrink-0 flex-col items-start gap-1.5 @[34rem]/approval:items-end">
+        {/* The answers, or the receipt that replaces them. On a phone they
+            stack full width, Allow first; from the tablet breakpoint up they
+            sit in a row, end-aligned beside the summary. */}
+        <div className="flex min-w-0 shrink-0 flex-col gap-1.5 md:items-start @[34rem]/approval:items-end">
           {decision ? (
             <AskCard.Receipt
               data-slot="approval-resolved"
-              tone={decision === 'granted' ? 'allowed' : 'denied'}
+              tone={decision === 'denied' ? 'denied' : 'allowed'}
               className="shrink-0"
             >
-              {decision === 'granted' ? 'Allowed' : 'Not allowed'}
+              {receiptFor(decision, agentLabel, approvalHeading(approval))}
             </AskCard.Receipt>
           ) : (
-            <AskCard.Actions className="gap-2">
-              {/* The buttons stay small — they sit beside a summary, not under
-                  it — so the target grows instead of the glyph, the way
-                  `SidebarGroupAction` does. Phone only: a pointer does not need
-                  it, and the overlay would swallow hovers between the two. */}
-              <Button
-                variant="outline"
-                size="sm"
-                data-slot="approval-deny"
-                className={cn('h-7 px-2.5 text-xs', TOUCH_TARGET)}
-                disabled={deciding}
-                onClick={() =>
-                  answer('denied', (onError) =>
-                    deny.mutate({ approvalId: approval.approvalId }, { onError })
-                  )
-                }
-              >
-                Don’t allow
-              </Button>
-              <Button
-                size="sm"
-                data-slot="approval-allow"
-                className={cn('h-7 px-2.5 text-xs', TOUCH_TARGET)}
-                disabled={deciding}
-                onClick={() =>
-                  answer('granted', (onError) =>
-                    grant.mutate({ approvalId: approval.approvalId }, { onError })
-                  )
-                }
-              >
-                Allow
-              </Button>
-            </AskCard.Actions>
-          )}
-
-          {/* The third answer. Quieter than Allow (ghost, no fill) because a
-              bounded one-time yes should stay the obvious default — but it names
-              its whole scope on the button itself, so nobody learns what they
-              granted afterwards. "Don't allow" stays first and unstyled: neither
-              answer is dressed up as the safe one. */}
-          {offerStanding && !decision && (
-            <div className="flex min-w-0 flex-col gap-0.5 @[34rem]/approval:items-end">
-              {/* `whitespace-normal` and `h-auto` override the Button base, which
-                  is nowrap and fixed-height. The label is a whole sentence and the
-                  card renders as narrow as ~240px in a phone sheet; a nowrap button
-                  there sets a minimum width the card cannot meet, and the card
-                  scrolls sideways. Verified in a real engine, not reasoned: jsdom
-                  has no layout and reported the broken version as fine.
-
-                  `md:h-auto` is not redundant. The Button base carries `md:h-8`, a
-                  media variant that outranks a plain `h-auto` in the cascade — so
-                  without it the height override silently stops applying at 768px
-                  and `min-h-7` never binds. Measured: 49.25px at 375, and 32px at
-                  768 until this was added. Nothing clips there today only because
-                  no production container is that narrow at desktop width, which
-                  makes it accidentally sufficient rather than correct. */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  'text-muted-foreground hover:text-foreground h-auto min-h-7 px-2.5 py-1 text-xs leading-snug font-normal whitespace-normal md:h-auto @[34rem]/approval:text-right',
-                  TOUCH_TARGET
+            <>
+              {suggest && (
+                <p
+                  data-slot="approval-suggestion"
+                  className="text-muted-foreground text-2xs @[34rem]/approval:text-right"
+                >
+                  {suggestionLine(approval.allowedThisWeek ?? 3)}{' '}
+                  <button
+                    type="button"
+                    className="hover:text-foreground underline underline-offset-2"
+                    aria-label={`Not now: stop suggesting Always allow for ${approvalHeading(approval)}`}
+                    disabled={dismissSuggestion.isPending}
+                    onClick={() => dismissSuggestion.mutate(approval.approvalId)}
+                  >
+                    Not now
+                  </button>
+                </p>
+              )}
+              <AskCard.Actions className="w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:items-center">
+                <Button
+                  size="sm"
+                  data-slot="approval-allow"
+                  className={ANSWER_BUTTON}
+                  disabled={deciding}
+                  onClick={() =>
+                    answer('granted', (onError) =>
+                      grant.mutate({ approvalId: approval.approvalId }, { onError })
+                    )
+                  }
+                >
+                  Allow
+                </Button>
+                {approval.alwaysOffered && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-slot="approval-always"
+                    data-suggested={suggest ? 'true' : undefined}
+                    className={cn(
+                      ANSWER_BUTTON,
+                      suggest && 'border-primary/60 bg-primary/5 text-foreground'
+                    )}
+                    disabled={deciding}
+                    onClick={() =>
+                      answer('granted-always', (onError) =>
+                        grant.mutate(
+                          { approvalId: approval.approvalId, answer: 'always' },
+                          { onError }
+                        )
+                      )
+                    }
+                  >
+                    Always allow
+                  </Button>
                 )}
-                disabled={deciding}
-                onClick={() =>
-                  answer('granted', (onError) =>
-                    grant.mutate({ approvalId: approval.approvalId, standing: true }, { onError })
-                  )
-                }
-              >
-                Allow, and stop asking about this for {formatTrustWindow(windowMinutes)}
-              </Button>
-              <p className="text-muted-foreground text-2xs max-w-xs @[34rem]/approval:text-right">
-                Covers {agentLabel} doing “{approval.capabilityTitle}”, and nothing else. End it any
-                time in Settings, under Access.
-              </p>
-            </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-slot="approval-deny"
+                  className={ANSWER_BUTTON}
+                  disabled={deciding}
+                  onClick={() =>
+                    answer('denied', (onError) =>
+                      deny.mutate({ approvalId: approval.approvalId }, { onError })
+                    )
+                  }
+                >
+                  Deny
+                </Button>
+              </AskCard.Actions>
+            </>
           )}
-
-          {/* No button, because there is nothing a press could do yet — but the
-              way to change that, named. One sentence and one place: both missing
-              settings live in the same panel, so pointing at the panel is the
-              whole answer and a person does not have to learn which of the two
-              switches they are short of. */}
-          {explainStanding && !decision && (
+          {/* Why Always allow is missing, said once, and only where a setting
+              could never change it. */}
+          {floor && !decision && (
             <p
-              data-slot="approval-standing-unavailable"
+              data-slot="approval-floor-line"
               className="text-muted-foreground text-2xs max-w-xs @[34rem]/approval:text-right"
             >
-              Want to stop being asked about this? Turn on Standing permissions in Settings, under
-              Access.
+              {FLOOR_AREA_LINE}
             </p>
           )}
         </div>

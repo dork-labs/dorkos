@@ -40,20 +40,26 @@
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
-import { readManifest } from '@dorkos/shared/manifest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
-import { configManager } from '../../../core/config-manager.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
-import { resolveAgentTokenEnv } from '../../../core/agent-identity/index.js';
+import {
+  homeOf,
+  createInSessionContextResolver,
+  readHomeManifest,
+  resolveAgentTokenEnv,
+  resolveAgentHome,
+  turnAgentOf,
+} from '../../../core/agent-identity/index.js';
 import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
-import { isTasksEnabled } from '../../../tasks/task-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
+import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
-import { resolveToolConfig } from '../tooling/tool-filter.js';
+import { applyDirectoryGrants } from './directory-grants.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
@@ -62,7 +68,12 @@ import {
   isClassifierContextEnabled,
 } from './classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
+import { toolDocGates } from './tool-doc-gates.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
+import {
+  renderBlockedAreaLines,
+  resolveToolVisibilityFor,
+} from '../../shared/permission-tool-filter.js';
 import {
   AUTO_DOWNGRADE_STATUS,
   UNKNOWN_MODE_STATUS,
@@ -98,7 +109,10 @@ export interface ResolvedLaunch {
    * ADR-0273 keeps the person's own words unmutated.
    */
   enrichedContent: string;
-  /** The mesh agent this working directory hosts, for `last_seen` stamping. */
+  /**
+   * The mesh agent this launch acts as, for `last_seen` stamping — the agent a
+   * room worktree belongs to when the turn stands in one (DOR-2091).
+   */
   meshAgentId: string | undefined;
   /**
    * Events the caller must yield BEFORE the turn's own, in this order. Only the
@@ -151,34 +165,34 @@ export async function resolveLaunch(args: {
   const { sessionId, content, session, opts, messageOpts, effectiveCwd } = args;
   const statusEvents: StreamEvent[] = [];
 
+  // **Who this launch acts as, resolved from who the turn is FOR and where it
+  // stands — never from a path prefix, and never from a `.dork/` the folder
+  // happens to carry** (DOR-2091, DOR-2355). A turn may stand in a room
+  // worktree, a git worktree of the agent's own repo or a managed checkout;
+  // each resolves to the registered home it belongs to, and when a server path
+  // names the turn's agent it must be that agent or nobody. See
+  // `core/agent-identity/agent-home.ts` for the whole rule.
+  const forAgent = turnAgentOf(messageOpts);
+  const turnAgentPath = homeOf(resolveAgentHome(effectiveCwd, forAgent));
   // Stamp agent last_seen_at when a message is dispatched
-  const meshAgent = opts.meshCore?.getByPath(effectiveCwd);
+  const meshAgent = turnAgentPath ? opts.meshCore?.getByPath(turnAgentPath) : undefined;
   const meshAgentId = meshAgent?.id;
   if (opts.meshCore && meshAgentId) {
     opts.meshCore.updateLastSeen(meshAgentId, 'message_sent');
   }
 
-  // Load agent manifest for the agent's per-agent tool-group settings. These decide
-  // which tool docs reach the system prompt; they never restrict what is callable.
-  let manifest: Awaited<ReturnType<typeof readManifest>> | null = null;
-  try {
-    manifest = await readManifest(effectiveCwd);
-  } catch {
-    // No manifest found -- all tools inherit global defaults
+  // Load the agent manifest for the settings a launch is pinned to (its account,
+  // below) — from the HOME, never the folder the turn stands in, whose
+  // committed `.dork/` may be a stale branch's (spec `agent-home-desk` I1).
+  // What its permissions hide is resolved separately, off the file.
+  let manifest: Awaited<ReturnType<typeof readHomeManifest>> | null = null;
+  if (turnAgentPath) {
+    try {
+      manifest = await readHomeManifest(turnAgentPath);
+    } catch {
+      // No manifest found -- the launch inherits the server defaults
+    }
   }
-
-  const globalConfig = configManager.get('agentContext') ?? {
-    tasksTools: true,
-    relayTools: true,
-    meshTools: true,
-    adapterTools: true,
-  };
-
-  const toolConfig = resolveToolConfig(manifest?.enabledToolGroups, {
-    relayEnabled: isRelayEnabled(),
-    tasksEnabled: isTasksEnabled(),
-    globalConfig,
-  });
 
   // Slash commands must reach the CLI as the bare prompt — it only parses a
   // command when `/` starts the message (DOR-107). Verify the name against the
@@ -201,11 +215,37 @@ export async function resolveLaunch(args: {
   // there would claim the tools are loaded for a session whose tool server had
   // already decided otherwise — the failure inverted, and worse than the
   // original, because a wrong "no lookup needed" costs the whole turn.
-  const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig, {
+  //
+  // Anchored rather than read raw (DOR-2091): a room session created in the
+  // agent's worktree has THAT as its `session.cwd`, and the tools act as the
+  // agent the worktree belongs to. One anchor feeds the tool server, the
+  // approval gate and the prose below, so none of the three can disagree.
+  //
+  // **`?? effectiveCwd`, never a bare `session.cwd`.** A session the store
+  // re-creates after a restart or eviction — a settings PATCH that lands first
+  // builds it with no directory at all — would otherwise anchor to NOBODY while
+  // the token above is minted for the agent: login on refuses every room verb
+  // again, and login off hands them to the operator with the cross-check never
+  // run. The directory the turn actually launches in is the honest fallback.
+  const toolIdentity = resolveAgentHome(session.cwd ?? effectiveCwd, forAgent);
+  const toolAgentPath = homeOf(toolIdentity);
+  // What a Blocked permission hides from this agent (spec `agent-permissions`
+  // D15), resolved against the SAME cwd the tool server keys the session's
+  // identity on, for the reason the agent-to-agent flag above gives. The list
+  // and the one context line per Blocked area come from one resolution, so the
+  // prompt never names an area the tools disagree with.
+  // The anchored agent or nobody: a refused session must not be shown some
+  // OTHER agent's Blocked areas off the directory it happens to stand in.
+  const toolVisibility = await resolveToolVisibilityFor(toolAgentPath);
+  // The four switchable tool-doc blocks follow the same resolution: a Blocked
+  // area's docs go with its tools.
+  const toolConfig = toolDocGates(toolVisibility.blockedAreas);
+  const baseAppend = await buildSystemPromptAppend(turnAgentPath, effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
-      !!(session.cwd && opts.meshCore?.getByPath(session.cwd)),
+      !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath)),
       isRelayEnabled()
     ),
+    blockedAreaLines: renderBlockedAreaLines(toolVisibility.blockedAreas),
   });
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the
   // base — onto BOTH halves, so the caller's own per-run instructions are
@@ -247,9 +287,9 @@ export async function resolveLaunch(args: {
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
   // rides the process env — NOT the context-builder's prompt block — so it
   // stays a credential for the tools the agent runs (`dorkos call ...`) rather
-  // than text in the model's context and the transcript. Yields `{}` when the
-  // working directory hosts no registered agent, leaving the session
-  // unattributed exactly as before.
+  // than text in the model's context and the transcript. Minted for the
+  // anchored agent above — so a room worktree carries its agent's token — and
+  // `{}` when there is none, leaving the session unattributed exactly as before.
   //
   // The name it is minted under is the one a PERSON reads, never the slug.
   // `agents.name` is the address an `@` reaches; `display_name` is the label,
@@ -259,7 +299,7 @@ export async function resolveLaunch(args: {
   // mid-conversation, in every message and in the member list (DOR-1264).
   const agentDisplayName = meshAgent?.displayName ?? meshAgent?.name;
   const agentTokenEnv = await resolveAgentTokenEnv(
-    meshAgent ? effectiveCwd : undefined,
+    meshAgent ? turnAgentPath : undefined,
     agentDisplayName
   );
 
@@ -286,15 +326,6 @@ export async function resolveLaunch(args: {
       agentAccountId: manifest?.account,
     });
   const accountEnv = claudeConfigDirEnv(accountRoot);
-  // Record which account this launch settled on, so the session can say later
-  // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
-  // read by the sign-in watch). Written HERE rather than in the two callers for
-  // the same reason this function exists at all: the turn path and the pump
-  // would otherwise each keep their own copy, and a copy that drifted would
-  // attribute a dead sign-in to the wrong account. It is deliberately not
-  // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
-  session.launchedAccountRoot = accountRoot;
-
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
@@ -343,7 +374,7 @@ export async function resolveLaunch(args: {
       // stay empty forever, and nothing errors. The env var is the only lever
       // that does not cost something else: `allowedTools` is an auto-approval
       // list rather than an access list, so naming tools there widens
-      // auto-approval (DOR-519, argued at length in `tooling/tool-filter.ts`),
+      // auto-approval (DOR-519, recorded in ADR-0070),
       // and `tools` would mean declaring a whole base tool set DorkOS has never
       // taken a position on. Fixture-fed tests cannot catch a regression here —
       // fixtures keep supplying the blocks a real model would have stopped
@@ -376,10 +407,34 @@ export async function resolveLaunch(args: {
       // URL and token are runtime values obtained before the turn, never minted
       // on this path: a launch that waited on the network would turn a cloud
       // hiccup into a stalled turn.
+      // Recheck after the awaited credential/agent resolution: unlink or relink
+      // during either wait must not hand this launch a retired credits token.
       ...creditsTurnEnv('claude-code'),
     }),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };
+
+  // Record which account this launch settled on, so the session can say later
+  // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
+  // read by the sign-in watch). Written HERE rather than in the two callers for
+  // the same reason this function exists at all: the turn path and the pump
+  // would otherwise each keep their own copy, and a copy that drifted would
+  // attribute a dead sign-in to the wrong account. It is deliberately not
+  // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
+  //
+  // Beside it, whether this launch bills per token, read off the FINAL
+  // environment the binary receives (a stored key, credits, or a key inherited
+  // from the server's own environment), so the folder's subscription windows
+  // are never shown as this session's usage when it pays per token (spec §6 U).
+  // The binary's own `apiKeySource` on session init overrides this guess. Both
+  // are written only once the options are built, so a launch that throws while
+  // building them changes neither.
+  session.launchedAccountRoot = accountRoot;
+  session.launchedPerToken = envBillsPerToken(sdkOptions.env ?? {});
+  // The session's shown account usage follows the account it now runs on: a
+  // new session's per-send hint is only known here (spec `claude-account-fleet`
+  // §6 U, "the first send re-stamps").
+  noteSessionAccountLaunched(sessionId, accountRoot, session.launchedPerToken);
 
   // Set the session title on the first turn when the caller supplies one
   // (SDK 0.2.113 `title` option — skips auto-generation). Ignored on resume.
@@ -510,23 +565,39 @@ export async function resolveLaunch(args: {
       fastMode: true,
     };
   }
+  // This turn's folder grants, merged into the same settings object, and the
+  // variable that would make a granted folder's CLAUDE.md load stripped from the
+  // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
+  applyDirectoryGrants(sdkOptions, messageOpts?.additionalDirectories, effectiveCwd);
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
   if (opts.mcpServerFactory) {
-    sdkOptions.mcpServers = opts.mcpServerFactory(session, sessionId);
+    sdkOptions.mcpServers = opts.mcpServerFactory(session, sessionId, {
+      hiddenToolNames: toolVisibility.hiddenToolNames,
+      identity: toolIdentity,
+    });
   }
 
-  // Nothing here sets `allowedTools`, on purpose (DOR-519). The tool-group toggles
-  // used to feed it a list, on the premise that the SDK option restricts which tools
+  // Nothing here sets `allowedTools`, on purpose (DOR-519). The retired tool-group
+  // toggles used to feed it a list, on the premise that the SDK option restricts which tools
   // a session may call. It does not: it auto-approves the names in it. Because the
   // list was only non-empty once a group was turned OFF, turning a group off widened
   // this agent's auto-approval instead of narrowing its access. Every DorkOS tool now
   // goes through `canUseTool` below, which auto-approves only `DORKOS_AGENT_TOOLS`.
-  // The toggles still take effect through `buildSystemPromptAppend` above, which
-  // leaves a disabled group's tool block out of the agent's context.
+  // What an agent may call is its permission, resolved by the gate on every call;
+  // a Blocked area's tools are left out of the list above, and its docs out of
+  // `buildSystemPromptAppend` (spec `agent-permissions` D15).
   const editBaselineCapture = createEditBaselineCapture(sessionId, effectiveCwd);
-  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture);
+  // The gate answers "does this session have an agent identity?" off the SAME
+  // anchor the tool server acts as, so a call it waves through is never one the
+  // tool then runs as somebody else (DOR-2091).
+  sdkOptions.canUseTool = createCanUseTool(
+    session,
+    logger,
+    editBaselineCapture,
+    createInSessionContextResolver(toolIdentity)
+  );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
   // hooks fire in every mode, before the tool runs. The matcher confines the
@@ -603,24 +674,27 @@ export async function resolveLaunch(args: {
   // token value — `mint()` returns fresh bytes every call, so pinning the value
   // would relaunch on every dispatch and warmth would never exist
   // (`launch-fingerprint.ts`).
-  const agentIdentity: AgentIdentityPin | undefined = meshAgent
-    ? {
-        agentPath: effectiveCwd,
-        // The same string the mint above was given: the pin describes who this
-        // launch was minted FOR, so a second name here would be a fingerprint
-        // of something that never happened.
-        //
-        // It is also the ONLY thing that keeps a token's label fresh, which
-        // makes it load-bearing rather than bookkeeping. `describeAgentIdentity`
-        // (`launch-fingerprint.ts`) folds this name into a `relaunch` pin, so
-        // renaming an agent ends the warm process and the next turn mints a new
-        // token under the new name. Drop it from the descriptor and a long-lived
-        // warm session would keep attributing every room message that agent
-        // writes to the name it had when the process started.
-        displayName: agentDisplayName,
-        attributed: Object.keys(agentTokenEnv).length > 0,
-      }
-    : undefined;
+  const agentIdentity: AgentIdentityPin | undefined =
+    meshAgent && turnAgentPath
+      ? {
+          // The ANCHORED agent, not the directory: two launches standing in the
+          // same worktree for the same agent are the same identity.
+          agentPath: turnAgentPath,
+          // The same string the mint above was given: the pin describes who this
+          // launch was minted FOR, so a second name here would be a fingerprint
+          // of something that never happened.
+          //
+          // It is also the ONLY thing that keeps a token's label fresh, which
+          // makes it load-bearing rather than bookkeeping. `describeAgentIdentity`
+          // (`launch-fingerprint.ts`) folds this name into a `relaunch` pin, so
+          // renaming an agent ends the warm process and the next turn mints a new
+          // token under the new name. Drop it from the descriptor and a long-lived
+          // warm session would keep attributing every room message that agent
+          // writes to the name it had when the process started.
+          displayName: agentDisplayName,
+          attributed: Object.keys(agentTokenEnv).length > 0,
+        }
+      : undefined;
 
   return {
     sdkOptions,

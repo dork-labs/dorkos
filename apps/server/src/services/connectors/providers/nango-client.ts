@@ -27,6 +27,7 @@
  * @module services/connectors/providers/nango-client
  */
 import { randomUUID } from 'node:crypto';
+import { trustedLogoUrl } from './app-presentation.js';
 
 /** Per-request deadline so a hung Nango call can never block an aggregation. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -44,6 +45,10 @@ export interface NangoIntegration {
   displayName?: string;
   /** Nango auth mode, e.g. `'OAUTH2'` | `'API_KEY'` | `'NONE'`. */
   authMode?: string;
+  /** The integration's logo on this Nango server or Nango's hosted app; absent otherwise. */
+  logoUrl?: string;
+  /** When the integration was set up (Nango's `created_at`, ISO 8601), when Nango sends it. */
+  createdAt?: string;
 }
 
 /** The reference-not-secret result of initiating a Nango connect flow. */
@@ -58,8 +63,10 @@ export interface NangoConnectionRequest {
  * Nango connection lifecycle status. `PENDING` while the user is still
  * completing consent; `ACTIVE` once the stored credentials are usable;
  * `EXPIRED`/`ERROR` are the unusable states (a failed refresh, a revoked grant).
+ * `UNKNOWN` only on a listed connection whose answer says nothing either way
+ * (no status and no `errors`), which DorkOS treats as no fact at all.
  */
-export type NangoConnectionStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'ERROR';
+export type NangoConnectionStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'ERROR' | 'UNKNOWN';
 
 /** One Nango connection, keyed by its random-UUID `connectionId`. */
 export interface NangoConnection {
@@ -159,6 +166,9 @@ export class NangoApiError extends Error {
 /** Nango's hosted Connect UI origin. `ASSUMPTION (live-unverified)`. */
 const DEFAULT_NANGO_CONNECT_URL = 'https://connect.nango.dev';
 
+/** Nango Cloud's hosted app, which serves the same template logos as a Nango server. */
+const NANGO_HOSTED_LOGO_HOST = 'app.nango.dev';
+
 /**
  * Default {@link NangoHttpClient} over a self-hosted Nango's REST API. The
  * secret key rides every request as a bearer token and is never logged. Every
@@ -188,13 +198,25 @@ export class FetchNangoHttpClient implements NangoHttpClient {
 
   async listIntegrations(): Promise<NangoIntegration[]> {
     // ASSUMPTION (live-unverified): GET /integrations → { data: [...] }.
+    // VERIFIED-DOCS (2026-09-27, nango.dev/docs/reference/api/integration/list):
+    // each item is { unique_key, display_name, provider, logo, created_at,
+    // updated_at } — `logo` is on the Nango server's own origin
+    // (`<origin>/images/template-logos/<provider>.svg`); Nango Cloud also
+    // serves the same files from `app.nango.dev` (both answer 200 image/svg+xml).
+    // There is no description field.
     const body = await this._request<{ data?: RawIntegration[] }>('GET', '/integrations');
-    return (body.data ?? []).map((it) => ({
-      uniqueKey: it.unique_key,
-      provider: it.provider ?? it.unique_key,
-      ...(it.display_name && { displayName: it.display_name }),
-      ...(it.auth_mode && { authMode: it.auth_mode }),
-    }));
+    const logoHosts = [new URL(this._baseUrl).hostname.toLowerCase(), NANGO_HOSTED_LOGO_HOST];
+    return (body.data ?? []).map((it) => {
+      const logoUrl = trustedLogoUrl(it.logo, logoHosts);
+      return {
+        uniqueKey: it.unique_key,
+        provider: it.provider ?? it.unique_key,
+        ...(it.display_name && { displayName: it.display_name }),
+        ...(it.auth_mode && { authMode: it.auth_mode }),
+        ...(logoUrl && { logoUrl }),
+        ...(it.created_at && { createdAt: it.created_at }),
+      };
+    });
   }
 
   async initiateConnection(input: {
@@ -300,6 +322,8 @@ interface RawIntegration {
   provider?: string;
   display_name?: string;
   auth_mode?: string;
+  logo?: string;
+  created_at?: string;
 }
 
 /** Raw Nango connect-session JSON. */
@@ -315,13 +339,18 @@ interface RawConnectSessionState {
   error?: string;
 }
 
-/** Raw Nango connection JSON (snake_case, partial). */
+/**
+ * Raw Nango connection JSON (snake_case, partial). The documented
+ * `GET /connections` item has no `status`: a problem is reported in `errors`
+ * (`[{ type: 'auth' | 'sync', log_id }]`), and an empty list means none.
+ */
 interface RawConnection {
   connection_id: string;
   provider_config_key?: string;
   end_user?: { display_name?: string; id?: string };
   metadata?: { label?: string };
   status?: string;
+  errors?: Array<{ type?: string; log_id?: string }>;
 }
 
 /** Coerce Nango's status string to a known {@link NangoConnectionStatus}. */
@@ -343,6 +372,34 @@ function normalizeStatus(raw: string | undefined): NangoConnectionStatus {
   }
 }
 
+/**
+ * A connection's sign-in status from what Nango actually said. An explicit
+ * status is honoured when recognized. Without one, `errors` decides: an `auth`
+ * error means the sign-in no longer works (expired), and a list without one
+ * means it does (a `sync` error is about data syncs, not the sign-in). An
+ * unrecognized status, or neither field, is `UNKNOWN`: never a guess, and
+ * never read as signed out.
+ */
+function connectionStatus(raw: RawConnection): NangoConnectionStatus {
+  if (raw.status !== undefined) {
+    switch (raw.status.toUpperCase()) {
+      case 'ACTIVE':
+      case 'OK':
+        return 'ACTIVE';
+      case 'EXPIRED':
+        return 'EXPIRED';
+      case 'PENDING':
+        return 'PENDING';
+      case 'ERROR':
+        return 'ERROR';
+      default:
+        return 'UNKNOWN';
+    }
+  }
+  if (!Array.isArray(raw.errors)) return 'UNKNOWN';
+  return raw.errors.some((error) => error.type === 'auth') ? 'EXPIRED' : 'ACTIVE';
+}
+
 /** Map a raw connection JSON to the client's domain shape. */
 function toDomainConnection(raw: RawConnection): NangoConnection {
   const label = raw.metadata?.label ?? raw.end_user?.display_name ?? raw.end_user?.id;
@@ -350,6 +407,6 @@ function toDomainConnection(raw: RawConnection): NangoConnection {
     connectionId: raw.connection_id,
     integration: raw.provider_config_key ?? '',
     ...(label && { label }),
-    status: normalizeStatus(raw.status),
+    status: connectionStatus(raw),
   };
 }

@@ -34,7 +34,6 @@ import {
   writeData,
   type GateDay,
   type Health,
-  type QueueBuild,
   type Snapshot,
 } from './data.ts';
 import { gateMapper, gateTimeouts, requiredWorkflowPaths, type GateMapper } from './gatemap.ts';
@@ -43,8 +42,19 @@ import { BudgetExhausted, type Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
 import type { Config } from './schemas.ts';
 import { fetchMergedPrs, type PrFacts } from './prs.ts';
-import { canaryRuns, FAILED, mainCommits, prFeedback, queueBuilds, reviews } from './series.ts';
+import { failingGatesFor, priorQueueBuilds, repeatEjections } from './ejection-facts.ts';
+import { refreshOlderDays } from './refresh.ts';
+import {
+  canaryRuns,
+  FAILED,
+  mainCommits,
+  prFeedback,
+  queueBuilds,
+  reviews,
+  trimRun,
+} from './series.ts';
 import { globalChecks, type GlobalChecks } from './rulesets.ts';
+import { deadlineMinutes, effectiveTimeouts } from './slo.ts';
 import { addDays, dayOf, dayRange, daysBetween, round, secondOfDay } from './time.ts';
 import type { WorkflowModel } from './workflows.ts';
 
@@ -84,6 +94,8 @@ export interface CollectResult {
   planned: string[];
   /** Days written, oldest first. */
   days: string[];
+  /** Older days brought up to the current engine's derivations (`refreshDay`), oldest first. */
+  refreshed: string[];
   /** What latest.json points at: the newest complete day on disk (see `latestDay`). */
   newest: string | null;
   healthy: boolean;
@@ -101,21 +113,6 @@ interface RunsFetch {
   runs: Run[];
   windows: Health['runs']['windows'];
   failures: string[];
-}
-
-function trimRun(r: Obj): Run {
-  return {
-    id: Number(r.id),
-    path: String(r.path ?? ''),
-    event: String(r.event ?? ''),
-    status: String(r.status ?? ''),
-    conclusion: typeof r.conclusion === 'string' ? r.conclusion : null,
-    created_at: String(r.created_at),
-    updated_at: String(r.updated_at),
-    run_attempt: Number(r.run_attempt ?? 1),
-    head_branch: typeof r.head_branch === 'string' ? r.head_branch : null,
-    head_sha: String(r.head_sha),
-  };
 }
 
 function iso(ms: number): string {
@@ -336,28 +333,6 @@ function addJobs(
 // ---------------------------------------------------------------------------
 // One day
 
-function priorQueueBuilds(
-  dataDir: string,
-  day: string,
-  current: readonly QueueBuild[]
-): QueueBuild[] {
-  const out = [...current];
-  for (let i = 1; i <= 7; i++) {
-    const s = readData(dataDir, snapshotPath(addDays(day, -i)), SnapshotSchema);
-    if (s) out.push(...s.queue_builds);
-  }
-  return out;
-}
-
-/** The failing gates of a PR's latest red queue build at or before an instant. */
-function failingGatesFor(builds: readonly QueueBuild[], pr: number, at: string): string[] {
-  const red = builds
-    .filter((b) => b.pr === pr && b.outcome === 'red' && b.created_at <= at)
-    .sort((a, b) => a.created_at.localeCompare(b.created_at));
-  const gates = red.at(-1)?.failed_gates ?? [];
-  return gates.length ? gates : ['unattributed'];
-}
-
 function collectDay(
   opts: CollectOptions,
   day: string,
@@ -458,8 +433,10 @@ function collectDay(
 
   // PRs merged this day.
   let prs: PrFacts[] = [];
+  let prsRead = false;
   try {
     prs = fetchMergedPrs(gh, repo, day, partial ? now : undefined, dayFailures);
+    prsRead = true;
   } catch (e) {
     if (!(e instanceof BudgetExhausted)) throw e;
     late = true;
@@ -485,6 +462,9 @@ function collectDay(
       else snap.counts.wasted_ejections += 1;
     }
   }
+  // Only once the PRs were actually read: a day that ran out of budget first
+  // is late and comes back, and until then it has no measurement, not zero.
+  if (prsRead) snap.counts.repeat_ejections = repeatEjections(prs, builds);
 
   // Flaky tests from a sample of queue builds' reports (artifacts expire after 7 days).
   if (!late) {
@@ -503,7 +483,9 @@ function collectDay(
   // Today's timeouts describe the runs of recent days only; a backfilled day's
   // runs ran under whatever the YAML said then, so headroom does not read them.
   const backfilled = day < addDays(dayOf(now), -files.config.collect.lookback_days);
-  snap.timeouts = backfilled ? {} : gateTimeouts(workflows);
+  snap.timeouts = backfilled
+    ? {}
+    : effectiveTimeouts(gateTimeouts(workflows), deadlineMinutes(config));
   failures.push(...dayFailures);
   snap.truncated = dayFailures.length > 0;
   snap.complete = !late && !partial && !snap.truncated;
@@ -582,7 +564,7 @@ function localExportHealth(
 
 /**
  * Run the collector: plan the days, collect each one while the budget lasts,
- * write their snapshots.
+ * write their snapshots, then spend what is left refreshing older days.
  *
  * @param opts - The run's inputs.
  */
@@ -600,6 +582,7 @@ export function collect(opts: CollectOptions): CollectResult {
     return {
       planned: days,
       days: [],
+      refreshed: [],
       newest: null,
       healthy: false,
       failures: [],
@@ -624,10 +607,14 @@ export function collect(opts: CollectOptions): CollectResult {
     written.push(day);
     for (const f of snap.health.failures) failures.add(f);
   }
+  // Last, on whatever the budget has left: collecting a day always outranks
+  // re-deriving one. A pulse and an explicit `--day` never refresh, so neither
+  // spends its requests on days nobody asked about.
+  const refreshed = !opts.days && !opts.includeToday ? refreshOlderDays(opts) : [];
   const all = snapshotDays(dataDir);
   // latest.json never moves back: a run that wrote only backfill days still
   // points at the newest complete day on disk.
-  const newest = written.length ? latestDay(dataDir) : null;
+  const newest = written.length || refreshed.length ? latestDay(dataDir) : null;
   if (newest) {
     const first = all[0]!;
     const from = [addDays(newest, -27), first].sort().at(-1)!;
@@ -644,6 +631,7 @@ export function collect(opts: CollectOptions): CollectResult {
   return {
     planned: days,
     days: written.sort(),
+    refreshed,
     newest,
     healthy: failures.size === 0,
     failures: [...failures],

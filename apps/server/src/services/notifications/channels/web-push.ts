@@ -217,16 +217,16 @@ export class WebPushChannel {
         });
         return { ok: false, subscriptionId: subscription.id, reason: 'gone', statusCode };
       }
+      const error = err instanceof Error ? err.message : 'Push failed';
+      // Named fields only, never the raw error: a `WebPushError` carries the
+      // subscription endpoint, the response headers and the body as own
+      // properties, and the log serializer would copy all of them to disk.
       logger.warn('[Push] Could not push to a subscribed browser', {
         id: subscription.id,
-        err,
+        statusCode,
+        error,
       });
-      return {
-        ok: false,
-        subscriptionId: subscription.id,
-        reason: 'failed',
-        error: err instanceof Error ? err.message : 'Push failed',
-      };
+      return { ok: false, subscriptionId: subscription.id, reason: 'failed', error };
     }
   }
 

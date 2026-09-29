@@ -481,7 +481,7 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.getByText('Add a platform in Messaging, then connect it to an agent')
+        screen.getByText('Add a chat app in Connections, then connect it to an agent')
       ).toBeInTheDocument();
     });
 
@@ -507,7 +507,7 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.queryByText('Add a platform in Messaging, then connect it to an agent')
+        screen.queryByText('Add a chat app in Connections, then connect it to an agent')
       ).not.toBeInTheDocument();
       expect(
         screen.queryByText('Drag from a platform to an agent to connect them')

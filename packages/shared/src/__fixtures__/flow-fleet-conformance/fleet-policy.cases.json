@@ -1,0 +1,909 @@
+{
+  "contract": "fleet",
+  "about": "Resolving routing policy from <dorkHome>/flow/fleet.json (spec flow-cli-core 1.1b). Call resolveFleetPolicy(accounts, fleet). input.accounts is the account list in runtime then registry order (a standalone default last), each { runtime, id, routable, implicit, isDefault? } from the account read (accounts.cases.json); isDefault absent reads as false for a registered account; input.fleet is the parsed fleet.json, or null when the file is missing. fleet.json accounts are keyed '<runtime>:<id>'. A bare key with no ':' was written before contract 2.0.0 and reads as 'claude-code:<key>'; when both forms are present the prefixed one wins ('entry-duplicate'). expected.accounts is one resolved policy per account, in input order, { runtime, id, key, role, reservePct, spendDownWindowHours, scope }, with every default filled in: role 'kept-out' for a registered account; for an implicit default (rev 6d): 'main' when its runtime has at least one ROUTABLE registered account and no account of that runtime has an explicit role 'main' in fleet.json, else 'rotation'; an explicit role always wins, reservePct 50 for main else 0, spendDownWindowHours 24, scope.repos []. A non-routable account always resolves to kept-out. At most one main per runtime: a later main of the same runtime reads as rotation ('main-duplicate'). expected.mains maps each runtime that has a main to its id. expected.handoff defaults to 'auto', expected.runtimes (the ordered runtime preference) to [] and expected.crossRuntimeFallback to 'off'; an invalid runtimes entry is dropped ('runtimes-invalid') and an unknown fallback reads as off ('cross-runtime-fallback-invalid'). expected.warnings is a multiset of codes (compare sorted). input.checks, when present, asks mayServe for an account (by key) and a checkout's origin URL (null = no origin): expected.checks gives, per check, the owner/name parsed from the origin (null when unparsable) and the mayServe answer. owner/name compare case-insensitively. Rev 6d aliases: when an account with isDefault true is NOT implicit (default is an alias of that row), an entry under '<runtime>:default' is that row's entry and is not reported as unknown; when the row's own key is also present, the row's own entry wins ('entry-duplicate'). A non-routable row that shares its key with a routable account (a hand-edited row with the reserved id 'default') does not warn 'entry-unroutable' for that entry.",
+  "cases": [
+    {
+      "name": "no fleet.json: every account is kept out",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "work", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false}
+        ],
+        "fleet": null
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "work",
+            "key": "claude-code:work",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a complete policy, defaults filled in at read time",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "personal", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "org", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "unlisted", "routable": true, "implicit": false}
+        ],
+        "fleet": {
+          "v": 1,
+          "handoff": "ask",
+          "note": "unknown fields are ignored",
+          "accounts": {
+            "claude-code:personal": {"role": "main"},
+            "claude-code:claude3": {"role": "rotation", "spendDownWindowHours": 12},
+            "claude-code:org": {"role": "kept-out", "scope": {"repos": ["acme/app"]}}
+          }
+        }
+      },
+      "expected": {
+        "handoff": "ask",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {"claude-code": "personal"},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "personal",
+            "key": "claude-code:personal",
+            "role": "main",
+            "reservePct": 50,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 12,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "org",
+            "key": "claude-code:org",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": ["acme/app"]}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "unlisted",
+            "key": "claude-code:unlisted",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "explicit zeroes are values, not absences",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "personal", "routable": true, "implicit": false}],
+        "fleet": {
+          "v": 1,
+          "accounts": {"claude-code:personal": {"role": "main", "reservePct": 0, "spendDownWindowHours": 0}}
+        }
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {"claude-code": "personal"},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "personal",
+            "key": "claude-code:personal",
+            "role": "main",
+            "reservePct": 0,
+            "spendDownWindowHours": 0,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a second main reads as rotation; the first in registry order wins",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "a", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "b", "routable": true, "implicit": false}
+        ],
+        "fleet": {
+          "v": 1,
+          "accounts": {"claude-code:b": {"role": "main"}, "claude-code:a": {"role": "main", "reservePct": 30}}
+        }
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {"claude-code": "a"},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "main",
+            "reservePct": 30,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "b",
+            "key": "claude-code:b",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["main-duplicate"]
+      }
+    },
+    {
+      "name": "invalid values read as absent",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "a", "routable": true, "implicit": false}],
+        "fleet": {
+          "v": 1,
+          "handoff": "sometimes",
+          "accounts": {"claude-code:a": {"role": "reserve", "reservePct": 150, "spendDownWindowHours": -1}}
+        }
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["handoff-invalid", "role-invalid", "reserve-invalid", "spend-down-invalid"]
+      }
+    },
+    {
+      "name": "non-numeric numbers read as absent",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "a", "routable": true, "implicit": false}],
+        "fleet": {
+          "v": 1,
+          "accounts": {"claude-code:a": {"role": "main", "reservePct": "40", "spendDownWindowHours": null}}
+        }
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {"claude-code": "a"},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "main",
+            "reservePct": 50,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["reserve-invalid", "spend-down-invalid"]
+      }
+    },
+    {
+      "name": "bad repo entries are dropped one by one",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "org", "routable": true, "implicit": false}],
+        "fleet": {
+          "v": 1,
+          "accounts": {"claude-code:org": {"role": "kept-out", "scope": {"repos": ["acme/app", "nope", 5]}}}
+        }
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "org",
+            "key": "claude-code:org",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": ["acme/app"]}
+          }
+        ],
+        "warnings": ["repo-invalid", "repo-invalid"]
+      }
+    },
+    {
+      "name": "a scope that is not an object reads as absent",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "org", "routable": true, "implicit": false}],
+        "fleet": {"v": 1, "accounts": {"claude-code:org": {"scope": ["acme/app"]}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "org",
+            "key": "claude-code:org",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["scope-invalid"]
+      }
+    },
+    {
+      "name": "an entry for an unknown id is ignored",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "a", "routable": true, "implicit": false}],
+        "fleet": {"v": 1, "accounts": {"claude-code:ghost": {"role": "rotation"}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["entry-unknown-id"]
+      }
+    },
+    {
+      "name": "a non-routable identity stays kept out whatever its entry says",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "Bad_ID", "routable": false, "implicit": false}],
+        "fleet": {"v": 1, "accounts": {"claude-code:Bad_ID": {"role": "rotation"}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "Bad_ID",
+            "key": "claude-code:Bad_ID",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["entry-unroutable"]
+      }
+    },
+    {
+      "name": "an entry that is not an object reads as absent",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "a", "routable": true, "implicit": false}],
+        "fleet": {"v": 1, "accounts": {"claude-code:a": "rotation"}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["entry-invalid"]
+      }
+    },
+    {
+      "name": "accounts that is not an object reads as empty",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "a", "routable": true, "implicit": false}],
+        "fleet": {"v": 1, "handoff": "ask", "accounts": []}
+      },
+      "expected": {
+        "handoff": "ask",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["accounts-invalid"]
+      }
+    },
+    {
+      "name": "a file with no v reads as version 1",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "a", "routable": true, "implicit": false}],
+        "fleet": {"accounts": {"claude-code:a": {"role": "rotation"}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "an unknown version is not read: everything stays kept out",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "a", "routable": true, "implicit": false}],
+        "fleet": {"v": 2, "handoff": "ask", "accounts": {"claude-code:a": {"role": "rotation"}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["fleet-version-unknown"]
+      }
+    },
+    {
+      "name": "a fleet.json that is not an object reads as missing",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "a", "routable": true, "implicit": false}],
+        "fleet": ["a"]
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "a",
+            "key": "claude-code:a",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["fleet-invalid"]
+      }
+    },
+    {
+      "name": "mayServe: main and rotation serve any repo, kept-out only its scope",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "personal", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "org", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "idle", "routable": true, "implicit": false}
+        ],
+        "fleet": {
+          "v": 1,
+          "accounts": {
+            "claude-code:personal": {"role": "main", "scope": {"repos": ["ignored/for-main"]}},
+            "claude-code:claude3": {"role": "rotation"},
+            "claude-code:org": {"role": "kept-out", "scope": {"repos": ["Acme/App"]}}
+          }
+        },
+        "checks": [
+          {"account": "claude-code:personal", "origin": "https://github.com/someone/else.git"},
+          {"account": "claude-code:claude3", "origin": null},
+          {"account": "claude-code:org", "origin": "https://github.com/acme/app.git"},
+          {"account": "claude-code:org", "origin": "git@github.com:ACME/app.git"},
+          {"account": "claude-code:org", "origin": "ssh://git@github.com:22/acme/app"},
+          {"account": "claude-code:org", "origin": "https://user@gitlab.example/acme/app/"},
+          {"account": "claude-code:org", "origin": "https://github.com/acme/other"},
+          {"account": "claude-code:org", "origin": "not a url"},
+          {"account": "claude-code:org", "origin": null},
+          {"account": "claude-code:idle", "origin": "https://github.com/acme/app.git"}
+        ]
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {"claude-code": "personal"},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "personal",
+            "key": "claude-code:personal",
+            "role": "main",
+            "reservePct": 50,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": ["ignored/for-main"]}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "org",
+            "key": "claude-code:org",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": ["Acme/App"]}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "idle",
+            "key": "claude-code:idle",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": [],
+        "checks": [
+          {"repo": "someone/else", "mayServe": true},
+          {"repo": null, "mayServe": true},
+          {"repo": "acme/app", "mayServe": true},
+          {"repo": "ACME/app", "mayServe": true},
+          {"repo": "acme/app", "mayServe": true},
+          {"repo": "acme/app", "mayServe": true},
+          {"repo": "acme/other", "mayServe": false},
+          {"repo": null, "mayServe": false},
+          {"repo": null, "mayServe": false},
+          {"repo": "acme/app", "mayServe": false}
+        ]
+      }
+    },
+    {
+      "name": "a bare key written before 2.0.0 reads as a Claude Code account",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "personal", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false}
+        ],
+        "fleet": {"v": 1, "accounts": {"personal": {"role": "main"}, "claude3": {"role": "rotation"}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {"claude-code": "personal"},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "personal",
+            "key": "claude-code:personal",
+            "role": "main",
+            "reservePct": 50,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "the prefixed key wins over the same bare key",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false}],
+        "fleet": {"v": 1, "accounts": {"claude3": {"role": "kept-out"}, "claude-code:claude3": {"role": "rotation"}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "claude3",
+            "key": "claude-code:claude3",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["entry-duplicate"]
+      }
+    },
+    {
+      "name": "an implicit default is in rotation; a registered account with no entry is kept out",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "work", "routable": true, "implicit": false},
+          {"runtime": "codex", "id": "default", "routable": true, "implicit": true},
+          {"runtime": "opencode", "id": "default", "routable": true, "implicit": true}
+        ],
+        "fleet": null
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "work",
+            "key": "claude-code:work",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "opencode",
+            "id": "default",
+            "key": "opencode:default",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "an implicit default's entry applies like any other",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "default", "routable": true, "implicit": true},
+          {"runtime": "codex", "id": "default", "routable": true, "implicit": true}
+        ],
+        "fleet": {
+          "v": 1,
+          "accounts": {
+            "codex:default": {"role": "kept-out", "scope": {"repos": ["acme/app"]}},
+            "claude-code:default": {"reservePct": 10}
+          }
+        }
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "role": "rotation",
+            "reservePct": 10,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": ["acme/app"]}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "one main per runtime",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "personal", "routable": true, "implicit": false},
+          {"runtime": "claude-code", "id": "work", "routable": true, "implicit": false},
+          {"runtime": "codex", "id": "default", "routable": true, "implicit": true}
+        ],
+        "fleet": {
+          "v": 1,
+          "accounts": {
+            "claude-code:personal": {"role": "main"},
+            "claude-code:work": {"role": "main"},
+            "codex:default": {"role": "main"}
+          }
+        }
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {"claude-code": "personal", "codex": "default"},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "personal",
+            "key": "claude-code:personal",
+            "role": "main",
+            "reservePct": 50,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "claude-code",
+            "id": "work",
+            "key": "claude-code:work",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "codex",
+            "id": "default",
+            "key": "codex:default",
+            "role": "main",
+            "reservePct": 50,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["main-duplicate"]
+      }
+    },
+    {
+      "name": "the same id in two runtimes is two accounts",
+      "input": {
+        "accounts": [
+          {"runtime": "claude-code", "id": "team", "routable": true, "implicit": false},
+          {"runtime": "codex", "id": "team", "routable": true, "implicit": false}
+        ],
+        "fleet": {"v": 1, "accounts": {"codex:team": {"role": "rotation"}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "team",
+            "key": "claude-code:team",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          },
+          {
+            "runtime": "codex",
+            "id": "team",
+            "key": "codex:team",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a key with an unknown runtime, or an account that is gone, is ignored",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "work", "routable": true, "implicit": false}],
+        "fleet": {
+          "v": 1,
+          "accounts": {
+            "gemini:work": {"role": "rotation"},
+            "codex:old": {"role": "rotation"},
+            "claude-code:work": {"role": "rotation"}
+          }
+        }
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "work",
+            "key": "claude-code:work",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["entry-unknown-id", "entry-unknown-id"]
+      }
+    },
+    {
+      "name": "runtime preference and cross-runtime fallback read as written",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "default", "routable": true, "implicit": true}],
+        "fleet": {"v": 1, "runtimes": ["codex", "claude-code"], "crossRuntimeFallback": "on"}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": ["codex", "claude-code"],
+        "crossRuntimeFallback": "on",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "bad runtime preference entries are dropped one by one; an unknown fallback reads as off",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "default", "routable": true, "implicit": true}],
+        "fleet": {"v": 1, "runtimes": ["opencode", "gemini", "opencode", 7], "crossRuntimeFallback": "sometimes"}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": ["opencode"],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "role": "rotation",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["runtimes-invalid", "runtimes-invalid", "runtimes-invalid", "cross-runtime-fallback-invalid"]
+      }
+    },
+    {
+      "name": "a registered row using the reserved id default stays kept out, even with an entry",
+      "input": {
+        "accounts": [{"runtime": "claude-code", "id": "default", "routable": false, "implicit": false}],
+        "fleet": {"v": 1, "accounts": {"claude-code:default": {"role": "rotation"}}}
+      },
+      "expected": {
+        "handoff": "auto",
+        "runtimes": [],
+        "crossRuntimeFallback": "off",
+        "mains": {},
+        "accounts": [
+          {
+            "runtime": "claude-code",
+            "id": "default",
+            "key": "claude-code:default",
+            "role": "kept-out",
+            "reservePct": 0,
+            "spendDownWindowHours": 24,
+            "scope": {"repos": []}
+          }
+        ],
+        "warnings": ["entry-unroutable"]
+      }
+    },
+    {"name": "rev 6d: a default that stands alone beside registered accounts is main with a 50% reserve", "input": {"accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false, "isDefault": false}, {"runtime": "claude-code", "id": "default", "routable": true, "implicit": true, "isDefault": true}], "fleet": null}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {"claude-code": "default"}, "accounts": [{"runtime": "claude-code", "id": "claude3", "key": "claude-code:claude3", "role": "kept-out", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "claude-code", "id": "default", "key": "claude-code:default", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": {"repos": []}}], "warnings": []}},
+    {"name": "rev 6d: an explicit main on a registered row wins, and default falls back to rotation", "input": {"accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false, "isDefault": false}, {"runtime": "claude-code", "id": "default", "routable": true, "implicit": true, "isDefault": true}], "fleet": {"v": 1, "accounts": {"claude-code:claude3": {"role": "main"}}}}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {"claude-code": "claude3"}, "accounts": [{"runtime": "claude-code", "id": "claude3", "key": "claude-code:claude3", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "claude-code", "id": "default", "key": "claude-code:default", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}], "warnings": []}},
+    {"name": "rev 6d: an explicit entry for default always wins over its default role", "input": {"accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false, "isDefault": false}, {"runtime": "claude-code", "id": "default", "routable": true, "implicit": true, "isDefault": true}], "fleet": {"v": 1, "accounts": {"claude-code:default": {"role": "rotation", "spendDownWindowHours": 12}}}}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {}, "accounts": [{"runtime": "claude-code", "id": "claude3", "key": "claude-code:claude3", "role": "kept-out", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "claude-code", "id": "default", "key": "claude-code:default", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 12, "scope": {"repos": []}}], "warnings": []}},
+    {"name": "rev 6d: a default that is main by default keeps an explicit reserve", "input": {"accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false, "isDefault": false}, {"runtime": "claude-code", "id": "default", "routable": true, "implicit": true, "isDefault": true}], "fleet": {"v": 1, "accounts": {"claude-code:default": {"reservePct": 30}}}}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {"claude-code": "default"}, "accounts": [{"runtime": "claude-code", "id": "claude3", "key": "claude-code:claude3", "role": "kept-out", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "claude-code", "id": "default", "key": "claude-code:default", "role": "main", "reservePct": 30, "spendDownWindowHours": 24, "scope": {"repos": []}}], "warnings": []}},
+    {"name": "rev 6d: explicit mains on a registered row and on default: the registered row, earlier in order, wins", "input": {"accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false, "isDefault": false}, {"runtime": "claude-code", "id": "default", "routable": true, "implicit": true, "isDefault": true}], "fleet": {"v": 1, "accounts": {"claude-code:claude3": {"role": "main"}, "claude-code:default": {"role": "main"}}}}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {"claude-code": "claude3"}, "accounts": [{"runtime": "claude-code", "id": "claude3", "key": "claude-code:claude3", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "claude-code", "id": "default", "key": "claude-code:default", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}], "warnings": ["main-duplicate"]}},
+    {"name": "rev 6d: beside only rows that are not routable, default is still the only spendable account, so rotation", "input": {"accounts": [{"runtime": "claude-code", "id": "Bad_ID", "routable": false, "implicit": false, "isDefault": false}, {"runtime": "claude-code", "id": "default", "routable": true, "implicit": true, "isDefault": true}], "fleet": null}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {}, "accounts": [{"runtime": "claude-code", "id": "Bad_ID", "key": "claude-code:Bad_ID", "role": "kept-out", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "claude-code", "id": "default", "key": "claude-code:default", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}], "warnings": []}},
+    {"name": "rev 6d: the main default of one runtime does not touch another runtime", "input": {"accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false, "isDefault": false}, {"runtime": "claude-code", "id": "default", "routable": true, "implicit": true, "isDefault": true}, {"runtime": "codex", "id": "default", "routable": true, "implicit": true, "isDefault": true}], "fleet": null}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {"claude-code": "default"}, "accounts": [{"runtime": "claude-code", "id": "claude3", "key": "claude-code:claude3", "role": "kept-out", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "claude-code", "id": "default", "key": "claude-code:default", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "codex", "id": "default", "key": "codex:default", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}], "warnings": []}},
+    {"name": "rev 6d: when default is an alias, its entry under <runtime>:default is the aliased row's entry", "input": {"accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false, "isDefault": true}, {"runtime": "claude-code", "id": "work", "routable": true, "implicit": false, "isDefault": false}], "fleet": {"v": 1, "accounts": {"claude-code:default": {"role": "main"}}}}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {"claude-code": "claude3"}, "accounts": [{"runtime": "claude-code", "id": "claude3", "key": "claude-code:claude3", "role": "main", "reservePct": 50, "spendDownWindowHours": 24, "scope": {"repos": []}}, {"runtime": "claude-code", "id": "work", "key": "claude-code:work", "role": "kept-out", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}], "warnings": []}},
+    {"name": "rev 6d: an alias entry and the row's own entry are one account: the row's own key wins", "input": {"accounts": [{"runtime": "claude-code", "id": "claude3", "routable": true, "implicit": false, "isDefault": true}], "fleet": {"v": 1, "accounts": {"claude-code:default": {"role": "main"}, "claude-code:claude3": {"role": "rotation"}}}}, "expected": {"handoff": "auto", "runtimes": [], "crossRuntimeFallback": "off", "mains": {}, "accounts": [{"runtime": "claude-code", "id": "claude3", "key": "claude-code:claude3", "role": "rotation", "reservePct": 0, "spendDownWindowHours": 24, "scope": {"repos": []}}], "warnings": ["entry-duplicate"]}}
+  ]
+}

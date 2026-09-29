@@ -43,7 +43,7 @@ export async function* mapSdkMessage(
     case 'user':
     case 'tool_use_summary':
     case 'tool_progress':
-      yield* mapMessageEvent(message, session, toolState);
+      yield* mapMessageEvent(message, session, toolState, sessionId);
       return;
     case 'result':
     case 'rate_limit_event':

@@ -1,16 +1,17 @@
 ---
 id: 260828-123331
 title: The first hard per-agent tool filter lives at registry.invoke, keyed on a grant only a person may write
-status: accepted
+status: superseded
 created: 2026-08-28
 spec: rooms-management-tools
-superseded-by: null
-amends: 260726-171347
+superseded-by: '260923-223904'
 ---
 
 # 260828-123331. The first hard per-agent tool filter lives at registry.invoke, keyed on a grant only a person may write
 
 ## Status
+
+Superseded (2026-09-24, DOR-2278, spec `agent-permissions` phase 3) by ADR-260923-223904 (one permission model for agent actions): the per-agent Rooms grant is now the Rooms permission area, with a default for everyone and a per-agent override in one resolver and one audit trail, so the "no global twin" rule no longer applies.
 
 Accepted (DOR-1611).
 

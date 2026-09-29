@@ -42,6 +42,8 @@ import { fileURLToPath } from 'node:url';
 
 import { sql } from 'drizzle-orm';
 
+import { refuseControlPlaneMigrationOnVercel } from './control-plane-deploy-guard';
+
 /** Absolute path of `apps/site`, resolved from this file rather than `cwd`. */
 const SITE_ROOT = fileURLToPath(new URL('../', import.meta.url));
 
@@ -57,10 +59,17 @@ export type MigrationHistory = {
   readonly migrationsTable: string;
   /** Schema the journal table lives in. */
   readonly migrationsSchema: string;
+  /**
+   * Whether `pnpm db:migrate`, and so every Vercel build, applies this history.
+   * Only the public half does; see `./control-plane-deploy-guard.ts` for why the
+   * control-plane half never runs on a deploy.
+   */
+  readonly appliedOnDeploy: boolean;
 };
 
 /**
- * Both histories, in the order `db:migrate` applies them.
+ * Both histories, public first. Deploys apply only the public one
+ * (`appliedOnDeploy`); tests and local databases apply both, in this order.
  *
  * Keep this in sync with `drizzle.public.config.ts` and
  * `drizzle.control-plane.config.ts`; `src/db/__tests__/migration-histories.test.ts`
@@ -73,6 +82,7 @@ export const MIGRATION_HISTORIES: readonly MigrationHistory[] = [
     config: 'drizzle.public.config.ts',
     migrationsTable: '__drizzle_migrations_public',
     migrationsSchema: 'drizzle',
+    appliedOnDeploy: true,
   },
   {
     id: 'control-plane',
@@ -80,8 +90,44 @@ export const MIGRATION_HISTORIES: readonly MigrationHistory[] = [
     config: 'drizzle.control-plane.config.ts',
     migrationsTable: '__drizzle_migrations_control_plane',
     migrationsSchema: 'drizzle',
+    appliedOnDeploy: false,
   },
 ];
+
+/**
+ * The histories a `baseline-migrations.ts` run was asked for, by id.
+ *
+ * Explicit on purpose: the script used to walk every history, which is how a
+ * deploy came to write into the control-plane journal. Now each caller names
+ * the one it means, and naming the control-plane history inside a Vercel build
+ * is refused before anything connects.
+ *
+ * @param ids - History ids from the command line.
+ * @param env - The environment, for the Vercel check.
+ * @returns The named histories, in the order given.
+ * @throws Error when no id is given, an id is unknown, or the control-plane
+ *   history is asked for inside a Vercel build.
+ */
+export function selectHistories(
+  ids: readonly string[],
+  env: Record<string, string | undefined> = process.env
+): MigrationHistory[] {
+  if (ids.length === 0) {
+    throw new Error(
+      `name the history to baseline: ${MIGRATION_HISTORIES.map((h) => h.id).join(' or ')}`
+    );
+  }
+  return ids.map((id) => {
+    const history = MIGRATION_HISTORIES.find((candidate) => candidate.id === id);
+    if (!history) {
+      throw new Error(
+        `unknown migration history "${id}"; expected ${MIGRATION_HISTORIES.map((h) => h.id).join(' or ')}`
+      );
+    }
+    if (!history.appliedOnDeploy) refuseControlPlaneMigrationOnVercel(env);
+    return history;
+  });
+}
 
 /**
  * The frozen pre-split history. No config points at it any more and nothing

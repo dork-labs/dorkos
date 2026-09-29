@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { Search } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
-import { groupSessionsByTime } from '@/layers/shared/lib';
+import { groupSessionsByTime, toSession } from '@/layers/shared/lib';
 import { Input, Skeleton } from '@/layers/shared/ui';
 import { useSafeNavigate, useTransport } from '@/layers/shared/model';
 import { useInteractionStore } from '@/layers/entities/interactions';
@@ -55,7 +55,7 @@ export function SessionsPage({ member }: ProfilePageContentProps) {
     // The same record the header's Message button writes (DOR-1156): what ⌘K's
     // ranking and the New menu's "last used" read is the AGENT, not the session.
     useInteractionStore.getState().recordOpened('agent', projectPath);
-    void navigate({ to: '/session', search: { dir: projectPath, session: sessionId } });
+    void navigate(toSession({ dir: projectPath, session: sessionId }));
   }
 
   async function fork(sessionId: string) {

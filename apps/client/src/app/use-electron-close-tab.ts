@@ -18,10 +18,6 @@
  * backstop timeout and the window wins ties. Closing a tab is a synchronous
  * store write, so the navigation that follows it can settle in its own time.
  *
- * Absent everywhere else, and correct there by doing nothing: in the browser
- * cockpit `Cmd/Ctrl+W` belongs to the browser and we must not fight it, and the
- * Obsidian embed has no shell at all. Both are the same guard.
- *
  * @module app/use-electron-close-tab
  */
 import { useEffect } from 'react';

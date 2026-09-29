@@ -1,3 +1,4 @@
+import { Button, Notice } from '@dork-labs/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
 import { describeError, RequestError, request } from '../api.js';
@@ -9,8 +10,14 @@ import {
   writeStorage,
 } from '../remembered-community.js';
 import { SignedOutPanel, SignOutButton } from './SignOut.js';
+import { AccountErasurePanels } from './Erasure.js';
 
 const ROUTE_NOTICE_KEY = 'communityChooserNotice';
+
+/** `/?account` opens the chooser for account actions instead of entering the one community. */
+function accountRequested(): boolean {
+  return new URLSearchParams(window.location.search).has('account');
+}
 
 /**
  * Send the person back to the chooser after a community route they cannot enter.
@@ -18,15 +25,24 @@ const ROUTE_NOTICE_KEY = 'communityChooserNotice';
  * The chooser then says so in one sentence that is the same whether the community was never
  * theirs, they were removed, or it is paused, so the notice reveals nothing about it.
  */
-export function returnToChooserWithNotice(): void {
-  writeStorage(() => sessionStorage, ROUTE_NOTICE_KEY, 'unavailable');
+export function returnToChooserWithNotice(notice: RouteNotice = 'unavailable'): void {
+  writeStorage(() => sessionStorage, ROUTE_NOTICE_KEY, notice);
   window.location.replace('/');
 }
 
-function takeRouteNotice(): boolean {
-  const notice = readStorage(() => sessionStorage, ROUTE_NOTICE_KEY) === 'unavailable';
+/** Why the chooser was opened in place of a community route. */
+type RouteNotice = 'unavailable' | 'no-address';
+
+const ROUTE_NOTICES: Record<RouteNotice, string> = {
+  unavailable: 'That community is not available to this account.',
+  // A short address that leads nowhere says only that, whatever the reason.
+  'no-address': 'No community at this address.',
+};
+
+function takeRouteNotice(): RouteNotice | null {
+  const notice = readStorage(() => sessionStorage, ROUTE_NOTICE_KEY);
   writeStorage(() => sessionStorage, ROUTE_NOTICE_KEY, null);
-  return notice;
+  return notice === 'unavailable' || notice === 'no-address' ? notice : null;
 }
 
 function enterCommunity(communityId: string, replace = false, deletion = false): void {
@@ -43,6 +59,8 @@ function describeChoice(membership: CommunityWireMembershipSummary, remembered: 
   if (deletionRecovery) return { available: true, deletionRecovery, status: 'Review deletion' };
   if (membership.lifecycle === 'archived')
     return { available: true, deletionRecovery, status: 'Read history' };
+  if (membership.lifecycle === 'held')
+    return { available: true, deletionRecovery, status: 'On hold: read only' };
   if (membership.lifecycle === 'active')
     return { available: true, deletionRecovery, status: remembered ? 'Last opened' : 'Open' };
   if (membership.lifecycle === 'suspended')
@@ -94,7 +112,12 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
           enterCommunity(recovering.communityId, true, true);
           return;
         }
-        if (next.length === 1 && next[0].lifecycle === 'active' && !routeNotice) {
+        if (
+          next.length === 1 &&
+          next[0].lifecycle === 'active' &&
+          !routeNotice &&
+          !accountRequested()
+        ) {
           enterCommunity(next[0].communityId, true);
           return;
         }
@@ -140,15 +163,15 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
           Choose a community
         </h1>
         {routeNotice && (
-          <p role="status" className="notice mb-4">
-            That community is not available to this account.
-          </p>
+          <Notice role="status" tone="info" className="mb-4">
+            {ROUTE_NOTICES[routeNotice]}
+          </Notice>
         )}
         {error ? (
-          <div role="alert" className="notice error">
+          <Notice role="alert" tone="error">
             <p className="mb-3">{error}</p>
-            <button
-              className="button"
+            <Button
+              variant="outline"
               type="button"
               onClick={() => {
                 setError('');
@@ -156,8 +179,8 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
               }}
             >
               Try again
-            </button>
-          </div>
+            </Button>
+          </Notice>
         ) : memberships?.length === 0 ? (
           <div>
             <p className="muted">This account does not have a community membership yet.</p>
@@ -177,9 +200,10 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
               const reasonId = `community-choice-${membership.communityId}-reason`;
               return (
                 <li key={membership.communityId}>
-                  <button
+                  <Button
                     type="button"
-                    className="button community-choice"
+                    variant="outline"
+                    className="community-choice"
                     aria-disabled={choice.available ? undefined : true}
                     aria-describedby={choice.reason ? reasonId : undefined}
                     onClick={() => {
@@ -199,12 +223,13 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
                       )}
                     </span>
                     <span className="small muted">{choice.status}</span>
-                  </button>
+                  </Button>
                 </li>
               );
             })}
           </ul>
         )}
+        {memberships && <AccountErasurePanels memberships={memberships} />}
         {!error && (
           <div className="mt-6 border-t border-[var(--line)] pt-4">
             <p className="small muted">

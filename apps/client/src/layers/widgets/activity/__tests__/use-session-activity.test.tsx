@@ -63,8 +63,6 @@ describe('useSessionActivity', () => {
   });
 
   it('treats an empty window as no answer, not as a quiet week', async () => {
-    // What the embedded (Obsidian) transport returns: no agent roster, so
-    // nothing machine-wide to count.
     const { transport, wrapper } = createHarness({ days: 0, dailyCounts: [], warnings: [] });
 
     const { result } = renderHook(() => useSessionActivity(), { wrapper });

@@ -117,6 +117,9 @@ export class ClaudeCodeRuntimeAdapter extends RuntimeAdapter {
       ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
       ...(opts.systemPromptAppend ? { systemPromptAppend: opts.systemPromptAppend } : {}),
+      // Relay-delivered: nobody is watching this turn in the app, so it does
+      // not hold for an approval card (spec `agent-permissions` D6).
+      unattendedApprovals: true,
     });
 
     try {

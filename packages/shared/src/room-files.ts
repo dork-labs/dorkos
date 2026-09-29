@@ -192,6 +192,15 @@ export const RoomFileContentResponseSchema = z.object({
 export type RoomFileContentResponse = z.infer<typeof RoomFileContentResponseSchema>;
 
 /**
+ * A commit id as a request carries it: hex only, 7 to 40 characters.
+ *
+ * **Shaped like a commit id, or refused before it can be one.** The value
+ * becomes an ARGUMENT to git, and a string beginning with `-` is an option
+ * rather than a commit.
+ */
+const CommitIdSchema = z.string().regex(/^[0-9a-f]{7,40}$/, 'that is not a commit id');
+
+/**
  * `PUT /api/rooms/{id}/files/content` — a person saving one file (spec
  * `project-rooms` §3.10).
  *
@@ -234,10 +243,7 @@ export const RoomFileSaveRequestSchema = z.object({
    * becomes an ARGUMENT to git, and a string beginning with `-` is an option
    * rather than a commit. Hex only, so nothing else is ever tried.
    */
-  baseCommit: z
-    .string()
-    .regex(/^[0-9a-f]{7,40}$/, 'that is not a commit id')
-    .nullable(),
+  baseCommit: CommitIdSchema.nullable(),
   /**
    * The file's whole new contents, as text.
    *
@@ -280,6 +286,139 @@ export const RoomFileSaveResponseSchema = z.object({
 
 /** What a completed save answers. See {@link RoomFileSaveResponseSchema}. */
 export type RoomFileSaveResponse = z.infer<typeof RoomFileSaveResponseSchema>;
+
+/**
+ * The most files one upload may carry (spec `agent-home-desk` §7.1).
+ *
+ * Twenty, because an upload is one commit and one room entry, and a person
+ * dropping more than that at once is moving a project rather than adding files
+ * to a room. More is refused `ROOM_UPLOAD_TOO_MANY_FILES`.
+ */
+export const ROOM_UPLOAD_MAX_FILES = 20;
+
+/** The multipart field an upload's files ride in. */
+export const ROOM_UPLOAD_FILES_FIELD = 'files';
+
+/**
+ * `POST /api/rooms/{id}/files/upload` — the text fields beside the files.
+ *
+ * Multipart carries every field as a string, so each one is parsed from its
+ * string form here: `baseCommit` empty (or absent) means "I read no commit",
+ * and `replace` is a JSON list of the file NAMES the person has agreed to
+ * overwrite.
+ */
+export const RoomFileUploadFieldsSchema = z.object({
+  /**
+   * The folder to upload into, relative to the repo root; empty for the root.
+   * Missing folders are created.
+   */
+  dir: z.string().default(''),
+  /**
+   * The commit the person's view of the folder came from. Only the files named
+   * in `replace` are locked against it; a new file needs no lock.
+   */
+  baseCommit: z
+    .union([CommitIdSchema, z.literal('')])
+    .optional()
+    .transform((value) => (value ? value : null)),
+  /**
+   * The names — not paths — of files this upload may overwrite, as a JSON array.
+   *
+   * Any upload whose name the folder already holds and that is not listed here
+   * is refused `ROOM_FILE_EXISTS`, which is what lets the app ask "replace, or
+   * keep both?" instead of overwriting somebody's file.
+   */
+  replace: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined || value === '') return [] as string[];
+      try {
+        const parsed: unknown = JSON.parse(value);
+        if (Array.isArray(parsed) && parsed.every((name) => typeof name === 'string')) {
+          return parsed as string[];
+        }
+      } catch {
+        // Reported below with every other wrong shape.
+      }
+      ctx.addIssue({ code: 'custom', message: '`replace` must be a JSON list of file names' });
+      return z.NEVER;
+    }),
+});
+
+/** The parsed upload fields. See {@link RoomFileUploadFieldsSchema}. */
+export type RoomFileUploadFields = z.infer<typeof RoomFileUploadFieldsSchema>;
+
+/** `POST /api/rooms/{id}/files/move` — rename or move one file or folder. */
+export const RoomFileMoveRequestSchema = z.object({
+  /** The file or folder to move, as a listing named it. */
+  from: z.string().min(1),
+  /** Where it goes. Must not exist; missing folders above it are created. */
+  to: z.string().min(1),
+  /**
+   * The commit the person's view came from — required. Every path under `from`
+   * must be unchanged since, or the move is refused `FILE_CHANGED`: a move only
+   * makes sense over files the person has seen.
+   */
+  baseCommit: CommitIdSchema,
+});
+
+/** What a move sends. See {@link RoomFileMoveRequestSchema}. */
+export type RoomFileMoveRequest = z.infer<typeof RoomFileMoveRequestSchema>;
+
+/** `POST /api/rooms/{id}/files/delete` — delete one file or folder. */
+export const RoomFileDeleteRequestSchema = z.object({
+  /** The file or folder to delete, as a listing named it. */
+  path: z.string().min(1),
+  /**
+   * The commit the person's view came from — required. Every path under
+   * `path` must be unchanged since, or the delete is refused `FILE_CHANGED`:
+   * nobody deletes a file they have not seen.
+   */
+  baseCommit: CommitIdSchema,
+});
+
+/** What a delete sends. See {@link RoomFileDeleteRequestSchema}. */
+export type RoomFileDeleteRequest = z.infer<typeof RoomFileDeleteRequestSchema>;
+
+/**
+ * `POST /api/rooms/{id}/files/from-attachment` — keep a file somebody attached
+ * to a message in this room as one of the room's files.
+ */
+export const RoomFileFromAttachmentRequestSchema = z.object({
+  /** The attachment, which must be on a message in THIS room. */
+  attachmentId: z.string().min(1),
+  /** The folder to save it into; empty for the root. */
+  dir: z.string().default(''),
+  /** The file name to save it under; the attachment's own name when omitted. */
+  name: z.string().min(1).optional(),
+  /** The commit the person's view of the folder came from. */
+  baseCommit: CommitIdSchema.nullable(),
+});
+
+/** What a save-from-the-chat sends. See {@link RoomFileFromAttachmentRequestSchema}. */
+export type RoomFileFromAttachmentRequest = z.infer<typeof RoomFileFromAttachmentRequestSchema>;
+
+/**
+ * What an upload, a move, a delete and a save-from-the-chat answer.
+ *
+ * One shape for all four, because each is one commit that touched some paths.
+ */
+export const RoomFileChangeResponseSchema = z.object({
+  /**
+   * The commit `main` points at now — the new one, or the one already there
+   * when the change turned out to change nothing (an upload identical to the
+   * file it replaced). Hand it back as the next change's `baseCommit`.
+   */
+  commit: z.string(),
+  /** Every file path the change wrote or removed, in byte order. */
+  paths: z.array(z.string()),
+  /** The commit that made the change, or `null` when nothing was committed. */
+  lastCommit: RoomFileCommitSchema.nullable(),
+});
+
+/** What a file change answers. See {@link RoomFileChangeResponseSchema}. */
+export type RoomFileChangeResponse = z.infer<typeof RoomFileChangeResponseSchema>;
 
 /**
  * The code a save is refused with when the file moved under the editor.

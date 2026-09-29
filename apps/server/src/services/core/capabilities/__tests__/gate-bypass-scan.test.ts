@@ -162,18 +162,23 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // `auth.enabled`, at `extensions.approvedToRun`, at anything. It carries no
     // policy, no consent door and no audit line.
     //
-    // No production module under `apps/server/src` calls it today; its callers
-    // are `dorkos config set` and `dorkos config edit`, out in `packages/cli`,
-    // which this scan cannot read (and which are covered instead by the
-    // LOCAL_OPERATOR_AUTHORITY entry above, plus `configManager.setDot`'s own
-    // place in the CLI's flow). So the allowlist is empty ON PURPOSE, the same
+    // Its general-purpose callers are `dorkos config set` and `dorkos config
+    // edit`, out in `packages/cli`, which this scan cannot read (and which are
+    // covered instead by the LOCAL_OPERATOR_AUTHORITY entry above, plus
+    // `configManager.setDot`'s own place in the CLI's flow). So the allowlist is
+    // CLOSED to any server caller that takes its path from a request, the same
     // way `sourceManager.setEnabled(` is: the obvious next route on any router
     // — "let me just set this one path" — arrives ungated and, without this
     // entry, invisible. With it, it turns this red until its author says which
-    // door it is and what refuses an agent at it.
+    // door it is and what refuses an agent at it. The one entry below is a
+    // purpose-built writer: it names a single fixed leaf, behind its own gate,
+    // and leaves a log line.
     what: 'writes ANY config path the caller names, with no bar, no consent door and no audit line — a general-purpose door with none of what a door owes',
     call: 'configManager.setDot(',
-    allowed: {},
+    allowed: {
+      'routes/runtimes.ts':
+        'POST /claude-code/accounts/found/dismiss, which names ONE fixed path, `runtimes.claudeCode.dismissedFolders`, never a caller-supplied one, so it is not the general-purpose door this entry watches. That leaf is operator-only, so the route runs both bars from `PATCH /api/config` for such a leaf, in the same order (the cookie bar under login, then the agent bar), before reaching here. It is a purpose-built writer in the sense `config-write.ts` defines (one fixed leaf, its own gate, a log line), and it only ever hides a folder from a prompt (logConfigWrite: "the found-folders route")',
+    },
   },
   {
     // Same reasoning, opposite verb. `reset` puts a section — or the whole file
@@ -445,11 +450,15 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'trustedCaller(',
     allowed: {
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
+      'routes/agents.ts':
+        'a person creating an agent from a template or a marketplace package in their own app (DOR-2325). It does not skip a gate: a person is SHOWN what a template brings (409 `template_needs_review`) and creates it with the hash they saw, and a package is held to the preview they saw. Everyone else gets an approval card for a template and is refused a package',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/shapes.ts':
         'a person clicking a Shape in their own cockpit — applying one writes files, rewrites config and creates and deletes scheduled work, so an agent is asked first (DOR-625)',
       'routes/extensions-person-bar.ts':
         'the one person bar every WRITE on the extensions router runs — approving an extension to run its code inside DorkOS (DOR-516) and, since DOR-1507, turning one on or off. Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because every leaf those four routes write (`extensions.approvedToRun`, `extensions.enabled`, `extensions.disabled`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these routes are reachable by a plain cross-site POST. It is ONE module rather than a copy per route file precisely so a fifth write route cannot arrive with two of the three bars',
+      'routes/runtimes.ts':
+        "two person bars on this router, each for a person in their own app. (1) `POST /claude-code/accounts/:id/probe`: checking an idle Claude account's usage (DOR-2381). Gated: the cookie bar under login, then this one, because the route starts the Claude binary in a registered account's folder; agents check usage with the `accounts_probe` MCP tool, which runs through the tool gate at the act tier. (2) `POST /claude-code/accounts/found/dismiss`: hiding a found Claude account folder, which writes the operator-only `runtimes.claudeCode.dismissedFolders`, so it runs both bars from `PATCH /api/config` for such a leaf, in the same order: the cookie bar under login, then this one. It writes only that fixed leaf (see its `configManager.setDot(` entry) and takes a JSON body, so a plain cross-site form POST cannot reach the write (it is refused at parsing)",
       'routes/tunnel.ts':
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
@@ -479,7 +488,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy',
       'services/tasks/legacy-migration.ts':
         'the boot migration (DOR-1486), on ONE branch: a legacy file it could not read, which it leaves on disk and reports as a parked row so the person is told about it. Gated by the strongest gate there is — the call passes `source: discovery`, which cannot arm anything (`resolveFileArmStatus`), and the definition it hands over carries no cron and `enabled: false`, so even an approval produces a schedule with no timer. Every file the migration CAN read goes nowhere near this call: it is rewritten on disk and its row is moved by `rekeyMigratedFile`, which writes a path and a grant and never a permission mode. Deleted with the module at its sunset',
-      'services/tasks/task-store.ts': 'the definition itself',
+      'services/tasks/sync/task-file-sync.ts':
+        'the definition itself, moved out of task-store.ts (DOR-2329)',
     },
   },
   {
@@ -529,6 +539,72 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         "the roster verbs, and the module that carries the guards: an agent may never remove the person, a system room keeps its owner, and the removed member's fallback seat and held turns are cleared with them",
       'services/rooms/manage/room-bridge-lifecycle.ts':
         'the agent swap in `rebridge`, operator-gated at the top of that method — the old agent leaves so exactly one agent is ever bound to a chat (D-6 Q3)',
+    },
+  },
+  {
+    // Watched from DOR-2328. A schedule that leaves its runtime, model or effort
+    // unset follows its agent, so a write of those three moves work a person
+    // approved. Every door below refuses them from an agent or asks a person.
+    what: "writes an agent's manifest, including the runtime, model and effort its schedules follow",
+    call: 'updateAgentManifest(',
+    allowed: {
+      'routes/agents.ts':
+        '`PATCH /api/agents/current`, mounted behind `refuseAgentExecutionWrites`, which refuses the three from a caller that has not cleared the agent bar',
+      'services/core/operator/operator-tool-handlers.ts':
+        '`update_agent` refuses the three outright; `update_agent_boundaries` writes only the NOPE fields; `update_agent_execution` is tier `destructive`, so a person approved the call before it gets here',
+      'services/core/operator/agent-updater.ts': 'the definition itself',
+    },
+  },
+  // `meshCore.update(` and its spellings. A mesh handle is named `mesh` or
+  // `meshCore` across the server, and a non-null or optional receiver is still
+  // the same write, so each spelling is its own entry: the scan matches text.
+  {
+    what: "writes any agent's manifest by id, runtime, model and effort included",
+    call: 'meshCore.update(',
+    allowed: {
+      'routes/mesh.ts':
+        '`PATCH /api/mesh/agents/:id`, mounted behind `refuseAgentExecutionWrites` (DOR-2328), and refusing permission fields by name (spec `agent-permissions` D10)',
+    },
+  },
+  {
+    what: "writes any agent's manifest by id, through a handle named `mesh`",
+    call: 'mesh.update(',
+    allowed: {
+      'services/core/permissions/index.ts':
+        'writes `permissions` and nothing else, behind the permission routes a person drives and with an audit event (spec `agent-permissions` D10)',
+      'index.ts':
+        "the boot-time permission upgrade sweep (spec `agent-permissions` D13): `writeFolded` is typed to `permissions` and `enabledToolGroups` only, folded from the agent's own legacy fields, never runtime, model or effort",
+    },
+  },
+  {
+    what: "writes any agent's manifest by id, through a non-null `meshCore`",
+    call: 'meshCore!.update(',
+    allowed: {},
+  },
+  {
+    what: "writes any agent's manifest by id, through an optional `meshCore`",
+    call: 'meshCore?.update(',
+    allowed: {},
+  },
+  {
+    // The file write beneath every door above. A caller that reaches it
+    // directly skips `updateAgentManifest`'s field policy and the execution
+    // gate together (DOR-2328 review).
+    what: "writes an agent's `.dork/agent.json` directly, beneath every field policy",
+    call: 'writeManifest(',
+    allowed: {
+      'routes/agents.ts':
+        '`POST /api/agents`, which only CREATES: it answers 409 when the folder already has a manifest, so no existing agent or schedule is moved',
+      'services/core/agent-creator.ts':
+        'creates a new agent workspace; a fresh id has no schedules following it',
+      'services/core/operator/agent-updater.ts':
+        '`updateAgentManifest`, the one edit path, whose callers are pinned in the entry above',
+      'services/mesh/agent-mcp-server-service.ts':
+        'writes `mcpServers` only, spreading the manifest it just read, so every other field lands unchanged',
+      'services/mesh/ensure-dorkbot.ts':
+        'boot-time DorkBot creation and upgrade: system flags, namespace, capabilities and display name, never runtime, model or effort',
+      'routes/test-control.ts':
+        'the test-control routes, which seed fixture agents: mounted by `app.ts` only under `DORKOS_TEST_RUNTIME`, and by the eval harness boot, never by a production start',
     },
   },
 ];
@@ -593,8 +669,10 @@ function callersOf(call: string): string[] {
   // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
   // call to `trustedCaller(` — a plain substring match reports the guard itself
   // as a bypass. A leading `.` is deliberately allowed, because a receiver
-  // (`deps.uninstallFlow.uninstall(`) is still that call.
-  const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace('(', '\\(')}`);
+  // (`deps.uninstallFlow.uninstall(`) is still that call. Every regex
+  // metacharacter in `call` is escaped, not just the paren: `meshCore?.update(`
+  // would otherwise read as an optional `e` and match things it does not name.
+  const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
   for (const [relative, code] of LEXED) {
     if (pattern.test(code)) hits.push(relative);
   }

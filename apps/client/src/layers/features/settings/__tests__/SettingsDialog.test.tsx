@@ -15,6 +15,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+
 import { SettingsDialog } from '../ui/SettingsDialog';
 
 // Mock useIsMobile to always return false (desktop dialog)
@@ -51,6 +52,7 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
     setTab: vi.fn(),
     setSection: vi.fn(),
   }),
+  useOpenConnections: () => vi.fn(),
 }));
 
 // Mock Radix dialog portal to render inline
@@ -232,6 +234,7 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('tab', { name: /remote access/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /danger zone/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /experiments/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^connections$/i })).toBeDefined();
     // The two deleted tabs are gone.
     expect(screen.queryByRole('tab', { name: /integrations/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agents$/i })).toBeNull();
@@ -263,6 +266,32 @@ describe('SettingsDialog', () => {
       await screen.findByRole('switch', { name: /keep agents warm between messages/i })
     ).toBeDefined();
     expect(screen.queryByText('Font family')).toBeNull();
+  });
+
+  // DOR-2419: the plumbing behind the Connections page. Both sections render,
+  // and the DorkOS account row's link lands on Access, where the link lives.
+  it('opens Connections from ?settings=connections with both sections', async () => {
+    deepLink.tab = 'connections';
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('How DorkOS reaches your apps')).toBeDefined();
+    expect(within(panel).getByText('Chat apps')).toBeDefined();
+    expect(await within(panel).findByText('Set up when you connect your first app')).toBeDefined();
+  });
+
+  it('switches to Access from the DorkOS account row', async () => {
+    deepLink.tab = 'connections';
+    const transport = createMockTransport({
+      getConfig: vi.fn().mockResolvedValue(mockConfig),
+      getCloudStatus: vi
+        .fn()
+        .mockResolvedValue({ linked: true, accountLabel: 'me', lastHeartbeatAt: null }),
+    });
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(transport),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Manage in Access/ }));
+    expect(await screen.findByText('On this machine')).toBeDefined();
   });
 
   // Verifies the grouped-nav section headers render in the sidebar. Scoped to the
@@ -335,18 +364,6 @@ describe('SettingsDialog', () => {
     expect(resetBtn?.textContent).toBe('Reset to defaults');
   });
 
-  // The Tools reset rides the tab def's actions slot (DOR-918); nothing else
-  // pins it, so deleting `actions:` from the tools tab would pass silently
-  // without this.
-  it('renders a "Reset to defaults" button in the Tools tab header', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    navigateTo(/tools/i);
-    const heading = screen.getByRole('heading', { name: 'Tools' });
-    const panel = heading.closest('[data-slot="navigation-layout-panel"]')!;
-    const resetBtn = panel.querySelector('button');
-    expect(resetBtn?.textContent).toBe('Reset to defaults');
-  });
-
   // Verifies the Feature suggestions toggle renders in the Preferences tab
   it('renders "Feature suggestions" toggle in Preferences tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
@@ -415,6 +432,7 @@ describe('SettingsDialog — one heading per panel', () => {
     { nav: /preferences/i, title: 'Preferences' },
     { nav: /^tools/i, title: 'Tools' },
     { nav: /^runtimes/i, title: 'Runtimes' },
+    { nav: /^connections$/i, title: 'Connections' },
     { nav: /^access$/i, title: 'Access' },
     { nav: /privacy & data/i, title: 'Privacy & Data' },
     { nav: /^server/i, title: 'Server' },

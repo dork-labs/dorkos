@@ -138,7 +138,8 @@ describe('an agent you manage', () => {
       'Rooms nav',
       'Notifications nav',
       'Skills nav',
-      'Tools & MCP nav',
+      'MCP servers nav',
+      'Permissions nav',
       'Connections nav',
       'Instructions nav',
       'Boundaries nav',
@@ -200,7 +201,8 @@ describe('DorkBot', () => {
       'Rooms nav',
       'Notifications nav',
       'Skills nav',
-      'Tools & MCP nav',
+      'MCP servers nav',
+      'Permissions nav',
     ]);
     // ONE locked row, not two. What is fixed about DorkBot is who it is — its
     // name, its face, its description — and the reason has to say exactly that,

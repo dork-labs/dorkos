@@ -131,15 +131,11 @@ export function toStreamSocketUrl(url: string, lastEventId?: string | null): str
  * legitimate is lost by requiring an own, callable property — that is exactly
  * what `StreamManager` registers.
  *
- * Shared with `transport-stream-pump.ts`, which feeds the same handler maps
- * from the embedded Transport instead of a socket, so both readers of those
- * maps dispatch by one rule.
- *
  * @param handlers - The caller's handler map, keyed by event name.
  * @param event - The event name the frame carried.
  * @param data - The frame payload to hand the handler.
  */
-export function dispatchFrame(
+function dispatchFrame(
   handlers: Record<string, (data: unknown) => void>,
   event: string,
   data: unknown

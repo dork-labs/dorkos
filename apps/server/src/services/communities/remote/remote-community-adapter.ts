@@ -46,6 +46,8 @@ import {
   CommunityWireEventSchema,
   CommunityWireMemberListResponseSchema,
   CommunityWireReadCursorResponseSchema,
+  CommunityWireRedactionPageSchema,
+  CommunityWireThreadSummaryListSchema,
 } from '@dorkos/shared/community-wire';
 import { CommunityAgentEnrollmentSecretResponseSchema } from '@dorkos/shared/community-private-wire';
 import { randomUUID } from 'node:crypto';
@@ -63,6 +65,7 @@ import {
   RemoteConnectionStore,
 } from './connection-store.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
+import type { NativeMirrorEntry } from './mirror-store.js';
 
 const capabilities: CommunityCapabilities = {
   type: 'dorkos-community',
@@ -100,6 +103,7 @@ const remoteAuthorMetadata = new WeakMap<
   Readonly<{ displayName: string; kind: 'human' | 'agent' }>
 >();
 const remoteOriginIdempotencyKeys = new WeakMap<CommunityEntry, string>();
+const remoteThreadReplySeqs = new WeakMap<CommunityEntry, number>();
 const communityUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const activeAdmissions = new Map<string, Promise<CommunityMember>>();
 const remoteRoomMetadata = new WeakMap<
@@ -132,6 +136,19 @@ export function remoteAuthorOf(
 /** Read an owner-authorized native agent-post correlation key retained outside the portable DTO. */
 export function remoteOriginIdempotencyKeyOf(projected: CommunityEntry): string | undefined {
   return remoteOriginIdempotencyKeys.get(projected);
+}
+
+/**
+ * Read the server sequence of the newest reply a projected root's `thread`
+ * summary counted. A reply seen later with a higher sequence is not in that
+ * count, which is how a reader adds live replies without counting one twice.
+ *
+ * @param projected - A thread root returned by {@link RemoteCommunityAdapter.listEntriesWithThreadRoot}.
+ * @returns The sequence, or `undefined` when the root carries no summary.
+ * @internal
+ */
+export function remoteThreadReplySeqOf(projected: CommunityEntry): number | undefined {
+  return remoteThreadReplySeqs.get(projected);
 }
 
 /** Read private native visibility and joined state for a projected remote room. */
@@ -249,6 +266,27 @@ function portableAttachment(value: {
     byteSize: value.byteSize,
     checksum: value.checksum,
   };
+}
+
+/** One page of a remote channel's redaction feed: changed entries as they stand now. */
+export interface RemoteRedactionPage {
+  /** Each changed entry with its native sequence and author, ready for the mirror. */
+  items: NativeMirrorEntry[];
+  /** Opaque, server-signed; store it even when `entries` is empty. */
+  nextCursor: string;
+  /** Whether to ask again at once. */
+  hasMore: boolean;
+}
+
+/**
+ * The Community server has no redaction feed: it answered the route with a bare `404` and no
+ * error code, as a server from before the route does. A readable-channel refusal carries a code.
+ */
+export class RemoteRedactionFeedUnsupportedError extends Error {
+  constructor(readonly community: CommunityRef) {
+    super('This Community server does not publish changed messages');
+    this.name = 'RemoteRedactionFeedUnsupportedError';
+  }
 }
 
 /** Private native stream events retain the server's replay watermark without widening the generic port. */
@@ -617,13 +655,107 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     };
   }
 
-  /** Post and retain the server-confirmed native entry for the qualified local API. */
-  /** Read a browser thread including its authoritative root context entry. */
+  /**
+   * Read one page of a channel's redaction feed: the entries that were deleted, removed, or
+   * erased (or rewritten because they mentioned an erased member) after the cursor.
+   *
+   * @throws RemoteRedactionFeedUnsupportedError when the server predates the feed.
+   * @throws StaleCommunityCursorError when the cursor is no longer valid (after a restore);
+   *   read again from the start.
+   * @throws CommunityRoomNotFoundError when the channel is no longer readable.
+   */
+  async readRedactions(
+    roomId: string,
+    opts: { cursor?: string; actingMemberId?: string; signal?: AbortSignal } = {}
+  ): Promise<RemoteRedactionPage> {
+    const query = new URLSearchParams();
+    if (opts.cursor) query.set('cursor', opts.cursor);
+    let data;
+    try {
+      data = CommunityWireRedactionPageSchema.parse(
+        await this.request(
+          `/api/v1/channels/${encodeURIComponent(roomId)}/redactions${query.size ? `?${query}` : ''}`,
+          undefined,
+          { actingMemberId: opts.actingMemberId },
+          'GET',
+          opts.signal
+        )
+      );
+    } catch (error) {
+      if (error instanceof PinnedHttpError && error.status === 404 && !error.remoteCode)
+        throw new RemoteRedactionFeedUnsupportedError(this.community);
+      throw remoteRoomError(error, this.community, roomId);
+    }
+    return {
+      items: data.redactions.map(({ entry: value }) => ({
+        entry: entry(this.community, value),
+        remoteSeq: value.seq,
+        author: {
+          memberId: value.authorMemberId,
+          displayName: value.authorDisplayName,
+          kind: value.authorKind,
+        },
+      })),
+      nextCursor: data.nextCursor,
+      hasMore: data.hasMore,
+    };
+  }
+
+  /**
+   * Put the reply count on every root in a browser history page that has
+   * replies — the "3 replies" line under it.
+   *
+   * Only this browser read asks: an agent or the cache importer reading
+   * history has no line to draw. Counts are a nicety on top of the history, so
+   * a server from before the route (404) or any other failure to read them
+   * leaves the page exactly as it was; only a revoked connection is passed on.
+   */
+  private async addThreadSummaries(
+    roomId: string,
+    entries: CommunityEntry[],
+    opts: ListCommunityEntriesOpts
+  ): Promise<void> {
+    const roots = entries.filter((item) => item.depth === 0);
+    if (roots.length === 0) return;
+    let data;
+    try {
+      data = CommunityWireThreadSummaryListSchema.parse(
+        await this.request(
+          `/api/v1/channels/${encodeURIComponent(roomId)}/threads?roots=${roots
+            .map((item) => encodeURIComponent(item.id))
+            .join(',')}`,
+          undefined,
+          { actingMemberId: opts.actingMemberId },
+          'GET'
+        )
+      );
+    } catch (error) {
+      if (error instanceof RemoteConnectionAuthorizationError) throw error;
+      return;
+    }
+    const byRoot = new Map(data.threads.map((thread) => [thread.rootEntryId, thread]));
+    for (const root of roots) {
+      const summary = byRoot.get(root.id);
+      if (!summary) continue;
+      root.thread = { replyCount: summary.replyCount, lastReplyAt: summary.lastReplyAt };
+      remoteThreadReplySeqs.set(root, summary.lastReplySeq);
+    }
+  }
+
+  /**
+   * Read history for the browser: a thread page includes its authoritative
+   * root context entry, and a channel page carries the reply count on every
+   * root that has replies (see {@link RemoteCommunityAdapter.addThreadSummaries}).
+   */
   async listEntriesWithThreadRoot(
     roomId: string,
     opts: ListCommunityEntriesOpts = {}
   ): Promise<CommunityEntryPage> {
-    if (!opts.thread) return this.listEntries(roomId, opts);
+    if (!opts.thread) {
+      const page = await this.listEntries(roomId, opts);
+      await this.addThreadSummaries(roomId, page.entries, opts);
+      return page;
+    }
     const query = new URLSearchParams();
     if (opts.cursor) query.set('cursor', opts.cursor);
     if (opts.limit) query.set('limit', String(Math.min(opts.limit, 100)));
@@ -642,6 +774,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     };
   }
 
+  /** Post and retain the server-confirmed native entry for the qualified local API. */
   async postEntry(
     roomId: string,
     input: PostCommunityEntryInput,

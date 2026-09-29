@@ -17,7 +17,6 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     capabilities: [],
     behavior: { responseMode: 'always' },
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
     registeredAt: '2026-02-24T00:00:00.000Z',
     registeredBy: 'test',

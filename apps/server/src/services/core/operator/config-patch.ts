@@ -23,6 +23,12 @@ import { configManager } from '../config-manager.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
+import { expandClaudeAccountHome } from '../../runtimes/claude-code/claude-config-dir.js';
+import {
+  defaultAccountColorRefusal,
+  planClaudeAccountWrite,
+  takeAccountsSeen,
+} from './claude-account-patch.js';
 
 /** Keys that must be filtered during deep merge to prevent prototype pollution. */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -53,7 +59,7 @@ let applyClaudeAccountChange: (() => void) | undefined;
  * Wiring it instead means the fact "am I the process that can re-derive this?"
  * is answered by construction rather than guessed at, and the CLI logs what is
  * actually true (see {@link applyConfigPatch}). Same shape and same reasoning as
- * `initStandingGrantPosture` and `initCapabilityTierGate`.
+ * `initCapabilityTierGate`.
  *
  * @param apply - The re-derivation to run after an account change lands.
  */
@@ -61,7 +67,7 @@ export function initClaudeAccountApplier(apply: () => void): void {
   applyClaudeAccountChange = apply;
 }
 
-/** Drop the wired applier. Test-only seam, mirroring `resetStandingGrantPosture`. */
+/** Drop the wired applier. Test-only seam, mirroring `resetCapabilityTierGate`. */
 export function resetClaudeAccountApplier(): void {
   applyClaudeAccountChange = undefined;
 }
@@ -371,6 +377,29 @@ export type ConfigPatchResult =
  * errors — persisting them is allowed, matching the route's long-standing
  * behavior.
  *
+ * ## The Claude account registry is merged, not replaced
+ *
+ * `runtimes.claudeCode.accounts` is shared with flow, which may add a row while
+ * the server runs, and the settings screen only sees the rows and fields
+ * `GET /api/config` shows. So this merges each patched row onto the stored row
+ * with the same id (else the same path), keeps every field the patch leaves
+ * out, and keeps every stored row the read rules skip, exactly as stored (see
+ * `planClaudeAccountWrite`). A listed row the patch leaves out is removed only
+ * when the patch's `runtimes.claudeCode.accountsSeen` names it, so a row flow
+ * added after the screen loaded survives a save from that screen. A patch with
+ * no `accountsSeen` (the CLI's `dorkos config set`, the `config_patch` tool)
+ * replaces the listed rows in full, which is how those writers remove one. A
+ * consequence worth stating: **no write through this function can delete a row
+ * the read rules skip** — not the settings
+ * screen, and not the operator `config_patch` tool, which reaches the same
+ * path. Removing one is a hand edit of `config.json`. A new or changed id must
+ * match the contract's pattern and must not be `default`; an unchanged id is
+ * never refused.
+ *
+ * The merge base is the file as it is NOW: `configManager.getAll()` reads the
+ * file from disk on every call (conf's `store` getter), so a row flow added a
+ * moment ago is in `current` and survives this write.
+ *
  * @param patch - The partial config to merge (must be a JSON object).
  * @returns `{ ok: true, config, warnings }` on success, else `{ ok: false, error, details? }`.
  */
@@ -378,7 +407,13 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     return { ok: false, error: 'Request body must be a JSON object' };
   }
-  const patchObj = patch as Record<string, unknown>;
+  // `accountsSeen` rides beside the account list but is not a setting: taken
+  // out here, before anything merges or validates it.
+  const taken = takeAccountsSeen(patch as Record<string, unknown>);
+  if (!taken.ok) return { ok: false, error: 'Validation failed', details: taken.details };
+  const patchObj = taken.patch;
+  const colorRefusal = defaultAccountColorRefusal(patchObj);
+  if (colorRefusal) return { ok: false, error: 'Validation failed', details: colorRefusal };
 
   const current = configManager.getAll();
   const merged = deepMerge(current as unknown as Record<string, unknown>, patchObj);
@@ -390,6 +425,32 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   // BACK, turning "go back to inheriting" into "pin to the old account, for
   // good". See `settleLegacyAccountAlias`.
   settleLegacyAccountAlias(merged, patchObj);
+
+  // The registry: validate only the rows a reader lists (merged with the patch
+  // when it names them), and carry the rest across untouched.
+  const patchedClaude = (patchObj.runtimes as { claudeCode?: unknown } | undefined)?.claudeCode;
+  const namesAccounts = isPlainObject(patchedClaude) && 'accounts' in patchedClaude;
+  const storedAccounts = (current.runtimes?.claudeCode as { accounts?: unknown } | undefined)
+    ?.accounts;
+  const accountPlan = planClaudeAccountWrite(
+    storedAccounts,
+    namesAccounts ? (patchedClaude as { accounts?: unknown }).accounts : undefined,
+    taken.seen
+  );
+  if (!accountPlan.ok) {
+    return { ok: false, error: 'Validation failed', details: accountPlan.details };
+  }
+  const mergedRuntimes = merged.runtimes;
+  const mergedClaude = isPlainObject(mergedRuntimes) ? mergedRuntimes.claudeCode : undefined;
+  if (isPlainObject(mergedClaude) && (namesAccounts || Array.isArray(storedAccounts))) {
+    // Copied, never assigned in place: when the patch does not name `runtimes`,
+    // `deepMerge` hands back the stored section by reference, and that object is
+    // `before`, which the audit line and the account-change check compare with.
+    merged.runtimes = {
+      ...(mergedRuntimes as Record<string, unknown>),
+      claudeCode: { ...mergedClaude, accounts: accountPlan.accounts },
+    };
+  }
   const parseResult = UserConfigSchema.safeParse(merged);
 
   if (!parseResult.success) {
@@ -410,8 +471,30 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
     }
   }
 
-  // Apply each patched top-level key from the validated result.
+  // Apply each patched top-level key from the validated result, with the
+  // registry rows the reader skips put back behind the listed ones.
   const validated = parseResult.data;
+  // The default account is stored absolute. The schema accepts any text (it is
+  // shared with the client, which has no home folder to expand against), and a
+  // `~/.claude2` from `dorkos config set` or the `config_patch` tool would
+  // otherwise reach `CLAUDE_CONFIG_DIR` literally, where no shell expands it.
+  // Normalized after the parse, not before, so a legacy `activeAccount` the
+  // schema's heal carries across is expanded too. Accepted, never refused.
+  const claudeCode = validated.runtimes?.claudeCode;
+  if (claudeCode && typeof claudeCode.defaultAccount === 'string') {
+    claudeCode.defaultAccount = expandClaudeAccountHome(claudeCode.defaultAccount);
+  }
+  if (Array.isArray(accountPlan.accounts)) {
+    type Row = (typeof validated.runtimes.claudeCode.accounts)[number];
+    const raw = accountPlan.accounts;
+    validated.runtimes.claudeCode.accounts = [
+      // The schema strips fields it does not declare; a row keeps them.
+      ...validated.runtimes.claudeCode.accounts.map((row, index) =>
+        isPlainObject(raw[index]) ? ({ ...raw[index], ...row } as Row) : row
+      ),
+      ...(accountPlan.unlisted as Row[]),
+    ];
+  }
   for (const key of Object.keys(patchObj)) {
     if (key in validated) {
       const configKey = key as keyof typeof validated;

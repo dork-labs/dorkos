@@ -63,7 +63,11 @@ import { commandDropReason } from './command-formats.js';
 // Codex reads `.agents/skills/<name>` directly; Claude Code reads `.claude/skills`.
 // Installed-plugin skills are symlinked there under their namespaced name
 // (shared with the scanner + sweep).
-import { AGENTS_SKILLS_DIR, CLAUDE_PLUGIN_ROOT_TOKEN } from '../scan/scanner.js';
+import {
+  AGENTS_SKILLS_DIR,
+  CLAUDE_PLUGIN_DATA_TOKEN,
+  CLAUDE_PLUGIN_ROOT_TOKEN,
+} from '../scan/scanner.js';
 
 /** Repo-relative Claude Code project slash-command dir (holds authored + wrapper commands). */
 export const CLAUDE_COMMANDS_DIR = '.claude/commands';
@@ -229,11 +233,66 @@ export function pluginRootText(absInstallDir: string, platform: NodeJS.Platform)
   return platform === 'win32' ? absInstallDir.split('\\').join('/') : absInstallDir;
 }
 
-/** Build a command wrapper: rewrite the plugin-root token to absolute, mark it generated. */
-function buildCommandWrapper(content: string, absInstallDir: string, relDir: string): string {
-  const rewritten = content
+/**
+ * A plugin's data directory as it should read inside generated text: the
+ * install's own `.dork/data` (ADR 260923-163515), spelled like
+ * {@link pluginRootText}.
+ *
+ * @param absInstallDir - the plugin's absolute install directory.
+ * @param platform - the running platform, i.e. `process.platform`.
+ * @returns the data dir as it should appear in generated text.
+ */
+export function pluginDataText(absInstallDir: string, platform: NodeJS.Platform): string {
+  return `${pluginRootText(absInstallDir, platform)}/.dork/data`;
+}
+
+/**
+ * Rewrite both plugin tokens Claude Code expands, `${CLAUDE_PLUGIN_ROOT}` and
+ * `${CLAUDE_PLUGIN_DATA}`, to the install's absolute paths.
+ *
+ * @param text - generated text still carrying the tokens.
+ * @param absInstallDir - the plugin's absolute install directory.
+ * @returns the text with both tokens resolved.
+ */
+export function rewritePluginTokens(text: string, absInstallDir: string): string {
+  return text
     .split(CLAUDE_PLUGIN_ROOT_TOKEN)
-    .join(pluginRootText(absInstallDir, process.platform));
+    .join(pluginRootText(absInstallDir, process.platform))
+    .split(CLAUDE_PLUGIN_DATA_TOKEN)
+    .join(pluginDataText(absInstallDir, process.platform));
+}
+
+/** Single-quote a string for a POSIX shell (`'` becomes `'\''`). */
+function shellQuote(value: string): string {
+  return `'${value.split("'").join("'\\''")}'`;
+}
+
+/**
+ * The prefix a projected Claude Code hook command carries so a script reading
+ * `process.env.CLAUDE_PLUGIN_ROOT` / `CLAUDE_PLUGIN_DATA` gets the same paths
+ * Claude Code would export to a plugin's own hook. A projected hook runs as a
+ * PROJECT hook, where Claude Code sets neither variable (ADR 260923-163515).
+ *
+ * DorkOS's own addition, not the package's command: it is applied only where
+ * the settings file is written ({@link toManagedHooks}), never in
+ * {@link projectedHooks}, so it never enters the consent digest and a package a
+ * person already approved stays approved. Claude Code runs hook commands
+ * through a POSIX shell (Git Bash on Windows). The generated
+ * Codex/Cursor/Copilot file does not get it: Copilot also runs PowerShell.
+ *
+ * @param absInstallDir - the plugin's absolute install directory.
+ * @param platform - the running platform, i.e. `process.platform`.
+ * @returns `export CLAUDE_PLUGIN_ROOT='…' CLAUDE_PLUGIN_DATA='…'; `
+ */
+export function pluginEnvPrefix(absInstallDir: string, platform: NodeJS.Platform): string {
+  const root = shellQuote(pluginRootText(absInstallDir, platform));
+  const data = shellQuote(pluginDataText(absInstallDir, platform));
+  return `export CLAUDE_PLUGIN_ROOT=${root} CLAUDE_PLUGIN_DATA=${data}; `;
+}
+
+/** Build a command wrapper: rewrite the plugin tokens to absolute, mark it generated. */
+function buildCommandWrapper(content: string, absInstallDir: string, relDir: string): string {
+  const rewritten = rewritePluginTokens(content, absInstallDir);
   return insertAfterFrontmatter(rewritten, generatedCommandMarkerLine(relDir));
 }
 
@@ -276,9 +335,7 @@ function buildOpencodeCommandWrapper(
   absInstallDir: string,
   relDir: string
 ): string {
-  const rewritten = content
-    .split(CLAUDE_PLUGIN_ROOT_TOKEN)
-    .join(pluginRootText(absInstallDir, process.platform));
+  const rewritten = rewritePluginTokens(content, absInstallDir);
   const { frontmatter, body } = splitFrontmatter(rewritten);
   const description = frontmatterField(frontmatter, 'description');
   const marker = generatedCommandMarkerLine(relDir);
@@ -301,9 +358,9 @@ function generatedOpencodeGitignore(wrapperFilenames: readonly string[]): string
 }
 
 /**
- * Rewrite every `${CLAUDE_PLUGIN_ROOT}` occurrence in an installed plugin's hook
- * commands to its absolute install dir, leaving the matcher-group shape otherwise
- * intact.
+ * Rewrite every `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` occurrence in
+ * an installed plugin's hook commands to its absolute install dir and data dir,
+ * leaving the matcher-group shape otherwise intact.
  *
  * For an INSTALLED plugin the install root is known at plan time, so its hooks
  * become portable — the generated Codex/Cursor/Copilot hook files then carry the
@@ -327,9 +384,7 @@ export function rewritePluginRootInHooks(
       ...group,
       hooks: group.hooks.map((h) => ({
         ...h,
-        command: h.command
-          .split(CLAUDE_PLUGIN_ROOT_TOKEN)
-          .join(pluginRootText(absInstallDir, process.platform)),
+        command: rewritePluginTokens(h.command, absInstallDir),
       })),
     }));
   }
@@ -444,10 +499,12 @@ function toManagedHooks(
 ): ClaudeHooksConfig | undefined {
   const rewritten = rewritePluginRootInHooks(plugin.hooks, absInstallDir);
   if (!rewritten) return undefined;
+  const prefix = pluginEnvPrefix(absInstallDir, process.platform);
   const out = emptyHooksConfig();
   for (const [event, groups] of Object.entries(rewritten)) {
     out[event] = groups.map((group): ManagedHookGroup => ({
       ...group,
+      hooks: group.hooks.map((h) => ({ ...h, command: `${prefix}${h.command}` })),
       [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
     }));
   }
@@ -465,6 +522,30 @@ function toManagedHooks(
  */
 export const PLUGIN_ROOT_SKILL_WARNING_REASON = `skill SKILL.md references ${CLAUDE_PLUGIN_ROOT_TOKEN}, which only resolves in plugin context; the projected copy will not expand it`;
 
+/** The same warning for `${CLAUDE_PLUGIN_DATA}` (DOR-2245). */
+export const PLUGIN_DATA_SKILL_WARNING_REASON = `skill SKILL.md references ${CLAUDE_PLUGIN_DATA_TOKEN}, which only resolves in plugin context; the projected copy will not expand it`;
+
+/** Both tokens in one skill: one warning, naming both. */
+const PLUGIN_TOKENS_SKILL_WARNING_REASON = `skill SKILL.md references ${CLAUDE_PLUGIN_ROOT_TOKEN} and ${CLAUDE_PLUGIN_DATA_TOKEN}, which only resolve in plugin context; the projected copy will not expand them`;
+
+/**
+ * The reason a projected skill that still carries a plugin token is flagged
+ * with, or `undefined` when it carries none. One warning per skill, whichever
+ * tokens it uses.
+ *
+ * @param skill - the skill's token flags.
+ * @returns the warning reason, or `undefined`.
+ */
+export function pluginTokenSkillWarningReason(skill: {
+  usesPluginRoot: boolean;
+  usesPluginData?: boolean;
+}): string | undefined {
+  if (skill.usesPluginRoot && skill.usesPluginData) return PLUGIN_TOKENS_SKILL_WARNING_REASON;
+  if (skill.usesPluginRoot) return PLUGIN_ROOT_SKILL_WARNING_REASON;
+  if (skill.usesPluginData) return PLUGIN_DATA_SKILL_WARNING_REASON;
+  return undefined;
+}
+
 /**
  * The `${CLAUDE_PLUGIN_ROOT}`-in-a-projected-skill warning, or `undefined` when
  * the skill is clean.
@@ -478,17 +559,12 @@ export const PLUGIN_ROOT_SKILL_WARNING_REASON = `skill SKILL.md references ${CLA
 function pluginRootSkillWarning(
   harness: HarnessId,
   namespaced: string,
-  usesPluginRoot: boolean,
+  skill: { usesPluginRoot: boolean; usesPluginData?: boolean },
   source: string
 ): ProjectionWarning | undefined {
-  if (!usesPluginRoot) return undefined;
-  return {
-    artifact: 'skill',
-    harness,
-    name: namespaced,
-    source,
-    reason: PLUGIN_ROOT_SKILL_WARNING_REASON,
-  };
+  const reason = pluginTokenSkillWarningReason(skill);
+  if (reason === undefined) return undefined;
+  return { artifact: 'skill', harness, name: namespaced, source, reason };
 }
 
 /**
@@ -539,12 +615,7 @@ export function planInstalledSkills(
             reason: `${HARNESS_LABELS[harness]} reads ${AGENTS_SKILLS_DIR} directly; this plugin's skills are linked at ${AGENTS_SKILLS_DIR}/${namespaced}`,
           }
     );
-    const warning = pluginRootSkillWarning(
-      harness,
-      namespaced,
-      skill.usesPluginRoot,
-      skill.sourceDir
-    );
+    const warning = pluginRootSkillWarning(harness, namespaced, skill, skill.sourceDir);
     if (warning) warnings.push(warning);
   }
 
@@ -624,7 +695,7 @@ export function planCanonicalSkillLinks(input: {
       const warning = pluginRootSkillWarning(
         SCHEDULE_LINK_ATTRIBUTION,
         namespaced,
-        skill.usesPluginRoot,
+        skill,
         skill.sourceDir
       );
       if (warning) warnings.push(warning);

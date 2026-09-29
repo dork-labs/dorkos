@@ -4,7 +4,8 @@ import type { PlaygroundSection } from '../playground-registry';
  * Settings sections from SettingsPage.
  *
  * Sources: SettingsShowcases — Full Settings Dialog, Individual Tabs,
- * Claude Code Accounts, Execution Exceptions Strip, Mobile Drill-In,
+ * Claude Code Accounts, FoundAccountsGroup, Runtime Usage, Execution
+ * Exceptions Strip, Mobile Drill-In,
  * Loading & Empty States, Settings Primitives — and RuntimeCardShowcases,
  * which owns the Runtimes category.
  */
@@ -117,7 +118,34 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'switch',
       'section',
       'runtime card',
+      'usage',
+      'color',
+      'flow',
     ],
+  },
+  {
+    id: 'foundaccountsgroup',
+    title: 'FoundAccountsGroup',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: [
+      'found on this computer',
+      'claude',
+      'account',
+      'folder',
+      'add',
+      'dismiss',
+      'organization',
+      'managed',
+      'discover',
+    ],
+  },
+  {
+    id: 'runtime-usage',
+    title: 'Runtime Usage',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: ['codex', 'opencode', 'usage', 'spend', 'limit', 'weekly', 'runtime card'],
   },
   {
     id: 'execution-exceptions-strip',

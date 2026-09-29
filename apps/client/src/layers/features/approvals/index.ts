@@ -8,12 +8,9 @@
  * {@link ApprovalList}, so the card a person answers is identical wherever they
  * happen to be standing.
  *
- * The same two surfaces carry standing permissions — the operator's answer to
- * "stop asking about this agent doing this thing" (spec
- * `agent-approval-settings`). {@link StandingPermissionsSettings} is the canonical
- * home in Settings under Access, and the header panel mirrors the live list
- * through {@link StandingPermissionList}. Both, because a permission a person
- * cannot find is a dark pattern.
+ * The card is the request card of spec `agent-permissions` D7: three answers,
+ * Allow, Always allow and Deny. Always allow is a per-agent, per-action
+ * permission setting, found afterwards on the agent's Permissions page.
  *
  * @module features/approvals
  */
@@ -42,8 +39,4 @@ export {
 // Composing this rather than re-deriving it is what keeps one agent the same
 // colour and the same badge on both cards.
 export { RequestingAgent } from './ui/RequestingAgent';
-export { StandingPermissionList } from './ui/StandingPermissionList';
-export { StandingPermissionsUnavailable } from './ui/StandingPermissionsUnavailable';
-export { StandingPermissionsSettings } from './ui/StandingPermissionsSettings';
 export { AutonomyAcknowledgementRow } from './ui/AutonomyAcknowledgementRow';
-export { useStandingPermissions } from './model/use-standing-permissions';

@@ -168,6 +168,8 @@ function anApproval(): PendingApproval {
     tier: 'destructive',
     summary: 'Scout wants to write src/index.ts.',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 600_000).toISOString(),
   };

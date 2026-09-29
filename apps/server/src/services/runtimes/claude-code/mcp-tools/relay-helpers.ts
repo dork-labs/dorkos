@@ -8,8 +8,17 @@ import path from 'node:path';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
-import type { RelayBudget } from '@dorkos/shared/relay-schemas';
+import {
+  reachesServerDestination,
+  SERVER_DESTINATION_REFUSAL,
+  type RelayBudget,
+} from '@dorkos/shared/relay-schemas';
 import { logger } from '../../../../lib/logger.js';
+import {
+  homeOf,
+  resolveAgentHome,
+  type HomeResolution,
+} from '../../../core/agent-identity/index.js';
 
 /** Sender identity injected on the external `/mcp` surface (no per-session context). */
 export const EXTERNAL_MCP_SENDER = 'relay.external.mcp';
@@ -61,12 +70,27 @@ export interface SenderIdentity {
  *   the question the label exists to answer. `${basename}-${hash}` keeps
  *   both: legible AND distinct even when two projects share a leaf name.
  *
+ * **The registry is asked about the session's identity ANCHOR, not its
+ * directory** (DOR-2091). A room turn in a room with files stands in the agent's
+ * worktree, which hosts no agent; the anchor is the agent that worktree was
+ * handed to. A REFUSED anchor — a working copy nobody can vouch for, or one that
+ * is not the turn's agent's — asks the registry nothing and gets the non-agent
+ * session subject, so it can neither send as an agent nor as anybody's
+ * integration owner.
+ *
  * @param deps - Tool dependencies, for the Mesh registry lookup
  * @param cwd - The session's working directory, when known
+ * @param anchor - Whose identity the session carries; defaults to the home
+ *   `cwd` resolves to
  */
-export function resolveSenderIdentity(deps: McpToolDeps, cwd: string | undefined): SenderIdentity {
-  if (cwd && deps.meshCore) {
-    const identity = deps.meshCore.getSubjectByPath(cwd);
+export function resolveSenderIdentity(
+  deps: McpToolDeps,
+  cwd: string | undefined,
+  anchor: HomeResolution = resolveAgentHome(cwd)
+): SenderIdentity {
+  const agentPath = homeOf(anchor);
+  if (agentPath && deps.meshCore) {
+    const identity = deps.meshCore.getSubjectByPath(agentPath);
     if (identity) return identity;
   }
   return { subject: cwd ? `relay.session.${sessionSubjectSegment(cwd)}` : EXTERNAL_MCP_SENDER };
@@ -200,6 +224,31 @@ export function isReservedSubject(subject: string, identity: SenderIdentity): bo
 }
 
 /**
+ * The refusal for a send whose destination or reply address is server-owned, or
+ * `undefined` when every subject given is one an agent may send to (DOR-2432).
+ *
+ * Checked before a send touches the bus, so `relay_send_and_wait` and
+ * `relay_send_async` never mint an inbox for a message that cannot go out. The
+ * publish pipeline holds the same rule for agent principals; this is the
+ * answer the model reads, with the rule named in it.
+ *
+ * @param subjects - The destination, then any reply address, as the caller wrote them
+ */
+export function serverDestinationRefusal(...subjects: Array<string | undefined>) {
+  const refused = subjects.find(
+    (subject): subject is string => subject !== undefined && reachesServerDestination(subject)
+  );
+  if (refused === undefined) return undefined;
+  return jsonContent(
+    {
+      error: `Cannot send to "${refused}": ${SERVER_DESTINATION_REFUSAL}`,
+      code: 'RESERVED_SUBJECT',
+    },
+    true
+  );
+}
+
+/**
  * The error response for a Relay endpoint the caller does not own.
  *
  * Says what to do next instead of only saying no: the same response covers an
@@ -233,6 +282,41 @@ export function inferEndpointType(
   if (subject.startsWith('relay.inbox.')) return 'persistent';
   if (subject.startsWith('relay.agent.')) return 'agent';
   return 'unknown';
+}
+
+/**
+ * The payload a `relay_send*` call publishes, with its optional `account`
+ * written in (spec `claude-account-fleet` D6, DOR-2384).
+ *
+ * An object payload gains the field; a text payload becomes `{ content, account }`,
+ * which the receiving agent reads the same way. Any other payload cannot carry
+ * a field, so an `account` on it is refused rather than silently dropped.
+ *
+ * Writing the field grants nothing: the receiving host honors it only for a
+ * new conversation and only when the account advisor allows the pick.
+ *
+ * @param payload - The payload the caller passed.
+ * @param account - The Claude account (registry id) the caller named, if any.
+ * @returns `{ payload }` to publish, or `{ error }` holding the tool's error response.
+ */
+export function payloadWithAccount(
+  payload: unknown,
+  account: string | undefined
+): { payload: unknown } | { error: ReturnType<typeof jsonContent> } {
+  if (account === undefined) return { payload };
+  if (typeof payload === 'string') return { payload: { content: payload, account } };
+  if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+    return { payload: { ...(payload as Record<string, unknown>), account } };
+  }
+  return {
+    error: jsonContent(
+      {
+        error: 'An account can only ride on a text or object payload.',
+        code: 'INVALID_PAYLOAD',
+      },
+      true
+    ),
+  };
 }
 
 /** Guard that returns an error response when Relay is disabled. */

@@ -207,7 +207,7 @@ Flip `Status: IN PROGRESS` → `COMPLETE`, append the total duration, and print 
 - **A tier that did not execute is never green.** Cache replay, a skipped tier, a blocked port, a suite that matched zero cases — each has its own verdict word (`PASS (CACHED)`, `SKIPPED`, `BLOCKED`, `NOT AVAILABLE YET`). None of them is PASS.
 - **Never infer a verdict from a green exit code alone** when the command has a known way of exiting zero without working. Turbo's replay is the one in this repo; `scripts/assert-tests-executed.sh` exists because a full cache hit prints "29 successful" in ~280ms and CI could not tell the difference either.
 - **Name failures, don't count them.** "3 specs failed" is not a report; the three spec names are.
-- **Never claim a tier ran on a surface you didn't touch.** This ladder covers the cockpit; the Obsidian plugin, the desktop apps, and the marketing site are outside it unless explicitly run.
+- **Never claim a tier ran on a surface you didn't touch.** This ladder covers the cockpit; the desktop apps and the marketing site are outside it unless explicitly run.
 - **Report the paid tier's cost after the fact** when one runs — the evals CLI prints which credential answered and what the run spent; carry that number into the report.
 
 ## Technical Notes

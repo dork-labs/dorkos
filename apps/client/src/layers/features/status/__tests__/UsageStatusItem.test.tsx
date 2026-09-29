@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { UsageStatusItem, UsageDetail, hasRenderableUsage } from '../ui/UsageStatusItem';
+import { UsageStatusItem, UsageDetail } from '../ui/UsageStatusItem';
+import { hasRenderableUsage } from '../lib/account-usage-status';
 
 afterEach(cleanup);
 
@@ -39,17 +41,22 @@ describe('UsageStatusItem', () => {
     expect(screen.getByLabelText('Subscription usage')).toBeInTheDocument();
   });
 
-  it('flags high utilization amber (>= 80%) and exhausted red', () => {
+  it('flags high utilization amber (>= 80%) and exhausted red, in text tokens that clear 4.5:1', () => {
     const { rerender } = render(
       <UsageStatusItem usage={{ kind: 'subscription', utilization: 0.85 }} />,
       { wrapper: Wrapper }
     );
-    expect(screen.getByLabelText('Subscription usage').className).toContain('text-amber-500');
+    // The text-tuned amber: text-amber-500 read 2.06:1 on the light status bar.
+    const item = () => screen.getByLabelText('Subscription usage');
+    expect(item()).toHaveClass('text-status-warning-fg');
+    expect(item()).not.toHaveClass('text-amber-500');
 
     rerender(
       <UsageStatusItem usage={{ kind: 'subscription', utilization: 1, state: 'exhausted' }} />
     );
-    expect(screen.getByLabelText('Subscription usage').className).toContain('text-red-500');
+    // The text-tuned red: text-red-500 read 3.60:1 on the light status bar.
+    expect(item()).toHaveClass('text-destructive');
+    expect(item()).not.toHaveClass('text-red-500');
   });
 
   it('degrades a subscription with no utilization to its cost figure', () => {
@@ -246,5 +253,102 @@ describe('UsageDetail — the sentence beside the figure', () => {
       }
     );
     expect(screen.queryByText(/Estimated/)).not.toBeInTheDocument();
+  });
+});
+
+describe('UsageStatusItem — freshness (spec claude-account-ui §6.8)', () => {
+  const NOW = new Date('2026-09-28T12:00:00.000Z');
+  const usage: UsageStatus = {
+    kind: 'subscription',
+    utilization: 0.4,
+    windowLabel: '5-hour window',
+    state: 'ok',
+  };
+  const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60_000).toISOString();
+
+  it('says "· old" after a stale healthy number, in the full muted color (04 §13)', () => {
+    render(<UsageStatusItem usage={usage} observedAt={minutesAgo(61)} now={NOW} />, {
+      wrapper: Wrapper,
+    });
+    // The status line is already muted, so gray alone cannot tell stale from
+    // fresh: the word does. No lighter step, which fell under 4.5:1.
+    expect(screen.getByText('40%')).toHaveClass('text-muted-foreground');
+    expect(screen.getByText('40%')).not.toHaveClass('text-muted-foreground/70');
+    expect(screen.getByText('· old')).toHaveClass('text-muted-foreground');
+  });
+
+  it('says nothing extra after a fresh number at 59 minutes', () => {
+    render(<UsageStatusItem usage={usage} observedAt={minutesAgo(59)} now={NOW} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.queryByText('· old')).not.toBeInTheDocument();
+    expect(screen.getByText('40%')).not.toHaveClass('text-muted-foreground');
+  });
+
+  it('mutes a stale amber number and says "· old" after it', () => {
+    render(
+      <UsageStatusItem
+        usage={{ ...usage, utilization: 0.91, state: 'warning' }}
+        observedAt={minutesAgo(61)}
+        now={NOW}
+      />,
+      { wrapper: Wrapper }
+    );
+    expect(screen.getByText('91%')).toHaveClass('text-muted-foreground');
+    expect(screen.getByText('· old')).toHaveClass('text-muted-foreground');
+  });
+
+  it('never dims a reading whose time is unknown', () => {
+    render(<UsageStatusItem usage={usage} now={NOW} />, { wrapper: Wrapper });
+    expect(screen.getByText('40%')).not.toHaveClass('text-muted-foreground');
+    expect(screen.queryByText('· old')).not.toBeInTheDocument();
+  });
+
+  it('ends the tooltip with how old the reading is', async () => {
+    render(<UsageStatusItem usage={usage} observedAt={minutesAgo(120)} now={NOW} />, {
+      wrapper: Wrapper,
+    });
+    fireEvent.focus(screen.getByLabelText('Subscription usage'));
+    expect((await screen.findAllByText('as of 2h ago')).length).toBeGreaterThan(0);
+  });
+});
+
+describe('UsageDetail — the overage note and "Rate limit reached" on a panel', () => {
+  it('wear the text-tuned warning and error tokens, which clear 4.5:1 on a popover', () => {
+    render(
+      <UsageDetail
+        usage={{
+          kind: 'subscription',
+          utilization: 1,
+          state: 'exhausted',
+          detail: 'Using overage capacity',
+        }}
+      />
+    );
+    expect(screen.getByText('Using overage capacity')).toHaveClass('text-status-warning-fg');
+    expect(screen.getByText('Rate limit reached')).toHaveClass('text-destructive');
+  });
+});
+
+describe('UsageDetail — on the inverted tooltip', () => {
+  it("draws its labels and notes in the tooltip's own muted text, never the page gray", () => {
+    render(
+      <UsageDetail
+        surface="tooltip"
+        usage={{
+          kind: 'subscription',
+          utilization: 0.4,
+          windowLabel: '5-hour window',
+          costUsd: 1,
+          costBasis: 'unknown',
+        }}
+      />
+    );
+    // The page's muted gray read 2.28:1 (light) and 1.87:1 (dark) on the tooltip.
+    for (const label of ['Utilization', 'Window']) {
+      expect(screen.getByText(label)).toHaveClass('text-dui-background/70');
+      expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground');
+    }
+    expect(screen.getByText(/no price was listed/)).toHaveClass('text-dui-background/70');
   });
 });

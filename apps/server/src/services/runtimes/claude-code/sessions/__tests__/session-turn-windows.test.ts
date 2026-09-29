@@ -763,6 +763,11 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(h.usages).toHaveLength(3);
     for (const usage of h.usages) {
       expect(usage.subscription).toMatchObject({ kind: 'subscription', utilization: 0.25 });
+      // The warm path's account-wide readings ride the same callback (spec
+      // `claude-account-fleet` D2), for `persistent-dispatch` to record.
+      expect(usage.accountUsage?.observations).toEqual([
+        expect.objectContaining({ key: 'five_hour', usedPct: 25, source: 'sdk_usage' }),
+      ]);
     }
   });
 

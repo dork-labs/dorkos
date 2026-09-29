@@ -370,19 +370,11 @@ Update user configuration. Accepts a partial config object that is deep-merged w
 ```json
 {
   "server": { "port": 8080 },
-  "ui": { "theme": "dark" },
-  "agentContext": {
-    "relayTools": true,
-    "meshTools": true,
-    "adapterTools": true,
-    "tasksTools": false
-  }
+  "ui": { "theme": "dark" }
 }
 ```
 
-The `agentContext` section controls global tool domain toggles. Each toggle determines whether the corresponding MCP tool group's DOCUMENTATION is included in agent system prompts by default. It does not restrict which tools a session can call: every tool stays registered either way (ADR-260726-171347). Per-agent overrides are set via `enabledToolGroups` on the agent manifest (see [PATCH /api/agents/current](#patch-apiagentscurrent)).
-
-These four are the only groups with a global default. The per-agent grant key `roomsManage` deliberately has no twin here (ADR-260828-123331): it is granted per agent or not at all, because a second and weaker path to the same grant would be a way around the first.
+What an agent may actually do is set by permissions (`/api/permissions/*`, `/api/agents/:id/permissions`), never by `PATCH /api/config`: the generic config writers refuse any `permissions.*` key with `USE_PERMISSIONS_API` (spec `agent-permissions` D10, D13). The `agentContext` section this endpoint used to accept — four global toggles that only ever hid MCP tool group documentation from agent system prompts, never restricted which tools a session could call (ADR-260726-171347) — and the per-agent `enabledToolGroups` manifest field that overrode it are both retired: a switch a person had turned off folded into that permission area Blocked, and whether a Blocked area's tool documentation reaches the prompt is now decided by `toolDocGates()` (`services/runtimes/claude-code/messaging/tool-doc-gates.ts`), not by a config toggle. See [`contributing/configuration.md`](configuration.md#boot-time-permission-retirements) for the fold.
 
 **Responses:**
 
@@ -540,34 +532,25 @@ Update agent fields by path. Merges the request body into the existing manifest.
   "persona": "You are an expert in REST APIs...",
   "personaEnabled": true,
   "color": "#6366f1",
-  "icon": "\ud83e\udd16",
-  "enabledToolGroups": {
-    "tasks": true,
-    "relay": false,
-    "mesh": true,
-    "adapter": true
-  }
+  "icon": "\ud83e\udd16"
 }
 ```
 
-All fields are optional. The `enabledToolGroups` object controls per-agent tool domain toggles. Omitted fields inherit the global default from the `agentContext` section in `~/.dork/config.json`.
+All fields are optional. The per-agent `enabledToolGroups` object this endpoint used to accept is retired (spec `agent-permissions` D13): what an agent may do lives on its Permissions page instead (`PATCH /api/agents/:id/permissions`), and both `enabledToolGroups` and `tierCeiling` are refused by name here — see the refusal table below.
 
 **This route is agent-reachable, so what it accepts is a classification rather than a schema.** It backs both the cockpit's self-edit and the `update_agent` MCP tool, and it performs no caller-identity check, so a field an agent must not decide for itself cannot be accepted on this path. Every leaf of the wire carries a verdict in `apps/server/src/services/core/operator/agent-write-policy.ts`, and a drift guard fails the build when a new field arrives without one (DOR-1506). These are the refusals:
 
-| Field                                                                              | Why it is refused                                                                                                                                                           | Where it is set instead      |
-| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `name`                                                                             | The slug is how everything else addresses the agent — `displayName` is the writable half                                                                                    | `PATCH /api/mesh/agents/:id` |
-| `namespace`                                                                        | It decides which other agents this one can reach, so an agent moving itself picks its own side of the access rules                                                          | `PATCH /api/mesh/agents/:id` |
-| `behavior.responseMode`, `behavior.escalationThreshold`                            | They decide whether a turn RUNS unbidden — an agent could vote itself the floor in every room, on the operator's model budget                                               | `PATCH /api/mesh/agents/:id` |
-| `account`                                                                          | Billing is the operator's call — an agent could repoint whose subscription its work bills to                                                                                | `PATCH /api/mesh/agents/:id` |
-| `enabledToolGroups` (all five: `tasks`, `relay`, `mesh`, `adapter`, `roomsManage`) | A per-agent value beats the global `agentContext.*` switch, so a writable one undoes a narrowing the person made; `roomsManage` is a real grant besides (ADR-260828-123331) | `PATCH /api/mesh/agents/:id` |
-| `tierCeiling` (raising only)                                                       | Widening the cap on what an agent may ever do hands privilege back, which is a person's call (DOR-486)                                                                      | `PATCH /api/mesh/agents/:id` |
+| Field                                                   | Why it is refused                                                                                                                                                                                                                        | Where it is set instead                                                                                                                                                           |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                                  | The slug is how everything else addresses the agent — `displayName` is the writable half                                                                                                                                                 | `PATCH /api/mesh/agents/:id`                                                                                                                                                      |
+| `namespace`                                             | It decides which other agents this one can reach, so an agent moving itself picks its own side of the access rules                                                                                                                       | `PATCH /api/mesh/agents/:id`                                                                                                                                                      |
+| `behavior.responseMode`, `behavior.escalationThreshold` | They decide whether a turn RUNS unbidden — an agent could vote itself the floor in every room, on the operator's model budget                                                                                                            | `PATCH /api/mesh/agents/:id`                                                                                                                                                      |
+| `account`                                               | Billing is the operator's call — an agent could repoint whose subscription its work bills to                                                                                                                                             | `PATCH /api/mesh/agents/:id`                                                                                                                                                      |
+| `permissions`, `enabledToolGroups`, `tierCeiling`       | What an agent may do is a person's call, set on the agent's Permissions page, and every change is audited. `enabledToolGroups` and `tierCeiling` are retired fields that used to answer the same question (spec `agent-permissions` D13) | `PATCH /api/agents/:id/permissions` (this route refuses all three with code `OPERATOR_ONLY`; `PATCH /api/mesh/agents/:id` refuses the same three with code `USE_PERMISSIONS_API`) |
 
-Everything but the ceiling is **refused, not stripped**: a partial write that silently dropped the field would let a caller report the change as done. Naming a refused field at all — `true`, `false`, `null`, or any object above it — refuses the whole patch, and the check runs before the schema parse and before the manifest is read, so the answer never depends on the rest of the body being well-formed or on which agent lives at the path.
+All three are **refused, not stripped**: a partial write that silently dropped the field would let a caller report the change as done. Naming a refused field at all — `true`, `false`, `null`, or any object above it — refuses the whole patch, and the check runs before the schema parse and before the manifest is read, so the answer never depends on the rest of the body being well-formed or on which agent lives at the path.
 
-"Any object above it" includes one carrying **only keys DorkOS does not recognise**, and that is load-bearing rather than pedantic. A write here REPLACES the object it names instead of merging into it, so `{"enabledToolGroups":{"zzz":1}}` would store `{}` — clearing groups a person had turned off, and the `roomsManage` grant with them — even though the patch named no guarded key. `{"behavior":{"zzz":1}}` is sharper still, because the schema defaults `responseMode` and the replacement would re-arm the most permissive setting. So naming an object that holds a refused field counts as naming every field under it, unless every key it carries is one the policy classifies.
-
-`tierCeiling` is the one refusal keyed on the VALUE rather than the field. An agent may LOWER its own ceiling — giving something up is a normal, safe thing to let it do — and any change that widens one, `null` (which means "no extra limit") included, is refused whole. Absent on the manifest reads as `destructive`, so every agent that predates the field keeps exactly the capability it had.
+"Any object above it" includes one carrying **only keys DorkOS does not recognise**, and that is load-bearing rather than pedantic. A write here REPLACES the object it names instead of merging into it, so `{"enabledToolGroups":{"zzz":1}}` would store `{}` — clearing groups a person had turned off — even though the patch named no guarded key. `{"behavior":{"zzz":1}}` is sharper still, because the schema defaults `responseMode` and the replacement would re-arm the most permissive setting. So naming an object that holds a refused field counts as naming every field under it, unless every key it carries is one the policy classifies.
 
 **Two more fields are refused on the `update_agent` MCP tool ONLY, and are accepted here** (DOR-1698). The split is deliberate and the direction matters: this route is how the cockpit's own Safety Boundaries editor saves, and a person editing their agent's boundaries in the app is the case that must stay free.
 
@@ -576,13 +559,15 @@ Everything but the ceiling is **refused, not stripped**: a partial write that si
 | `nopeContent`      | `operator.update_agent` (tier `act`) — the NOPE.md body                   | `operator.update_agent_boundaries` |
 | `conventions.nope` | `operator.update_agent` (tier `act`) — whether NOPE.md is injected at all | `operator.update_agent_boundaries` |
 
-`operator.update_agent_boundaries` is tier `destructive`, so an agent changing either one waits for a person's approval, and the card carries the full new text rather than a preview. Both are refused the same way `roomsManage` is — present at any value, whole patch rejected — so an agent cannot be told half a change landed. See `contributing/agent-operator-surface.md`.
+`operator.update_agent_boundaries` is tier `destructive`, so an agent changing either one waits for a person's approval, and the card carries the full new text rather than a preview. Both are refused the same way `permissions` is — present at any value, whole patch rejected — so an agent cannot be told half a change landed. See `contributing/agent-operator-surface.md`.
+
+**Three more are refused for an agent caller on this route and on `PATCH /api/mesh/agents/:id`, and accepted from a person** (DOR-2328): `runtime`, `model` and `effort`. A schedule that leaves them unset follows its agent, and a person's approval of it records the unset value, so moving an agent's defaults moves every such approved schedule. A caller that presents an agent identity (`X-Dorkos-Agent`) or an approval token, or that lacks the session cookie under login-on, gets `403` with code `NEEDS_APPROVAL` and a pointer to `operator.update_agent_execution` (tier `destructive`, whose card shows each change old → new). The Runs-on popover and the agent settings page are a person and are not asked. `update_agent` refuses the three for every caller, as it does the boundaries fields.
 
 **Responses:**
 
 - `200` - Updated `AgentManifest`
 - `400` - Validation error or missing `path`
-- `403` - Refused as operator-only: the patch named a field from the table above, or asked to widen `tierCeiling`
+- `403` - Refused as operator-only: the patch named a field from the table above
 - `403` - Path outside configured boundary
 - `404` - No agent registered at this path
 
@@ -603,6 +588,79 @@ Maximum 20 paths per request.
 **Responses:**
 
 - `200` - `{ agents: Record<string, AgentManifest | null> }` — keys are paths, values are manifests or `null` for unregistered directories
+
+## Permissions Endpoints (`routes/permissions.ts`)
+
+What agents may do on their own, what waits for a person's yes, and what they cannot do at all (spec `agent-permissions` D10). Mounted at `/api`. Every mutating route requires a person: `resolveDecisionAuthority` refuses a caller presenting `X-DorkOS-Agent` (resolved or not) or holding an approval token, and `requireOperatorCookieUnderLogin` requires a browser session once login is on — see `contributing/agent-operator-surface.md`. The user guide is `docs/guides/permissions.mdx`; the schemas live in `@dorkos/shared/permissions`.
+
+### GET /api/permissions
+
+The default layer: the chosen preset, the changes on top of it, every area with its actions resolved, the Files & commands row, and which agents differ.
+
+- `200` - `PermissionsResponse`: `{ preset, presetLastChange?, defaults, changeCount, filesAndCommands: { stop, presetStop, runtimes: [{ runtime, stop }], exceptions: [{ agentId, agentName, stop, lastChange? }], followingAgentIds, lastChange? }, areas: [...], exceptions: [...], agentCount }`
+
+Every area, action, exception and Files & commands entry carries an optional `lastChange` (`{ eventId, occurredAt, actorLabel, attribution, surface }`): the newest recorded change to any setting the resolver reads for that state, from the last 200 permission events (`readLastChanges`). It is what the app's "Why?" line names; absent when nothing in that window touched it. `followingAgentIds` lists the agents that follow the global Files & commands stop (no stop of their own, none set for their runtime). "Affects N agents" everywhere is `countAgentsFollowing` in `@dorkos/shared/permissions`, one function shared by the app and the CLI.
+
+### GET /api/permissions/history
+
+Query params: `agentId` (optional), `before` (ISO 8601 cursor, optional), `limit` (1–100, default 50).
+
+- `200` - `{ items: PermissionHistoryEntry[], nextCursor: string | null }`
+
+### POST /api/permissions/history/:eventId/undo
+
+Undo one `permission.changed` event (spec `agent-permissions` D14): every key it moved goes back to its `before`, recorded as one new `permission.changed` with `surface: 'undo'` and `undoOf`. Person-only, like every write.
+
+**Request body:** `{ force?: boolean, acknowledgeAutonomy?: true }` (an empty body is a plain Undo).
+
+- A key whose value is no longer the recorded `after` is a conflict. A change to one target is refused whole (`409 UNDO_CONFLICT`, with `conflicts: PermissionUndoSkip[]`). A change that reached several targets sets back the ones that still match and reports the rest in `skipped`; it is refused only when none match. `force: true` sets everything back.
+- A preset switch (`presetSnapshot` on the event) goes back as one unit: the preset, the defaults it cleared, and the global stop.
+- Never writes Allowed in a floor area (skipped with `reason: 'floor'`); an agent that no longer exists is `reason: 'gone'`.
+
+**Responses:**
+
+- `200` - `{ changes: PermissionChange[], skipped: PermissionUndoSkip[] }`
+- `404` - `UNKNOWN_EVENT`
+- `409` - `UNDO_CONFLICT` (with `conflicts`), or `NOT_UNDOABLE` for a request-card answer or a notice
+- `428` - `AUTONOMY_ACK_REQUIRED` when the Undo would put a Files & commands stop back on Full autonomy
+
+### PUT /api/permissions/preset
+
+Choose a preset for everyone (`careful`, `balanced`, `full`). Moves the global Files & commands stop to the preset's (Careful → `ask`, Balanced → `act`, Full power → `autonomy`) and clears the changes made on top of the old preset; `applyToAgents` also removes those agents' own settings so they follow the new preset.
+
+**Request body:** `{ preset, applyToAgents?: string[], surface, acknowledgeAutonomy?: true }`. `acknowledgeAutonomy` records that the person read what Full autonomy means and said yes, in the same write as the preset — needed only when the preset moves Files & commands to Full autonomy and no acknowledgement is already on file.
+
+**Responses:**
+
+- `200` - `{ changes: PermissionChange[], permissions: PermissionsResponse }`
+- `428` - `AUTONOMY_ACK_REQUIRED` when the preset would move Files & commands to Full autonomy and `acknowledgeAutonomy` was not sent and none is on file
+
+### PATCH /api/permissions/defaults
+
+Change one or more areas or single actions for everyone. `null` removes a change so the setting falls back a layer.
+
+**Request body:** `{ areas?: Record<string, state | null>, actions?: Record<string, state | null>, applyToAgents?: string[], surface }`
+
+- `200` - `{ changes: PermissionChange[], permissions: PermissionsResponse }`
+
+### GET /api/agents/:id/permissions
+
+One agent's resolved permissions, with where each area's state and its Files & commands stop came from.
+
+- `200` - `AgentPermissionsResponse`: `{ agentId, agentName, overrides, areas: [{ ...area, inherited, changedOutsideAt, lastChange? }], filesAndCommands: { stop, source, lastChange?, inherited: { stop, source, lastChange? } } }`. `source` is one of `agent | runtime | default | runtime-own`; `changedOutsideAt` is set when the area's most recent change was an edit to the agent's settings file DorkOS noticed rather than made.
+
+### PATCH /api/agents/:id/permissions
+
+Change one agent's own areas, actions, or Files & commands stop.
+
+**Request body:** `{ areas?: Record<string, state | null>, actions?: Record<string, state | null>, filesAndCommands?: stop | null, surface, acknowledgeAutonomy?: true }`. `filesAndCommands: null` puts the agent back on the default. `acknowledgeAutonomy` is needed the same way it is on the preset route, when this write moves the agent's own stop to `autonomy`.
+
+**Refuses `permissions`, `enabledToolGroups`, and `tierCeiling` on `PATCH /api/agents/current` and `PATCH /api/mesh/agents/:id`** — see those routes above; this is the only door in.
+
+**Responses:**
+
+- `200` - `{ changes: PermissionChange[], permissions: AgentPermissionsResponse }`
+- `428` - `AUTONOMY_ACK_REQUIRED`
 
 ## Relay Endpoints
 
@@ -1086,10 +1144,13 @@ Update a registered agent's manifest fields.
 
 **Request body:** Partial `AgentManifest`
 
+**Refuses `permissions`, `enabledToolGroups`, and `tierCeiling` by name** (`retiredPermissionFields` in `routes/mesh.ts`, spec `agent-permissions` D13): what an agent may do is set only through the Permissions page (`PATCH /api/agents/:id/permissions`), and the two retired fields that used to answer the same question are refused so a caller still sending one learns where the setting went instead of a `200` that changed nothing.
+
 **Responses:**
 
 - `200` - Updated `AgentManifest`
 - `400` - Validation error
+- `400` - `{ "error": "...", "code": "USE_PERMISSIONS_API", "fields": [...] }` when the body names `permissions`, `enabledToolGroups`, or `tierCeiling`
 - `404` - Agent not found
 
 ### DELETE /api/mesh/agents/:id

@@ -32,10 +32,7 @@
  *   open, so a window parking two of them meant the THIRD cockpit window took
  *   the last socket and everything after it — including the fourth window's own
  *   HTML — queued behind streams that never end. The server still serves SSE at
- *   the same paths for integrations; the cockpit does not use it.
- * - **Transport pump** (embedded/Obsidian): {@link StreamManager.useTransportSource}
- *   iterates the Transport seam in-process (`getSessionSnapshot` +
- *   `subscribeSession`, `subscribeSessionList`) — no network at all.
+ *   the same paths for integrations; the app does not use it.
  *
  * It is a framework-agnostic singleton living in the `shared` FSD layer: it knows
  * nothing about Zustand, the session store, or the `entities` layer. It parses and
@@ -60,11 +57,6 @@ import {
 } from '@dorkos/shared/session-stream';
 
 import { WSConnection, type StreamConnectionOptions } from './ws-connection';
-import {
-  TransportSessionStreamPump,
-  TransportListStreamPump,
-  type TransportStreams,
-} from './transport-stream-pump';
 import { addBreadcrumb } from '../breadcrumbs';
 import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
 import {
@@ -119,17 +111,8 @@ export interface StreamManagerListeners {
 
 /**
  * Every {@link SessionEvent} `type` discriminant the session stream emits.
- *
- * This is the ONLY allowlist, and EVERY source dispatches per-name off the one
- * handler map {@link StreamManager.buildSessionEventHandlers} builds: the socket
- * looks the frame's event name up in it, and the embedded transport pump looks
- * `event.type` up in that same object. So a name missing here is SILENTLY
- * DROPPED on every surface — web, Electron AND Obsidian — not just over the
- * network. `system_status`/`compact_boundary` (and later
- * `capability_approval_required`/`_resolved`, DOR-963) went missing exactly this
- * way. Must stay in lockstep with `SessionEventSchema` — the parity test pins
- * the two together, but it only proves a name is REGISTERED, so behavioral
- * coverage per event is what proves the frame is actually routed.
+ * Keep this allowlist aligned with SessionEventSchema: unregistered event names
+ * are silently dropped. The parity and dispatch tests pin both registration and routing.
  */
 const SESSION_EVENT_TYPES = [
   'text_delta',
@@ -216,13 +199,7 @@ const SESSION_EVENT_TYPES = [
   'context_staged',
 ] as const;
 
-/**
- * The non-session broadcast event names the unified `/api/events` stream emits.
- * Static — add new names here as the server emits them. They are dispatched
- * verbatim (no schema at this layer; payloads are validated by their consumers)
- * to {@link StreamManager.subscribeEvent} subscribers. The embedded transport
- * source only yields the session-list discriminants, so these never fire there.
- */
+/** Broadcast names forwarded from the unified events stream to subscribers. */
 export const GENERIC_EVENTS = [
   'connected',
   'tunnel_status',
@@ -248,6 +225,10 @@ export const GENERIC_EVENTS = [
   // happened," not silently dropped once past the cap. No UI subscribes yet.
   'relay_chat_unclaimed_burst',
   'task_run_failed',
+  // How much of one account is used changed (spec `claude-account-fleet` D2):
+  // payload `AccountUsage`, throttled per account on the server. The session
+  // stream binding applies it to every open session on that account (§6 U).
+  'account_usage',
   // A task definition changed (created, edited, deleted). The standing
   // unattended-autonomy banner reads it: a task dialled up to Full autonomy has
   // to raise the banner as the form closes, not on the next page load.
@@ -255,7 +236,11 @@ export const GENERIC_EVENTS = [
   'mesh_liveness_changed',
   'approval_pending',
   'approval_resolved',
-  'approval_grant_changed',
+  // An agent asked the owner for an app, or one of those requests was answered,
+  // expired or failed (DOR-2415). A stamp only: the chat card, the room card and
+  // the Connections page's Needs you strip re-read their owner-scoped list on it,
+  // so answering in one window retires the card in every other.
+  'connector_agent_requests_changed',
   // A blocking condition began or stopped standing (DOR-1570). A standing kind
   // stores no row while it stands, so these are the only live news that a
   // schedule was proposed or an approval is waiting — which is what the desktop
@@ -345,8 +330,7 @@ export type GenericEventName = (typeof GENERIC_EVENTS)[number];
 const DEFAULT_BASE_URL = '/api';
 
 /** Where StreamManager sources its streams from (see module doc). */
-type StreamSource =
-  { kind: 'socket'; baseUrl: string } | { kind: 'transport'; transport: TransportStreams };
+type StreamSource = { baseUrl: string };
 
 /**
  * Build the URL of a session's durable event stream. The `cwd` query is
@@ -378,7 +362,7 @@ function sessionStreamUrl(
 export class StreamManager {
   private readonly createConnection: CreateConnection;
   private listeners: StreamManagerListeners = {};
-  private source: StreamSource = { kind: 'socket', baseUrl: DEFAULT_BASE_URL };
+  private source: StreamSource = { baseUrl: DEFAULT_BASE_URL };
 
   private sessionConnection: DurableStreamConnection | null = null;
   private attachedSessionId: string | null = null;
@@ -608,32 +592,14 @@ export class StreamManager {
    * @param baseUrl - Same resolved origin `HttpTransport` is constructed with.
    */
   useHttpSource(baseUrl: string): void {
-    this.setSource({ kind: 'socket', baseUrl });
-  }
-
-  /**
-   * Source streams from the Transport seam via in-process iteration (embedded
-   * mode — Obsidian's `DirectTransport`, where no HTTP server exists). Call
-   * before the first attach/connect; switching tears down open streams.
-   *
-   * @param transport - The transport whose stream methods to pump.
-   */
-  useTransportSource(transport: TransportStreams): void {
-    this.setSource({ kind: 'transport', transport });
+    this.setSource({ baseUrl });
   }
 
   private setSource(source: StreamSource): void {
     // Identical source → no-op, so StrictMode/HMR re-wiring doesn't churn
     // (tear down + re-open) perfectly healthy streams.
     const prev = this.source;
-    if (
-      prev.kind === source.kind &&
-      (source.kind === 'socket'
-        ? (prev as { baseUrl: string }).baseUrl === source.baseUrl
-        : (prev as { transport: TransportStreams }).transport === source.transport)
-    ) {
-      return;
-    }
+    if (prev.baseUrl === source.baseUrl) return;
     const reattach =
       this.attachedSessionId !== null
         ? { sessionId: this.attachedSessionId, cwd: this.attachedCwd }
@@ -854,15 +820,6 @@ export class StreamManager {
       }
       this.listeners.onSessionConnectionState?.(sessionId, state);
     };
-    if (this.source.kind === 'transport') {
-      return new TransportSessionStreamPump({
-        transport: this.source.transport,
-        sessionId,
-        cwd,
-        eventHandlers,
-        onStateChange,
-      });
-    }
     return this.createConnection(sessionStreamUrl(this.source.baseUrl, sessionId, cwd), {
       eventHandlers,
       onStateChange,
@@ -956,13 +913,6 @@ export class StreamManager {
     const onStateChange = (state: ConnectionState, failedAttempts = 0): void => {
       this.updateListState(state, failedAttempts);
     };
-    if (this.source.kind === 'transport') {
-      return new TransportListStreamPump({
-        transport: this.source.transport,
-        eventHandlers,
-        onStateChange,
-      });
-    }
     return this.createConnection(`${this.source.baseUrl}/events`, {
       eventHandlers,
       onStateChange,

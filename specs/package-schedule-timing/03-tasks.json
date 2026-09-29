@@ -1,0 +1,87 @@
+{
+  "spec": "specs/package-schedule-timing/02-specification.md",
+  "slug": "package-schedule-timing",
+  "generatedAt": "2026-09-24T00:35:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — data + server core",
+      "subject": "[package-schedule-timing] [P1] Add cron_override and timezone_override to pulse_schedules",
+      "description": "Add two nullable TEXT columns to `pulseSchedules` in `packages/db/src/schema/tasks.ts`, right after `timezone`: `cronOverride: text('cron_override')` and `timezoneOverride: text('timezone_override')`, each with TSDoc saying what NULL and a value mean ('' in cron_override = on demand). Generate the migration with `cd packages/db && npx drizzle-kit generate` and stage `packages/db/drizzle/`. Test (`packages/db/src/__tests__/schedule-timing-override-migration.test.ts`): build a database at the shape the previous journal entry left (copy the migration folder minus the new tag, truncate the journal, `migrate()`), insert a schedule row, apply the new migration's statements; assert both columns exist, are NULL on the old row, and cron/timezone are untouched. Acceptance: `pnpm vitest run packages/db/src/__tests__/schedule-timing-override-migration.test.ts` green; `pnpm --filter @dorkos/db db:check` clean.",
+      "activeForm": "Adding the override columns",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.2"],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — data + server core",
+      "subject": "[package-schedule-timing] [P1] Expose effective timing, defaults and the override flag on Task; add resetTiming",
+      "description": "`packages/shared/src/schemas.ts`: document `TaskSchema.cron`/`timezone` as the timing that runs; add `defaultCron: z.string().nullable().default(null)`, `defaultTimezone: z.string().nullable().default(null)`, `timingOverridden: z.boolean().default(false)`, each with TSDoc. `UpdateTaskRequestSchema` gains `resetTiming: z.literal(true).optional()` with TSDoc. `apps/server/src/services/tasks/task-write-policy.ts`: `resetTiming: 'agent-writable'` with a reason comment (the drift test fails until it is there). Update `createMockTask` in `packages/test-utils/src/mock-factories.ts` and every literal Task fixture typecheck names. Rebuild `@dorkos/shared`.",
+      "activeForm": "Extending the task schemas",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1"],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — data + server core",
+      "subject": "[package-schedule-timing] [P1] One effective-timing module; mapper, store and gates read through it",
+      "description": "New `apps/server/src/services/tasks/timing/effective-timing.ts` (own directory: `services/tasks` is over the 25-file ceiling): `effectiveTiming(row)`, `effectiveContentKey(row)`, `timingColumnWrites(row, request, landsOn)` (reset → both overrides NULL; 'row' → override columns, value equal to the file's stored as NULL, cron null → '', timezone null → NULL; 'file' → default columns as today and clear the matching override), `conflictingTimingRequest(request)`. `task-row-mappers.ts`: effective cron/timezone, defaultCron/defaultTimezone from the raw columns, timingOverridden. `task-store.ts`: `updateTask(id, input, options?: { timingLandsOn?: 'file' | 'row' })` writes through `timingColumnWrites`; `recordApproval`, `backfillApprovalGrants`, `rekeyMigratedFile` use effective content; `upsertFromFile`'s un-pause grant uses effective incoming content; new `settleTimingChange(id, previousKey, { trusted })` returning 'unchanged' | 'rekeyed' | 'parked' (trusted: re-key when the grant covered previousKey; untrusted: park an active row with the DorkOS timing reason, reasonSource 'dorkos'). `file-sync-gates.ts`: approved.cron = row's effective cron; incoming.cron = row override ?? file cron; refusal log keys on the file cron. Reason constant beside CHANGED_REASON in `schedule-permission-clamp.ts`. Tests: `timing/__tests__/effective-timing.test.ts`, `__tests__/task-store-timing-override.test.ts`, mapper cases.",
+      "activeForm": "Routing every timing reader through the effective value",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — update doors",
+      "subject": "[package-schedule-timing] [P2] Package-owned timing lands on the row through PATCH and tasks_update",
+      "description": "`task-file-update.ts`: `ROW_ONLY_WHEN_PACKAGE_OWNED` = {enabled, cron, timezone}, docs updated. `lifecycle/update-task-file.ts`: success carries `timingLandsOn: 'file' | 'row'` ('row' only from the package-owned branch); refusal sentence says timing can be changed here. `routes/tasks.ts` PATCH: 400 on `conflictingTimingRequest`; clamp also counts a reset that changes the cron; `store.updateTask(id, data, { timingLandsOn })`; when `!changesFile`, `store.settleTimingChange(id, key(existing), { trusted })`; the entered-pending edge records `data.reason` only for `data.status === 'pending_approval'`. `mcp-tools/task-tools.ts`: `resetTiming` argument + description, forwarded; conflict → tool error; same updateTask/settle; a park raises `schedule.parked` and replies `needsReapproval` + a new TIMING_REAPPROVAL_NOTE; tool description mentions package timing. Tests: integration on the FB-26 fixture (`__tests__/package-schedule-timing.integration.test.ts`), route (`routes/__tests__/tasks-package-timing.test.ts`), MCP (`mcp-tools/__tests__/task-tools-package-timing.test.ts`).",
+      "activeForm": "Opening the update doors to package timing",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["1.3"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — client + docs",
+      "subject": "[package-schedule-timing] [P3] Schedules page: mark the override, show the package's timing, reset",
+      "description": "`features/tasks/ui/TaskRow.tsx`: '· Your timing' on the timing line when `timingOverridden`; expanded row line 'The package runs this {default in words}, {timezone}.' with a 'Reset to the package's default' button; the same item in the actions menu. Reset sends `{ resetTiming: true }` and toasts 'Back on the package's timing'. `TaskFormInner.tsx`: the edit branch sends only fields that differ from the form's opening values (nothing changed → close without a request). Dev playground: an overridden task in `TasksShowcases`. Tests: `TaskRow.test.tsx`, `CreateTaskDialog.test.tsx` (or a form test). Screenshots at phone, tablet, desktop widths under `.temp/`.",
+      "activeForm": "Building the Schedules page controls",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["2.1"],
+      "parallelWith": ["3.2"],
+      "issue": null
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "P3 — client + docs",
+      "subject": "[package-schedule-timing] [P3] Docs and changelog",
+      "description": "`docs/guides/task-scheduler.mdx`: the package paragraph says the timing can be changed on the Schedules page and reset. One fragment in `changelog/unreleased/` in plain words (writing-for-humans).",
+      "activeForm": "Writing the docs",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["2.1"],
+      "parallelWith": ["3.1"],
+      "issue": null
+    }
+  ]
+}

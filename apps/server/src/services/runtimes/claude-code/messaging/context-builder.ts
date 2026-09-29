@@ -8,10 +8,10 @@ import type {
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
-import { configManager } from '../../../core/config-manager.js';
-import type { ResolvedToolConfig } from '../tooling/tool-filter.js';
+import type { ToolDocGates } from './tool-doc-gates.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
+import type { AgentHome } from '../../../core/agent-identity/index.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import { buildCanvasContentCatalog, buildUiActionCatalog } from '../../shared/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
@@ -166,8 +166,8 @@ Subject hierarchy:
   relay.inbox.dispatch.{UUID}          — ephemeral inbox for ${T}relay_send_async (auto-expires after ~35 min)
   relay.inbox.{agentId}                — persistent agent reply inbox
   relay.human.console.{clientId}       — reach a human in the DorkOS UI
-  relay.system.console                 — system broadcast channel
-  relay.system.tasks.{scheduleId}      — Tasks scheduler events
+  relay.system.*, relay.control.*      — DorkOS's own addresses; a send there fails
+                                         with RESERVED_SUBJECT
 
 Every workflow below starts the same way: ${T}mesh_list() lists the agents on this
 machine, and each entry's relaySubject IS the address you send to. Copy that string
@@ -243,7 +243,7 @@ server restarts. A subject differing from an existing endpoint only by letter ca
 (the two would share one mailbox on macOS and Windows).
 
 Error codes: RELAY_DISABLED, ACCESS_DENIED, ENDPOINT_ACCESS_DENIED (not your endpoint),
-             RESERVED_SUBJECT, INVALID_SUBJECT, ENDPOINT_NOT_FOUND (no such endpoint —
+             RESERVED_SUBJECT (a DorkOS address), INVALID_SUBJECT, ENDPOINT_NOT_FOUND (no such endpoint —
              cleanup is idempotent, do not retry), TIMEOUT, AGENT_ERROR (their turn
              failed — partialText is what they got through, not an answer),
              QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED
@@ -331,11 +331,11 @@ Read-only lookups:
   ${T}marketplace_search(query?, type?, category?, tags?, marketplace?, limit?) -- search every enabled source (limit defaults to 20)
   ${T}marketplace_get(name, marketplace?) -- full manifest + README for one package
   ${T}marketplace_list_marketplaces() -- configured sources (name, source, enabled, package count)
-  ${T}marketplace_list_installed(type?) -- what is installed, one entry per scope (global | agent-local | override)
+  ${T}marketplace_list_installed(type?, checkUpdates?, verify?) -- what is installed, one entry per scope (global | agent-local | override); checkUpdates adds update.status/latestVersion (slower: fetches each marketplace); verify adds integrity (clean | modified | unknown) with the changed files (slower: reads every shipped file)
   ${T}marketplace_recommend(context, type?, limit?) -- keyword/tag-matched suggestions for a free-text need (limit defaults to 5)
 
-Mutations -- ${T}marketplace_install, ${T}marketplace_uninstall, ${T}marketplace_create_package --
-all require explicit user confirmation through the SAME two-call protocol:
+Mutations -- ${T}marketplace_install, ${T}marketplace_update (with apply), ${T}marketplace_uninstall,
+${T}marketplace_create_package -- all require explicit user confirmation through the SAME two-call protocol:
   1. Call the tool without confirmationToken. A requires_confirmation response means the user
      has not approved yet -- show them the preview and STOP. Do not assume approval and do not
      retry in a loop; nothing resumes this for you.
@@ -345,6 +345,8 @@ all require explicit user confirmation through the SAME two-call protocol:
      changing any of those on the retry invalidates it.
 
   ${T}marketplace_install(name, marketplace?, projectPath?, confirmationToken?)
+  ${T}marketplace_update(names?, installPaths?, projectPath?, apply?, confirmationToken?) -- without apply, only checks
+     what has a newer version and changes nothing; with apply, reinstalls the stale ones where they are installed
   ${T}marketplace_uninstall(name, purge?, projectPath?, confirmationToken?)
   ${T}marketplace_create_package(name, type, description, author?, categories?, confirmationToken?)
 </marketplace_tools>`;
@@ -421,11 +423,10 @@ function buildUiToolsBlock(): string {
 /**
  * Build the static `<marketplace_tools>` context block.
  *
- * Always included, the same as {@link buildUiToolsBlock}: the marketplace group
- * has no entry in `EnabledToolGroupsSchema` and no feature flag in
- * `tool-filter.ts`'s `ToolFilterDeps` to gate on, so there is nothing to check —
- * unlike relay/mesh/adapter/tasks, it was never wired into the toggle system at
- * all. DOR-529 added this block for parity: it was the only tool group with zero
+ * Included unless the Tools & packages area is Blocked for this agent, in which
+ * case the tools it documents are not in the agent's list either (spec
+ * `agent-permissions` D15). There is no feature flag to check. DOR-529 added
+ * this block for parity: it was the only tool group with zero
  * system-prompt context, `relay`/`mesh`/`adapter`/`tasks` all had one. This closes
  * that gap on its own merits; it is not a fix for the eval-awareness defect the
  * same ticket found — every credentialed run measured against the marketplace
@@ -436,89 +437,66 @@ function buildUiToolsBlock(): string {
  * behavior the eval measures, so it can plausibly shift how often a model retries
  * on turn 1 — that is a claim about outcomes this change does not get to make.
  *
- * Per the module TSDoc on {@link ResolvedToolConfig} (ADR 260726-171347 supersedes
- * ADR-0070): a tool-group toggle gates what this file tells the agent, never what
- * the agent can call. This block documents `marketplace_install` /
- * `marketplace_uninstall` / `marketplace_create_package`'s confirmation-token
- * protocol accurately for that reason — omitting a tool from context has never
- * made it unreachable, so the text must not imply otherwise.
+ * What decides whether the agent can CALL these tools is its permission, which
+ * the gate resolves on every call; this block only describes them. It documents
+ * `marketplace_install` / `marketplace_uninstall` / `marketplace_create_package`'s
+ * confirmation-token protocol accurately for that reason.
+ *
+ * @param toolConfig - The agent's tool-doc gates, when the caller resolved them.
  */
-function buildMarketplaceToolsBlock(): string {
+function buildMarketplaceToolsBlock(toolConfig?: ToolDocGates): string {
+  if (toolConfig && !toolConfig.packages) return '';
   return MARKETPLACE_TOOLS_CONTEXT;
 }
 
 /**
  * Build the `<relay_tools>` context block.
  *
- * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
- * Otherwise falls back to global feature flag + config toggle checks.
+ * When `toolConfig` is provided, uses the agent's gates (`toolDocGates`).
+ * Otherwise falls back to the Relay feature flag.
  *
  * @param toolConfig - Pre-resolved tool config, when the caller has one.
  * @param agentToAgentToolsPreloaded - Whether this session's six agent-to-agent
  *   tools already ride the prompt; see {@link relayToolsContext}.
  */
 function buildRelayToolsBlock(
-  toolConfig?: ResolvedToolConfig,
+  toolConfig?: ToolDocGates,
   agentToAgentToolsPreloaded = false
 ): string {
-  if (toolConfig) {
-    if (!toolConfig.relay) return '';
-  } else {
-    if (!isRelayEnabled()) return '';
-    const config = configManager.get('agentContext');
-    if (config?.relayTools === false) return '';
-  }
+  if (!(toolConfig ? toolConfig.relay : isRelayEnabled())) return '';
   return relayToolsContext(agentToAgentToolsPreloaded);
 }
 
 /**
  * Build the `<mesh_tools>` context block.
  *
- * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
- * Otherwise falls back to the global config toggle.
- * Mesh is always-on per ADR-0062, so no feature flag check in the fallback path.
+ * When `toolConfig` is provided, uses the agent's gates (`toolDocGates`).
+ * Mesh is always-on per ADR-0062, so there is no feature flag to fall back to.
  */
-function buildMeshToolsBlock(toolConfig?: ResolvedToolConfig): string {
-  if (toolConfig) {
-    if (!toolConfig.mesh) return '';
-  } else {
-    const config = configManager.get('agentContext');
-    if (config?.meshTools === false) return '';
-  }
+function buildMeshToolsBlock(toolConfig?: ToolDocGates): string {
+  if (toolConfig && !toolConfig.mesh) return '';
   return MESH_TOOLS_CONTEXT;
 }
 
 /**
  * Build the `<adapter_tools>` context block.
  *
- * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
- * Otherwise falls back to Relay feature flag + config toggle checks.
+ * When `toolConfig` is provided, uses the agent's gates (`toolDocGates`).
+ * Otherwise falls back to the Relay feature flag.
  */
-function buildAdapterToolsBlock(toolConfig?: ResolvedToolConfig): string {
-  if (toolConfig) {
-    if (!toolConfig.adapter) return '';
-  } else {
-    if (!isRelayEnabled()) return '';
-    const config = configManager.get('agentContext');
-    if (config?.adapterTools === false) return '';
-  }
+function buildAdapterToolsBlock(toolConfig?: ToolDocGates): string {
+  if (!(toolConfig ? toolConfig.adapter : isRelayEnabled())) return '';
   return ADAPTER_TOOLS_CONTEXT;
 }
 
 /**
  * Build the `<tasks_tools>` context block.
  *
- * When `toolConfig` is provided, uses the pre-resolved config (agent-aware).
- * Otherwise falls back to Tasks feature flag + config toggle checks.
+ * When `toolConfig` is provided, uses the agent's gates (`toolDocGates`).
+ * Otherwise falls back to the Tasks feature flag.
  */
-function buildTasksToolsBlock(toolConfig?: ResolvedToolConfig): string {
-  if (toolConfig) {
-    if (!toolConfig.tasks) return '';
-  } else {
-    if (!isTasksEnabled()) return '';
-    const config = configManager.get('agentContext');
-    if (config?.tasksTools === false) return '';
-  }
+function buildTasksToolsBlock(toolConfig?: ToolDocGates): string {
+  if (!(toolConfig ? toolConfig.tasks : isTasksEnabled())) return '';
   return TASKS_TOOLS_CONTEXT;
 }
 
@@ -533,7 +511,7 @@ function buildTasksToolsBlock(toolConfig?: ResolvedToolConfig): string {
  */
 function buildRelayConnectionsBlock(
   relayContext?: RelayContextDeps,
-  toolConfig?: ResolvedToolConfig
+  toolConfig?: ToolDocGates
 ): string {
   if (!relayContext) return '';
   if (toolConfig && !toolConfig.adapter) return '';
@@ -658,8 +636,13 @@ export interface SystemPromptAppend {
  * prepended to the user message via {@link renderContextEntry} from the
  * per-turn additional-context bag (ADR-0273).
  *
- * @param cwd - Working directory for the session
- * @param toolConfig - Optional resolved tool config for agent-aware block gating
+ * @param home - The home of the agent this session acts as, resolved through
+ *   `resolveAgentHome`, or `undefined` for a session about a directory. The
+ *   agent's identity, persona and memory are read from here and nowhere else
+ *   (spec `agent-home-desk` I1).
+ * @param cwd - Working directory for the session (the `<env>` block)
+ * @param toolConfig - The agent's tool-doc gates (`toolDocGates`), when the
+ *   caller resolved them; without them only the server feature flags decide
  * @param options - Per-session facts the prose has to agree with. `agentSession`
  *   is `loadsAgentToAgentTools`'s answer for THIS session — the same function
  *   and the same input `mcp-tools/index.ts` decides exposure with — so the
@@ -667,9 +650,10 @@ export interface SystemPromptAppend {
  *   (DOR-1337 / F8). Callers must not compute it themselves.
  */
 export async function buildSystemPromptAppend(
+  home: AgentHome | undefined,
   cwd: string,
-  toolConfig?: ResolvedToolConfig,
-  options: { agentSession?: boolean } = {}
+  toolConfig?: ToolDocGates,
+  options: { agentSession?: boolean; blockedAreaLines?: string } = {}
 ): Promise<SystemPromptAppend> {
   const agentSession = options.agentSession ?? false;
 
@@ -678,7 +662,7 @@ export async function buildSystemPromptAppend(
   const meshBlock = buildMeshToolsBlock(toolConfig);
   const adapterBlock = buildAdapterToolsBlock(toolConfig);
   const tasksBlock = buildTasksToolsBlock(toolConfig);
-  const marketplaceBlock = buildMarketplaceToolsBlock();
+  const marketplaceBlock = buildMarketplaceToolsBlock(toolConfig);
   // Rendered under THIS runtime's prefix. The body moved to `runtimes/shared/`
   // when the DorkOS tools reached codex and opencode (DOR-1613); claude-code
   // always carries them in-process, so it is always rendered here.
@@ -702,7 +686,7 @@ export async function buildSystemPromptAppend(
 
   // Runtime-neutral identity + env (async: reads files, but content is stable
   // between agent config changes)
-  const agentContext = await buildAgentContextAppend(cwd);
+  const agentContext = await buildAgentContextAppend(home, cwd);
 
   // 1. Static tool documentation — fully cacheable, never changes.
   //    The naming rule comes first, because every block after it is written in
@@ -715,6 +699,10 @@ export async function buildSystemPromptAppend(
     tasksBlock,
     marketplaceBlock,
     roomBlock,
+    // One line per Blocked permission area, telling the agent the area exists and
+    // how to get it (spec `agent-permissions` D15). Empty when nothing is blocked.
+    // Part of the digested tool docs, so a change relaunches a warm session.
+    options.blockedAreaLines ?? '',
     uiBlock,
     genUiBlock,
   ];

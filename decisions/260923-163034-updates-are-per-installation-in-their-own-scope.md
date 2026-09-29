@@ -1,7 +1,7 @@
 ---
 id: 260923-163034
 title: An update is checked and applied per installation, in the installation's own scope
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-update-all
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-update-all)
+Accepted (extracted from spec: marketplace-update-all)
 
 ## Context
 

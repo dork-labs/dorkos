@@ -1,19 +1,16 @@
 import Database from 'better-sqlite3';
-import {
-  test,
-  expect,
-  type Page,
-  type APIRequestContext,
-  type Locator,
-  type TestInfo,
-} from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext, type TestInfo } from '@playwright/test';
 import { BasePage } from '../../pages/BasePage.js';
 import { ChatPage } from '../../pages/ChatPage.js';
 import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
-import { describeViolation, runAxe } from '../../axe.js';
+import { describeViolation, runAxe, settleAnimations } from '../../axe.js';
 import { registerOwnerManagementTests } from './owner-management.js';
 import { registerEventNotificationTests } from './event-notifications.js';
+import {
+  registerChatConnectCardTests,
+  registerChatConnectFirstStepTests,
+} from './chat-connect-card.js';
 
 /**
  * Browser proof of canonical Connections resources, driven against the
@@ -61,127 +58,67 @@ export async function gotoConnections(page: Page): Promise<void> {
   await new BasePage(page).waitForAppReady();
 }
 
-test('unlinked Accounts opens the existing owner account settings @smoke', async ({
+test('popular apps are listed before anything is set up, and the first connect asks how once @smoke', async ({
   page,
 }, testInfo) => {
   await gotoConnections(page);
-  const link = page.getByTestId('link-dorkos-account');
-  await expect(link).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Advanced account setup' })).toHaveAttribute(
-    'aria-expanded',
-    'false'
-  );
-  await link.scrollIntoViewIfNeeded();
-  await page
-    .locator('[aria-labelledby="region-accounts"]')
-    .screenshot({ path: testInfo.outputPath('accounts-desktop.png') });
-  await link.click();
-  await expect(page).toHaveURL(/settings=access/);
-  await expect(page).toHaveURL(/settingsSection=account/);
+  // Your own key is set in Settings › Connections; the page keeps one pointer there.
   await expect(
-    page
-      .locator('[data-section="account"]')
-      .getByRole('button', { name: 'Link this instance', exact: true })
-  ).toBeVisible();
-  // Opening settings is the handoff, never approval to initiate a cloud link.
-  await expect(page.getByText('This instance is not linked to a DorkOS account.')).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('account-settings.png'), fullPage: true });
-  await page.goto('/connections');
-  await new BasePage(page).waitForAppReady();
+    page.getByRole('button', { name: 'Set it up in Settings › Connections' })
+  ).toHaveCount(1);
+  // The popular apps are rows in the list from the first visit: no dialog to
+  // open, no search needed, and never "No app matches".
+  const gmail = page.getByTestId('catalog-app-gmail');
+  await expect(gmail).toContainText('Read, search and send email.');
+  await expect(page.getByText('No app matches', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Connect Gmail' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Connect Gmail' });
+  await expect(dialog).toContainText('First, pick how DorkOS reaches your apps.');
+  const step = dialog.getByTestId('first-connect-step');
+  await expect(step.getByRole('button', { name: /Use my Composio key/ })).toBeVisible();
+  // Nango stays folded, and no sign-in can start before a way is set up.
+  await expect(step.getByText(/My own Nango server/)).toBeHidden();
+  await expect(dialog.getByRole('button', { name: 'Continue' })).toHaveCount(0);
+  await dialog.screenshot({ path: testInfo.outputPath('first-connect-desktop.png') });
+
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(link).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Advanced account setup' })).toBeVisible();
+  await expect(step).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
   );
-  await link.scrollIntoViewIfNeeded();
-  await page
-    .locator('[aria-labelledby="region-accounts"]')
-    .screenshot({ path: testInfo.outputPath('accounts-mobile.png') });
-});
-
-test('a revoked community grant gives a direct remove-and-reconnect path', async ({
-  page,
-}, testInfo) => {
-  let removed = false;
-  await page.route('**/api/community-connections**', async (route) => {
-    const request = route.request();
-    const path = new URL(request.url()).pathname;
-    if (request.method() === 'GET' && path === '/api/community-connections') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          connections: removed
-            ? []
-            : [
-                {
-                  ref: 'remote_revoked',
-                  remoteCommunityId: 'community-revoked',
-                  label: 'Writers Space',
-                  pinnedOrigin: 'https://spaces.example',
-                  connectedHumanMemberId: 'member-revoked',
-                  status: 'reconnect-required',
-                  expiresAt: null,
-                  access: {
-                    state: 'reconnect-required',
-                    effective: { read: false, post: false, enrollAgent: false, stream: false },
-                    lastKnown: {
-                      lifecycle: 'active',
-                      capabilities: { read: true, post: true, enrollAgent: true, stream: true },
-                      verifiedAt: '2026-09-21T12:00:00.000Z',
-                    },
-                  },
-                  attention: {
-                    state: 'unavailable',
-                    unreadCount: null,
-                    mentionCount: null,
-                    verifiedAt: null,
-                  },
-                },
-              ],
-        }),
-      });
-      return;
-    }
-    if (request.method() === 'DELETE' && path === '/api/community-connections/remote_revoked') {
-      removed = true;
-      await route.fulfill({ json: { remoteRevoked: true } });
-      return;
-    }
-    await route.continue();
-  });
-
-  await gotoConnections(page);
-  const messaging = page.locator('[aria-labelledby="region-messaging"]');
-  const community = messaging.getByRole('listitem').filter({ hasText: 'Writers Space' });
-  await expect(community.getByText('Reconnect required')).toBeVisible();
-  await expect(community).toContainText('Disconnect here, then connect again.');
-  await testInfo.attach('community-reconnect-required.png', {
-    body: await community.screenshot(),
-    contentType: 'image/png',
-  });
-  await community.getByRole('button', { name: 'Disconnect Writers Space' }).click();
-  expect(removed).toBe(true);
-  await expect(community).toBeHidden();
-  await expect(
-    page.getByText('Writers Space is disconnected. Connect again to continue.', { exact: true })
-  ).toBeVisible();
-  await expect(page.getByLabel('Community address')).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath('first-connect-mobile.png') });
 });
 
 /**
+ * Open Settings › Connections, where your own keys live (DOR-2419), and return
+ * the "add a way" entry for the scripted provider. Nothing is set up yet in
+ * these specs, so the choices are already open under "Or set one up here now".
+ */
+async function openKeySetup(page: Page) {
+  await page.getByRole('button', { name: 'Set it up in Settings › Connections' }).click();
+  const settings = page.getByTestId('settings-dialog');
+  await expect(
+    settings.getByRole('heading', { name: 'How DorkOS reaches your apps' })
+  ).toBeVisible();
+  return settings.getByTestId(`add-connection-way-${PROVIDER}`);
+}
+
+/**
  * Save the provider key through the real UI form and wait for the live
- * registration to land ("Ready" badge on the provider card).
+ * registration to land (the way's row says "Working"), then close Settings.
  */
 async function saveKeyThroughUi(page: Page): Promise<void> {
-  const setup = page.getByRole('button', { name: 'Advanced account setup' });
-  if ((await setup.getAttribute('aria-expanded')) !== 'true') await setup.click();
-  const card = page.locator(`[data-testid="provider-card-${PROVIDER}"]`);
-  await card.getByLabel(/Test connector API key/i).fill('e2e-test-key');
-  await card.getByRole('button', { name: 'Save key' }).click();
-  // exact: a substring match would also accept future copy like "Not Ready".
-  await expect(card.getByText('Ready', { exact: true })).toBeVisible();
+  const settings = page.getByTestId('settings-dialog');
+  const entry = settings.getByTestId(`add-connection-way-${PROVIDER}`);
+  if (!(await entry.isVisible())) await openKeySetup(page);
+  await entry.getByLabel(/Test connector API key/i).fill('e2e-test-key');
+  await entry.getByRole('button', { name: 'Save key' }).click();
+  const row = settings.getByTestId(`connection-way-${PROVIDER}`);
+  // exact: a substring match would also accept future copy like "Not working".
+  await expect(row.getByText('Working', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
 }
 
 /**
@@ -200,15 +137,22 @@ async function connectGmail(
     capture?: { testInfo: TestInfo; viewport: 'desktop' | 'phone' };
   }
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Connect service' }).click();
-  const catalog = page.getByRole('dialog', { name: 'Connect a service' });
-  await catalog.getByLabel('Search services').fill('Gmail');
-  await catalog.getByRole('button', { name: 'Use a Gmail account' }).click();
-  await expect(catalog).toBeHidden();
+  // The first Gmail is a Connect in "All apps"; once one is connected, Gmail
+  // lives in "Yours" and another account is added from its side panel.
+  const connections = new ConnectionsPage(page);
+  const connectRow = page.getByRole('button', { name: 'Connect Gmail' });
+  if (await connectRow.isVisible()) {
+    await connectRow.click();
+  } else {
+    await connections.openPanel('Gmail');
+    const more = await connections.openMore();
+    await more.getByRole('button', { name: 'Connect another Gmail account' }).click();
+    await expect(connections.panel).toBeHidden();
+  }
 
   let dialog = page.getByRole('dialog', { name: 'Connect Gmail' });
   await expect(dialog).toBeVisible();
-  await settleFiniteAnimations(dialog);
+  await settleAnimations(page);
 
   const labelInput = dialog.getByLabel(/Account label/i);
   await labelInput.fill(label);
@@ -248,21 +192,21 @@ async function connectGmail(
     }
     for (const colorScheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme });
-      await settleFiniteAnimations(dialog);
+      await settleAnimations(page);
       await opts.capture.testInfo.attach(
         `connections-auth-${opts.capture.viewport}-${colorScheme}.png`,
         { body: await page.screenshot(), contentType: 'image/png' }
       );
     }
     await page.emulateMedia({ colorScheme: 'light' });
-    await settleFiniteAnimations(dialog);
+    await settleAnimations(page);
   }
   await dialog.getByRole('button', { name: 'Continue' }).click();
   await expect(page).toHaveURL(/(?:\?|&)flow=[^&]+/);
 
   // Polling reaches the scripted instant success.
   await expect(dialog.getByText('Gmail is connected')).toBeVisible({ timeout: 15_000 });
-  await expect(dialog.getByText('No agent can use it until you choose access.')).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Who can use Gmail?' })).toBeVisible();
 
   if (opts?.proveReloadResume) {
     await page.reload();
@@ -270,7 +214,8 @@ async function connectGmail(
     await expect(dialog.getByText('Gmail is connected')).toBeVisible({ timeout: 15_000 });
   }
 
-  await dialog.getByRole('button', { name: 'Choose agents' }).click();
+  // The exact per-action editor stays one link away from the simple card.
+  await dialog.getByRole('button', { name: 'Choose exact actions' }).click();
   const access = page.getByRole('dialog', { name: 'Choose agent access' });
   await expect(access).toBeVisible();
   await page.keyboard.press('Escape');
@@ -330,33 +275,33 @@ test.describe('Connections — save key, connect, multi-account', () => {
   }, testInfo) => {
     await gotoConnections(page);
 
-    // Before any key: the provider card says so, and the service grid is
-    // honestly empty (the raw-MCP baseline has no configured servers).
-    await page.getByRole('button', { name: 'Advanced account setup' }).click();
-    const card = page.locator(`[data-testid="provider-card-${PROVIDER}"]`);
-    await expect(card).toBeVisible();
-    await expect(card.getByText('Not set up')).toBeVisible();
-    // The custody stance is disclosed on the setup card BEFORE any key exists.
-    await expect(card).toContainText(CUSTODY_FRAGMENT);
-    // With nothing connectable, the region leads with its own first-run card
-    // rather than an empty service grid (DOR-857) — the grid's own empty copy
-    // is no longer what a person in this state is shown.
-    await expect(page.getByText('No accounts connected')).toBeVisible();
+    // Nothing connected yet: no Gmail row in "Yours", and Gmail waits in
+    // "All apps" (the list is the empty state).
+    const connections = new ConnectionsPage(page);
+    await expect(connections.yourApp('Gmail')).toHaveCount(0);
+    await expect(page.getByTestId('catalog-app-gmail')).toBeVisible();
 
-    // Save the key → the provider registers live, no restart: the badge flips
-    // to Ready and the scripted toolkits appear as service tiles.
+    // Before any key: Settings › Connections has no way set up, and the
+    // custody stance is disclosed on the key's entry BEFORE any key exists.
+    const entry = await openKeySetup(page);
+    await expect(entry).toBeVisible();
+    await expect(entry).toContainText(CUSTODY_FRAGMENT);
+
+    // Save the key → the provider registers live, no restart: the way's row
+    // says Working and the scripted toolkits appear as service tiles.
     await saveKeyThroughUi(page);
-    await page.getByRole('button', { name: 'Connect service' }).click();
-    const catalog = page.getByRole('dialog', { name: 'Connect a service' });
-    await expect(catalog.getByText('Gmail', { exact: true })).toBeVisible();
-    const slack = catalog.getByTestId('service-result-slack');
-    await expect(slack.getByText('Slack', { exact: true })).toBeVisible();
-    await expect(slack.getByRole('button', { name: 'Use a Slack account' })).toBeVisible();
-    await slack.getByRole('button', { name: 'Messages through a Slack bot' }).click();
-    await expect(catalog).toBeHidden();
-    await expect(page).toHaveURL(/(?:\?|&)region=messaging/);
-    await expect(page.locator('[aria-labelledby="region-messaging"]')).toBeVisible();
+    // Slack does two things, so its one row asks which, in plain words.
+    await page.getByRole('button', { name: 'Connect Slack' }).click();
+    const choice = page.getByTestId('app-use-choice');
+    await expect(choice.getByRole('button', { name: /Let agents use my Slack/ })).toBeVisible();
+    await choice.getByRole('button', { name: /Talk to my agents in Slack/ }).click();
+    await expect(choice).toBeHidden();
+    // A chat app goes straight to its own setup, never the account sign-in.
+    const slackSetup = page.getByRole('dialog', { name: 'Add Slack' });
+    await expect(slackSetup).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Connect Slack' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(slackSetup).toBeHidden();
 
     // First account: disclosure-before-URL is asserted inside connectGmail.
     await connectGmail(page, 'work', {
@@ -364,29 +309,27 @@ test.describe('Connections — save key, connect, multi-account', () => {
       capture: { testInfo, viewport: 'desktop' },
     });
 
-    // The new account's row carries its own server-composed custody sentence.
-    const workRow = page.locator('[data-testid^="connection-row-"]', { hasText: 'Gmail (work)' });
-    await expect(workRow).toBeVisible();
-    await workRow.getByRole('button').click();
-    const detail = page.getByRole('dialog', { name: 'Gmail (work)' });
-    await expect(detail).toContainText(CUSTODY_FRAGMENT);
+    // The new account is a row in "Yours"; its side panel carries the server's
+    // own custody sentence under More › How it's connected.
+    await expect(connections.yourApp('Gmail', 'work')).toBeVisible();
+    await connections.openPanel('Gmail', 'work');
+    await expect(page).toHaveURL(/(?:\?|&)app=/);
+    const more = await connections.openMore();
+    await expect(more).toContainText(CUSTODY_FRAGMENT);
     await page.keyboard.press('Escape');
+    await expect(connections.panel).toBeHidden();
 
     // Second account of the SAME service: the label input arrives pre-filled
     // with the suggested 'personal', and both rows are visibly distinct.
     await page.setViewportSize({ width: 390, height: 844 });
     await connectGmail(page, 'personal', { capture: { testInfo, viewport: 'phone' } });
     await page.setViewportSize({ width: 1280, height: 720 });
-    await expect(
-      page.locator('[data-testid^="connection-row-"]', { hasText: 'Gmail (work)' })
-    ).toBeVisible();
-    await expect(
-      page.locator('[data-testid^="connection-row-"]', { hasText: 'Gmail (personal)' })
-    ).toBeVisible();
+    // A second account of the same app is a second row.
+    await expect(connections.yourApp('Gmail', 'work')).toBeVisible();
+    await expect(connections.yourApp('Gmail', 'personal')).toBeVisible();
 
-    const connections = new ConnectionsPage(page);
-    await connections.accounts.scrollIntoViewIfNeeded();
-    const accessibility = await runAxe(page, '[aria-labelledby="region-accounts"]');
+    await connections.yours.scrollIntoViewIfNeeded();
+    const accessibility = await runAxe(page, '[aria-labelledby="connections-yours"]');
     expect(
       accessibility.violations.map(describeViolation),
       'the canonical account inventory should have no automated accessibility violations'
@@ -396,40 +339,45 @@ test.describe('Connections — save key, connect, multi-account', () => {
       contentType: 'application/json',
     });
     await testInfo.attach('connections-inventory-aria.txt', {
-      body: Buffer.from(await connections.accounts.ariaSnapshot()),
+      body: Buffer.from(await connections.yours.ariaSnapshot()),
       contentType: 'text/plain',
     });
     await page.emulateMedia({ colorScheme: 'light' });
-    await settleFiniteAnimations(page.locator('body'));
+    await settleAnimations(page);
     await testInfo.attach('connections-inventory-desktop-light.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
     await page.emulateMedia({ colorScheme: 'dark' });
-    await settleFiniteAnimations(page.locator('body'));
+    await settleAnimations(page);
     await testInfo.attach('connections-inventory-desktop-dark.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
 
-    const personalRow = connections.account('Gmail (personal)').getByRole('button');
+    // The row is a keyboard target: Enter opens its panel, Escape closes it.
+    const personalRow = connections.yourApp('Gmail', 'personal').getByRole('button').first();
     await personalRow.focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('dialog', { name: 'Gmail (personal)' })).toBeVisible();
+    await expect(connections.panel).toBeVisible();
+    await expect(
+      connections.panel.getByRole('heading', { name: 'Who can use Gmail?' })
+    ).toBeVisible();
     await page.keyboard.press('Escape');
+    await expect(connections.panel).toBeHidden();
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await connections.accounts.scrollIntoViewIfNeeded();
-    await expect(connections.account('Gmail (work)')).toBeVisible();
-    await expect(connections.account('Gmail (personal)')).toBeVisible();
+    await connections.yours.scrollIntoViewIfNeeded();
+    await expect(connections.yourApp('Gmail', 'work')).toBeVisible();
+    await expect(connections.yourApp('Gmail', 'personal')).toBeVisible();
     await page.emulateMedia({ colorScheme: 'light' });
-    await settleFiniteAnimations(page.locator('body'));
+    await settleAnimations(page);
     await testInfo.attach('connections-inventory-phone-light.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
     await page.emulateMedia({ colorScheme: 'dark' });
-    await settleFiniteAnimations(page.locator('body'));
+    await settleAnimations(page);
     await testInfo.attach('connections-inventory-phone-dark.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -437,23 +385,20 @@ test.describe('Connections — save key, connect, multi-account', () => {
   });
 });
 
-async function settleFiniteAnimations(locator: Locator): Promise<void> {
-  await locator.evaluate(async (element) => {
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
-    const finite = element
-      .getAnimations({ subtree: true })
-      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity);
-    await Promise.allSettled(finite.map((animation) => animation.finished));
-  });
-}
-
 registerOwnerManagementTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoConnections });
 registerEventNotificationTests({ apiUrl: API_URL, gotoConnections });
+const chatConnectHarness = {
+  apiUrl: API_URL,
+  enableTestConnector: async (request: APIRequestContext) => {
+    const put = await request.put(CREDENTIAL_URL, { data: { secret: 'e2e-test-key' } });
+    expect(put.ok()).toBe(true);
+  },
+};
+registerChatConnectCardTests(chatConnectHarness);
+registerChatConnectFirstStepTests(chatConnectHarness);
 
 test.describe('Connections — session access status', () => {
-  test('shows canonical agent access read-only and links to the exact access editor', async ({
+  test('shows a chat’s access, turns an app off and on for that chat, and links to the access editor', async ({
     page,
     request,
   }) => {
@@ -509,11 +454,10 @@ test.describe('Connections — session access status', () => {
     });
     await expect(row).toBeVisible();
     await expect(row.getByText('Inherited from agent')).toBeVisible();
-    await expect(group.getByRole('button', { name: /attach|detach/i })).toHaveCount(0);
 
-    // Arrange historical session-scoped authority in the isolated database.
-    // The public UI intentionally has no attach/detach control; real queries and
-    // rendering must still explain each retained session override accurately.
+    // Arrange historical session-scoped authority in the isolated database. The
+    // app never writes chat-only grants; real queries and rendering must still
+    // explain each retained session override accurately.
     const sessionUrl = page.url();
     const sessionId = new URL(sessionUrl).searchParams.get('session');
     expect(sessionId).toBeTruthy();
@@ -541,7 +485,8 @@ test.describe('Connections — session access status', () => {
         connections: [
           expect.objectContaining({
             connectionId,
-            access: 'session_only',
+            source: 'this_chat',
+            readiness: expect.objectContaining({ state: 'ready' }),
             operationRevisionIds: [read!.operationRevisionId],
           }),
         ],
@@ -553,10 +498,11 @@ test.describe('Connections — session access status', () => {
       await page.reload();
       await rightPanel.open();
       await page.getByRole('tab', { name: 'Session', exact: true }).click();
-      await expect(row.getByText('Disabled in this session')).toBeVisible();
-      await expect(row.getByText('This session is blocked from using the account.')).toBeVisible();
-      // Arrange a pending hosted acknowledgement without a live hosted account.
-      // This is a persistence/status fixture, not a proof of hosted delivery.
+      await expect(row.getByText('Not available')).toBeVisible();
+      await expect(row.getByText('Turned off for this chat.')).toBeVisible();
+      // Arrange a pending hosted acknowledgement of this agent's own access
+      // without a live hosted account. This is a persistence/status fixture,
+      // not a proof of hosted delivery.
       const commandId = crypto.randomUUID();
       db.prepare(
         `INSERT INTO connector_managed_authority_outbox
@@ -564,18 +510,18 @@ test.describe('Connections — session access status', () => {
          owner_kind, owner_id, managed_connection_id, scope_kind, subject_id, scope_version,
          request_hash, request_json, state, next_attempt_at, created_at, updated_at)
         SELECT ?, c.id, p.id, p.execution_config_generation, p.owner_kind, p.owner_id,
-          c.external_account_ref, 'connection_lifecycle', 'connection', 1,
+          c.external_account_ref, 'agent_grants', ?, 1,
           'browser-status-fixture', '{}', 'pending', '2099-01-01T00:00:00.000Z', ?, ?
         FROM connections c JOIN connector_provider_instances p ON p.id = c.provider_instance_id
         WHERE c.id = ?`
-      ).run(commandId, now, now, connectionId);
+      ).run(commandId, agentId, now, now, connectionId);
       db.prepare(
         `INSERT INTO connector_managed_authority_scopes
         (managed_connection_id, scope_kind, subject_id, scope_version, last_command_id,
           last_command_hash, updated_at)
-        SELECT external_account_ref, 'connection_lifecycle', 'connection', 1, ?,
+        SELECT external_account_ref, 'agent_grants', ?, 1, ?,
           'browser-status-fixture', ? FROM connections WHERE id = ?`
-      ).run(commandId, now, connectionId);
+      ).run(agentId, commandId, now, connectionId);
       db.prepare(
         `UPDATE connector_provider_instances SET mode = 'managed'
         WHERE id = (SELECT provider_instance_id FROM connections WHERE id = ?)`
@@ -587,8 +533,8 @@ test.describe('Connections — session access status', () => {
       await page.reload();
       await rightPanel.open();
       await page.getByRole('tab', { name: 'Session', exact: true }).click();
-      await expect(row.getByText('Disabled in this session')).toBeVisible();
-      await expect(row.getByText('Account access has not finished updating.')).toBeVisible();
+      await expect(row.getByText('Not available')).toBeVisible();
+      await expect(row.getByText('Updating who can use it…')).toBeVisible();
       await expect(row.getByText(/actions available/)).toHaveCount(0);
       db.prepare(
         `UPDATE connector_managed_authority_outbox SET state = 'applied'
@@ -608,21 +554,56 @@ test.describe('Connections — session access status', () => {
         `UPDATE connector_provider_instances SET mode = 'byo'
         WHERE id = (SELECT provider_instance_id FROM connections WHERE id = ?)`
       ).run(connectionId);
-      // Restore inherited state before proving the owner editor link below.
-      db.prepare(
-        'DELETE FROM session_connection_overrides WHERE session_id = ? AND connection_id = ?'
-      ).run(sessionId, connectionId);
     } finally {
       db.close();
     }
 
-    // The retained session panel is status only. Its one action opens the
-    // canonical owner workspace, where the exact connection and named agent
-    // are reviewable rather than reconstructing consent from the session.
+    // The owner's per-chat switch (DOR-2448) is exactly reversible: off hides
+    // the app from this chat's agent, and on puts back what the chat had —
+    // here its own hand-picked access, never the agent's account-wide access.
+    await page.reload();
+    await rightPanel.open();
+    await page.getByRole('tab', { name: 'Session', exact: true }).click();
+    const toggle = row.getByRole('switch', { name: 'Gmail (work) in this chat' });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(row.getByText('Turned off for this chat.')).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await expect(row.getByText('Allowed only in this session')).toBeVisible();
+    const restored = await request.get(
+      `${API_URL}/api/connectors/sessions/${sessionId}/connections`
+    );
+    expect(await restored.json()).toMatchObject({
+      connections: [
+        expect.objectContaining({
+          connectionId,
+          source: 'this_chat',
+          thisChat: 'on',
+          operationRevisionIds: [read!.operationRevisionId],
+        }),
+      ],
+    });
+    // Restore inherited state before proving the owner editor link below.
+    const cleanup = new Database(`/tmp/dorkos-test-mode-${MOCK_PORT}/dork.db`);
+    try {
+      cleanup
+        .prepare(
+          'DELETE FROM session_connection_overrides WHERE session_id = ? AND connection_id = ?'
+        )
+        .run(sessionId, connectionId);
+    } finally {
+      cleanup.close();
+    }
+
+    // What the agent may do account-wide is reviewed on Connections, where
+    // the exact connection and named agent are reviewable rather than
+    // reconstructing consent from the session.
     await group.getByRole('button', { name: 'Manage agent access' }).click();
     await expect(page).toHaveURL(/\/connections/);
     const connections = new ConnectionsPage(page);
-    const access = await connections.openAccess('Gmail (work)');
+    const access = await connections.openAccess('Gmail', 'work');
     const agentAccess = access.getByRole('group', { name: /E2E Test Agent/ });
     const dorkBotAccess = access.getByRole('group', { name: /DorkBot/ });
     await expect(agentAccess).toContainText('Read');

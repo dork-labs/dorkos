@@ -131,6 +131,18 @@ export type RoomErrorCode =
    */
   | 'TOOL_LEAVE_NOT_IN_DM'
   /**
+   * `archive_room` was asked to archive something that is not a channel (spec
+   * `agent-permissions` D12). A direct message stays until the person archives
+   * it, the same rule `leave_room` follows.
+   */
+  | 'TOOL_ARCHIVE_NOT_IN_DM'
+  /**
+   * `archive_room` was asked to archive a channel connected to an outside chat.
+   * Its archive is the disconnect the person makes, which also closes the
+   * bridge; archiving it alone would leave the bridge believing it is live.
+   */
+  | 'TOOL_ARCHIVE_BRIDGED'
+  /**
    * `update_room` was asked to rename a direct message (spec
    * `rooms-management-tools` §D12 amendment, DOR-1611).
    *
@@ -512,6 +524,21 @@ export type RoomErrorCode =
    */
   | 'ROOM_FILE_NOT_TEXT'
   /**
+   * A person's upload, move or save-from-the-chat would land on a path the
+   * room's files already hold (spec `agent-home-desk` §7.1).
+   *
+   * Refused rather than overwritten, and the message names the path: the app
+   * turns this into "replace, or keep both?", and replacing is a choice the
+   * person makes by naming the file in the upload's `replace` list — never one
+   * the server makes for them.
+   */
+  | 'ROOM_FILE_EXISTS'
+  /**
+   * One upload carried more files than the twenty a single commit and a single
+   * room entry take (`ROOM_UPLOAD_MAX_FILES`). Refused while still being read.
+   */
+  | 'ROOM_UPLOAD_TOO_MANY_FILES'
+  /**
    * Something that only makes sense for a room with files was asked of a room
    * without any — a working copy, a merge, a file listing (spec `project-rooms`
    * §3.4, §3.6).
@@ -562,6 +589,14 @@ export type RoomErrorCode =
    * person deals with it.
    */
   | 'MAIN_CHECKOUT_DIRTY'
+  /**
+   * The room's shared git config names a program git would run — a filter,
+   * diff or merge driver, an include, an fsmonitor, a credential helper
+   * (`assertRoomRepoConfigSafe` in `repo/room-repo-git.ts`). Written by
+   * something outside DorkOS, most likely an agent's unsandboxed shell. Every
+   * server git command in the room refuses until a person removes the keys.
+   */
+  | 'ROOM_REPO_CONFIG_UNSAFE'
   /**
    * The work being merged carries a symlink pointing outside the room's files
    * (spec §3.6, refusal 5).
@@ -648,6 +683,142 @@ export class RoomError extends Error {
     super(message);
     this.name = 'RoomError';
   }
+}
+
+/**
+ * What anyone but the operator is told when a room's shared git settings name a
+ * program: the fact and who fixes it, with no path and no command (DOR-2457).
+ */
+export const ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE =
+  'This room’s files are paused until the person who runs this DorkOS fixes the room’s git ' +
+  'settings.';
+
+/**
+ * Quote one word for a POSIX shell, so a command a person copies runs exactly
+ * what it says. A key's subsection is whatever the author of the settings chose,
+ * quotes included, and the command below is one somebody pastes into a terminal.
+ *
+ * @param word - The word to quote.
+ */
+function shellQuote(word: string): string {
+  return `'${word.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * `ROOM_REPO_CONFIG_UNSAFE`, carrying what it found (spec `agent-home-desk`
+ * §5.2, DOR-2457).
+ *
+ * **Two audiences, so two answers.** The operator needs the settings file, the
+ * offending keys and a command to paste. Anybody else in the room, agents
+ * included, is told only that the files are paused and who fixes them
+ * ({@link forMember}): the file sits under the operator's data folder, and a
+ * path on this machine is not something a room member was ever shown. Every
+ * surface that answers a caller picks one through {@link roomRefusalFor}.
+ *
+ * **The command travels apart from the sentence** ({@link command}). A key's
+ * subsection is whatever the author of the settings chose, backticks and quotes
+ * included, so a command set inside prose could be mangled by whatever renders
+ * the prose; a separate field is shown as-is. {@link message}, which is what
+ * the log records, carries both.
+ */
+export class RoomRepoConfigUnsafeError extends RoomError {
+  /**
+   * One shell command that removes every offending key, each word quoted for a
+   * POSIX shell; `null` when the settings could not be read at all.
+   */
+  readonly command: string | null;
+
+  /** The operator's sentence without the command: the file and the keys. */
+  readonly forOwner: string;
+
+  /**
+   * Build the refusal. Its message is the operator's sentence followed by the
+   * command, for the log.
+   *
+   * @param configFile - The room's shared settings file, `<room>/repo/.git/config`.
+   * @param keys - The offending keys as `git config --list` prints them; empty
+   *   when the file could not be read at all.
+   */
+  constructor(
+    readonly configFile: string,
+    readonly keys: readonly string[]
+  ) {
+    const command =
+      keys.length === 0
+        ? null
+        : keys
+            .map(
+              (key) => `git config --file ${shellQuote(configFile)} --unset-all ${shellQuote(key)}`
+            )
+            .join(' && ');
+    const forOwner =
+      keys.length === 0
+        ? `This room’s git settings (${configFile}) could not be read, so DorkOS will not work on ` +
+          `its files until they can be.`
+        : `This room’s shared git settings (${configFile}) contain entries that can make git run ` +
+          `programs: ${keys.join(', ')}. DorkOS will not merge, save or read this room’s files ` +
+          `until they are removed. Something outside DorkOS added them, most likely a command an ` +
+          `agent ran. The room’s Files section shows the command that removes them.`;
+    super(
+      'ROOM_REPO_CONFIG_UNSAFE',
+      command === null ? forOwner : `${forOwner} The command: ${command}`
+    );
+    this.name = 'RoomRepoConfigUnsafeError';
+    this.command = command;
+    this.forOwner = forOwner;
+  }
+
+  /** The sentence for anybody but the operator: no path, no keys, no command. */
+  get forMember(): string {
+    return ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE;
+  }
+}
+
+/** What a caller is told about a refusal: the sentence, and the command when it is theirs to run. */
+export interface RoomRefusalBody {
+  /** The sentence. */
+  error: string;
+  /** The refusal's code. */
+  code: RoomErrorCode;
+  /** A command to paste; only ever the operator's (DOR-2457). */
+  command?: string;
+}
+
+/**
+ * Ask whether the owner is asking, answering "no" if the question itself fails.
+ *
+ * @param ownerAsking - The question.
+ */
+function askSafely(ownerAsking: () => boolean): boolean {
+  try {
+    return ownerAsking();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The refusal as THIS caller may see it (DOR-2457).
+ *
+ * Every refusal reads the same to everyone except {@link RoomRepoConfigUnsafeError},
+ * whose file path, keys and command are the operator's alone. **Withheld unless
+ * the caller is known to be the operator**, so a surface that cannot say who is
+ * asking fails closed. Shared by `sendRoomError` (HTTP) and the room
+ * capabilities (MCP), the two places a refusal leaves the server.
+ *
+ * `ownerAsking` is a question, not an answer, because answering it reads the
+ * owner account: it is asked only for the one refusal it changes, and a throw
+ * while asking is "no" rather than a refusal that never reaches its caller.
+ *
+ * @param err - The refusal.
+ * @param ownerAsking - Asks whether the caller was resolved as the install's owner.
+ */
+export function roomRefusalFor(err: RoomError, ownerAsking: () => boolean): RoomRefusalBody {
+  if (!(err instanceof RoomRepoConfigUnsafeError)) return { error: err.message, code: err.code };
+  if (!askSafely(ownerAsking)) return { error: err.forMember, code: err.code };
+  return err.command === null
+    ? { error: err.forOwner, code: err.code }
+    : { error: err.forOwner, code: err.code, command: err.command };
 }
 
 /**

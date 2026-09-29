@@ -81,10 +81,12 @@ const STRUCTURAL_EXCLUDES = ['node_modules', 'dist', 'src/core-extensions/**'];
  * type-checks like everything else.
  * DOR-2248 deleted `git-subdir.test.ts` with the resolver it tested; its
  * replacement, `source-resolvers/__tests__/git.test.ts`, type-checks.
+ * `agent-permissions` phase 2 deleted `standing-grants-chain.test.ts` with the
+ * standing permissions it tested; Always allow's route tests type-check.
  * **Only ever lower this.** Lowering it means a file was fixed and freed; raising
  * it means a test file was given up on, which needs a reason in review.
  */
-const QUARANTINE_BASELINE = 103;
+const QUARANTINE_BASELINE = 102;
 
 /**
  * The `exclude` array from the server tsconfig.

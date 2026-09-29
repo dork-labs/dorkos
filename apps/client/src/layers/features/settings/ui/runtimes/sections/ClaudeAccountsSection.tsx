@@ -5,18 +5,26 @@
  */
 
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Trash2 } from 'lucide-react';
 import { claudeAccountId } from '@dorkos/shared/config-schema';
+import {
+  FLOW_FLEET_SETTINGS_TAB_ID,
+  IMPLICIT_ACCOUNT_ID,
+  type AccountUsage,
+  type FoundClaudeFolder,
+} from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/types';
 import {
-  claudeAccountName,
+  accountWindow,
   claudeAccountOptions,
+  cn,
   isAbsoluteAccountPath,
   shortenHomePath,
 } from '@/layers/shared/lib';
 import {
   Button,
+  buttonVariants,
   DirectoryPicker,
   Input,
   Label,
@@ -27,8 +35,22 @@ import {
   SelectTrigger,
   SelectValue,
   SettingRow,
+  UsageBar,
 } from '@/layers/shared/ui';
+import {
+  accountKeys,
+  useAccountUsage,
+  useClaudeAccounts,
+  useSettingsDeepLink,
+  useSlotContributions,
+  useTransport,
+  type AccountUsageView,
+} from '@/layers/shared/model';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { useAccountIdentityGate } from '@/layers/entities/runtime';
+import { AccountColorControl } from './AccountColorControl';
+import { AccountUsageBars } from './AccountUsageBars';
+import { FoundAccountsGroup } from './FoundAccountsGroup';
 
 /**
  * Stands in for "no account chosen", which writes `defaultAccount: null`. Radix
@@ -42,8 +64,28 @@ type Account = NonNullable<ServerConfig['claudeCode']>['accounts'][number];
 /** The `runtimes.claudeCode` slice a write may carry. */
 type ClaudeCodePatch = {
   defaultAccount?: string | null;
-  accounts?: { id: string; path: string; label: string | null }[];
+  accounts?: WritableAccount[];
+  /**
+   * The ids of the accounts this screen showed. The server removes only those
+   * a write leaves out, so an account flow added after the screen loaded is
+   * kept rather than read as removed.
+   */
+  accountsSeen?: string[];
+  /**
+   * The color of this computer's own sign-in while it stands alone: a palette
+   * hex, or `null` to show its default again. Written on its own, never with
+   * `accounts`, so choosing it cannot rewrite the registry.
+   */
+  defaultAccountColor?: string | null;
 };
+
+/** The ids of the registered accounts this screen is showing. */
+function shownIds(accounts: readonly Account[]): string[] {
+  return accounts.flatMap((account) => (account.id ? [account.id] : []));
+}
+
+/** One registry row as a write carries it. */
+type WritableAccount = { id: string; path: string; label: string | null; color: string | null };
 
 /**
  * The registry rows as a WRITE carries them — ids included, because the id is
@@ -60,20 +102,41 @@ type ClaudeCodePatch = {
  * row already owns — two rows with one id, which the server now refuses outright
  * and which would otherwise make one account unreachable.
  *
+ * **Each row carries its stored color**, `null` when it shows the default for
+ * its position, so adding or removing an account never resets a color the
+ * operator chose and never freezes a default into the file. The server merges
+ * each row onto the stored one, so fields this screen does not know survive.
+ *
  * @param accounts - The registered accounts as `GET /api/config` reported them.
  * @returns Rows shaped for `PATCH /api/config`.
  */
-function toWritableAccounts(accounts: readonly Account[]): {
-  id: string;
-  path: string;
-  label: string | null;
-}[] {
+function toWritableAccounts(accounts: readonly Account[]): WritableAccount[] {
   const taken = new Set(accounts.flatMap((account) => (account.id ? [account.id] : [])));
   return accounts.map((account) => {
     const id = account.id ?? claudeAccountId({ label: account.label, path: account.path, taken });
     taken.add(id);
-    return { id, path: account.path, label: account.label };
+    return {
+      id,
+      path: account.path,
+      label: account.label,
+      color: account.colorIsDefault ? null : account.color,
+    };
   });
+}
+
+/**
+ * The registry rows with one new account appended: its id minted from the
+ * label (else the folder's name) and made unique against the ids already
+ * registered, the same rule the config migration backfills with.
+ */
+function withNewAccount(
+  accounts: readonly Account[],
+  path: string,
+  label: string | null
+): WritableAccount[] {
+  const existing = toWritableAccounts(accounts);
+  const id = claudeAccountId({ label, path, taken: existing.map((account) => account.id) });
+  return [...existing, { id, path, label, color: null }];
 }
 
 /**
@@ -105,6 +168,9 @@ function describeWriteFailure(err: unknown): string {
  */
 export function ClaudeAccountsSection() {
   const { data: config } = useConfig();
+  // Names every account the one way (the standalone default reads "Main (this
+  // computer's sign-in)", decision §12).
+  const { nameFor } = useClaudeAccounts();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
 
@@ -113,12 +179,57 @@ export function ClaudeAccountsSection() {
   const [adding, setAdding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
+  const [foundError, setFoundError] = useState<{ path: string; message: string } | null>(null);
+  const transport = useTransport();
+  // Fetched only while this section is mounted: the folders on disk change
+  // outside DorkOS, so a cached answer from another visit is not trusted.
+  const found = useQuery({
+    queryKey: accountKeys.found(),
+    queryFn: () => transport.getFoundClaudeFolders(),
+  });
+  const dismissFolder = useMutation({
+    mutationFn: (folder: FoundClaudeFolder) => transport.dismissFoundClaudeFolder(folder.path),
+    onMutate: () => setFoundError(null),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: accountKeys.found() }),
+    onError: (err, folder) =>
+      setFoundError({ path: folder.path, message: describeWriteFailure(err) }),
+  });
+  // Every account-identity surface opens on this one gate (spec invariant 1):
+  // the dots, the color control, the per-row bars and the Flow note.
+  const identityGate = useAccountIdentityGate('claude-code');
+  // Asked afresh while Settings is open: the cache only ever adds and replaces
+  // records, so a `default` record left over from before an alias would
+  // otherwise keep Main's row on screen. The route's answer is the whole list.
+  const usage = useAccountUsage('claude-code', { fetch: true });
+  const hasFlowTab = useSlotContributions('settings.tabs').some(
+    (tab) => tab.id === FLOW_FLEET_SETTINGS_TAB_ID
+  );
 
   const claudeCode = config?.claudeCode;
   const accounts: Account[] = claudeCode?.accounts ?? [];
   const resolvedAccount = claudeCode?.resolvedAccount;
   const inherited = claudeCode?.inherited ?? true;
-  const activeValue = inherited || !resolvedAccount ? DEFAULT_ACCOUNT : resolvedAccount;
+  // The row new sessions run on, NAMED BY THE SERVER: a registered id, or
+  // `default` when the default stands alone (Main). Never re-derived here by
+  // comparing path strings: the server compares folders by real path, so a
+  // default written with a trailing slash, through a symlink or with `~` still
+  // names its row, and it also knows about its own `$CLAUDE_CONFIG_DIR`, which
+  // this screen cannot see. Absent (an old server, an unreadable config): no
+  // row claims "in use" rather than a guessed one.
+  const resolvedAccountId = claudeCode?.resolvedAccountId;
+  const resolvedRow =
+    resolvedAccountId && resolvedAccountId !== IMPLICIT_ACCOUNT_ID
+      ? accounts.find((account) => account.id === resolvedAccountId)
+      : undefined;
+  // The picker's value in the registered row's OWN spelling, so a chosen default
+  // written differently from its row selects that row instead of appending a
+  // second, unregistered-looking option for the same folder.
+  const chosenPath = resolvedRow?.path ?? resolvedAccount;
+  const activeValue = inherited || !chosenPath ? DEFAULT_ACCOUNT : chosenPath;
+  // The server lists `default` on its own only while no registered row has its
+  // folder (an aliased default is listed under that row), so this record is the
+  // one signal that Main needs a row of its own. Folders are never re-resolved here.
+  const mainUsage = identityGate ? usage.byId.get(IMPLICIT_ACCOUNT_ID) : undefined;
 
   const trimmedPath = newPath.trim();
   const isDuplicate = accounts.some((account) => account.path === trimmedPath);
@@ -140,16 +251,24 @@ export function ClaudeAccountsSection() {
    * key comes from the entity's factory rather than a literal, so every writer
    * on this tab spells the prefix one way.
    */
-  function write(patch: ClaudeCodePatch, onDone?: () => void) {
+  function write(
+    patch: ClaudeCodePatch,
+    onDone?: () => void,
+    onError: (message: string) => void = setWriteError
+  ) {
     setWriteError(null);
+    setFoundError(null);
     updateConfig.mutate(
       { runtimes: { claudeCode: patch } },
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({ queryKey: configKeys.all });
+          // A write can register the default's folder (Main's row then folds into
+          // that row) or change Main's color, and only the route's fresh list says so.
+          void queryClient.invalidateQueries({ queryKey: accountKeys.usage('claude-code') });
           onDone?.();
         },
-        onError: (err) => setWriteError(describeWriteFailure(err)),
+        onError: (err) => onError(describeWriteFailure(err)),
       }
     );
   }
@@ -162,25 +281,8 @@ export function ClaudeAccountsSection() {
     if (!canAdd) return;
     write(
       {
-        accounts: (() => {
-          const existing = toWritableAccounts(accounts);
-          const label = newLabel.trim() || null;
-          return [
-            ...existing,
-            {
-              // The new account's stable reference, minted from the label (else
-              // the directory's basename) and uniquified against the ids already
-              // registered — the same rule the config migration backfills with.
-              id: claudeAccountId({
-                label,
-                path: trimmedPath,
-                taken: existing.map((account) => account.id),
-              }),
-              path: trimmedPath,
-              label,
-            },
-          ];
-        })(),
+        accounts: withNewAccount(accounts, trimmedPath, newLabel.trim() || null),
+        accountsSeen: shownIds(accounts),
       },
       () => {
         setNewPath('');
@@ -190,13 +292,40 @@ export function ClaudeAccountsSection() {
     );
   }
 
+  /**
+   * Register a folder from "Found on this computer": the same write the add
+   * form makes, unnamed. On success the folder moves up into the accounts
+   * list, so the found list is read again; a refusal shows under its row.
+   */
+  function addFoundFolder(folder: FoundClaudeFolder) {
+    write(
+      { accounts: withNewAccount(accounts, folder.path, null), accountsSeen: shownIds(accounts) },
+      () => void queryClient.invalidateQueries({ queryKey: accountKeys.found() }),
+      (message) => setFoundError({ path: folder.path, message })
+    );
+  }
+
+  /** Store one account's color: a palette hex, or `null` to show its default again. */
+  function chooseColor(path: string, color: string | null) {
+    write({
+      accounts: toWritableAccounts(accounts).map((row, i) =>
+        accounts[i]!.path === path ? { ...row, color } : row
+      ),
+      accountsSeen: shownIds(accounts),
+    });
+  }
+
   function removeAccount(path: string) {
     const remaining = toWritableAccounts(accounts.filter((account) => account.path !== path));
     // Removing the account work is currently running on has to release it too,
     // or DorkOS would keep billing an account the operator just took off the
     // list. `defaultAccount` is a path, so nothing else can inherit the slot.
-    const releasesActive = !inherited && resolvedAccount === path;
-    write({ accounts: remaining, ...(releasesActive && { defaultAccount: null }) });
+    const releasesActive = !inherited && resolvedRow !== undefined && resolvedRow.path === path;
+    write({
+      accounts: remaining,
+      accountsSeen: shownIds(accounts),
+      ...(releasesActive && { defaultAccount: null }),
+    });
   }
 
   return (
@@ -205,9 +334,11 @@ export function ClaudeAccountsSection() {
       data-testid="claude-accounts-section"
     >
       <div className="flex items-center justify-between gap-3">
-        <h4 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+        {/* h3: the runtime card's sections sit under the Settings dialog's h2
+            with no heading between on a phone, so an h4 skipped a level. */}
+        <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
           Billing account
-        </h4>
+        </h3>
         {/* Quiet by design: adding an account is a rare, deliberate act, and the
             fields would otherwise crowd the card every time it is opened. */}
         <Button
@@ -220,6 +351,8 @@ export function ClaudeAccountsSection() {
           Add account
         </Button>
       </div>
+
+      {!identityGate && <ClaudeUsageBlock accounts={accounts} usage={usage} />}
 
       {/* "Default", not "Account": this is the bottom of a three-rung ladder now
           (spec `billing-account-ladder`), and an agent or a single session can
@@ -243,25 +376,77 @@ export function ClaudeAccountsSection() {
                 ? `Default (${shortenHomePath(resolvedAccount)})`
                 : 'Default'}
             </SelectItem>
-            {claudeAccountOptions(accounts, inherited ? null : resolvedAccount).map((option) => (
+            {claudeAccountOptions(accounts, inherited ? null : chosenPath).map((option) => (
               <SelectItem key={option.path} value={option.path}>
-                {claudeAccountName(option.path, accounts)}
+                {nameFor(option.path)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </SettingRow>
 
+      {/* Said in words only when no row can say it: Main never follows the
+          server's own `$CLAUDE_CONFIG_DIR` (shared account contract rev 6d).
+          When a row stands for that folder, its "in use" already says it. */}
+      {claudeCode?.launchOverride && !resolvedAccountId && (
+        <p className="text-muted-foreground text-xs" data-testid="claude-account-launch-override">
+          New sessions use $CLAUDE_CONFIG_DIR ({shortenHomePath(claudeCode.launchOverride.path)})
+          set on the server.
+        </p>
+      )}
+
       {accounts.map((account) => (
         <AccountRow
           key={account.path}
+          name={nameFor(account.path)}
           account={account}
-          accounts={accounts}
-          isActive={!inherited && resolvedAccount === account.path}
+          isActive={account.id !== null && account.id === resolvedAccountId}
           onRemove={() => removeAccount(account.path)}
+          onChooseColor={(color) => chooseColor(account.path, color)}
           disabled={updateConfig.isPending}
+          identity={
+            identityGate
+              ? {
+                  usage:
+                    (account.id ? usage.byId.get(account.id) : undefined) ??
+                    usage.byPath.get(account.path),
+                }
+              : null
+          }
         />
       ))}
+
+      {/* This computer's own sign-in, while no registered row is its folder
+          (spec §6.5, "Main's own row"). It is not a registry entry, so it has no
+          remove button, and its color is stored on its own. */}
+      {mainUsage && (
+        <AccountRow
+          name={mainUsage.label ?? nameFor(mainUsage.path)}
+          account={{
+            path: mainUsage.path,
+            color: claudeCode?.defaultAccountResolvedColor ?? mainUsage.color,
+            colorIsDefault: (claudeCode?.defaultAccountColor ?? null) === null,
+            isAccountRoot: true,
+          }}
+          // The server says no registered row has the folder new sessions run in.
+          isActive={resolvedAccountId === IMPLICIT_ACCOUNT_ID}
+          onChooseColor={(color) => write({ defaultAccountColor: color })}
+          disabled={updateConfig.isPending}
+          identity={{ usage: mainUsage }}
+        />
+      )}
+
+      {/* Not gated on the account count: a one-account user is exactly who
+          it helps (spec §6.9). It renders nothing when nothing was found. */}
+      <FoundAccountsGroup
+        folders={found.data?.folders ?? []}
+        onAdd={addFoundFolder}
+        onDismiss={(folder) => dismissFolder.mutate(folder)}
+        error={foundError}
+        disabled={updateConfig.isPending || dismissFolder.isPending}
+      />
+
+      {identityGate && hasFlowTab && <FlowNote />}
 
       {adding && (
         <SettingRow
@@ -319,6 +504,7 @@ export function ClaudeAccountsSection() {
 
       {writeError && (
         <p
+          role="alert"
           className="text-destructive flex items-start gap-1.5 text-xs"
           data-testid="claude-account-error"
         >
@@ -337,24 +523,90 @@ export function ClaudeAccountsSection() {
   );
 }
 
-/** One registered account: what it is called, where it lives, and whether DorkOS can read it. */
-function AccountRow({
-  account,
+/**
+ * Claude Code's usage while accounts are not told apart (0 or 1 registered):
+ * the one account's 5-hour and weekly bars under "Billing account", labelled
+ * with that account, or the implicit `default` account's when none is
+ * registered. Nothing when that account has no reading.
+ */
+function ClaudeUsageBlock({
   accounts,
+  usage,
+}: {
+  accounts: readonly Account[];
+  usage: AccountUsageView;
+}) {
+  const { nameFor } = useClaudeAccounts();
+  if (accounts.length > 1) return null;
+  const only = accounts[0];
+  const record: AccountUsage | undefined = only
+    ? ((only.id ? usage.byId.get(only.id) : undefined) ?? usage.byPath.get(only.path))
+    : usage.byId.get(IMPLICIT_ACCOUNT_ID);
+  if (!record) return null;
+  const name = only ? nameFor(only.path) : (record.label ?? nameFor(record.path));
+  return <AccountUsageBars usage={record} name={name} />;
+}
+
+/**
+ * The pointer to the Flow tab, shown only when accounts are told apart and the
+ * Flow extension contributes its tab. The dialog is already open, so the link
+ * switches tabs without closing it.
+ */
+function FlowNote() {
+  const { setTab } = useSettingsDeepLink();
+  return (
+    <p className="bg-muted text-muted-foreground rounded-md px-3 py-2 text-xs">
+      Flow uses these accounts for your work. Choose how in{' '}
+      <button
+        type="button"
+        onClick={() => setTab(FLOW_FLEET_SETTINGS_TAB_ID)}
+        className="text-foreground font-semibold underline-offset-2 hover:underline"
+      >
+        Settings → Flow
+      </button>
+      .
+    </p>
+  );
+}
+
+/**
+ * One account: what it is called, where it lives, and whether DorkOS can read
+ * it. A registered account can be removed; this computer's own sign-in (Main,
+ * passed without `onRemove`) cannot.
+ */
+function AccountRow({
+  name,
+  account,
   isActive,
   onRemove,
+  onChooseColor,
   disabled,
+  identity,
 }: {
-  account: Account;
-  accounts: Account[];
+  name: string;
+  account: Pick<Account, 'path' | 'color' | 'colorIsDefault' | 'isAccountRoot'>;
   isActive: boolean;
-  onRemove: () => void;
+  /** Removes the account from the registry; absent for an account that is not in it. */
+  onRemove?: () => void;
+  onChooseColor: (color: string | null) => void;
   disabled: boolean;
+  /** The account's identity and usage, present only while the identity gate is open. */
+  identity: { usage: AccountUsage | undefined } | null;
 }) {
-  const name = claudeAccountName(account.path, accounts);
   return (
-    <div className="flex items-start justify-between gap-4" data-testid="claude-account-row">
-      <div className="min-w-0">
+    <div className="flex items-start gap-3" data-testid="claude-account-row">
+      {identity && (
+        <span className="mt-1 flex">
+          <AccountColorControl
+            name={name}
+            color={account.color}
+            colorIsDefault={account.colorIsDefault}
+            onChoose={onChooseColor}
+            disabled={disabled}
+          />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">
           {name}
           {isActive && <span className="text-muted-foreground ml-2 text-xs">in use</span>}
@@ -375,15 +627,34 @@ function AccountRow({
           </p>
         )}
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onRemove}
-        disabled={disabled}
-        aria-label={`Remove ${name}`}
-      >
-        <Trash2 className="size-3.5" />
-      </Button>
+      {identity && (
+        <div className="w-36 shrink-0 space-y-1 pt-0.5">
+          <UsageBar window={accountWindow(identity.usage, 'five_hour')} label="5h" compact />
+          <UsageBar window={accountWindow(identity.usage, 'seven_day')} label="wk" compact />
+        </div>
+      )}
+      {onRemove ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          disabled={disabled}
+          aria-label={`Remove ${name}`}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      ) : (
+        // Holds the remove button's place so every row's bars line up. It wears
+        // the button's own classes, so its width follows the button's. Not a
+        // button and not focusable: nothing to click, nothing to announce.
+        <span
+          aria-hidden="true"
+          data-testid="claude-account-remove-spacer"
+          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'invisible')}
+        >
+          <Trash2 className="size-3.5" />
+        </span>
+      )}
     </div>
   );
 }

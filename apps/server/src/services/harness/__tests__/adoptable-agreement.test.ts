@@ -34,7 +34,7 @@ import {
   readAdoptCandidates,
   ROOM_SEEDED_SKILL_NAMES,
 } from '@dorkos/harness';
-import { SEEDED_PACK_EXCLUDES } from '../../rooms/repo/room-worktree-manager.js';
+import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import { adoptableSkillSources } from '../status.js';
 
 /** Temp directories to remove when the case ends. */
@@ -231,16 +231,14 @@ describe('the adopt reader and the status model', () => {
     }
   });
 
-  it('SK-16: reserves exactly the names a room worktree hides from git', () => {
-    // R3 refuses exactly the names a room worktree hides from git, and the two
-    // lists are derived in two packages that cannot see each other. Compared
-    // through the PATHS the room manager really writes into `info/exclude`, so
-    // a change to either derivation's shape reds this rather than passing on
-    // both sides reading the same array.
+  it('SK-16: reserves exactly the names an older room worktree hides from git', () => {
+    // R3 refuses exactly the names a room worktree's legacy `info/exclude`
+    // block hides from git — the Operating DorkOS pack, which releases before
+    // spec `agent-home-desk` seeded into every worktree and which stays hidden
+    // until that worktree's plumbing is retired. The two lists are derived in
+    // two packages that cannot see each other, so they are compared here.
     const reserved = [...ROOM_SEEDED_SKILL_NAMES].sort();
-    const hidden = SEEDED_PACK_EXCLUDES.map((path) =>
-      path.replace('/.agents/skills/', '').replace('/SKILL.md', '')
-    ).sort();
+    const hidden = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
     expect({ reserved: reserved.length, hidden: hidden.length }).toEqual({
       reserved: hidden.length,
       hidden: hidden.length,

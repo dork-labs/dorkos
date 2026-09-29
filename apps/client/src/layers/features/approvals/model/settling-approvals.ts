@@ -87,8 +87,11 @@ import { askExitTransition } from '@/layers/shared/lib';
 const EXIT = askExitTransition({ decided: true, reducedMotion: false });
 export const APPROVAL_RECEIPT_SETTLE_MS = (EXIT.delay + EXIT.duration) * 1000;
 
-/** What a person answered, once they have. */
-export type ApprovalDecision = 'granted' | 'denied';
+/**
+ * What a person answered, once they have: allowed once, allowed always (for
+ * this agent and this action, spec `agent-permissions` D7), or denied.
+ */
+export type ApprovalDecision = 'granted' | 'granted-always' | 'denied';
 
 /**
  * How many answers are remembered at once.

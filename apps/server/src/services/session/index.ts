@@ -138,6 +138,7 @@ export {
   dispatchMessage,
   dispatchCommandIntent,
   emitQueueUpdate,
+  isTurnInFlight,
   listQueuedMessages,
   noteSessionOrphaned,
   noteTurnBoundary,
@@ -191,6 +192,19 @@ export {
   setStagedContextStore,
 } from './staged-context-store.js';
 export type { StagedContextEntry } from './staged-context-store.js';
+export {
+  SessionLimitStore,
+  getSessionLimitStore,
+  setSessionLimitStore,
+} from './fleet/session-limit-store.js';
+export { startLimitPlanning, onLimitPlanWritten } from './fleet/limit-plans.js';
+export { installContinueService } from './fleet/continue-service.js';
+export { installResumeService } from './fleet/resume-service.js';
+export {
+  applySessionFleetOverlay,
+  sessionFleetOverlayDeps,
+} from './fleet/session-fleet-overlay.js';
+export type { FleetUsageReader, SessionFleetOverlayDeps } from './fleet/session-fleet-overlay.js';
 export type {
   TriggerCommandIntentDeps,
   TriggerCommandIntentOpts,
@@ -208,17 +222,6 @@ export {
 } from './resolve-read-cwd.js';
 export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
-export {
-  createEmbeddedTurnTrigger,
-  createEmbeddedCommandIntentTrigger,
-} from './embedded-turn-trigger.js';
-export type {
-  EmbeddedTurnTrigger,
-  EmbeddedTriggerOpts,
-  EmbeddedCommandIntentTrigger,
-  EmbeddedCommandIntentOpts,
-} from './embedded-turn-trigger.js';
-
 // --- Multi-runtime session-list aggregation (ADR-0310) ---
 export { aggregateSessionList, LIST_SESSIONS_TIMEOUT_MS } from './aggregate-session-list.js';
 export {

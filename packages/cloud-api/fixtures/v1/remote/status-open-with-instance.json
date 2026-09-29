@@ -1,0 +1,10 @@
+{
+  "instanceId": "inst_0001",
+  "mode": "managed",
+  "state": "open",
+  "address": "example-instance.remote.invalid",
+  "url": "https://example-instance.remote.invalid",
+  "openedAt": "2026-09-15T12:00:00.000Z",
+  "lastActivityAt": "2026-09-15T12:00:00.000Z",
+  "alwaysAvailable": false
+}

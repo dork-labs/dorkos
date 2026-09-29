@@ -541,7 +541,7 @@ function StreamingLine({
       className="flex min-w-0 items-center gap-2"
     >
       {state.isBypass ? (
-        <span aria-hidden="true" className="shrink-0 font-bold text-amber-500/70">
+        <span aria-hidden="true" className="text-status-warning-fg shrink-0 font-bold">
           ☠
         </span>
       ) : (
@@ -549,7 +549,10 @@ function StreamingLine({
       )}
       <span
         aria-hidden="true"
-        className={cn('truncate', state.isBypass ? 'text-amber-500/80' : 'text-muted-foreground')}
+        className={cn(
+          'truncate',
+          state.isBypass ? 'text-status-warning-fg' : 'text-muted-foreground'
+        )}
       >
         {state.verb}
       </span>

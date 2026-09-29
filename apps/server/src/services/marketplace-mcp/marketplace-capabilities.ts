@@ -11,10 +11,10 @@
  * MCP adapters re-wrap it).
  *
  * The confirmation-token trust boundary for the mutation capabilities
- * (`marketplace.install`, `marketplace.uninstall`, `marketplace.create_package`)
- * is preserved exactly: the approval state machine lives inside the handler on
- * `deps.confirmationProvider`, unchanged by the migration. The five read-only
- * lookups carry `readOnlyCarveOut: true`; the three mutations do not.
+ * (`marketplace.install`, `marketplace.update`, `marketplace.uninstall`,
+ * `marketplace.create_package`) is preserved exactly: the approval state machine
+ * lives inside the handler on `deps.confirmationProvider`. The five read-only
+ * lookups carry `readOnlyCarveOut: true`; the four mutations do not.
  *
  * ## Cooperating with the tier gate
  *
@@ -41,6 +41,7 @@ import { createListMarketplacesHandler } from './tool-list-marketplaces.js';
 import { createListInstalledHandler, ListInstalledInputSchema } from './tool-list-installed.js';
 import { createRecommendHandler, RecommendInputSchema } from './tool-recommend.js';
 import { createInstallHandler, InstallInputSchema } from './tool-install.js';
+import { createUpdateHandler, UpdateInputSchema } from './tool-update.js';
 import { createUninstallHandler, UninstallInputSchema } from './tool-uninstall.js';
 import { createCreatePackageHandler, CreatePackageInputSchema } from './tool-create-package.js';
 
@@ -86,16 +87,34 @@ function callerContext(context: CapabilityHandlerContext): MarketplaceConfirmati
     : undefined;
   return {
     ...(requestedBy ? { requestedBy } : {}),
-    // Two different proofs that this person has already said yes to this exact
-    // call, and the handler must not ask again for either: an approval the tier
-    // gate spent, or a caller that proved it may DECIDE approvals — for whom the
-    // confirmation this flow would go and fetch is its own.
-    ...(context.approval || context.trusted ? { preApproved: true } : {}),
+    // Three different proofs that this person has already said yes, and the
+    // handler must not ask again for any: an approval the tier gate spent on
+    // this exact call, a caller that proved it may DECIDE approvals (for whom
+    // the confirmation this flow would go and fetch is its own), or an Allowed
+    // the person set on this one action (an Always allow).
+    ...(context.trusted || personAlreadySaidYes(context.approval) ? { preApproved: true } : {}),
   };
 }
 
 /**
- * The marketplace domain: read-only lookups first, then the three
+ * Whether what the gate concluded is a person's yes for THIS action.
+ *
+ * An area-level Allowed is not one: a preset or an area default says "this kind
+ * of work may run", and the marketplace's own confirmation is how a person sees
+ * which package is about to land (spec `agent-permissions` D5, where the
+ * undecided install keeps that confirmation). Only an approval spent on this
+ * call, or an Allowed set on this one action, stands in for it.
+ *
+ * @param approval - What the gate concluded, when the call was gated.
+ */
+function personAlreadySaidYes(approval: CapabilityHandlerContext['approval']): boolean {
+  if (!approval) return false;
+  if (approval.via === 'approval') return true;
+  return approval.source === 'agent-action' || approval.source === 'default-action';
+}
+
+/**
+ * The marketplace domain: read-only lookups first, then the four
  * confirmation-gated mutations. This is the registration order on both MCP
  * servers.
  */
@@ -112,6 +131,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'Returns matching entries from every enabled marketplace source. ' +
         'Filters: type (agent/plugin/skill-pack/adapter), category, tags, marketplace, query (free-text).',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(SearchInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -131,6 +152,8 @@ export const marketplaceDomain: CapabilityDomain = {
       description:
         'Get full details for a marketplace package by name. Returns the package manifest, README, marketplace metadata, and any DorkOS-specific fields (type, category, tags).',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(GetInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -148,8 +171,13 @@ export const marketplaceDomain: CapabilityDomain = {
       id: 'marketplace.list_marketplaces',
       title: 'List marketplace sources',
       description:
-        'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, and total package count.',
+        'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, ' +
+        'total package count, and lastFetch: how the latest fetch of its listing went (never | fetched | ' +
+        'failed | stale, with the reason). A packageCount of 0 with lastFetch failed means the listing ' +
+        "didn't load, not that the marketplace is empty.",
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -170,8 +198,14 @@ export const marketplaceDomain: CapabilityDomain = {
         'List packages currently installed in this DorkOS instance, one entry per installation across scopes. ' +
         'A package installed globally and on two agents returns three entries, each tagged with scope ' +
         '(global | agent-local | override) and, for agent installs, the owning agent id and name. ' +
-        'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance.',
+        'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance. ' +
+        'Pass checkUpdates:true to also get, per entry, update.status (update-available | current | unknown), ' +
+        "update.latestVersion and a note. That checks each package's marketplace, so it is slower; " +
+        'without it nothing is fetched. Pass verify:true to also get, per entry, integrity.status ' +
+        '(clean | modified | unknown) with the files that changed since install; that reads every shipped file.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(ListInstalledInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -179,7 +213,8 @@ export const marketplaceDomain: CapabilityDomain = {
           toolName: 'marketplace_list_installed',
           servers: ['in-session', 'external'],
           readOnlyCarveOut: true,
-          annotations: { idempotentHint: true },
+          // `checkUpdates` reads each package's (possibly remote) marketplace.
+          annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
       invoke: async (deps, input) =>
@@ -191,6 +226,8 @@ export const marketplaceDomain: CapabilityDomain = {
       description:
         'Recommend marketplace packages based on a context description (e.g., "I need to track errors in my Next.js app"). Uses keyword + tag matching. Returns top matches with relevance scores and reasons.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(RecommendInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -214,6 +251,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'For external AI agents: the first call returns status:requires_confirmation with a token. ' +
         'After the user approves in DorkOS, re-call with confirmationToken to complete the install.',
       tier: 'act',
+      area: 'packages',
+      approvalDisplayFields: ['name', 'marketplace', 'projectPath'],
       input: z.object(InstallInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -230,12 +269,49 @@ export const marketplaceDomain: CapabilityDomain = {
         ),
     }),
     defineCapability({
+      id: 'marketplace.update',
+      title: 'Update packages',
+      description:
+        'Check installed marketplace packages for newer versions, and install them. ' +
+        'By default it only checks: one entry per installation, with status (update-available | current | unknown), ' +
+        'installedVersion, latestVersion, a note saying why when it could not tell, and where it is installed ' +
+        '(installPath, scope, agentPath). Nothing changes. ' +
+        'Narrow it with names (every copy of those packages) and/or installPaths (exact copies, as a check reported them). ' +
+        'Pass apply:true to reinstall every selected package that has a newer version, each where it is installed. ' +
+        'Requires user confirmation: the first apply call checks, then returns status:requires_confirmation with a token ' +
+        'and the updates it would make (versions, and every command, scheduled job, server, monitor and skill tool the new versions bring). ' +
+        'After the user approves in DorkOS, re-call with the same arguments plus confirmationToken. If a new version changed ' +
+        'in between, it asks again. Too many updates for one approval are refused: apply fewer, by installPaths. ' +
+        'A linked (symlinked) install is never reinstalled.',
+      tier: 'act',
+      // Same area as install: an applied update is an install of a new version.
+      area: 'packages',
+      approvalDisplayFields: ['names', 'installPaths', 'apply'],
+      input: z.object(UpdateInputSchema),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'marketplace_update',
+          servers: ['in-session', 'external'],
+          // Reads each package's (possibly remote) marketplace, and fetches it on apply.
+          annotations: { openWorldHint: true },
+        },
+      },
+      invoke: async (deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createUpdateHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
+        ),
+    }),
+    defineCapability({
       id: 'marketplace.uninstall',
       title: 'Uninstall package',
       description:
         'Uninstall a previously installed marketplace package. Requires user confirmation. ' +
-        'By default, preserves .dork/data/ and .dork/secrets.json. Pass purge:true to remove them.',
+        'By default, keeps the files you and your agents added or changed; purge:true removes them. ' +
+        'Uninstalling an agent package removes the agent from the team (rooms, schedules, sign-ins, access), ' +
+        'and reinstalling does not restore that.',
       tier: 'destructive',
+      area: 'packages',
       input: z.object(UninstallInputSchema),
       output: z.unknown(),
       // What a person needs to decide, and nothing else. `confirmationToken` is a
@@ -263,6 +339,8 @@ export const marketplaceDomain: CapabilityDomain = {
         '~/.dork/personal-marketplace/packages/<name>/ and registers the package in personal marketplace.json. ' +
         'Requires user confirmation. Publishing to a public marketplace is a separate step.',
       tier: 'act',
+      area: 'packages',
+      approvalDisplayFields: ['name', 'type'],
       input: z.object(CreatePackageInputSchema),
       output: z.unknown(),
       surfaces: {

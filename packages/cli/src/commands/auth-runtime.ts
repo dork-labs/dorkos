@@ -42,6 +42,14 @@ export async function buildAuthRuntime(dorkHome: string): Promise<AuthRuntime> {
   mkdirSync(dorkHome, { recursive: true });
   // Same on-disk database the server opens (`apps/server/src/index.ts`).
   const db = createDb(path.join(dorkHome, 'dork.db'));
+  // This can be the first process to migrate this database, and the migration
+  // drops the retired standing-permission table: capture the live ones first,
+  // exactly as the server does, so the permission history still gets its line
+  // for each (`permissions/ended-standing-grants.ts`). The server writes those
+  // lines, and removes the retired settings, at its next start.
+  const { captureLiveStandingGrants, readStandingGrantLicence } =
+    await import('../../server/services/core/permissions/ended-standing-grants.js');
+  captureLiveStandingGrants(db, dorkHome, console, readStandingGrantLicence(dorkHome));
   runMigrations(db);
 
   // Resolve the signing secret the SAME way the server does (env → persisted

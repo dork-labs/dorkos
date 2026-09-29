@@ -10,6 +10,12 @@
  * minutes while linked. A `401` from any cloud call marks the instance unlinked:
  * it clears the token and stops — it never retry-loops a dead key.
  *
+ * Every path that drops a key (unlink, a `401`) keeps that key's relink proof
+ * (an HMAC keyed by it, see `linkProofForKey`) at `cloud.previousLinkProof`;
+ * the next link request carries that proof (or the held key's, when re-linking
+ * while linked) so the cloud can continue the same
+ * link for the same DorkOS account, and a successful link clears it (DOR-2521).
+ *
  * This is deliberately INDEPENDENT of `config.auth.enabled` (local login and the
  * cloud link are orthogonal). The token value is never logged.
  *
@@ -52,6 +58,7 @@ import { env } from '../../../env.js';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import {
   buildInstanceDescriptor,
+  linkProofForKey,
   executeManagedConnectorOperation,
   ManagedConnectorCloudError,
   ManagedConnectorLinkRequiredError,
@@ -81,6 +88,13 @@ import { resolveLinkTelemetryInstanceId } from './link-telemetry.js';
 
 /** How often a linked instance heartbeats the cloud. */
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
+let nextLinkGeneration = 0;
+
+interface LinkContext {
+  generation: number;
+  token: string;
+  baseUrl: string;
+}
 
 /** Reason surfaced to the UI when the cloud revokes this instance's key. */
 export const UNLINKED_REASON = 'This instance was unlinked';
@@ -113,9 +127,16 @@ export interface StartLinkResult {
 export interface CloudConfigPort {
   getToken(): string | null;
   getAccountLabel(): string | null;
+  /** The kept relink proof of the last dropped instance key, or `null` (also when absent). */
+  getPreviousLinkProof(): string | null;
+  /** Store a newly issued key. A new link consumes any kept relink proof (sets it `null`). */
   save(link: { instanceToken: string; instanceName: string }): void;
   setAccountLabel(label: string | null): void;
-  clear(): void;
+  /**
+   * Drop the instance key, name and account label, keeping `previousLinkProof`
+   * so the next link can ask the cloud to continue this one.
+   */
+  clear(keep: { previousLinkProof: string | null }): void;
 }
 
 /** Default config port backed by the `configManager` singleton (resolved lazily). */
@@ -123,12 +144,20 @@ function defaultConfigPort(): CloudConfigPort {
   return {
     getToken: () => configManager.get('cloud')?.instanceToken ?? null,
     getAccountLabel: () => configManager.get('cloud')?.linkedAccountLabel ?? null,
+    // Configs written before the field existed carry no leaf at all; absence is `null`.
+    getPreviousLinkProof: () => configManager.get('cloud')?.previousLinkProof ?? null,
     save: ({ instanceToken, instanceName }) => {
       const current = configManager.get('cloud');
       // `cloud.instanceToken` is registered in SENSITIVE_CONFIG_KEYS; the write
       // path mirrors how `tunnel.authtoken` is stored (whole-section set). The
-      // token value is never logged — `logConfigWrite` names paths only.
-      configManager.set('cloud', { ...current, instanceToken, instanceName });
+      // token value is never logged — `logConfigWrite` names paths only. The
+      // new link has consumed any kept relink proof, so it goes too.
+      configManager.set('cloud', {
+        ...current,
+        instanceToken,
+        instanceName,
+        previousLinkProof: null,
+      });
       logConfigWrite('the account link', 'cloud', current, configManager.get('cloud'));
     },
     setAccountLabel: (label) => {
@@ -140,12 +169,13 @@ function defaultConfigPort(): CloudConfigPort {
       configManager.set('cloud', { ...current, linkedAccountLabel: label });
       logConfigWrite('the account link', 'cloud', current, configManager.get('cloud'));
     },
-    clear: () => {
+    clear: ({ previousLinkProof }) => {
       const current = configManager.get('cloud');
       configManager.set('cloud', {
         instanceToken: null,
         instanceName: null,
         linkedAccountLabel: null,
+        previousLinkProof,
       });
       logConfigWrite('unlinking this instance', 'cloud', current, configManager.get('cloud'));
     },
@@ -209,6 +239,7 @@ export class CloudLinkManager {
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private pollController: AbortController | undefined;
   private pollTask: Promise<void> | undefined;
+  private linkGeneration = ++nextLinkGeneration;
 
   constructor(private readonly options: CloudLinkManagerOptions = {}) {
     this.fetchImpl = options.fetchImpl;
@@ -227,6 +258,28 @@ export class CloudLinkManager {
     return this.configPort;
   }
 
+  /** Process-local identity of this lifecycle, including same-token replacements. */
+  get generation(): number {
+    return this.linkGeneration;
+  }
+
+  private advanceGeneration(): number {
+    this.linkGeneration = ++nextLinkGeneration;
+    return this.linkGeneration;
+  }
+
+  private captureContext(token: string, baseUrl = resolveCloudBaseUrl()): LinkContext {
+    return { generation: this.linkGeneration, token, baseUrl };
+  }
+
+  private ownsContext(context: LinkContext): boolean {
+    return (
+      this.linkGeneration === context.generation &&
+      this.config.getToken() === context.token &&
+      resolveCloudBaseUrl() === context.baseUrl
+    );
+  }
+
   /**
    * Begin the device flow: request a code, enter `pending`, and kick off the
    * background poll that carries the flow to `linked`/`denied`/`expired`. Returns
@@ -234,19 +287,29 @@ export class CloudLinkManager {
    * outcome.
    */
   async startLink(): Promise<StartLinkResult> {
+    const generation = this.advanceGeneration();
     this.cancelPoll();
     const baseUrl = resolveCloudBaseUrl();
     // Resolve the analytics-merge opt-in HERE, at link time: the descriptor built
     // now is what the cloud persists and reads to alias this install's anonymous
     // history onto the account. Heartbeats deliberately never carry the id.
     const telemetryInstanceId = await this.resolveTelemetryInstanceId();
-    const descriptor = buildInstanceDescriptor(telemetryInstanceId);
+    if (generation !== this.linkGeneration) throw new Error('Cloud link request was superseded');
+    const previousLinkProof = this.previousLinkProof();
+    const descriptor = {
+      ...buildInstanceDescriptor(telemetryInstanceId),
+      ...(previousLinkProof ? { previousLinkProof } : {}),
+    };
     const codes = await requestDeviceCode({ baseUrl, descriptor, fetchImpl: this.fetchImpl });
+
+    if (generation !== this.linkGeneration || baseUrl !== resolveCloudBaseUrl()) {
+      throw new Error('Cloud link request was superseded');
+    }
 
     this.setState('pending');
     const controller = new AbortController();
     this.pollController = controller;
-    this.pollTask = this.runPoll(baseUrl, descriptor, codes, controller.signal);
+    this.pollTask = this.runPoll(baseUrl, descriptor, codes, controller.signal, generation);
 
     return {
       userCode: codes.user_code,
@@ -255,11 +318,26 @@ export class CloudLinkManager {
     };
   }
 
+  /**
+   * The relink proof a link request carries: the key held right now
+   * (re-linking while linked), else the proof kept from the last dropped key.
+   */
+  private previousLinkProof(): string | null {
+    const token = this.config.getToken();
+    return token ? linkProofForKey(token) : this.config.getPreviousLinkProof();
+  }
+
+  /** Clear the link locally, keeping the relink proof of whatever key is being dropped. */
+  private clearKeepingProof(): void {
+    this.config.clear({ previousLinkProof: this.previousLinkProof() });
+  }
+
   private async runPoll(
     baseUrl: string,
     descriptor: InstanceDescriptor,
     codes: { device_code: string; interval: number; expires_in: number },
-    signal: AbortSignal
+    signal: AbortSignal,
+    generation: number
   ): Promise<void> {
     try {
       const result = await pollForToken({
@@ -272,22 +350,32 @@ export class CloudLinkManager {
         now: this.now,
         signal,
       });
-      if (signal.aborted) return;
+      this.settlePoll(signal);
+      if (signal.aborted || generation !== this.linkGeneration || baseUrl !== resolveCloudBaseUrl())
+        return;
       if (result.status === 'approved') {
         this.config.save({ instanceToken: result.accessToken, instanceName: descriptor.name });
+        const context = this.captureContext(result.accessToken, baseUrl);
         this.setState('linked');
         await this.notifyManagedProviderSync();
-        await this.heartbeat(baseUrl, descriptor, result.accessToken);
-        if (this.config.getToken()) this.startHeartbeatSchedule();
+        if (!this.ownsContext(context)) return;
+        await this.heartbeat(baseUrl, descriptor, result.accessToken, generation);
+        if (this.ownsContext(context)) this.startHeartbeatSchedule();
       } else {
         this.setState(result.status === 'denied' ? 'denied' : 'expired');
       }
     } catch (err) {
-      if (!signal.aborted) {
+      this.settlePoll(signal);
+      if (!signal.aborted && generation === this.linkGeneration) {
         logger.warn('[CloudLink] Device-link poll failed', logError(err));
         this.setState('idle');
       }
     }
+  }
+
+  /** A settled poll no longer counts as a pending re-link (see {@link markUnlinked}). */
+  private settlePoll(signal: AbortSignal): void {
+    if (this.pollController?.signal === signal) this.pollController = undefined;
   }
 
   /**
@@ -298,31 +386,36 @@ export class CloudLinkManager {
   async initOnStartup(): Promise<void> {
     const token = this.config.getToken();
     if (!token) return;
+    const context = this.captureContext(token);
     this.setState('linked');
-    await this.heartbeat(resolveCloudBaseUrl(), buildInstanceDescriptor(), token);
+    await this.heartbeat(context.baseUrl, buildInstanceDescriptor(), token, context.generation);
     // Only schedule if the startup heartbeat did not just unlink us (401).
-    if (this.config.getToken()) this.startHeartbeatSchedule();
+    if (this.ownsContext(context)) this.startHeartbeatSchedule();
   }
 
   /**
-   * User-initiated unlink: best-effort server-side revoke, then clear the local
-   * token and stop heartbeating. Returns the instance to `idle`.
+   * User-initiated unlink: withdraw locally before best-effort remote revoke.
+   * The revoke retains only the retiring credential and cannot affect a new link.
    */
   async unlink(): Promise<void> {
+    const token = this.config.getToken();
+    const baseUrl = resolveCloudBaseUrl();
+    this.advanceGeneration();
     this.cancelPoll();
     this.stopHeartbeatSchedule();
-    const token = this.config.getToken();
-    if (token) {
-      await revokeInstanceKey({
-        baseUrl: resolveCloudBaseUrl(),
-        accessToken: token,
-        fetchImpl: this.fetchImpl,
-      });
-    }
-    this.config.clear();
+    this.clearKeepingProof();
     this.lastHeartbeatAt = undefined;
     this.setState('idle');
-    await this.notifyManagedProviderSync();
+    const reconciliation = this.notifyManagedProviderSync();
+    const revocation = token
+      ? revokeInstanceKey({
+          baseUrl,
+          accessToken: token,
+          fetchImpl: this.fetchImpl,
+        })
+      : undefined;
+    await reconciliation;
+    await revocation;
   }
 
   /** The link-flow state for `GET /api/cloud/link/status`. */
@@ -363,9 +456,10 @@ export class CloudLinkManager {
     signal?: AbortSignal
   ): Promise<ManagedConnectorAuthorityCommandStatus> {
     const token = this.requireConnectorToken();
+    const context = this.captureContext(token);
     try {
       return await submitManagedConnectorAuthorityCommand({
-        baseUrl: resolveCloudBaseUrl(),
+        baseUrl: context.baseUrl,
         accessToken: token,
         command,
         fetchImpl: this.fetchImpl,
@@ -373,7 +467,7 @@ export class CloudLinkManager {
       });
     } catch (error) {
       if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
-        this.markUnlinked();
+        this.markUnlinked(context);
       }
       throw error;
     }
@@ -385,9 +479,10 @@ export class CloudLinkManager {
     signal?: AbortSignal
   ): Promise<ManagedConnectorAuthorityCommandStatus> {
     const token = this.requireConnectorToken();
+    const context = this.captureContext(token);
     try {
       return await readManagedConnectorAuthorityCommand({
-        baseUrl: resolveCloudBaseUrl(),
+        baseUrl: context.baseUrl,
         accessToken: token,
         commandId,
         fetchImpl: this.fetchImpl,
@@ -395,7 +490,7 @@ export class CloudLinkManager {
       });
     } catch (error) {
       if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
-        this.markUnlinked();
+        this.markUnlinked(context);
       }
       throw error;
     }
@@ -630,6 +725,7 @@ export class CloudLinkManager {
 
   /** Stop all timers and cancel any in-flight poll (server shutdown). */
   stop(): void {
+    this.advanceGeneration();
     this.cancelPoll();
     this.stopHeartbeatSchedule();
   }
@@ -643,11 +739,12 @@ export class CloudLinkManager {
     request: (accessToken: string) => Promise<T>
   ): Promise<T> {
     const token = this.requireConnectorToken();
+    const context = this.captureContext(token);
     try {
       return await request(token);
     } catch (error) {
       if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
-        this.markUnlinked();
+        this.markUnlinked(context);
       }
       throw error;
     }
@@ -677,7 +774,8 @@ export class CloudLinkManager {
   private async heartbeat(
     baseUrl: string,
     descriptor: InstanceDescriptor,
-    accessToken: string
+    accessToken: string,
+    generation: number
   ): Promise<void> {
     const result = await sendHeartbeat({
       baseUrl,
@@ -685,12 +783,14 @@ export class CloudLinkManager {
       descriptor,
       fetchImpl: this.fetchImpl,
     });
+    const context = { generation, token: accessToken, baseUrl };
+    if (!this.ownsContext(context)) return;
     if (result.ok) {
       this.lastHeartbeatAt = result.lastSeenAt;
       this.config.setAccountLabel(result.accountLabel);
       this.setState('linked');
     } else if (result.unauthorized) {
-      this.markUnlinked();
+      this.markUnlinked(context);
     } else {
       // Transient (network / 5xx): keep the token and the schedule; retry next tick.
       logger.warn(`[CloudLink] Heartbeat failed (transient): ${result.error}`);
@@ -703,14 +803,26 @@ export class CloudLinkManager {
     return token;
   }
 
-  private markUnlinked(): void {
+  private markUnlinked(context: LinkContext): void {
+    if (!this.ownsContext(context)) return;
+    // A re-link started while still linked has a device poll in flight, and
+    // the old key can be refused (401) while it waits. Drop the old key but
+    // leave that poll, and the generation it runs under, alone: an approval
+    // still saves the new key. Work still holding the old key cannot act on
+    // the result, because `ownsContext` also requires the stored token to
+    // match, and it is now cleared (and later replaced).
+    const relinkPending = this.pollController !== undefined && !this.pollController.signal.aborted;
+    if (!relinkPending) {
+      this.advanceGeneration();
+      this.cancelPoll();
+    }
     this.stopHeartbeatSchedule();
-    this.config.clear();
+    this.clearKeepingProof();
     this.lastHeartbeatAt = undefined;
-    this.setState('unlinked');
+    this.setState(relinkPending ? 'pending' : 'unlinked');
     void this.notifyManagedProviderSync();
     logger.warn(
-      `[CloudLink] ${UNLINKED_REASON} — cloud revoked the instance key; cleared local token`
+      `[CloudLink] ${UNLINKED_REASON} — cloud refused the instance key (401); cleared local token`
     );
   }
 
@@ -729,7 +841,8 @@ export class CloudLinkManager {
       this.stopHeartbeatSchedule();
       return;
     }
-    await this.heartbeat(resolveCloudBaseUrl(), buildInstanceDescriptor(), token);
+    const context = this.captureContext(token);
+    await this.heartbeat(context.baseUrl, buildInstanceDescriptor(), token, context.generation);
   }
 
   private stopHeartbeatSchedule(): void {
@@ -771,4 +884,9 @@ export function initCloudLinkManager(options?: CloudLinkManagerOptions): CloudLi
 export function getCloudLinkManager(): CloudLinkManager {
   if (!instance) throw new Error('CloudLinkManager not initialized');
   return instance;
+}
+
+/** Current process-local link generation, if the singleton has been initialized. */
+export function getCloudLinkGeneration(): number | undefined {
+  return instance?.generation;
 }

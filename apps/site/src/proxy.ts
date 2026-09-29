@@ -1,5 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { isMarkdownPreferred, rewritePath } from 'fumadocs-core/negotiation';
+import { env } from '@/env';
+import {
+  decideCloudAccountsForward,
+  managedConnectionsForwarding,
+  parseCloudAccountsOrigin,
+  proxiedRequestHeaders,
+} from '@/lib/cloud-accounts/forward';
 import { classifyRegion, REGION_COOKIE } from '@/lib/region';
 
 /**
@@ -39,7 +46,15 @@ function isDocsPath(pathname: string): boolean {
 }
 
 /**
- * Edge proxy (Next.js 16's successor to `middleware`) with three jobs:
+ * Edge proxy (Next.js 16's successor to `middleware`) with four jobs:
+ *
+ * 0. **Handing accounts to the accounts service**, only when
+ *    `DORKOS_CLOUD_ACCOUNTS_ORIGIN` is set (`lib/cloud-accounts/forward.ts`), and
+ *    managed connections with them only when `DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD`
+ *    is also `1`. Unset,
+ *    this step does nothing and every path below behaves as before. It runs
+ *    first and returns early, so a forwarded request gets no region cookie and
+ *    no negotiation: it is not this site's response.
  *
  * 1. **`/install` content negotiation.** One URL serves two audiences: the
  *    documented one-liner (`curl -fsSL https://dorkos.ai/install | bash`) and
@@ -84,6 +99,41 @@ function isDocsPath(pathname: string): boolean {
 export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
+  const forward = decideCloudAccountsForward(
+    request,
+    parseCloudAccountsOrigin(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN),
+    {
+      managedConnections: managedConnectionsForwarding(
+        env.DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD
+      ),
+    }
+  );
+  if (forward?.kind === 'redirect') {
+    const response = NextResponse.redirect(forward.url, 307);
+    // Never cached anywhere, so turning the variable off takes effect at once.
+    response.headers.set('cache-control', 'private, no-store');
+    return response;
+  }
+  if (forward?.kind === 'proxy') {
+    // Who the caller is, for the service's per-address limits (DOR-2443): only
+    // with the shared secret, only on Vercel, and never a caller's own copy.
+    const headers = proxiedRequestHeaders(request.headers, {
+      secret: env.DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET,
+      // `VERCEL_ENV` alone can come from a pulled `.env.local`; the platform
+      // itself sets `VERCEL=1` at runtime.
+      onVercel:
+        env.VERCEL === '1' && (env.VERCEL_ENV === 'production' || env.VERCEL_ENV === 'preview'),
+    });
+    return headers
+      ? NextResponse.rewrite(forward.url, { request: { headers } })
+      : NextResponse.rewrite(forward.url);
+  }
+
+  // The account API paths are in the matcher only so they can be forwarded.
+  // Served locally, they get exactly what they got before the matcher named
+  // them: no region cookie, no negotiation.
+  if (pathname.startsWith('/api/')) return NextResponse.next();
+
   if (pathname === '/install') {
     const userAgent = request.headers.get('user-agent') ?? '';
     if (CLI_USER_AGENTS.test(userAgent)) {
@@ -126,11 +176,29 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 /**
- * Run on page navigations only. Skips Next internals, the analytics ingest
- * proxy (`/hub`), API routes, and any path with a file extension (static
+ * Run on page navigations, plus the account and managed-connection API paths
+ * the hand-over may forward. The first entry skips Next internals, the analytics
+ * ingest proxy (`/hub`), API routes, and any path with a file extension (static
  * assets, and the `.md`/`.mdx` markdown routes which `next.config.ts` rewrites
- * directly) — none of which need the region cookie or markdown negotiation.
+ * directly) — none of which need the region cookie or markdown negotiation. The
+ * rest name the account API (`CLOUD_ACCOUNT_API_*` in
+ * `lib/cloud-accounts/forward.ts`) and the managed-connection API
+ * (`CLOUD_MANAGED_API_PREFIXES`); a test keeps the lists in step, and the
+ * managed-connection pages are already under the first entry. Matchers must be
+ * literals, so they are written out rather than built from those constants.
+ * With forwarding off, a matched API path costs one proxy call and ends at
+ * `NextResponse.next()` unchanged, the trade already made for the account API.
  */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|hub|api|favicon.ico|.*\\..*).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|hub|api|favicon.ico|.*\\..*).*)',
+    '/api/auth/:path*',
+    '/api/account/:path*',
+    '/api/instances',
+    '/api/instances/heartbeat',
+    '/api/instances/pending',
+    '/api/instances/revoke',
+    '/api/instances/connectors/:path*',
+    '/api/connectors/managed/:path*',
+  ],
 };

@@ -30,6 +30,8 @@ function statusWithLifecycle(lifecycle: SessionLifecycle): SessionStatus {
     runningSubagentCount: 0,
     lifecycle,
     lastError: null,
+    limit: null,
+    accountUsage: null,
   };
 }
 

@@ -121,7 +121,10 @@ async function readAllowance(signal?: AbortSignal): Promise<CloudCommunityAllowa
 export async function readHostedCommunities(
   signal?: AbortSignal
 ): Promise<HostedCommunitiesOverview | null> {
-  const [communities, moves, allowance] = await Promise.all([
+  // Wait for every read before answering, even when one has failed: Promise.all
+  // alone would reject on the first failure and leave the others running,
+  // reaching the service after the caller was told the read was over.
+  const reads = [
     readOrNull((client) =>
       readAllPages<HostedCommunity>(
         client,
@@ -139,7 +142,9 @@ export async function readHostedCommunities(
       )
     ),
     readAllowance(signal),
-  ]);
+  ] as const;
+  await Promise.allSettled(reads);
+  const [communities, moves, allowance] = await Promise.all(reads);
   if (communities === null) return null;
   return { communities, moves: moves ?? [], allowance };
 }

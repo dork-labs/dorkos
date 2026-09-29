@@ -62,7 +62,9 @@ import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers
 export type ToolResultOutcome = 'complete' | 'expired' | 'denied' | 'cancelled' | 'errored';
 
 /**
- * What the model is told when it asks for something on a run nobody is watching.
+ * What the model is told when it asks for something on a run nobody is watching
+ * (a scheduled run, or the first turn of an automatic move to another account).
+ * No surface is named: a person reads it later in the transcript of either.
  *
  * A constant, and not a sentence built from the ask: this is read by a model
  * that then decides what to do with the rest of the run, so it has to say the
@@ -75,7 +77,7 @@ export type ToolResultOutcome = 'complete' | 'expired' | 'denied' | 'cancelled' 
  * DorkOS hands over.
  */
 export const NO_APPROVAL_SURFACE_DENIAL =
-  'Nobody is available to approve this on a scheduled run. Do what you can without it and say what you skipped.';
+  'Nobody is available to approve this right now. Do what you can without it and say what you skipped.';
 
 /**
  * How long a refusal says it waited, in the unit that reads best: whole hours

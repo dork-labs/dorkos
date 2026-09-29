@@ -56,6 +56,7 @@ const knownCommands = new Set([
   'task',
   'room',
   'activity',
+  'permissions',
   'connections',
   'capabilities',
   'call',
@@ -194,114 +195,24 @@ if (process.argv[2] === 'browser') {
   process.exit(await runBrowserDispatcher(process.argv[3], process.argv.slice(4)));
 }
 
-// `install` subcommand has its own flag namespace (`--marketplace`, `--source`,
-// `--force`, `--project`). Intercept before the top-level parseArgs call so
-// those flags aren't rejected as unknown options. Talks to a running DorkOS
-// server via the marketplace HTTP API; does not boot the server itself.
-if (process.argv[2] === 'install') {
-  const subArgs = process.argv.slice(3);
-  if (subArgs[0] === '--help' || subArgs[0] === '-h') {
-    console.log(`
-Usage: dorkos install <name> [options]
-
-Install a marketplace package on the running DorkOS server.
-
-Options:
-      --marketplace <name>  Marketplace identifier (e.g. dorkos-community)
-      --source <url>        Explicit Git URL or marketplace.json URL
-      --force               Override warning-level conflicts
-  -y, --yes                 Skip the interactive confirmation prompt
-      --project <path>      Project path for project-local installs
-
-Examples:
-  dorkos install code-review-suite
-  dorkos install code-review-suite@dorkos-community
-  dorkos install --yes --force my-package
-`);
-    process.exit(0);
-  }
-  try {
-    const { runInstall, parseInstallArgs } = await import('./commands/install.js');
-    const exitCode = await runInstall(parseInstallArgs(subArgs));
-    process.exit(exitCode);
-  } catch (err) {
-    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
-  }
+// `install`, `update` and `uninstall` are shorthand for `dorkos marketplace
+// <verb>`, the one home for package management. They are handed straight to
+// the marketplace dispatcher, so both spellings run the same handler and print
+// the same help; see commands/marketplace-dispatcher.ts for why the namespaced
+// form is the canonical one. Intercepted before the top-level parseArgs call so
+// their flags aren't rejected as unknown options.
+if (
+  process.argv[2] === 'install' ||
+  process.argv[2] === 'update' ||
+  process.argv[2] === 'uninstall'
+) {
+  const { runMarketplaceDispatcher } = await import('./commands/marketplace-dispatcher.js');
+  process.exit(await runMarketplaceDispatcher(process.argv[2], process.argv.slice(3)));
 }
 
-// `uninstall` subcommand has its own flag namespace (`--purge`, `--project`).
-// Intercept before the top-level parseArgs call so those flags aren't rejected
-// as unknown options. Talks to a running DorkOS server via the marketplace
-// HTTP API; does not boot the server itself.
-if (process.argv[2] === 'uninstall') {
-  const subArgs = process.argv.slice(3);
-  if (subArgs[0] === '--help' || subArgs[0] === '-h') {
-    console.log(`
-Usage: dorkos uninstall <name> [options]
-
-Remove an installed marketplace package from the running DorkOS server.
-
-Removing a package cannot be undone, so an agent has to get a person's approval
-first: the command answers with an approval id and a token, and you run it again
-with --approval once the person has said yes in DorkOS.
-
-Options:
-      --purge             Remove preserved data and secrets in addition to package files
-      --project <path>    Project path for project-local uninstalls
-      --approval <token>  Approval token from a previous run that was waiting on a person
-
-Examples:
-  dorkos uninstall code-review-suite
-  dorkos uninstall --purge code-review-suite
-  dorkos uninstall code-review-suite --approval appr_tok_...
-`);
-    process.exit(0);
-  }
-  try {
-    const { runUninstall, parseUninstallArgs } = await import('./commands/uninstall.js');
-    const exitCode = await runUninstall(parseUninstallArgs(subArgs));
-    process.exit(exitCode);
-  } catch (err) {
-    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
-  }
-}
-
-// `update` subcommand has its own flag namespace (`--apply`, `--project`).
-// Intercept before the top-level parseArgs call so those flags aren't rejected
-// as unknown options. Advisory by default — pass `--apply` to actually update.
-if (process.argv[2] === 'update') {
-  const subArgs = process.argv.slice(3);
-  if (subArgs[0] === '--help' || subArgs[0] === '-h') {
-    console.log(`
-Usage: dorkos update [<name>] [options]
-
-Check for marketplace package updates on the running DorkOS server.
-
-Options:
-      --apply           Apply the update (default: advisory only)
-      --project <path>  Project path for project-local updates
-
-Examples:
-  dorkos update                       # check every installed package
-  dorkos update code-review-suite     # check a single package
-  dorkos update --apply               # apply every available update
-`);
-    process.exit(0);
-  }
-  try {
-    const { runUpdate, parseUpdateArgs } = await import('./commands/update.js');
-    const exitCode = await runUpdate(parseUpdateArgs(subArgs));
-    process.exit(exitCode);
-  } catch (err) {
-    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
-  }
-}
-
-// `marketplace` subcommand has its own subcommand namespace
-// (`add`/`remove`/`list`/`refresh`). Intercept before the top-level
+// `marketplace` subcommand has its own subcommand namespace: packages
+// (`install`/`update`/`uninstall`/`installed`/`outdated`) and sources
+// (`add`/`remove`/`list`/`refresh`/`validate`). Intercept before the top-level
 // parseArgs call so its sub-flags (`--name`) aren't rejected as unknown
 // options. Talks to a running DorkOS server via the marketplace HTTP API;
 // does not boot the server itself. Dispatch + help text live in
@@ -463,6 +374,7 @@ if (
   process.argv[2] === 'task' ||
   process.argv[2] === 'room' ||
   process.argv[2] === 'activity' ||
+  process.argv[2] === 'permissions' ||
   process.argv[2] === 'connections' ||
   process.argv[2] === 'capabilities' ||
   process.argv[2] === 'call' ||
@@ -496,6 +408,10 @@ if (
       console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
+  }
+  if (process.argv[2] === 'permissions') {
+    const { runPermissionsDispatcher } = await import('./commands/permissions.js');
+    process.exit(await runPermissionsDispatcher(subArgs));
   }
   if (process.argv[2] === 'connections') {
     const { runConnectionsDispatcher } = await import('./commands/connections.js');
@@ -628,13 +544,15 @@ Commands:
   init --yes           Accept all defaults
   package init <name>  Scaffold a new marketplace package
   package validate [p] Validate a marketplace package
-  install <name>       Install a marketplace package (requires running server)
-  uninstall <name>     Remove an installed marketplace package
-  update [<name>]      Check for (or apply with --apply) package updates
-  marketplace <sub>    Manage + validate marketplace sources (add|remove|list|refresh|validate)
+  marketplace <sub>    Install, update and remove packages, and manage their sources
+                       (install|update|uninstall|installed|outdated|add|remove|list|refresh|validate)
+  install <name>       Shorthand for marketplace install (requires running server)
+  uninstall <name>     Shorthand for marketplace uninstall
+  update [<name>]      Shorthand for marketplace update (check; --apply to install)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
   browser <sub>        Sign in once for your agents' browsers (login|status|forget)
-  agent <sub>          Manage agents (list|show|create|update) — add --json for machine output
+  agent <sub>          Manage agents (list|show|create|update|permissions) — add --json for machine output
+  permissions <sub>    See and change what agents may do (list|set|reset|history)
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
   room export <room>   Save a channel or DM's history as a file (--out|--force)
   activity             Show the activity feed (--actor|--category|--type|--limit)
@@ -886,10 +804,10 @@ if (values.open !== undefined) {
   }
 }
 
-// Relay: env var > config (no CLI flag for relay)
-if (!process.env.DORKOS_RELAY_ENABLED && cfgMgr.getDot('relay.enabled')) {
-  process.env.DORKOS_RELAY_ENABLED = 'true';
-}
+// Relay: nothing to do here. The server reads `relay.enabled` itself and lets
+// DORKOS_RELAY_ENABLED overrule it only when the person set that variable.
+// Copying the setting into the variable made every CLI install look
+// env-locked, so the Settings switch and "Turn on chat apps" could never act.
 
 // Working directory: CLI flag > env var > config > cwd
 const cliDir = values.dir;
@@ -1021,6 +939,14 @@ console.log('');
 // the running server, so the direct specifier gave the CLI a private,
 // never-started second `TunnelManager` and the address never printed.
 attachTunnelPrintout(server.tunnelManager);
+
+// Say which globally installed packages are held back from every session
+// because nobody approved them as they are (DOR-2306). A headless server has
+// no browser to show the approval card in, so the terminal says it and names
+// the command that decides it.
+void import('./commands/marketplace-held-back.js').then(({ printHeldBackNotice }) =>
+  printHeldBackNotice()
+);
 
 // Open browser automatically (skipped in non-TTY or when --no-open)
 if (shouldOpenBrowser && process.stdin.isTTY) {

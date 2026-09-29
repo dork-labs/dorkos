@@ -542,7 +542,11 @@ describe('signed admission over real HTTP and Postgres', () => {
   it('exposes only the current member and a bounded moderator directory', async () => {
     const options = await call('/api/v1/auth-options', 'GET');
     expect(options.status).toBe(200);
-    expect(await options.json()).toEqual({ google: false, github: false });
+    expect(await options.json()).toEqual({ google: false, github: false, oidc: null });
+    // A host that sets no links (every self-hoster) answers three nulls, signed out, untenanted.
+    const links = await call('/api/v1/host-links', 'GET');
+    expect(links.status).toBe(200);
+    expect(await links.json()).toEqual({ termsUrl: null, privacyUrl: null, reportAbuseUrl: null });
     expect((await call('/api/v1/me', 'GET')).status).toBe(401);
     const self = await call('/api/v1/me', 'GET', undefined, ownerCookie);
     expect(self.status).toBe(200);
@@ -886,6 +890,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(Object.keys(await preview.json()).sort()).toEqual([
       'channelName',
       'communityName',
+      'held',
       'inviterName',
     ]);
     expect(

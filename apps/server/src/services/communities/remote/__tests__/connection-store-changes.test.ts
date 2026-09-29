@@ -224,3 +224,34 @@ describe('RemoteConnectionStore change announcements', () => {
     expect(changes).toHaveLength(2);
   });
 });
+
+describe('RemoteConnectionStore read-only connections', () => {
+  it('lists every owner’s connected read-only Community and nothing else', async () => {
+    // Purpose: this list is what the release check polls (spec `community-hold-keeps-access`,
+    // AC-8). Fails if it misses another owner's held connection or includes an active,
+    // pending, or reconnect-required one.
+    const archived = {
+      state: 'verified' as const,
+      effective: { read: true, post: false, enrollAgent: false, stream: false },
+      lastKnown: {
+        lifecycle: 'archived' as const,
+        capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+        verifiedAt: '2026-09-23T00:00:00.000Z',
+      },
+    };
+    const held = await connected('remote_held');
+    await store.updateAccess(held, OWNER, archived);
+    const otherOwner = await connected('remote_other_owner', 'owner-author-b');
+    await store.updateAccess(otherOwner, 'owner-author-b', archived);
+    await connected('remote_active');
+    await pending('remote_pending');
+    const refused = await connected('remote_refused');
+    await store.updateAccess(refused, OWNER, archived);
+    await store.requireReconnect(refused, OWNER);
+
+    expect(await store.readOnlyConnections()).toEqual([
+      { communityRef: held, ownerAuthorId: OWNER },
+      { communityRef: otherOwner, ownerAuthorId: 'owner-author-b' },
+    ]);
+  });
+});

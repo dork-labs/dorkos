@@ -151,6 +151,12 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   communityKeys: (await importOriginal<typeof import('@/layers/entities/community')>())
     .communityKeys,
   withinCommunityAuthority: (_authority: unknown, run: () => unknown) => run(),
+  // The connect dialog reads the app-level approval watcher; none runs here.
+  communityOwnerAddress: () => '',
+  useCommunityApprovalStore: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .useCommunityApprovalStore,
+  useCommunityApprovalCheck: () => ({ error: null, isFetching: false, retry: () => {} }),
+  useShowCommunityApproval: () => {},
   useEndCommunityConnection: () => ({
     mutate: mockEndConnection,
     reset: () => {},
@@ -1314,12 +1320,19 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('sends Connect to Connections and running your own server to the guide', async () => {
+  it('connects a community in place and sends running your own server to the guide', async () => {
     renderMobileSwitcher();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     const add = within(await screen.findByRole('group', { name: 'Add community' }));
-    fireEvent.click(add.getByRole('menuitem', { name: /Connect a community/ }));
-    expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
+    fireEvent.click(add.getByRole('menuitem', { name: /Connect a community…/ }));
+    // The form opens here; nothing sends the person to Connections.
+    expect(await screen.findByLabelText('Community address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name for this installation')).toBeInTheDocument();
+    expect(mockOpenConnections).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() =>
+      expect(screen.queryByLabelText('Community address')).not.toBeInTheDocument()
+    );
 
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(
@@ -1403,12 +1416,36 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockOpenConnections).not.toHaveBeenCalled();
   });
 
-  it('sends a Community that needs reconnecting to Connections › Messaging', async () => {
+  it('opens a Community that needs reconnecting in the connect dialog, not Connections', async () => {
     mockConnections = [alpha({ status: 'reconnect-required' })];
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
+    const dialog = await screen.findByRole('dialog', { name: 'Reconnect Alpha' });
+    expect(mockOpenConnections).not.toHaveBeenCalled();
+    // Selecting it does not try to enter a Community it cannot reach.
+    expect(mockNavigate).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Disconnect' }));
+    expect(mockEndConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'a', status: 'reconnect-required' }),
+      expect.anything()
+    );
+  });
+
+  it('opens a Community still waiting for approval on its wait, not Connections', async () => {
+    mockConnections = [alpha({ status: 'pending' })];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Approve on Alpha' });
+    expect(within(dialog).getByText('Waiting for your approval')).toBeInTheDocument();
+    expect(mockOpenConnections).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel approval' }));
+    expect(mockEndConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'a', status: 'pending' }),
+      expect.anything()
+    );
   });
 
   it('offers Create a community only for a host that says the person runs it', async () => {
@@ -1425,7 +1462,7 @@ describe('the context switcher’s lifecycle actions', () => {
     add = within(await screen.findByRole('group', { name: 'Add community' }));
     // In the spec's order: connect, join, create, then run your own.
     expect(add.getAllByRole('menuitem').map((row) => row.textContent)).toEqual([
-      'Connect a community',
+      'Connect a community…',
       'Join with an invitation…',
       'Create a community…, opens on a.example.com',
       'Run your own community',

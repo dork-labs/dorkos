@@ -47,7 +47,7 @@ import {
   releaseSeat,
   type UsageGrouping,
 } from '../services/core/cloud/plan.js';
-import { cloudInstanceRef, isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
+import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
 import {
   creditsFlagEnabled,
   creditsWiringReport,
@@ -79,7 +79,7 @@ router.get('/link/status', (_req, res) => {
   res.json(getCloudLinkManager().getStatus());
 });
 
-/** POST /api/cloud/unlink — best-effort server-side revoke, then clear local state. */
+/** POST /api/cloud/unlink — withdraw locally before best-effort server-side revoke. */
 router.post('/unlink', async (_req, res) => {
   try {
     await getCloudLinkManager().unlink();
@@ -274,8 +274,7 @@ router.get('/credits', (_req, res) => {
  * nothing was spent.
  */
 router.post('/credits/select', async (_req, res) => {
-  const instanceRef = cloudInstanceRef();
-  if (creditsFlagEnabled() && instanceRef !== null) await primeCreditsInference(instanceRef);
+  if (creditsFlagEnabled()) await primeCreditsInference();
   return res.json(creditsWiringReport());
 });
 

@@ -15,8 +15,9 @@
 import { type FormEvent, useId, useState } from 'react';
 
 import type { NewsletterSource } from '@/db/newsletter-schema';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@dork-labs/ui/button';
+import { Input } from '@dork-labs/ui/input';
+import { Label } from '@dork-labs/ui/label';
 import { cn } from '@/lib/utils';
 
 import { useNewsletterForm } from './use-newsletter-form';
@@ -79,13 +80,17 @@ export function NewsletterSignupForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className={cn('w-full', className)} noValidate>
+    <form
+      onSubmit={onSubmit}
+      className={cn('w-full', isCompact ? 'dark' : 'light', className)}
+      noValidate
+    >
       <div
         className={cn('flex gap-2', isCompact ? 'flex-col sm:flex-row' : 'flex-col sm:flex-row')}
       >
-        <label htmlFor={emailId} className="sr-only">
+        <Label htmlFor={emailId} className="sr-only">
           Email address
-        </label>
+        </Label>
         <Input
           id={emailId}
           type="email"
@@ -102,7 +107,7 @@ export function NewsletterSignupForm({
           // announcing "invalid entry" over a perfectly good email.
           aria-invalid={errorKind === 'invalid-email'}
           className={cn(
-            'flex-1',
+            'sm:flex-1',
             isCompact &&
               'border-cream-tertiary/20 text-cream-white placeholder:text-cream-tertiary/40 bg-white/5'
           )}

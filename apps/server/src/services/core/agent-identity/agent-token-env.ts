@@ -15,15 +15,11 @@
  * @module services/core/agent-identity/agent-token-env
  */
 import { readManifest } from '@dorkos/shared/manifest';
-import { DEFAULT_AGENT_TIER_CEILING, type CapabilityTier } from '@dorkos/shared/capabilities';
 
 import { logger } from '../../../lib/logger.js';
-import {
-  getAgentIdentityService,
-  type AgentIdentity,
-  type AgentIdentityService,
-} from './agent-identity-service.js';
+import { getAgentIdentityService, type AgentIdentity } from './agent-identity-service.js';
 import type { CapabilityInvocationContext } from '../capabilities/index.js';
+import { homeOf, type HomeResolution } from './agent-home.js';
 
 /** The env var a spawned agent reads its identity token from. */
 export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
@@ -37,10 +33,8 @@ export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
  * concurrent sessions for the same agent never invalidate each other (see
  * `agent-identity-service.ts`).
  *
- * The agent's tier ceiling rides along, read from `.dork/agent.json` (DOR-486).
- * That file is the source of truth per ADR-0043 and the only place the answer
- * exists — the derived Mesh row has no column for it, deliberately, so nothing
- * can make this decision from a cache that cannot answer.
+ * The token names the agent and nothing more: what it may do is its
+ * permissions, which the gate reads fresh off `.dork/agent.json` on every call.
  *
  * Returns `{}` — leaving the session unattributed, exactly as today — when the
  * path hosts no registered agent, when the service was never initialized, or
@@ -64,7 +58,6 @@ export async function resolveAgentTokenEnv(
     const token = await service.mint({
       agentPath,
       displayName: displayName?.trim() || agentPath,
-      ...(await resolveTierCeiling(agentPath, service)),
     });
     return { [AGENT_TOKEN_ENV_VAR]: token };
   } catch (err) {
@@ -107,7 +100,6 @@ export async function ensureInSessionAgentIdentity(
     return {
       agentPath,
       displayName: manifest.displayName?.trim() || manifest.name,
-      tierCeiling: manifest.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING,
       createdAt: manifest.registeredAt,
     };
   } catch (err) {
@@ -120,77 +112,42 @@ export async function ensureInSessionAgentIdentity(
 }
 
 /**
- * The tier ceiling to stamp on a freshly minted token, as a spreadable fragment
- * so an agent with no ceiling passes nothing and takes `mint()`'s default.
- *
- * `.dork/agent.json` is the source of truth (ADR-0043). When it cannot be read —
- * missing, malformed, or refused by the filesystem — the agent's LAST RECORDED
- * ceiling is used instead, rather than nothing. That fallback is the whole
- * reason this is not two lines inline: taking the default on an unreadable
- * manifest would mean an agent limited to `observe` gets an unrestricted token
- * the moment somebody fat-fingers its manifest, and a limit you can delete your
- * way out of is not a limit. A directory that simply hosts no agent has no
- * recorded ceiling either, so it still passes nothing.
- *
- * **The one gap that fallback cannot close, stated so nobody reads it as
- * airtight:** it needs a PREVIOUS token to read a ceiling off. An agent whose
- * manifest is unreadable on its very first spawn — one that has never minted —
- * has no recorded ceiling anywhere, and takes `mint()`'s default. Closing that
- * would mean a column on the derived Mesh row, which is the one thing this
- * field deliberately does not have (an authorization answer must not come from a
- * cache that can be stale); the honest alternative, refusing to spawn at all, is
- * a worse failure for a file that is far more often absent than tampered with.
- * The window is one spawn wide and only reachable by corrupting a manifest
- * before the agent has ever run.
- *
- * @param agentPath - Absolute path to the agent's project directory.
- * @param service - The identity service, for the last-recorded fallback.
- * @returns `{ tierCeiling }`, or `{}` when no ceiling is recorded anywhere.
- */
-async function resolveTierCeiling(
-  agentPath: string,
-  service: AgentIdentityService
-): Promise<{ tierCeiling?: CapabilityTier }> {
-  const manifest = await readManifest(agentPath, logger);
-  if (manifest) {
-    return manifest.tierCeiling ? { tierCeiling: manifest.tierCeiling } : {};
-  }
-
-  const recorded = await service.describeAgent(agentPath);
-  if (!recorded) return {};
-
-  logger.warn('[agent-identity] Manifest unreadable; keeping the recorded tier ceiling', {
-    agentPath,
-    tierCeiling: recorded.tierCeiling,
-  });
-  return { tierCeiling: recorded.tierCeiling };
-}
-
-/**
  * Build the invocation-context resolver for an in-session `dorkos` MCP server.
  *
  * In-session tools run IN PROCESS: the agent calls them from inside its own
  * session, so there is no HTTP request and no `X-DorkOS-Agent` header to
  * resolve. The caller is instead structurally known — it is the agent whose
- * session this is — so identity comes from the session's working directory.
- * This is the same reasoning `resolveSenderIdentity` uses for Relay.
+ * session this is — so identity comes from the session's
+ * {@link HomeResolution}: the registered home its working directory resolves
+ * to — the folder itself, a room working copy's agent (DOR-2091), or the agent
+ * whose repo a worktree or managed checkout belongs to (DOR-2355). This is the same reasoning
+ * `resolveSenderIdentity` uses for Relay.
  *
  * The lookup is memoized for the life of the server instance (one per SDK
  * query), so a session that makes twenty tool calls performs one indexed read,
  * not twenty. It resolves to `undefined` — leaving calls unattributed, exactly
  * as before — when the directory hosts no agent with a live token.
  *
- * @param agentPath - The session's working directory, or `undefined` when the
+ * **A REFUSED anchor is not "unattributed".** It means the session stands where
+ * some agent works and it cannot be established which one (or it is not the one
+ * the turn is for). Answering `undefined` there would let a login-off install
+ * read the call as the operator's — the DOR-1361 defect on a new axis — so it
+ * answers `agentIdentityPresented` with no identity, which every consumer reads
+ * as "a machine this surface cannot verify" and refuses.
+ *
+ * @param anchor - The session's resolved home, or `undefined` when the
  *   server is built without a session (the external/introspection path).
  * @returns A memoized resolver for `capabilityMcpTools`.
  */
 export function createInSessionContextResolver(
-  agentPath: string | undefined
+  anchor: HomeResolution | undefined
 ): () => Promise<CapabilityInvocationContext | undefined> {
   let pending: Promise<CapabilityInvocationContext | undefined> | undefined;
 
   return () => {
     pending ??= (async () => {
+      if (anchor?.kind === 'refused') return { agentIdentityPresented: true };
+      const agentPath = anchor ? homeOf(anchor) : undefined;
       if (!agentPath) return undefined;
 
       const service = getAgentIdentityService();

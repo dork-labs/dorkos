@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { ExplorerEntry } from '../model/source';
 import { isPinnedEntryName } from '../lib/listing-shape';
+import { droppedFiles, hasOutsideFiles } from '../lib/dropped-files';
 import { provenanceLine } from '../lib/provenance';
 import {
   ResponsiveContextMenu,
@@ -66,10 +67,10 @@ interface FileTreeRowProps {
   /**
    * Whether this row can only be looked at.
    *
-   * True over a source whose entries are a commit rather than files on disk:
-   * there is nothing on the other side of a rename. Drag, the inline rename and
-   * the whole context menu go away — an affordance that would always refuse is
-   * worse than no affordance. Defaults to false, which is every session row.
+   * True over a source that declares itself not writable: drag, the inline
+   * rename and the whole context menu go away — an affordance that would always
+   * refuse is worse than no affordance. Defaults to false, which is every
+   * session row and every room row.
    */
   readOnly?: boolean;
   /**
@@ -78,6 +79,26 @@ interface FileTreeRowProps {
    * just noise taking up the width the filename wanted.
    */
   provenance?: boolean;
+  /**
+   * Whether entries can be copied — Copy, Paste, Duplicate and an Alt-held
+   * drop. Defaults to true, which is every session row; a room's files have no
+   * copy, so none of the four is offered there.
+   */
+  copyable?: boolean;
+  /**
+   * Whether entries are files on this machine's disk — what "show in the file
+   * manager", "add to chat" and an absolute path all need. Defaults to true;
+   * a room's files are a commit, and offer only the path inside the room.
+   */
+  onDisk?: boolean;
+  /**
+   * Upload files dropped from outside the app, into a folder: this row when it
+   * is one, the folder it sits in otherwise. Absent where uploads are not a
+   * thing the source does.
+   */
+  onUpload?: (toDir: string, files: File[]) => void;
+  /** Open the file picker to upload into a folder. Absent with {@link onUpload}. */
+  onPickUpload?: (toDir: string) => void;
 }
 
 /**
@@ -119,6 +140,10 @@ export function FileTreeRow({
   onCopyPath,
   readOnly = false,
   provenance = false,
+  copyable = true,
+  onDisk = true,
+  onUpload,
+  onPickUpload,
 }: FileTreeRowProps) {
   const { entry, depth, expanded, loading } = row;
   const isDir = entry.type === 'dir';
@@ -160,24 +185,40 @@ export function FileTreeRow({
         // row, so the tree's own empty-space drop (the root) must not also
         // claim it.
         e.stopPropagation();
+        // Files from outside the app go into this folder, or the one this
+        // file sits in — the row under the pointer is where a person aimed.
+        if (!readOnly && onUpload && hasOutsideFiles(e.dataTransfer.types)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setDropTarget(true);
+          return;
+        }
         // Only our own rows are droppable here. Text dragged out of another
         // app carries `text/plain` too, and reading that alone turned a
         // dragged sentence into a move of whatever file it happened to name.
         if (readOnly || !isDir || !hasFilePathDrag(e.dataTransfer.types)) return;
         e.preventDefault();
-        // Alt held = copy, so the cursor shows a + before the drop lands.
-        e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+        // Alt held = copy, so the cursor shows a + before the drop lands —
+        // where there is such a thing as a copy.
+        e.dataTransfer.dropEffect = e.altKey && copyable ? 'copy' : 'move';
         setDropTarget(true);
       }}
       onDragLeave={() => setDropTarget(false)}
       onDrop={(e) => {
         e.stopPropagation();
-        if (readOnly || !isDir) return;
+        if (readOnly) return;
         setDropTarget(false);
+        if (onUpload && hasOutsideFiles(e.dataTransfer.types)) {
+          e.preventDefault();
+          const { files } = droppedFiles(e.dataTransfer);
+          onUpload(parent, files);
+          return;
+        }
+        if (!isDir) return;
         const from = readFilePathDrag(e.dataTransfer);
         if (from === null) return;
         e.preventDefault();
-        if (e.altKey) onCopyInto(from, entry.path);
+        if (e.altKey && copyable) onCopyInto(from, entry.path);
         else onMove(from, entry.path);
       }}
       onClick={() => {
@@ -259,48 +300,80 @@ export function FileTreeRow({
   );
 
   // Read-only rows carry no menu at all: every item in it either writes, or
-  // names a place on disk that a commit does not have.
+  // names a place on disk.
   if (readOnly) return body;
 
   return (
     <ResponsiveContextMenu>
       <ResponsiveContextMenuTrigger asChild>{body}</ResponsiveContextMenuTrigger>
       <ResponsiveContextMenuContent className="w-52">
-        <ResponsiveContextMenuItem onClick={() => onNewFile(parent)}>
+        {/* `movesFocus` on the three items that open a name field: the field
+            takes the caret, and without it the menu's own focus restore lands
+            on this row a moment later, which blurs the field and cancels it
+            before anybody can type. */}
+        <ResponsiveContextMenuItem movesFocus onClick={() => onNewFile(parent)}>
           New file
         </ResponsiveContextMenuItem>
-        <ResponsiveContextMenuItem onClick={() => onNewFolder(parent)}>
+        <ResponsiveContextMenuItem movesFocus onClick={() => onNewFolder(parent)}>
           New folder
         </ResponsiveContextMenuItem>
-        <ResponsiveContextMenuSeparator />
-        {revealLabel && (
-          <ResponsiveContextMenuItem onClick={() => onReveal(entry)}>
-            {revealLabel}
+        {onPickUpload && (
+          // On a folder the files land inside it; on a file, beside it.
+          <ResponsiveContextMenuItem onClick={() => onPickUpload(parent)}>
+            Upload files…
           </ResponsiveContextMenuItem>
         )}
-        {/* `movesFocus`: this one puts the caret in the composer, so it runs
-            once the menu is on its way out and keeps the focus it takes. */}
-        <ResponsiveContextMenuItem movesFocus onClick={() => onAddToChat(entry)}>
-          Add to chat
-        </ResponsiveContextMenuItem>
+        {onDisk && (
+          <>
+            <ResponsiveContextMenuSeparator />
+            {revealLabel && (
+              <ResponsiveContextMenuItem onClick={() => onReveal(entry)}>
+                {revealLabel}
+              </ResponsiveContextMenuItem>
+            )}
+            {/* `movesFocus`: this one puts the caret in the composer, so it runs
+                once the menu is on its way out and keeps the focus it takes. */}
+            <ResponsiveContextMenuItem movesFocus onClick={() => onAddToChat(entry)}>
+              Add to chat
+            </ResponsiveContextMenuItem>
+          </>
+        )}
+        {copyable && (
+          <>
+            <ResponsiveContextMenuSeparator />
+            <ResponsiveContextMenuItem onClick={() => onCopy(entry)}>
+              Copy
+            </ResponsiveContextMenuItem>
+            {/* On a folder the paste lands inside it; on a file, beside it. */}
+            <ResponsiveContextMenuItem
+              disabled={!canPasteInto(parent)}
+              onClick={() => onPaste(parent)}
+            >
+              Paste
+            </ResponsiveContextMenuItem>
+            <ResponsiveContextMenuItem onClick={() => onDuplicate(entry)}>
+              Duplicate
+            </ResponsiveContextMenuItem>
+          </>
+        )}
         <ResponsiveContextMenuSeparator />
-        <ResponsiveContextMenuItem onClick={() => onCopy(entry)}>Copy</ResponsiveContextMenuItem>
-        {/* On a folder the paste lands inside it; on a file, beside it. */}
-        <ResponsiveContextMenuItem disabled={!canPasteInto(parent)} onClick={() => onPaste(parent)}>
-          Paste
-        </ResponsiveContextMenuItem>
-        <ResponsiveContextMenuItem onClick={() => onDuplicate(entry)}>
-          Duplicate
-        </ResponsiveContextMenuItem>
+        {onDisk ? (
+          <>
+            <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'absolute')}>
+              Copy path
+            </ResponsiveContextMenuItem>
+            <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'relative')}>
+              Copy relative path
+            </ResponsiveContextMenuItem>
+          </>
+        ) : (
+          // The path inside the room is the only path a room's file has.
+          <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'relative')}>
+            Copy path
+          </ResponsiveContextMenuItem>
+        )}
         <ResponsiveContextMenuSeparator />
-        <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'absolute')}>
-          Copy path
-        </ResponsiveContextMenuItem>
-        <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'relative')}>
-          Copy relative path
-        </ResponsiveContextMenuItem>
-        <ResponsiveContextMenuSeparator />
-        <ResponsiveContextMenuItem onClick={() => onStartRename(entry)}>
+        <ResponsiveContextMenuItem movesFocus onClick={() => onStartRename(entry)}>
           Rename
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuItem variant="destructive" onClick={() => onDelete(entry)}>
@@ -349,6 +422,10 @@ function RenameInput({
       onClick={(e) => e.stopPropagation()}
       onBlur={commit}
       onKeyDown={(e) => {
+        // The row this input sits in opens its entry on Enter, and the key
+        // must not reach it: over a room's files that opened the file the
+        // person had just renamed, on top of the rename.
+        e.stopPropagation();
         if (e.key === 'Enter') commit();
         else if (e.key === 'Escape') onCancel();
       }}

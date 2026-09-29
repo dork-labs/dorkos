@@ -47,8 +47,8 @@ export const TOUR_ANCHORS = {
    * chrome that opens it.
    */
   navAgents: 'nav-agents',
-  /** The Relay integrations list inside settings. */
-  relayIntegrations: 'connections-messaging',
+  /** The Connections page's one list of apps (yours, then all apps). */
+  relayIntegrations: 'connections-list',
   /** The Tasks page scheduled-work list. */
   tasksList: 'tasks-list',
   /**

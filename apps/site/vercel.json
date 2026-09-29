@@ -1,11 +1,13 @@
 {
   "ignoreCommand": "node scripts/ignore-build.mjs",
   "buildCommand": "pnpm db:migrate && pnpm exec turbo run build --filter=@dorkos/site",
+  "git": {
+    "deploymentEnabled": {
+      "gh-readonly-queue/**": false,
+      "codex/archive/**": false
+    }
+  },
   "crons": [
-    {
-      "path": "/api/cron/instance-expiry",
-      "schedule": "0 * * * *"
-    },
     {
       "path": "/api/cron/event-retention",
       "schedule": "0 * * * *"

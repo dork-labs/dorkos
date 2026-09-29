@@ -16,6 +16,7 @@ import type {
   RoomCanvasChange,
   RoomEntry,
   RoomEntryBody,
+  RoomFileChangeEvent,
   RoomMergeEvent,
   RoomMoment,
 } from '@dorkos/shared/room-schemas';
@@ -230,6 +231,65 @@ export class RoomSystemPosts {
   }
 
   /**
+   * Announce a change a PERSON made to the room's files (spec
+   * `agent-home-desk` §7.2) — an edit, an upload, a rename, a delete, or a file
+   * kept from the chat.
+   *
+   * **The merge entry's shape, for the merge entry's reasons**
+   * ({@link postMergeEvent}): a post in the room's own voice, written by the
+   * system author, addressing nobody (`mentions: []`), its cascade spent at the
+   * ceiling, and never dispatched. A person saving `ROOM.md` is news for whoever
+   * reads the room next; a room where every save set its agents talking is the
+   * over-participation `meta/agent-etiquette.md` exists to damp. A person who
+   * wants a reaction @mentions somebody.
+   *
+   * One entry per commit, composed by the caller, which is the only thing that
+   * knows what the commit touched. `subjectAuthorId` names the person, so the
+   * feed draws their face beside the sentence and a later reader (the turn-start
+   * heads-up) takes their NAME from here rather than from git.
+   *
+   * @param roomId - The room whose files changed.
+   * @param input.text - The sentence a person reads, composed from sanitized
+   *   path segments.
+   * @param input.fileChange - The machine-readable half, for the file explorer.
+   * @param input.subjectAuthorId - The person who made the change.
+   * @returns The committed entry.
+   * @throws {RoomError} `ROOM_ARCHIVED` — an archived room gains no entries.
+   */
+  postFileChangeEvent(
+    roomId: string,
+    input: { text: string; fileChange: RoomFileChangeEvent; subjectAuthorId: string }
+  ): RoomEntry {
+    const room = this.visibility.requireRoom(roomId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'post',
+      body: {
+        text: input.text,
+        fileChange: input.fileChange,
+        subjectAuthorId: input.subjectAuthorId,
+      },
+      // Addresses nobody — the emptiness is the mechanism, exactly as it is on a
+      // merge entry. This is what makes "edits wake nobody" structural.
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...threadPointers(this.store, roomId, undefined),
+      ...deriveCascade(id, {
+        authorKind: 'system',
+        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+      }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publisher.publishEntry(entry);
+    return entry;
+  }
+
+  /**
    * Announce what one turn put on, changed or took off the room's canvas (spec
    * `room-canvas` §6.2).
    *
@@ -341,6 +401,42 @@ export class RoomSystemPosts {
       within,
       bind
     );
+    this.publisher.publishEntry(entry);
+    return entry;
+  }
+
+  /**
+   * Write the notice that says a room was archived: the one entry an archived
+   * room gains. It is written after the archive lands, so it never claims an
+   * archive that failed, and it refuses a room that is not archived, so it
+   * cannot be used to slip any other entry past {@link postNotice}'s rule.
+   *
+   * @param roomId - The room that was just archived.
+   * @param body - From `buildRoomArchivedNotice`.
+   * @returns The committed entry.
+   * @throws {Error} When the room is still live — a caller bug, never a
+   *   request's fault, so it has no room error code.
+   */
+  postArchivedNotice(roomId: string, body: RoomEntryBody): RoomEntry {
+    const room = this.visibility.requireRoom(roomId);
+    if (!room.archived) {
+      throw new Error('postArchivedNotice: the room is not archived');
+    }
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'notice',
+      body,
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...threadPointers(this.store, roomId, undefined),
+      cascadeRoot: id,
+      cascadeDepth: 0,
+      createdAt: new Date().toISOString(),
+    });
     this.publisher.publishEntry(entry);
     return entry;
   }

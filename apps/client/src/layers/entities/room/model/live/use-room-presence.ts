@@ -186,6 +186,12 @@ export interface RoomHoldRow {
   behindRoomId: string;
   /** Whether this agent is holding a message in at least one other conversation. */
   othersWaiting: boolean;
+  /**
+   * Whether more than one of this agent's turns is running elsewhere, so any of
+   * them finishing may let this message start — `behindRoomId` is only the one
+   * that has run longest.
+   */
+  severalInTheWay: boolean;
 }
 
 /**
@@ -737,6 +743,9 @@ function summarizeHolds(
       // room to point at, which the copy already has a sentence for.
       behindRoomId: record.heldBehind?.roomId ?? '',
       othersWaiting: record.heldBehind?.othersWaiting ?? false,
+      // Absent from a producer that predates the setting, where only ever one
+      // turn could be in the way.
+      severalInTheWay: record.heldBehind?.severalInTheWay ?? false,
     }));
 }
 

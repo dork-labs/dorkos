@@ -9,12 +9,7 @@
    chunks that bundled a global preflight (DOR-1024). */
 @layer theme, base, components, blintz, border-defaults, utilities;
 @import 'tailwindcss';
-/* Animation utilities for Radix/shadcn surfaces (data-[state]:animate-in,
-   slide-in-from-*, fade-*, zoom-*). Defined via Tailwind v4 `@utility`, so they
-   land in the `utilities` layer above — above `blintz` in the pin, so the layer
-   order is untouched. Without this, sheets/dialogs/popovers/menus/tooltips have
-   no enter/exit animation and simply pop. Must sit after `@import 'tailwindcss'`. */
-@import 'tw-animate-css';
+@import '@dork-labs/ui/tailwind.css';
 @import '@xyflow/react/dist/style.css';
 
 @custom-variant dark (&:is(.dark *));
@@ -47,6 +42,10 @@
   --_st: 1;
   --_si: 1;
   --_sb: 1;
+  /* Shared primitive icons follow the app's mobile/user icon dial. */
+  --dui-size-icon-xs: calc(0.75rem * var(--_si));
+  --dui-size-icon-sm: calc(1rem * var(--_si));
+  --dui-size-icon-md: calc(1.25rem * var(--_si));
 
   /* ============================================
      SIDEBAR GEOMETRY (specs/sidebar-simplification D1)
@@ -199,10 +198,9 @@
    properties inherit, and an element's own declaration beats one inherited from
    a `.dark` ancestor.
 
-   It exists for ONE job: the both-themes review pair the sidebar programme
-   requires (spec R1), where a light panel and a dark panel have to sit side by
-   side on a single screenshot. Nothing in the app sets it; the app switches
-   themes by putting `dark` on the document element, exactly as before.
+   The app also sets `.light` on the document for an explicit light preference,
+   so that preference wins even when the OS is in dark mode. A nested light
+   panel can still sit inside a dark page for a both-themes review pair.
 
    The caveat, stated so nobody is surprised by it: Tailwind's `dark:` variant
    keys off `.dark *`, so inside a `.light` island on a dark page the TOKENS
@@ -210,30 +208,28 @@
    way is token-driven, which is why the pair is honest. */
 :root,
 .light {
-  --background: 0 0% 98%;
-  --foreground: 0 0% 9%;
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 92%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 32%;
-  --accent: 0 0% 94%;
-  --accent-foreground: 0 0% 9%;
-  /* Readable as text AND under a white label (WCAG AA). Contrast table and
-     guard: `__tests__/destructive-contrast.test.ts`. */
-  --destructive: 356 76% 45%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 83%;
-  --input: 0 0% 83%;
-  --ring: 24 90% 44%;
+  --background: var(--dui-background);
+  --foreground: var(--dui-foreground);
+  --card: var(--dui-card);
+  --card-foreground: var(--dui-card-foreground);
+  --popover: var(--dui-popover);
+  --popover-foreground: var(--dui-popover-foreground);
+  --primary: var(--dui-primary);
+  --primary-foreground: var(--dui-primary-foreground);
+  --secondary: var(--dui-secondary);
+  --secondary-foreground: var(--dui-secondary-foreground);
+  --muted: var(--dui-muted);
+  --muted-foreground: var(--dui-muted-foreground);
+  --accent: var(--dui-accent);
+  --accent-foreground: var(--dui-accent-foreground);
+  --destructive: var(--dui-destructive);
+  --destructive-foreground: var(--dui-destructive-foreground);
+  --border: var(--dui-border);
+  --input: var(--dui-input);
+  --ring: var(--dui-ring);
   --radius: 0.5rem;
-  --brand: 24 90% 44%;
-  --brand-foreground: 0 0% 100%;
+  --brand: var(--dui-brand);
+  --brand-foreground: var(--dui-brand-foreground);
 
   /* === Status tokens === */
   /* Green is text (dial caption, status word, "unattended" notes, session marks)
@@ -263,7 +259,22 @@
   --status-warning-dot: 38 92% 40%;
   --status-warning-bg: 38 92% 96%;
   --status-warning-border: 38 92% 80%;
-  --status-warning-fg: 38 92% 40%;
+  /* DOR-2444: this used to equal `--status-warning-dot` (40%), which is only
+     tuned for the 3:1 non-text bar above — as TEXT it read 3.29:1 on white,
+     3.10:1 on the `-bg` wash, and as low as 2.75:1 on `--secondary`, all
+     under WCAG AA's 4.5:1. The binding case is `--secondary` (92% lightness
+     — the darkest common ground this token is painted on, so the closest to
+     this token's own luminance and the tightest ratio): 30% clears it at
+     4.51:1, `--accent` at 4.73:1, `--muted` at 4.95:1, the `-bg` wash at
+     5.08:1, and plain white at 5.40:1. Dark mode's `-fg` (50%) already
+     clears every ground by a wide margin and is unchanged.
+     claude-account-ui 04 §13: 28%, not 30%. The session row's context gauge
+     paints this bare on the sidebar (91%), where 30% read 4.41:1, and on the
+     Heads up zone's tint, 4.21:1. At 28% the binding ground is that tint at
+     4.68:1; the sidebar reads 4.91:1, `--secondary` 5.02:1, the `-bg` wash
+     5.66:1 and white 6.01:1. Hue and saturation held. Pinned by
+     `__tests__/destructive-contrast.test.ts`. */
+  --status-warning-fg: 38 92% 28%;
 
   --status-info: 217 91% 60%;
   --status-info-bg: 217 91% 96%;
@@ -363,14 +374,13 @@
      to spring back after a long press is released. The squish going IN uses the
      same value as a transition, so the gesture feels symmetrical. */
   --msg-press-release: 200ms;
-  /* The thread panel's three motions (design record §5.3–5.5). The connector's
-     140ms is the number the approved demo names; the reply that lands on it
-     runs longer because its 2px bounce needs somewhere to settle, and the
+  /* The thread panel's two motions (design record §5.3–5.5). The landing reply
+     runs 220ms because its 2px bounce needs somewhere to settle, and the
      hand-off is paced to read as ONE gesture — the "working" line leaving as
      the answer rises into the space it left, rather than two things happening
-     near each other. All well inside the 300ms every motion here resolves
-     within, and every call site gates them with `motion-safe:`. */
-  --msg-thread-draw: 140ms;
+     near each other. Both well inside the 300ms every motion here resolves
+     within, and every call site gates them with `motion-safe:`. §5.3's other
+     half, the connector drawing downward, went with the connector (DOR-2110). */
   --msg-thread-reply: 220ms;
   --msg-presence-handoff: 200ms;
   --msg-count-flip: 220ms;
@@ -468,29 +478,27 @@
 }
 
 .dark {
-  --background: 0 0% 4%;
-  --foreground: 0 0% 87%;
-  --card: 0 0% 4%;
-  --card-foreground: 0 0% 87%;
-  --popover: 0 0% 4%;
-  --popover-foreground: 0 0% 87%;
-  --primary: 0 0% 87%;
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 14%;
-  --secondary-foreground: 0 0% 87%;
-  --muted: 0 0% 9%;
-  --muted-foreground: 0 0% 64%;
-  --accent: 0 0% 12%;
-  --accent-foreground: 0 0% 87%;
-  /* Lighter, for text on near-black; too light to hold a white label, so solid
-     fills add `dark:bg-destructive/60`. See `__tests__/destructive-contrast.test.ts`. */
-  --destructive: 2.5 95% 62%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 25%;
-  --input: 0 0% 25%;
-  --ring: 24 88% 55%;
-  --brand: 24 88% 55%;
-  --brand-foreground: 0 0% 100%;
+  --background: var(--dui-background);
+  --foreground: var(--dui-foreground);
+  --card: var(--dui-card);
+  --card-foreground: var(--dui-card-foreground);
+  --popover: var(--dui-popover);
+  --popover-foreground: var(--dui-popover-foreground);
+  --primary: var(--dui-primary);
+  --primary-foreground: var(--dui-primary-foreground);
+  --secondary: var(--dui-secondary);
+  --secondary-foreground: var(--dui-secondary-foreground);
+  --muted: var(--dui-muted);
+  --muted-foreground: var(--dui-muted-foreground);
+  --accent: var(--dui-accent);
+  --accent-foreground: var(--dui-accent-foreground);
+  --destructive: var(--dui-destructive);
+  --destructive-foreground: var(--dui-destructive-foreground);
+  --border: var(--dui-border);
+  --input: var(--dui-input);
+  --ring: var(--dui-ring);
+  --brand: var(--dui-brand);
+  --brand-foreground: var(--dui-brand-foreground);
 
   --status-success: 152 69% 55%;
   --status-success-bg: 152 69% 12%;
@@ -785,14 +793,11 @@
    of them — DOR-1750). The editor's own borders remain scoped and excluded
    from this fallback.
 
-   Two exclusions, both about somebody else owning border colour inside their
-   own container. `.copilot-view-content` is Obsidian's: inside the plugin, the
-   host app's theme owns it (see the twin rule further down). `.milkdown` is the
-   canvas editor's: this layer sits above `blintz`, so without the exclusion the
+   `.milkdown` is the canvas editor's: this layer sits above `blintz`, so without the exclusion the
    app's neutral line would flatten the editor's own blockquote and table
    borders — the exact thing the `blintz` slot exists to prevent. */
 @layer border-defaults {
-  *:where(:not(.copilot-view-content *):not(.milkdown *)) {
+  *:where(:not(.milkdown *)) {
     border-color: hsl(var(--border));
   }
 }
@@ -849,20 +854,6 @@ body {
 @supports not (height: 100dvh) {
   body {
     height: -webkit-fill-available;
-  }
-}
-
-/* When embedded in Obsidian, the neutral border comes from the vault's theme
-   instead. Same layer as the `*` default above, and AFTER it in document order,
-   so this carve-out keeps winning inside the plugin's container — it also
-   out-specifies it, so neither half of that depends on the other.
-
-   It carries the `.milkdown` exclusion for the same reason the rule above does,
-   and it needs its own copy: this selector out-specifies that one, so the
-   exclusion up there does not reach the elements this one matches. */
-@layer border-defaults {
-  .copilot-view-content *:where(:not(.milkdown *)) {
-    border-color: var(--color-border);
   }
 }
 
@@ -1012,13 +1003,6 @@ body {
   animation-fill-mode: forwards;
 }
 
-/* Radix Collapsible opening and closing (DOR-1751): `animate-collapsible-down`
-   / `animate-collapsible-up`, worn by `shared/ui/collapsible.tsx`, come from
-   `tw-animate-css` (imported above) — it already ships both keyframes reading
-   Radix's own `--radix-collapsible-content-height`, 200ms ease-out. Nothing
-   to declare here; the global reduced-motion reset in this file flattens the
-   animation to 0.01ms, so the call site needs no `motion-safe:` gate. */
-
 /* The message action capsule's entrance: a 5px rise that overshoots a pixel and
    settles (design record §5.1). The overshoot is a KEYFRAME, not the curve —
    cubic-bezier(.2,1.4,.4,1) alone only carries a 5px travel about a quarter of
@@ -1164,30 +1148,8 @@ body {
   animation: press-release var(--msg-press-release) cubic-bezier(0.2, 1.6, 0.4, 1);
 }
 
-/* The thread panel's connector drawing itself downward as a reply arrives
-   (design record §5.3). `scaleY` from a top origin rather than an animated
-   `height`: height is a layout property, so animating it would reflow the
-   panel's whole reply list on every frame — and the design's own rule is that
-   motion here is transform and opacity only.
-
-   `transform-origin: top` is the whole gesture. From the centre it would grow
-   both ways and read as a line appearing; from the top it extends DOWNWARD,
-   which is the direction the reply it is announcing comes from. */
-@keyframes thread-line-draw {
-  from {
-    transform: scaleY(0);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
-
-@utility animate-thread-line-draw {
-  animation: thread-line-draw var(--msg-thread-draw) cubic-bezier(0.3, 1.2, 0.4, 1);
-  transform-origin: top;
-}
-
-/* The reply landing on that connector (design record §5.3): it comes down from
+/* A reply landing in the thread panel (design record §5.3 — the bounce, all
+   that remains of it since DOR-2110 removed the connector): it comes down from
    above, overshoots 2px, and settles. The bounce is stated as a KEYFRAME for
    the same reason `capsule-in`'s pixel is — a curve alone cannot carry a 7px
    travel 2px past its landing and have it read as weight. */
@@ -2009,93 +1971,4 @@ body {
   .room-panel-footer {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
-}
-
-/*
- * Obsidian theme bridge
- * Obsidian uses raw color values (not HSL triplets), so we override the
- * Tailwind color-* tokens directly instead of the HSL variable layer.
- */
-.copilot-view-content {
-  --color-background: var(--background-secondary);
-  --color-foreground: var(--text-normal);
-  --color-card: var(--background-secondary-alt);
-  --color-card-foreground: var(--text-normal);
-  --color-popover: var(--background-primary);
-  --color-popover-foreground: var(--text-normal);
-  --color-primary: var(--interactive-accent);
-  --color-primary-foreground: var(--text-on-accent);
-  --color-secondary: var(--background-secondary-alt);
-  --color-secondary-foreground: var(--text-normal);
-  --color-muted: var(--background-secondary-alt);
-  --color-muted-foreground: var(--text-muted);
-  --color-accent: var(--interactive-accent);
-  --color-accent-foreground: var(--text-on-accent);
-  /* Light-vault red; `.theme-dark` below lifts it. Kept in sync with
-     apps/obsidian-plugin/src/styles/plugin.css. */
-  --color-destructive: #ca1c27;
-  --color-destructive-foreground: #fff;
-  --color-border: var(--background-modifier-border);
-  --color-input: var(--background-modifier-form-field);
-  --color-ring: var(--interactive-accent);
-
-  /* Green-700 (`#15803d`), 5.02:1 on the Obsidian light theme's near-white
-     surface — the former green-600 was 3.30:1, under WCAG AA. Kept in sync with
-     the duplicate in apps/obsidian-plugin/src/styles/plugin.css (DOR-1080);
-     plugin-styles.test.ts guards the two against drift. */
-  --color-status-success: #15803d;
-  --color-status-success-bg: rgba(21, 128, 61, 0.1);
-  --color-status-success-border: rgba(21, 128, 61, 0.2);
-  --color-status-success-fg: #15803d;
-  --color-status-error: #dc2626;
-  --color-status-error-bg: rgba(220, 38, 38, 0.1);
-  --color-status-error-border: rgba(220, 38, 38, 0.2);
-  --color-status-error-fg: #dc2626;
-  --color-status-warning: #f59e0b;
-  --color-status-warning-bg: rgba(245, 158, 11, 0.1);
-  --color-status-warning-border: rgba(245, 158, 11, 0.2);
-  --color-status-warning-fg: #f59e0b;
-  --color-status-info: #3b82f6;
-  --color-status-info-bg: rgba(59, 130, 246, 0.1);
-  --color-status-info-border: rgba(59, 130, 246, 0.2);
-  --color-status-info-fg: #3b82f6;
-  --color-status-pending: #737373;
-  --color-status-pending-bg: rgba(115, 115, 115, 0.1);
-  --color-status-pending-fg: #737373;
-
-  /* Package hues get the same translucent-bg / solid-fg treatment as the
-     status tokens above, for the same reason: Obsidian's `.dark` never
-     matches here (it uses `.theme-dark`), so the `:root`/`.dark` package
-     tokens never reach this surface and the light values would otherwise
-     paint through as near-white chips on a dark Obsidian theme. A translucent
-     background survives either of Obsidian's themes; an opaque ~96%-lightness
-     fill does not. */
-  --color-package-agent-bg: rgba(59, 130, 246, 0.1);
-  --color-package-agent-border: rgba(59, 130, 246, 0.2);
-  --color-package-agent-fg: #3b82f6;
-  --color-package-plugin-bg: rgba(139, 92, 246, 0.1);
-  --color-package-plugin-border: rgba(139, 92, 246, 0.2);
-  --color-package-plugin-fg: #8b5cf6;
-  --color-package-skill-bg: rgba(5, 150, 105, 0.1);
-  --color-package-skill-border: rgba(5, 150, 105, 0.2);
-  --color-package-skill-fg: #059669;
-  --color-package-adapter-bg: rgba(245, 158, 11, 0.1);
-  --color-package-adapter-border: rgba(245, 158, 11, 0.2);
-  --color-package-adapter-fg: #f59e0b;
-  --color-package-shape-bg: rgba(244, 63, 94, 0.1);
-  --color-package-shape-border: rgba(244, 63, 94, 0.2);
-  --color-package-shape-fg: #f43f5e;
-  --color-package-connector-bg: rgba(6, 182, 212, 0.1);
-  --color-package-connector-border: rgba(6, 182, 212, 0.2);
-  --color-package-connector-fg: #06b6d4;
-
-  color: var(--text-normal);
-  background-color: var(--background-secondary);
-  font-family: var(--font-interface);
-}
-
-/* Dark-vault red (Obsidian puts `.theme-dark` on the body). Kept in sync with
-   apps/obsidian-plugin/src/styles/plugin.css. */
-.theme-dark .copilot-view-content {
-  --color-destructive: #ff554b;
 }

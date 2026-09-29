@@ -64,6 +64,12 @@ Five approaches were weighed for room files (full trade-off discussion in the 20
 
 ## 6) Decisions
 
+> **Amended 2026-09-26 by [`specs/agent-home-desk/`](../agent-home-desk/01-ideation.md):** decision 5
+> (turn cwd = the room worktree) and decision 13 (native skill discovery from the worktree) are
+> retired. A room turn runs in the agent's own home with its worktree granted; room-committed skills
+> are not loaded. Decision 7's "never mutate a worktree" keeps one exception: a clean worktree with
+> nothing ahead of `main` is fast-forwarded at turn start.
+
 Settled with the operator on 2026-08-27. These are resolved, not open.
 
 | #   | Decision                      | Choice                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Rationale                                                                                                                                                                                                        |

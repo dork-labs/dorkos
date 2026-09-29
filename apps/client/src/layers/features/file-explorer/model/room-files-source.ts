@@ -1,10 +1,14 @@
 /**
- * The explorer over a room's own files (spec `project-rooms` §3.9).
+ * The explorer over a room's own files (spec `project-rooms` §3.9, spec
+ * `agent-home-desk` §7.3).
  *
- * Read-only, and that is a fact about the place rather than a limitation of the
- * pane: a room's files are a git commit — the tip of `main` — so there is
- * nothing on disk for a click to rename. Writing them is what merging does, and
- * a person editing them is §3.10's job, not this one.
+ * A room's files are a git commit — the tip of `main` — so nothing here writes
+ * to a disk. Every change a person makes goes through the room's own routes as
+ * one commit with their name on it: an edit or a new file through the save
+ * door, and an upload, a rename or move, and a delete through
+ * {@link FileExplorerSource.changes}. Each one carries the version the person
+ * saw, so a change over somebody else's newer work comes back as a choice
+ * rather than landing blind.
  *
  * Everything it returns is written by the room's members: names, commit
  * subjects, author names, file bodies. None of it is authored by DorkOS, so it
@@ -14,12 +18,19 @@
  */
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { ROOM_FILE_CHANGED_CODE, type RoomFileEntry } from '@dorkos/shared/room-files';
+import {
+  ROOM_FILE_CHANGED_CODE,
+  ROOM_UPLOAD_MAX_FILES,
+  type RoomFileChangeResponse,
+  type RoomFileEntry,
+} from '@dorkos/shared/room-files';
 import { roomKeys } from '@/layers/entities/room';
 import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
 import { roomFileConflictOf, saveRefusalMessage } from '../lib/save-errors';
+import { roomChangeRefusalMessage, serverSentenceFirst } from '../lib/crud-errors';
 import { watchRoomEntries } from './room-entry-watch';
 import type {
+  ExplorerChangeOutcome,
   ExplorerEntry,
   ExplorerFile,
   ExplorerListing,
@@ -36,6 +47,13 @@ export interface RoomFilesSourceDeps {
   queryClient: QueryClient;
   /** The room whose files to browse. */
   roomId: string;
+  /**
+   * Whether the reader may change these files: a member, in a room that is not
+   * archived. Defaults to true. False leaves a tree to read — no new files, no
+   * uploads, no renames, deletes or edits — because every one of those would
+   * be refused, and an affordance that always refuses is worse than none.
+   */
+  canChange?: boolean;
 }
 
 /**
@@ -80,13 +98,29 @@ const NOT_READABLE_COPY = new Map<string, string>([
  * @param deps - The transport, the query cache, and the room.
  */
 export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSource {
-  const { transport, queryClient, roomId } = deps;
+  const { transport, queryClient, roomId, canChange = true } = deps;
+
+  /**
+   * Run one change and say how it ended, in the outcome's words rather than
+   * as a rejection for anything a person can act on.
+   */
+  const change = async (
+    run: () => Promise<RoomFileChangeResponse>
+  ): Promise<ExplorerChangeOutcome> => {
+    try {
+      const result = await run();
+      return { status: 'changed', commit: result.commit };
+    } catch (error) {
+      return changeRefusal(error, queryClient, roomId);
+    }
+  };
+
   return {
     scopeKey: `room:${roomId}`,
-    // No working directory: a commit is not a place on disk. Every path that
-    // would need one is unreachable, because nothing here is writable.
+    // No working directory: a commit is not a place on disk. The tree is
+    // written through `changes` below, never through the files API.
     cwd: null,
-    writable: false,
+    writable: canChange,
     provenance: true,
     // The API serves the tree as committed, with nothing dropped — so hiding
     // the plumbing is this client's job here.
@@ -99,15 +133,32 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
     async showToEveryone(path: string): Promise<void> {
       await transport.openRoomCanvasDocument(roomId, { type: 'file', sourcePath: path });
     },
-    // The tree is not writable and the FILES are — the opposite pair from a
-    // session, and both halves are true at once. Merging is what adds and
-    // removes entries here; a person's own edits go through §3.10's door, one
-    // save to one commit with their name on it.
-    editable: true,
+    // A person's own edits go through §3.10's door, one save to one commit
+    // with their name on it — any text file, not only markdown.
+    editable: canChange,
+    changes: !canChange
+      ? undefined
+      : {
+          maxUploadFiles: ROOM_UPLOAD_MAX_FILES,
+          upload: (input) =>
+            change(() =>
+              transport.uploadRoomFiles(roomId, {
+                dir: input.dir,
+                baseCommit: input.baseCommit,
+                replace: input.replace,
+                files: input.files,
+              })
+            ),
+          move: (input) => change(() => transport.moveRoomFile(roomId, input)),
+          remove: (input) => change(() => transport.deleteRoomFile(roomId, input)),
+        },
     async list(path: string): Promise<ExplorerListing> {
       try {
         const listing = await transport.readRoomFiles(roomId, path === '' ? undefined : path);
-        return { entries: listing.entries.map(toExplorerEntry) };
+        // The commit rides along: it is the lock a rename or a delete of
+        // anything in this directory carries, because it names the version the
+        // person was looking at.
+        return { entries: listing.entries.map(toExplorerEntry), commit: listing.commit };
       } catch (error) {
         // "This room has no files of its own" is the ordinary answer, not a
         // failure: most rooms are conversations and always will be. Left on the
@@ -187,7 +238,10 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
         if (code === 'MAIN_CHECKOUT_DIRTY') {
           void queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(roomId) });
         }
-        const reason = saveRefusalMessage(code);
+        // The server's sentence first where it names the file — a name taken
+        // in other capitals, a path the room ignores, a folder where a file
+        // was meant — and ours where it does not.
+        const reason = serverSentenceFirst(error) ?? saveRefusalMessage(code);
         // A refusal nobody wrote copy for is a bug, not a rule. Rethrowing is
         // what puts it in front of somebody who can fix it, rather than dressing
         // it up as an ordinary answer.
@@ -203,4 +257,52 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
       return watchRoomEntries(queryClient, roomId, onChange);
     },
   };
+}
+
+/**
+ * A refused change, as the outcome the pane acts on — or a rethrow for a
+ * refusal nobody wrote copy for, which is a bug rather than a rule.
+ *
+ * @param error - Whatever the transport threw.
+ * @param queryClient - The cache, for the repo status a paused room re-asks.
+ * @param roomId - The room.
+ */
+export function changeRefusal(
+  error: unknown,
+  queryClient: QueryClient,
+  roomId: string
+): ExplorerChangeOutcome {
+  const code = errorCodeOf(error);
+  if (code === ROOM_FILE_CHANGED_CODE) {
+    const conflict = roomFileConflictOf(error);
+    if (conflict !== null) {
+      return {
+        status: 'conflict',
+        path: conflict.path,
+        commit: conflict.commit,
+        lastCommit: conflict.lastCommit,
+      };
+    }
+    return {
+      status: 'refused',
+      reason:
+        'Somebody changed these files after you opened them, so nothing was changed. Look at the new version, then try again.',
+    };
+  }
+  if (code === 'ROOM_FILE_EXISTS') {
+    const said = error instanceof Error ? error.message.replace(/`([^`]*)`/g, '“$1”') : '';
+    return {
+      status: 'exists',
+      reason: said.trim() !== '' ? said : 'Something with that name is already there.',
+    };
+  }
+  // The room's copy has changed since the warning above the files was last
+  // drawn — this refusal is the proof. Re-ask now, so the sentence the person is
+  // about to read has something to point at.
+  if (code === 'MAIN_CHECKOUT_DIRTY') {
+    void queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(roomId) });
+  }
+  const reason = roomChangeRefusalMessage(error);
+  if (reason === undefined) throw error;
+  return { status: 'refused', reason };
 }

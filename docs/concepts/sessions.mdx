@@ -33,9 +33,7 @@ It picks up right where it left off.
 
 **Sessions from other tools show up automatically.** Claude Code sessions are just files on your
 disk, so any tool that can read those files sees the same sessions. Start a task from the `claude`
-CLI and it appears in the DorkOS sidebar too, no import step, no sync button. The Obsidian plugin
-can read the same files as well, though it's still early and under active testing, so expect some
-rough edges there.
+CLI and it appears in the DorkOS sidebar too, no import step, no sync button.
 
 OpenCode supplies sessions from its own store. For Codex, DorkOS lists the threads it has tracked
 and saves the conversation events it observed. This is not a promise that every conversation
@@ -141,9 +139,6 @@ as an agent gets `403 PEOPLE_ONLY`, and no request can name a user other than th
 that actually moves is broadcast as a `read_cursor` event on the global `GET /api/events` stream,
 which is what updates a second window without polling.
 
-In Obsidian there is no server to hold the mark, so it is kept in that browser profile instead. The
-"New messages" line still works there; it just does not travel to your other devices.
-
 ### Session metadata
 
 Most people never need this. Here's where each field on a Claude Code session comes from, if you
@@ -195,8 +190,8 @@ ignored if you've already started typing, so a link can never overwrite your own
     Understand how sessions fit into the overall DorkOS architecture.
   </Card>
   <Card title="Building Integrations" href="/docs/integrations/building-integrations">
-    See how session operations are delivered through the Transport interface, for extension and
-    integration authors.
+    See how session operations are delivered through the Transport interface, for extension authors
+    and anyone building a custom client.
   </Card>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">
     Learn how to review and approve tool calls during a session.

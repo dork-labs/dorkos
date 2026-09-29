@@ -28,7 +28,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
@@ -59,6 +59,15 @@ import { composeDorkOsCapabilityRegistry } from '../../../../core/self-descripti
 import { noopLogger } from '@dorkos/shared/logger';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
 import type { ServerPrincipalProof } from '../../../../connectors/principal/server-principal.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 /** The SDK's private spelling of the two loading controls. */
 const ALWAYS_LOAD_META = 'anthropic/alwaysLoad';
@@ -284,7 +293,7 @@ describe('in-session tool exposure', () => {
     await Promise.all([client.close(), server.instance.close()]);
   });
 
-  it('always-loads exactly the nine a turn cannot search for first', async () => {
+  it('always-loads exactly the ten a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -314,6 +323,9 @@ describe('in-session tool exposure', () => {
         // waiting on: the context says WHAT is on the canvas and never what a
         // document says.
         'read_canvas',
+        // Spec `agent-permissions` D15: the line that replaces a Blocked area's
+        // tools names this one, so it may not be deferred.
+        'request_permission',
       ].sort()
     );
     // The declared set and the served surface are the same set, in both
@@ -411,8 +423,38 @@ describe('in-session tool exposure', () => {
     // person saying "this is broken, can you report it" — a turn with room for a
     // search, unlike a room reply with somebody waiting. Both counts move by the
     // same one.
-    expect(tools).toHaveLength(104);
-    expect(deferred).toHaveLength(95);
+    //
+    // 104 -> 105 for `archive_room` (spec `agent-permissions` D12), DEFERRED: an
+    // agent archives a channel rarely, once its work is done, which is a turn
+    // with room for a search. Both counts move by the same one.
+    //
+    // 105 -> 107 for the two permission verbs (spec `agent-permissions` D8,
+    // D9): `request_permission` ALWAYS-LOADED, because the Blocked-area line
+    // names it, and `list_my_permissions` DEFERRED, because nothing does. So
+    // the deferred count moves by one, not two.
+    //
+    // 107 -> 108 for `marketplace_update` (DOR-2195), DEFERRED like every other
+    // marketplace tool: the turn that wants it is a person asking what is out of
+    // date, which can afford a search. Both counts move by the same one.
+    //
+    // 108 -> 109 for `update_agent_execution` (DOR-2328), DEFERRED like
+    // `update_agent_boundaries`: the turn that wants it is a person asking to
+    // move an agent to another model, which can afford a search. Both counts
+    // move by the same one.
+    // 109 -> 110 for `change_permission` (spec `agent-permissions` D9),
+    // DEFERRED: an agent asks to change a permission rarely, and always on a
+    // person's card, which is a turn with room for a search. Both counts move by
+    // the same one.
+    // 110 -> 111 for `accounts_usage` (spec `claude-account-fleet` D2),
+    // DEFERRED: a turn that asks how much of an account is used can afford a
+    // search. Both counts move by the same one.
+    // 111 -> 112 for `accounts_probe` (spec `claude-account-fleet` D3),
+    // DEFERRED for the same reason. Both counts move by the same one.
+    // 112 -> 113 for `session_start` (spec `claude-account-fleet` D5),
+    // DEFERRED: starting a session is a deliberate step a turn can search for.
+    // Both counts move by the same one.
+    expect(tools).toHaveLength(113);
+    expect(deferred).toHaveLength(103);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',
@@ -459,6 +501,7 @@ describe('in-session tool exposure', () => {
         'search_member_rooms',
         'read_canvas',
         'memory_write',
+        'request_permission',
         'mesh_list',
         'mesh_inspect',
         'relay_send',

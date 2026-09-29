@@ -5,17 +5,22 @@
 # refusal it can make is pinned by fixtures. Read that header before changing
 # anything here — the safety argument lives there, not in this file.
 #
-# Scope is deliberately LOCAL ONLY. Branches on origin are handled by GitHub's
-# "automatically delete head branches" setting, enabled 2026-08-03, which covers
-# everything merged from that date on. (It did not clear the pre-existing
-# backlog; that was deleted by hand on 2026-08-01 — see
-# research/20260801_worktree-and-branch-sweep.md.) This script cleans what GitHub
-# cannot see: your worktrees and your local refs.
+# The default pass is LOCAL: your worktrees and your local refs. GitHub's
+# "automatically delete head branches" setting (enabled 2026-08-03) removes a
+# branch from origin when its PR merges, but it never sees a branch that did not
+# become a PR: a Codex attempt that lost to a sibling, a `codex/archive/*` twin, a
+# review branch nobody opened. Those piled up twice (402 in
+# research/20260801_worktree-and-branch-sweep.md; again by 2026-09-25, each one
+# holding a Neon preview database). `--origin` is the opt-in pass for them,
+# implemented in scripts/origin-branch-janitor.ts: it reports every origin branch
+# with no open PR and no worktree here, and `--origin --fix` deletes only those
+# already in main or whose merged PR had the same tip. Its header has the rules.
 #
 # Usage:
 #   scripts/worktree-janitor.sh            # report what would go, write nothing
 #   scripts/worktree-janitor.sh --fix      # actually remove them
 #   scripts/worktree-janitor.sh --json     # machine-readable plan, writes nothing
+#   scripts/worktree-janitor.sh --origin   # origin branches instead; add --fix or --json
 #
 # Dry run is the default and --fix is the only thing that writes, because the
 # habit this replaces was "an agent decides cleanup is in scope and starts
@@ -45,8 +50,12 @@
 set -uo pipefail
 
 MODE=""
+ORIGIN=false
 for arg in "$@"; do
   case "$arg" in
+    --origin)
+      ORIGIN=true
+      ;;
     --fix | --json)
       want=${arg#--}
       # Last-flag-wins would silently turn an intended write into a read.
@@ -70,6 +79,18 @@ for arg in "$@"; do
   esac
 done
 MODE=${MODE:-report}
+
+if [[ "$ORIGIN" == true ]]; then
+  # A separate pass, not an extra step of the local one: it judges origin refs,
+  # not worktrees, and its --fix deletes from origin, so it runs only by name.
+  command -v node >/dev/null 2>&1 || {
+    echo "required tool not found: node" >&2
+    exit 2
+  }
+  ORIGIN_ARGS=()
+  [[ "$MODE" != report ]] && ORIGIN_ARGS+=("--$MODE")
+  exec node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/origin-branch-janitor.ts" "${ORIGIN_ARGS[@]+"${ORIGIN_ARGS[@]}"}"
+fi
 
 for tool in git jq gh; do
   command -v "$tool" >/dev/null 2>&1 || {

@@ -248,8 +248,78 @@ export interface OperatingSkill {
  *   feedback form now, and `answering-dorkos-questions` said to look for a menu
  *   entry that no longer exists. An agent seeded at 22 would keep sending people
  *   to it.
+ * - 24: permissions (spec `agent-permissions`, phase 2). An `act` call can now wait
+ *   for a person (its area set to Ask), any tier can be refused as Blocked, and a
+ *   Blocked agent asks with `request_permission` under three limits that answer
+ *   `request_pending`, `recently_denied` and `request_limit`. `operating-dorkos`
+ *   said `act` always runs and knew none of those reasons, so an agent seeded at
+ *   23 would read a refusal it could ask past as final, or ask again into a limit
+ *   with no idea why it was held back. Paid for by folding the tier list and
+ *   dropping the rule that restated it.
+ * - 25: `using-the-marketplace` learns to update packages (DOR-2195). Agents
+ *   gained `marketplace_update` and `marketplace_list_installed { checkUpdates }`,
+ *   and a page that says nothing about either leaves an agent telling a person to
+ *   open the app to update a stale plugin, which is the gap the tools close.
+ * - 26: uninstall keeps what the person added (DOR-2245). `using-the-marketplace`
+ *   said an uninstall keeps `.dork/data/` and `.dork/secrets.json`; it now keeps
+ *   every file the person or their agents added or changed, and uninstalling an
+ *   agent package removes the agent from the team, which a reinstall does not
+ *   restore. An agent seeded at 25 would tell a person their added files are
+ *   deleted, and would not warn them before removing an agent.
+ * - 27: `dorkos update --apply` asks first (DOR-2306). From an agent's shell it
+ *   now prints what each new version runs and waits on an approval card, then
+ *   takes `--approval <token>`. An agent seeded at 26 would run the old command
+ *   and read the card as a failure.
+ * - 28: the marketplace and scheduling pages catch up with the package
+ *   programme (DOR-2305). `using-the-marketplace` teaches `dorkos marketplace
+ *   installed|outdated` (and outdated's exit codes), what an update keeps
+ *   (`.dork-old` / `.dork-new`, and what `userEditable` may not cover), and
+ *   global packages held back until a person approves them, which an agent
+ *   cannot do itself. `scheduling-tasks` says the timezone is part of what a
+ *   person approves (DOR-2307), that an agent's edit stops an approved schedule
+ *   at once (DOR-2313), that a package's schedule takes only on/off and a new
+ *   timing, with `resetTiming` to undo it (DOR-2302), and that schedules under a
+ *   marketplace agent now work, with Make my own copy for a package's own
+ *   (DOR-2272). `using-the-marketplace` also says adding a source fetches its
+ *   list at once and a refresh that can't reach it says so (DOR-2304). An agent
+ *   seeded at 27 would retime a package schedule believing it stays live, tell
+ *   a person a package agent can't have schedules, or try to approve a
+ *   held-back package it installed.
+ * - 29: older installs point at Check files (DOR-2197). `scheduling-tasks`
+ *   said a schedule under a package an older DorkOS installed works after the
+ *   package's next update, and that Make my own copy isn't offered for one yet;
+ *   `using-the-marketplace` gains `verify` and Check files. An agent
+ *   seeded at 28 would tell a person to wait for an update that may never ship.
+ * - 30: an agent's runtime, model and effort moved off \`update_agent\` to
+ *   \`update_agent_execution\` at tier \`destructive\` (DOR-2328), because every
+ *   schedule that follows the agent moves with them. \`managing-agents\` teaches
+ *   it. An agent seeded at 29 has no page naming the capability, so a refused
+ *   \`update_agent\` or \`NEEDS_APPROVAL\` from the HTTP API would read as broken.
+ * - 31: `reading-activity` stops naming the app by a word DorkOS retired
+ *   (DOR-1517, caught by DOR-2068). An agent seeded at 30 would repeat it to the person it
+ *   works for. The banned-words guard now scans this package, which is how it
+ *   was caught.
+ * - 32: the tier ceiling is retired (agent permissions, DOR-2278). The refusal
+ *   an agent reads is now `permission_blocked` with `approvable: true` (it may
+ *   ask with `request_permission`), not `tier_ceiling`. An agent seeded at 31
+ *   would stop and give up on a refusal it can now ask past.
+ * - 33: the Connections page became one list of apps (DOR-2418). The
+ *   `operating-dorkos` page named its two retired regions, Accounts and
+ *   Messaging, so an agent seeded at 32 would send a person to a section that
+ *   no longer exists.
+ * - 34: a room turn runs in the agent's own folder, not in its copy of the
+ *   room's files (spec `agent-home-desk`, DOR-2410). `working-in-room-repos`
+ *   teaches working on that copy by full path and `git -C`, and the rule that an
+ *   agent changes its own code in a private worktree of its own repo, never in
+ *   its home checkout. An agent seeded at 33 would edit relative paths believing
+ *   it stands in the copy, and write into its own folder instead.
+ * - 35: `working-in-room-repos` says a clean copy of a room's files is brought
+ *   up to date with main when a room turn starts, and that a copy with work in
+ *   progress is left alone with a list of what moved (spec `agent-home-desk` §6,
+ *   DOR-2411). An agent seeded at 34 would read a refreshed copy as somebody
+ *   else's edit, or not know why its copy was held.
  */
-export const OPERATING_SKILLS_VERSION = 23;
+export const OPERATING_SKILLS_VERSION = 35;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

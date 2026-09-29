@@ -26,7 +26,11 @@ import { InstallConfirmationDialog } from '../ui/InstallConfirmationDialog';
 // the scope-aware reinstall detection.
 // ---------------------------------------------------------------------------
 
-vi.mock('@/layers/entities/marketplace', () => ({
+vi.mock('@/layers/entities/marketplace', async () => ({
+  // The real notice: what a refused preview says is part of what is tested.
+  ...(await vi.importActual<typeof import('@/layers/entities/marketplace/ui/PreviewRefusedNotice')>(
+    '@/layers/entities/marketplace/ui/PreviewRefusedNotice'
+  )),
   usePermissionPreview: vi.fn(),
   useInstallPackage: vi.fn(),
   useInstalledPackages: vi.fn(),
@@ -104,6 +108,14 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+    skippedLinks: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -116,6 +128,18 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
 
 function makeDetail(preview?: Partial<PermissionPreview>): MarketplacePackageDetail {
   return {
+    // Runs nothing on its own: what an install is held to (DOR-2306).
+    disclosed: {
+      hooks: [],
+      schedules: [],
+      mcpServers: [],
+      lspServers: [],
+      monitors: [],
+      executables: [],
+      skillTools: [],
+      skillCommands: [],
+    },
+    contentHash: 'sha256:staged',
     manifest: {
       name: '@dorkos/code-reviewer',
       version: '1.0.0',
@@ -130,13 +154,13 @@ function makeDetail(preview?: Partial<PermissionPreview>): MarketplacePackageDet
 // Hook return-value helpers
 // ---------------------------------------------------------------------------
 
-type PreviewHookState = { data?: MarketplacePackageDetail; isLoading?: boolean };
+type PreviewHookState = { data?: MarketplacePackageDetail; isLoading?: boolean; error?: unknown };
 
 function setPreviewState(state: PreviewHookState = {}) {
   vi.mocked(usePermissionPreview).mockReturnValue({
     data: state.data,
     isLoading: state.isLoading ?? false,
-    error: null,
+    error: state.error ?? null,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof usePermissionPreview>);
 }
@@ -268,6 +292,27 @@ describe('InstallConfirmationDialog', () => {
     expect(screen.queryByText('Secrets required')).not.toBeInTheDocument();
   });
 
+  it('says why and offers no install when the server refused the preview (DOR-2314)', () => {
+    // Purpose: a package the server will not preview is one it will not
+    // install; the dialog must never offer Install over an empty preview.
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
+    const refused = Object.assign(new Error('Package failed validation'), {
+      status: 400,
+      body: {
+        errors: [
+          "An agent package can't ship .claude/settings.json: its folder is the agent's working directory.",
+        ],
+      },
+    });
+    setPreviewState({ error: refused });
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('DorkOS won’t install this package');
+    expect(screen.getByRole('alert')).toHaveTextContent("can't ship .claude/settings.json");
+    expect(screen.getByRole('button', { name: /^install/i })).toBeDisabled();
+  });
+
   it('renders the PermissionPreviewSection once the preview resolves', async () => {
     const user = userEvent.setup();
     useMarketplaceStore.getState().openInstallConfirm(makePackage());
@@ -300,7 +345,15 @@ describe('InstallConfirmationDialog', () => {
     // The dialog now uses mutateAsync + try/catch to wait for success before
     // closing. The bare `mutate` is not called by this code path.
     expect(installMutateAsync).toHaveBeenCalledTimes(1);
-    expect(installMutateAsync).toHaveBeenCalledWith({ name: '@dorkos/code-reviewer' });
+    expect(installMutateAsync).toHaveBeenCalledWith({
+      name: '@dorkos/code-reviewer',
+      // What the dialog showed the package runs, sent back so the install is
+      // held to it (DOR-2306).
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
+    });
   });
 
   it('disables the Install button when the preview has error-level conflicts', () => {
@@ -488,7 +541,15 @@ describe('InstallConfirmationDialog', () => {
 
     await user.click(screen.getByRole('button', { name: /^install$/i }));
 
-    expect(installMutateAsync).toHaveBeenCalledWith({ name: 'my-shape' });
+    expect(installMutateAsync).toHaveBeenCalledWith({
+      name: 'my-shape',
+      // What the dialog showed the package runs, sent back so the install is
+      // held to it (DOR-2306).
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
+    });
   });
 
   it('keeps the scope selector for a non-shape package (regression guard)', () => {

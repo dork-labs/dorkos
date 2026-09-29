@@ -37,7 +37,6 @@ function baseManifest(overrides?: Partial<AgentManifest>): AgentManifest {
     registeredBy: 'test-suite',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
     ...overrides,
   };

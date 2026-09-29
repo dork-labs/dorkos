@@ -46,9 +46,16 @@ import {
 } from '@dorkos/shared/room-schemas';
 import {
   ROOM_FILE_CHANGED_CODE,
+  ROOM_UPLOAD_FILES_FIELD,
+  ROOM_UPLOAD_MAX_FILES,
   RoomFileContentQuerySchema,
+  RoomFileDeleteRequestSchema,
+  RoomFileFromAttachmentRequestSchema,
+  RoomFileMoveRequestSchema,
   RoomFileSaveRequestSchema,
   RoomFilesQuerySchema,
+  RoomFileUploadFieldsSchema,
+  type RoomFileConflict,
 } from '@dorkos/shared/room-files';
 import { RoomMainRepairRequestSchema } from '@dorkos/shared/room-repo';
 import {
@@ -61,9 +68,14 @@ import {
   getRoomService,
   RoomError,
   toAuthorRef,
+  type AuthorRecord,
   type PostedEntry,
 } from '../services/rooms/index.js';
-import { readRoomRepoConfig, ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
+import {
+  readRoomRepoConfig,
+  ROOM_REPO_EXISTS_CODE,
+  type RoomFileActor,
+} from '../services/rooms/repo/index.js';
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
@@ -74,6 +86,7 @@ import {
 import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-sweep.js';
 import { configManager } from '../services/core/config-manager.js';
 import { parseBody, sendError, discardStream } from '../lib/route-utils.js';
+import { describeBytes } from '../services/rooms/repo/room-file-ops.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
 import roomCanvasRouter from './room-canvas.js';
@@ -1057,7 +1070,7 @@ router.put('/:id/files/content', (req, res) => {
       const caller = resolveCaller(req, res);
       const body = parseBody(RoomFileSaveRequestSchema, req.body, res);
       if (!body) return;
-      const outcome = await getRoomFileEditor().save(req.params.id, caller.id, {
+      const outcome = await getRoomFileEditor().save(req.params.id, fileActor(caller, res), {
         path: body.path,
         baseCommit: body.baseCommit,
         text: body.text,
@@ -1073,6 +1086,269 @@ router.put('/:id/files/content', (req, res) => {
       res.json(outcome.result);
     } catch (err) {
       sendRoomError(res, err, 'PUT /:id/files/content');
+    }
+  })();
+});
+
+/**
+ * Who is changing a room's files, as the file editor needs to know them.
+ *
+ * `signedIn` is whether a login session made this request — `res.locals.user`
+ * is only ever set by `sessionGate`, which only runs with login on. It decides
+ * whose name the commit carries (spec `agent-home-desk` §7.1): the signed-in
+ * person's, or the operator's.
+ *
+ * @param caller - The resolved caller.
+ * @param res - The response, for the session the gate resolved.
+ */
+function fileActor(caller: AuthorRecord, res: { locals: Record<string, unknown> }): RoomFileActor {
+  return { authorId: caller.id, signedIn: res.locals.user !== undefined };
+}
+
+/**
+ * Answer a file change that lost the race — the same 409 `FILE_CHANGED` body
+ * the save answers, so one client handler covers every operation.
+ *
+ * @param res - The response.
+ * @param conflict - What moved.
+ */
+function sendFileConflict(res: import('express').Response, conflict: RoomFileConflict): void {
+  res.status(409).json({
+    error:
+      'Somebody changed these files after you opened them, so nothing was changed. Look at the new version, then try again.',
+    code: ROOM_FILE_CHANGED_CODE,
+    conflict,
+  });
+}
+
+/**
+ * POST /:id/files/upload — a person uploading files into one folder of the
+ * room's files (spec `agent-home-desk` §7.1).
+ *
+ * Multipart: `files` (at most {@link ROOM_UPLOAD_MAX_FILES}), plus `dir`,
+ * `baseCommit` and `replace` (a JSON list of the names this upload may
+ * overwrite). **One commit for the whole upload**, authored as the person, and
+ * one quiet room entry.
+ *
+ * **Refused before a byte is read** when the caller may not change this room's
+ * files — the same gate, in the same order, as a save. Only then is multer
+ * started, with **disk storage** into a staging folder of this request's own
+ * under `<dorkHome>/.temp/room-uploads/` (memory storage would hold up to twenty
+ * times the room's file cap in RAM), each file capped at the room's own frozen
+ * `maxFileBytes`. The staging folder is removed when the request settles,
+ * whatever happened. Uploads are bytes: binary files are fine, and nothing that
+ * arrives this way can be a symlink.
+ */
+router.post('/:id/files/upload', (req, res) => {
+  void (async () => {
+    let stagingDir: string | null = null;
+    // The answer is decided first and SENT last, after the staging folder is
+    // gone: a client that sees the response can rely on nothing of its upload
+    // being left on disk.
+    let reply: () => unknown;
+    try {
+      const caller = resolveCaller(req, res);
+      const actor = fileActor(caller, res);
+      const editor = getRoomFileEditor();
+      const prepared = await editor.prepareUpload(req.params.id, actor);
+      stagingDir = prepared.stagingDir;
+      const destination = prepared.stagingDir;
+
+      const files = await new Promise<Express.Multer.File[]>((resolve, reject) => {
+        multer({
+          storage: multer.diskStorage({ destination }),
+          // UTF-8 names: a person's file called `résumé.pdf` is not latin-1.
+          defParamCharset: 'utf8',
+          limits: {
+            fileSize: prepared.maxFileBytes,
+            files: ROOM_UPLOAD_MAX_FILES,
+            fields: 10,
+          },
+        }).array(ROOM_UPLOAD_FILES_FIELD, ROOM_UPLOAD_MAX_FILES)(req, res, (err: unknown) => {
+          if (err) return reject(uploadError(err, prepared.maxFileBytes));
+          resolve((req.files as Express.Multer.File[] | undefined) ?? []);
+        });
+      });
+      const fields = RoomFileUploadFieldsSchema.safeParse(req.body ?? {});
+      if (!fields.success) {
+        reply = () => parseBody(RoomFileUploadFieldsSchema, req.body ?? {}, res);
+      } else {
+        const outcome = await editor.upload(req.params.id, actor, {
+          dir: fields.data.dir,
+          baseCommit: fields.data.baseCommit,
+          replace: fields.data.replace,
+          files: files.map((file) => ({
+            name: file.originalname,
+            content: { file: file.path, size: file.size },
+          })),
+        });
+        reply =
+          outcome.status === 'conflict'
+            ? () => sendFileConflict(res, outcome.conflict)
+            : () => res.json(outcome.result);
+      }
+    } catch (err) {
+      // A person closing the tab mid-upload is not a server fault, and there is
+      // nobody left to answer: a note, not an error, and no response.
+      if (isAbortedUpload(err)) {
+        logger.info('[rooms] an upload was abandoned before it finished', {
+          roomId: req.params.id,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+        reply = () => undefined;
+      } else {
+        reply = () => sendRoomError(res, err, 'POST /:id/files/upload');
+      }
+    }
+    if (stagingDir) await getRoomFileEditor().discardUpload(stagingDir);
+    reply();
+  })();
+});
+
+/**
+ * Whether an upload failed because the client went away — multer's own words
+ * for an aborted or closed request.
+ *
+ * @param err - What the upload failed with.
+ */
+function isAbortedUpload(err: unknown): boolean {
+  return (
+    err instanceof Error && (err.message === 'Request aborted' || err.message === 'Request closed')
+  );
+}
+
+/**
+ * Turn a multer refusal into the room's own.
+ *
+ * @param err - What multer reported.
+ * @param maxFileBytes - The room's per-file cap, for the sentence.
+ */
+function uploadError(err: unknown, maxFileBytes: number): unknown {
+  if (!(err instanceof multer.MulterError)) return err;
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return new RoomError(
+      'FILE_TOO_LARGE',
+      `A file in that upload is larger than this room’s limit for one file, ${describeBytes(maxFileBytes)}.`
+    );
+  }
+  if (
+    err.code === 'LIMIT_FILE_COUNT' ||
+    (err.code === 'LIMIT_UNEXPECTED_FILE' && err.field === ROOM_UPLOAD_FILES_FIELD)
+  ) {
+    return new RoomError(
+      'ROOM_UPLOAD_TOO_MANY_FILES',
+      `One upload can carry at most ${ROOM_UPLOAD_MAX_FILES} files.`
+    );
+  }
+  return new RoomError(
+    'ROOM_FILE_PATH_INVALID',
+    `That upload could not be read: ${err.message}. Send the files as the '${ROOM_UPLOAD_FILES_FIELD}' field.`
+  );
+}
+
+/**
+ * POST /:id/files/move — rename or move one file or folder (spec
+ * `agent-home-desk` §7.1).
+ *
+ * One commit, `Rename <from> to <to>`, authored as the person. Every path under
+ * `from` must be unchanged since `baseCommit` (else 409 `FILE_CHANGED` with the
+ * conflict), and `to` must not exist (409 `ROOM_FILE_EXISTS`). Missing folders
+ * above `to` are created; a folder segment that differs only in capitals from
+ * one the room has is refused, naming the real one.
+ */
+router.post('/:id/files/move', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      const body = parseBody(RoomFileMoveRequestSchema, req.body, res);
+      if (!body) return;
+      const outcome = await getRoomFileEditor().move(req.params.id, fileActor(caller, res), body);
+      if (outcome.status === 'conflict') return sendFileConflict(res, outcome.conflict);
+      res.json(outcome.result);
+    } catch (err) {
+      sendRoomError(res, err, 'POST /:id/files/move');
+    }
+  })();
+});
+
+/**
+ * POST /:id/files/delete — delete one file or folder (spec `agent-home-desk`
+ * §7.1).
+ *
+ * POST rather than DELETE, because the request carries a body (the lock) and a
+ * DELETE body is one proxies are free to drop. One commit, `Delete <path>`; every
+ * path under `path` must be unchanged since `baseCommit`. The room's history
+ * keeps what was deleted.
+ */
+router.post('/:id/files/delete', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      const body = parseBody(RoomFileDeleteRequestSchema, req.body, res);
+      if (!body) return;
+      const outcome = await getRoomFileEditor().remove(req.params.id, fileActor(caller, res), body);
+      if (outcome.status === 'conflict') return sendFileConflict(res, outcome.conflict);
+      res.json(outcome.result);
+    } catch (err) {
+      sendRoomError(res, err, 'POST /:id/files/delete');
+    }
+  })();
+});
+
+/**
+ * POST /:id/files/from-attachment — keep a file somebody attached to a message
+ * in this room as one of the room's files (spec `agent-home-desk` §7.1).
+ *
+ * **The attachment must be on a message in THIS room.** Anything else — another
+ * room's id, an unposted upload, an id that never existed — is the attachments
+ * route's own answer, 404 `ATTACHMENT_NOT_FOUND`, so this route cannot be used to
+ * learn about files elsewhere. The write gate is asked first, so a non-member
+ * learns nothing either. One commit, `Add <path> from the chat`; a name the
+ * folder already holds is 409 `ROOM_FILE_EXISTS`.
+ */
+router.post('/:id/files/from-attachment', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(req, res);
+      const body = parseBody(RoomFileFromAttachmentRequestSchema, req.body, res);
+      if (!body) return;
+      const actor = fileActor(caller, res);
+      const editor = getRoomFileEditor();
+      // The write gate before the attachment is looked up: a caller who may not
+      // change this room's files learns nothing about its attachments.
+      editor.assertCanChange(req.params.id, actor);
+
+      const row = getAttachmentRowStore().get(req.params.id, body.attachmentId);
+      if (
+        !row ||
+        row.entryId === null ||
+        !getRoomService().canReadAttachment(req.params.id, caller.id, row)
+      ) {
+        return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
+      }
+      const stored = await getRoomAttachmentStore().get(
+        req.params.id,
+        row.id,
+        row.extension,
+        'application/octet-stream'
+      );
+      if (!stored) return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
+      const chunks: Buffer[] = [];
+      for await (const chunk of stored.stream) chunks.push(Buffer.from(chunk as Buffer));
+
+      const outcome = await editor.saveAttachment(req.params.id, actor, {
+        dir: body.dir,
+        name: body.name ?? row.name,
+        baseCommit: body.baseCommit,
+        bytes: Buffer.concat(chunks),
+      });
+      if (outcome.status === 'conflict') return sendFileConflict(res, outcome.conflict);
+      res.json(outcome.result);
+    } catch (err) {
+      if (err instanceof InvalidRoomAttachmentIdError) {
+        return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
+      }
+      sendRoomError(res, err, 'POST /:id/files/from-attachment');
     }
   })();
 });

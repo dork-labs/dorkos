@@ -97,46 +97,45 @@
  * budget for a post, {@link ReactionBudget} for a reaction. `I2` — bounds are
  * mechanisms, never prompts, and never tiers pretending to be one.
  *
- * ## The CONVERSATION verbs still have no toggle, and the five that arrange
- * rooms have one with teeth
+ * ## The CONVERSATION verbs have no switch; the verbs that arrange rooms sit in
+ * the Rooms permission area
  *
  * `EnabledToolGroupsSchema` still gains no `rooms` key (spec `room-participation`
  * §10.2), and the reasoning behind that has not moved: a togglable rooms group
  * reproduces OpenClaw's documented footgun exactly — an agent that "will listen
  * to room events and can never speak" — in a place where the toggle is one
  * person's per-agent setting and the consequence shows up in somebody else's
- * room. Nothing can mute an agent that is already in a conversation.
+ * room. Nothing can mute an agent that is already in a conversation, so
+ * `rooms.post` and `rooms.react` declare `area: null`.
  *
- * The five MANAGEMENT verbs are a different question and carry a different
- * answer: `toolGroup: 'roomsManage'` (DOR-1611, ADR 260828-123331). That is not
- * the `rooms` key §10.2 forbids and does not reproduce its footgun — it is
- * visibly a separate key, it covers no conversation verb, and an agent whose
- * owner has not turned it on can still read, post, react and look rooms up
- * exactly as before. What it withholds is the ability to REARRANGE, which is
- * the part that touches other people's rooms.
+ * The verbs that REARRANGE rooms — create, add and remove members, rename, leave,
+ * merge, archive — declare `area: 'rooms'` (spec `agent-permissions` D2). The
+ * capability gate resolves that area on every call, fresh off the agent's
+ * manifest and the install's defaults: Blocked refuses the call, Ask raises the
+ * approval card, Allowed runs. No agent can change its setting through DorkOS —
+ * only the permission routes, behind a person, write it; an agent that can edit
+ * files can still edit its own manifest, which the permission observer records
+ * as a change made outside DorkOS. What the area withholds is the
+ * ability to rearrange, which is the part that touches other people's rooms; an
+ * agent with Rooms Blocked can still read, post, react and look rooms up.
  *
- * **It is the product's first tool group that actually refuses.** The four keys
- * beside it in `mcp-tool-groups.ts` shape documentation only; this one is read
- * fresh off the agent's manifest at `registry.invoke` and the call does not run
- * without it. Off by default, and the agent cannot turn it on for itself — the
- * agent-reachable manifest write path refuses the field.
+ * ## Who reaches the Rooms area
  *
- * ## Agent-only by construction
- *
- * A person never reaches these five. The gate lets a `trustedCaller` past, and
- * that marker is minted at four routes none of which is the invoke route — so
- * the only caller who can pass the grant check is an identified agent that holds
- * it. That is correct rather than a gap: a person manages rooms in the app, over
- * the HTTP room routes, which are unchanged. It also means `callerAuthor` below
- * always takes its `context.identity` branch for these five, and the login-off
- * owner fallback is unreachable from them.
+ * A person never reaches these through the capability surface: the gate lets a
+ * `trustedCaller` past, and that marker is minted at routes none of which is the
+ * invoke route. A person manages rooms in the app, over the HTTP room routes.
+ * An identified agent reaches them when its resolved Rooms permission allows it.
+ * A caller that presents no identity resolves against the install's defaults
+ * only (spec `agent-permissions` D11), and `callerAuthor` below then gives it the
+ * same author the HTTP routes would: an error with login on, the operator with
+ * login off, which is the `local-trust` residual those routes already carry.
  *
  * ## The runtime constraint (§10.2.1), dissolved
  *
  * It used to be that only claude-code declared `supportsMcp: true`, so only a
  * claude-code agent got these in-session and the other two kept text-as-reply.
  * DOR-1613's wiring removed the premise, and DOR-2099 removed the switch in
- * front of it: Codex and OpenCode sessions reach the same fifteen verbs over
+ * front of it: Codex and OpenCode sessions reach the same verbs over
  * this server's own `/mcp`, with per-agent identity. Whether a given session actually carries them is now a
  * property of that SESSION rather than of its runtime, which is what the reply
  * mode reads (spec `tool-only-room-replies` §D2) — and a session that does not is
@@ -174,6 +173,7 @@
  */
 import { z } from 'zod';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { canvasSourcePath } from '../canvas/index.js';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
@@ -189,8 +189,10 @@ import {
 } from '@dorkos/shared/room-schemas';
 import {
   discardStagedAttachments,
+  ownRoomCopy,
   stageAgentAttachments,
 } from './attachments/agent-attachments.js';
+import { resolveDorkHome } from '../../lib/dork-home.js';
 import { sweepUnboundAttachments } from './attachments/unbound-sweep.js';
 import { getAttachmentRowStore, getRoomAttachmentStore } from './attachments/attachment-stores.js';
 
@@ -203,9 +205,9 @@ import {
 } from '../core/capabilities/index.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { configManager } from '../core/config-manager.js';
-import type { AuthorRecord } from './author-registry.js';
+import { isOwnerRecord, type AuthorRecord } from './author-registry.js';
 import { resolveOperatorAuthor } from './operator-author.js';
-import { RoomError } from './room-errors.js';
+import { RoomError, roomRefusalFor } from './room-errors.js';
 import {
   FIND_ROOMS_MAX,
   HISTORY_PAGE_MAX,
@@ -431,7 +433,8 @@ function projectEntry(rooms: RoomService, entry: RoomEntry): Record<string, unkn
     at: entry.createdAt,
     kind: entry.kind,
     authorId: entry.authorId,
-    author: sanitizeIdentity(author?.displayName ?? 'someone who has left'),
+    // The owner by name, never the registry's 'You' (DOR-2458).
+    author: sanitizeIdentity(rooms.nameForAgents(entry.authorId) ?? 'someone who has left'),
     ...(author?.handle ? { handle: sanitizeIdentity(author.handle) } : {}),
     text: entry.body.text,
     ...(entry.threadRootEntryId ? { threadRootEntryId: entry.threadRootEntryId } : {}),
@@ -458,10 +461,11 @@ function projectEntry(rooms: RoomService, entry: RoomEntry): Record<string, unkn
  * and a second cap copied to this side of the seam is a number that drifts from
  * the schema and truncates in a place nobody would think to look.
  *
+ * @param rooms - The rooms service, for naming each member as an agent reads them.
  * @param detail - The service's projection.
  * @returns The compact, label-sanitized shape a tool returns.
  */
-function projectDetail(detail: RoomDetail): Record<string, unknown> {
+function projectDetail(rooms: RoomService, detail: RoomDetail): Record<string, unknown> {
   return {
     roomId: detail.roomId,
     kind: detail.kind,
@@ -483,27 +487,14 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
     lastActivity: detail.lastActivityAt,
     members: detail.members.map((member) => ({
       authorId: member.authorId,
-      name: sanitizeIdentity(member.name) ?? null,
+      // The owner by name, never the registry's 'You' (DOR-2458).
+      name: sanitizeIdentity(rooms.nameForAgents(member.authorId) ?? member.name) ?? null,
       ...(member.handle ? { handle: sanitizeIdentity(member.handle) } : {}),
       kind: member.kind,
     })),
   };
 }
 
-/**
- * Run a room verb, turning its typed refusal into the MCP `isError` payload
- * rather than a stack trace.
- *
- * A {@link RoomError} is the room saying no for a reason the caller can act on —
- * "you are not in that room", "that is a direct message", "you have used up your
- * reactions". The code travels with the message so an agent can branch on it
- * without parsing prose. Anything else propagates: an unexpected throw is a bug,
- * and swallowing it into a tidy payload is how a bug becomes a behaviour.
- *
- * @param body - The verb.
- * @returns Whatever the verb returned.
- * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
- */
 /**
  * The agent's own working directory, or a refusal it can act on.
  *
@@ -528,15 +519,46 @@ function requireAgentCwd(context: CapabilityHandlerContext): string {
   return context.cwd;
 }
 
-function answering<T>(body: () => T): T {
+/**
+ * Run a room verb, turning its typed refusal into the MCP `isError` payload
+ * rather than a stack trace.
+ *
+ * A {@link RoomError} is the room saying no for a reason the caller can act on —
+ * "you are not in that room", "that is a direct message", "you have used up your
+ * reactions". The code travels with the message so an agent can branch on it
+ * without parsing prose. Anything else propagates: an unexpected throw is a bug,
+ * and swallowing it into a tidy payload is how a bug becomes a behaviour.
+ *
+ * **What the refusal says depends on who asked** ({@link roomRefusalFor},
+ * DOR-2457): a room whose git settings name a program is explained in full,
+ * path and command, only to the install's owner. `ownerAsking` is read when a
+ * refusal happens, after the verb had its chance to resolve the caller, and
+ * defaults to "no" — an agent, another person, and a caller nobody resolved
+ * are all told only that the files are paused.
+ *
+ * @param body - The verb.
+ * @param ownerAsking - Whether the resolved caller is the install's owner.
+ * @returns Whatever the verb returned.
+ * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
+ */
+function answering<T>(body: () => T, ownerAsking: () => boolean = () => false): T {
   try {
     return body();
   } catch (err) {
     if (err instanceof RoomError) {
-      throw new CapabilityToolError({ error: err.message, code: err.code });
+      throw new CapabilityToolError(roomRefusalFor(err, ownerAsking));
     }
     throw err;
   }
+}
+
+/**
+ * Whether a resolved caller is the install's owner, for {@link answering}.
+ *
+ * @param caller - The caller, or `undefined` when it was never resolved.
+ */
+function isOwnerCaller(caller: AuthorRecord | undefined): boolean {
+  return caller !== undefined && isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 }
 
 /**
@@ -550,15 +572,19 @@ function answering<T>(body: () => T): T {
  * been affected.
  *
  * @param body - The verb.
+ * @param ownerAsking - As {@link answering}'s.
  * @returns Whatever the verb resolved to.
  * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
  */
-async function answeringAsync<T>(body: () => Promise<T>): Promise<T> {
+async function answeringAsync<T>(
+  body: () => Promise<T>,
+  ownerAsking: () => boolean = () => false
+): Promise<T> {
   try {
     return await body();
   } catch (err) {
     if (err instanceof RoomError) {
-      throw new CapabilityToolError({ error: err.message, code: err.code });
+      throw new CapabilityToolError(roomRefusalFor(err, ownerAsking));
     }
     throw err;
   }
@@ -721,9 +747,12 @@ export const roomsDomain: CapabilityDomain = {
         'Posting into the room that triggered your turn is how you answer it; posting into a ' +
         'different room leaves your answer here untouched. ' +
         'You can show a file with it — a screenshot or a recording you made — by naming its ' +
-        'path in attachments; it has to be a file in your own working directory. ' +
+        'path in attachments; it has to be a file in your own folder or your own copy of a ' +
+        "room's files. " +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
       tier: 'act',
+      area: null,
+      areaNote: 'conversation verbs never get a switch',
       input: z.object({
         roomId: z
           .string()
@@ -742,7 +771,8 @@ export const roomsDomain: CapabilityDomain = {
           .optional()
           .describe(
             'Files to show with this message, by path. Relative paths are from your own ' +
-              'working directory, and only files inside it can be attached. Screenshots and ' +
+              "working directory; a file in your own copy of a room's files is named by its " +
+              'full path. Nothing else can be attached. Screenshots and ' +
               'recordings you made are the usual case. Everyone in the room sees them, and the ' +
               'other agents get their own copy.'
           ),
@@ -760,7 +790,8 @@ export const roomsDomain: CapabilityDomain = {
         // Inside `answering`, because resolving WHO is calling can itself refuse
         // — a login-on install that could name nobody — and a refusal a model
         // gets as a stack trace is a refusal it cannot act on.
-        const authorId = answering(() => callerAuthor(rooms, context).id);
+        const author = answering(() => callerAuthor(rooms, context));
+        const authorId = author.id;
         // Staged BEFORE the entry, and bound inside its transaction below, so
         // the message and its files land together or neither does. A refusal
         // here leaves no bytes, no rows and no entry (spec §4).
@@ -772,18 +803,33 @@ export const roomsDomain: CapabilityDomain = {
         const attachmentIds =
           named.length === 0
             ? []
-            : await answeringAsync(() =>
-                stageAgentAttachments({
+            : await answeringAsync(async () => {
+                // A room turn stands in the agent's home and is granted its
+                // copy of the room's files (spec `agent-home-desk`), so a file
+                // it made there is its own too. Only THIS room's copy, named
+                // exactly as a turn here is placed: from the VERIFIED author
+                // (its home and label), never from the path the agent named.
+                const roomsDir = path.join(resolveDorkHome(), 'rooms');
+                const copy =
+                  author.kind === 'agent'
+                    ? await ownRoomCopy(roomsDir, input.roomId, {
+                        agentPath: author.naturalKey,
+                        agentName: author.displayName,
+                      })
+                    : null;
+                return stageAgentAttachments({
                   roomId: input.roomId,
                   authorId,
                   cwd: requireAgentCwd(context),
+                  ownCopies: copy ? [copy] : [],
+                  roomsDir,
                   paths: named,
                   store: getRoomAttachmentStore(),
                   rows: getAttachmentRowStore(),
                   limits: configManager.get('uploads'),
                   nameMax: ROOM_ATTACHMENT_NAME_MAX,
-                })
-              );
+                });
+              });
         // **The write can still refuse after the bytes are on disk**, and a
         // refusal is the ordinary case rather than the exotic one: a mistyped
         // `roomId`, the per-turn post ceiling, a stopped turn, an archived room.
@@ -853,6 +899,8 @@ export const roomsDomain: CapabilityDomain = {
         'You have a limited number of these per room per hour, so spend them where a word would ' +
         'otherwise be noise — and when something needs saying, say it.',
       tier: 'act',
+      area: null,
+      areaNote: 'conversation verbs never get a switch',
       input: z.object({
         roomId: z.string().describe('The room the message is in, by its id — not its #name.'),
         entryId: z
@@ -910,6 +958,11 @@ export const roomsDomain: CapabilityDomain = {
         'When it lands, the room gets one line saying what you merged — you do not need to ' +
         'announce it as well.',
       tier: 'act',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId', 'summary'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -945,8 +998,13 @@ export const roomsDomain: CapabilityDomain = {
         // Inside `answeringAsync` with the merge itself, because resolving WHO
         // is calling can refuse too — and every refusal in this contract is one
         // an agent is meant to read and act on.
-        const result = await answeringAsync(() =>
-          merges.merge(input.roomId, callerAuthor(rooms, context).id, { summary: input.summary })
+        let caller: AuthorRecord | undefined;
+        const result = await answeringAsync(
+          () => {
+            caller = callerAuthor(rooms, context);
+            return merges.merge(input.roomId, caller.id, { summary: input.summary });
+          },
+          () => isOwnerCaller(caller)
         );
         return { merged: true, ...result };
       },
@@ -961,6 +1019,8 @@ export const roomsDomain: CapabilityDomain = {
         'anyone is sitting on work nobody has merged. ' +
         'It reads only — it changes nothing and merges nothing.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         roomId: z
           .string()
@@ -977,7 +1037,14 @@ export const roomsDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         const merges = requireMergeDeps(deps);
-        return answeringAsync(() => merges.status(input.roomId, callerAuthor(rooms, context).id));
+        let caller: AuthorRecord | undefined;
+        return answeringAsync(
+          () => {
+            caller = callerAuthor(rooms, context);
+            return merges.status(input.roomId, caller.id);
+          },
+          () => isOwnerCaller(caller)
+        );
       },
     }),
     defineCapability({
@@ -991,6 +1058,8 @@ export const roomsDomain: CapabilityDomain = {
         `A page is at most ${HISTORY_PAGE_MAX} messages; ask for more by passing the lowest seq ` +
         'you got back as `before`.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         ...historyScope,
         limit: z
@@ -1041,6 +1110,8 @@ export const roomsDomain: CapabilityDomain = {
         'Something said in the last few minutes may not be findable yet; read the room back ' +
         'instead for the recent end of a conversation.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         ...historyScope,
         query: z.string().min(1).describe('The words to look for.'),
@@ -1087,6 +1158,8 @@ export const roomsDomain: CapabilityDomain = {
         `At most ${MEMBER_ROOMS_PAGE_MAX} come back; there is no next page, because a list ` +
         'longer than that is a directory rather than an answer.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -1134,6 +1207,8 @@ export const roomsDomain: CapabilityDomain = {
         'instead for the recent end of a conversation. ' +
         'It does not search your own past sessions — only rooms.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         query: z.string().min(1).describe('The words to look for.'),
         limit: z
@@ -1182,6 +1257,8 @@ export const roomsDomain: CapabilityDomain = {
         'you are in, and outside one you can list the rooms you are in or find a room by its ' +
         'name to get an id. You must be a member of the room.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         roomId: z
           .string()
@@ -1203,7 +1280,7 @@ export const roomsDomain: CapabilityDomain = {
         const detail = answering(() =>
           rooms.describeRoom(input.roomId, callerAuthor(rooms, context).id)
         );
-        return Promise.resolve(projectDetail(detail));
+        return Promise.resolve(projectDetail(rooms, detail));
       },
     }),
     defineCapability({
@@ -1221,6 +1298,8 @@ export const roomsDomain: CapabilityDomain = {
         'the answer looks cut off. It only searches rooms you belong to: a room you are not ' +
         'in is not findable.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         name: z
           .string()
@@ -1278,7 +1357,7 @@ export const roomsDomain: CapabilityDomain = {
             ...(members.length > 0 ? { memberHandles: members } : {}),
           })
         );
-        return Promise.resolve({ rooms: found.map(projectDetail) });
+        return Promise.resolve({ rooms: found.map((room) => projectDetail(rooms, room)) });
       },
     }),
     defineCapability({
@@ -1297,7 +1376,10 @@ export const roomsDomain: CapabilityDomain = {
         'Ask before reorganising somebody else\u2019s work: opening a room is a message to ' +
         'everyone you put in it.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['kind', 'title', 'members'],
       input: z.object({
         kind: z
           .enum(['channel', 'dm'])
@@ -1391,7 +1473,7 @@ export const roomsDomain: CapabilityDomain = {
         // agent gets back from opening a room is byte-identical to the shape it
         // gets from looking one up. One projection, one set of sanitized labels.
         const detail = answering(() => rooms.describeRoom(opened.id, caller.id));
-        return Promise.resolve({ ...projectDetail(detail), created: opened.created });
+        return Promise.resolve({ ...projectDetail(rooms, detail), created: opened.created });
       },
     }),
     defineCapability({
@@ -1407,7 +1489,11 @@ export const roomsDomain: CapabilityDomain = {
         'Members are applied one at a time and it does not stop at the first refusal: the ' +
         'result lists who was added and who was not, with the reason for each.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId', 'members'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -1453,7 +1539,11 @@ export const roomsDomain: CapabilityDomain = {
         'Members are applied one at a time and it does not stop at the first refusal: the ' +
         'result lists who was removed and who was not, with the reason for each.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId', 'members'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -1501,7 +1591,11 @@ export const roomsDomain: CapabilityDomain = {
         'this install can rename it. ' +
         'A name somebody chose is theirs; ask before you change it.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId', 'title', 'topic'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -1547,7 +1641,7 @@ export const roomsDomain: CapabilityDomain = {
           })
         );
         const detail = answering(() => rooms.describeRoom(input.roomId, caller.id));
-        return Promise.resolve(projectDetail(detail));
+        return Promise.resolve(projectDetail(rooms, detail));
       },
     }),
     defineCapability({
@@ -1562,7 +1656,11 @@ export const roomsDomain: CapabilityDomain = {
         'Say goodbye before you go if people are still working in there \u2014 leaving without a ' +
         'word reads as a colleague vanishing mid-conversation.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -1584,6 +1682,43 @@ export const roomsDomain: CapabilityDomain = {
       },
     }),
     defineCapability({
+      id: 'rooms.archive',
+      title: 'Archive a channel',
+      description:
+        'Put away a channel you are in, once the work it was opened for is finished. ' +
+        'Archiving is not deleting: the channel and everything said in it are kept, it leaves ' +
+        'the sidebar and every list, and the person can bring it back whenever they want. ' +
+        'Anything the channel was still waiting for ends. ' +
+        'It only works on channels: a direct message stays until the person archives it. ' +
+        'You cannot archive the home channel, or a channel connected to an outside chat. ' +
+        'Say so in the channel first if people are still working in there.',
+      tier: 'act',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
+      input: z.object({
+        roomId: z
+          .string()
+          .describe('The channel to archive, by its id \u2014 not its #name. You must be in it.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'archive_room',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        answering(() => rooms.archiveRoomFromTool(input.roomId, caller.id));
+        return Promise.resolve({ archived: true, roomId: input.roomId });
+      },
+    }),
+    defineCapability({
       id: 'rooms.read_canvas',
       title: "Read the room's canvas",
       description:
@@ -1596,6 +1731,8 @@ export const roomsDomain: CapabilityDomain = {
         'A document that names a file you could not open yourself comes back as its name and ' +
         'who opened it, without the contents.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         roomId: z
           .string()
@@ -1790,6 +1927,6 @@ async function readFileBacked(
  */
 function authorLabel(rooms: RoomService, authorId: string): string {
   const author = rooms.authorRegistry.getById(authorId);
-  const name = author?.handle ?? author?.displayName;
-  return (name === undefined ? undefined : sanitizeIdentity(name)) ?? 'Somebody';
+  const name = author?.handle ?? rooms.nameForAgents(authorId);
+  return (name ? sanitizeIdentity(name) : undefined) ?? 'Somebody';
 }

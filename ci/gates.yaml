@@ -17,7 +17,7 @@ gates:
   # --- browser-test.yml ---
   - id: wf.browser-test.browser-shard
     source: .github/workflows/browser-test.yml
-    purpose: Runs one third of the Playwright browser suite against the merge queue's combined tree.
+    purpose: Runs one sixth of the Playwright browser suite against the merge queue's combined tree.
   - id: wf.browser-test.browser-test
     source: .github/workflows/browser-test.yml
     purpose: The required browser-test check; fails the queue build unless every shard passed and the suite provably executed, and passes through on PRs.
@@ -137,6 +137,11 @@ gates:
     source: .github/workflows/merge-tail.yml
     purpose: Every 10 minutes, arms auto-merge on PRs that are finished, green and unblocked, and re-requests a lost automated review on the ones whose review check is red.
 
+  # --- neon-preview-sweep.yml ---
+  - id: wf.neon-preview-sweep.sweep
+    source: .github/workflows/neon-preview-sweep.yml
+    purpose: Nightly, deletes Neon preview databases idle 7+ days whose git branch has no open PR; green with a notice until NEON_API_KEY is set, red when it cannot read Neon or GitHub or a delete fails. Never required.
+
   # --- operating-skills-version-check.yml ---
   - id: wf.operating-skills-version-check.version-outranks-base
     source: .github/workflows/operating-skills-version-check.yml
@@ -174,7 +179,7 @@ gates:
     purpose: Runs the community service's tests against a real Postgres and a real browser.
   - id: wf.test.community-packaged
     source: .github/workflows/test.yml
-    purpose: Proves the packaged local-agent community journey on the queue's combined tree, with no public network.
+    purpose: Proves the packaged local-agent community journey with no public network, on every queue build and canary run, and on pull requests whose diff touches the community slice (scripts/community-packaged-scope.sh).
   - id: wf.test.test-shard
     source: .github/workflows/test.yml
     purpose: Runs one quarter of the unit suites (affected-only on PRs, the full sweep in the merge queue).
@@ -211,9 +216,6 @@ gates:
   - id: lefthook.pre-commit.lint
     source: lefthook.yml
     purpose: Lints the packages the branch affects against origin/main, under the machine-wide heavy-run cap.
-  - id: lefthook.pre-commit.typecheck
-    source: lefthook.yml
-    purpose: Typechecks the packages the branch affects against origin/main, under the machine-wide heavy-run cap.
   - id: lefthook.pre-push.formatting
     source: lefthook.yml
     purpose: Fails a push whose changed files are not Prettier-clean, and prints the fix command.
@@ -254,7 +256,7 @@ gates:
     purpose: Runs Prettier over the files changed in the turn, once, at turn end.
   - id: claude.SessionStart.session-maintenance
     source: .claude/settings.json
-    purpose: Prints short nags at session start about ADR drift, backlog and stale state.
+    purpose: Prints short nags at session start about ADR drift, backlog and stale state, and fast-forwards the main checkout's clean main to origin/main on startup.
 
   # --- ruleset 19893973 "main: merge queue" ---
   - id: ruleset.merge_queue

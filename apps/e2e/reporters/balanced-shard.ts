@@ -108,12 +108,41 @@ export function weighUnits(units: ShardUnit[], timings: ShardTimings | undefined
 }
 
 /**
+ * Units that must run on one particular shard, because only that shard boots
+ * what they need.
+ *
+ * The marketing-site leg is the case this exists for: it is the one leg that
+ * times out in the queue, only two spec files use it, and booting it on every shard multiplied
+ * its readiness timeout by the shard count (ledger
+ * `ci/ledger/260928-075416-site-leg-one-shard.md`). Pinning those files to one
+ * shard lets the other shards skip the leg entirely.
+ */
+export interface ShardPin {
+  /** 1-based shard every pinned unit is placed on. */
+  shard: number;
+  /** Unit keys ({@link unitKey}) that go there. */
+  keys: readonly string[];
+}
+
+/**
  * Deals units to `total` shards, heaviest first, each to the currently
  * lightest shard (ties: lowest index). Returns one array of units per shard,
  * index 0 being shard 1. Pure and order-independent: the input order does not
  * affect the result.
+ *
+ * Pinned units are placed first, on their own shard, and their weight counts
+ * toward that shard's load, so the rest of the deal still balances around
+ * them. A pinned key that is not in `units` is skipped: a filtered run
+ * (`--grep`, `--project`, a file argument) legitimately collects without it,
+ * and Playwright applies those filters before this cut. A renamed site spec is
+ * caught instead by `__tests__/site-leg.test.ts`, which scans `tests/`. A shard
+ * outside `1..total` throws.
+ *
+ * @param units - Every unit in the collected suite, weighed.
+ * @param total - How many shards to deal into.
+ * @param pin - Units that must land on one fixed shard.
  */
-export function partition(units: WeightedUnit[], total: number): WeightedUnit[][] {
+export function partition(units: WeightedUnit[], total: number, pin?: ShardPin): WeightedUnit[][] {
   if (!Number.isInteger(total) || total < 1)
     throw new Error(`shard total must be a positive integer, got ${total}`);
   const keys = new Set<string>();
@@ -121,11 +150,21 @@ export function partition(units: WeightedUnit[], total: number): WeightedUnit[][
     if (keys.has(u.key)) throw new Error(`duplicate shard unit ${u.key}`);
     keys.add(u.key);
   }
-  const sorted = [...units].sort(
-    (a, b) => b.weight - a.weight || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
-  );
   const shards: WeightedUnit[][] = Array.from({ length: total }, () => []);
   const loads = new Array<number>(total).fill(0);
+  const pinned = new Set(pin?.keys ?? []);
+  if (pin) {
+    if (!Number.isInteger(pin.shard) || pin.shard < 1 || pin.shard > total)
+      throw new Error(`pinned shard must be within 1..${total}, got ${pin.shard}`);
+    const byKey = units.filter((u) => pinned.has(u.key)).sort((a, b) => (a.key < b.key ? -1 : 1));
+    for (const u of byKey) {
+      shards[pin.shard - 1].push(u);
+      loads[pin.shard - 1] += u.weight;
+    }
+  }
+  const sorted = units
+    .filter((u) => !pinned.has(u.key))
+    .sort((a, b) => b.weight - a.weight || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   for (const u of sorted) {
     let lightest = 0;
     for (let i = 1; i < total; i++) if (loads[i] < loads[lightest]) lightest = i;

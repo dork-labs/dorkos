@@ -14,7 +14,14 @@ import {
   createInSessionContextResolver,
   AGENT_TOKEN_ENV_VAR,
 } from '../agent-token-env.js';
+import { resolveAgentHome } from '../agent-home.js';
 import { logger } from '../../../../lib/logger.js';
+import { clearTestHomes, registerEveryFolderAsHome } from './agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -22,21 +29,17 @@ vi.mock('../../../../lib/logger.js', () => ({
 
 const AGENT_PATH = '/projects/researcher';
 
-async function writeAgentManifest(
-  agentDir: string,
-  tierCeiling: 'observe' | 'destructive'
-): Promise<void> {
+async function writeAgentManifest(agentDir: string, displayName = 'New Agent'): Promise<void> {
   await writeFile(
     path.join(agentDir, '.dork', 'agent.json'),
     JSON.stringify({
       id: 'agent-new',
       name: 'new-agent',
-      displayName: 'New Agent',
+      displayName,
       description: '',
       runtime: 'opencode',
       capabilities: [],
       behavior: { responseMode: 'always' },
-      tierCeiling,
       registeredAt: '2026-09-08T00:00:00.000Z',
       registeredBy: 'test',
     })
@@ -160,12 +163,11 @@ describe('createInSessionContextResolver', () => {
     initAgentIdentityService(createTestDb());
     await resolveAgentTokenEnv(AGENT_PATH, 'Researcher');
 
-    const context = await createInSessionContextResolver(AGENT_PATH)();
+    const context = await createInSessionContextResolver(resolveAgentHome(AGENT_PATH))();
 
     expect(context?.identity).toMatchObject({
       agentPath: AGENT_PATH,
       displayName: 'Researcher',
-      tierCeiling: 'destructive',
     });
   });
 
@@ -173,7 +175,7 @@ describe('createInSessionContextResolver', () => {
     const agentDir = await mkdtemp(path.join(tmpdir(), 'in-session-identity-'));
     try {
       await mkdir(path.join(agentDir, '.dork'));
-      await writeAgentManifest(agentDir, 'observe');
+      await writeAgentManifest(agentDir);
       const service = initAgentIdentityService(createTestDb());
       expect(await service.describeAgent(agentDir)).toBeUndefined();
 
@@ -182,7 +184,6 @@ describe('createInSessionContextResolver', () => {
       expect(resolved).toEqual({
         agentPath: agentDir,
         displayName: 'New Agent',
-        tierCeiling: 'observe',
         createdAt: '2026-09-08T00:00:00.000Z',
       });
       expect(await service.describeAgent(agentDir)).toBeUndefined();
@@ -191,25 +192,21 @@ describe('createInSessionContextResolver', () => {
     }
   });
 
-  it('takes a later turn ceiling from the manifest instead of an older token record', async () => {
+  it('takes a later turn name from the manifest instead of an older token record', async () => {
     const agentDir = await mkdtemp(path.join(tmpdir(), 'in-session-identity-'));
     try {
       await mkdir(path.join(agentDir, '.dork'));
-      await writeAgentManifest(agentDir, 'observe');
+      await writeAgentManifest(agentDir, 'Old Name');
       const service = initAgentIdentityService(createTestDb());
-      await service.mint({
-        agentPath: agentDir,
-        displayName: 'New Agent',
-        tierCeiling: 'observe',
-      });
+      await service.mint({ agentPath: agentDir, displayName: 'Old Name' });
 
-      await writeAgentManifest(agentDir, 'destructive');
+      await writeAgentManifest(agentDir, 'New Agent');
 
       await expect(ensureInSessionAgentIdentity(agentDir)).resolves.toMatchObject({
-        tierCeiling: 'destructive',
+        displayName: 'New Agent',
       });
       await expect(service.describeAgent(agentDir)).resolves.toMatchObject({
-        tierCeiling: 'observe',
+        displayName: 'Old Name',
       });
     } finally {
       await rm(agentDir, { recursive: true, force: true });
@@ -220,17 +217,12 @@ describe('createInSessionContextResolver', () => {
     const agentDir = await mkdtemp(path.join(tmpdir(), 'in-session-identity-'));
     try {
       await mkdir(path.join(agentDir, '.dork'));
-      await writeAgentManifest(agentDir, 'destructive');
+      await writeAgentManifest(agentDir);
       const service = initAgentIdentityService(createTestDb());
-      await service.mint({
-        agentPath: agentDir,
-        displayName: 'New Agent',
-        tierCeiling: 'observe',
-      });
+      await service.mint({ agentPath: agentDir, displayName: 'New Agent' });
       await service.revoke(agentDir);
 
       await expect(ensureInSessionAgentIdentity(agentDir)).resolves.toMatchObject({
-        tierCeiling: 'observe',
         inactive: 'revoked',
       });
     } finally {
@@ -243,7 +235,7 @@ describe('createInSessionContextResolver', () => {
     await resolveAgentTokenEnv(AGENT_PATH, 'Researcher');
     const spy = vi.spyOn(AgentIdentityService.prototype, 'describeAgent');
 
-    const resolve = createInSessionContextResolver(AGENT_PATH);
+    const resolve = createInSessionContextResolver(resolveAgentHome(AGENT_PATH));
     await Promise.all([resolve(), resolve(), resolve()]);
 
     expect(spy).toHaveBeenCalledOnce();
@@ -258,26 +250,28 @@ describe('createInSessionContextResolver', () => {
   it('resolves undefined when the agent holds no live token', async () => {
     initAgentIdentityService(createTestDb());
 
-    expect(await createInSessionContextResolver('/projects/never-minted')()).toBeUndefined();
+    expect(
+      await createInSessionContextResolver(resolveAgentHome('/projects/never-minted'))()
+    ).toBeUndefined();
   });
 
   it('resolves a REVOKED context after the agent is revoked, not an empty one', async () => {
     // Changed on purpose (DOR-486). An empty context reads as "unidentified" at
-    // the capability gate, and an unidentified caller gets the widest tier
-    // ceiling — so answering `undefined` here meant revoking a capped agent
-    // mid-session WIDENED what its in-session tools could reach. The context now
-    // names the agent and its state, and the gate caps it at `observe`.
+    // the capability gate, and an unidentified caller is decided on the
+    // install's defaults — so answering `undefined` here meant revoking a
+    // narrowed agent mid-session WIDENED what its in-session tools could reach.
+    // The context now names the agent and its state, and the gate Blocks it.
     const service = initAgentIdentityService(createTestDb());
     await resolveAgentTokenEnv(AGENT_PATH, 'Researcher');
     await service.revoke(AGENT_PATH);
 
-    const context = await createInSessionContextResolver(AGENT_PATH)();
+    const context = await createInSessionContextResolver(resolveAgentHome(AGENT_PATH))();
 
     expect(context?.identity).toMatchObject({ agentPath: AGENT_PATH, inactive: 'revoked' });
   });
 
   it('resolves undefined when the service was never initialized', async () => {
-    expect(await createInSessionContextResolver(AGENT_PATH)()).toBeUndefined();
+    expect(await createInSessionContextResolver(resolveAgentHome(AGENT_PATH))()).toBeUndefined();
   });
 
   it('resolves undefined instead of throwing when the lookup fails', async () => {
@@ -287,6 +281,8 @@ describe('createInSessionContextResolver', () => {
     );
 
     // Attribution must never fail the agent's tool call.
-    await expect(createInSessionContextResolver(AGENT_PATH)()).resolves.toBeUndefined();
+    await expect(
+      createInSessionContextResolver(resolveAgentHome(AGENT_PATH))()
+    ).resolves.toBeUndefined();
   });
 });

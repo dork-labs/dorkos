@@ -26,7 +26,15 @@ import type { ApprovalAuthorizer } from './approval-handler.js';
  * carry a permission mode would be a second answer to a question that already
  * has one.
  */
-export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'>;
+export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'> & {
+  /**
+   * Which Claude account (registry id) the turn should LAUNCH on, handed to the
+   * runtime as `MessageOpts.accountHint` (DOR-2384). Read only when the turn
+   * starts a conversation; an existing one keeps its account, and every other
+   * runtime ignores it.
+   */
+  accountHint?: string;
+};
 
 /**
  * What model, effort and fast-mode a relay-triggered turn should start with.
@@ -56,12 +64,38 @@ export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'>;
  *   holding `.dork/agent.json` — not necessarily where the turn runs, which a
  *   payload can move without changing who is answering. Absent when nothing
  *   resolved either, and the manifest tier then has nothing to read.
+ * @param opts.requestedAccount - The Claude account (registry id) the message
+ *   asked the conversation to launch on, from the payload's `account`. Set only
+ *   when the turn starts a new conversation. It is the SENDER's words, and any
+ *   agent can write it, so the host answers with an `accountHint` only when its
+ *   account policy allows the pick; a refusal means no hint, never a dropped
+ *   message (DOR-2384).
  */
 export type ExecutionSettingsResolver = (opts: {
   sessionId: string;
   runtimeType: string;
   agentDirectory?: string;
+  requestedAccount?: string;
 }) => Promise<TurnExecutionSettings>;
+
+/**
+ * The host's desk guard for a turn whose payload names its own folder (spec
+ * `agent-home-desk` §3.4). A payload `cwd` is the SENDER's words — any agent can
+ * publish one — so a folder it names is where the answering agent would stand
+ * only if the host agrees it is that agent's desk.
+ *
+ * Resolves to `null` to allow, or to the refusal in plain words.
+ */
+export type TurnDeskCheck = (input: {
+  /** The folder the payload names. */
+  cwd: string;
+  /** The answering agent's home as the relay resolved it from the subject, when it did. */
+  agentDirectory: string | undefined;
+  /** The agent the payload says the turn is for, when it says. */
+  forAgent: string | undefined;
+  /** The session key this turn runs under, for a host that looks its agent up. */
+  sessionKey: string;
+}) => Promise<string | null>;
 
 /**
  * Which runtime one TURN on an agent-addressed conversation runs on, asked of
@@ -192,7 +226,20 @@ export interface AgentRuntimeLike {
     opts?: TurnExecutionSettings & {
       permissionMode?: PermissionMode;
       cwd?: string;
+      /**
+       * The home of the agent the turn is dispatched as. Mirrors
+       * `MessageOpts.forAgent`: identity is read from that home, and a `cwd`
+       * resolving to another agent's home is refused.
+       */
+      forAgent?: string;
       systemPromptAppend?: string;
+      /**
+       * Nobody can answer a DorkOS approval card inside this turn. Mirrors
+       * `MessageOpts.unattendedApprovals`: a relay-delivered turn is started
+       * by a message, not by a person watching the app, so a capability call
+       * that needs a person returns at once instead of holding the turn.
+       */
+      unattendedApprovals?: boolean;
     }
   ): AsyncGenerator<StreamEvent>;
   /**
@@ -347,6 +394,12 @@ export interface ClaudeCodeAdapterDeps {
    * is what every host did before this existed.
    */
   resolveExecutionSettings?: ExecutionSettingsResolver;
+  /**
+   * The host's desk guard for a turn whose payload names its own folder (spec
+   * `agent-home-desk` §3.4) — see {@link TurnDeskCheck}. Absent means a payload
+   * `cwd` is trusted as it was before this existed.
+   */
+  checkTurnDesk?: TurnDeskCheck;
   /**
    * Which runtime a turn addressed to an AGENT by a mesh subject runs on — see
    * {@link TurnRuntimeTypeResolver}. Absent means the host's default runtime

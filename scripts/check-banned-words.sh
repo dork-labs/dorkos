@@ -14,11 +14,16 @@
 # with wave-2 for exactly these two words. That gate parses TypeScript and only
 # flags positions that actually reach a screen, which is the right tool there
 # and the reason it can run over files where "cockpit" is also a variable name,
-# a media key and a hundred comments. It deliberately does not read prose:
-# its own header says docs/ is "prose, not a render path". So the split is:
+# a media key and a hundred comments. It deliberately does not read most prose
+# this way — grep is simpler and good enough for a plain substring ban. So the
+# split is:
 #
-#   check-vocab-gate.ts  →  render-path strings in apps/{client,site,server}/src
-#   this script          →  prose and data files an AST walk cannot see
+#   check-vocab-gate.ts  →  render-path strings in apps/{client,site,server}/src,
+#                            PLUS docs/**/*.mdx prose (DOR-2508, wave 4 only —
+#                            see that script's own header)
+#   this script          →  everything else: README/AGENTS.md/CONTRIBUTING.md,
+#                            docs/ and blog/ prose for wave 2, and data files
+#                            an AST walk cannot see
 #
 # Both now run in the `typecheck` workflow, one step apart (DOR-1814 moved the
 # parser half there; before that it rode only its own pin suite, on a workflow
@@ -28,12 +33,14 @@
 # The four nouns ADR 260804-021140 retired for "Connections" — integration,
 # connector, adapter, provider (DOR-1814, wave 4) — are enforced by the parser
 # half ALONE, deliberately: they are ordinary English with legitimate technical
-# senses everywhere this script looks. `docs/integrations/` is a shipped URL
-# path, every release note in the frozen changelog says "integration", and
-# `docs/api/openapi.json` is generated from route descriptions that name
-# `provider` path parameters. A grep here would fire on all of it and teach
-# everyone to skip the gate, which is the failure this file's header warns
-# about two paragraphs up. Sweep docs prose for those four words by hand.
+# senses everywhere this script looks, and `check-vocab-gate.ts`'s docs scan
+# (DOR-2508) needs the allowlist mechanism this whole-line grep does not have
+# to tell `/docs/integrations/` (a legitimate shipped URL path) from a real
+# violation. `docs/api/openapi.json` stays out of both gates: it is generated
+# from route descriptions that name `provider` path parameters and `connectors`
+# path segments, wire naming rather than authored prose either script should
+# sweep. Every release note in the frozen changelog still says "integration"
+# and neither gate touches it — see both scripts' own headers for why.
 #
 # Neither one covers the other's ground, and a word landing in either place
 # fails CI. Do not "simplify" this into a repo-wide grep: grep cannot tell the
@@ -42,6 +49,17 @@
 #
 # WHAT IT SCANS. Only files whose entire content is prose or user-visible data,
 # listed in SCAN_TARGETS below. Adding a surface means adding a glob there.
+#
+# One of those surfaces is TypeScript: packages/operating-skills (DOR-2068).
+# Its skills are template-literal prose seeded into every agent's
+# `.agents/skills/`, and an agent repeats what they say to the person it works
+# for. check-vocab-gate.ts cannot judge them (it reads render positions in
+# apps/*/src, and a skill body is none), so they are read here as prose, line by
+# line, with the same case-insensitive substring match as every other target.
+# That is safe only because the package is prose all the way down: its
+# identifiers are skill names and it keeps no internal "cockpit" vocabulary.
+# Its __tests__ are not scanned. Should a legitimate use ever appear, mark the
+# line with `vocab-allow` rather than dropping the directory.
 #
 # WHAT IS DELIBERATELY EXEMPT (see ALLOW_PATTERNS):
 #   - docs/changelog.mdx and docs/changelog-archive.mdx are COMPILED from
@@ -75,8 +93,11 @@ set -uo pipefail
 
 ROOT="${ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-# Whole-word, case-insensitive. "cockpit" must not fire inside a longer word,
-# matching how check-vocab-gate.ts matches its own terms.
+# Case-insensitive SUBSTRING match, not whole-word: "cockpit" also fires inside
+# a longer word such as "cockpits" or "cockpitView". That is stricter than
+# check-vocab-gate.ts, which matches whole words, and it is deliberate here:
+# every scanned file is prose, so a longer word containing a retired one is
+# almost always the retired word in another form.
 BANNED_RE='mission control|cockpit'
 
 # Prose and user-visible data only — never source files. See the header.
@@ -88,10 +109,12 @@ SCAN_TARGETS=(
   'packages/cli/README.md'
   'apps/client/public/manifest.webmanifest'
   'docs/api/openapi.json'
+  'packages/operating-skills/src/tool-name-note.ts'
 )
 SCAN_GLOB_DIRS=(
   'docs:mdx'
   'blog:mdx'
+  'packages/operating-skills/src/skills:ts'
 )
 
 # A line matching any of these is exempt. Keep each one justified in the header.

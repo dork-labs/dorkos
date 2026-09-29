@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
 
@@ -44,6 +44,10 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
 vi.mock('@dorkos/shared/convention-files-io', () => ({
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  writeConventionFileIfAbsent: async (...args: unknown[]) => {
+    mockWriteConventionFile(...args);
+    return true;
+  },
 }));
 
 const mockRenderTraits = vi.fn();
@@ -53,8 +57,13 @@ vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
   renderTraits: (...args: unknown[]) => mockRenderTraits(...args),
 }));
 
-vi.mock('ulidx', () => ({
+vi.mock('ulidx', async (importOriginal) => ({
+  // The real factory: the agents route now reaches modules that mint ids with it.
+  monotonicFactory: (await importOriginal<typeof import('ulidx')>()).monotonicFactory,
   ulid: vi.fn(() => 'MOCK_ULID_001'),
+  // The PATCH route's caller check (lib/caller-authority) reaches the capability
+  // registry, whose relay imports build a monotonic ULID factory at load.
+  monotonicFactory: vi.fn(() => vi.fn(() => 'MOCK_ULID_001')),
 }));
 
 vi.mock('@dorkos/shared/dorkbot-templates', () => ({
@@ -77,6 +86,15 @@ import express from 'express';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createAgentsRouter } from '../agents.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const app = express();
 app.use(express.json());

@@ -18,7 +18,6 @@ function row(overrides: Partial<AgentTableRow> & { id: string; name: string }): 
     registeredAt: minutesAgo(60 * 24 * 30),
     registeredBy: 'user',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
     projectPath: `/Users/kai/code/${overrides.name}`,
     healthStatus: 'active',

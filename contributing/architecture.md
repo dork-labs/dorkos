@@ -2,18 +2,15 @@
 
 > **Sync note:** A condensed, user-facing version of this guide is published on the docs site at `docs/contributing/architecture.mdx`. When you change the architecture here, update that page too so the two do not drift.
 
-For the current cross-system boundaries, use [the system architecture guide](system-architecture.md). Its [Cloud-hosted Community view](system-architecture.md#cloud-hosted-communities-planned-management-path) distinguishes optional hosting management from Community content authority. Its [runtime tools view](system-architecture.md#runtime-tools-and-room-publication) distinguishes internal turn-scoped MCP from external `/mcp`.
+For the current cross-system boundaries, use [the system architecture guide](system-architecture.md). Its [Cloud-hosted Community view](system-architecture.md#cloud-hosted-communities-management-and-content-paths) distinguishes optional hosting management from Community content authority. Its [runtime tools view](system-architecture.md#runtime-tools-and-room-publication) distinguishes internal turn-scoped MCP from external `/mcp`.
 
 ## Overview
 
 Start with [the system architecture map](system-architecture.md) for deployment boundaries, protocols, replaceable interfaces, Community, Cloud, and marketplace delivery. This guide covers local implementation details.
 
-DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. This enables the same React client to run in two modes:
+DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. The React client reaches Express through `HttpTransport`, with durable streams over WebSocket (ADR 260805-041016).
 
-1. **Standalone web** -- Express server + HTTP via `HttpTransport`, with the durable streams over WebSocket (ADR 260805-041016)
-2. **Obsidian plugin (preview)** -- An in-process service subset via `DirectTransport`, no HTTP server needed
-
-The browser, phone web app, and desktop renderer use the first path. The desktop shell manages its local server. Independent Community has its own browser and Hono service; it is not another Transport implementation for the local app.
+The browser, phone web app, and desktop renderer share this path. The desktop shell manages its local server. Independent Community has its own browser and Hono service; it is not another Transport implementation for the local app.
 
 ## Core Abstraction: Transport Interface
 
@@ -101,17 +98,15 @@ Transport
 
 ### Key Design Decision: Trigger + Durable Stream
 
-There is no separate `Transport.createSession`: the first message creates a session. `postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). This normalizes both transports:
+There is no separate `Transport.createSession`: the first message creates a session. `postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). The HTTP implementation maps this contract to the server:
 
 - **HttpTransport** maps the streams to `GET /api/sessions/:id/events` and `GET /api/events` (WebSocket; the same paths also serve SSE for integrations — ADR 260805-041016)
-- **DirectTransport** iterates the runtime's async generators in-process
 
 ### File Uploads
 
-`uploadFiles` uses a different pattern per transport:
+`uploadFiles` reports progress while sending files to the server:
 
 - **HttpTransport** sends files via XHR (`XMLHttpRequest`) with `FormData` to `POST /api/uploads?cwd=...`. XHR is used instead of `fetch()` because it supports `upload.onprogress` events for real-time progress reporting.
-- **DirectTransport** copies files directly to `{cwd}/.dork/.temp/uploads/` using Node.js `fs` — no HTTP, no serialization.
 
 The `UploadFile` interface (`packages/shared/src/transport.ts`) abstracts over the browser `File` API so the shared package stays free of DOM lib dependencies.
 
@@ -148,7 +143,7 @@ HttpTransport({ baseUrl: '/api' })
 
 **The home surface is a layout, not a route.** `/`, `/activity`, `/tasks` and `/workspaces` are one tabbed place, and the tab bar is a second pathless layout route (`_home`, `widgets/home/ui/HomeSurfaceLayout.tsx`) nested inside `_shell`. Because it uses `id` rather than `path` and declares no `validateSearch`, the four pages keep their exact addresses, their own search schemas and their own loaders, so `/activity?categories=agent` still arrives with its filter applied. The active tab is derived from `location.pathname` on every render — there is no tab state to keep in sync with the URL. `shared/config/home-surface.ts` owns the list of those four paths; the tab bar reads it to name the tabs and `features/dashboard-sidebar` reads it to keep the sidebar's single **Home** entry lit across all four.
 
-Each route provides its own sidebar content via a private slot hook in `AppShell` (`useSidebarSlot`); the header is declarative instead. Every route declares its bar as `staticData.header` in `router.tsx` — a component, or `null` for layout/root/redirect-only routes that have no bar of their own. `router.tsx` augments TanStack's `StaticDataRouteOption` with a required `header` field, which is what makes `staticData` a required route option on every route: add a route and forget its bar, and the build fails rather than silently inheriting whatever route rendered last (the old `pathname` switch's failure mode — every channel and DM once read "Dashboard", DOR-587, and Workspaces/Connections/Your reports did the same later, DOR-919). `AppShell`'s `useRouteHeader` calls `resolveRouteHeader` (`layers/widgets/one-bar/model/route-header.ts`) on the router's match chain, walking leaf-first and returning the first non-null `header` — so `/`, a leaf under the `_home` layout that declares `null`, still gets its own bar instead of the layout's absence of one. The sidebar body and the resolved header both cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` keeps the same `DashboardSidebar` roster (the old session drill-in was retired — per-session context now lives in the right-panel inspector) with the `SessionHeader`. A registered `sidebar.body` contribution can take over the body wholesale for its route (the marketplace facet panel does this on `/marketplace`). The Obsidian plugin's chrome is `EmbedSidebar` (`apps/client/src/App.tsx`), not `SessionSidebar` — the four-tab `SessionSidebar` it replaced was retired (DOR-401).
+Each route provides its own sidebar content via a private slot hook in `AppShell` (`useSidebarSlot`); the header is declarative instead. Every route declares its bar as `staticData.header` in `router.tsx` — a component, or `null` for layout/root/redirect-only routes that have no bar of their own. `router.tsx` augments TanStack's `StaticDataRouteOption` with a required `header` field, which is what makes `staticData` a required route option on every route: add a route and forget its bar, and the build fails rather than silently inheriting whatever route rendered last (the old `pathname` switch's failure mode — every channel and DM once read "Dashboard", DOR-587, and Workspaces/Connections/Your reports did the same later, DOR-919). `AppShell`'s `useRouteHeader` calls `resolveRouteHeader` (`layers/widgets/one-bar/model/route-header.ts`) on the router's match chain, walking leaf-first and returning the first non-null `header` — so `/`, a leaf under the `_home` layout that declares `null`, still gets its own bar instead of the layout's absence of one. The sidebar body and the resolved header both cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` keeps the same `DashboardSidebar` roster (the old session drill-in was retired — per-session context now lives in the right-panel inspector) with the `SessionHeader`. A registered `sidebar.body` contribution can take over the body wholesale for its route (the marketplace facet panel does this on `/marketplace`).
 
 The header components live in `apps/client/src/layers/widgets/one-bar/` — a widget rather than a feature, because the bar composes `InboxBell`, itself a widget. `features/top-nav` keeps only `CommandPaletteTrigger`, `SystemHealthDot`, and `useSystemHealth`. `OneBar` lays out `[identity] [chips] [fill] [actions]`; `BarFixedCluster` — search, the inbox bell, the right-panel toggle — is rendered once by `AppShell` as a sibling _after_ the cross-fade, so those three controls never re-animate on navigation and no route's bar can render past them.
 
@@ -159,21 +154,6 @@ The header components live in `apps/client/src/layers/widgets/one-bar/` — a wi
 **On a phone the sidebar is not mounted at all.** Below 768px `AppShell` selects `widgets/mobile-tabs`'s `MobileTabsLayout` instead — four destinations along the bottom, no drawer and no hamburger (spec `sidebar-now-today-library` §9, P4.1). A contributed `sidebar.body` takeover replaces **Library** there and leaves Home standing, which is the one place mobile deliberately differs from desktop: Heads up and Today are what needs you, and browsing somebody's extension is not a reason to stop being told. So a takeover has three shapes to keep working in, not two: desktop with zones, desktop with a takeover body, and the phone's Library panel.
 
 Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessionId()` and `useDirectoryState()` read/write via `useSearch`/`useNavigate` internally, preserving their public API.
-
-### Obsidian Plugin (`CopilotView.tsx`)
-
-```
-// Vault path = workspace/, repo root = its parent (where .claude/ lives)
-repoRoot = path.resolve(vaultPath, '..')
-
-ClaudeCodeRuntime(dorkHome, repoRoot) -- resolves Claude CLI, sets cwd
-TranscriptReader()              -- reads JSONL from ~/.claude/projects/{slug}/
-CommandRegistryService(repoRoot) -- scans repoRoot/.claude/commands/
-
-DirectTransport({ runtime, transcriptReader, commandRegistry, vaultRoot: repoRoot })
-  -> TransportProvider
-    -> ObsidianApp -> App
-```
 
 ## Transport Implementations
 
@@ -196,25 +176,11 @@ Domain-specific methods (Relay, Tasks, Mesh) are delegated to factory-produced o
 
 HttpTransport uses `Object.assign(this, createRelayMethods(...))` at construction time. Each factory lives in its own file under `transport/` and handles HTTP serialization for its domain. This keeps the Transport interface unified while allowing independent testability of domain methods.
 
-### DirectTransport (`apps/client/src/layers/shared/lib/direct-transport.ts`)
-
-Calls service instances directly in the same process:
-
-- No HTTP, no port binding, no serialization
-- Uses `DirectTransportServices` interface (narrow typed subset of service methods)
-- `getSessionSnapshot`/`subscribeSession`/`subscribeSessionList` iterate the runtime's async generators in-process
-- `uploadFiles` copies files to disk via Node.js `fs` (no HTTP)
-- The caller supplies a session ID to `postMessage`; the returned canonical runtime ID may differ
-- Respects `AbortSignal` for cancellation
-
-**Scope limitation:** DirectTransport currently implements only session, message, tool, task, and agent APIs. Relay, Mesh, and task-scheduler methods are not available in DirectTransport (Obsidian plugin mode) — these features require server-side state and are scoped for the standalone web client.
-
 ### Authentication across the Transport seam
 
 Optional local login (Better Auth) rides the same seam without changing the Transport interface:
 
 - **HttpTransport** sends `credentials: 'include'` on every fetch path (the central `fetchJSON` in `shared/lib/transport/http-client.ts`, plus `ws-connection.ts` and `session-stream-methods.ts`, whose sockets carry the cookie on the handshake). The Better Auth session cookie rides the browser cookie jar, so the constructor needs no token wiring. When a gated request returns `401 { code: 'AUTH_REQUIRED' }`, the client's auth-required signal flips and `AuthGuard` (`features/auth`) renders the `LoginScreen`. Machine callers may instead send `Authorization: Bearer <api-key>`.
-- **DirectTransport** (Obsidian embedded mode) stays **unauthenticated** — it calls service instances in-process with no HTTP boundary to gate, and the embedded shell never mounts `AuthGuard`. Progressive disclosure means no user concept appears there.
 
 Server-side, the single `sessionGate` middleware enforces this for `/api/*` and `/mcp` only when `config.auth.enabled` is true; otherwise it is a zero-overhead pass-through. See `contributing/authentication.md` for the full auth architecture.
 
@@ -243,15 +209,9 @@ Session list (sidebar/liveness):
 
 See [Agent UI Control](#agent-ui-control) for the bidirectional UI-command pattern.
 
-### Obsidian Plugin (DirectTransport)
+## Shared visual primitives
 
-```
-User input -> SessionComposer -> ConversationTarget.send() -> useChatSession.submitContent()
-  -> transport.postMessage(sessionId, content, cwd)
-    -> runtime.sendMessage() -> SDK query() (turn runs detached)
-  -> StreamManager pump iterates transport.subscribeSession()
-    -> SessionEvents -> session stream store -> React state updates -> UI re-render
-```
+`packages/ui` owns portable visual and interaction behavior; applications own state, routing, validation, permissions and requests. The client imports through its FSD facade, while Community and site forms import public package exports. The standalone catalog renders these same implementations; application feature simulations stay in the client playground. Native controls, framework-owned documentation UI and deliberate marketing/domain composition remain local. See [shared-ui.md](shared-ui.md) for the consumer inventory, CSS and portal contracts, and release procedure.
 
 ## Tabbed Dialog Primitive (`TabbedDialog`)
 
@@ -324,19 +284,18 @@ A companion `get_ui_state` MCP tool lets agents query the current UI state witho
 
 ### UiCommand Actions
 
-| Action                                        | Effect                                                                                   |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `open_canvas`                                 | Opens the canvas panel with URL, markdown, or JSON content                               |
-| `update_canvas`                               | Updates canvas content without toggling visibility                                       |
-| `close_canvas`                                | Closes the canvas panel                                                                  |
-| `open_panel` / `close_panel` / `toggle_panel` | Controls named panels (settings, pulse, relay, mesh, picker)                             |
-| `open_sidebar` / `close_sidebar`              | Controls sidebar visibility                                                              |
-| `switch_sidebar_tab`                          | Switches the sidebar to a named tab (embedded Obsidian app only; a no-op on the web app) |
-| `show_toast`                                  | Shows a toast notification (success, error, info, warning)                               |
-| `set_theme`                                   | Switches between light and dark theme                                                    |
-| `scroll_to_message`                           | Scrolls chat to a specific message ID                                                    |
-| `switch_agent`                                | Switches to a different agent by working directory                                       |
-| `open_command_palette`                        | Opens the command palette                                                                |
+| Action                                        | Effect                                                       |
+| --------------------------------------------- | ------------------------------------------------------------ |
+| `open_canvas`                                 | Opens the canvas panel with URL, markdown, or JSON content   |
+| `update_canvas`                               | Updates canvas content without toggling visibility           |
+| `close_canvas`                                | Closes the canvas panel                                      |
+| `open_panel` / `close_panel` / `toggle_panel` | Controls named panels (settings, pulse, relay, mesh, picker) |
+| `open_sidebar` / `close_sidebar`              | Controls sidebar visibility                                  |
+| `show_toast`                                  | Shows a toast notification (success, error, info, warning)   |
+| `set_theme`                                   | Switches between light and dark theme                        |
+| `scroll_to_message`                           | Scrolls chat to a specific message ID                        |
+| `switch_agent`                                | Switches to a different agent by working directory           |
+| `open_command_palette`                        | Opens the command palette                                    |
 
 ### Key Types
 
@@ -404,7 +363,7 @@ Each runtime declares static capability flags via `getCapabilities()`:
 | `supportsCostTracking`      | Whether dollar-cost tracking is available (gates the cost strip)                                                                                                                         |
 | `supportsResume`            | Whether sessions can be resumed                                                                                                                                                          |
 | `supportsMcp`               | Whether DorkOS can inject its MCP tool server                                                                                                                                            |
-| `supportsManagedMcpServers` | Whether DorkOS can inject an agent's own managed MCP servers — the "Add server" affordance on an agent profile's Tools & MCP page — distinct from `supportsMcp`'s in-process tool server |
+| `supportsManagedMcpServers` | Whether DorkOS can inject an agent's own managed MCP servers — the "Add server" affordance on an agent profile's MCP servers page — distinct from `supportsMcp`'s in-process tool server |
 | `supportsQuestionPrompt`    | Whether the AskUserQuestion interactive flow is supported                                                                                                                                |
 | `supportsPlugins`           | Whether marketplace plugins / plugin commands apply                                                                                                                                      |
 | `permissionModes`           | Structured mode declaration: `{ supported, default, values[] }` — the picker renders exactly this set                                                                                    |
@@ -444,7 +403,7 @@ const { sessions, warnings } = await aggregateSessionList({
 });
 ```
 
-For a **new** session, `resolveRuntimeTypeForNewSession` (`routes/sessions.ts`) picks the type — explicit `body.runtime` hint (or `?runtime=` launch param) > agent manifest `runtime` field > registry default — and `persistSessionRuntime` freezes it there, on the first message.
+For a **new** session, `resolveRuntimeTypeForNewSession` (`services/session/launch/launch-session.ts`) picks the type — explicit `body.runtime` hint (or `?runtime=` launch param) > agent manifest `runtime` field > registry default — and `persistSessionRuntime` freezes it there, on the first message.
 
 A session that has not sent one yet has **no** runtime, and `session_metadata.runtime` is NULL to say so. Changing a setting before the first message (the pre-launch picker) creates the row, and that write deliberately names no runtime and seeds no defaults: it does not know which runtime the session will run on, and every default is a per-runtime answer. Reads resolve an unbound row exactly like a row-less one — by inference, never persisted — so nothing is blocked in the meantime (DOR-812).
 
@@ -609,8 +568,6 @@ The membership column survives Phase 3 unchanged as the RP3 delivery cursor (roo
 
 Rooms and chats share one placement rule (`unreadPlacement` in `apps/client/src/layers/shared/lib/group-timeline.ts`) and one `UnreadDivider` (`apps/client/src/layers/features/conversation/ui/rows/UnreadDivider.tsx`), drawn by the one list both surfaces mount (`Conversation.Timeline`). Chat sessions moved off the per-browser `dorkos:chat:last-seen:*` watermark onto the table, keyed by **transcript position** (server-confirmed message count), not by SSE `seq`. `purgeLegacyWatermarks` in `use-unread-cursor.ts` sweeps the retired prefix on every session open and deliberately does **not** carry the value over: a number one browser wrote about itself, republished as this person's position everywhere, is how one stale tab un-reads a conversation on every device.
 
-`DirectTransport` (Obsidian, no server) satisfies the same contract from `localStorage` (`apps/client/src/layers/shared/lib/direct/read-cursor-methods.ts`), monotonic like the server's. The seam is the right place for that choice: refusing there would leave the embed with a rule that never draws and never clears, which reads as a broken divider rather than as a missing server. What the embed gives up is sharing across devices, not the feature.
-
 ### Anti-Patterns
 
 ```ts
@@ -632,59 +589,39 @@ store.set(resolveCaller(req, res).id, 'room', roomId, seq);
 
 There is no `PUT /api/rooms/:id/read-cursor`. It was removed once every client wrote through the generic route; a test in `rooms.test.ts` keeps it gone.
 
-## Per-Session Tool Groups
+## Per-Agent Tool Visibility
 
-Each agent can be told about a different subset of the DorkOS MCP tools. The resolution pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:
+**What a Blocked permission hides from an agent's tool list is decided by permissions (spec `agent-permissions`), not by a tool-group config.** The four `enabledToolGroups` manifest switches and the global `agentContext.*Tools` config section that used to gate this are retired (D13): what an agent may do — and therefore what it is shown and told about — now lives entirely in the ten permission areas (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, DorkOS settings, Safety limits, Permissions, Reach & secrets). The resolution pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:
 
 ```
 ClaudeCodeRuntime.sendMessage(sessionId, content, cwd)
-  -> readManifest(effectiveCwd)                    // Load .dork/agent.json
-  -> resolveToolConfig(manifest.enabledToolGroups, // Merge agent overrides with global defaults
-       { relayEnabled, tasksEnabled, globalConfig })
-  -> buildSystemPromptAppend(cwd, meshCore,        // Context blocks gated by toolConfig
-       toolConfig)
-  -> query({ systemPrompt })                       // SDK call — no tool list is passed
+  -> resolveToolVisibilityFor(cwd)          // Which tools & areas resolve to Blocked for this agent
+  -> toolDocGates(blockedAreas)             // Which of the switchable tool-doc blocks it still gets
+  -> buildSystemPromptAppend(cwd, toolConfig, { blockedAreaLines })
+  -> createDorkOsToolServer(..., hiddenToolNames)  // The Blocked tools are left out of the SDK tool list
+  -> query({ systemPrompt })
 ```
 
-### Resolution Order
+### Two things happen from one resolution, so they cannot disagree
 
-1. **Per-agent override** (`enabledToolGroups` in `.dork/agent.json`): explicit `true`/`false` per domain
-2. **Global default** (`agentContext.*Tools` in `~/.dork/config.json`): applies when agent has no override
-3. **Server feature flag** (`relayEnabled`, `tasksEnabled`): hard gate that overrides both above when `false`
+- **Tool registration.** `resolveToolVisibilityFor` (`services/runtimes/shared/permission-tool-filter.ts`) resolves every gated action's permission with the SAME `resolvePermission` the tier/permission gate runs, over the same sources. An action whose area resolves to Blocked is added to `hiddenToolNames`; `createDorkOsToolServer` filters the in-session MCP server's tool list against it (`mcp-tools/index.ts`), so a Blocked tool is **not registered for that session** — not merely undocumented. The external `/mcp` server and the Codex/OpenCode tool-list builders read the same function, so all three surfaces agree.
+- **Tool documentation.** `toolDocGates(blockedAreas)` (`messaging/tool-doc-gates.ts`) decides which of the five switchable prompt blocks (`tasks`, `relay`, `mesh`, `adapter`, `packages`) `buildSystemPromptAppend` includes, folding in the server feature flags (`relayEnabled`, `tasksEnabled`) the same way the old toggles did. `renderBlockedAreaLines` adds one line per Blocked area to the prompt, naming the tool the agent can ask past Blocked with (`request_permission`), so a hidden area is one the agent knows exists and knows how to ask for.
 
-### Implicit Grouping
+Hiding is still a courtesy to the agent, not the enforcement: the tier/permission gate resolves on every call regardless of what the tool list showed, so a call made before a permission change takes effect (the next turn) is still refused or asked about correctly. `resolveCallPermission` resolves Blocked, Ask or Allowed inside `registry.invoke`, `authorizeCapability` and the MCP tool gate's `runGate`, so both MCP servers converge on the same answer that decided the list. The per-agent `roomsManage` grant this section used to describe (ADR-260828-123331) is folded into `permissions.areas.rooms` on read and by the boot-time upgrade sweep, the same way `enabledToolGroups` and `tierCeiling` are (`contributing/configuration.md#boot-time-permission-retirements`). `contributing/agent-operator-surface.md` has the identity rule that goes with the tier gate.
 
-Four top-level toggles control six tool groups:
+### What DOR-519 already established, and still holds
 
-| Toggle    | Controls                                                                                          |
-| --------- | ------------------------------------------------------------------------------------------------- |
-| `tasks`   | Tasks tools (list/create/update/delete schedules, run history)                                    |
-| `relay`   | Relay tools (send, inbox, endpoints) + Trace tools (get_trace, get_metrics)                       |
-| `mesh`    | Mesh tools (discover, register, list, deny, status, inspect, topology)                            |
-| `adapter` | Adapter tools (list/enable/disable/reload adapters) + Binding tools (list/create/delete bindings) |
-
-Core tools (ping, get_server_info, get_session_count, get_agent) are always included.
-
-### What a Disabled Group Actually Does
-
-Exactly one thing: `buildSystemPromptAppend` leaves that group's tool block out of the agent's context, so the agent is never told those tools exist. The tools stay registered on the session's MCP server, and an agent that names one anyway can still call it through the normal approval prompt. This steers the agent; it is not a security boundary.
-
-Until DOR-519 this section described a second, stronger mechanism: the resolved config also produced an SDK `allowedTools` array. That was a misreading of the option. `allowedTools` auto-approves the names in it rather than restricting them, and the array was only non-empty once a group had been turned OFF. So turning one group off made 31 to 35 tools skip the approval prompt (the count depends which group), while leaving every group on auto-approved only the 13 names in `DORKOS_AGENT_TOOLS`. `binding_delete` and `relay_disable_adapter` are representative of what that exposed. The toggle ran backwards, and because `enabledToolGroups` is agent-writable through `config_patch`, an agent could widen its own auto-approval. The wiring and `buildAllowedTools` are gone, nothing sets `allowedTools`, and a test in `claude-code-runtime.test.ts` fails if anything sets it again. ADR-0070 carries the full history.
-
-Both of the `destructive` tools that appeared in those lists, `tasks_delete` and `mesh_unregister`, were never actually exposed: they are gated in the handler by `gateHandRegisteredMcpTools` (DOR-468), a layer `allowedTools` cannot reach. (Scoped deliberately: `marketplace.uninstall` and `operator.update_agent_boundaries` are `destructive` too, but no registry capability is in any tool group, so they were never in those lists.) That left 29 to 34 `act` and `observe` tools in the list, of which 7 to 13 already auto-approved through `canUseTool` regardless of any toggle. The prompts the toggle actually silenced numbered 16 to 24. That split is the argument for where enforcement lives: consequence is gated by tier in `services/core/mcp-tool-gate.ts`, below every caller, and never by a list of names a config toggle can rewrite.
-
-Everything above is still true of these four toggles, and ADR-260726-171347 records that deliberate position: they gate context, not access.
-
-**A fifth key beside them does take real access away, and it got there by a different route (DOR-1611).** `enabledToolGroups.roomsManage` is a per-agent grant, and a capability that declares it as its `toolGroup` is refused inside `registry.invoke` for any caller that does not hold it. The registration-time omission this section used to point at was not built, and deliberately so: the external `/mcp` server is stateless and assembles its tool list per request, so a registration-time filter would have covered the in-session server and left the other door open. Both servers converge on `registry.invoke`, so that is where the check went. Three things make it a boundary rather than a fourth toggle with better words — it is read fresh from the manifest on every call, it fails closed for an unidentified caller, and the agent-reachable manifest write path refuses to set it. ADR-260828-123331 has the argument; `contributing/agent-operator-surface.md` has the identity-polarity rule that goes with it.
+Before the permission-areas system existed, this section described a stronger-looking but mistaken mechanism: the resolved tool-group config also produced an SDK `allowedTools` array. That was a misreading of the option — `allowedTools` auto-approves the names in it rather than restricting them — and the wiring is long gone (`buildAllowedTools` no longer exists; a test in `claude-code-runtime.test.ts` fails if anything sets `allowedTools` again). The lesson it left behind is still the operative one: **consequence is gated by tier in `services/core/mcp-tool-gate.ts`, below every caller, never by a list of names a tool-visibility mechanism can rewrite.** `tasks_delete` and `mesh_unregister` — the `destructive` tools a stale `allowedTools` list once exposed — are gated in the handler by `gateHandRegisteredMcpTools` (DOR-468), a layer neither the old `allowedTools` nor today's `hiddenToolNames` filter is asked to reach. (Scoped deliberately: `marketplace.uninstall`, `operator.update_agent_boundaries` and `operator.update_agent_execution` are `destructive` too, but they were never in a tool group, so no such list ever held them.) See ADR-0070 and ADR-260726-171347 for the full history.
 
 ### Files
 
-| File                                                                         | Purpose                                      |
-| ---------------------------------------------------------------------------- | -------------------------------------------- |
-| `apps/server/src/services/runtimes/claude-code/tooling/tool-filter.ts`       | `resolveToolConfig()`                        |
-| `apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts` | Agent-aware block gating, peer agents block  |
-| `packages/shared/src/mesh-schemas.ts`                                        | `EnabledToolGroupsSchema` on `AgentManifest` |
-| `packages/shared/src/config-schema.ts`                                       | `agentContext.tasksTools` global default     |
+| File                                                                         | Purpose                                                   |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `apps/server/src/services/runtimes/shared/permission-tool-filter.ts`         | `resolveToolVisibility()` / `resolveToolVisibilityFor()`  |
+| `apps/server/src/services/runtimes/claude-code/messaging/tool-doc-gates.ts`  | `toolDocGates()` — which prompt blocks an agent gets      |
+| `apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts` | Agent-aware block gating, peer agents block               |
+| `apps/server/src/services/runtimes/claude-code/mcp-tools/index.ts`           | Filters the in-session MCP tool list by `hiddenToolNames` |
+| `packages/shared/src/permissions/`                                           | Area registry, presets, resolver, HTTP DTOs               |
 
 ## Module Layout
 
@@ -703,33 +640,9 @@ Use [project structure](project-structure.md) for the repository map and [system
 | Independent Community | `apps/community/src/`                                               | Hono API, browser, PostgreSQL and blob storage                                  |
 | Cloud contract        | `packages/cloud-api/`                                               | Public schemas, routes and a fetch client; no private implementation dependency |
 
-## Electron Compatibility Layer
+## Claude Code Binary Resolution
 
-The Obsidian plugin runs inside Electron's renderer process, which creates two categories of incompatibility with the bundled Node.js code. These are handled by Vite build plugins that post-process `main.js`.
-
-### Problem 1: Vite `import.meta.url` Polyfill
-
-Vite converts ESM `import.meta.url` to a CJS polyfill that uses `document.baseURI`. In Electron, this produces `app://obsidian.md/main.js` instead of a `file://` URL. Node's `fileURLToPath()` then throws.
-
-**Fix:** `fixDirnamePolyfill()` plugin replaces Vite's polyfill with native `__dirname` / `__filename` (available in CJS).
-
-### Problem 2: Browser AbortSignal vs Node.js EventTarget
-
-In Electron's renderer, `new AbortController().signal` is Chromium's Web API `AbortSignal`, not a Node.js `EventTarget`. The Claude Agent SDK passes this signal to two Node.js APIs that reject it:
-
-1. `events.setMaxListeners(50, signal)` -- throws `ERR_INVALID_ARG_TYPE`
-2. `child_process.spawn(cmd, args, { signal })` -- throws `ERR_INVALID_ARG_TYPE`
-
-**Fix:** `patchElectronCompat()` plugin prepends a preamble that monkey-patches both APIs:
-
-- `spawn()` -- strips the `signal` option, manually listens for abort to kill the process
-- `setMaxListeners()` -- wraps in try/catch, silently ignores `ERR_INVALID_ARG_TYPE`
-
-### Problem 3: Claude Code Binary Path Resolution
-
-Since SDK 0.2.113 the Agent SDK ships Claude Code as a per-platform native binary (an optional dependency), and `cli.js` is no longer published. The SDK resolves the bundled binary relative to `import.meta.url`. In the bundled plugin, this resolves inside `Obsidian.app`, which doesn't contain the binary.
-
-**Fix:** `ClaudeCodeRuntime` resolves the binary path dynamically via `resolveClaudeCliPath()`:
+`ClaudeCodeRuntime` resolves the binary path dynamically via `resolveClaudeCliPath()`:
 
 1. An explicit `DORKOS_CLAUDE_CLI_PATH` (the packaged desktop app hands over the binary it unpacked)
 2. The SDK's bundled, version-matched native binary (preferred — avoids requiring a separate install), remapped from `app.asar` to `app.asar.unpacked` when the resolved path lands inside the archive
@@ -740,21 +653,6 @@ Since SDK 0.2.113 the Agent SDK ships Claude Code as a per-platform native binar
 The readiness probe (`resolveClaudeBinaryPath`) walks the same rungs, differing only in using the bounded async PATH lookup, so the setup screen and a session resolve by one rule rather than two (DOR-1334). A live runtime keeps the binary it resolved and re-checks rungs 1–3 only while it has none, which is what lets a one-click install reach the next session without a restart.
 
 The resolved path is passed via `pathToClaudeCodeExecutable` in SDK options.
-
-### Problem 4: Optional Dependencies
-
-Some bundled libraries reference packages that aren't installed (e.g., `@emotion/is-prop-valid`, `ajv-formats`).
-
-**Fix:** `safeRequires()` plugin wraps these `require()` calls in try/catch, returning `{}` on failure.
-
-### Build Plugin Execution Order
-
-All four plugins run in this order during `vite build` in `apps/obsidian-plugin/` (using `apps/obsidian-plugin/vite.config.ts`):
-
-1. `copyManifest()` -- copies `manifest.json` to `dist/`
-2. `safeRequires()` -- wraps optional requires during chunk rendering
-3. `fixDirnamePolyfill()` -- replaces `import.meta.url` polyfills after write
-4. `patchElectronCompat()` -- prepends spawn/setMaxListeners patches after write
 
 ## Data Directory Resolution
 
@@ -793,12 +691,7 @@ Location: `~/.dork/config.json` (created automatically on first run). Format:
   "relay": { "enabled": true, "dataDir": null },
   "scheduler": { "enabled": true, "maxConcurrentRuns": 1, "timezone": null, "retentionCount": 100 },
   "mesh": { "scanRoots": [] },
-  "agentContext": {
-    "relayTools": true,
-    "meshTools": true,
-    "adapterTools": true,
-    "tasksTools": true
-  }
+  "permissions": { "preset": null, "defaults": { "areas": {}, "actions": {} } }
 }
 ```
 
@@ -846,9 +739,9 @@ Both subcommands initialize `ConfigManager` independently and exit before starti
 
 ## Server Utilities
 
-### Vault Root Resolution (`apps/server/src/lib/resolve-root.ts`)
+### Default Working Directory Resolution (`apps/server/src/lib/resolve-root.ts`)
 
-`DEFAULT_CWD` is the single source of truth for the server's default working directory. It prefers the `DORKOS_DEFAULT_CWD` environment variable (set by the CLI, Obsidian plugin, or tests) and falls back to the repository root resolved from `lib/resolve-root.ts`'s own location.
+`DEFAULT_CWD` is the single source of truth for the server's default working directory. It prefers the `DORKOS_DEFAULT_CWD` environment variable (set by the CLI or tests) and falls back to the repository root resolved from `lib/resolve-root.ts`'s own location.
 
 ```typescript
 export const DEFAULT_CWD: string = env.DORKOS_DEFAULT_CWD ?? path.resolve(thisDir, '../../../');
@@ -871,16 +764,6 @@ Models are served dynamically from the resolved runtime's `getSupportedModels()`
 ### Standalone Web (`apps/client/vite.config.ts`)
 
 Standard Vite React build. Server compiled separately via `tsc`.
-
-### Obsidian Plugin (`apps/obsidian-plugin/vite.config.ts`)
-
-- **Target**: `node18` (Electron has Node.js runtime)
-- **Format**: CJS (Obsidian requires `module.exports`)
-- **External**: Obsidian API, CodeMirror, Lezer, all Node.js built-ins
-- **Bundled**: Claude Agent SDK, gray-matter, React, TanStack Query, all npm deps
-- **Output**: Single `main.js` file with `inlineDynamicImports`
-- CSS extracted to `styles.css` (auto-loaded by Obsidian)
-- **Build plugins**: `copyManifest`, `safeRequires`, `fixDirnamePolyfill`, `patchElectronCompat`
 
 ### CLI Package (`packages/cli/scripts/build.ts`)
 
@@ -1178,10 +1061,12 @@ That module carries its own removal date (2027-02 or v1.0, whichever comes first
 
 ### Key Components
 
-| Module                      | Purpose                                                                 |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `task-store.ts`             | SQLite database + JSON file for task and run state                      |
-| `task-scheduler-service.ts` | Cron engine using `croner` with overrun protection and concurrency caps |
+| Module                        | Purpose                                                                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task-store.ts`               | SQLite database + JSON file for task and run state                                                                                           |
+| `approvals/task-approvals.ts` | The approval lifecycle: record, withdraw, settle a changed schedule, carry a grant across a file move or key upgrade (`TaskStore.approvals`) |
+| `sync/task-file-sync.ts`      | SKILL.md → row through the content gates, the pause when a file goes away, and the lookup by path (`TaskStore.fileSync`)                     |
+| `task-scheduler-service.ts`   | Cron engine using `croner` with overrun protection and concurrency caps                                                                      |
 
 ### Dispatch Modes
 

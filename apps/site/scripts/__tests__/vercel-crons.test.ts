@@ -18,11 +18,14 @@ const config = JSON.parse(readFileSync(join(SITE_ROOT, 'vercel.json'), 'utf8')) 
 const crons = config.crons ?? [];
 
 describe('vercel.json crons', () => {
-  it('registers both halves of the scheduled cleanup', () => {
-    expect(crons.map((c) => c.path).sort()).toEqual([
-      '/api/cron/event-retention',
-      '/api/cron/instance-expiry',
-    ]);
+  // instance-expiry's Vercel Cron entry is gone: DORKOS_CLOUD_ACCOUNTS_ORIGIN is
+  // permanently set in production, the route has answered
+  // `{ skipped: 'accounts-service' }` since the accounts hand-over, and DorkOS
+  // Cloud's own scheduler now runs that sweep. event-retention stays — it
+  // belongs to managed connections, which move separately. See
+  // contributing/authentication.md#cleanup-jobs-dor-194.
+  it('registers the half of the scheduled cleanup the site still owns', () => {
+    expect(crons.map((c) => c.path).sort()).toEqual(['/api/cron/event-retention']);
   });
 
   it.each(crons)('$path has a route handler on disk', ({ path }) => {
@@ -33,7 +36,10 @@ describe('vercel.json crons', () => {
     expect(schedule).toMatch(/^\S+( \S+){4}$/);
   });
 
-  it('still applies both migration histories before building', () => {
+  it('applies the public migration history before building, and only that one', () => {
+    // `db:migrate` is the public half alone; `deploy-migrations.test.ts` pins
+    // what it runs. The control-plane half must never be named here.
     expect(config.buildCommand).toContain('pnpm db:migrate');
+    expect(config.buildCommand).not.toMatch(/control-plane/);
   });
 });

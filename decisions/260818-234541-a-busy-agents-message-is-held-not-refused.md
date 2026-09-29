@@ -103,3 +103,25 @@ a way around them.
 - **One more thing that can be wrong on the lane.** A `held` line that is stale by up to ten seconds
   — after a clear-on-post, or between republishes — says an agent will pick something up when it
   already has.
+
+## Amendment — 2026-09-26: the per-checkout ceiling is a setting (DOR-2104)
+
+**What changed.** Two sentences above are no longer true as written. The Decision says the
+one-turn-per-checkout ceiling is "enforced exactly as before", and the Positive consequences say this
+needed "no setting". The checkout ceiling is now a count, `rooms.maxConcurrentTurnsPerAgent` (1–8,
+default 3, Settings → Rooms → **Conversations at once**): `claimBusyWith` holds a new turn when the
+live claims on the agent's path are at or above it, where it used to hold when any existed. `1` is
+the ceiling this ADR describes.
+
+**What did not change.** Everything this ADR decided. A message that meets the ceiling is still held,
+never refused; the hold still lives in process memory and on the live lane only; the
+one-turn-per-`(room, agent)` ceiling is still exactly one and is not a setting. The parent ADR's
+DOR-500 evidence still stands: the default of three sits well short of the six writers per tree it
+measured as damaging, and the upper bound of eight keeps a deliberate choice from becoming an
+accident.
+
+**Two consequences the setting added.** Raising it frees a slot without any turn ending, so the
+dispatcher now re-arms waiting messages on the republish beat and before deciding any fresh message
+for the same agent, which keeps the order first-come. And with several turns in the way, the `held`
+indicator carries `severalInTheWay`, so the lane names the longest-running room without promising
+it is the one that has to finish.

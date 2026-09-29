@@ -19,7 +19,7 @@
  * new solid fill cannot skip that.
  *
  * **Contrast needs layout, and jsdom has none.** The browser measurement is in
- * the PR. What a unit test CAN own is the token: the value shipped in
+ * the PR. What a unit test CAN own is the token: the value shipped by the public UI package and bridged by
  * `index.css`, run through the WCAG math against the ground it sits on. The
  * math is pinned against known pairs first, and the discriminator is proven
  * both ways (the OLD values fail, the shipped ones pass), so a contrast
@@ -31,9 +31,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, relative, resolve } from 'node:path';
+import { STATUS_TONE_TEXT } from '@/layers/shared/ui/status-dot';
 
 const SRC = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const INDEX_CSS = join(SRC, 'index.css');
+const UI_ROOT = resolve(SRC, '../../../packages/ui');
+const UI_SRC = join(UI_ROOT, 'src');
 
 /** WCAG AA threshold for normal-size text. */
 const AA = 4.5;
@@ -100,6 +103,15 @@ function section(css: string, start: string, end: string): string {
   return css.slice(from, to);
 }
 
+/** Resolve the client's shared aliases against the matching package theme. */
+function resolveSharedTokens(clientCss: string, paletteCss: string): string {
+  return clientCss.replace(/var\((--dui-[a-z-]+)\)/g, (_, name: string) => {
+    const declaration = paletteCss.match(new RegExp(`${name}:\\s*([^;]+);`));
+    expect(declaration, `shared token not found: ${name}`).not.toBeNull();
+    return declaration![1]!.trim();
+  });
+}
+
 /** The `H S% L%` triplet a token holds inside one section. */
 function hsl(sectionCss: string, name: string): Rgb {
   const m = sectionCss.match(
@@ -127,8 +139,20 @@ describe('destructive contrast', () => {
   // Light declarations live in `:root, .light { ... }`, dark ones in
   // `.dark { ... }`. Slicing by the block openers keeps the two
   // `--destructive` values apart.
-  const light = section(css, ':root,', '.dark {');
-  const dark = section(css, '.dark {', '.copilot-view-content');
+  const tokens = readFileSync(join(UI_ROOT, 'tokens.css'), 'utf8');
+  const light = resolveSharedTokens(
+    section(css, ':root,', '.dark {'),
+    section(tokens, ':root,', '@media')
+  );
+  const dark = resolveSharedTokens(
+    section(css, '.dark {', '@layer border-defaults'),
+    section(tokens, '\n.dark {', '\n}')
+  );
+
+  it('checks the package palette that the client actually consumes', () => {
+    // Copying literals back into the app would split ownership and bypass the package proof.
+    expect(css.match(/--destructive:\s*var\(--dui-destructive\)/g)).toHaveLength(2);
+  });
 
   // --- The math, pinned before it is trusted ---
 
@@ -228,27 +252,130 @@ describe('destructive contrast', () => {
     }
     expectAll(pairs);
   });
+});
 
-  // --- The Obsidian embed's flat literals ---
+/**
+ * The token a bare text-colour class paints with (`text-destructive` →
+ * `--destructive`), so the assertion follows whatever class the map holds.
+ */
+function textToken(cls: string): string {
+  const m = cls.match(/^text-([a-z-]+)$/);
+  expect(m, `not a plain text-colour class: ${cls}`).not.toBeNull();
+  return `--${m![1]}`;
+}
 
-  it('Obsidian: the light red holds text and a white label; the dark-vault red holds text', () => {
-    const obsidian = section(css, '.copilot-view-content {', '\n}');
-    const lightPin = obsidian.match(/--color-destructive:\s*(#[0-9a-fA-F]{6})/);
-    const darkPin = css.match(
-      /\.theme-dark \.copilot-view-content\s*\{[^}]*--color-destructive:\s*(#[0-9a-fA-F]{6})/
+describe('bare red status text (DOR-2493)', () => {
+  // `STATUS_TONE_TEXT.error` is red painted straight on grey, not on its own
+  // tint: the session row's context gauge (sidebar, hovered, selected), the
+  // status bar's context percent, the connection hover card, a relay
+  // conversation's status word. `--status-error-fg` measured 4.08:1 on the
+  // selected session row in dark mode; this fails if the map goes back to it.
+  const css = readFileSync(INDEX_CSS, 'utf8');
+  const tokens = readFileSync(join(UI_ROOT, 'tokens.css'), 'utf8');
+  const themes = {
+    light: resolveSharedTokens(
+      section(css, ':root,', '.dark {'),
+      section(tokens, ':root,', '@media')
+    ),
+    dark: resolveSharedTokens(
+      section(css, '.dark {', '@layer border-defaults'),
+      section(tokens, '\n.dark {', '\n}')
+    ),
+  };
+
+  /** Every ground the bare red sits on, in one theme. */
+  function grounds(theme: string): Record<string, Rgb> {
+    const sidebar = hsl(theme, '--sidebar');
+    const secondary = hsl(theme, '--secondary');
+    const bg = hsl(theme, '--background');
+    const muted = hsl(theme, '--muted');
+    return {
+      sidebar,
+      'session row hover (bg-secondary/60 over sidebar)': over(secondary, 0.6, sidebar),
+      'selected session row (bg-secondary)': secondary,
+      background: bg,
+      card: hsl(theme, '--card'),
+      popover: hsl(theme, '--popover'),
+      'relay row hover (bg-muted/50)': over(muted, 0.5, bg),
+      // An out-of-usage session row wears the red tint; the gauge's red sits on it.
+      'out-of-usage session row (bg-status-error-bg)': hsl(theme, '--status-error-bg'),
+    };
+  }
+
+  function ratios(theme: string, cls: string): Record<string, number> {
+    const red = hsl(theme, textToken(cls));
+    return Object.fromEntries(
+      Object.entries(grounds(theme)).map(([name, ground]) => [name, contrast(red, ground)])
     );
-    expect(lightPin, 'Obsidian --color-destructive pin not found').not.toBeNull();
-    expect(darkPin, 'Obsidian .theme-dark --color-destructive pin not found').not.toBeNull();
-    const lightRed = hexToRgb(lightPin![1]!);
-    const darkRed = hexToRgb(darkPin![1]!);
-    // Obsidian's default theme surfaces: #ffffff / #f6f6f6 light, #1e1e1e / #262626 dark.
-    expectAll({
-      'light red on #ffffff': contrast(lightRed, hexToRgb('#ffffff')),
-      'light red on #f6f6f6': contrast(lightRed, hexToRgb('#f6f6f6')),
-      'white on light red': contrast(WHITE, lightRed),
-      'dark red on #1e1e1e': contrast(darkRed, hexToRgb('#1e1e1e')),
-      'dark red on #262626': contrast(darkRed, hexToRgb('#262626')),
-    });
+  }
+
+  it('discriminates: the tint-tuned `-fg` red fails the selected row in dark mode', () => {
+    expect(
+      ratios(themes.dark, 'text-status-error-fg')['selected session row (bg-secondary)']
+    ).toBeLessThan(AA);
+  });
+
+  it('light: clears AA on every ground', () => {
+    expectAll(ratios(themes.light, STATUS_TONE_TEXT.error));
+  });
+
+  it('dark: clears AA on every ground', () => {
+    expectAll(ratios(themes.dark, STATUS_TONE_TEXT.error));
+  });
+});
+
+describe('bare amber status text on the session row (claude-account-ui 04 §13)', () => {
+  // `STATUS_TONE_TEXT.warning` is amber painted straight on grey: the session
+  // row's context gauge at 80% and over, in the sidebar, in the Heads up zone's
+  // tint, hovered and selected. At 30% lightness the light token measured
+  // 4.41:1 on the sidebar and 4.21:1 on the zone tint; this fails if it goes
+  // back. Dark mode clears every ground by a wide margin.
+  const css = readFileSync(INDEX_CSS, 'utf8');
+  const tokens = readFileSync(join(UI_ROOT, 'tokens.css'), 'utf8');
+  const themes = {
+    light: resolveSharedTokens(
+      section(css, ':root,', '.dark {'),
+      section(tokens, ':root,', '@media')
+    ),
+    dark: resolveSharedTokens(
+      section(css, '.dark {', '@layer border-defaults'),
+      section(tokens, '\n.dark {', '\n}')
+    ),
+  };
+
+  /** Every ground the session row's gauge sits on, in one theme. */
+  function rowGrounds(theme: string): Record<string, Rgb> {
+    const sidebar = hsl(theme, '--sidebar');
+    const zone = over(hsl(theme, '--sidebar-accent'), 0.4, sidebar);
+    const secondary = hsl(theme, '--secondary');
+    return {
+      sidebar,
+      'Heads up zone tint (bg-sidebar-accent/40)': zone,
+      'row hover over the sidebar (bg-secondary/60)': over(secondary, 0.6, sidebar),
+      'row hover over the zone tint': over(secondary, 0.6, zone),
+      'selected row (bg-secondary)': secondary,
+      'out-of-usage row (bg-status-error-bg)': hsl(theme, '--status-error-bg'),
+    };
+  }
+
+  function ratios(theme: string, amber: Rgb): Record<string, number> {
+    return Object.fromEntries(
+      Object.entries(rowGrounds(theme)).map(([name, ground]) => [name, contrast(amber, ground)])
+    );
+  }
+
+  it('discriminates: the 30% amber it replaced fails the zone tint in light mode', () => {
+    expect(
+      ratios(themes.light, hslToRgb(38, 92, 30))['Heads up zone tint (bg-sidebar-accent/40)']
+    ).toBeLessThan(AA);
+  });
+
+  it('light: clears AA on every row ground', () => {
+    expectAll(ratios(themes.light, hsl(themes.light, textToken(STATUS_TONE_TEXT.warning))));
+  });
+
+  it('dark: clears AA on every row ground', () => {
+    expectAll(ratios(themes.dark, hsl(themes.dark, textToken(STATUS_TONE_TEXT.warning))));
   });
 });
 
@@ -350,13 +477,15 @@ function classUnit(src: string, lit: Literal, literals: Literal[]): string {
 }
 
 /** A class token the label on a red fill is painted with. */
-const LABEL = /(^|[\s'"`])(hover:)?text-(white|destructive-foreground)(?=[\s'"`]|$)/;
+const LABEL = /(^|[\s'"`])(hover:)?text-(white|(?:dui-)?destructive-foreground)(?=[\s'"`]|$)/;
 /** A solid (un-alpha'd) destructive fill. */
-const SOLID = /(^|[\s'"`])bg-destructive(?=[\s'"`]|$)/;
+const SOLID = /(^|[\s'"`])bg-(?:dui-)?destructive(?=[\s'"`]|$)/;
 /** A hover-only near-solid fill. */
-const HOVER_SOLID = /(^|[\s'"`])hover:bg-destructive\/(9\d|100)(?=[\s'"`]|$)/;
+const HOVER_SOLID = /(^|[\s'"`])hover:bg-(?:dui-)?destructive\/(9\d|100)(?=[\s'"`]|$)/;
 const DIMMED = /(^|[\s'"`])dark:bg-destructive\/60(?=[\s'"`]|$)/;
+const PACKAGE_DIMMED = /(^|[\s'"`])dui-dark:bg-dui-destructive\/60(?=[\s'"`]|$)/;
 const HOVER_DIMMED = /(^|[\s'"`])dark:hover:bg-destructive\/60(?=[\s'"`]|$)/;
+const PACKAGE_HOVER_DIMMED = /(^|[\s'"`])dui-dark:hover:bg-dui-destructive\/60(?=[\s'"`]|$)/;
 
 /**
  * The labelled red fills in `src` that skip the dark-mode dimming.
@@ -380,7 +509,10 @@ function undimmedFills(src: string): { offenders: string[]; inspected: number } 
     if (!LABEL.test(unit)) continue;
     inspected++;
     const solid = SOLID.test(unit);
-    if ((solid && !DIMMED.test(unit)) || (!solid && !HOVER_DIMMED.test(unit))) {
+    const packageFill = lit.text.includes('bg-dui-destructive');
+    const dimmed = packageFill ? PACKAGE_DIMMED : DIMMED;
+    const hoverDimmed = packageFill ? PACKAGE_HOVER_DIMMED : HOVER_DIMMED;
+    if ((solid && !dimmed.test(unit)) || (!solid && !hoverDimmed.test(unit))) {
       offenders.push(unit.replace(/\s+/g, ' ').slice(0, 100));
     }
   }
@@ -434,10 +566,27 @@ describe('solid destructive fills dim themselves in dark mode', () => {
     expect(undimmedFills(src)).toEqual({ offenders: [], inspected: 0 });
   });
 
-  it('every labelled solid fill in the app carries the dark dimming', () => {
+  it('catches namespaced package fills without their matching dark variant', () => {
+    const src = `x = 'bg-dui-destructive text-dui-destructive-foreground';`;
+    expect(undimmedFills(src).offenders).toHaveLength(1);
+    expect(
+      undimmedFills(src.replace("foreground'", "foreground dui-dark:bg-dui-destructive/60'"))
+    ).toEqual({
+      offenders: [],
+      inspected: 1,
+    });
+    expect(
+      undimmedFills(src.replace("foreground'", "foreground dark:bg-dui-destructive/60'")).offenders
+    ).toHaveLength(1);
+    const button = undimmedFills(readFileSync(join(UI_SRC, 'button.tsx'), 'utf8'));
+    expect(button.inspected).toBe(1);
+    expect(button.offenders).toEqual([]);
+  });
+
+  it('every labelled solid fill in the app and package carries the dark dimming', () => {
     const offenders: string[] = [];
     let inspected = 0;
-    for (const file of sourceFiles(SRC)) {
+    for (const file of [...sourceFiles(SRC), ...sourceFiles(UI_SRC)]) {
       const result = undimmedFills(readFileSync(file, 'utf8'));
       inspected += result.inspected;
       offenders.push(...result.offenders.map((o) => `${relative(SRC, file)}: ${o}`));

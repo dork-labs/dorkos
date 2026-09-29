@@ -1,9 +1,17 @@
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
-import { mergeHookConfigs, pluginRootText, projectedHooks } from '../installed-projector.js';
+import {
+  mergeHookConfigs,
+  pluginDataText,
+  pluginEnvPrefix,
+  pluginRootText,
+  projectedHooks,
+  PLUGIN_DATA_SKILL_WARNING_REASON,
+} from '../installed-projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
 import type { InstalledPlugin, ProjectInstalledPlugin } from '../../sources/installed.js';
@@ -877,6 +885,157 @@ describe('pluginRootText', () => {
     // "normalized" — it is left exactly as the filesystem spells it.
     expect(pluginRootText('/home/me/od\\d/plugins/flow', 'darwin')).toBe(
       '/home/me/od\\d/plugins/flow'
+    );
+  });
+});
+
+describe('${CLAUDE_PLUGIN_DATA} (DOR-2245)', () => {
+  const dataPlugin: ProjectInstalledPlugin = {
+    ...projectPlugin,
+    commands: [
+      {
+        name: 'save',
+        sourcePath: '.dork/plugins/acme/commands/save.md',
+        content: '---\ndescription: s\n---\nWrite to `${CLAUDE_PLUGIN_DATA}/state.json`.\n',
+      },
+    ],
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/x.mjs" "${CLAUDE_PLUGIN_DATA}/log"',
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  // Purpose: a command a plugin wrote for Claude Code's data dir points at the
+  // install's own .dork/data once projected, never at an unset variable.
+  it('rewrites the data token in command wrappers to <install>/.dork/data', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [dataPlugin],
+      });
+      const wrapper = plan.actions.find((a) => a.target === '.claude/commands/acme/save.md');
+      const content = getActionContent(wrapper!)!;
+      const data = pluginDataText(join(repo, '.dork/plugins/acme'), process.platform);
+      expect(content).toContain(`${data}/state.json`);
+      expect(content).not.toContain('${CLAUDE_PLUGIN_DATA}');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: Claude Code exports both variables to a plugin's hook processes; a
+  // projected hook runs as a project hook, so DorkOS exports them itself.
+  it('prefixes projected Claude Code hooks with both variables, and rewrites the data token inline', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [dataPlugin],
+      });
+      const merge = plan.actions.find((a) => a.target === '.claude/settings.local.json');
+      const content = getActionContent(merge!)!;
+      const installDir = join(repo, '.dork/plugins/acme');
+      const command = (
+        JSON.parse(content) as { Stop: Array<{ hooks: Array<{ command: string }> }> }
+      ).Stop[0].hooks[0].command;
+      expect(command.startsWith(pluginEnvPrefix(installDir, process.platform))).toBe(true);
+      expect(command).toContain(`${pluginDataText(installDir, process.platform)}/log`);
+      expect(command).not.toContain('${CLAUDE_PLUGIN_DATA}');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: the prefix is DorkOS's own addition, not the package's command, so
+  // it never enters the consent digest; a package already approved stays approved.
+  it('keeps the export prefix out of what a person is asked to approve', () => {
+    const [entry] = projectedHooks([dataPlugin], '/repo');
+    expect(entry.hooks[0].command).toBe(
+      'node "/repo/.dork/plugins/acme/hooks/x.mjs" "/repo/.dork/plugins/acme/.dork/data/log"'
+    );
+  });
+
+  // Purpose: the generated Codex/Cursor/Copilot file gets the inline rewrite but
+  // no POSIX prefix (Copilot also runs PowerShell), so nothing there breaks.
+  it('rewrites the data token in the generated Codex hooks file without a prefix', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [dataPlugin],
+      });
+      const codex = getActionContent(plan.actions.find((a) => a.target === '.codex/hooks.json')!)!;
+      expect(codex).not.toContain('${CLAUDE_PLUGIN_DATA}');
+      expect(codex).not.toContain('export CLAUDE_PLUGIN_ROOT');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: a projected skill is a symlink, so the token cannot be rewritten; say so.
+  it('warns when a projected skill references the data token', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [
+          {
+            ...projectPlugin,
+            skills: [
+              {
+                name: 'alpha',
+                sourceDir: '.dork/plugins/acme/skills/alpha',
+                usesPluginRoot: false,
+                usesPluginData: true,
+                hasSchedule: false,
+              },
+            ],
+          },
+        ],
+      });
+      const warning = plan.warnings.find((w) => w.artifact === 'skill' && w.name === 'acme__alpha');
+      expect(warning?.reason).toBe(PLUGIN_DATA_SKILL_WARNING_REASON);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: the prefix survives a path with a quote in it, and a real shell
+  // then sees exactly the two paths. Needs /bin/sh, which Windows runners lack
+  // (Claude Code there runs hooks through Git Bash, not this path).
+  it.skipIf(process.platform === 'win32')(
+    'quotes the prefix so a real shell exports the exact paths',
+    () => {
+      const installDir = "/tmp/o'brien/.dork/plugins/acme";
+      const out = execFileSync('/bin/sh', [
+        '-c',
+        `${pluginEnvPrefix(installDir, 'darwin')}printf '%s|%s' "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA"`,
+      ]).toString();
+      expect(out).toBe(`${installDir}|${installDir}/.dork/data`);
+    }
+  );
+
+  // Purpose: Windows spells both paths with forward slashes, like the root token.
+  it('spells the data dir with forward slashes on Windows', () => {
+    expect(pluginDataText('C:\\u\\.dork\\plugins\\flow', 'win32')).toBe(
+      'C:/u/.dork/plugins/flow/.dork/data'
     );
   });
 });

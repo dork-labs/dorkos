@@ -59,7 +59,6 @@ const WARDEN_MANIFEST = {
   traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
   conventions: { soul: true, nope: true, memory: true, dorkosKnowledge: true },
   behavior: { responseMode: 'always' },
-  enabledToolGroups: {},
   mcpServers: [],
   soulContent: '<!-- TRAITS:START -->\ntraits\n<!-- TRAITS:END -->\nBe careful.',
   nopeContent: 'Never force-push.',

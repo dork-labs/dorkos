@@ -33,6 +33,34 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 const routerSearch = vi.hoisted(() => ({ current: {} as Record<string, string> }));
 
 // The durable stream: attach/connect must never open a real fetch in jsdom.
+// Exercise the supported upload seam instead of the retired host content callback.
+const uploadOverride = vi.hoisted(() => ({
+  run: undefined as undefined | (() => Promise<string[]>),
+}));
+// The out-of-usage banner and its composer pause read the session's account
+// (spec claude-account-ui §6.7); they have their own tests, and this file's
+// narrow mocks do not carry what they read.
+vi.mock('@/layers/features/continue-on-account', () => ({
+  AccountLimitBanner: () => null,
+  AccountLimitMarker: () => null,
+  useLimitComposer: () => ({ canSubmit: true, placeholder: null }),
+  useSessionHasLimit: () => false,
+}));
+
+vi.mock('@/layers/features/chat/model/use-file-upload', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/layers/features/chat/model/use-file-upload')>();
+  return {
+    ...actual,
+    useFileUpload: () => {
+      const upload = actual.useFileUpload();
+      return uploadOverride.run
+        ? { ...upload, hasPendingFiles: true, uploadAndGetPaths: uploadOverride.run }
+        : upload;
+    },
+  };
+});
+
 vi.mock('@/layers/entities/attention', () => ({
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
 }));
@@ -49,6 +77,7 @@ vi.mock('@/layers/shared/lib/transport', async () => {
       releaseSession: vi.fn(),
       getAttachedSessionId: vi.fn().mockReturnValue(null),
       subscribeListConnectionState: vi.fn().mockReturnValue(() => {}),
+      subscribeEvent: vi.fn().mockReturnValue(() => {}),
     },
   };
 });
@@ -145,20 +174,17 @@ function draft(): string {
 
 function renderPanel(
   transport: Transport,
-  transformContent?: (content: string) => Promise<string>,
+  uploadAndGetPaths?: () => Promise<string[]>,
   seedQuery?: (queryClient: QueryClient) => void,
   panelProps?: Partial<React.ComponentProps<typeof ChatPanel>>
 ) {
+  uploadOverride.run = uploadAndGetPaths;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   seedQuery?.(queryClient);
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <ChatPanel
-          sessionId={SESSION_ID}
-          {...(transformContent === undefined ? {} : { transformContent })}
-          {...panelProps}
-        />
+        <ChatPanel sessionId={SESSION_ID} {...panelProps} />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -249,7 +275,6 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
         registeredAt: '2026-09-08T00:00:00.000Z',
         registeredBy: 'test',
         personaEnabled: true,
-        enabledToolGroups: {},
         mcpServers: [],
       });
     });
@@ -320,7 +345,6 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
         registeredAt: '2026-09-06T00:00:00.000Z',
         registeredBy: 'test',
         personaEnabled: true,
-        enabledToolGroups: {},
         mcpServers: [],
       });
     });
@@ -346,7 +370,6 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
       registeredAt: '2026-09-06T00:00:00.000Z',
       registeredBy: 'test',
       personaEnabled: true,
-      enabledToolGroups: {},
       mcpServers: [],
     } satisfies AgentManifest;
     const streamState = useSessionStreamStore.getState().getSession(SESSION_ID);
@@ -460,12 +483,14 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
     const postMessage = vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const transformContent = vi.fn().mockRejectedValue(new Error('The attachment did not upload.'));
+    const uploadAndGetPaths = vi
+      .fn()
+      .mockRejectedValue(new Error('The attachment did not upload.'));
 
-    renderPanel(createMockTransport({ postMessage }), transformContent);
+    renderPanel(createMockTransport({ postMessage }), uploadAndGetPaths);
     await send('look at this file');
 
-    await waitFor(() => expect(transformContent).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(uploadAndGetPaths).toHaveBeenCalledTimes(1));
     // Nothing was sent, and the sentence is still exactly where it was typed.
     expect(postMessage).not.toHaveBeenCalled();
     expect(draft()).toBe('look at this file');

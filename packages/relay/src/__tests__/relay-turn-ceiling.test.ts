@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { RelayCore } from '../relay-core.js';
 import { RelayTurnCeiling } from '../turn-ceiling.js';
-import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import { TASK_SCHEDULER_PRINCIPAL, type RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type {
   AdapterRegistryLike,
   AdapterContext,
@@ -25,6 +25,8 @@ import type {
 
 const AGENT_SUBJECT = 'relay.agent.demo.agent-1';
 const TASKS_SUBJECT = 'relay.system.tasks.nightly-report';
+/** Only the scheduler may send to a task subject (DOR-2432). */
+const SCHEDULER = TASK_SCHEDULER_PRINCIPAL;
 const TURN_PREFIXES = ['relay.agent.', 'relay.system.tasks.'];
 
 /**
@@ -228,11 +230,12 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
   it('counts a scheduled-task dispatch too — it is the same adapter and the same paid turn', async () => {
     // The hole this closes: the ceiling used to match `relay.agent.*` only,
     // while the Claude Code adapter also answers for `relay.system.tasks.*` and
-    // routes it to `ensureSession` + `sendMessage`. `relay_send` reaches that
-    // subject, so the bound was bypassable by exactly the party it bounds.
+    // routes it to `ensureSession` + `sendMessage`. Before DOR-2432 `relay_send`
+    // reached that subject, so the bound was bypassable by exactly the party it
+    // bounds; a scheduled run is still a paid turn and still counts.
     relay = await makeRelay({ perAgent: () => null, global: () => 1 });
 
-    const ok = await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: 'relay.test.a' });
+    const ok = await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: SCHEDULER });
     expect(ok.rejected).toBeUndefined();
     expect(registry.delivered).toHaveLength(1);
 
@@ -247,12 +250,12 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
   it('refuses a task dispatch at the cap, on the same terms as an agent one', async () => {
     relay = await makeRelay({ perAgent: () => 1, global: () => null });
 
-    await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: 'relay.test.a' });
+    await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: SCHEDULER });
     const refused = await relay.publish(
       TASKS_SUBJECT,
       { taskId: 't1' },
       {
-        from: 'relay.test.a',
+        from: SCHEDULER,
       }
     );
 
@@ -267,10 +270,10 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
     relay = await makeRelay({ perAgent: () => 1, global: () => 1 });
     registry.refuse = 'at capacity';
 
-    await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: 'relay.test.a' });
+    await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: SCHEDULER });
 
     registry.refuse = undefined;
-    const ok = await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: 'relay.test.a' });
+    const ok = await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: SCHEDULER });
     expect(ok.rejected).toBeUndefined();
     expect(registry.delivered).toHaveLength(1);
   });

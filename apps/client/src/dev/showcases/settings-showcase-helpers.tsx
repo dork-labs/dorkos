@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   NavigationLayout,
@@ -9,7 +10,7 @@ import {
   NavigationLayoutPanel,
   NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, seedAccountUsage, useTransport } from '@/layers/shared/model';
 import { RuntimeCardView } from '@/layers/features/settings';
 import { createPlaygroundTransport } from '../playground-transport';
 import {
@@ -33,13 +34,18 @@ import { configKeys } from '@/layers/entities/config';
  *
  * @param children - Showcase content to render.
  * @param config - Server config to seed; defaults to {@link MOCK_SERVER_CONFIG}.
+ * @param usage - Account usage to seed into each runtime's usage cache. When
+ *   given, the usage route answers these records too: Settings asks the route
+ *   while it is open, and its answer replaces the cached list.
  */
 export function MockedQueryProvider({
   children,
   config = MOCK_SERVER_CONFIG,
+  usage = [],
 }: {
   children: React.ReactNode;
   config?: ServerConfig;
+  usage?: AccountUsage[];
 }) {
   const [client] = useState(() => {
     const c = new QueryClient({
@@ -47,9 +53,42 @@ export function MockedQueryProvider({
     });
     c.setQueryData(configKeys.current(), config);
     c.setQueryData(['mesh', 'agents'], MOCK_MESH_AGENTS);
+    seedAccountUsage(c, usage);
     return c;
   });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      {usage.length > 0 ? (
+        <UsageRouteProvider usage={usage}>{children}</UsageRouteProvider>
+      ) : (
+        children
+      )}
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * The surrounding transport with `getAccountUsage` answering `usage`, so the
+ * refetch Settings makes while open keeps the showcase's records rather than
+ * swapping in the playground-wide fixtures. A Proxy over the ambient transport,
+ * so an outer override (a refused write) still applies.
+ */
+function UsageRouteProvider({ usage, children }: { usage: AccountUsage[]; children: ReactNode }) {
+  const outer = useTransport();
+  const [transport] = useState<Transport>(
+    () =>
+      new Proxy(outer, {
+        get(target, prop, receiver) {
+          if (prop === 'getAccountUsage') {
+            return async (runtime: string) => ({
+              accounts: usage.filter((record) => record.runtime === runtime),
+            });
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      })
+  );
+  return <TransportProvider transport={transport}>{children}</TransportProvider>;
 }
 
 /**

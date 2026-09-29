@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtempSync } from 'node:fs';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { NotifyBudget } from '../../relay/notify-budget.js';
 import {
@@ -18,6 +18,15 @@ import {
   createRelayDispatchHandler,
   createRelayUnregisterEndpointHandler,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../../../lib/version.js', () => ({
   SERVER_VERSION: '1.0.0',
@@ -41,6 +50,7 @@ vi.mock('@dorkos/shared/convention-files', async (importOriginal) => ({
 }));
 vi.mock('@dorkos/shared/convention-files-io', () => ({
   writeConventionFile: vi.fn(),
+  writeConventionFileIfAbsent: vi.fn(async () => true),
   readConventionFile: vi.fn(),
 }));
 vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
@@ -145,9 +155,12 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
     // and the row is derived from reading it back, so this is what a create
     // normally goes through. `createTask` above is only the fallback for a file
     // that will not parse.
-    upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
+    fileSync: { upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }) },
     recordProposal: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
     updateTask: vi.fn().mockReturnValue(null),
+    // A row-only update (no file written) is settled against the approval
+    // (DOR-2302); these cases never change a package's timing, so nothing moves.
+    approvals: { settleApprovedWorkChange: vi.fn().mockReturnValue('unchanged') },
     deleteTask: vi.fn().mockReturnValue(false),
     listRuns: vi.fn().mockReturnValue([]),
     ...overrides,
@@ -475,7 +488,9 @@ describe('MCP Tool Handlers', () => {
       // `acceptEdits` in the same call that lands the new prompt.
       expect(updateTask).toHaveBeenCalledWith(
         'u1',
-        expect.objectContaining({ prompt: 'a different prompt', permissionMode: 'acceptEdits' })
+        expect.objectContaining({ prompt: 'a different prompt', permissionMode: 'acceptEdits' }),
+        // Where the timing lands (DOR-2302); not this case's concern.
+        expect.anything()
       );
     });
 
@@ -713,7 +728,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 45 tools (32 legacy + 10 operator + list_capabilities + memory_write + read_canvas_document)', () => {
+    it('registers 52 tools (35 legacy + 11 operator + list_capabilities + memory_write + read_canvas_document + 3 permission verbs)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -745,8 +760,19 @@ describe('MCP Tool Handlers', () => {
       // 44 -> 45 for `feedback_draft`, which builds the prefilled GitHub issue
       // link `dorkos feedback` builds and sends nothing (DOR-2056). Operator
       // capabilities go from 9 to 10.
+      //
+      // 45 -> 47 for `request_permission` and `list_my_permissions` (spec
+      // `agent-permissions` D8, D9), which every agent carries.
+      //
+      // 47 -> 48 for `update_agent_execution` (DOR-2328), the runtime, model and
+      // effort write split out of `update_agent`. Operator capabilities go from
+      // 10 to 11.
+      // 48 -> 49 for `change_permission` (spec `agent-permissions` D9).
+      // 49 -> 50 for `accounts_usage` (spec `claude-account-fleet` D2).
+      // 50 -> 51 for `accounts_probe` (spec `claude-account-fleet` D3).
+      // 51 -> 52 for `session_start` (spec `claude-account-fleet` D5).
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(45);
+      expect(server.tools).toHaveLength(52);
     });
 
     it('registers tools with correct names', () => {

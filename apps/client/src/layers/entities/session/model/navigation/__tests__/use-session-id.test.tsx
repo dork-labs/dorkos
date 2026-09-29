@@ -26,13 +26,6 @@ vi.mock('../use-session-search', () => ({
   useSessionSearch: () => search,
 }));
 
-// Partial: the app store this hook pulls in reads other things from the same
-// barrel, and replacing it wholesale takes the store down with it.
-vi.mock('@/layers/shared/lib', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
-  getPlatform: () => ({ isEmbedded: false }),
-}));
-
 import { useSessionId } from '../use-session-id';
 
 /** The search params the setter would write, given what the URL currently holds. */

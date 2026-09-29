@@ -33,7 +33,7 @@ Skip ADRs for:
 
 Focus on the **problem**, not the solution. What situation existed? What forces were at play?
 
-- **Good**: "DorkOS runs as both a standalone web app and an Obsidian plugin. The Obsidian plugin cannot make HTTP requests to localhost, so the client needs a way to communicate with the server that works in both environments."
+- **Good**: "DorkOS shares its React client across the browser, phone and desktop. Components need to reach server operations without coupling their rendering to network details, and tests need to substitute those operations."
 - **Bad**: "We needed an architecture." (Too vague)
 - **Bad**: A full page of background. (Too long — that belongs in the spec)
 
@@ -41,7 +41,7 @@ Focus on the **problem**, not the solution. What situation existed? What forces 
 
 State what was decided in **active voice**. Start with "We will..."
 
-- **Good**: "We will use a Transport interface that abstracts the communication layer. HttpTransport handles standalone mode via REST/SSE. DirectTransport handles Obsidian mode via in-process function calls."
+- **Good**: "We will use a Transport interface that abstracts the communication layer. HttpTransport reaches the local server over HTTP and durable streams. Component tests inject mock transports through React Context."
 - **Bad**: "The transport pattern was implemented." (Passive, vague)
 
 ### Consequences

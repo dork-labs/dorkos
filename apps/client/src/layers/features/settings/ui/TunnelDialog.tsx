@@ -6,7 +6,7 @@ import {
   ResponsiveDialogDescription,
 } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
-import { cn, getPlatform } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import { useTunnelMachine, type TunnelMachine } from '../model/use-tunnel-machine';
 import { useTunnelActions } from '../model/use-tunnel-actions';
 import { TunnelPanel } from './TunnelPanel';
@@ -37,8 +37,6 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 
   const machine = useTunnelMachine({ open });
   const actions = useTunnelActions({ machine });
-
-  if (getPlatform().isEmbedded) return null;
 
   // Pulses while the dialog is waiting on something, which now includes ngrok
   // re-establishing a dropped session — but `isTransitioning` deliberately does

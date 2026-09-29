@@ -1,0 +1,99 @@
+---
+title: Use all your accounts
+description: Let /flow share its work between every Claude Code, Codex and OpenCode account on this computer, set up from the terminal or the DorkOS app.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Use all your accounts
+
+If you have more than one Claude Code, Codex or OpenCode account on this computer, `/flow` can spread its work across them. When one account reaches its limit, work moves to another instead of stopping.
+
+One command sets it up: `flow accounts setup`. It finds your accounts, suggests a role for each one, and changes nothing until you say yes.
+
+<Callout type="warn">
+  This is built for one person using their own accounts. Whether that fits Anthropic's terms, or any
+  other service's, is your call to judge. Don't use it to share accounts between people. Keep a work
+  or client account out unless you are allowed to use it this way.
+</Callout>
+
+## The three roles
+
+Every account gets one role:
+
+- **Main** is your own everyday account. Flow holds back half of its weekly limit for you and uses it only when no other account has room. In the last day before the weekly limit resets, it may use the rest.
+- **Rotation** accounts are the ones flow may use freely.
+- **Kept out** accounts are never used by flow. You can let one serve a few named repositories. Any account you add starts here, so nothing is spent until you decide.
+
+A work, organization or client account belongs in kept out.
+
+## Set it up in the DorkOS app
+
+1. **Add your accounts.** Open Settings, then **Runtimes**. On the Claude Code card, under **Billing account**, choose **Add account**. Pick the **Account folder**, give it a **Name**, then choose **Add**. The same card's **Default account** sets which account new chats use. See [Choose an account](/docs/guides/runtimes#choose-an-account).
+2. **Pick each account's role.** With the flow plugin installed from the [Marketplace](/docs/marketplace), Settings has a **Flow** tab under Add-ons. Under **Which accounts flow may use**, set each account to **Main**, **Rotation** or **Kept out**. For your main account, **Keep N% for me** sets how much of its weekly limit flow leaves alone. For a kept-out account, **Only for these repos** lets it serve the repositories you list. If the tab says to update DorkOS, update it, or use the terminal steps below.
+
+The app and flow share one list of accounts, so an account you add in Settings shows up in `flow accounts setup` too, and the reverse.
+
+**Schedules** don't pick an account themselves. A scheduled run uses its agent's account (**Runs on** in the agent's profile), or else your default. When flow starts sessions on its own, it picks the account by role.
+
+## Set it up from the terminal
+
+In these commands, `flow` is short for `node --experimental-strip-types <flow-root>/scripts/flow.ts`.
+
+```bash
+flow accounts setup
+```
+
+It looks for:
+
+- `~/.claude`, and every other `~/.claude…` folder you have used (one with a `sessions` or `projects` folder inside);
+- the folder in `CLAUDE_CONFIG_DIR`, if you set one;
+- `~/.codex`, or the folder in `CODEX_HOME`;
+- OpenCode's data folder;
+- every account you already added.
+
+It lists each one with its latest usage, when flow has seen it. Then it asks a few questions:
+
+1. For each account besides your main one: is it a work, organization or client account? Say yes and it is kept out. Say no and it joins the rotation.
+2. If any account joined the rotation: should this computer's default account stay your main one? (With nothing else in the rotation, there is no main.)
+3. For each account flow will use: should flow add a small recorder to its status line, so flow can see its limits?
+
+If a folder looks managed by an organization, setup says why and suggests keeping it out. It can't always tell, so it asks about every account.
+
+Before it changes anything, setup prints each change as the `flow` command that would make it, then asks once. Run it again any time; it starts from your current choices.
+
+### For scripts and agents
+
+Run `flow accounts setup --json` first to see the proposal, then `--yes` with flags, which answer the questions for you:
+
+```bash
+flow accounts setup --yes --rotation all --keep-out ~/.claude-work --statusline
+```
+
+- `--rotation all` puts every account in the rotation except your default, the ones you keep out now or kept out before, and any that look organization-managed. It says which it skipped and why. To use one of those anyway, name it: `--rotation ~/.claude-work`.
+- `--keep-out` names the accounts to keep out.
+- `--main` picks a different main account. Each runtime has only one main, so an account you had made main moves to rotation. Your default, if you never set its role, then counts as rotation too. The plan shows both before anything changes.
+- `--statusline` adds the usage recorder where it can.
+
+Without `--rotation`, `--yes` never puts an account in the rotation. Apart from the old main giving way to a new one, it never changes an account you did not name. The changes are still printed; `--dry-run` shows them without making them.
+
+## Keep an eye on it
+
+- `flow accounts` lists every account with its role, how much is held back, and how much room it has left.
+- `flow fleet` shows every account's usage next to every running session.
+
+While you have several accounts flow could use and only your default is in the rotation, `flow status`, `flow fleet` and `flow next` end with one reminder line. Work, client and kept-out accounts don't count. To turn it off, set `"fleet": { "nudge": false }` in your project's flow config. Outside a project there is no config to read, so the line stays until you run setup.
+
+## When something looks wrong
+
+**An account is missing.** Setup only finds folders in the places listed above. Add another one with `flow accounts add --path <folder>`, or with **Add account** in Settings, then run setup again.
+
+**A work account wasn't flagged.** Setup checks for two files Claude Code saves for organization-managed accounts. Not every work account has them. Answer yes when setup asks, set it to **Kept out** in the Flow tab, or use `--keep-out`.
+
+**Usage shows as "unknown".** Flow hasn't seen that account's limits yet. Add the status line recorder, or run `flow usage scan`.
+
+**A Codex folder can't be added.** Flow can add Claude Code accounts only. Setup lists the others so you know they're there.
+
+**You changed your mind.** Change the role in the Flow tab, run setup again, or change one account with `flow accounts set <id> --role kept-out`.
+
+**Setup says a file is locked.** Another flow command was writing it. Run setup again.

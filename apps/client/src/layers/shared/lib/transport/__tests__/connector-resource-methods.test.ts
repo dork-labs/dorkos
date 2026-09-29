@@ -65,12 +65,33 @@ describe('connector resource transport methods', () => {
 
     await setup().getSessionConnectorConnections('session/a');
     expect(lastCall()[0].endsWith('/connectors/sessions/session%2Fa/connections')).toBe(true);
+
+    await setup().getEveryAgentConnectorGrants();
+    expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/every-agent-grants');
+  });
+
+  it('turns one app on or off for one chat with a PUT on its exact encoded path', async () => {
+    stubFetch({ sessionId: 'session/a', agentId: 'agent-a', connections: [] });
+    await setup().setSessionConnectorAccess('session/a', 'connection/a', { on: false });
+
+    const [url, init] = lastCall();
+    expect(url).toBe(
+      'http://localhost:4242/api/connectors/sessions/session%2Fa/connections/connection%2Fa'
+    );
+    expect(init.method).toBe('PUT');
+    expect(init.body).toBe(JSON.stringify({ on: false }));
   });
 
   it('uses owner-only agent request routes and forwards the exact decision body', async () => {
     stubFetch({ requests: [] });
     await setup().getConnectorAgentRequests('pending');
     expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/agent-requests?state=pending');
+
+    stubFetch({ requests: [] });
+    await setup().getConnectorAgentRequests(undefined, 'session/a');
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/agent-requests?sessionId=session%2Fa'
+    );
 
     stubFetch({ requestId: 'request/a', status: 'denied' });
     await setup().resolveConnectorAgentRequest('request/a', { decision: 'denied' });

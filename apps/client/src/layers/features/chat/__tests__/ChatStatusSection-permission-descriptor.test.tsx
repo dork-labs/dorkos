@@ -29,6 +29,7 @@ const EXOTIC_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsAccounts: false,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -121,7 +122,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   return {
     ...actual,
     useQuery: vi.fn(() => ({ data: undefined })),
-    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn(), getQueryData: vi.fn() })),
   };
 });
 

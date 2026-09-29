@@ -41,8 +41,9 @@ export function UnregisterAgentDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Unregister {agentName}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This will remove the agent from the mesh registry. The agent can be re-discovered by
-            scanning its project directory.
+            It leaves your team and every channel it was in, and any schedules it has are paused.
+            Its messages stay. Your own project files are not touched. You can add the folder as an
+            agent again later, but you may need to add it back to its channels.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

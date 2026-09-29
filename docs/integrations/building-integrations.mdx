@@ -20,11 +20,11 @@ DorkOS uses a hexagonal (ports & adapters) architecture centered on the **Transp
                  ┌───────────────────────┐
    Browser  ───▶ │                       │ ───▶  HttpTransport ───▶ Express (HTTP + SSE)
                  │   Transport interface │
-   Obsidian ───▶ │                       │ ───▶  DirectTransport ─▶ in-process services
+   Desktop  ───▶ │                       │
                  └───────────────────────┘
 ```
 
-Both adapters implement the same interface, so every hook and component that consumes a Transport works unmodified against either one.
+The browser, phone web app, and desktop renderer use HttpTransport. Tests can inject a mock through the same interface.
 
 ## The Transport Interface
 
@@ -125,30 +125,14 @@ interface Transport {
 
 The full interface also covers Tasks (`listTasks`, `createTask`, `triggerTask`, `listTaskRuns`, and friends), Relay, Mesh, and agent identity operations. See `packages/shared/src/transport.ts` for the complete definition.
 
-## Built-in Implementations
+## Built-in HTTP Transport
 
-<Tabs items={["HttpTransport", "DirectTransport"]}>
-
-<Tab value="HttpTransport">
-**HttpTransport** is used by the standalone web client and communicates with the Express server over HTTP and SSE:
+**HttpTransport** is used by the browser, phone web app, and desktop renderer. It communicates with the Express server over HTTP and WebSocket:
 
 - Standard `fetch()` for CRUD operations
 - `postMessage()` triggers a turn (`202` with the canonical session id)
-- `subscribeSession()` consumes the durable SSE stream `GET /api/sessions/:id/events`; `subscribeSessionList()` consumes `GET /api/events`
+- `subscribeSession()` consumes the durable WebSocket stream `GET /api/sessions/:id/events`; `subscribeSessionList()` consumes `GET /api/events`. The same routes also support SSE for external clients.
 - Includes `X-Client-Id` header for session write coordination
-
-</Tab>
-
-<Tab value="DirectTransport">
-**DirectTransport** is used by the Obsidian plugin and calls service instances directly in the same process:
-
-- No HTTP, no port binding, no network serialization
-- Iterates the runtime's snapshot and event generators in-process
-- Lower latency, ideal for embedded contexts
-
-</Tab>
-
-</Tabs>
 
 ## Building a Custom Client
 

@@ -43,10 +43,6 @@ function humanizeMinutes(minutes: number): string {
 
 /**
  * The welcome-back card.
- *
- * Renders nothing at all when the server does not report the setting — an older
- * server, or Obsidian, where the write would save nothing. A switch that ticks
- * and forgets is worse than no switch.
  */
 export function WelcomeBackCard() {
   const {

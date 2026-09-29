@@ -276,8 +276,8 @@ describe('a room gathers a burst into one turn', () => {
       expect(input).not.toContain('The message you are answering is outside this block.');
       // Each one is attributed and clock-stamped, so a burst from two people is
       // not one voice.
-      expect(input).toMatch(/\(1 of 2 · aaaa1111\) \[\d\d:\d\d\] You \(person/);
-      expect(input).toMatch(/\(2 of 2 · aaaa1111\) \[\d\d:\d\d\] You \(person/);
+      expect(input).toMatch(/\(1 of 2 · aaaa1111\) \[\d\d:\d\d\] the operator \(person/);
+      expect(input).toMatch(/\(2 of 2 · aaaa1111\) \[\d\d:\d\d\] the operator \(person/);
     });
 
     it('keeps a gathered question the ambient cap would have dropped', async () => {
@@ -1066,6 +1066,53 @@ describe('one agent, several waiting rooms, one clock reading', () => {
       expect(batches, 'both waiting rooms came back in one sweep, not two').toEqual([
         ['second', 'first'],
       ]);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('re-arms waiting rooms from a fresh message’s own reading, so they share its sweep (DOR-2104)', async () => {
+    // A raised `rooms.maxConcurrentTurnsPerAgent` frees a slot with no turn
+    // ending, and the dispatcher re-arms the waits just before deciding the
+    // fresh message that noticed. **Seeded defect: let `resumeAgent` read its
+    // own `Date.now()` instead of the fresh message's `arrivedAt`.** On a clock
+    // that has moved on by even a millisecond the wait is due AFTER the fresh
+    // message, the sweep hands the fresh one back alone, and it takes the slot
+    // ahead of a message that had been waiting — first come, second served.
+    const real = Date.now;
+    let tick = real.call(Date);
+    vi.spyOn(Date, 'now').mockImplementation(() => (tick += 1));
+    try {
+      const batches: string[][] = [];
+      const collector = new RoomCollector({
+        window: () => ({ debounceMs: 0, maxEntries: 20 }),
+        run: (batch) => batches.push(batch.map((collection) => collection.room.id)),
+      });
+
+      park(collector, 'waiting', tick);
+      // The fresh message's one reading, taken before anything is re-armed —
+      // the order `collectOne` works in.
+      const arrivedAt = Date.now();
+      collector.resumeAgent('/agents/ana', arrivedAt);
+      collector.collect({
+        room: room('fresh'),
+        authorId: 'ana',
+        agentPath: '/agents/ana',
+        displayName: 'Ana',
+        entry: entry('fresh-1'),
+        depth: 0,
+        engaged: null,
+        reason: 'mention',
+        duringTurnHere: false,
+        park: false,
+        arrivedAt,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      expect(
+        batches,
+        'the waiting room came back in the fresh message’s sweep, ahead of it'
+      ).toEqual([['waiting', 'fresh']]);
     } finally {
       vi.restoreAllMocks();
     }

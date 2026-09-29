@@ -173,7 +173,6 @@ describe('connector runtime MCP listener', () => {
       snapshotIdentity: async (agentPath) => ({
         agentPath,
         displayName: 'Agent A',
-        tierCeiling: 'observe',
         createdAt: '2026-09-08T00:00:00.000Z',
       }),
       identityWasRevoked: async () => false,

@@ -36,6 +36,7 @@
  *
  * @module shared/feedback
  */
+import { configuredRuntimes } from './config-schema.js';
 import { defuseSystemTags } from './untrusted-text.js';
 
 /** The DorkOS repository on GitHub, in `owner/name` form. */
@@ -177,19 +178,6 @@ export interface FeedbackReportInput {
   title?: string;
   /** Optional written body. See {@link FeedbackReport.body}. */
   body?: string;
-}
-
-/**
- * The runtimes configured on this host, read through one dotted-path reader.
- *
- * claude-code is always available; codex and opencode are included unless they
- * are explicitly turned off, since both default to enabled.
- */
-function configuredRuntimes(read: (key: string) => unknown): string[] {
-  const runtimes = ['claude-code'];
-  if (read('runtimes.codex.enabled') !== false) runtimes.push('codex');
-  if (read('runtimes.opencode.enabled') !== false) runtimes.push('opencode');
-  return runtimes;
 }
 
 /**

@@ -53,6 +53,9 @@ const ADAPTER_ERROR_STATUS: Record<string, number> = {
   MULTI_INSTANCE_DENIED: 400,
   NOT_FOUND: 404,
   REMOVE_BUILTIN_DENIED: 400,
+  // A config its schema refuses — a webhook aimed at a DorkOS address among
+  // them (DOR-2432). The caller's mistake, so a 400 that says which rule.
+  INVALID_CONFIG: 400,
 };
 
 /**

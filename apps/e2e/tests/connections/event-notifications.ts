@@ -65,9 +65,10 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await harness.gotoConnections(page);
 
       const accountTrigger = new ConnectionsPage(page)
-        .account('Gmail (events work)')
-        .getByRole('button');
-      const detail = await openAccount(page, 'Gmail (events work)');
+        .yourApp('Gmail', 'events work')
+        .getByRole('button')
+        .first();
+      const detail = await openAccount(page, 'events work');
       await detail.getByLabel('Public DorkOS address').fill(PUBLIC_ORIGIN);
       await detail.getByLabel('Signing secret').fill(WEBHOOK_SECRET);
       await detail.getByRole('button', { name: 'Save setup' }).click();
@@ -105,13 +106,13 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         .getByTestId('connection-notification-list')
         .getByRole('listitem')
         .filter({ hasText: 'New message' });
-      await expect(pendingRow.getByText('pending', { exact: true })).toBeVisible();
-      await expect(pendingRow.getByText('active', { exact: true })).toHaveCount(0);
+      await expect(pendingRow).toHaveAttribute('data-state', 'pending');
+      await expect(
+        pendingRow.getByText('Setting up. DorkOS keeps trying on its own.', { exact: true })
+      ).toBeVisible();
 
       await setFixtureMode(request, harness.apiUrl, 'ready');
-      await expect(pendingRow.getByText('active', { exact: true })).toBeVisible({
-        timeout: 45_000,
-      });
+      await expect(pendingRow).toHaveAttribute('data-state', 'active', { timeout: 45_000 });
       const ownerProjection = await request.get(
         `${harness.apiUrl}/api/connectors/connections/${connectionId}/events/subscriptions`
       );
@@ -138,7 +139,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         .getByTestId('connection-notification-list')
         .getByRole('listitem')
         .filter({ hasText: 'Message with unknown timing' });
-      await expect(unknownRow.getByText('active', { exact: true })).toBeVisible();
+      await expect(unknownRow).toHaveAttribute('data-state', 'active');
 
       let unsupportedPosts = 0;
       page.on('request', (candidate) => {
@@ -173,11 +174,11 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await expect(
         detail
           .getByRole('alert')
-          .filter({ hasText: 'couldn’t confirm whether that notification was removed' })
+          .filter({ hasText: 'Couldn’t confirm that notification was removed. Check the list.' })
       ).toBeVisible();
       expect(revokeReachedServer).toBe(true);
-      await expect(pendingRow.getByText('revoked', { exact: true })).toBeVisible();
-      await expect(pendingRow.getByRole('button', { name: 'Remove New message' })).toHaveCount(0);
+      // The removal landed even though its answer was lost, so the row is gone.
+      await expect(pendingRow).toHaveCount(0);
 
       await attachNotificationProof(page, detail, testInfo, 'account-notifications');
       await page.keyboard.press('Escape');
@@ -196,7 +197,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await configureSource(request, harness.apiUrl, accountB);
       await harness.gotoConnections(page);
 
-      let detail = await openAccount(page, 'Gmail (events A)');
+      let detail = await openAccount(page, 'events A');
       await detail.getByLabel('Signing secret').fill(`${WEBHOOK_SECRET}_unsaved`);
       await choose(page, detail, 'Account activity', 'New message');
       await choose(page, detail, 'Agent', 'E2E Test Agent');
@@ -225,13 +226,13 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await detail.getByRole('button', { name: 'Set up notification' }).click();
       await processed;
       await page.keyboard.press('Escape');
-      detail = await openAccount(page, 'Gmail (events B)');
+      detail = await openAccount(page, 'events B');
       await expect(detail.getByLabel('Signing secret')).toHaveValue('');
       await expect(detail.getByRole('combobox', { name: 'Account activity' })).toContainText(
         'Choose activity'
       );
       releaseResponse();
-      await expect(detail.getByText(/New message is active/i)).toHaveCount(0);
+      await expect(detail.getByText(/New message is on/i)).toHaveCount(0);
       await expect(
         detail.getByTestId('connection-notification-list').getByText('New message', { exact: true })
       ).toHaveCount(0);
@@ -253,8 +254,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
           .getByTestId('connection-notification-list')
           .getByRole('listitem')
           .filter({ hasText: 'New message' })
-          .getByText('active', { exact: true })
-      ).toBeVisible();
+      ).toHaveAttribute('data-state', 'active');
     });
 
     test('CN-04/CN-06: holds a real agent MCP request for one exact owner grant or denial', async ({
@@ -274,7 +274,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       });
       const grantRequest = await waitForPendingAgentRequest(request, harness.apiUrl, agent.agentId);
       await harness.gotoConnections(page);
-      const grantRequestTrigger = page.getByTestId(`agent-request-${grantRequest.requestId}`);
+      const grantRequestTrigger = page.getByTestId(`needs-you-request-${grantRequest.requestId}`);
       await grantRequestTrigger.click();
 
       const dialog = page.getByRole('dialog', { name: 'Review agent access' });
@@ -317,7 +317,8 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await expect(dialog.getByTestId('agent-request-outcome')).toContainText('Granted');
       await dialog.getByRole('button', { name: 'Close', exact: true }).last().click();
       await expect(dialog).toBeHidden();
-      await expect(page.getByRole('heading', { name: 'Agent requests' })).toBeFocused();
+      // The decided request left the "Needs you" strip, so focus lands on the page heading.
+      await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeFocused();
 
       const beforeDenial = await listSubscriptions(request, harness.apiUrl, connectionId);
       const deniedAgent = await seedDeniedAgent(request, harness.apiUrl);
@@ -332,7 +333,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         grantRequest.requestId
       );
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.getByTestId(`agent-request-${denyRequest.requestId}`).click();
+      await page.getByTestId(`needs-you-request-${denyRequest.requestId}`).click();
       await expect(dialog).toBeVisible();
       await dialog.getByRole('button', { name: 'Deny' }).click();
 
@@ -365,7 +366,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await configureSource(request, harness.apiUrl, connectionId);
       await reconcileConnection(request, harness.apiUrl, connectionId);
       await harness.gotoConnections(page);
-      const detail = await openAccount(page, 'Gmail (defaults proof)');
+      const detail = await openAccount(page, 'defaults proof');
       await choose(page, detail, 'Account activity', 'New Gmail message');
       await expect(detail.getByRole('spinbutton', { name: 'Interval' })).toHaveValue('1.5');
       await expect(detail.getByRole('textbox', { name: 'Labels' })).toHaveValue('INBOX');
@@ -378,7 +379,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await detail.getByRole('textbox', { name: 'User' }).fill('owner@example.test');
       await choose(page, detail, 'Agent', 'E2E Test Agent');
       await expect(detail.getByRole('textbox', { name: 'User' })).toHaveValue('owner@example.test');
-      await attachGmailFilterProof(page, detail, testInfo, 'connection-detail');
+      await attachGmailFilterProof(page, detail, testInfo, 'app-panel');
       const submit = page.waitForRequest(
         (candidate) =>
           candidate.method() === 'POST' &&
@@ -395,7 +396,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
         .getByTestId('connection-notification-list')
         .getByRole('listitem')
         .filter({ hasText: 'New Gmail message' });
-      await expect(row.getByText('active', { exact: true })).toBeVisible();
+      await expect(row).toHaveAttribute('data-state', 'active');
       const ownerReadback = await request.get(
         `${harness.apiUrl}/api/connectors/connections/${connectionId}/events/subscriptions`
       );
@@ -416,7 +417,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       });
       const pending = await waitForPendingAgentRequest(request, harness.apiUrl, agent.agentId);
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.getByTestId(`agent-request-${pending.requestId}`).click();
+      await page.getByTestId(`needs-you-request-${pending.requestId}`).click();
       const dialog = page.getByRole('dialog', { name: 'Review agent access' });
       const scopes = dialog.getByTestId('agent-request-event-scopes');
       await choose(page, scopes, 'Account activity', 'New Gmail message');
@@ -476,12 +477,20 @@ async function choose(
   await page.getByRole('option', { name: option, exact: true }).click();
 }
 
-async function openAccount(page: Page, name: string) {
+/**
+ * Open one Gmail account's side panel at its new-event notifications, which
+ * sit under More (design record `connections-one-list` §5).
+ *
+ * @param account - The account's name, as its row shows it.
+ */
+async function openAccount(page: Page, account: string) {
   const connections = new ConnectionsPage(page);
-  await connections.account(name).getByRole('button').click();
-  const detail = page.getByTestId('connection-detail');
-  await expect(detail.getByRole('heading', { name, exact: true })).toBeVisible();
-  return detail;
+  const panel = await connections.openPanel('Gmail', account);
+  await expect(panel.getByText(account, { exact: true })).toBeVisible();
+  const more = await connections.openMore();
+  await more.getByRole('button', { name: 'When a new email arrives…' }).click();
+  await expect(panel.getByRole('heading', { name: 'Tell an agent' })).toBeVisible();
+  return panel;
 }
 
 async function seedAgent(request: APIRequestContext, apiUrl: string): Promise<SeededAgent> {
@@ -706,7 +715,7 @@ async function attachGmailFilterProof(
   page: Page,
   surface: Locator,
   testInfo: TestInfo,
-  testId: 'connection-detail' | 'agent-request-dialog'
+  testId: 'app-panel' | 'agent-request-dialog'
 ): Promise<void> {
   const interval = surface.getByRole('spinbutton', { name: 'Interval' });
   const labels = surface.getByRole('textbox', { name: 'Labels' });
@@ -767,7 +776,7 @@ async function attachNotificationProof(
       await page.emulateMedia({ colorScheme });
       await settleFiniteAnimations(detail);
       await expectSurfaceWithinViewport(page, detail);
-      const accessibility = await runAxe(page, '[data-testid="connection-detail"]');
+      const accessibility = await runAxe(page, '[data-testid="app-panel"]');
       expect(
         accessibility.violations.map(describeViolation),
         `the ${viewport.name} ${colorScheme} notification sheet should have no automated accessibility violations`

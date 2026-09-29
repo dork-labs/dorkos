@@ -5,6 +5,7 @@ import { cn } from '@/layers/shared/lib';
 const KIND_LABEL: Record<ApprovalSubjectValue['kind'], string> = {
   agent: 'Agent',
   task: 'Scheduled task',
+  room: 'Room',
 };
 
 export interface ApprovalSubjectProps {

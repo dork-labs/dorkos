@@ -8,10 +8,20 @@
  * as a followable link — and that each stripped link is logged.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  truncate,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { PACKAGE_SIZE_LIMITS, PackageTooLargeError } from '@dorkos/marketplace/package-size';
 import { stagePackageContents } from '../stage-package.js';
 
 /** Construct a logger whose methods are spies. */
@@ -152,5 +162,129 @@ describe('stagePackageContents', () => {
     await stagePackageContents(source, dest, buildLogger());
 
     expect(await exists(path.join(dest, 'templates', '.npmrc'))).toBe(true);
+  });
+
+  // Purpose (DOR-2245): paths DorkOS keeps for the person or the installer never
+  // reach the staged tree, so no package can ship over a person's data or the
+  // installer's records, whatever validation said.
+  it('strips every reserved path, logs each once, and keeps near-misses', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+
+    const reserved = [
+      '.dork/data/seed.json',
+      '.dork/secrets.json',
+      '.dork/install-metadata.json',
+      '.dork/installed-files.json',
+      '.dork/uninstalled-agent.json',
+      'skills/x/SKILL.md.dork-old',
+      'config/a.json.dork-new.2',
+    ];
+    const kept = [
+      '.dork/database.json',
+      'x.dork-older',
+      'skills/x/SKILL.md',
+      '.dork/manifest.json',
+    ];
+    for (const rel of [...reserved, ...kept]) {
+      await mkdir(path.dirname(path.join(src, rel)), { recursive: true });
+      await writeFile(path.join(src, rel), rel, 'utf-8');
+    }
+    const logger = buildLogger();
+
+    await stagePackageContents(src, dest, logger);
+
+    for (const rel of reserved) expect(await exists(path.join(dest, rel))).toBe(false);
+    expect(await exists(path.join(dest, '.dork', 'data'))).toBe(false);
+    for (const rel of kept) expect(await readFile(path.join(dest, rel), 'utf-8')).toBe(rel);
+    const warned = vi
+      .mocked(logger.warn)
+      .mock.calls.map((c) => String(c[0]))
+      .filter((m) => m.includes('reserved'));
+    // `.dork/data` is dropped as one subtree, so six files plus one directory.
+    expect(warned).toHaveLength(reserved.length);
+  });
+
+  // Purpose (code review 2): APFS and NTFS ignore case, so `.dork/Secrets.json`
+  // IS the person's secrets file there; a case variant must be stripped too.
+  it('strips case variants of reserved paths', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+    for (const rel of ['.dork/Secrets.json', '.dork/Data/seed.json', 'a.md.DORK-OLD']) {
+      await mkdir(path.dirname(path.join(src, rel)), { recursive: true });
+      await writeFile(path.join(src, rel), rel, 'utf-8');
+    }
+
+    await stagePackageContents(src, dest, buildLogger());
+
+    expect(await exists(path.join(dest, '.dork', 'Secrets.json'))).toBe(false);
+    expect(await exists(path.join(dest, '.dork', 'Data'))).toBe(false);
+    expect(await exists(path.join(dest, 'a.md.DORK-OLD'))).toBe(false);
+  });
+
+  it('drops every .git, folder or file, at any depth, and logs it (DOR-2326)', async () => {
+    // Purpose: git obeys the settings and hooks in a .git; a package is its
+    // files, so a local agent that is its author's own repository installs
+    // without them, and nothing else is lost.
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+    await mkdir(path.join(src, '.git', 'hooks'), { recursive: true });
+    await writeFile(path.join(src, '.git', 'config'), '[core]\n\tfsmonitor = x\n');
+    await mkdir(path.join(src, 'vendor', 'lib'), { recursive: true });
+    await writeFile(path.join(src, 'vendor', 'lib', '.git'), 'gitdir: ../../../x\n');
+    await writeFile(path.join(src, 'vendor', 'lib', 'index.js'), 'ok');
+    await writeFile(path.join(src, '.gitignore'), 'node_modules\n');
+    const logger = buildLogger();
+
+    await stagePackageContents(src, dest, logger);
+
+    expect(await exists(path.join(dest, '.git'))).toBe(false);
+    expect(await exists(path.join(dest, 'vendor', 'lib', '.git'))).toBe(false);
+    expect(await readFile(path.join(dest, 'vendor', 'lib', 'index.js'), 'utf-8')).toBe('ok');
+    expect(await exists(path.join(dest, '.gitignore'))).toBe(true);
+    const warned = vi.mocked(logger.warn).mock.calls.map((c) => String(c[0]));
+    expect(warned.some((m) => m.includes('Stripped .git '))).toBe(true);
+    expect(warned.some((m) => m.includes('Stripped vendor/lib/.git '))).toBe(true);
+  });
+
+  it('drops .GIT in any case, the same folder on macOS and Windows', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+    await mkdir(path.join(src, 'sub', '.GIT'), { recursive: true });
+    await writeFile(path.join(src, 'sub', '.GIT', 'config'), 'x');
+    await writeFile(path.join(src, 'sub', 'keep.txt'), 'k');
+    await stagePackageContents(src, dest, buildLogger());
+    expect(await exists(path.join(dest, 'sub', '.GIT'))).toBe(false);
+    expect(await exists(path.join(dest, 'sub', 'keep.txt'))).toBe(true);
+  });
+});
+
+describe('stagePackageContents size limits (DOR-2321)', () => {
+  // Purpose: staging is the backstop for paths that skip validation. An
+  // oversized package is refused before a single file is copied.
+  it('refuses a package over a size limit without copying anything', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    try {
+      await writeFile(path.join(src, 'README.md'), 'hello');
+      await writeFile(path.join(src, 'big.bin'), '');
+      await truncate(path.join(src, 'big.bin'), PACKAGE_SIZE_LIMITS.maxFileBytes + 1);
+
+      await expect(stagePackageContents(src, dest, buildLogger())).rejects.toBeInstanceOf(
+        PackageTooLargeError
+      );
+      expect(await exists(path.join(dest, 'README.md'))).toBe(false);
+    } finally {
+      await rm(src, { recursive: true, force: true });
+      await rm(dest, { recursive: true, force: true });
+    }
   });
 });

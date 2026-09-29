@@ -1,8 +1,10 @@
+import { createHash, createHmac } from 'node:crypto';
 import { describe, it, expect, vi } from 'vitest';
 import {
   DEVICE_GRANT_TYPE,
   INSTANCE_CLIENT_ID,
   buildInstanceDescriptor,
+  linkProofForKey,
   executeManagedConnectorOperation,
   pollForToken,
   requestManagedConnectorExecutionReceipt,
@@ -117,6 +119,60 @@ describe('requestDeviceCode', () => {
     );
     expect(scopeWithout).toEqual(DESCRIPTOR);
     expect('telemetryInstanceId' in scopeWithout).toBe(false);
+  });
+
+  it('serializes previousLinkProof only when present, leaving the scope byte-identical otherwise', async () => {
+    const okResponse = () =>
+      new Response(
+        JSON.stringify({
+          device_code: 'dev-123',
+          user_code: 'ABCD1234',
+          verification_uri: `${BASE}/activate`,
+          verification_uri_complete: `${BASE}/activate?user_code=ABCD1234`,
+          expires_in: 1800,
+          interval: 5,
+        }),
+        { status: 200 }
+      );
+    const rawScope = (fetchImpl: ReturnType<typeof vi.fn>) =>
+      JSON.parse((fetchImpl.mock.calls[0][1] as RequestInit).body as string).scope as string;
+
+    const withProof = vi.fn(okResponse);
+    await requestDeviceCode({
+      baseUrl: BASE,
+      descriptor: { ...DESCRIPTOR, previousLinkProof: 'proof-a' },
+      fetchImpl: withProof,
+    });
+    expect(JSON.parse(rawScope(withProof)).previousLinkProof).toBe('proof-a');
+
+    // No proof: the exact bytes a first link has always sent.
+    const withoutProof = vi.fn(okResponse);
+    await requestDeviceCode({ baseUrl: BASE, descriptor: DESCRIPTOR, fetchImpl: withoutProof });
+    expect(rawScope(withoutProof)).toBe(
+      '{"name":"kai-mbp","platform":"darwin","dorkosVersion":"0.4.2"}'
+    );
+  });
+});
+
+describe('linkProofForKey', () => {
+  it('is HMAC-SHA256 keyed by the UTF-8 key over "dorkos-relink-v1", base64url with no padding', () => {
+    // Formula: base64url_nopad(HMAC-SHA256(key = <raw instance key>, message = "dorkos-relink-v1")).
+    // Recomputed here AND pinned as a literal below, so a change to either the
+    // formula or the implementation fails.
+    const key = 'dork_inst_example';
+    expect(linkProofForKey(key)).toBe(
+      createHmac('sha256', key).update('dorkos-relink-v1').digest('base64url')
+    );
+    // Cross-checked with: printf 'dorkos-relink-v1' | openssl dgst -sha256 -hmac 'dork_inst_example' -binary | base64 (then + / -> - _, = dropped).
+    expect(linkProofForKey(key)).toBe('N90kR3TE_GnYWhiySlFCBbDkvflsBdA5CrAVDzjrovw');
+    expect(linkProofForKey('dork_inst_example')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+
+  it('is not the plain SHA-256 of the key, so a stored key hash cannot stand in for it', () => {
+    const key = 'dork_inst_example';
+    const plainHash = createHash('sha256').update(key, 'utf8').digest('base64url');
+    expect(linkProofForKey(key)).not.toBe(plainHash);
+    expect(linkProofForKey(key)).not.toContain('dork_inst');
   });
 });
 

@@ -26,7 +26,6 @@ const resolveAgentIdentityFromHeaders = vi.mocked(resolveAgentIdentityImport);
 const ALPHA: AgentIdentity = {
   agentPath: '/agents/alpha',
   displayName: 'Alpha',
-  tierCeiling: 'observe',
   createdAt: '2026-08-04T00:00:00.000Z',
 };
 

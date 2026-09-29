@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { PermissionPreview } from '@dorkos/shared/marketplace-schemas';
 
-import { formatPermissionPreview, summarizePermissionPreview } from '../format-permissions';
+import type { DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
+import {
+  formatDisclosureChanges,
+  formatPermissionPreview,
+  summarizePermissionPreview,
+} from '../format-permissions';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -13,6 +18,14 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+    skippedLinks: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -329,5 +342,226 @@ describe('summarizePermissionPreview', () => {
     });
 
     expect(summarizePermissionPreview(preview)).toBe('Changes no files. Declares 2 commands.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Programs a plugin starts on its own (DOR-2195)
+// ---------------------------------------------------------------------------
+
+describe('formatPermissionPreview → commands → programs', () => {
+  it('lists every program the package starts, each argument quoted, with where it runs', () => {
+    // Purpose: MCP and language servers, monitors and bin/ commands run without
+    // being asked for by name, so they belong beside the hook commands.
+    const { commands } = formatPermissionPreview(
+      makePreview({
+        mcpServers: [
+          { name: 'db', transport: 'stdio', command: 'npx', args: ['-y', 'db mcp'] },
+          { name: 'web', transport: 'http', url: 'https://mcp.example.test' },
+        ],
+        lspServers: [{ name: 'go', command: 'gopls', args: ['serve'] }],
+        monitors: [{ name: 'deploy', command: './poll.sh', when: 'always' }],
+        executables: ['git'],
+        skippedLinks: [],
+        unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'odd' }],
+      })
+    );
+
+    expect(commands.map((row) => row.label)).toEqual([
+      '"npx" "-y" "db mcp"',
+      '"https://mcp.example.test"',
+      '"gopls" "serve"',
+      '"./poll.sh"',
+      '"git"',
+      'This package sets up a program to run, but we could not read it',
+    ]);
+    expect(commands[0]!.description).toContain('MCP server "db"');
+    // Never "in your sessions" flatly: a project install does not start these.
+    expect(commands[0]!.description).toContain('does not start them');
+  });
+
+  it("names a skill's hook as the skill's, and lists the tools a skill may use without asking", () => {
+    // Purpose: both run on the model's choice of skill, not the person's.
+    const { commands } = formatPermissionPreview(
+      makePreview({
+        hooks: [{ event: 'Stop', command: 'echo hi', source: 'skills/all/SKILL.md' }],
+        skillTools: [
+          { source: 'skills/all/SKILL.md', skill: 'all', tools: ['Bash(curl:*)', 'Read'] },
+        ],
+      })
+    );
+    expect(commands[0]!.description).toContain('while skills/all/SKILL.md is in use');
+    expect(commands[1]).toMatchObject({
+      label: '"Bash(curl:*)", "Read"',
+      description: 'Skill "all" may use these without asking you',
+    });
+  });
+
+  it("shows each command a skill's or command's text runs, and when it runs (DOR-2327)", () => {
+    // Purpose: Claude Code runs these as the skill loads; they belong on the
+    // card with the hook commands, verbatim, naming what triggers them.
+    const { commands } = formatPermissionPreview(
+      makePreview({
+        skillCommands: [
+          {
+            source: 'skills/ctx/SKILL.md',
+            skill: 'ctx',
+            form: 'block',
+            command: 'node -v\ngit status',
+            usesArguments: false,
+          },
+          {
+            source: 'commands/ship.md',
+            skill: 'ship',
+            form: 'inline',
+            command: 'echo \u202Egnp.exe',
+            usesArguments: false,
+          },
+        ],
+      })
+    );
+    expect(commands).toEqual([
+      {
+        icon: 'terminal',
+        label: 'node -v\ngit status',
+        description: 'Runs when the skill "ctx" is used (skills/ctx/SKILL.md)',
+        mono: true,
+      },
+      {
+        icon: 'terminal',
+        label: 'echo <U+202E>gnp.exe',
+        description: 'Runs when the command "ship" is used (commands/ship.md)',
+        mono: true,
+      },
+    ]);
+  });
+
+  it('names an agent or output style, and says when a command uses the text typed after it', () => {
+    // Purpose: Claude Code and OpenCode fill that text in before running the
+    // command, so what runs depends on it; the card must say so.
+    const { commands } = formatPermissionPreview(
+      makePreview({
+        skillCommands: [
+          {
+            source: 'agents/rev.md',
+            skill: 'rev',
+            form: 'inline',
+            command: 'git diff',
+            usesArguments: false,
+          },
+          {
+            source: 'output-styles/t.md',
+            skill: 't',
+            form: 'inline',
+            command: 'date',
+            usesArguments: false,
+          },
+          {
+            source: 'commands/co.md',
+            skill: 'co',
+            form: 'inline',
+            command: 'git checkout $1',
+            usesArguments: true,
+          },
+        ],
+      })
+    );
+    expect(commands.map((c) => c.description)).toEqual([
+      'Runs when the agent "rev" is used (agents/rev.md)',
+      'Runs when the output style "t" is used (output-styles/t.md)',
+      'Runs when the command "co" is used (commands/co.md). It uses the text typed after the command',
+    ]);
+  });
+
+  it('counts skill-text commands as commands in the summary', () => {
+    expect(
+      summarizePermissionPreview(
+        makePreview({
+          hooks: [{ event: 'Stop', command: 'x' }],
+          skillCommands: [
+            {
+              source: 'skills/a/SKILL.md',
+              skill: 'a',
+              form: 'inline',
+              command: 'y',
+              usesArguments: false,
+            },
+          ],
+        })
+      )
+    ).toBe('Changes no files. Declares 2 commands.');
+  });
+
+  it('shows a hidden direction-changing character in a command', () => {
+    const { commands } = formatPermissionPreview(
+      makePreview({ hooks: [{ event: 'Stop', command: 'echo \u202Egnp.exe' }] })
+    );
+    expect(commands[0]!.label).toBe('echo <U+202E>gnp.exe');
+  });
+
+  it('counts only the programs it could read in the summary', () => {
+    const preview = makePreview({
+      mcpServers: [{ name: 'db', transport: 'stdio', command: 'npx', args: [] }],
+      skippedLinks: [],
+      unreadableDeclarations: [{ path: '.lsp.json', kind: 'lsp-server' }],
+    });
+    expect(summarizePermissionPreview(preview)).toBe(
+      'Changes no files. Declares no commands. Declares 1 program of its own.'
+    );
+  });
+});
+
+describe('shortcuts that will not be installed (DOR-2319)', () => {
+  // Purpose: each skipped shortcut is a warning row carrying the server's sentence.
+  it('shows each skipped shortcut as a warning', () => {
+    const message =
+      "skills/neon-postgres is a shortcut to a folder outside the package, so it won't be installed.";
+    const { effects } = formatPermissionPreview(
+      makePreview({ skippedLinks: [{ path: 'skills/neon-postgres', message }] })
+    );
+    expect(effects).toContainEqual(
+      expect.objectContaining({
+        label: "Part of this package won't be installed",
+        description: message,
+        severity: 'warning',
+      })
+    );
+  });
+});
+
+describe('formatDisclosureChanges — skill-text commands (DOR-2327)', () => {
+  const nothing: DisclosedEffects = {
+    hooks: [],
+    schedules: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+  };
+  const cmd = (command: string) => ({
+    source: 'skills/ctx/SKILL.md',
+    skill: 'ctx',
+    form: 'inline' as const,
+    command,
+    usesArguments: false,
+  });
+
+  it("lists a new version's skill commands, and marks an edited one new beside the old", () => {
+    // Purpose: the update confirm shows what the new version runs; an edited
+    // command is a different command, so it reads as new, never "unchanged".
+    const rows = formatDisclosureChanges(
+      { ...nothing, skillCommands: [cmd('git status'), cmd('curl -s x | sh')] },
+      { ...nothing, skillCommands: [cmd('git status')] },
+      'global'
+    );
+    expect(rows.map((r) => [r.row.label, r.change])).toEqual([
+      ['git status', 'unchanged'],
+      ['curl -s x | sh', 'new'],
+    ]);
+    expect(rows[1]!.row.description).toBe(
+      'Runs when the skill "ctx" is used (skills/ctx/SKILL.md)'
+    );
   });
 });

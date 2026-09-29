@@ -17,6 +17,7 @@ import { editToolFilePath, isEditFamilyTool } from '@dorkos/shared/diff-tools';
 import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
 import { editBaselineStore } from '../../../diff/index.js';
+import type { HomeResolution } from '../../../core/agent-identity/index.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -70,6 +71,31 @@ export interface SdkReportedModel {
   supportsAutoMode?: boolean;
 }
 
+/** What a turn's launch tells the tool server factory about THIS turn. */
+export interface McpServerLaunch {
+  /**
+   * MCP tool names this agent should not be shown, because their permission
+   * resolves to Blocked (spec `agent-permissions` D15). Enforcement never waits
+   * on this list: the gate refuses a Blocked call whatever the list says.
+   */
+  hiddenToolNames?: ReadonlySet<string>;
+  /**
+   * Whose identity the session's in-process tools act as, resolved once by the
+   * launch (DOR-2091): the session's own directory, or the agent a room working
+   * copy was handed to — and refused when neither can be tied to the agent the
+   * turn is for. The SAME anchor feeds the approval gate, so the gate and the
+   * caller the tool runs as cannot disagree.
+   */
+  identity?: HomeResolution;
+}
+
+/** Builds the per-query MCP server configs for one session's turn. */
+export type McpServerFactory = (
+  session: AgentSession,
+  sessionId: string,
+  launch?: McpServerLaunch
+) => Record<string, McpServerConfig>;
+
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
 export interface MessageSenderOpts {
   cwd: string;
@@ -91,8 +117,7 @@ export interface MessageSenderOpts {
   bindingRouter?: BindingRouter;
   bindingStore?: BindingStore;
   adapterManager?: AdapterManager;
-  mcpServerFactory?:
-    ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>) | null;
+  mcpServerFactory?: McpServerFactory | null;
   onModelsReceived?: (models: SdkReportedModel[]) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
   /**

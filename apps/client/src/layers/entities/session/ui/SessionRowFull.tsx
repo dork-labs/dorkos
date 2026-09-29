@@ -3,7 +3,13 @@ import { motion, type TargetAndTransition, type Transition } from 'motion/react'
 import { ChevronDown, Pencil, Zap, Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { Tooltip, TooltipContent, TooltipTrigger, TRUST_TONE_TEXT } from '@/layers/shared/ui';
+import {
+  STATUS_TONE_SURFACE,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TRUST_TONE_TEXT,
+} from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import {
   useSessionBorderState,
@@ -11,6 +17,8 @@ import {
 } from '../model/status/use-session-border-state';
 import { useInlineRename } from '../model/rename/use-inline-rename';
 import { useSessionPermissionSummary } from '../model/settings/use-session-permission-summary';
+import { useSessionRowAccount } from '../model/status/use-session-row-account';
+import { LIMIT_ACTION_TEXT_CLASS } from '../lib/session-limit-text';
 import { usePulseMotion } from '../model/status/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { FULL_POWER_MARK_LABEL } from '../lib/permission-mode';
@@ -62,7 +70,26 @@ export function SessionRowFull({
     [session.updatedAt, now]
   );
 
-  const borderState = useSessionBorderState(session.id);
+  const account = useSessionRowAccount(session);
+  const limitDisplay = account.limitDisplay;
+  const borderState = useSessionBorderState(session.id, account.limitStatus);
+  // What the row says aloud: the title, the account the dot names, what
+  // happened to it (the words replace the time on screen), and its state.
+  const accountName = account.visible && account.color ? account.name : null;
+  // The row's tooltip names the account (the dot has none of its own, so two
+  // never open at once) and, when there is one, the row's state.
+  const tooltipText = [accountName, borderState.kind === 'idle' ? null : borderState.label]
+    .filter(Boolean)
+    .join(' · ');
+  const ariaLabel = [
+    `Session: ${sessionDisplayTitle(session.title)}`,
+    accountName,
+    limitDisplay?.text,
+    borderState.label,
+  ]
+    .filter(Boolean)
+    .map((part) => `${part}.`)
+    .join(' ');
 
   const handleExpandToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -91,9 +118,15 @@ export function SessionRowFull({
         // Reports what the hook decided. No motion prop is assertable in jsdom,
         // so this attribute is the only observable half.
         data-pulsing={pulsing ? 'true' : 'false'}
+        // Which out-of-usage look the row wears: `action` is the red tint, `waiting`
+        // the neutral one (Q13). Absent when it shows no limit.
+        data-limit={limitDisplay ? (limitDisplay.needsAction ? 'action' : 'waiting') : undefined}
         style={pulsing ? undefined : { borderLeftColor: borderState.color }}
         className={cn(
           'group relative rounded-lg border-l-2 transition-colors duration-150',
+          // The soft red tint of an account that ran out and needs the person
+          // (Q13); the active highlight still paints over it.
+          limitDisplay?.needsAction && STATUS_TONE_SURFACE.error,
           isActive ? 'text-foreground' : 'hover:bg-secondary/60'
         )}
       >
@@ -108,121 +141,144 @@ export function SessionRowFull({
           onRename={onRename ? startRename : undefined}
           onFork={onFork ? () => onFork(session.id) : undefined}
         >
-          <TooltipTrigger asChild disabled={borderState.kind === 'idle'}>
+          <TooltipTrigger asChild disabled={!tooltipText}>
+            {/*
+              Not a control itself. The row used to be one `role="button"`
+              holding its own rename and details buttons, which screen readers
+              flatten and axe reports as `nested-interactive`. Now the row's
+              primary control is the `<button>` below, stretched over this box,
+              and every other control is its SIBLING.
+
+              The click lives here rather than on that button so a press
+              anywhere on the row's face still opens the session: the text
+              sits above the button (it has to, or the gauge and origin
+              tooltips would never see the pointer), so a press on it lands
+              on the text and bubbles here. A press on the button, or Enter
+              or Space while it has focus, bubbles here too. The row's own
+              buttons and the rename field stop their clicks, as before.
+            */}
             <motion.div
-              role="button"
-              tabIndex={0}
-              aria-current={isActive ? 'page' : undefined}
-              aria-label={`Session: ${sessionDisplayTitle(session.title)}. ${borderState.label}.`}
               onClick={onClick}
-              onKeyDown={(e) => {
-                // Not while the rename field is up. This row is a synthetic
-                // `role="button"`, so Enter and Space have to be wired by hand
-                // — but the rename `<input>` below is a DESCENDANT of it, and
-                // its keystrokes bubble here. Without this guard the
-                // `preventDefault()` below ate every space a person typed into
-                // a session name, and "activated" the row instead (FB-16).
-                //
-                // The sibling rows never had the bug because neither nests the
-                // field inside an activatable ancestor: `sidebar-row` renders
-                // the editor INSTEAD of its `<button>`, and `SessionRowCompact`
-                // puts it inside a real `<button>`, which browsers already keep
-                // out of a focused input's way. This row is the only one that
-                // hand-rolls the key handling, so it is the only one that had
-                // to remember, and it did not.
-                if (isRenaming) return;
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onClick();
-                }
-              }}
+              // Load-bearing: motion's press gesture (`whileTap`) gives any
+              // non-native element WITHOUT a tabindex `tabindex="0"`, which
+              // made this box an unnamed tab stop before the row's button.
+              // -1 keeps it out of the tab order; jsdom never shows the trap,
+              // the real-browser check in sidebar-model-showcase.spec.ts does.
+              tabIndex={-1}
               whileTap={{ scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               className="relative z-10 cursor-pointer px-3 py-2"
             >
-              {/* Line 1: relative time + icons + expand chevron */}
-              <div className="text-muted-foreground flex items-center gap-1 text-xs">
-                <span className="min-w-0 flex-1">{relativeTime}</span>
-                <span className="flex flex-shrink-0 items-center gap-1">
-                  <SessionContextGauge session={session} />
-                  {borderState.kind === 'pendingApproval' && (
-                    <Hand
-                      className="size-(--size-icon-xs) text-amber-500"
-                      aria-label="Awaiting your approval"
-                    />
+              <button
+                type="button"
+                data-slot="session-row-open"
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={ariaLabel}
+                // The same box the old `role="button"` drew its focus ring on,
+                // so the ring is unchanged. No `onClick`: see the note above.
+                className="absolute inset-0 cursor-pointer"
+              />
+              {/* `relative` puts the row's face above the button it covers. */}
+              <div className="relative">
+                {/* Line 1: relative time + icons + expand chevron */}
+                <div className="text-muted-foreground flex items-center gap-1 text-xs">
+                  {/* A session that ran out says so where its time sits (§6.2). */}
+                  {limitDisplay ? (
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate',
+                        limitDisplay.needsAction && LIMIT_ACTION_TEXT_CLASS
+                      )}
+                    >
+                      {limitDisplay.text}
+                    </span>
+                  ) : (
+                    <span className="min-w-0 flex-1">{relativeTime}</span>
                   )}
-                  {isFullPower && <FullPowerIcon />}
-                  {onRename && !isRenaming && (
+                  <span className="flex flex-shrink-0 items-center gap-1">
+                    <SessionContextGauge session={session} />
+                    {borderState.kind === 'pendingApproval' && (
+                      <Hand
+                        className="text-status-warning-fg size-(--size-icon-xs)"
+                        aria-label="Awaiting your approval"
+                      />
+                    )}
+                    {isFullPower && <FullPowerIcon />}
+                    {onRename && !isRenaming && (
+                      <button
+                        type="button"
+                        onClick={handleStartRename}
+                        className="text-muted-foreground/60 hover:text-muted-foreground rounded p-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 max-md:p-1.5 max-md:opacity-100"
+                        aria-label="Rename session"
+                      >
+                        <Pencil className="size-(--size-icon-xs)" />
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={handleStartRename}
-                      className="text-muted-foreground/60 hover:text-muted-foreground rounded p-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 max-md:p-1.5 max-md:opacity-100"
-                      aria-label="Rename session"
+                      onClick={handleExpandToggle}
+                      className={cn(
+                        'rounded p-0.5 transition-opacity duration-150 max-md:p-1.5',
+                        expanded
+                          ? 'text-muted-foreground opacity-100'
+                          : 'text-muted-foreground/60 hover:text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100'
+                      )}
+                      aria-label="Session details"
+                      aria-expanded={expanded}
                     >
-                      <Pencil className="size-(--size-icon-xs)" />
+                      <motion.div
+                        animate={{ rotate: expanded ? 180 : 0 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      >
+                        <ChevronDown className="size-(--size-icon-sm)" />
+                      </motion.div>
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleExpandToggle}
-                    className={cn(
-                      'rounded p-0.5 transition-opacity duration-150 max-md:p-1.5',
-                      expanded
-                        ? 'text-muted-foreground opacity-100'
-                        : 'text-muted-foreground/60 hover:text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100'
-                    )}
-                    aria-label="Session details"
-                    aria-expanded={expanded}
-                  >
-                    <motion.div
-                      animate={{ rotate: expanded ? 180 : 0 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    >
-                      <ChevronDown className="size-(--size-icon-sm)" />
-                    </motion.div>
-                  </button>
-                </span>
-              </div>
-
-              {/* Line 2: title or rename input */}
-              {isRenaming ? (
-                <input
-                  ref={renameInputRef}
-                  autoFocus
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={handleRenameKeyDown}
-                  onClick={(e) => e.stopPropagation()}
-                  className="bg-background text-foreground mt-0.5 w-full rounded border px-1 text-xs outline-none"
-                  aria-label="Session title"
-                />
-              ) : (
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  <SessionOriginMark
-                    origin={session.origin}
-                    label={session.originLabel}
-                    className="text-muted-foreground/50"
-                  />
-                  <RuntimeMark
-                    type={session.runtime}
-                    model={session.model}
-                    className="text-muted-foreground/50"
-                  />
-                  <AccountMark account={session.account} className="text-muted-foreground/60" />
-                  <div
-                    className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs"
-                    title={onRename ? 'Click the pencil icon to rename' : undefined}
-                  >
-                    {sessionDisplayTitle(session.title)}
-                  </div>
+                  </span>
                 </div>
-              )}
+
+                {/* Line 2: title or rename input */}
+                {isRenaming ? (
+                  <input
+                    ref={renameInputRef}
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={handleRenameKeyDown}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-background text-foreground mt-0.5 w-full rounded border px-1 text-xs outline-none"
+                    aria-label="Session title"
+                  />
+                ) : (
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <SessionOriginMark
+                      origin={session.origin}
+                      label={session.originLabel}
+                      className="text-muted-foreground/50"
+                    />
+                    <RuntimeMark
+                      type={session.runtime}
+                      model={session.model}
+                      className="text-muted-foreground/50"
+                    />
+                    <AccountMark account={account} tooltip={false} />
+                    <div
+                      // Full muted, never dimmed further: the title must clear
+                      // 4.5:1 on the sidebar and on the red row tint in both
+                      // themes (the design system's muted rule, DOR-1098).
+                      className="text-muted-foreground min-w-0 flex-1 truncate text-xs"
+                      title={onRename ? 'Click the pencil icon to rename' : undefined}
+                    >
+                      {sessionDisplayTitle(session.title)}
+                    </div>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </TooltipTrigger>
         </SessionContextMenu>
         <TooltipContent side="right" sideOffset={8}>
-          {borderState.label}
+          {tooltipText || borderState.label}
         </TooltipContent>
 
         <SessionDetailsPanel

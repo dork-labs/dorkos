@@ -10,8 +10,12 @@
  */
 import {
   describeHookEvent,
+  describeProgramLine,
   describeScheduleArrival,
   describeSchedulePermissionMode,
+  PLUGIN_PROGRAMS_SCOPE_NOTE,
+  revealHiddenCharacters,
+  skillCommandKind,
 } from '@dorkos/shared/marketplace-schemas';
 
 /** A single planned filesystem mutation surfaced by the preview. */
@@ -33,6 +37,24 @@ export interface PreviewHook {
   event: string;
   matcher?: string;
   command: string;
+  /** The skill or command file whose frontmatter declares it, when it is one. */
+  source?: string;
+}
+
+/** A shell command a skill's or command's text runs when it is used (DOR-2327). */
+export interface PreviewSkillCommand {
+  source: string;
+  skill: string;
+  form: 'inline' | 'block';
+  command: string;
+  usesArguments: boolean;
+}
+
+/** The tools a skill or command lets the agent use without asking. */
+export interface PreviewSkillTools {
+  source: string;
+  skill: string;
+  tools: string[];
 }
 
 /** A hook declaration the package ships that could not be read. */
@@ -47,6 +69,36 @@ export interface PreviewNpmDependency {
   range: string;
   /** True for an `optionalDependencies` entry — installed, but allowed to fail. */
   optional?: boolean;
+}
+
+/** An MCP server the package starts. */
+export interface PreviewMcpServer {
+  name: string;
+  transport: string;
+  command?: string;
+  args?: string[];
+  url?: string;
+}
+
+/** A language (LSP) server the package starts. */
+export interface PreviewLspServer {
+  name: string;
+  command: string;
+  args: string[];
+}
+
+/** A background monitor the package runs. */
+export interface PreviewMonitor {
+  name: string;
+  command: string;
+  when?: string;
+}
+
+/** A program declaration that could not be read, or points outside the package. */
+export interface UnreadableDeclaration {
+  path: string;
+  kind: 'mcp-server' | 'lsp-server' | 'monitor';
+  entry?: string;
 }
 
 /** A scheduled job the install will create, and what it may do unattended. */
@@ -66,6 +118,15 @@ export interface PreviewPayload {
   extensions: { id: string; slots: string[] }[];
   hooks: PreviewHook[];
   unreadableHooks: UnreadablePreviewHook[];
+  mcpServers: PreviewMcpServer[];
+  lspServers: PreviewLspServer[];
+  monitors: PreviewMonitor[];
+  executables: string[];
+  skillTools: PreviewSkillTools[];
+  /** Absent from a server older than DOR-2327. */
+  skillCommands?: PreviewSkillCommand[];
+  unreadableDeclarations: UnreadableDeclaration[];
+  skippedLinks: { path: string; message: string }[];
   npmDependencies: PreviewNpmDependency[];
   schedules: PreviewSchedule[];
   secrets: { key: string; required: boolean; description?: string }[];
@@ -130,11 +191,23 @@ export function renderPreview(
     lines.push('');
   }
 
-  if (preview.hooks.length > 0) {
+  // A server older than DOR-2327 sends no skillCommands.
+  const skillCommands = preview.skillCommands ?? [];
+  if (preview.hooks.length + skillCommands.length > 0) {
     lines.push('Commands this package declares:');
     for (const hook of preview.hooks) {
-      lines.push(`  Runs ${describeHookEvent(hook.event, hook.matcher)}`);
-      lines.push(`    ${hook.command}`);
+      const scope = hook.source ? `, while ${revealHiddenCharacters(hook.source)} is in use` : '';
+      lines.push(`  Runs ${describeHookEvent(hook.event, hook.matcher)}${scope}`);
+      lines.push(`    ${revealHiddenCharacters(hook.command)}`);
+    }
+    // Written into a skill's or command's text: run as it loads (DOR-2327).
+    for (const entry of skillCommands) {
+      lines.push(
+        `  Runs when the ${skillCommandKind(entry.source)} ${revealHiddenCharacters(entry.skill)} is used (${revealHiddenCharacters(entry.source)})` +
+          (entry.usesArguments ? ', using the text typed after it' : '')
+      );
+      for (const line of revealHiddenCharacters(entry.command).split('\n'))
+        lines.push(`    ${line}`);
     }
     lines.push('');
   }
@@ -148,6 +221,68 @@ export function renderPreview(
     lines.push(
       `  ${DIM}This package declares commands to run, but they are written in a way DorkOS cannot read.${RESET}`
     );
+    lines.push('');
+  }
+
+  const programs = [
+    ...preview.mcpServers.map((server) => ({
+      label: `MCP server ${server.name}`,
+      runs: server.command
+        ? describeProgramLine(server.command, server.args)
+        : `connects to ${revealHiddenCharacters(JSON.stringify(server.url ?? ''))}`,
+    })),
+    ...preview.lspServers.map((server) => ({
+      label: `Language server ${server.name}`,
+      runs: describeProgramLine(server.command, server.args),
+    })),
+    ...preview.monitors.map((monitor) => ({
+      label: `Background monitor ${monitor.name}${monitor.when ? ` (${monitor.when})` : ''}`,
+      runs: revealHiddenCharacters(JSON.stringify(monitor.command)),
+    })),
+    ...preview.executables.map((name) => ({
+      label: `Command on the agent's PATH`,
+      runs: revealHiddenCharacters(JSON.stringify(name)),
+    })),
+  ];
+  if (programs.length > 0) {
+    lines.push('Programs this package starts on its own:');
+    for (const program of programs) {
+      lines.push(`  ${revealHiddenCharacters(program.label)}`);
+      lines.push(`    ${program.runs}`);
+    }
+    lines.push(`  ${DIM}${PLUGIN_PROGRAMS_SCOPE_NOTE}${RESET}`);
+    lines.push('');
+  }
+
+  if (preview.skillTools.length > 0) {
+    lines.push('Tools a skill may use without asking you:');
+    for (const entry of preview.skillTools) {
+      lines.push(
+        `  ${revealHiddenCharacters(entry.skill)} (${revealHiddenCharacters(entry.source)})`
+      );
+      lines.push(
+        `    ${entry.tools.map((t) => revealHiddenCharacters(JSON.stringify(t))).join(', ')}`
+      );
+    }
+    lines.push('');
+  }
+
+  if (preview.unreadableDeclarations.length > 0) {
+    lines.push(`${YELLOW}Programs we could not read:${RESET}`);
+    for (const declaration of preview.unreadableDeclarations) {
+      const where = declaration.entry
+        ? `${declaration.path} (${declaration.entry})`
+        : declaration.path;
+      lines.push(`  ${YELLOW}⚠ ${revealHiddenCharacters(where)}${RESET}`);
+    }
+    lines.push('');
+  }
+
+  if (preview.skippedLinks.length > 0) {
+    lines.push(`${YELLOW}Shortcuts that won't be installed:${RESET}`);
+    for (const link of preview.skippedLinks) {
+      lines.push(`  ${YELLOW}⚠ ${revealHiddenCharacters(link.message)}${RESET}`);
+    }
     lines.push('');
   }
 

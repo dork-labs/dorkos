@@ -7,6 +7,19 @@ import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-libra
 // `Composer.Attachments` are stand-ins so this file tests the container's
 // orchestration, while `Composer.ClearArmedHint` stays REAL — the armed-clear
 // assertions below read its own testid.
+// The out-of-usage banner and its composer pause read the session's account
+// (spec claude-account-ui §6.7); they have their own tests, and this file's
+// narrow mocks do not carry what they read.
+const { mockLimitComposer } = vi.hoisted(() => ({
+  mockLimitComposer: vi.fn(() => ({ canSubmit: true, placeholder: null as string | null })),
+}));
+vi.mock('@/layers/features/continue-on-account', () => ({
+  AccountLimitBanner: () => null,
+  AccountLimitMarker: () => null,
+  useLimitComposer: mockLimitComposer,
+  useSessionHasLimit: () => false,
+}));
+
 vi.mock('@/layers/features/composer', async (importActual) => {
   const actual = await importActual<typeof import('@/layers/features/composer')>();
   return {
@@ -485,15 +498,6 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
   });
 
   it('closes the box and names the way out when no conversation is selected', () => {
-    // The Obsidian embed's first load, exactly: `app-store` seeds
-    // `sessionId: null`, nothing auto-mints one, and the composer is on screen
-    // the whole time. Enter used to reach `postMessage(null, …)`, which the
-    // route answers `400 INVALID_SESSION_ID` — after the composer had already
-    // been emptied, so the words were gone and all that came back was "Could
-    // not send message".
-    //
-    // **Seeded defect:** put `canSend: true` back in `useSessionTarget` and
-    // this goes red on both assertions.
     render(<SessionComposerBench {...baseProps} sessionId="" input="hello?" />);
 
     const props = lastChatInputProps();
@@ -530,6 +534,20 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
     const props = lastChatInputProps();
     expect(props.canSubmit).toBe(false);
     expect(props.canSubmitReason).toBe('Checking this directory before starting the session…');
+  });
+
+  it('waits with the banner words while the account is out (spec claude-account-ui §6.7)', () => {
+    mockLimitComposer.mockReturnValueOnce({
+      canSubmit: false,
+      placeholder: 'Paused until you continue or the account resets',
+    });
+    render(<SessionComposerBench {...baseProps} input="hello?" />);
+
+    const props = lastChatInputProps();
+    expect(props.canSubmit).toBe(false);
+    expect(props.placeholder).toBe('Paused until you continue or the account resets');
+    // The rotating hints would cover the paused words.
+    expect(props.placeholderOverlay).toBeNull();
   });
 
   it('keeps the queue panel out of the tree entirely when nothing is queued', () => {

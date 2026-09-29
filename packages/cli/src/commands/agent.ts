@@ -11,17 +11,9 @@
  *   scaffold + optional template + register).
  * - `agent update`         → `PATCH /api/agents/current?path=` (self-edit
  *   fields; the server enforces its agent-write policy and the system-agent
- *   guards), plus `PATCH /api/mesh/agents/:id` for `--ceiling` alone (see below).
- *
- * ## Why `--ceiling` takes a different route
- *
- * A tier ceiling is the cap on what an agent may ever do, and raising one hands
- * privilege back — the decision that belongs to a person, never to the agent
- * being capped. So the self-edit route refuses any change that widens a ceiling,
- * whoever sends it, and the operator's route is the only way to raise one
- * (DOR-486). This CLI is the person's shell, so `--ceiling` goes through the
- * operator's route and can set any rung. It costs one extra lookup: the operator
- * route addresses an agent by Mesh id, and `--path` is what a person has.
+ *   guards).
+ * - `agent permissions`    → `commands/permissions.ts` (one agent's
+ *   permissions, through the permission routes).
  *
  * Every verb accepts `--json` for raw machine output. Handlers return an exit
  * code rather than calling `process.exit` so `cli.ts` stays the single source of
@@ -30,13 +22,10 @@
  * @module commands/agent
  */
 import { parseArgs } from 'node:util';
-import {
-  CAPABILITY_TIERS,
-  CAPABILITY_CEILING_PHRASE,
-  DEFAULT_AGENT_TIER_CEILING,
-  type CapabilityTier,
-} from '@dorkos/shared/capabilities';
-import { apiCall } from '../lib/api-client.js';
+import { ApiError, apiCall } from '../lib/api-client.js';
+import { confirm } from '../lib/confirm-prompt.js';
+import { renderDisclosureLines } from '../lib/disclosure-render.js';
+import type { DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
@@ -50,6 +39,7 @@ Subcommands:
   show <path-or-id>                 Show one agent by Mesh id or project path
   create --name <slug> --path <dir> Create a new agent
   update --path <dir> [fields]      Edit an agent's self-editable fields
+  permissions <agent> [set|reset]   See or change what one agent may do
 
 Options (all subcommands):
       --json   Print raw JSON instead of a table
@@ -57,7 +47,10 @@ Options (all subcommands):
 create options:
       --name <slug>          Kebab-case agent name (required)
       --path <dir>           Project directory for the agent (required)
-      --template <ref>       Template to scaffold from
+      --template <ref>       Template to scaffold from. DorkOS shows what it brings
+                             (settings, programs, skills) and asks before using it
+      --yes                  Don't ask before using a template (it still prints what it brings)
+      --approval <token>     Retry a template creation a person approved in DorkOS
       --display-name <name>  Human-friendly name
       --description <text>   One-line description
 
@@ -66,10 +59,6 @@ update options (all optional; --path is required):
       --description <text>   Change the description
       --color <hex>          Set the accent color (pass '' to clear)
       --icon <emoji>         Set the icon (pass '' to clear)
-      --ceiling <limit>      The most this agent may ever do:
-                               observe      read only
-                               act          change things, never delete them
-                               destructive  no extra limit (the default)
 
 Examples:
   dorkos agent list
@@ -77,8 +66,7 @@ Examples:
   dorkos agent show dorkbot
   dorkos agent show ~/projects/app
   dorkos agent create --name my-bot --path ~/projects/my-bot
-  dorkos agent update --path ~/.dork/agents/dorkbot --display-name "Dork Bot"
-  dorkos agent update --path ~/projects/my-bot --ceiling act`;
+  dorkos agent update --path ~/.dork/agents/dorkbot --display-name "Dork Bot"`;
 
 /** A Mesh agent entry as returned by `GET /api/mesh/agents`. */
 interface MeshAgent {
@@ -98,6 +86,10 @@ export interface AgentCreateArgs {
   displayName?: string;
   description?: string;
   json: boolean;
+  /** Use a template without asking (what it brings is still printed). */
+  yes?: boolean;
+  /** Token from an earlier run that was waiting on a person (DOR-2325). */
+  approvalToken?: string;
 }
 
 /** Parsed arguments for `agent update`. */
@@ -107,8 +99,6 @@ export interface AgentUpdateArgs {
   description?: string;
   color?: string | null;
   icon?: string | null;
-  /** The most this agent may ever do — written through the operator's route. */
-  ceiling?: CapabilityTier;
   json: boolean;
 }
 
@@ -136,7 +126,8 @@ function jsonOf(values: Record<string, unknown>): boolean {
  * @returns Typed {@link AgentCreateArgs}.
  */
 export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
-  const usage = 'Usage: dorkos agent create --name <slug> --path <dir> [--template <ref>]';
+  const usage =
+    'Usage: dorkos agent create --name <slug> --path <dir> [--template <ref> [--yes] [--approval <token>]]';
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -145,6 +136,8 @@ export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
         name: { type: 'string' },
         path: { type: 'string' },
         template: { type: 'string' },
+        yes: { type: 'boolean', short: 'y', default: false },
+        approval: { type: 'string' },
         'display-name': { type: 'string' },
         description: { type: 'string' },
         json: { type: 'boolean', default: false },
@@ -167,7 +160,58 @@ export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
     displayName: typeof values['display-name'] === 'string' ? values['display-name'] : undefined,
     description: typeof values.description === 'string' ? values.description : undefined,
     json: jsonOf(values),
+    yes: values.yes === true,
+    ...(typeof values.approval === 'string' && { approvalToken: values.approval }),
   };
+}
+
+/** What a template brings, as the server describes it (DOR-2325). */
+interface TemplateBrings {
+  source: string;
+  contentHash: string;
+  findings: { path: string; message: string }[];
+  /** Each file under `findings`: its text (hidden characters already made visible), or why not. */
+  settings?: {
+    path: string;
+    bytes: number;
+    content?: string;
+    omitted?: 'too-long' | 'not-text' | 'link';
+  }[];
+  disclosed: DisclosedEffects;
+}
+
+/**
+ * One settings file, written out under its name. Every line carries a `│ `
+ * gutter, so nothing in the file can pass itself off as this prompt's own text.
+ */
+function describeSettingsFile(file: NonNullable<TemplateBrings['settings']>[number]): string[] {
+  if (file.content === undefined) {
+    const why =
+      file.omitted === 'link'
+        ? 'is a link, which is not copied'
+        : file.omitted === 'not-text'
+          ? `is not text (${file.bytes} bytes)`
+          : `is too long to show here (${file.bytes} bytes); read it in the template first`;
+    return [`      ${file.path} ${why}`];
+  }
+  return [
+    `      ${file.path} (${file.bytes} bytes):`,
+    ...file.content.split('\n').map((line) => `      │ ${line}`),
+  ];
+}
+
+/** The lines that say what a template brings into the new agent's folder. */
+function describeTemplate(template: TemplateBrings): string[] {
+  return [
+    `The template ${template.source} brings:`,
+    ...(template.findings.length > 0
+      ? [
+          ...template.findings.map((f) => `    ${f.path}: settings the new agent's sessions load`),
+          ...(template.settings ?? []).flatMap(describeSettingsFile),
+        ]
+      : ["    no settings files for the new agent's sessions"]),
+    ...renderDisclosureLines(template.disclosed, 'agent'),
+  ];
 }
 
 /**
@@ -176,15 +220,12 @@ export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
  * `--color`/`--icon` accept an empty string to clear the field (the server
  * treats `null` as "clear"), so an explicitly-passed empty value maps to `null`.
  *
- * `--ceiling` is validated here rather than left to the server, because the
- * three rungs are a closed set and a typo deserves the list, not a 400.
- *
  * @param rawArgs - Argv after `update`.
  * @returns Typed {@link AgentUpdateArgs}.
  */
 export function parseAgentUpdateArgs(rawArgs: string[]): AgentUpdateArgs {
   const usage =
-    'Usage: dorkos agent update --path <dir> [--display-name <name>] [--description <text>] [--color <hex>] [--icon <emoji>] [--ceiling <observe|act|destructive>]';
+    'Usage: dorkos agent update --path <dir> [--display-name <name>] [--description <text>] [--color <hex>] [--icon <emoji>]';
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -195,7 +236,6 @@ export function parseAgentUpdateArgs(rawArgs: string[]): AgentUpdateArgs {
         description: { type: 'string' },
         color: { type: 'string' },
         icon: { type: 'string' },
-        ceiling: { type: 'string' },
         json: { type: 'boolean', default: false },
       },
       allowPositionals: false,
@@ -210,22 +250,12 @@ export function parseAgentUpdateArgs(rawArgs: string[]): AgentUpdateArgs {
   // Empty string clears the field (null); a non-empty string sets it.
   const clearable = (v: unknown): string | null | undefined =>
     typeof v === 'string' ? (v.length === 0 ? null : v) : undefined;
-  let ceiling: CapabilityTier | undefined;
-  if (typeof values.ceiling === 'string') {
-    if (!(CAPABILITY_TIERS as readonly string[]).includes(values.ceiling)) {
-      throw new Error(
-        `Unknown --ceiling '${values.ceiling}'. Use one of: ${CAPABILITY_TIERS.join(', ')}.`
-      );
-    }
-    ceiling = values.ceiling as CapabilityTier;
-  }
   return {
     path,
     displayName: typeof values['display-name'] === 'string' ? values['display-name'] : undefined,
     description: typeof values.description === 'string' ? values.description : undefined,
     color: clearable(values.color),
     icon: clearable(values.icon),
-    ceiling,
     json: jsonOf(values),
   };
 }
@@ -282,11 +312,7 @@ export async function runAgentShow(ref: string, json: boolean): Promise<number> 
       printJson(agent);
       return 0;
     }
-    const a = agent as MeshAgent & {
-      description?: string;
-      projectPath?: string;
-      tierCeiling?: CapabilityTier;
-    };
+    const a = agent as MeshAgent & { description?: string; projectPath?: string };
     const rows: Array<[string, string]> = [
       ['Name', a.displayName ?? a.name],
       ['Id', a.id],
@@ -295,12 +321,6 @@ export async function runAgentShow(ref: string, json: boolean): Promise<number> 
       ['Health', a.healthStatus ?? '-'],
       ['Description', a.description ?? '-'],
     ];
-    // Only on the manifest form. A tier ceiling lives in `.dork/agent.json` and
-    // has no column in the Mesh row, so the id form genuinely does not know it —
-    // and printing "anything" for an unanswered question is worse than silence.
-    if (fromManifest) {
-      rows.push(['Limit', CAPABILITY_CEILING_PHRASE[a.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING]]);
-    }
     const width = Math.max(...rows.map((r) => r[0].length));
     console.log(rows.map(([k, v]) => `${k}${' '.repeat(width - k.length)}  ${v}`).join('\n'));
     return 0;
@@ -317,27 +337,74 @@ export async function runAgentShow(ref: string, json: boolean): Promise<number> 
  * @returns The intended process exit code.
  */
 export async function runAgentCreate(args: AgentCreateArgs): Promise<number> {
+  const body: Record<string, unknown> = { name: args.name, directory: args.path };
+  if (args.template) body.template = args.template;
+  if (args.displayName) body.displayName = args.displayName;
+  if (args.description) body.description = args.description;
+  if (args.approvalToken) body.confirmationToken = args.approvalToken;
   try {
-    const body: Record<string, unknown> = { name: args.name, directory: args.path };
-    if (args.template) body.template = args.template;
-    if (args.displayName) body.displayName = args.displayName;
-    if (args.description) body.description = args.description;
-    const created = await apiCall<{ id: string; name: string; _path?: string }>(
-      'POST',
-      '/api/agents/create',
-      body
-    );
+    let created: CreatedAgentBody | TemplateApprovalBody;
+    try {
+      created = await apiCall<CreatedAgentBody | TemplateApprovalBody>(
+        'POST',
+        '/api/agents/create',
+        body
+      );
+    } catch (err) {
+      // A person's own template that brings settings or programs is shown to
+      // them first, and used once they say so (DOR-2325).
+      const template =
+        (err as ApiError).body?.code === 'template_needs_review'
+          ? ((err as ApiError).body as unknown as { template: TemplateBrings }).template
+          : undefined;
+      if (!(err instanceof ApiError) || !template) throw err;
+      for (const line of describeTemplate(template)) console.log(line);
+      if (!args.yes && !(await confirm('Create the agent with these?'))) {
+        console.log('Nothing was created.');
+        return 1;
+      }
+      created = await apiCall<CreatedAgentBody>('POST', '/api/agents/create', {
+        ...body,
+        approvedTemplateHash: template.contentHash,
+      });
+    }
+    // From an agent's session a template always waits for a person's card.
+    if ('status' in created && created.status === 'requires_confirmation') {
+      for (const line of describeTemplate(created.template)) console.error(line);
+      console.error(created.message);
+      console.error(
+        `Retry with: dorkos agent create --name ${args.name} --path ${args.path} ` +
+          `--template ${args.template} --approval ${created.confirmationToken}`
+      );
+      return 1;
+    }
+    const agent = created as CreatedAgentBody;
     if (args.json) {
-      printJson(created);
+      printJson(agent);
       return 0;
     }
-    console.log(`Created agent ${created.name} (${created.id})`);
-    if (created._path) console.log(`  ${created._path}`);
+    console.log(`Created agent ${agent.name} (${agent.id})`);
+    if (agent._path) console.log(`  ${agent._path}`);
     return 0;
   } catch (err) {
     printError(err);
     return 1;
   }
+}
+
+/** What `POST /api/agents/create` answers with when it created the agent. */
+interface CreatedAgentBody {
+  id: string;
+  name: string;
+  _path?: string;
+}
+
+/** What it answers with when a template waits on a person's card (DOR-2325). */
+interface TemplateApprovalBody {
+  status: 'requires_confirmation';
+  confirmationToken: string;
+  message: string;
+  template: TemplateBrings;
 }
 
 /**
@@ -352,40 +419,19 @@ export async function runAgentUpdate(args: AgentUpdateArgs): Promise<number> {
   if (args.description !== undefined) body.description = args.description;
   if (args.color !== undefined) body.color = args.color;
   if (args.icon !== undefined) body.icon = args.icon;
-  if (Object.keys(body).length === 0 && args.ceiling === undefined) {
+  if (Object.keys(body).length === 0) {
     console.error('Error: nothing to update — pass at least one field to change.');
     return 1;
   }
   const selfEditUrl = `/api/agents/current?path=${encodeURIComponent(args.path)}`;
   try {
-    // A `--ceiling`-only run still has to learn the agent's Mesh id, so it reads
-    // where the other fields would have written.
-    let updated =
-      Object.keys(body).length > 0
-        ? await apiCall<{ id: string; name: string }>('PATCH', selfEditUrl, body)
-        : await apiCall<{ id: string; name: string }>('GET', selfEditUrl);
-
-    if (args.ceiling !== undefined) {
-      // Deliberately the OPERATOR route — the self-edit route refuses any change
-      // that widens a ceiling, whoever sends it (see the module TSDoc).
-      await apiCall('PATCH', `/api/mesh/agents/${encodeURIComponent(updated.id)}`, {
-        tierCeiling: args.ceiling,
-      });
-      // Read the manifest back rather than trusting that route's echo: its
-      // response is rebuilt from the derived Mesh row, which has no column for a
-      // tier ceiling, so `--json` would report the field missing on the very run
-      // that set it.
-      updated = await apiCall<{ id: string; name: string }>('GET', selfEditUrl);
-    }
+    const updated = await apiCall<{ id: string; name: string }>('PATCH', selfEditUrl, body);
 
     if (args.json) {
       printJson(updated);
       return 0;
     }
     console.log(`Updated agent ${updated.name}`);
-    if (args.ceiling !== undefined) {
-      console.log(`  Limited to ${CAPABILITY_CEILING_PHRASE[args.ceiling]}.`);
-    }
     return 0;
   } catch (err) {
     printError(err);
@@ -437,6 +483,10 @@ export async function runAgentDispatcher(rawArgs: string[]): Promise<number> {
     }
     if (subcommand === 'update') {
       return await runAgentUpdate(parseAgentUpdateArgs(rawArgs.slice(1)));
+    }
+    if (subcommand === 'permissions') {
+      const { runAgentPermissions } = await import('./permissions.js');
+      return await runAgentPermissions(rawArgs.slice(1));
     }
   } catch (err) {
     printError(err);

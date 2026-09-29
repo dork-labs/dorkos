@@ -26,7 +26,8 @@ import {
   Toaster,
 } from '@/layers/shared/ui';
 import { useTheme } from '@/layers/shared/model';
-import { ChevronLeft, LayoutDashboard, Sun, Monitor, Moon, Search } from 'lucide-react';
+import { ChevronLeft, LayoutDashboard, Sun, Monitor, Moon, Search, Palette } from 'lucide-react';
+import { CATALOG_URL } from './catalog-link';
 import { createPlaygroundTransport } from './playground-transport';
 import { PlaygroundProviders } from './playground-providers';
 import { PlaygroundSearch } from './PlaygroundSearch';
@@ -243,6 +244,14 @@ function DevPlaygroundShell() {
               <SidebarGroup>
                 <SidebarGroupLabel>Design System</SidebarGroupLabel>
                 <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <a href={CATALOG_URL}>
+                        <Palette className="size-4" />
+                        Shared UI catalog
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                   {DESIGN_SYSTEM_NAV.map((item) => (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton

@@ -1,8 +1,8 @@
 /**
  * Scheduler configuration rows for the Settings Tools tab.
  *
- * Renders concurrent runs and run-history retention controls inside the
- * expandable Tasks tool group. The component is purely presentational —
+ * Renders concurrent runs and run-history retention controls, in their own card
+ * while scheduled runs are on. The component is purely presentational —
  * persistence is delegated to the `onUpdate` callback supplied by the parent.
  *
  * There was a third row here, a default timezone for cron schedules. It was
@@ -19,7 +19,7 @@ interface SchedulerSettingsProps {
   onUpdate: (patch: Record<string, unknown>) => void;
 }
 
-/** Scheduler configuration rows rendered inside the Tasks tool group expansion. */
+/** Scheduler configuration rows for the Settings Tools tab. */
 export function SchedulerSettings({ scheduler, onUpdate }: SchedulerSettingsProps) {
   return (
     <>

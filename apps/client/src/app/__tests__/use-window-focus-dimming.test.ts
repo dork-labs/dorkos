@@ -34,7 +34,7 @@ describe('useWindowFocusDimming', () => {
     expect(document.documentElement.classList.contains(WINDOW_BLURRED_CLASS)).toBe(false);
   });
 
-  it('does nothing when window.electronAPI.onFocusChange is absent (browser/Obsidian)', async () => {
+  it('does nothing when window.electronAPI.onFocusChange is absent (browser)', async () => {
     document.documentElement.classList.add('desktop-darwin');
     vi.resetModules();
     const { useWindowFocusDimming } = await import('../use-window-focus-dimming');

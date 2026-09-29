@@ -9,7 +9,8 @@
     "./subsystems": "./src/subsystems.ts",
     "./brand": "./src/brand.ts",
     "./logos": "./src/logos.tsx",
-    "./adapter-logos": "./src/adapter-logos.tsx"
+    "./adapter-logos": "./src/adapter-logos.tsx",
+    "./app-logos": "./src/app-logos.ts"
   },
   "scripts": {
     "lint": "eslint .",

@@ -38,9 +38,10 @@
  *
  * @module services/marketplace/lib/materialize-schedules
  */
-import { lstat, mkdir, readFile } from 'node:fs/promises';
+import { lstat, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
+import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import type { PackageScheduleDecl } from '@dorkos/marketplace/manifest-schema';
 import { AGENTS_SKILLS_DIR } from '@dorkos/harness/scan';
@@ -61,8 +62,20 @@ const GLOBAL_SKILLS_DIR = 'skills';
 export interface MaterializeSchedulesOptions {
   /** The validated manifest whose `schedules[]` are being materialized. */
   manifest: MarketplacePackageManifest;
-  /** Absolute path to the package's install root (where its shipped skills now live). */
+  /**
+   * The package tree whose shipped skills a `skillRef` block is written into.
+   * For `forms: 'skillRef'` this is the STAGED tree, before its installed-files
+   * record is computed, so the record holds each scheduled `SKILL.md` exactly as
+   * installed (DOR-2318). For `forms: 'inline'` it is the activated install root.
+   */
   installPath: string;
+  /**
+   * Which declarations to place: `skillRef` blocks go into the package's own
+   * files, so they are written into the staged tree; `inline` ones generate
+   * skills outside the install root, after activation. Each warning is said by
+   * the call that places its schedule, so none is said twice.
+   */
+  forms: 'skillRef' | 'inline';
   /** The DorkOS data directory — the global skills root's parent. */
   dorkHome: string;
   /** The project this install is scoped to, when it is scoped to one. */
@@ -76,9 +89,10 @@ export interface MaterializeSchedulesResult {
    * Absolute paths of the skill DIRECTORIES generated for inline declarations.
    *
    * Recorded in the package's install-metadata sidecar so uninstall can remove
-   * them. Only inline entries appear here: a `skillRef` block is written inside
-   * the package's own install root, which uninstall removes wholesale, so there
-   * is nothing extra to track and nothing of the person's to avoid deleting.
+   * them. Only inline entries appear here: a `skillRef` block is written into
+   * the package's own staged tree before its installed-files record is
+   * computed, so the scheduled SKILL.md is a recorded package file that
+   * uninstall removes like any other (DOR-2318).
    */
   generatedPaths: string[];
   /** One sentence per schedule that could not be placed, or that needs saying. */
@@ -115,6 +129,7 @@ export async function materializePackageSchedules(
   const packageName = opts.manifest.name;
 
   for (const [index, schedule] of schedules.entries()) {
+    if ((schedule.skillRef ? 'skillRef' : 'inline') !== opts.forms) continue;
     const label = scheduleDisplayName(schedule, index);
 
     // A manifest written against the pre-DOR-607 schema still parses: zod would
@@ -142,8 +157,10 @@ export async function materializePackageSchedules(
         // parsing and re-emitting it, which preserves the frontmatter's keys and
         // values but not its exact text — comments go, anchors resolve, scalars
         // may be re-quoted. That is fine for a file inside the package's own
-        // install root, which is regenerated from the source package on every
-        // reinstall and which nobody hand-edits. Point this at a skills root and
+        // staged tree, which is regenerated from the source package on every
+        // reinstall and whose installed copy the installed-files record then
+        // vouches for, so a person's edit to it is seen and kept on the next
+        // update (DOR-2245, DOR-2318). Point this at a skills root and
         // it would quietly reformat a file somebody maintains. Nothing enforces
         // the invariant; this is the only place it is decided.
         const replaced = await injectScheduleIntoShippedSkill(
@@ -224,9 +241,10 @@ function buildScheduleBlock(
   // apply to a declaration that went through a parse, and not every one does —
   // a manifest read off disk by an older build reaches here with keys missing.
   // The cost of assuming otherwise is not a wrong default but a THROW:
-  // `scheduleToFrontmatter` hands whatever it is given to js-yaml, which refuses
-  // an `undefined` with "unacceptable kind of an object to dump" and takes the
-  // whole schedule down. Its own TSDoc names that failure; this is the guard.
+  // `scheduleToFrontmatter` hands whatever it is given to the frontmatter
+  // writer, which refuses an `undefined` ("is undefined, which YAML cannot
+  // hold") rather than silently dropping the key, and takes the whole schedule
+  // down. Its own TSDoc names that failure; this is the guard.
   const { mode, clamped } = clampSchedulePermissionMode(schedule.permissionMode ?? 'acceptEdits');
   const block: ScheduleBlock = {
     ...(schedule.cron != null && { cron: schedule.cron }),
@@ -251,7 +269,7 @@ function buildScheduleBlock(
  * Write a `schedule:` block into the installed copy of a skill the package ships.
  *
  * Every frontmatter KEY AND VALUE the author wrote is carried across, which is
- * why this reads with `gray-matter` rather than through `SkillFrontmatterSchema`:
+ * why this reads with `parseFrontmatter` rather than through `SkillFrontmatterSchema`:
  * the schema strips keys it does not know, so parsing and re-writing through it
  * would quietly delete a Claude-Code-only key, a `metadata:` map, or anything
  * else the author put there. Only the `schedule` key is added or replaced.
@@ -284,7 +302,9 @@ async function injectScheduleIntoShippedSkill(
   }
 
   const filePath = path.join(skillDir, 'SKILL.md');
-  const parsed = matter(await readFile(filePath, 'utf-8'));
+  const parsed = parseFrontmatter(
+    await readTextFileWithin(filePath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md')
+  );
   const incoming = scheduleToFrontmatter(block);
 
   // An update reinstalls the package, which rewrites this block from the new
@@ -448,7 +468,11 @@ async function readScheduleOwner(
 
   let content: string;
   try {
-    content = await readFile(path.join(dirPath, 'SKILL.md'), 'utf-8');
+    content = await readTextFileWithin(
+      path.join(dirPath, 'SKILL.md'),
+      PACKAGE_TEXT_MAX_BYTES,
+      'The SKILL.md'
+    );
   } catch {
     // Occupied by something that is not a readable skill — a draft directory, a
     // dangling link, a differently named entry file. Present, and not ours.
@@ -456,7 +480,7 @@ async function readScheduleOwner(
   }
 
   try {
-    const parsed = matter(content);
+    const parsed = parseFrontmatter(content);
     const schedule = parsed.data.schedule as Record<string, unknown> | undefined;
     if (!schedule || typeof schedule !== 'object') return { present: true, owner: null };
     const shape = schedule.shape;

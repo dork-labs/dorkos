@@ -9,7 +9,8 @@ export type PendingAdmission = CommunityWireInvitePending;
  * person to do something outside this page, so they are said in words rather than faked as
  * controls.
  */
-export type AdmissionRecovery = 'retry' | 'new-invitation' | 'reopen' | 'wait-for-room';
+export type AdmissionRecovery =
+  'retry' | 'new-invitation' | 'reopen' | 'wait-for-room' | 'wait-for-release';
 
 /** What the person reads when joining stops short of a membership. */
 export type AdmissionFailure = {
@@ -30,6 +31,7 @@ export type AdmissionFailureContext = {
 const NEW_INVITATION = 'Ask the person who invited you for a new invitation link.';
 const REOPEN = 'Open your invitation link again in this browser.';
 const WAIT_FOR_ROOM = 'Your invitation still works. Open it again once the owner has made room.';
+const WAIT_FOR_RELEASE = 'Your invitation still works until it expires. Open it again then.';
 
 /**
  * Explain a failed invitation step without revealing why an invitation is unusable.
@@ -47,6 +49,13 @@ export function describeAdmissionFailure(
     ? 'Your account was created, but membership was not added.'
     : 'Membership was not added.';
   if (cause instanceof RequestError) {
+    // A hold keeps the invitation; it works again when the host releases the community.
+    if (cause.status === 423 && cause.code === 'COMMUNITY_HELD')
+      return {
+        title,
+        detail: 'This community is on hold. You can join when the hold ends.',
+        recovery: 'wait-for-release',
+      };
     if (cause.status === 409 && cause.code === 'MEMBER_LIMIT_REACHED')
       return { title, detail: cause.message, recovery: 'wait-for-room' };
     if (cause.status === 409 && cause.message === 'This community is closed to new members.')
@@ -82,6 +91,7 @@ export function recoveryInstruction(recovery: AdmissionRecovery): string | null 
   if (recovery === 'new-invitation') return NEW_INVITATION;
   if (recovery === 'reopen') return REOPEN;
   if (recovery === 'wait-for-room') return WAIT_FOR_ROOM;
+  if (recovery === 'wait-for-release') return WAIT_FOR_RELEASE;
   return null;
 }
 

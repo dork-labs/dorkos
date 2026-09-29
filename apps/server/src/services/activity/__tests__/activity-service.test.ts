@@ -373,5 +373,57 @@ describe('ActivityService', () => {
       expect(after).toHaveLength(1);
       expect(after[0].summary).toBe('Recent event');
     });
+
+    it('keeps an old permissions event while removing an old config one', async () => {
+      // A permission history that forgets cannot answer "who allowed this"
+      // (spec `agent-permissions` D14), so the category outlives the prune.
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 40);
+      for (const category of ['permissions', 'config'] as const) {
+        await service.emit({
+          occurredAt: oldDate.toISOString(),
+          actorType: 'user',
+          actorLabel: 'Someone on this computer',
+          category,
+          eventType: `${category}.old`,
+          summary: `Old ${category} event`,
+        });
+      }
+
+      expect(await service.prune(30)).toBe(1);
+      const after = db.select().from(activityEvents).all();
+      expect(after.map((row) => row.category)).toEqual(['permissions']);
+    });
+  });
+
+  describe('the permissions category and the resourceId filter', () => {
+    it('round-trips the permissions category', async () => {
+      await service.emit({
+        actorType: 'user',
+        actorLabel: 'Someone on this computer',
+        category: 'permissions',
+        eventType: 'permission.changed',
+        summary: 'Rooms set to Allowed for everyone',
+      });
+      const { items } = await service.list({ limit: 10, categories: 'permissions' });
+      expect(items).toHaveLength(1);
+      expect(items[0]!.category).toBe('permissions');
+    });
+
+    it('returns only the events about one resource', async () => {
+      for (const resourceId of ['agent-a', 'agent-b', 'agent-a']) {
+        await service.emit({
+          actorType: 'user',
+          actorLabel: 'You',
+          category: 'permissions',
+          eventType: 'permission.changed',
+          resourceType: 'agent',
+          resourceId,
+          summary: `${resourceId} changed`,
+        });
+      }
+      const { items } = await service.list({ limit: 10, resourceId: 'agent-a' });
+      expect(items.map((i) => i.resourceId)).toEqual(['agent-a', 'agent-a']);
+    });
   });
 });

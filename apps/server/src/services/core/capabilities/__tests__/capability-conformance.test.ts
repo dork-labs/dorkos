@@ -66,7 +66,10 @@ vi.mock('../../../../lib/boundary.js', () => ({
 // update_agent reads the target agent's manifest off disk; stub it to "no agent
 // here" so the handler returns its structured NOT_FOUND (a CapabilityToolError),
 // never a raw filesystem throw.
-vi.mock('@dorkos/shared/manifest', () => ({
+// The rest of the module stays real: the permission gate reads an agent's own
+// settings file by the manifest path constants.
+vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/manifest')>()),
   readManifest: async () => null,
   writeManifest: async () => {},
 }));
@@ -129,6 +132,14 @@ const emptyPreview = {
   extensions: [],
   hooks: [],
   unreadableHooks: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+  skillCommands: [],
+  skippedLinks: [],
+  unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],
   secrets: [],
@@ -175,6 +186,11 @@ const marketplaceDeps = {
       uninstallReached = true;
       throw new Error('uninstall must not be reached in conformance (gated at pending)');
     },
+  },
+  // The sandbox has nothing installed, so an advisory `marketplace.update`
+  // checks nothing; an apply would find nothing to reinstall either.
+  updateFlow: {
+    planInstallations: async () => ({ checks: [], steps: [] }),
   },
   confirmationProvider: {
     requestInstallConfirmation: async () => ({ status: 'pending' as const, token: 'conformance' }),
@@ -311,13 +327,12 @@ const { createCapabilitiesInvokeRouter } =
   await import('../../../../routes/capabilities-invoke.js');
 const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
 const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
-const { ApprovalGrantService, ApprovalService } = await import('../../approvals/index.js');
+const { ApprovalService } = await import('../../approvals/index.js');
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
 const PROBE_IDENTITY = {
   agentPath: path.join(SANDBOX_CWD, 'agents', 'prober'),
   displayName: 'Prober',
-  tierCeiling: 'destructive' as const,
   createdAt: new Date().toISOString(),
 };
 
@@ -334,7 +349,6 @@ const DESTRUCTIVE_INPUT = { name: 'nonexistent-conformance-pkg', purge: true };
 // boot does — so the probes exercise the real request/consume path, not a stub.
 const approvalDb = createTestDb();
 const approvalService = new ApprovalService(approvalDb);
-const approvalGrantService = new ApprovalGrantService(approvalDb);
 const requestTarget = swappableServer();
 initCapabilityTierGate({ approvals: approvalService });
 
@@ -447,7 +461,7 @@ const requesterDecideProbe = async () => {
   app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
   app.use(
     '/api/approvals',
-    createApprovalsRouter(approvalService, approvalGrantService, { isLoginEnabled: () => false })
+    createApprovalsRouter(approvalService, { isLoginEnabled: () => false })
   );
   requestTarget.mount(app);
 
@@ -522,6 +536,16 @@ capabilityConformance(registry, {
     // No identity in a conformance invocation, so the handler answers its own
     // `no-agent` refusal — wired and reachable, which is what this suite asks.
     'memory.write': { action: 'add', text: 'a conformance note' },
+    // Anonymous here, so the handler refuses with its own structured error
+    // (there is no agent to scope the request to), which is what "wired" means.
+    'permissions.request_access': {
+      action: 'capabilities.list',
+      arguments: {},
+      reason: 'a conformance probe',
+    },
+    // A floor-area action: nothing lets it run without a person's yes, so the
+    // gate answers before the handler, which is the wiring this proves.
+    'permissions.change': { target: 'everyone', area: 'tasks', state: 'ask' },
     'mcp.list': { agentId: 'conformance-agent' },
     'mcp.add': {
       agentId: 'conformance-agent',
@@ -571,24 +595,20 @@ capabilityConformance(registry, {
     // invocation do the thing the suite is asking about, and exercises the sigil
     // that `normalizeRoomNameNeedle` strips on the way in.
     'rooms.find_room': { name: `#${CONFORMANCE_ROOM_SLUG}` },
-    // The five that ARRANGE rooms, and the first real subjects the tool-group
-    // check has ever had (DOR-1611, acceptance criterion 12). Until they landed
-    // that check ran over an empty set and could only ever be green.
+    // The verbs that ARRANGE rooms, in the Rooms permission area. Every one of
+    // these must PARSE and then be refused by the PERMISSION, not by a ZodError —
+    // the invoke check reads an unstructured throw as a wiring failure. So each
+    // fixture is a request that would really run if Rooms were Allowed, and each
+    // names the harness room the reads above use.
     //
-    // Every one of these must PARSE and then be refused by the GRANT, not by a
-    // ZodError — the check reads an unstructured throw as "the gate is not
-    // there", which is exactly what it should do. So each fixture is a request
-    // that would really run if the caller held the grant, and each names the
-    // harness room the reads above use.
-    //
-    // Nothing in this file wires a `ToolGroupGrantLookup`, and that is the
-    // point: an unwired gate holds no grant for anybody, which is the fail-closed
-    // state these five have to be refused from.
+    // Nothing in this file wires the permission config, and that is the point:
+    // unwired, no preset is chosen (Unchanged), where Rooms is Blocked.
     'rooms.create': { kind: 'channel', title: 'Conformance opened' },
     'rooms.add_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
     'rooms.remove_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
     'rooms.update': { roomId: CONFORMANCE_ROOM_ID, topic: 'what this room is for' },
     'rooms.leave': { roomId: CONFORMANCE_ROOM_ID },
+    'rooms.archive': { roomId: CONFORMANCE_ROOM_ID },
     // The canvas read (DOR-1999), against the same harness room. With no
     // `documentId` it LISTS what is on the table, which is the arm that needs no
     // document to exist — so the verb really runs and answers `{ documents: [] }`
@@ -641,39 +661,22 @@ describe('capability conformance wiring', () => {
     expect(ids).toContain('rooms.post');
   });
 
-  it('keeps runtime, model and effort out of what an agent may edit on ITS OWN manifest', () => {
-    // Not a spend guard, and saying so would be false: the machine-wide
-    // defaults (`runtimes.*.defaultModel` / `.defaultEffort`) are deliberately
-    // `agent-writable` through `config_patch`, on the operator's own call —
-    // "set yourself to the cheapest model for this batch" is a reasonable thing
-    // to ask an agent to do (see `config-write-policy.ts`).
-    //
-    // The asymmetry is about durability and visibility, not cost. A config
-    // write is one value, in one file the Settings screen shows, that a person
-    // can see and reverse in one place. A manifest write is per agent, scattered
-    // across as many `agent.json` files as there are agents, and it silently
-    // outranks the server default from then on — so an agent quietly pinning
-    // itself would be invisible exactly where somebody would look to explain the
-    // behavior. `update_agent` is the AGENT-facing surface; the operator's HTTP
-    // PATCH carries all three, because a person is driving it.
-    //
-    // A caller that sends one anyway has it dropped, not rejected: the schema
-    // strips unknown keys, so an over-eager agent gets its personality edit
-    // applied and its execution edit ignored.
+  it('keeps runtime, model and effort out of what update_agent may write, and says where they go', () => {
+    // An agent's runtime, model and effort move every schedule that follows the
+    // agent (DOR-2328), so they live on `operator.update_agent_execution`, which
+    // is destructive and asks a person. `update_agent` DECLARES them only so its
+    // handler can refuse them with a pointer: undeclared, the schema would strip
+    // them and an agent would report a model change that never happened (the
+    // DOR-1253 shape). They are `unknown` so the refusal is the answer whatever
+    // they hold; the refusal itself is pinned in `agent-execution-gate.test.ts`.
     const updateAgent = registry.capabilities.find((c) => c.id === 'operator.update_agent');
     const shape = (updateAgent!.input as z.ZodObject<z.ZodRawShape>).shape;
-    expect(Object.keys(shape)).not.toContain('runtime');
-    expect(Object.keys(shape)).not.toContain('model');
-    expect(Object.keys(shape)).not.toContain('effort');
-
-    const parsed = updateAgent!.input.parse({
-      cwd: SANDBOX_CWD,
-      displayName: 'Still fine',
-      model: 'opus',
-      effort: 'xhigh',
-      runtime: 'codex',
-    });
-    expect(parsed).toEqual({ cwd: SANDBOX_CWD, displayName: 'Still fine' });
+    for (const field of ['runtime', 'model', 'effort']) {
+      expect(String((shape[field] as z.ZodType).description)).toContain('update_agent_execution');
+    }
+    const gated = registry.capabilities.find((c) => c.id === 'operator.update_agent_execution');
+    expect(gated?.tier).toBe('destructive');
+    expect(gated?.describeApprovalChange).toBeTypeOf('function');
   });
 });
 
@@ -689,13 +692,15 @@ describe('capability conformance wiring', () => {
  * surfaces here as a SUCCESS where a refusal belongs.
  */
 describe('operator.config_patch refuses posture changes through the registry', () => {
-  it('refuses to turn login off', async () => {
+  it('never turns login off on its own: the gate decides it in Reach & secrets', async () => {
+    // Turning login off is a Reach & secrets change (spec `agent-permissions`
+    // D6), a floor area that is never Allowed, so the gate stops the call before
+    // the handler runs, whatever the preset. The handler's own refusal (for a
+    // call that somehow reached it without a person's yes) is pinned in its
+    // unit tests.
     await expect(
       registry.invoke('operator.config_patch', { patch: { auth: { enabled: false } } })
-    ).rejects.toMatchObject({
-      name: 'CapabilityToolError',
-      payload: { code: 'operator_only_config', paths: ['auth.enabled'] },
-    });
+    ).rejects.toMatchObject({ name: 'CapabilityGateRefusal' });
   });
 
   it('lets an ordinary preference past the guard', async () => {

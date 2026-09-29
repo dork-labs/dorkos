@@ -239,7 +239,10 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
     const current = await readConfigWhenReady(context, baseURL);
     const { onboarding, profile, telemetry, ui, dorkHome } = (await current.json()) as {
       onboarding?: { dismissedAt?: string };
-      profile?: { rolePromptDismissedAt?: string | null };
+      profile?: {
+        rolePromptDismissedAt?: string | null;
+        identityPromptDismissedAt?: string | null;
+      };
       telemetry?: { userHasDecided?: boolean };
       ui?: { fullPowerDecidedAt?: string | null; fullPowerChoice?: string | null };
       dorkHome?: string;
@@ -254,6 +257,7 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
     if (
       onboarding?.dismissedAt &&
       profile?.rolePromptDismissedAt &&
+      profile?.identityPromptDismissedAt &&
       telemetry?.userHasDecided &&
       ui?.fullPowerDecidedAt
     ) {
@@ -270,7 +274,13 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
         context.patch('/api/config', {
           data: {
             onboarding: { dismissedAt: onboarding?.dismissedAt ?? now },
-            profile: { rolePromptDismissedAt: profile?.rolePromptDismissedAt ?? now },
+            // Both one-time sidebar prompts — what you do, and what to call
+            // you (DOR-677) — settled, so neither takes the bottom slot a spec
+            // expects to find a promo or nothing in.
+            profile: {
+              rolePromptDismissedAt: profile?.rolePromptDismissedAt ?? now,
+              identityPromptDismissedAt: profile?.identityPromptDismissedAt ?? now,
+            },
             // Record a settled decision so the launch modal never renders. NOT
             // `?? true` like the two above: `userHasDecided` defaults to an explicit
             // `false` (unlike `dismissedAt`, which is absent until set), and
@@ -285,8 +295,8 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
             // this suite's steady state, so without this every spec is ambushed by
             // it the way telemetry once ambushed them. Settle a real "supervised"
             // decision: it records that the question was answered WITHOUT flipping
-            // any consent-gated value (no autonomy stop, no standing grants, no open
-            // mesh), so the suite runs at the same safe defaults it always has. The
+            // any consent-gated value (no autonomy stop, no open mesh), so the suite
+            // runs at the same safe defaults it always has. The
             // opt-in `full-power-door.spec.ts` re-opens the door on its own serial
             // run; nothing else should see it.
             ui: {

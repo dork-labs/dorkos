@@ -74,7 +74,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,7 +111,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
     registeredBy: 'test',
     behavior: { responseMode: 'always' },
     personaEnabled: true,
-    enabledToolGroups: {},
   }),
 }));
 vi.mock('../../../../lib/logger.js', () => ({
@@ -140,6 +139,16 @@ import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../mcp-tools/types.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { RelayContextDeps } from '../context-builder.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+  testHome,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const CWD = '/tmp/dor-1292-probe-cwd';
 
@@ -283,7 +292,7 @@ function tagsIn(text: string): string[] {
  * @returns The blocks, and the tags they were confirmed to contain.
  */
 async function sharedBlocks(): Promise<{ blocks: string[]; tags: string[] }> {
-  const agentContext = (await buildAgentContextAppend(CWD)).text;
+  const agentContext = (await buildAgentContextAppend(testHome(CWD), CWD)).text;
   const blocks = [GEN_UI_CONTEXT, agentContext];
   return { blocks, tags: blocks.flatMap(tagsIn) };
 }
@@ -295,7 +304,7 @@ async function sharedBlocks(): Promise<{ blocks: string[]; tags: string[] }> {
  * @returns The prose, and the shared blocks that were subtracted out of it.
  */
 async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
-  const assembled = (await buildSystemPromptAppend(CWD)).text;
+  const assembled = (await buildSystemPromptAppend(testHome(CWD), CWD)).text;
   const { blocks: shared } = await sharedBlocks();
   let prose = assembled;
   for (const block of shared) prose = prose.split(block).join('');
@@ -451,7 +460,28 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 103 -> 104 for `feedback_draft` (DOR-2056), on the same terms: no prompt
     // block names it, so it stays deferred and unprefixed too.
-    expect(advertised.size).toBe(104);
+    //
+    // 104 -> 105 for `archive_room` (spec `agent-permissions` D12), on the same
+    // terms: deferred and unprefixed.
+    //
+    // 105 -> 107 for `request_permission` and `list_my_permissions` (spec
+    // `agent-permissions` D8, D9). No claude-code prompt block names either bare:
+    // the Blocked-area line names the request tool by its ENDING, the form that
+    // survives every runtime's prefix.
+    //
+    // 107 -> 108 for `marketplace_update` (DOR-2195). `<marketplace_tools>` names
+    // it, prefixed, like every marketplace tool.
+    //
+    // 108 -> 109 for `update_agent_execution` (DOR-2328): no prompt block names
+    // it, so it stays deferred and unprefixed.
+    // 109 -> 110 for `change_permission` (spec `agent-permissions` D9): the
+    // settings tool's description names it by its ENDING, never bare.
+    // 110 -> 111 for `accounts_usage` (spec `claude-account-fleet` D2): no prompt
+    // block names it, so it stays deferred and unprefixed.
+    // 111 -> 112 for `accounts_probe` (spec `claude-account-fleet` D3), likewise.
+    // 112 -> 113 for `session_start` (spec `claude-account-fleet` D5): no prompt
+    // block names it, so it stays deferred and unprefixed.
+    expect(advertised.size).toBe(113);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [
@@ -524,7 +554,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // only one, and it names `post_to_room` once more than the first did — in
     // the sentence that says the answer you worked out is the thing you post,
     // which is the line DOR-1643 measured as the one that closes the gap.
-    expect(prefixed.length).toBe(97);
+    //
+    // 97 -> 99 for `marketplace_update` (DOR-2195): `<marketplace_tools>` names it
+    // twice, once among the confirmation-gated mutations and once for its
+    // signature, as it does every other mutation.
+    expect(prefixed.length).toBe(99);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
@@ -534,7 +568,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // never renders needs the same guard, or a name could rot in the half of the
     // prose only agents read.
     const advertised = await advertisedToolNames();
-    const prompt = (await buildSystemPromptAppend(CWD, undefined, { agentSession: true })).text;
+    const prompt = (
+      await buildSystemPromptAppend(testHome(CWD), CWD, undefined, { agentSession: true })
+    ).text;
 
     const unknown = [
       ...new Set(
@@ -566,7 +602,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // and searching the wrong string. The five always-loaded tools are the other
     // half — the prompt has to say they need no lookup, or a room turn spends one
     // anyway out of caution.
-    const prompt = (await buildSystemPromptAppend(CWD)).text;
+    const prompt = (await buildSystemPromptAppend(testHome(CWD), CWD)).text;
     expect(prompt).toContain('<dorkos_tools>');
     expect(prompt).toContain('already in your tool list');
     expect(prompt).toContain('deferred, not missing');
@@ -692,9 +728,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'dorkos-tool-names.ts',
       'gen-ui-context.ts',
       'mcp-content.ts',
+      'permission-tool-filter.ts',
       'resolve-agent-runtime-type.ts',
       'resolve-binary.ts',
       'room-context-block.ts',
+      'room-files-refresh-lines.ts',
       'room-tools-context.ts',
       'run-probe.ts',
       'runtime-environment-catalog.ts',

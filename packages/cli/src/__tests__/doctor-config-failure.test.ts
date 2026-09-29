@@ -114,7 +114,7 @@ describe('configFailureCheck', () => {
  * Settings a NEWER version of DorkOS wrote and this one cannot read (DOR-1227).
  *
  * Falling back to the default is the right behaviour and the wrong secret. The
- * tolerated set includes `auth.enabled` and `approvals.trustWindowMinutes`, and
+ * tolerated set includes `auth.enabled` and `uploads.maxFiles`, and
  * before DOR-1227 a file holding a value one of those could not take was
  * condemned loudly, with a backup a person could see. Doctor is where somebody
  * looks when something feels off, so it has to be able to say so.

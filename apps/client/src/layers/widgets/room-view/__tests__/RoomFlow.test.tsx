@@ -197,6 +197,39 @@ describe('a line the room wrote about somebody', () => {
   });
 });
 
+describe('an agent that left the team (DOR-2095)', () => {
+  const retiredAna = {
+    author: {
+      id: 'ana',
+      kind: 'agent' as const,
+      displayName: 'Ana',
+      handle: null,
+      retired: true,
+    },
+    origin: 'local' as const,
+  };
+
+  it('keeps its messages signed with its name, marked retired', () => {
+    renderTimeline({
+      members: [member('kai', 'Kai', 'human')],
+      formerAuthors: [retiredAna],
+      entries: [entry(1, { authorId: 'ana', body: { text: 'shipped it' } })],
+    });
+    const row = screen.getByTestId('room-entry');
+    expect(within(row).getByText('Ana')).toBeInTheDocument();
+    expect(within(row).queryByText('Unknown')).not.toBeInTheDocument();
+    expect(within(row).getByTestId('retired-mark')).toHaveTextContent('Retired');
+  });
+
+  it('marks nobody retired who is still on the roster', () => {
+    renderTimeline({
+      members: [member('ana', 'Ana')],
+      entries: [entry(1, { authorId: 'ana', body: { text: 'shipped it' } })],
+    });
+    expect(screen.queryByTestId('retired-mark')).not.toBeInTheDocument();
+  });
+});
+
 describe('RoomFlow', () => {
   it('shows a loading state before any history arrives', () => {
     renderTimeline({ isLoading: true });
@@ -939,6 +972,25 @@ describe('toMessageAuthor', () => {
       body: { text: 'shipped it', subjectAuthorId: 'kai' },
     });
     expect(displayAuthorIdOf(moment, authors)).toBe('ana');
+  });
+
+  it('names a former author from the room read, and lets the roster win a clash', () => {
+    const authors = authorsById(
+      [member('ana', 'Ana (live)')],
+      [
+        {
+          author: { id: 'bo', kind: 'agent', displayName: 'Bo', handle: null, retired: true },
+          origin: 'local',
+        },
+        {
+          author: { id: 'ana', kind: 'agent', displayName: 'Ana (old)', handle: null },
+          origin: 'local',
+        },
+      ]
+    );
+    expect(toMessageAuthor('bo', authors)).toMatchObject({ displayName: 'Bo', retired: true });
+    expect(toMessageAuthor('ana', authors).displayName).toBe('Ana (live)');
+    expect(toMessageAuthor('ana', authors).retired).toBeUndefined();
   });
 
   it('keeps a departed member’s words rather than dropping them', () => {

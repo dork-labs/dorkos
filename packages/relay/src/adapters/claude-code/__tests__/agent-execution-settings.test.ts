@@ -47,6 +47,9 @@ function createMockRelay(): RelayPublisher {
   };
 }
 
+/** A person through a chat binding: a sender whose payload may shape the turn (DOR-2446). */
+const BINDING_SENDER = 'relay.human.telegram.123';
+
 function createTestEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope {
   return {
     id: 'msg-001',
@@ -144,6 +147,7 @@ describe('a relay turn runs on the agent it addressed', () => {
     // session still runs in the directory the payload named.
     await adapter.start(relay);
     const envelope = createTestEnvelope({
+      from: BINDING_SENDER,
       payload: { content: 'What is the status?', cwd: '/projects/other' },
     });
 
@@ -160,12 +164,39 @@ describe('a relay turn runs on the agent it addressed', () => {
     );
   });
 
+  it("hands the runtime the binding's agent as the turn's agent (DOR-2355)", async () => {
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({
+      from: BINDING_SENDER,
+      payload: { content: 'hi', cwd: '/ws/ana-fix', forAgent: '/projects/ana' },
+    });
+
+    await adapter.deliver(envelope.subject, envelope, undefined);
+
+    expect(agentManager.sendMessage).toHaveBeenCalledWith(
+      'agent-ulid-1',
+      expect.any(String),
+      expect.objectContaining({ cwd: '/ws/ana-fix', forAgent: '/projects/ana' })
+    );
+  });
+
+  it('names no turn agent when the payload carries none', async () => {
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({ payload: { content: 'hi', cwd: '/projects/other' } });
+
+    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
+
+    const opts = vi.mocked(agentManager.sendMessage).mock.calls[0]![2];
+    expect(opts).not.toHaveProperty('forAgent');
+  });
+
   it("falls back to the payload's directory when no agent was resolved", async () => {
     // A binding-created session whose subject Mesh cannot resolve still has a
     // project directory, and a project directory is a better guess at a
     // manifest than nothing.
     await adapter.start(relay);
     const envelope = createTestEnvelope({
+      from: BINDING_SENDER,
       payload: { content: 'What is the status?', cwd: '/projects/other' },
     });
 
@@ -220,7 +251,10 @@ describe('a relay turn runs on the agent it addressed', () => {
     // absence is not consent (DOR-604), so the binding's mode — or `default` —
     // stays exactly what it was.
     await adapter.start(relay);
+    // From a person through a binding: the one kind of sender whose payload may
+    // carry a permission mode (DOR-2446).
     const envelope = createTestEnvelope({
+      from: 'relay.human.telegram.123',
       payload: {
         content: 'What is the status?',
         __bindingPermissions: { permissionMode: 'bypassPermissions' },
@@ -266,5 +300,98 @@ describe('a relay turn runs on the agent it addressed', () => {
     expect(result.success).toBe(true);
     const ensureCall = vi.mocked(agentManager.ensureSession).mock.calls[0];
     expect(ensureCall[1]).not.toHaveProperty('model');
+  });
+});
+
+describe('a relay message can name the account a new conversation runs on (DOR-2384)', () => {
+  let agentManager: AgentRuntimeLike;
+  let deps: ClaudeCodeAdapterDeps;
+  let relay: RelayPublisher;
+  let resolveExecutionSettings: ReturnType<typeof vi.fn<ExecutionSettingsResolver>>;
+
+  beforeEach(() => {
+    agentManager = createMockAgentManager();
+    relay = createMockRelay();
+    // A host that honors the request, so what reaches the runtime is the
+    // adapter's plumbing and nothing else. Whether a request is honored at all
+    // is the host's (the account advisor's) call, tested server-side.
+    resolveExecutionSettings = vi
+      .fn<ExecutionSettingsResolver>()
+      .mockImplementation(async ({ requestedAccount }) =>
+        requestedAccount ? { accountHint: requestedAccount } : {}
+      );
+    deps = {
+      agentManager,
+      approvalAuthorizer: () => true,
+      traceStore: createMockTraceStore(),
+      resolveExecutionSettings,
+    };
+  });
+
+  it('asks the host about the named account and hands its answer to sendMessage', async () => {
+    const adapter = new ClaudeCodeAdapter('claude-code', {}, deps);
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({ payload: { content: 'Go', account: 'work' } });
+
+    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
+
+    expect(resolveExecutionSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedAccount: 'work' })
+    );
+    const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
+    expect(sendCall[2]).toEqual(expect.objectContaining({ accountHint: 'work' }));
+  });
+
+  it('never asks about an account for a conversation that has already started', async () => {
+    // A resumed conversation stays on the account it launched on: the request is
+    // not even put to the host, so no advisor is asked and no hint can travel.
+    // The first message has no persisted SDK session; the second resumes one.
+    const agentSessionStore: AgentSessionStoreLike = {
+      get: vi.fn().mockReturnValueOnce(undefined).mockReturnValue('sdk-uuid-42'),
+      set: vi.fn(),
+    };
+    const adapter = new ClaudeCodeAdapter('claude-code', {}, { ...deps, agentSessionStore });
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({ payload: { content: 'Go', account: 'work' } });
+
+    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
+    await adapter.deliver(envelope.subject, { ...envelope, id: 'msg-002' }, MESH_CONTEXT);
+
+    const [fresh, resumed] = resolveExecutionSettings.mock.calls.map(([opts]) => opts);
+    expect(fresh).toEqual(expect.objectContaining({ requestedAccount: 'work' }));
+    expect(resumed).toEqual(expect.objectContaining({ sessionId: 'sdk-uuid-42' }));
+    expect(resumed).not.toHaveProperty('requestedAccount');
+    const sends = vi.mocked(agentManager.sendMessage).mock.calls;
+    expect(sends[0]?.[2]).toEqual(expect.objectContaining({ accountHint: 'work' }));
+    expect(sends[1]?.[2]).not.toHaveProperty('accountHint');
+  });
+
+  it('ignores an account that is not a non-empty string', async () => {
+    const adapter = new ClaudeCodeAdapter('claude-code', {}, deps);
+    await adapter.start(relay);
+    for (const [i, account] of ['', 42, { id: 'work' }, 'work'].entries()) {
+      const envelope = createTestEnvelope({ id: `msg-${i}`, payload: { content: 'Go', account } });
+      await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
+    }
+
+    expect(
+      resolveExecutionSettings.mock.calls.map(([opts]) => opts.requestedAccount ?? null)
+    ).toEqual([null, null, null, 'work']);
+  });
+
+  it('runs the turn without an account when the host refuses it', async () => {
+    resolveExecutionSettings.mockResolvedValue({});
+    const adapter = new ClaudeCodeAdapter('claude-code', {}, deps);
+    await adapter.start(relay);
+    const envelope = createTestEnvelope({ payload: { content: 'Go', account: 'work' } });
+
+    const result = await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
+
+    expect(resolveExecutionSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedAccount: 'work' })
+    );
+    expect(result.success).toBe(true);
+    const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
+    expect(sendCall[2]).not.toHaveProperty('accountHint');
   });
 });

@@ -34,12 +34,8 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
 const SEEDED_ROOM_MD = '# House rules\n\nSay what you did.\n';
 
 /**
- * A second file, so the listing has something to sort ROOM.md above.
- *
- * At the root, and not in a `notes/` folder: saving a room's file does not make
- * new folders (§3.10), so a seed that reached for one was refused
- * `ROOM_FILE_NOT_FOUND` — the same refusal a person would get, which is why the
- * seed goes through the real door rather than around it.
+ * A second file, so the listing has something to sort ROOM.md above. The seed
+ * goes through the real save route rather than around it.
  */
 const SEEDED_NOTE = '# Sizing\n\nRough, and probably wrong.\n';
 

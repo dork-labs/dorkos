@@ -484,12 +484,12 @@ describe('TaskReconciler', () => {
       const { repo, recon } = await projectReconciler();
       const { linkPath, filePath } = await installProjectPackage(repo, 'acme', 'daily');
       await recon.reconcile();
-      expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+      expect(store.fileSync.getByFilePath(filePath)?.status).toBe('pending_approval');
 
       await fs.rm(linkPath, { force: true });
       await recon.reconcile();
 
-      const row = store.getByFilePath(filePath);
+      const row = store.fileSync.getByFilePath(filePath);
       expect(row?.status).toBe('paused');
       // The file is untouched: pausing is the end for a skill that still exists
       // and is merely unreachable, and its history is the person's.
@@ -507,7 +507,7 @@ describe('TaskReconciler', () => {
       await recon.reconcile();
       await recon.reconcile();
 
-      expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+      expect(store.fileSync.getByFilePath(filePath)?.status).toBe('pending_approval');
       await fs.rm(repo, { recursive: true, force: true });
     });
 
@@ -525,13 +525,13 @@ describe('TaskReconciler', () => {
         const { repo, recon } = await projectReconciler();
         const { filePath } = await installProjectPackage(repo, 'acme', 'daily');
         await recon.reconcile();
-        expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+        expect(store.fileSync.getByFilePath(filePath)?.status).toBe('pending_approval');
 
         await fs.chmod(filePath, 0o000);
         try {
           await recon.reconcile();
 
-          expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+          expect(store.fileSync.getByFilePath(filePath)?.status).toBe('pending_approval');
         } finally {
           await fs.chmod(filePath, 0o644);
           await fs.rm(repo, { recursive: true, force: true });
@@ -568,13 +568,13 @@ describe('TaskReconciler', () => {
       );
       unwatched.addRoot(skillsRoot(skillsDir, 'global'));
       await recon.reconcile();
-      expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+      expect(store.fileSync.getByFilePath(filePath)?.status).toBe('pending_approval');
 
       // The project link goes; the one in the global root still reaches the file.
       await fs.rm(path.join(repo, '.agents', 'skills', 'acme__daily'), { force: true });
       await unwatched.sweepUnwatchedRoots();
 
-      expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+      expect(store.fileSync.getByFilePath(filePath)?.status).toBe('pending_approval');
       await fs.rm(repo, { recursive: true, force: true });
     });
 
@@ -668,7 +668,7 @@ describe('TaskReconciler', () => {
         .where(eq(pulseSchedules.filePath, filePath))
         .run();
 
-      vi.spyOn(store, 'upsertFromFile').mockImplementation(() => {
+      vi.spyOn(store.fileSync, 'upsertFromFile').mockImplementation(() => {
         throw new Error('db is busy');
       });
 
@@ -780,7 +780,7 @@ describe('TaskReconciler', () => {
 
     it('damps a repeating error the same way, and keeps the error object on the first', async () => {
       const filePath = await writeTask('flaky', 'flaky');
-      vi.spyOn(store, 'upsertFromFile').mockImplementation(() => {
+      vi.spyOn(store.fileSync, 'upsertFromFile').mockImplementation(() => {
         throw new Error('db is busy');
       });
 
@@ -801,7 +801,7 @@ describe('TaskReconciler', () => {
 
     it('logs immediately when the same operation starts failing a different way', async () => {
       await writeTask('flaky', 'flaky');
-      const upsert = vi.spyOn(store, 'upsertFromFile').mockImplementation(() => {
+      const upsert = vi.spyOn(store.fileSync, 'upsertFromFile').mockImplementation(() => {
         throw new Error('db is busy');
       });
 

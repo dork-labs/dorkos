@@ -66,6 +66,8 @@ function statusWithLastError(lastError: SessionStatus['lastError']): SessionStat
     runningSubagentCount: 0,
     lifecycle: 'error',
     lastError,
+    limit: null,
+    accountUsage: null,
   };
 }
 
@@ -87,6 +89,13 @@ describe('shouldShowTurnFailedNotice', () => {
   it('is true when the failed turn produced no assistant message at all', () => {
     expect(shouldShowTurnFailedNotice('error', null, [msg('user')])).toBe(true);
     expect(shouldShowTurnFailedNotice('error', null, [])).toBe(true);
+  });
+
+  it('gives way to the out-of-usage banner while the session has a limit (one notice, not two)', () => {
+    // Codex's limited turn leaves no inline part, so only the limit hides it.
+    expect(shouldShowTurnFailedNotice('error', null, [msg('user')], true)).toBe(false);
+    // Any other failure keeps the notice.
+    expect(shouldShowTurnFailedNotice('error', null, [msg('user')], false)).toBe(true);
   });
 
   it('is suppressed while the transport-error banner is showing', () => {

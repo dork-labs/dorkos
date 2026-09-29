@@ -1,0 +1,35 @@
+{
+  "period": "2026-08",
+  "downloadUrl": "https://example.invalid/statements/abc123.csv",
+  "expiresAt": "2026-10-15T12:00:00.000Z",
+  "from": "2026-08-20T00:00:00.000Z",
+  "to": "2026-09-20T00:00:00.000Z",
+  "lines": [
+    {
+      "key": "md_opaque_0001",
+      "displayName": "the model shown in your statement",
+      "units": 91000,
+      "unit": "tokens",
+      "listPriceMicro": "3100",
+      "dorkosPriceMicro": "3500",
+      "costBasis": "published_price"
+    },
+    {
+      "key": "md_opaque_0002",
+      "displayName": "another model shown in your statement",
+      "units": 4200,
+      "unit": "tokens",
+      "listPriceMicro": "260",
+      "dorkosPriceMicro": "300",
+      "costBasis": "published_price"
+    }
+  ],
+  "totals": {
+    "listPriceMicro": "3360",
+    "dorkosPriceMicro": "3800"
+  },
+  "denomination": {
+    "currency": "XTS",
+    "microPerCredit": "250"
+  }
+}

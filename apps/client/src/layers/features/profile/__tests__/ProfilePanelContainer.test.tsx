@@ -2,12 +2,6 @@
  * @vitest-environment jsdom
  *
  * Whose profile the Settings tab edits, and what it says when there is nobody.
- *
- * The two no-form states are the point. A read that FAILED and a read that
- * SUCCEEDED with an empty roster look identical from `!self`, and they are not
- * the same thing: the first is worth retrying, the second is the Obsidian
- * embed, whose roster stub answers `{ members: [] }` by construction. Telling
- * that person to reopen the tab sends them round a loop that cannot terminate.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -48,18 +42,16 @@ describe('ProfilePanelContainer', () => {
     expect(await screen.findByText(/could not read your profile/i)).toBeInTheDocument();
   });
 
-  it('names the missing server when the read SUCCEEDED with nobody on it', async () => {
-    // The Obsidian embed's own answer — a 200 with an empty roster, not an error.
+  it('keeps the form closed when the account row could not be loaded', async () => {
     renderContainer(
       vi.fn().mockResolvedValue({
         members: [],
-        warnings: [{ source: 'team', message: 'No DorkOS server in embedded mode.' }],
+        warnings: [{ source: 'account', message: 'account unavailable' }],
       })
     );
 
-    expect(await screen.findByText(/needs a DorkOS server/i)).toBeInTheDocument();
-    // The retry sentence would be a loop that cannot terminate here.
-    expect(screen.queryByText(/try reopening this tab/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/could not find your profile/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Handle')).not.toBeInTheDocument();
   });
 
   it('draws the form on your own row', async () => {

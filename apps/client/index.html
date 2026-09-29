@@ -122,7 +122,7 @@
         // Without the second caller the shell would reload this panel away,
         // clear caches under it, and restart the app over a JavaScript error,
         // ending on a page that says LESS than the one it destroyed. Guarded
-        // because there is no bridge in a browser or the Obsidian embed, and
+        // because there is no bridge in a browser, and
         // wrapped because a bridge that throws must not change what the page
         // does.
         function reportAlive() {
@@ -502,10 +502,11 @@
     </script>
     <script data-desktop-class-detect>
       (function () {
-        var t = localStorage.getItem('gateway-theme');
+        var t = localStorage.getItem('dorkos-theme');
         var dark =
           t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.classList.add('dark');
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.classList.toggle('light', !dark);
         // Desktop (Electron) shell detection, paint-safe: the preload script's
         // contextBridge runs before this inline script, so window.electronAPI
         // is already available here.

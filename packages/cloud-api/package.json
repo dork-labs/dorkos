@@ -1,6 +1,6 @@
 {
   "name": "@dork-labs/cloud-api",
-  "version": "0.82.0",
+  "version": "0.89.0",
   "description": "The public wire contract for DorkOS Cloud: Zod schemas for the /v1 surface, plus a thin fetch client.",
   "license": "MIT",
   "repository": {
@@ -23,6 +23,10 @@
       "types": "./dist/client.d.ts",
       "default": "./dist/client.js"
     },
+    "./display": {
+      "types": "./dist/display.d.ts",
+      "default": "./dist/display.js"
+    },
     "./fixtures/v1/*.json": "./fixtures/v1/*.json",
     "./package.json": "./package.json"
   },
@@ -34,11 +38,12 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepublishOnly": "pnpm run build",
+    "prepublishOnly": "pnpm run clean && pnpm run build",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "peerDependencies": {
     "zod": "^4.6.2"

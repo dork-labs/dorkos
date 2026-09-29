@@ -296,6 +296,30 @@ describe('createCanUseTool — approval gate', () => {
     }
   );
 
+  it.each(OWNER_FACING_VERBS)(
+    // A session standing where some agent works but that cannot be tied to the
+    // turn's agent answers `agentIdentityPresented` with NO identity (DOR-2091).
+    // That is an answer, but it names nobody, so it must ask — a gate that
+    // tested "any answer" would wave the call through. Seeded: reverting
+    // `hasAgentIdentity` to `!== undefined` reddens every row.
+    'still raises a card for %s when the session is a machine nobody can name',
+    async (toolName, input) => {
+      const session = makeSession('default');
+      const canUseTool = createCanUseTool(session, noopLog, undefined, () =>
+        Promise.resolve({ agentIdentityPresented: true })
+      );
+
+      const result = canUseTool(toolName, input, makeContext(`refused-${toolName}`));
+      const settled = await Promise.race([
+        result.then(() => 'settled' as const),
+        Promise.resolve('pending' as const),
+      ]);
+
+      expect(settled).toBe('pending');
+      expect(session.eventQueue[0].type).toBe('approval_required');
+    }
+  );
+
   it('asks rather than skipping the card when the identity lookup throws', async () => {
     // Fail-closed: the fallback caller on the other side of these verbs is the
     // person who owns the install, so "could not tell" must never mean "allow".
@@ -352,10 +376,10 @@ describe('createCanUseTool — approval gate', () => {
  * `mcp__dorkos__control_ui` sits in {@link DORKOS_AGENT_TOOLS}, which
  * `createCanUseTool` short-circuits on BEFORE `resolveModeDecision` runs, so the
  * session's permission mode never gets a vote. It was put there under the comment
- * "pure client-side UI mutations, no system access", and for 21 of its 22 actions
+ * "pure client-side UI mutations, no system access", and for 20 of its 21 actions
  * that is true.
  *
- * `apply_layout` is the twenty-second. The client answers it by POSTing
+ * `apply_layout` is the exception. The client answers it by POSTing
  * `/api/shapes/:name/apply`, and applying a Shape writes a `SKILL.md` into the
  * person's own skills root for every schedule the Shape declares, records a
  * receipt naming what it wrote, rewrites `ui.shapes.active` in
@@ -1621,7 +1645,7 @@ describe('counting the stops auto mode makes on DorkOS tools', () => {
 
 describe('an ask nobody can answer is refused the moment it is raised', () => {
   const DENIAL =
-    'Nobody is available to approve this on a scheduled run. ' +
+    'Nobody is available to approve this right now. ' +
     'Do what you can without it and say what you skipped.';
 
   /** The refusal record a handler pushed, if it pushed one. */
@@ -1652,6 +1676,26 @@ describe('an ask nobody can answer is refused the moment it is raised', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('refuses in a turn nobody is watching, and asks again in the next one', async () => {
+    // An automatic carry-over's first turn has nobody to ask; the person who
+    // opens that session next does. The flag is the turn's, not the session's.
+    const session = makeBareSession({ unattendedTurn: true });
+    await expect(
+      handleToolApproval(session, 'turn-1', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'turn-1',
+      } as ToolApprovalContext)
+    ).resolves.toEqual({ behavior: 'deny', message: DENIAL });
+
+    // The next send reassigns it; that turn's approval waits for its person.
+    session.unattendedTurn = false;
+    void handleToolApproval(session, 'turn-2', 'Bash', { command: 'ls' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'turn-2',
+    } as ToolApprovalContext);
+    expect(session.pendingInteractions.get('turn-2')?.type).toBe('approval');
   });
 
   it('records the refusal under a reason only DorkOS writes', async () => {

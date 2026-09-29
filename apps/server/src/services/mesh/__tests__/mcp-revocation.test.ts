@@ -168,7 +168,6 @@ async function setupWorkspace(connection: McpServerTransport = OAUTH_HTTP): Prom
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: SERVER,

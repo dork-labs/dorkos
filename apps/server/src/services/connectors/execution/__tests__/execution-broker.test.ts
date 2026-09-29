@@ -1,4 +1,5 @@
 /** Live authority and retry invariants for the DorkOS connector broker. */
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   connectionOperationGrants,
@@ -20,9 +21,9 @@ import {
   type ConnectorProviderExecuteCommand,
   type ConnectorProviderExecuteResult,
 } from '@dorkos/shared/connector-schemas';
-import type {
-  ConnectorExternalAccountRef,
-  ConnectorProvider,
+import {
+  type ConnectorExternalAccountRef,
+  type ConnectorProvider,
 } from '@dorkos/shared/connector-provider';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import { ConnectionStore } from '../../connection-store.js';
@@ -44,6 +45,33 @@ const REVISION_ID = 'revision-a';
 const DESTRUCTIVE_REVISION_ID = 'revision-destructive';
 const RETRY_REVISION_ID = 'revision-retry';
 const EXTERNAL_REF = 'provider-account-a' as ConnectorExternalAccountRef;
+
+/**
+ * Shaped the way a real provider writes an operation's input: optional fields
+ * carry a `default`, fields carry `title` and `examples` (strings on the integer
+ * one, as Composio's do), and nothing says `additionalProperties`. The fixture
+ * this replaced had none of that, so a check that filled defaults in and then
+ * refused the call for no longer matching passed here while refusing every
+ * real Gmail call.
+ */
+const PROVIDER_SHAPED_INPUT_SCHEMA = {
+  type: 'object',
+  title: 'SendMessageRequest',
+  properties: {
+    message: { type: 'string', title: 'Message', examples: ['hello'] },
+    user_id: { type: 'string', title: 'User Id', default: 'me', examples: ['me'] },
+    max_attempts: {
+      type: 'integer',
+      title: 'Max Attempts',
+      default: 1,
+      minimum: 1,
+      maximum: 5,
+      examples: ['1', '3'],
+    },
+    label_ids: { type: 'array', items: { type: 'string' }, title: 'Label Ids' },
+  },
+  required: ['message'],
+};
 
 interface ScriptedProvider extends ConnectorProvider {
   readonly commands: ConnectorProviderExecuteCommand[];
@@ -169,12 +197,7 @@ describe('ConnectorExecutionBroker', () => {
           toolkitVersion: '2026-09-01',
           schemaHash: `sha256:${revision.id}`,
           providerRevisionRef: `10000000-0000-4000-8000-00000000000${index + 1}`,
-          inputSchemaJson: JSON.stringify({
-            type: 'object',
-            properties: { message: { type: 'string' } },
-            required: ['message'],
-            additionalProperties: false,
-          }),
+          inputSchemaJson: JSON.stringify(PROVIDER_SHAPED_INPUT_SCHEMA),
           discoveredAt: '2026-09-06T12:00:00.000Z',
         }))
       )
@@ -330,6 +353,7 @@ describe('ConnectorExecutionBroker', () => {
       agentId: 'agent-a',
       attemptIndex: 1,
       grantScopeVersion: 4,
+      grantSubject: 'agent',
       hostedRevisionId: '10000000-0000-4000-8000-000000000001',
       attribution: { surface: 'mcp', actorKind: 'agent', actorId: 'agent-a' },
     });
@@ -442,6 +466,77 @@ describe('ConnectorExecutionBroker', () => {
       authorization.prepare({ capabilityId: 'connectors.execute_write', target, principal: other })
     ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_OWNER_MISMATCH' } });
     expect(db.select().from(connectorUsageAttempts).all()).toEqual([]);
+    expect(provider.commands).toEqual([]);
+  });
+
+  it('sends the provider exactly the arguments the agent sent, never the schema defaults', async () => {
+    const sent = { message: 'hello', label_ids: ['INBOX'] };
+
+    await expect(
+      execute(principal(), 'connectors.execute_write', undefined, { ...target, arguments: sent })
+    ).resolves.toMatchObject({ result: { status: 'success' } });
+    expect(provider.dispatchedCommands.map((command) => command.arguments)).toEqual([sent]);
+  });
+
+  it('names the field an agent got wrong without echoing what it sent', async () => {
+    const refusal = await authorization
+      .prepare({
+        capabilityId: 'connectors.execute_write',
+        target: { ...target, arguments: { message: 'hello', max_attempts: 'nine-hundred' } },
+        principal: principal(),
+      })
+      .then(
+        () => undefined,
+        (error: { payload?: { code?: string; error?: string } }) => error.payload
+      );
+
+    expect(refusal?.code).toBe('CONNECTOR_ARGUMENTS_INVALID');
+    expect(refusal?.error).toMatch(/max_attempts: .*expected number/);
+    expect(refusal?.error).not.toContain('nine-hundred');
+    expect(provider.commands).toEqual([]);
+  });
+
+  it('refuses cleanly, before dispatch, when a stored schema is not readable JSON', async () => {
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'revision-corrupt',
+        providerInstanceId: provider.instanceId,
+        toolkit: 'gmail',
+        operationSlug: 'gmail.corrupt',
+        toolkitVersion: '2026-09-01',
+        schemaHash: 'sha256:revision-corrupt',
+        capabilityClassification: 'write',
+        retryPolicy: 'never',
+        providerRevisionRef: '10000000-0000-4000-8000-000000000009',
+        inputSchemaJson: '{"type":"object",',
+        discoveredAt: '2026-09-06T12:00:00.000Z',
+      })
+      .run();
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-revision-corrupt',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: CONNECTION_ID,
+        operationRevisionId: 'revision-corrupt',
+        createdBy: 'operator',
+        createdAt: '2026-09-06T12:00:00.000Z',
+      })
+      .run();
+
+    await expect(
+      authorization.prepare({
+        capabilityId: 'connectors.execute_write',
+        target: { ...target, operationRevisionId: 'revision-corrupt' },
+        principal: principal(),
+      })
+    ).rejects.toMatchObject({
+      payload: {
+        code: 'CONNECTOR_ARGUMENTS_INVALID',
+        error: expect.stringContaining('cannot be checked'),
+      },
+    });
     expect(provider.commands).toEqual([]);
   });
 
@@ -1092,5 +1187,70 @@ describe('ConnectorExecutionBroker', () => {
     expect(provider.commands).toHaveLength(1);
     expect(db.select().from(connectorUsageAttempts).all()).toHaveLength(1);
     expect(db.select().from(connectorUsageTerminalReceipts).all()).toHaveLength(1);
+  });
+
+  describe('a sign-in the service says has ended', () => {
+    const signInOf = () =>
+      db
+        .select({ status: connections.status, lastVerifiedAt: connections.lastVerifiedAt })
+        .from(connections)
+        .where(eq(connections.id, CONNECTION_ID))
+        .get();
+
+    beforeEach(() => {
+      broker = new ConnectorExecutionBroker(
+        authorization,
+        new ConnectorUsageStore(db),
+        { revalidate: () => true },
+        () => new Date('2026-09-06T12:00:01.000Z'),
+        undefined,
+        registry
+      );
+    });
+
+    it.each([
+      ['ACCOUNT_SIGN_IN_EXPIRED', 'expired'],
+      ['ACCOUNT_SIGN_IN_REVOKED', 'revoked'],
+    ] as const)(
+      'records %s on the connection at once and tells the agent to ask for a new sign-in',
+      async (code, status) => {
+        provider.results.push({
+          status: 'error',
+          code,
+          message: CONNECTION_READINESS_COPY.signed_out.agent,
+          retryable: false,
+        });
+
+        await expect(execute()).resolves.toMatchObject({
+          result: { status: 'error', code, message: CONNECTION_READINESS_COPY.signed_out.agent },
+        });
+        expect(signInOf()).toEqual({ status, lastVerifiedAt: expect.any(String) });
+
+        // The next call is refused before it reaches the service, with the same one fix.
+        await expect(execute()).rejects.toMatchObject({
+          payload: {
+            code: 'CONNECTOR_SIGN_IN_ENDED',
+            error: CONNECTION_READINESS_COPY.signed_out.agent,
+          },
+        });
+        expect(provider.commands).toHaveLength(1);
+      }
+    );
+
+    it.each([
+      { status: 'error', code: 'PROVIDER_REJECTED', message: 'Rejected.', retryable: false },
+      { status: 'error', code: 'RATE_LIMITED', message: 'Slow down.', retryable: true },
+      { status: 'error', code: 'ACCOUNT_CHECK_FAILED', message: 'No answer.', retryable: false },
+      { status: 'outcome_unknown', code: 'PROVIDER_OUTCOME_UNKNOWN', message: 'Unknown.' },
+    ] as const)(
+      'leaves the sign-in alone for $code, which is not an ended sign-in',
+      async (result) => {
+        provider.results.push(result);
+
+        await execute();
+
+        expect(signInOf()).toEqual({ status: 'active', lastVerifiedAt: null });
+      }
+    );
   });
 });

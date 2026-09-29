@@ -52,16 +52,17 @@ url = "http://localhost:6242/mcp"
 
 The `Auth` column is **posture-dependent**. "None (login off)" means the `readOnlyCarveOut` lets the call through tokenless while `auth.enabled` is `false`; with login on, every row needs a credential.
 
-| Tool                            | Description                                         | Auth             |
-| ------------------------------- | --------------------------------------------------- | ---------------- |
-| `marketplace_search`            | Search for packages by query, type, category, tags  | None (login off) |
-| `marketplace_get`               | Get full package details + README                   | None (login off) |
-| `marketplace_list_marketplaces` | List configured marketplace sources                 | None (login off) |
-| `marketplace_list_installed`    | List installed packages                             | None (login off) |
-| `marketplace_recommend`         | Recommend packages from a context description       | None (login off) |
-| `marketplace_install`           | Install a package (requires confirmation)           | Always required  |
-| `marketplace_uninstall`         | Remove a package (requires confirmation)            | Always required  |
-| `marketplace_create_package`    | Scaffold a new package in your personal marketplace | Always required  |
+| Tool                            | Description                                               | Auth             |
+| ------------------------------- | --------------------------------------------------------- | ---------------- |
+| `marketplace_search`            | Search for packages by query, type, category, tags        | None (login off) |
+| `marketplace_get`               | Get full package details + README                         | None (login off) |
+| `marketplace_list_marketplaces` | List configured marketplace sources                       | None (login off) |
+| `marketplace_list_installed`    | List installed packages                                   | None (login off) |
+| `marketplace_recommend`         | Recommend packages from a context description             | None (login off) |
+| `marketplace_install`           | Install a package (requires confirmation)                 | Always required  |
+| `marketplace_update`            | Check for newer versions (confirmation only with `apply`) | Always required  |
+| `marketplace_uninstall`         | Remove a package (requires confirmation)                  | Always required  |
+| `marketplace_create_package`    | Scaffold a new package in your personal marketplace       | Always required  |
 
 ## The Confirmation Flow for External Agents
 
@@ -78,11 +79,11 @@ Three things to keep straight here, each of which a previous version of this doc
 - **The TTL is two hours, not five minutes.** `TokenConfirmationProvider` is backed by `ApprovalService`, so unresolved tokens expire on `APPROVAL_TTL_MS` (`services/core/approvals/approval-service.ts`). Expiry is checked when the token is presented.
 - **There is no decide-by-token route.** The requester holds the token, so a decide-by-token path would let it approve its own request. Decisions go by approval id only; the older `POST /api/marketplace/confirmations/:token` route is gone.
 - **`InstallConfirmationDialog` is not this flow.** That modal (`features/marketplace/ui/`) blocks a **human's own** install from the Marketplace tab and shows a permission preview. An agent's request never reaches it; it lands on the approval card instead. Do not name the dialog when documenting the agent path.
-- **`marketplace_uninstall` is gated twice.** It is the marketplace's one `destructive`-tier capability (the registry has others, `operator.update_agent_boundaries` among them, and `tasks_delete` and `mesh_unregister` are hand-registered tools declared in `mcp-tool-tiers.ts`), so the registry's tier gate answers first with `status: 'approval_required'` (plus `approvalId` + `approvalToken`), before this handler's own `requires_confirmation` flow ever runs. A test asserting "the package survived" therefore proves nothing about the tier gate. See `contributing/agent-operator-surface.md` for the discrimination rule.
+- **`marketplace_uninstall` is gated twice.** It is the marketplace's one `destructive`-tier capability (the registry has others, `operator.update_agent_boundaries` and `operator.update_agent_execution` among them, and `tasks_delete` and `mesh_unregister` are hand-registered tools declared in `mcp-tool-tiers.ts`), so the registry's tier gate answers first with `status: 'approval_required'` (plus `approvalId` + `approvalToken`), before this handler's own `requires_confirmation` flow ever runs. A test asserting "the package survived" therefore proves nothing about the tier gate. See `contributing/agent-operator-surface.md` for the discrimination rule.
 
 Tokens are single-use: the first call after a decision spends the token, so a replay reports `declined`.
 
-**A token covers the commands the person read, not just the package name (DOR-647).** The approval binds the executable half of the preview as well as the action: every hook command string (with its event and matcher) and every scheduled job (with its cron, permission mode and whether the package asked for it to be switched on) — `disclosedEffectsOf` in `services/marketplace/disclosed-effects.ts`. When a presented token does not cover the action in front of DorkOS — a different package, a different scope, or a package that now declares different commands — the original approval is left unspent and **DorkOS asks again** rather than proceeding, returning `requires_confirmation` with a fresh token and a `message` naming what the package declares now. That is the same answer the capability tier gate gives a mismatched token (`wrong_action`).
+**A token covers the commands the person read, not just the package name (DOR-647).** The approval binds the executable half of the preview as well as the action: every hook command string (with its event and matcher), every scheduled job (with its cron, permission mode and whether the package asked for it to be switched on), and every program the package starts on its own: MCP servers, language servers, background monitors and the commands its `bin/` puts on the agent's `PATH` (DOR-2195) — `disclosedEffectsOf` in `services/marketplace/disclosed-effects.ts`. When a presented token does not cover the action in front of DorkOS — a different package, a different scope, or a package that now declares different commands — the original approval is left unspent and **DorkOS asks again** rather than proceeding, returning `requires_confirmation` with a fresh token and a `message` naming what the package declares now. That is the same answer the capability tier gate gives a mismatched token (`wrong_action`).
 
 **There are two re-resolves, and both are checked.** Step 4 re-resolves once to rebuild the preview (checked against the approval by the binding above) and `installer.install()` resolves a SECOND time to stage the package it actually writes. That second one is compared against the disclosure the approval covered, inside `MarketplaceInstaller.install()`, using the preview it already builds for the conflict gate — a divergence throws `DisclosureChangedError`, which the tool reports as `code: 'DISCLOSURE_CHANGED'` with both descriptions, before any flow touches disk. `InstallRequest.approvedDisclosure` is the internal hand-off that carries it; it is deliberately absent from `InstallRequestBodySchema`, so no HTTP caller can supply or blank it. Callers that hold no approval (the CLI, the cockpit route) pass nothing and the check does not fire.
 

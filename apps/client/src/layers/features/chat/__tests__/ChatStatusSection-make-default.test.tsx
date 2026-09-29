@@ -77,6 +77,7 @@ const CAPS: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  supportsAccounts: true,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -196,7 +197,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   return {
     ...actual,
     useQuery: vi.fn(() => ({ data: undefined })),
-    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn(), getQueryData: vi.fn() })),
   };
 });
 
@@ -490,8 +491,6 @@ describe('the offer stays quiet when it would say nothing', () => {
   });
 
   it('offers nothing where the answer could not be stored', async () => {
-    // Obsidian: config does not round-trip, so an offer would save nothing and
-    // report nothing — worse than never offering.
     canRemember.current = false;
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));

@@ -24,9 +24,11 @@
  *
  * @module services/openapi-registry
  */
+import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
+import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -159,8 +161,12 @@ import {
   RoomCanvasDiffReviewSchema,
   RoomCanvasDiffWriteRequestSchema,
   RoomCanvasDiffWriteResultSchema,
+  RoomFileChangeResponseSchema,
   RoomFileConflictResponseSchema,
   RoomFileContentQuerySchema,
+  RoomFileDeleteRequestSchema,
+  RoomFileFromAttachmentRequestSchema,
+  RoomFileMoveRequestSchema,
   RoomFileContentResponseSchema,
   RoomFileListResponseSchema,
   RoomFileSaveRequestSchema,
@@ -196,9 +202,6 @@ import {
   DenyApprovalBodySchema,
   GrantApprovalBodySchema,
   ApprovalDecisionResponseSchema,
-  RevokeStandingPermissionResponseSchema,
-  StandingPermissionNotRecordedResponseSchema,
-  StandingPermissionsResponseSchema,
 } from '@dorkos/shared/approval-schemas';
 import {
   DeletePushSubscriptionResponseSchema,
@@ -226,23 +229,49 @@ import {
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReconciliationPreviewRequestSchema,
   ConnectorReconciliationPreviewSchema,
+  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorUsagePageSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
   ConnectorAgentConnectionsSchema,
+  ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
+  ConnectorProvidersResourceSchema,
   ConnectorCatalogResourcePageSchema,
+  CONNECTOR_LOGO_SERVICE_ID,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
   ConnectorConnectionPatchSchema,
+  ConnectorAppActionsQuerySchema,
+  ConnectorAppActionsSchema,
   ConnectorDisconnectImpactSchema,
   ConnectorLifecycleResultSchema,
   ConnectorReconnectRequestSchema,
+  ConnectorSessionAccessUpdateSchema,
   ConnectorSessionConnectionsSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
+import {
+  AgentPermissionsResponseSchema,
+  PatchAgentPermissionsBodySchema,
+  PatchPermissionDefaultsBodySchema,
+  PermissionHistoryQuerySchema,
+  PermissionHistoryResponseSchema,
+  UndoConflictResponseSchema,
+  UndoPermissionChangeBodySchema,
+  UndoPermissionChangeResponseSchema,
+  PermissionsResponseSchema,
+  SetPermissionPresetBodySchema,
+} from '@dorkos/shared/permissions';
 import { z } from 'zod';
+import {
+  AccountUsageSchema,
+  DismissFoundFolderRequestSchema,
+  FoundClaudeFolderSchema,
+  LEDGER_RUNTIMES,
+} from '@dorkos/shared/account-usage';
+import { DisclosedEffectsSchema } from '../marketplace/disclosed-effects.js';
 
 /**
  * Simplified documentation mirror of `@dorkos/marketplace`'s
@@ -311,6 +340,21 @@ const LocalInstallRequestBodySchema = z.object({
   force: z.boolean().optional(),
   yes: z.boolean().optional(),
   projectPath: z.string().optional(),
+  approvedDisclosure: DisclosedEffectsSchema.optional().describe(
+    "Install only: the preview's `disclosed`, sent back untouched. The install refuses a " +
+      'package that now runs anything else (409 `disclosure_changed`).'
+  ),
+  approvedContentHash: z
+    .string()
+    .optional()
+    .describe(
+      "Install only: the preview's `contentHash`. A global package that runs anything loads into " +
+        'sessions only when its installed files hash the same.'
+    ),
+  confirmationToken: z
+    .string()
+    .optional()
+    .describe("Install only: the token an agent's earlier 202 carried, once a person approved."),
 });
 
 /**
@@ -341,9 +385,57 @@ const LocalPermissionPreviewSchema = z.object({
       event: z.string(),
       matcher: z.string().optional(),
       command: z.string(),
+      source: z.string().optional(),
     })
   ),
   unreadableHooks: z.array(z.object({ path: z.string(), event: z.string().optional() })),
+  mcpServers: z.array(
+    z.object({
+      name: z.string(),
+      transport: z.string(),
+      command: z.string().optional(),
+      args: z.array(z.string()).optional(),
+      url: z.string().optional(),
+    })
+  ),
+  lspServers: z.array(
+    z.object({ name: z.string(), command: z.string(), args: z.array(z.string()) })
+  ),
+  monitors: z.array(
+    z.object({ name: z.string(), command: z.string(), when: z.string().optional() })
+  ),
+  executables: z.array(z.string()),
+  skillTools: z.array(
+    z.object({ source: z.string(), skill: z.string(), tools: z.array(z.string()) })
+  ),
+  skillCommands: z
+    .array(
+      z.object({
+        source: z.string(),
+        skill: z.string(),
+        form: z.enum(['inline', 'block']),
+        command: z.string(),
+        usesArguments: z
+          .boolean()
+          .describe(
+            'Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after ' +
+              'the command before it runs.'
+          ),
+      })
+    )
+    .describe(
+      "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a " +
+        'fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads ' +
+        'the skill, before the model sees it.'
+    ),
+  unreadableDeclarations: z.array(
+    z.object({
+      path: z.string(),
+      kind: z.enum(['mcp-server', 'lsp-server', 'monitor']),
+      entry: z.string().optional(),
+    })
+  ),
+  skippedLinks: z.array(z.object({ path: z.string(), message: z.string() })),
   schedules: z.array(
     z.object({
       name: z.string(),
@@ -408,7 +500,6 @@ const LocalUpdateCheckResultSchema = z.object({
  */
 const LocalUpdateResultSchema = z.object({
   checks: z.array(LocalUpdateCheckResultSchema),
-  applied: z.array(LocalInstallResultSchema),
 });
 
 /**
@@ -424,8 +515,26 @@ const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
   agentPath: z.string().optional(),
   agentId: z.string().optional(),
   agentName: z.string().optional(),
+  linked: z
+    .literal(true)
+    .optional()
+    .describe(
+      "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
+    ),
   applied: LocalInstallResultSchema.optional(),
   applyError: z.string().optional(),
+  disclosed: DisclosedEffectsSchema.nullable()
+    .optional()
+    .describe(
+      'On every update-available check: what the new version runs on its own. An apply sends it back untouched.'
+    ),
+  contentHash: z
+    .string()
+    .optional()
+    .describe("The new version's staged files, hashed. An apply sends it back untouched."),
+  installedDisclosed: DisclosedEffectsSchema.nullable()
+    .optional()
+    .describe('What the installed version runs now; null when it could not be read.'),
 });
 
 /** The 404 body when an update names packages or installations not in view. */
@@ -449,10 +558,13 @@ const LocalUninstallResultSchema = z.object({
   packageName: z.string(),
   removedFiles: z.number().int().nonnegative(),
   preservedData: z.array(z.string()),
+  unproven: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
 });
 
 const registry = new OpenAPIRegistry();
 registerConnectorEventOpenApi(registry);
+registerSessionContinueOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -505,7 +617,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'List all sessions',
   description:
-    'Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results.',
+    'Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle) and its flow `trackerItem`; the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.',
   request: {
     query: ListSessionsQuerySchema,
   },
@@ -857,7 +969,10 @@ registry.registerPath({
     'in a queue behind a still-running turn, and `outcome` carries the requested and ' +
     'applied disposition (queue/steer/stage), not whether a turn began. A busy session ' +
     'is never a `409` here — read and edit what is waiting through ' +
-    '`/api/sessions/{id}/queue`. The `202` also carries the CANONICAL session id: for a ' +
+    '`/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would ' +
+    "run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own " +
+    'folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the ' +
+    "room's files), and nothing was started. The `202` also carries the CANONICAL session id: for a " +
     'brand-new session this is the real id assigned during the turn (it differs from ' +
     'the client-supplied id), so the client re-keys its URL and `/events` subscription ' +
     'to it. To avoid missing the turn, a client should be subscribed to `/events` ' +
@@ -877,6 +992,12 @@ registry.registerPath({
     },
     400: {
       description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'Refused before anything started, for where the turn would run ' +
+        '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`); the body says what to do instead',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -1202,6 +1323,111 @@ registry.registerPath({
   },
 });
 
+// --- Account usage ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/runtimes/{runtime}/accounts/usage',
+  tags: ['Runtimes'],
+  summary: "List how much of each of a runtime's accounts is used",
+  description:
+    "Every account of the runtime with its usage windows, from the server's memory: registered " +
+    'accounts in registry order, the machine-wide `default` account when it is not another ' +
+    'name for a registered one, then folders that are neither (with a null `accountId`). A ' +
+    'window with no current reading is left out, and an account with nothing to go on reads ' +
+    '`state: "unknown"`, never zero.',
+  request: {
+    params: z.object({
+      runtime: z.enum(LEDGER_RUNTIMES).openapi({ description: 'The runtime slug.' }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The runtime's accounts and their usage",
+      content: {
+        'application/json': { schema: z.object({ accounts: z.array(AccountUsageSchema) }) },
+      },
+    },
+    400: { description: 'Unknown runtime slug' },
+    503: { description: 'The usage store is not running yet' },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/runtimes/claude-code/accounts/{id}/probe',
+  tags: ['Runtimes'],
+  summary: "Check a Claude account's usage without running a turn",
+  description:
+    "Starts Claude Code in the account's own folder on a prompt that never sends a message, " +
+    'asks it for the account usage, and closes it: no turn runs, nothing is billed, and no ' +
+    'transcript is kept. On demand only, one probe per account at a time and at most one a ' +
+    'minute. `probe` says how it went: `ok` recorded new readings; `unavailable` (the account ' +
+    'has no plan limits), `failed` (with a `reason`) and `throttled` recorded nothing.',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .openapi({ description: "A registry id, or `default` for this computer's own sign-in." }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The account's usage after the probe, and how the probe went",
+      content: {
+        'application/json': {
+          schema: z.object({
+            account: AccountUsageSchema,
+            probe: z.enum(['ok', 'unavailable', 'failed', 'throttled']),
+            reason: z.string().optional(),
+          }),
+        },
+      },
+    },
+    404: { description: 'No Claude Code account has that id (`code: "UNKNOWN_ACCOUNT"`)' },
+    503: { description: 'The usage store is not running yet' },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/runtimes/claude-code/accounts/found',
+  tags: ['Runtimes'],
+  summary: 'List the Claude account folders found on this computer',
+  description:
+    'Every `.claude*` folder in the home folder that holds a `projects/` folder and is not a ' +
+    'registered account, the machine default or a dismissed folder, sorted by name. Read-only: ' +
+    'folders are listed and statted, and no file is ever opened. Settings offers each one with ' +
+    'an Add button; nothing is registered until a person clicks it.',
+  responses: {
+    200: {
+      description: 'The folders to offer, possibly none',
+      content: {
+        'application/json': { schema: z.object({ folders: z.array(FoundClaudeFolderSchema) }) },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/runtimes/claude-code/accounts/found/dismiss',
+  tags: ['Runtimes'],
+  summary: 'Stop offering one found Claude account folder',
+  description:
+    'Adds the folder, in comparable form, to `runtimes.claudeCode.dismissedFolders` in one ' +
+    'read-modify-write, so it stays hidden across restarts. A folder that is already registered ' +
+    'or dismissed answers 204 as well.',
+  request: {
+    body: { content: { 'application/json': { schema: DismissFoundFolderRequestSchema } } },
+  },
+  responses: {
+    204: { description: 'The folder is hidden' },
+    400: { description: 'No path, or a folder the found list does not offer' },
+    403: { description: 'An agent, or (with login on) a caller that is not signed in' },
+  },
+});
+
 // --- Capabilities ---
 
 const PermissionModeDescriptorSchema = z.object({
@@ -1269,6 +1495,10 @@ const RuntimeCapabilitiesSchema = z.object({
   supportsQuestionPrompt: z.boolean(),
   supportsPlugins: z.boolean().openapi({
     description: 'Whether this runtime can load plugins.',
+  }),
+  supportsAccounts: z.boolean().openapi({
+    description:
+      'Whether this runtime can run sessions on more than one registered billing account. The account chip, dots and badge show only when this is true and two or more accounts are registered.',
   }),
   permissionModes: z
     .object({
@@ -2233,8 +2463,67 @@ const MarketplaceSourceSchema = z.object({
   addedAt: z.string(),
 });
 
+/**
+ * How the one listing fetch `POST /api/marketplace/sources` makes after saving
+ * went (DOR-2304). Hand-mirrors `SourceListingOutcome` in
+ * `@dorkos/shared/marketplace-schemas`, the way every marketplace schema in
+ * this file mirrors its interface: that module is interfaces-only by design.
+ */
+const SourceListingOutcomeSchema = z
+  .discriminatedUnion('fetched', [
+    z.object({ fetched: z.literal(true), packageCount: z.number().int().nonnegative() }),
+    z.object({ fetched: z.literal(false), reason: z.string() }),
+  ])
+  .describe(
+    "The first fetch of the new source's listing. `fetched: true` means fetched just now from " +
+      'this source, never an older cached copy. `fetched: false` never undoes the add: the ' +
+      'source is saved, `reason` says in plain words why the listing is not there yet (including ' +
+      'a source added with `enabled: false`, which is not fetched), and a refresh tries again.'
+  );
+
+/**
+ * How the most recent fetch of a source's listing went (DOR-2324). Hand-mirrors
+ * `SourceLastFetch` in `@dorkos/shared/marketplace-schemas`, which is
+ * interfaces-only by design.
+ */
+const SourceLastFetchSchema = z
+  .discriminatedUnion('state', [
+    z.object({ state: z.literal('never') }),
+    z.object({
+      state: z.literal('fetched'),
+      checkedAt: z.string(),
+      packageCount: z.number().int().nonnegative(),
+    }),
+    z.object({ state: z.literal('failed'), checkedAt: z.string(), reason: z.string() }),
+    z.object({
+      state: z.literal('stale'),
+      checkedAt: z.string(),
+      reason: z.string(),
+      copyFetchedAt: z.string(),
+      packageCount: z.number().int().nonnegative(),
+    }),
+  ])
+  .describe(
+    'How the most recent attempt to fetch the listing went, from adding, refreshing, browsing ' +
+      'or an update check. `stale`: it failed and an older copy, fetched at `copyFetchedAt`, ' +
+      'is still listed. `failed`: it failed with no copy. Kept by the server, so it survives ' +
+      'a reload.'
+  );
+
+const AddedMarketplaceSourceSchema = MarketplaceSourceSchema.extend({
+  listing: SourceListingOutcomeSchema,
+});
+
 const AddMarketplaceSourceBodySchema = z.object({
-  name: z.string().min(1).max(128),
+  name: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+    .describe(
+      'Letters, numbers, dots, dashes and underscores, starting with a letter or number. ' +
+        'Checked by the server on add; names saved before the check still load.'
+    ),
   source: z.string().min(1),
   enabled: z.boolean().optional(),
 });
@@ -2267,6 +2556,47 @@ const InstalledPackageSchema = z.object({
   agentPath: z.string().optional(),
   agentId: z.string().optional(),
   agentName: z.string().optional(),
+  linked: z
+    .literal(true)
+    .optional()
+    .describe(
+      "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
+    ),
+  heldBack: z
+    .object({
+      reason: z.enum(['unasked', 'refused', 'unrecorded', 'unreadable', 'unreadable-config']),
+      note: z.string(),
+      reviewable: z.boolean(),
+      linkedPath: z.string().optional(),
+    })
+    .optional()
+    .describe(
+      'Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder.'
+    ),
+  integrity: z
+    .union([
+      z.object({
+        status: z.literal('clean'),
+        customized: z.array(z.string()),
+        truncated: z.literal(true).optional(),
+      }),
+      z.object({
+        status: z.literal('modified'),
+        changed: z.array(z.string()),
+        missing: z.array(z.string()),
+        added: z.array(z.string()),
+        customized: z.array(z.string()),
+        truncated: z.literal(true).optional(),
+      }),
+      z.object({
+        status: z.literal('unknown'),
+        reason: z.enum(['no-record', 'unreadable-record', 'linked']),
+      }),
+    ])
+    .optional()
+    .describe(
+      'Present only with verify=true: whether the installed files still match what was installed (DOR-2197).'
+    ),
 });
 
 /**
@@ -2318,7 +2648,9 @@ registry.registerPath({
       description: 'Configured marketplace sources',
       content: {
         'application/json': {
-          schema: z.object({ sources: z.array(MarketplaceSourceSchema) }),
+          schema: z.object({
+            sources: z.array(MarketplaceSourceSchema.extend({ lastFetch: SourceLastFetchSchema })),
+          }),
         },
       },
     },
@@ -2344,7 +2676,9 @@ registry.registerPath({
     'Only the person running DorkOS may add a package source. Any caller that could not decide ' +
     'an approval is refused with 403, which includes one presenting an agent identity, one ' +
     'presenting an approval token, and (with local login on) one with no signed-in identity. ' +
-    'There is no approval that unlocks it.',
+    'There is no approval that unlocks it. After saving, the server fetches the new ' +
+    "source's listing once, the same way the refresh route does but without falling back to a " +
+    'cached copy; a failed fetch is reported in `listing` and never fails the add.',
   request: {
     body: {
       content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
@@ -2352,11 +2686,11 @@ registry.registerPath({
   },
   responses: {
     201: {
-      description: 'Source added',
-      content: { 'application/json': { schema: MarketplaceSourceSchema } },
+      description: 'Source added, with how the first fetch of its listing went',
+      content: { 'application/json': { schema: AddedMarketplaceSourceSchema } },
     },
     400: {
-      description: 'Validation error',
+      description: 'Validation error, a name DorkOS cannot use, or an address it will not fetch',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     403: {
@@ -2379,7 +2713,8 @@ registry.registerPath({
     'Only the person running DorkOS may remove a package source. Any caller that could not ' +
     'decide an approval is refused with 403, which includes one presenting an agent identity, ' +
     'one presenting an approval token, and (with local login on) one with no signed-in ' +
-    'identity. There is no approval that unlocks it.',
+    "identity. There is no approval that unlocks it. The source's cached listing is removed " +
+    'with it, so a later source given the same name starts clean.',
   request: {
     params: z.object({ name: z.string() }),
   },
@@ -2397,17 +2732,26 @@ registry.registerPath({
   path: '/api/marketplace/sources/{name}/refresh',
   tags: ['Marketplace'],
   summary: 'Force refetch of a source marketplace.json',
+  description:
+    'Checks the source now. When it cannot be reached but a copy is cached, answers 200 with ' +
+    'that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. ' +
+    'With nothing cached, answers 502.',
   request: {
     params: z.object({ name: z.string() }),
   },
   responses: {
     200: {
-      description: 'Refreshed marketplace document',
+      description: 'The listing, fetched now or (when `stale`) the last cached copy',
       content: {
         'application/json': {
           schema: z.object({
             marketplace: LocalMarketplaceJsonSchema,
-            fetchedAt: z.string(),
+            fetchedAt: z.string().describe('When this copy of the listing was fetched'),
+            stale: z.boolean().describe('True when the source could not be reached'),
+            reason: z
+              .string()
+              .optional()
+              .describe('Why the source could not be reached; present only when `stale`'),
           }),
         },
       },
@@ -2434,7 +2778,13 @@ registry.registerPath({
     'With projectPath: the merged view for that single project — one entry per install root ' +
     'and name — scanned at the canonical path, so its install paths match `GET /updates`.',
   request: {
-    query: z.object({ projectPath: z.string().optional() }),
+    query: z.object({
+      projectPath: z.string().optional(),
+      verify: z
+        .enum(['true'])
+        .optional()
+        .describe("Add each installation's `integrity`. Reads every shipped file."),
+    }),
   },
   responses: {
     200: {
@@ -2466,6 +2816,12 @@ registry.registerPath({
     'each enriched with capability counts (commands, skills, hooks).',
   request: {
     params: z.object({ name: z.string() }),
+    query: z.object({
+      verify: z
+        .enum(['true'])
+        .optional()
+        .describe("Add each installation's `integrity`. Reads every shipped file."),
+    }),
   },
   responses: {
     200: {
@@ -2569,6 +2925,8 @@ registry.registerPath({
             manifest: LocalMarketplacePackageManifestSchema,
             packagePath: z.string(),
             preview: LocalPermissionPreviewSchema,
+            disclosed: DisclosedEffectsSchema,
+            contentHash: z.string(),
             // Raw README markdown read from the staged clone; omitted when the
             // package ships no README (see routes/marketplace.ts readPackageReadme).
             readme: z.string().optional(),
@@ -2607,6 +2965,12 @@ registry.registerPath({
             preview: LocalPermissionPreviewSchema,
             manifest: LocalMarketplacePackageManifestSchema,
             packagePath: z.string(),
+            disclosed: DisclosedEffectsSchema.describe(
+              'What the package runs on its own, in the form an install is held to: send it back as `approvedDisclosure`.'
+            ),
+            contentHash: z
+              .string()
+              .describe('The staged files, hashed: send it back as `approvedContentHash`.'),
           }),
         },
       },
@@ -2638,6 +3002,21 @@ registry.registerPath({
       description: 'Install result from the type-specific flow',
       content: { 'application/json': { schema: LocalInstallResultSchema } },
     },
+    202: {
+      description:
+        "An agent's global install that runs things on its own, or replaces a global package, " +
+        'waits for a person to approve the card; nothing was installed',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('requires_confirmation'),
+            confirmationToken: z.string(),
+            preview: LocalPermissionPreviewSchema,
+            message: z.string(),
+          }),
+        },
+      },
+    },
     400: {
       description: 'Validation error or invalid package',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -2647,15 +3026,74 @@ registry.registerPath({
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
-      description: 'Install blocked by conflicts',
+      description:
+        'Install blocked by conflicts, or (`code: disclosure_changed`) the package now runs something other than `approvedDisclosure`',
       content: {
         'application/json': {
           schema: z.object({
             error: z.string(),
-            conflicts: z.array(LocalConflictReportSchema),
+            conflicts: z.array(LocalConflictReportSchema).optional(),
+            code: z.literal('disclosure_changed').optional(),
           }),
         },
       },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/packages/{name}/check-files',
+  tags: ['Marketplace'],
+  summary: 'Check the files of a package an older DorkOS installed',
+  description:
+    "Give an install made before DorkOS recorded a package's files its installed-files record, " +
+    'from the exact commit it was installed at, only when that commit matches the installed ' +
+    'files byte for byte. Otherwise nothing is written and the answer says why (DOR-2320).',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectPath: z.string().optional(),
+            installRoot: z
+              .string()
+              .optional()
+              .describe(
+                'One installation the caller already sees; narrows, never widens, the lookup.'
+              ),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What the check did, and one sentence saying so',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outcome: z.enum([
+              'rebuilt',
+              'sorted',
+              'not-needed',
+              'no-source',
+              'fetch-failed',
+              'mismatch',
+            ]),
+            message: z.string(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or an invalid package name',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -2698,23 +3136,23 @@ registry.registerPath({
   method: 'post',
   path: '/api/marketplace/packages/{name}/update',
   tags: ['Marketplace'],
-  summary: 'Advisory update check (pass apply:true to actually update)',
+  summary: 'Check one package for an update',
+  description:
+    'Advisory only: nothing is reinstalled. Updates are applied through `POST /api/marketplace/updates`, ' +
+    'which shows what each new version runs first. A body with `apply` is refused (400).',
   request: {
     params: z.object({ name: z.string() }),
     body: {
       content: {
         'application/json': {
-          schema: z.object({
-            apply: z.boolean().optional(),
-            projectPath: z.string().optional(),
-          }),
+          schema: z.object({ projectPath: z.string().optional() }).strict(),
         },
       },
     },
   },
   responses: {
     200: {
-      description: 'Update advisory result (and any applied reinstalls)',
+      description: 'The check for the installation the name means in this scope',
       content: { 'application/json': { schema: LocalUpdateResultSchema } },
     },
     400: {
@@ -2742,7 +3180,8 @@ registry.registerPath({
     'check may stage a newer version into the package cache. Without ' +
     '`projectPath`, every installation in every scope (global, then each registered ' +
     "agent's project); with it, that project's merged view. Each check carries the " +
-    "installation's identity; `installPath` matches the installed list's.",
+    "installation's identity (`installPath` matches the installed list's) and, for a newer " +
+    'version, `disclosed`: what it runs on its own, which an apply sends back.',
   request: {
     query: z.object({ projectPath: z.string().optional() }),
   },
@@ -2766,26 +3205,38 @@ registry.registerPath({
   method: 'post',
   path: '/api/marketplace/updates',
   tags: ['Marketplace'],
-  summary: 'Update every stale installed package, or the named ones',
+  summary: 'Update exactly the installations a person was shown',
   description:
-    'Reinstalls every installation in view whose check is `update-available`, each in the ' +
-    'scope it was found in, one at a time. A failed reinstall is reported on its ' +
-    'installation as `applyError` and the rest carry on. Each reinstall is authorized as ' +
-    '`marketplace.install` before anything runs. A batch that would need a person to ' +
-    'approve each install is refused (`batch_update_needs_approval`); use the one-package ' +
-    'route instead. `names` selects every installation of those packages; `installPaths` ' +
-    'selects exactly the installations a check reported. The response is the record of ' +
-    'what changed.',
+    'Reinstalls each target whose check is `update-available`, in the scope it was found in, one at ' +
+    'a time. Each target carries the `latestVersion` and `disclosed` its check reported, sent back ' +
+    'untouched: the server recomputes both, and if either moved the whole apply is refused (409 ' +
+    '`disclosure_changed`) with nothing reinstalled; each reinstall is then held to its disclosure. ' +
+    'Each reinstall is authorized as `marketplace.install` first. The person applies directly; an ' +
+    "agent's apply raises the same approval card `marketplace_update` does (202 " +
+    '`requires_confirmation`) and runs once retried with its `confirmationToken` after a person ' +
+    'approves. A failed reinstall is reported on its installation as `applyError` and the rest ' +
+    'carry on. The response is the record of what changed.',
   request: {
     body: {
       content: {
         'application/json': {
-          schema: z.object({
-            apply: z.literal(true),
-            names: z.array(z.string().min(1)).min(1).optional(),
-            installPaths: z.array(z.string().min(1)).min(1).optional(),
-            projectPath: z.string().optional(),
-          }),
+          schema: z
+            .object({
+              apply: z.literal(true),
+              projectPath: z.string().optional(),
+              targets: z
+                .array(
+                  z.object({
+                    installPath: z.string().min(1),
+                    latestVersion: z.string(),
+                    disclosed: DisclosedEffectsSchema.nullable(),
+                    contentHash: z.string().min(1),
+                  })
+                )
+                .min(1),
+              confirmationToken: z.string().min(1).optional(),
+            })
+            .strict(),
         },
       },
     },
@@ -2795,20 +3246,140 @@ registry.registerPath({
       description: 'One check per installation, with `applied` or `applyError` where one ran',
       content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
     },
+    202: {
+      description: "An agent's apply waits for a person to approve the card; nothing ran",
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('requires_confirmation'),
+            confirmationToken: z.string(),
+            updates: z.array(z.unknown()),
+            message: z.string(),
+          }),
+        },
+      },
+    },
     400: {
-      description: 'Validation error (including a body without `apply: true`)',
+      description:
+        'Validation error (a body without `apply: true`, no targets, or a retired selector)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     403: {
-      description: 'Refused by the permission check, or projectPath outside the boundary',
+      description:
+        'Refused by the permission check, a person declined the card, or projectPath outside the boundary',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
-      description: 'A named package or install path is not installed in view',
+      description: 'A target install path is not installed in view',
       content: { 'application/json': { schema: NotInstalledForUpdateSchema } },
+    },
+    409: {
+      description:
+        'A new version, or what it runs, is not what was shown (`disclosure_changed`); nothing ran',
+      content: {
+        'application/json': {
+          schema: z.object({
+            error: z.string(),
+            code: z.literal('disclosure_changed'),
+            changed: z.array(z.unknown()),
+          }),
+        },
+      },
     },
     502: {
       description: "The package's git remote could not be reached, or its fetch failed",
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+const LocalHeldBackPackageSchema = z.object({
+  name: z.string(),
+  reason: z.enum(['unasked', 'refused', 'unrecorded', 'unreadable', 'unreadable-config']),
+  note: z.string(),
+  reviewable: z.boolean(),
+  linkedPath: z.string().optional(),
+  version: z.string().optional(),
+  source: z.string().optional(),
+  changedSinceApproval: z.boolean(),
+  effects: DisclosedEffectsSchema.optional(),
+  bindsTo: z.string().optional(),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/held-back',
+  tags: ['Marketplace'],
+  summary: 'List global packages held back from every session',
+  description:
+    'A globally installed package that runs things on its own loads into sessions only when a ' +
+    'person approved the install that put it there (the content hash recorded when it landed) ' +
+    'and what it runs. A linked install is approved by its folder instead. Each entry says why ' +
+    'it is held back, what it runs, and `bindsTo`: what a decision is bound to.',
+  responses: {
+    200: {
+      description: 'Every held-back package',
+      content: {
+        'application/json': { schema: z.object({ packages: z.array(LocalHeldBackPackageSchema) }) },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/held-back/{name}/review',
+  tags: ['Marketplace'],
+  summary: 'Raise the approval card for a held-back package again',
+  request: { params: z.object({ name: z.string() }) },
+  responses: {
+    202: {
+      description: 'The card is raised; a person decides on it',
+      content: { 'application/json': { schema: z.object({ status: z.literal('asked') }) } },
+    },
+    409: {
+      description: 'Not held back, or cannot be shown on a card (the error says what to do)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/held-back/{name}/decision',
+  tags: ['Marketplace'],
+  summary: "Record the person's allow or refuse for a held-back package",
+  description:
+    'The person only: the same bar as deciding an approval card. An agent is refused, and with ' +
+    'sign-in on, so is anything but a signed-in session (decide on the Review card instead). ' +
+    'Send back `effects` and `bindsTo` exactly as listed; a package that changed since is not ' +
+    'decided by it.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              decision: z.enum(['allow', 'refuse']),
+              effects: DisclosedEffectsSchema,
+              bindsTo: z.string().min(1),
+            })
+            .strict(),
+        },
+      },
+    },
+  },
+  responses: {
+    204: { description: 'Recorded' },
+    403: {
+      description:
+        'Not the person (`operator_only`), or sign-in is on and this is not a signed-in ' +
+        'session (`operator_cookie_required`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Not held back, unreadable, or changed since it was shown',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -2911,21 +3482,15 @@ registry.registerPath({
  */
 const LocalShapeLayoutSchema = z.object({
   sidebarOpen: z.boolean(),
-  // A sidebar tab id, bounded. The sidebar tab strip exists only in the embedded
-  // (Obsidian) shell; the web cockpit has no strip, so a pinned tab is a no-op
-  // there. The `:` is still accepted so old manifests that pinned a namespaced
-  // tab keep validating. Mirrors the bounded `sidebarTab` in manifest-schema.ts
-  // and `UiSidebarTabSchema` in @dorkos/shared.
+  // Legacy sidebar tab metadata remains accepted so installed manifests with a
+  // pinned tab still validate. Applying a Shape ignores it. Mirrors the bounds
+  // in manifest-schema.ts and ShapeLiveLayoutCaptureSchema in @dorkos/shared.
   sidebarTab: z
     .string()
     .min(1)
     .max(200)
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/)
-    .describe(
-      "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
-        "'connections'). The sidebar tab strip exists only in the embedded " +
-        '(Obsidian) app; in the web app switching a sidebar tab is a no-op.'
-    )
+    .describe('Legacy sidebar tab id retained for stored Shape manifests.')
     .optional(),
   openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])),
   focusDashboardSections: z.array(z.string()),
@@ -3077,13 +3642,14 @@ registry.registerPath({
   description:
     'Reference-free setup state per credential-gated provider: configured/registered booleans, ' +
     'the custody stance with its plain-language disclosure, and — when a configured provider ' +
-    'refused to register — the honest error text. Never carries a secret or a credential reference.',
+    'refused to register — the honest error text. `appConnections` lists every way set up to ' +
+    'reach apps and names the one new apps use. Never carries a secret or a credential reference.',
   responses: {
     200: {
       description: 'Provider setup statuses',
       content: {
         'application/json': {
-          schema: z.object({ providers: z.array(ConnectorProviderStatusSchema) }),
+          schema: ConnectorProvidersResourceSchema,
         },
       },
     },
@@ -3147,7 +3713,9 @@ registry.registerPath({
   tags: ['Connectors'],
   summary: 'List the provider-neutral connector catalog',
   description:
-    'Returns one bounded account-free page. Native message adapters remain distinct from account routes.',
+    'Returns one bounded account-free page. Hand-picked popular apps are always listed, even ' +
+    'before any way to reach apps is set up; live services merge into them by service id. ' +
+    'Native message adapters remain distinct from account routes.',
   request: {
     query: z.object({
       q: z.string().max(200).optional(),
@@ -3162,6 +3730,36 @@ registry.registerPath({
     },
     400: {
       description: 'Invalid catalog query or cursor',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/catalog/logos/{serviceSlug}',
+  tags: ['Connectors'],
+  summary: 'Get one catalog app’s logo',
+  description:
+    'Serves the logo a catalog entry’s `logo` path points at. The server fetches it once, from ' +
+    'the URL its own app list recorded for that service on the connection service’s own logo ' +
+    'host, keeps it under the DorkOS data directory, and serves it with `nosniff` and a ' +
+    'sandboxing Content-Security-Policy. The browser never loads a third-party URL.',
+  request: {
+    params: z.object({ serviceSlug: z.string().regex(CONNECTOR_LOGO_SERVICE_ID) }),
+  },
+  responses: {
+    200: {
+      description: 'The logo image',
+      content: Object.fromEntries(
+        ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'].map((type) => [
+          type,
+          { schema: z.string().openapi({ type: 'string', format: 'binary' }) },
+        ])
+      ),
+    },
+    404: {
+      description: 'The app has no logo, or its logo could not be fetched just now',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -3292,6 +3890,44 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
+  path: '/api/connectors/apps/{toolkit}/actions',
+  tags: ['Connectors'],
+  summary: 'List what an app lets agents do through one configured way',
+  description:
+    'Owner only. Returns every action the app offers at one exact service version, each with ' +
+    'the safety classification the grant review stores and execution enforces. The list is ' +
+    'kept for 24 hours and served at once while it refreshes. A way that cannot list trusted ' +
+    'actions answers `unlisted`; a list that stopped part way says `complete: false`.',
+  request: {
+    params: z.object({ toolkit: z.string().min(1).max(200) }),
+    query: ConnectorAppActionsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'The app’s actions, or an honest unlisted answer',
+      content: { 'application/json': { schema: ConnectorAppActionsSchema } },
+    },
+    400: {
+      description: 'Invalid app id or query',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Only the owner can read this, from the DorkOS app',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'The named way of reaching apps is not set up',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: 'The service could not list the app’s actions just now',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
   path: '/api/connectors/connections/{connectionId}/disconnect-impact',
   tags: ['Connectors'],
   summary: 'Preview authority affected by disconnecting a connection',
@@ -3392,6 +4028,21 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
+  path: '/api/connectors/every-agent-grants',
+  tags: ['Connectors'],
+  summary: 'Read what every agent, including a new one, inherits',
+  description:
+    'Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.',
+  responses: {
+    200: {
+      description: 'Connections every agent can use, and at which level',
+      content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
   path: '/api/connectors/sessions/{sessionId}/connections',
   tags: ['Connectors'],
   summary: 'Read effective connector access for one session',
@@ -3403,6 +4054,42 @@ registry.registerPath({
     },
     404: {
       description: 'Session absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/connectors/sessions/{sessionId}/connections/{connectionId}',
+  tags: ['Connectors'],
+  summary: 'Turn one app on or off for one chat',
+  description:
+    'Owner-only. Off hides the app from the chat’s agent in this chat alone. On only undoes Off: the chat gets back the access it had (its own hand-picked access, or else the agent’s account-wide access), and never more. Only apps the agent was given account-wide can be switched; switching to the state the chat is already in changes nothing.',
+  request: {
+    params: z.object({ sessionId: z.string().min(1), connectionId: z.string().min(1) }),
+    body: { content: { 'application/json': { schema: ConnectorSessionAccessUpdateSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The chat’s connector access after the change',
+      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
+    },
+    400: {
+      description: 'Invalid request body or connection id',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused: agents and programs cannot make account decisions',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Session absent, or the agent was not given that app account-wide',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'Refused: turning it on would drop a limit the owner set on this chat for another agent (`session_access_other_agent`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -3533,6 +4220,26 @@ registry.registerPath({
     },
     409: {
       description: 'The connection must be reconciled before it can be edited',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/connectors/connections/{connectionId}/every-agent',
+  tags: ['Connectors'],
+  summary: 'Stop sharing one connection with every agent',
+  description:
+    'Owner only. Ends the every-agent grant at once, for every agent. Needs no permission review, so it works while the service is unavailable.',
+  request: { params: z.object({ connectionId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'How many shared actions ended',
+      content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -3827,15 +4534,14 @@ registry.registerPath({
     'every posture, and when local login is enabled an authenticated user is required. With login ' +
     'disabled DorkOS cannot tell the app apart from a local script, so every decision is ' +
     'recorded in the Activity feed with the posture it was made under.\n\n' +
-    'The body accepts a `standing` flag, which also stops DorkOS asking about this agent doing ' +
-    'this thing for as long as `approvals.trustWindowMinutes` says. Opening one needs a person ' +
-    'signed in to the DorkOS app, so it needs Require login to be on: with login off there is no ' +
-    'session cookie and DorkOS cannot tell the operator from an agent running as the same user. ' +
-    'It is refused rather than quietly downgraded to a plain one-time yes, and the refusal comes ' +
-    'before anything is granted, so a caller that asked for two things and can only have one gets ' +
-    'neither and is told which part failed. On success the response carries the permission that ' +
-    'was opened. Re-answering the same question replaces the live permission and starts a fresh ' +
-    'window; using a permission never extends it.',
+    "`answer: 'always'` also sets this action to Allowed for the agent that asked, written " +
+    'through the same permission service Settings uses, before the agent is told the answer, so ' +
+    'the resumed call and the new setting agree. It records its own `permission.changed` event ' +
+    'beside the `permission.answered` event every answer records. It is refused (409 ' +
+    '`ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no ' +
+    'permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach ' +
+    '& secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before ' +
+    'anything is granted.',
   request: {
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: GrantApprovalBodySchema } } },
@@ -3848,9 +4554,8 @@ registry.registerPath({
     403: {
       description:
         'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`). For `standing: true`, also when ' +
-        'login is off (`standing_grants_require_login`) or the caller has no session cookie ' +
-        '(`operator_cookie_required`)',
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`). With login on, only a person ' +
+        'signed in to the DorkOS app can decide (`operator_cookie_required`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     401: {
@@ -3863,25 +4568,13 @@ registry.registerPath({
     },
     409: {
       description:
-        'Already decided; or `standing: true` was asked for while standing permissions are ' +
-        'switched off (`STANDING_GRANTS_DISABLED`), or for an approval that recorded no agent ' +
-        'path, so there is no agent to stop asking about (`APPROVAL_HAS_NO_AGENT`). Nothing is ' +
-        'granted in the last two cases',
+        "Already decided; or `answer: 'always'` on an approval that does not offer it " +
+        '(`ALWAYS_NOT_OFFERED`). Nothing is granted in that case',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     410: {
       description: 'Expired before it was decided',
       content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    500: {
-      description:
-        'The one-time yes was recorded but the permission was not ' +
-        '(`STANDING_PERMISSION_NOT_RECORDED`). The two are separate writes; this answer carries ' +
-        '`approvalId` and `outcome` so a caller can tell it apart from "nothing happened" — ' +
-        'retrying the whole call would answer 409, which reads like the permission exists',
-      content: {
-        'application/json': { schema: StandingPermissionNotRecordedResponseSchema },
-      },
     },
   },
 });
@@ -3934,58 +4627,27 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/approvals/grants',
+  method: 'post',
+  path: '/api/approvals/{id}/dismiss-suggestion',
   tags: ['Approvals'],
-  summary: 'List live standing permissions',
+  summary: 'Stop suggesting Always allow',
   description:
-    'The standing permissions that are live right now: which agent, which action, and when each ' +
-    'one runs out. A permission nobody can find is a dark pattern, so this is the list the ' +
-    'DorkOS app shows in both places it offers to end one. Expiry is applied here rather than ' +
-    'left to a sweep, so a permission whose window has closed is already gone from this list.\n\n' +
-    'Authorized like deciding an approval, NOT like reading the pending list, and the difference ' +
-    'is deliberate. A pending card is meant to be agent-readable. This list is prospective: it ' +
-    'says which irreversible action will go through silently right now and the minute the window ' +
-    "shuts, and it names other agents' pairings. So a caller presenting an agent identity or an " +
-    'approval token is refused.\n\n' +
-    'It carries what the DorkOS app renders and nothing more. Who opened each permission, when, ' +
-    'under which posture, and which card it came from are recorded in the ' +
-    '`approval.grant_created` Activity event instead, which is where an audit question belongs.',
+    '"Not now" on a card that suggests Always allow: the suggestion never comes back for this ' +
+    'agent and action. Recorded as a `permission.suggestion_dismissed` Activity event. Who may ' +
+    'call it is exactly as for grant.',
+  request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
-      description: 'Live standing permissions, soonest to expire first',
-      content: { 'application/json': { schema: StandingPermissionsResponseSchema } },
-    },
-    403: {
-      description:
-        'Refused: an agent cannot read this (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
+      description: 'The suggestion is off for this agent and action',
+      content: {
+        'application/json': {
+          schema: z.object({ ok: z.literal(true), approvalId: z.string() }),
+        },
+      },
     },
     401: {
       description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'delete',
-  path: '/api/approvals/grants/{id}',
-  tags: ['Approvals'],
-  summary: 'End one standing permission',
-  description:
-    'Ends a standing permission, so DorkOS asks again before the next time that agent runs that ' +
-    'action. It does not undo anything that already ran.\n\n' +
-    'Ending one NARROWS what an agent may do, so it needs no session cookie — unlike opening one. ' +
-    'It still needs proof of a person in the same sense deciding an approval does: a caller ' +
-    'presenting an agent identity or an approval token is refused in every posture. A second ' +
-    'click answers 404, so the moment a permission ended cannot be rewritten.',
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: 'The permission was ended',
-      content: { 'application/json': { schema: RevokeStandingPermissionResponseSchema } },
     },
     403: {
       description:
@@ -3993,14 +4655,294 @@ registry.registerPath({
         'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    401: {
-      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+    404: {
+      description: 'No such approval',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'This request never suggests Always allow (`SUGGESTION_NOT_OFFERED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// === Permissions (spec `agent-permissions` D10) ===
+
+/** What every permission write answers with: the changes and the fresh view. */
+const PermissionWriteResponseSchema = (view: z.ZodTypeAny) =>
+  z.object({
+    changes: z.array(z.record(z.string(), z.unknown())),
+    permissions: view,
+  });
+
+/** The refusals every mutating permission route shares. */
+const PERMISSION_WRITE_REFUSALS = {
+  400: {
+    description:
+      'Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no ' +
+      'area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  401: {
+    description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  403: {
+    description:
+      'Refused: only a person can change permissions. A caller presenting an agent identity ' +
+      '(`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in ' +
+      'every posture, and with login on a per-user API key is refused (`operator_cookie_required`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+} as const;
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/permissions',
+  tags: ['Permissions'],
+  summary: 'Read what agents may do by default',
+  description:
+    'The preset, the changes a person made on top of it, every area with its actions and the ' +
+    'state each resolves to for everyone, and the agents that are set differently.',
+  responses: {
+    200: {
+      description: 'The default layer',
+      content: { 'application/json': { schema: PermissionsResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/permissions/preset',
+  tags: ['Permissions'],
+  summary: 'Choose a preset',
+  description:
+    'Sets the preset every area starts from and clears the changes on top of the old one. ' +
+    "`applyToAgents` also clears those agents' own settings, so they follow the new preset. " +
+    'Records one `permission.changed` Activity event.',
+  request: { body: { content: { 'application/json': { schema: SetPermissionPresetBodySchema } } } },
+  responses: {
+    200: {
+      description: 'The preset changed',
+      content: {
+        'application/json': { schema: PermissionWriteResponseSchema(PermissionsResponseSchema) },
+      },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/permissions/defaults',
+  tags: ['Permissions'],
+  summary: 'Change what agents may do by default',
+  description:
+    'Sets areas and single actions to Blocked, Ask or Allowed for everyone; `null` removes a ' +
+    "change. `applyToAgents` removes those agents' own settings for the same keys in the same " +
+    'write. Records one `permission.changed` Activity event naming every agent touched.',
+  request: {
+    body: { content: { 'application/json': { schema: PatchPermissionDefaultsBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The defaults changed',
+      content: {
+        'application/json': { schema: PermissionWriteResponseSchema(PermissionsResponseSchema) },
+      },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/permissions/history',
+  tags: ['Permissions'],
+  summary: 'Read the permission history',
+  description:
+    'Every permission change, newest first, with who made it. With `agentId`, the changes ' +
+    'that touched that agent, bulk changes included.',
+  request: { query: PermissionHistoryQuerySchema },
+  responses: {
+    200: {
+      description: 'Permission changes',
+      content: { 'application/json': { schema: PermissionHistoryResponseSchema } },
+    },
+  },
+});
+
+const TemplateBringsSchema = z.object({
+  source: z.string(),
+  contentHash: z.string(),
+  findings: z.array(z.object({ path: z.string(), message: z.string() })),
+  settings: z
+    .array(
+      z.object({
+        path: z.string(),
+        bytes: z.number().int(),
+        content: z.string().optional(),
+        omitted: z.enum(['too-long', 'not-text', 'link']).optional(),
+      })
+    )
+    .describe(
+      'Each file under `findings`, its text verbatim with hidden and control characters shown ' +
+        'as <U+XXXX>, or why it is not shown.'
+    ),
+  disclosed: DisclosedEffectsSchema,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/agents/create',
+  tags: ['Agents'],
+  summary: 'Create an agent',
+  description:
+    'Makes the folder, scaffolds the agent and registers it. Two sources need more than that ' +
+    '(DOR-2325). `template` is cloned into a staging folder and read before it lands: a person ' +
+    'whose template brings settings or programs gets 409 `template_needs_review` with what it ' +
+    'brings, and creates it by sending back `approvedTemplateHash`; anyone else (an agent) gets ' +
+    '202 `requires_confirmation` and an approval card, and retries with `confirmationToken`. ' +
+    '`package` creates the agent a marketplace package brings, through the marketplace installer, ' +
+    'held to `approvedDisclosure` and `approvedContentHash` (the preview’s `disclosed` and ' +
+    '`contentHash`); a person only.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: CreateAgentOptionsSchema.omit({ skipTemplateDownload: true }).extend({
+            approvedTemplateHash: z.string().optional(),
+            confirmationToken: z.string().optional(),
+            package: z
+              .object({
+                name: z.string(),
+                marketplace: z.string().optional(),
+                approvedDisclosure: DisclosedEffectsSchema,
+                approvedContentHash: z.string(),
+              })
+              .optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: { description: 'Created: the agent manifest, with `_path`' },
+    202: {
+      description: 'A template waits on a person’s approval card',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('requires_confirmation'),
+            confirmationToken: z.string(),
+            message: z.string(),
+            template: TemplateBringsSchema,
+          }),
+        },
+      },
+    },
+    403: {
+      description: 'Turned down, nobody can be asked, or a package requested by an agent',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        '`template_needs_review` (with `template`), `disclosure_changed`, or a collision',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/permissions/history/{eventId}/undo',
+  tags: ['Permissions'],
+  summary: 'Undo one permission change',
+  description:
+    'Sets every key a recorded `permission.changed` event moved back to its value before, as ' +
+    "one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed " +
+    'since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each ' +
+    'conflict) and writes nothing, while a change that reached several targets sets back the ' +
+    'ones that still match and reports the rest in `skipped`. `force` sets every key back. A ' +
+    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and ' +
+    'moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a ' +
+    '"Not now" on the Always allow suggestion lets the suggestion come back ' +
+    '(`suggestionRestored`). A key already back where the change found it is nothing to do.',
+  request: {
+    params: z.object({ eventId: z.string() }),
+    body: { content: { 'application/json': { schema: UndoPermissionChangeBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'What the Undo changed, and what it left alone',
+      content: { 'application/json': { schema: UndoPermissionChangeResponseSchema } },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
+    404: {
+      description: 'No such permission change (`UNKNOWN_EVENT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a ' +
+        'change, such as an answer on a request card (`NOT_UNDOABLE`)',
+      content: { 'application/json': { schema: UndoConflictResponseSchema } },
+    },
+    428: {
+      description: 'The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/agents/{id}/permissions',
+  tags: ['Permissions'],
+  summary: "Read one agent's permissions",
+  description:
+    "The agent's resolved state per area and per action, where each came from, and what it " +
+    "would be without the agent's own settings.",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "The agent's permissions",
+      content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
     },
     404: {
-      description: 'No permission is live under that id (`UNKNOWN_STANDING_PERMISSION`)',
+      description: 'No such agent (`UNKNOWN_AGENT`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/agents/{id}/permissions',
+  tags: ['Permissions'],
+  summary: "Change one agent's permissions",
+  description:
+    "Sets this agent's own areas and actions; `null` puts one back to the default. Records one " +
+    '`permission.changed` Activity event.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: PatchAgentPermissionsBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: "The agent's permissions changed",
+      content: {
+        'application/json': {
+          schema: PermissionWriteResponseSchema(AgentPermissionsResponseSchema),
+        },
+      },
+    },
+    404: {
+      description: 'No such agent (`UNKNOWN_AGENT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
   },
 });
 
@@ -4814,7 +5756,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Save one of a room's files",
   description:
-    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link), `ROOM_FILE_NOT_FOUND` (a folder the room does not have; saving does not make new folders), `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `REQUEST_TOO_LARGE` by the request parser, where a save that fits the request and not the room is refused 409 `FILE_TOO_LARGE`.",
+    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. A save that commits posts one quiet entry in the room (`body.fileChange`, `kind: 'edit'` or `'add'`) that addresses nobody and wakes no agent. With login on, the commit is authored as the signed-in person (`person-<authorId>@dorkos.local`); with login off, as the operator. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link — or a name that differs only in capital letters from a file or folder the room already has, which is the same name on macOS and Windows; the message names the real one), **missing folders above the file are created**, and a folder in the path that is really a file is `ROOM_FILE_PATH_INVALID`, `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `REQUEST_TOO_LARGE` by the request parser, where a save that fits the request and not the room is refused 409 `FILE_TOO_LARGE`.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileSaveRequestSchema } } },
@@ -4836,7 +5778,7 @@ registry.registerPath({
     },
     404: {
       description:
-        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such folder in the room’s files (`ROOM_FILE_NOT_FOUND`)',
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
@@ -4855,6 +5797,117 @@ registry.registerPath({
     },
     429: {
       description: 'Another write held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+/** The shared answers of the four file-change routes below (spec `agent-home-desk` §7.1). */
+const roomFileChangeResponses = {
+  200: {
+    description:
+      'The change is one commit on the room’s `main`, authored as the person, and one quiet room entry',
+    content: { 'application/json': { schema: RoomFileChangeResponseSchema } },
+  },
+  400: {
+    description:
+      'A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`ROOM_FILE_PATH_INVALID`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`ROOM_FILE_NOT_READABLE`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  401: roomAgentUnverified,
+  403: {
+    description: 'The caller is an agent; only people change a room’s files (`PEOPLE_ONLY`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  404: {
+    description:
+      'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file or folder (`ROOM_FILE_NOT_FOUND`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  409: {
+    description:
+      'A path changed since the person read it — `FILE_CHANGED`, the ONLY code that carries `conflict` — or the room already holds that path (`ROOM_FILE_EXISTS`, naming it), or one of the room-state refusals a save gives (`MAIN_CHECKOUT_DIRTY`, `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, `ROOM_ARCHIVED`, `ROOM_HAS_NO_REPO`, `ROOM_REPOS_DISABLED`, `ROOM_REPO_GIT_UNAVAILABLE`). Switch on `code`',
+    content: {
+      'application/json': {
+        schema: z.union([RoomFileConflictResponseSchema, ErrorResponseSchema]),
+      },
+    },
+  },
+  429: {
+    description: 'Another write held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`)',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+};
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/files/upload',
+  tags: ['Rooms'],
+  summary: "Upload files into a room's files",
+  description:
+    "Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/` (`to the top folder` for the root), authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `ROOM_FILE_EXISTS`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `FILE_TOO_LARGE`); more than 20 files is 400 `ROOM_UPLOAD_TOO_MANY_FILES`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.",
+  request: {
+    params: RoomIdParams,
+    body: {
+      content: {
+        'multipart/form-data': {
+          schema: z.object({
+            files: z.array(z.string().openapi({ type: 'string', format: 'binary' })),
+            dir: z.string().optional(),
+            baseCommit: z.string().optional(),
+            replace: z.string().optional().describe('A JSON array of file names.'),
+          }),
+        },
+      },
+    },
+  },
+  responses: roomFileChangeResponses,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/files/move',
+  tags: ['Rooms'],
+  summary: "Rename or move one of a room's files or folders",
+  description:
+    "One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `FILE_CHANGED` with the conflict. `to` must not exist (409 `ROOM_FILE_EXISTS`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.",
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: RoomFileMoveRequestSchema } } },
+  },
+  responses: roomFileChangeResponses,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/files/delete',
+  tags: ['Rooms'],
+  summary: "Delete one of a room's files or folders",
+  description:
+    "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `FILE_CHANGED`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.",
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: RoomFileDeleteRequestSchema } } },
+  },
+  responses: roomFileChangeResponses,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/files/from-attachment',
+  tags: ['Rooms'],
+  summary: "Keep a chat attachment as one of the room's files",
+  description:
+    "Copies a file somebody attached to a message in THIS room into the room's files, under `name` (the attachment's own name when omitted) in `dir`. One commit, `Add <path> from the chat`, authored as the person, and one quiet room entry (`kind: 'from-attachment'`). The attachment must be on a posted message in this room — another room's attachment, an unposted upload and an unknown id are all 404 `ATTACHMENT_NOT_FOUND`, the attachments route's own answer. A name the folder already holds is 409 `ROOM_FILE_EXISTS`.",
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: RoomFileFromAttachmentRequestSchema } } },
+  },
+  responses: {
+    ...roomFileChangeResponses,
+    404: {
+      description:
+        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`), or no such attachment on a message in this room (`ATTACHMENT_NOT_FOUND`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -5980,13 +7033,12 @@ registry.registerPath({
     '**It writes nothing**: no manifest is scaffolded, nothing is turned on, and no settings ' +
     'store is opened. That is DOR-678’s rule, learned when `dorkos harness sync --check` ' +
     'scaffolded a manifest into whatever folder a person happened to be standing in. ' +
-    '**`state` answers for the project as a whole**, and has four values. `ready` — the manifest ' +
+    '**`state` answers for the project as a whole**, and has three values. `ready` — the manifest ' +
     'parsed and everything below is populated. `not-set-up` — there is no ' +
     '`.agents/harness.manifest.json`, answered `200` rather than `404`, because a project with ' +
     'no manifest is a state the app is built to draw and a `404` would say the route is not ' +
     'there. `unreadable` — there is one and it will not parse, with `detail` saying why in words ' +
-    'a person can act on. `unavailable` — a build with no harness service at all; it belongs to ' +
-    'the in-process (Obsidian) transport and is never produced here. On anything but `ready` ' +
+    'a person can act on. On anything but `ready` ' +
     'every list is empty and every count is zero. ' +
     '**No file bytes**: the response carries artifact names, repo-relative paths and reasons, ' +
     'and a withheld package’s hook commands are deliberately left out of it. ' +

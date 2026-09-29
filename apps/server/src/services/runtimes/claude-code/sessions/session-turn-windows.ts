@@ -228,7 +228,10 @@ import { logger } from '../../../../lib/logger.js';
 import type { TurnOrigin } from '../../../session/session-event-normalizer.js';
 import { validateDispatchBoundary } from '../dispatch-boundary.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
-import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
+import {
+  fetchSubscriptionUsage,
+  type SubscriptionUsageReading,
+} from '../sdk/subscription-usage.js';
 import {
   PumpRefusedError,
   type PumpControlQuery,
@@ -387,6 +390,11 @@ export interface WindowUsage {
   context?: ContextUsage;
   /** The current subscription utilization, when this session has one. */
   subscription?: UsageStatus;
+  /**
+   * The same usage call's answer as account-wide usage-ledger readings, for the
+   * account usage store. Present whenever the call answered.
+   */
+  accountUsage?: Pick<SubscriptionUsageReading, 'observations' | 'subscriptionType'>;
 }
 
 /** One slice of the pump's output: the turn a dispatch opened, or one nobody asked for. */
@@ -2125,7 +2133,15 @@ export class SessionTurnWindows {
     if (context === undefined && subscription === undefined) return;
     this.opts.onUsage?.({
       ...(context !== undefined ? { context } : {}),
-      ...(subscription !== undefined ? { subscription } : {}),
+      ...(subscription?.status !== undefined ? { subscription: subscription.status } : {}),
+      ...(subscription !== undefined
+        ? {
+            accountUsage: {
+              observations: subscription.observations,
+              subscriptionType: subscription.subscriptionType,
+            },
+          }
+        : {}),
     });
   }
 

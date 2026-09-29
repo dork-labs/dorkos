@@ -25,10 +25,6 @@ import { useConfirmedCommunityAuthority } from './use-community-navigation';
  * refetches only the list of the owner this window is confirmed as — through
  * the owner-scoped route, which answers with that owner's rows alone. Another
  * owner's cached list, if one is still in memory, is left untouched.
- *
- * Mount once near the app root, beside the other `*Sync` hooks. In embedded
- * mode (Obsidian) the in-process transport yields no generic events, so the
- * subscription is an inert no-op there.
  */
 export function useCommunityConnectionsSync(): void {
   const queryClient = useQueryClient();

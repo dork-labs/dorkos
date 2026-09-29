@@ -12,6 +12,7 @@ import type { ConnectorCatalogResourcePage } from '@dorkos/shared/connector-reso
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
+import { agentAppSetupNote, appReachProblem } from './app-connection-way.js';
 import { recommendConnector, type RelayAdapterCatalog } from './routing.js';
 import type { ConnectorRegistry } from './registry.js';
 
@@ -74,9 +75,12 @@ export const connectorDomain: CapabilityDomain = {
         'List services you can use with DorkOS. Open Connections in the ' +
         'DorkOS app to connect an account or change access. Follow nextCursor with the ' +
         'same query to see more services; warnings mean the catalog is incomplete. The ' +
-        'query matches service names. A slug in toolkits is what a service request ' +
-        'takes; a service offering only messages is set up by the person under Messaging.',
+        'query matches service names. The serviceSlug of a service with an account ' +
+        'intent is what a service request takes, even when a setupNote says DorkOS cannot ' +
+        'reach it yet; a service offering only messages is set up by the person under Messaging.',
       tier: 'observe',
+      area: null,
+      areaNote: 'connected accounts have their own grant model',
       input: z
         .object({
           query: z.string().trim().max(200).optional(),
@@ -94,12 +98,29 @@ export const connectorDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) => {
-        const page = await requireConnectorDeps(deps).catalog({
+        // `appConnections` is the owner's setup (which way new apps use, and its
+        // route ids): agents get the catalog, never the plumbing behind it —
+        // only the one plain note it decides for an app no way reaches.
+        const connectorDeps = requireConnectorDeps(deps);
+        const { appConnections, ...page } = await connectorDeps.catalog({
           ...input,
           signal: context.signal ?? AbortSignal.timeout(30_000),
         });
+        const problem = appConnections
+          ? appReachProblem(appConnections.newApps, page.warnings.length > 0)
+          : connectorDeps.registry.listProviders().length > 0
+            ? 'app_not_reached'
+            : 'nothing_set_up';
         return {
           ...page,
+          // A popular app no way reaches yet can still be requested (DOR-2494);
+          // the note says why DorkOS cannot reach it and what the person does.
+          services: page.services.map((service) => {
+            const account = service.intents.find((intent) => intent.kind === 'account');
+            return account?.kind === 'account' && account.routes.length === 0
+              ? { ...service, setupNote: agentAppSetupNote(problem, service.displayName) }
+              : service;
+          }),
           // Keep the original toolkit fields for callers that predate pagination.
           // Messaging-only entries remain in services, without inventing account support.
           toolkits: page.services.flatMap((service) => {
@@ -126,6 +147,8 @@ export const connectorDomain: CapabilityDomain = {
         'Recommend the best route for a service. Account setup and access changes ' +
         'remain owner actions in the DorkOS app.',
       tier: 'observe',
+      area: null,
+      areaNote: 'connected accounts have their own grant model',
       input: z.object({
         service: z.string().min(1).describe("Service slug, for example 'gmail' or 'slack'."),
       }),

@@ -153,7 +153,12 @@ import {
 import { onSessionRemoved } from './session-list-broadcaster.js';
 import { runtimeLockHolder } from './session-lock.js';
 import { getStagedContextStore, holdStagedContext } from './staged-context-store.js';
-import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './trigger-turn.js';
+import {
+  triggerTurn,
+  type TriggerTurnDeps,
+  type TriggerTurnOpts,
+  type TriggerTurnResult,
+} from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
 import { ROOMS, SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
@@ -538,7 +543,7 @@ type RawContextStaged = Omit<Extract<SessionEvent, { type: 'context_staged' }>, 
  * queue routes call it for theirs. A mutation that forgets leaves every other
  * window showing a queue that is no longer true until something else changes.
  *
- * A no-op when no queue store is wired (embedded hosts, most unit tests) or when
+ * A no-op when no queue store is wired (most unit tests) or when
  * no projector is registered for the session: with nobody listening there is
  * nothing to correct, and the next cold connect reads the queue from the store
  * anyway.
@@ -731,6 +736,8 @@ export interface DispatchMessageOpts {
    * routing metadata that never reaches a prompt (spec `room-canvas` §5.3).
    */
   roomTurn?: MessageOpts['roomTurn'];
+  /** The home of the agent this turn is dispatched as — see {@link MessageOpts.forAgent}. */
+  forAgent?: string;
   /** Background the caller attached to this turn; the person never sees it. */
   seedContext?: string;
   /**
@@ -746,6 +753,20 @@ export interface DispatchMessageOpts {
    * what belongs in `content` or `additionalContext`.
    */
   systemPromptAppend?: string;
+  /**
+   * The folders this turn may reach beyond its cwd (spec `agent-home-desk` §4).
+   * Passed straight through to the turn; absent means none, so a queued turn
+   * that lost it would silently run with fewer folders than it was given.
+   */
+  additionalDirectories?: MessageOpts['additionalDirectories'];
+  /**
+   * Work to do when this turn LAUNCHES, not when it is accepted — immediately
+   * for a turn on an idle session, or when a queued turn is released (spec
+   * `agent-home-desk` §5.9, §6.1). Its result is merged into the turn before
+   * the runtime is called. Passed straight through; see
+   * {@link TriggerTurnOpts.prepareLaunch} for where it runs.
+   */
+  prepareLaunch?: TriggerTurnOpts['prepareLaunch'];
   /**
    * Claude account registry id this LAUNCH should bill to, when the sender made
    * an explicit pre-launch choice. Passed straight through to the turn.
@@ -782,6 +803,11 @@ export interface DispatchMessageOpts {
   onTurnStart?(seq: number): void;
   /** Server-owned receipt for a protected automatic follow-up. */
   privateReceiptId?: string;
+  /**
+   * Nobody is watching THIS turn. Passed straight through; see
+   * {@link TriggerTurnOpts.unattended}.
+   */
+  unattended?: boolean;
   /**
    * What to do when the session already has a turn open.
    *
@@ -958,9 +984,12 @@ interface DispatchPlan {
     | 'context'
     | 'roomContext'
     | 'roomTurn'
+    | 'forAgent'
     | 'seedContext'
     | 'approvalVerdict'
     | 'systemPromptAppend'
+    | 'additionalDirectories'
+    | 'prepareLaunch'
     | 'accountHint'
     | 'settings'
     | 'newSessionPermissionMode'
@@ -969,6 +998,7 @@ interface DispatchPlan {
     | 'onSettled'
     | 'onTurnStart'
     | 'privateReceiptId'
+    | 'unattended'
   >;
 }
 
@@ -1130,7 +1160,13 @@ function returnToQueue(plan: DispatchPlan): void {
     return;
   }
   const store = getMessageQueueStore();
-  if (store && !store.get(plan.messageId)) return;
+  if (store && !store.get(plan.messageId)) {
+    // No row to put back (it was removed, or never written): no turn will
+    // start for this message, so its caller hears that now, or never (a
+    // launch-cap slot is released on it).
+    plan.turn.onSettled?.('failed');
+    return;
+  }
   parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true });
 }
 
@@ -1238,11 +1274,16 @@ function launchDispatch(
       ...(turn.context ? { context: turn.context } : {}),
       ...(turn.roomContext ? { roomContext: turn.roomContext } : {}),
       ...(turn.roomTurn ? { roomTurn: turn.roomTurn } : {}),
+      ...(turn.forAgent !== undefined ? { forAgent: turn.forAgent } : {}),
       ...(turn.seedContext ? { seedContext: turn.seedContext } : {}),
       ...(turn.approvalVerdict ? { approvalVerdict: turn.approvalVerdict } : {}),
       ...(turn.systemPromptAppend !== undefined
         ? { systemPromptAppend: turn.systemPromptAppend }
         : {}),
+      ...(turn.additionalDirectories !== undefined
+        ? { additionalDirectories: turn.additionalDirectories }
+        : {}),
+      ...(turn.prepareLaunch !== undefined ? { prepareLaunch: turn.prepareLaunch } : {}),
       ...(turn.accountHint ? { accountHint: turn.accountHint } : {}),
       ...(turn.settings ? { settings: turn.settings } : {}),
       ...(turn.newSessionPermissionMode !== undefined
@@ -1250,6 +1291,7 @@ function launchDispatch(
         : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
+      ...(turn.unattended ? { unattended: true } : {}),
       // The turn is running: THIS is the instant the message stops waiting, and
       // every window is told so in the same beat — a queue chip that outlives
       // the message it stands for is a lie about what is still waiting.
@@ -1484,8 +1526,8 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const messageId = record?.id ?? crypto.randomUUID();
   // A row gives a real position. Without one the answer depends on WHY there is
   // no row: a refusing caller is deliberately rowless and reports `0` (it is on
-  // no queue at all, transient or not), while a host with no store wired — every
-  // embedded host and most unit tests — still has a notional queue of one and
+  // no queue at all, transient or not), while a host with no store wired — as
+  // in most unit tests — still has a notional queue of one and
   // reports `1`.
   const queuePosition = record
     ? (getMessageQueueStore()
@@ -1879,6 +1921,34 @@ export async function dispatchCommandIntent(
   }
 }
 
+/**
+ * Whether a turn is running on this session right now, by every authority
+ * that can know (spec `agent-home-desk` §6.1).
+ *
+ * True when ANY of three says so: the dispatcher's in-flight slot, the
+ * runtime's real write lock, or the session's projector holding an open turn.
+ * The slot alone is lossy — a turn launched with its queue budget exhausted
+ * runs holding the runtime lock and never takes the slot
+ * ({@link launchDispatch}), the same hole {@link deliverSteer} closes by asking
+ * the lock. A caller that must not act under a running turn (the room's
+ * launch-time work on an agent's copy of a room's files) asks here.
+ *
+ * @param sessionId - The session, by any id it has held.
+ * @param runtime - The runtime that session runs on.
+ */
+export function isTurnInFlight(
+  sessionId: string,
+  runtime: Pick<AgentRuntime, 'isLocked' | 'getInternalSessionId'>
+): boolean {
+  const lockKey = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  const sessionKey = primaryOf(lockKey);
+  if (inFlight.has(sessionKey)) return true;
+  if (runtime.isLocked(lockKey) || (lockKey !== sessionId && runtime.isLocked(sessionId))) {
+    return true;
+  }
+  return (projectorFor(sessionKey)?.peekInProgressTurn() ?? null) !== null;
+}
+
 /** Inputs for {@link deliverSteer}. */
 export interface DeliverSteerOpts {
   /** The session to steer; either id a caller might hold. */
@@ -2230,7 +2300,7 @@ export function noteRuntimeTurnClosed(sessionId: string): void {
  *
  * The stored `position` is the authority, because that is what a reorder edits
  * and what every window reads. A dispatch with no row behind it — no store is
- * wired, which is every embedded host and most unit tests — keeps its arrival
+ * wired, as in most unit tests — keeps its arrival
  * order, which is the same answer for a queue nobody can reorder. `sort` is
  * stable, so the two groups interleave predictably rather than by accident.
  */
@@ -2374,7 +2444,7 @@ export function resetMessageDispatcher(): void {
 
 // Wired on import rather than from the composition root, deliberately. The
 // dispatcher is only correct while it is listening: a host that forgot the
-// wiring — the Obsidian plugin, a test harness, a future embedder — would get a
+// wiring — including a test harness — would get a
 // queue that accepts messages and never runs them, which is the worst possible
 // way to fail. There is nothing to configure and nothing to tear down, so
 // there is nothing for a root to decide.

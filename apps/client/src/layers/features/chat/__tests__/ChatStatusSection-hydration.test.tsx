@@ -73,7 +73,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   return {
     ...actual,
     useQuery: vi.fn(() => ({ data: undefined })),
-    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn(), getQueryData: vi.fn() })),
   };
 });
 
@@ -181,6 +181,8 @@ function makeSnapshot(): SessionSnapshot {
       runningSubagentCount: 0,
       lifecycle: 'idle',
       lastError: null,
+      limit: null,
+      accountUsage: null,
     },
     pendingInteractions: [],
     queuedMessages: [],

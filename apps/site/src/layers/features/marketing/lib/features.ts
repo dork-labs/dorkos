@@ -289,11 +289,11 @@ export const features: Feature[] = [
       'Work and personal on one machine gets awkward. Add more than one Claude account, then say which one an agent bills, or which one a single chat bills.',
     status: 'ga',
     benefits: [
-      'Add more than one Claude account in Settings',
       'Pin an agent to the account that should pay for it',
       'Send one chat to a different account, just this once',
+      'See how much each account has left, right in the status bar',
+      'When one account runs out, carry the work on with another',
       'Switch accounts without restarting anything',
-      'Once a chat has started, its account never changes',
     ],
     moment:
       'Your work agent bills the work account, and your side project bills your own. You choose once per agent, and every session it starts follows that choice.',
@@ -497,7 +497,7 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'Read what would run, in plain words, before deciding',
-      'One yes covers one exact action, then it is spent',
+      'Allow once, always allow for that agent, or deny',
       'Answer from a Telegram or Slack message, not just the app',
       'Only the person you name gets asked, not every chat',
       'Say yes right from the notification banner on your Mac',
@@ -645,7 +645,7 @@ export const features: Feature[] = [
     benefits: [
       'See where new sessions stop for approval, at a glance',
       'Let agents message across projects with one switch',
-      "Make 'stop asking' stick for one agent, one action",
+      'Cap how far agents keep replying to each other, with one switch',
       'Keep agents warm between messages, and cap concurrent scheduled runs',
       'An Exceptions list links straight to what to fix',
     ],
@@ -863,7 +863,7 @@ export const features: Feature[] = [
       "Sharing a file over chat loses someone's edit. A room's Files panel lets you and your agents edit it together, catching every clash before it overwrites work.",
     status: 'ga',
     benefits: [
-      'Open any file in a room and edit it right there',
+      'Add, upload, rename and edit any text file right there',
       'Save clashes ask you to keep theirs or keep yours',
       'Agents work in their own copy, then merge back in',
       'See which agent is holding work still unmerged',
@@ -1164,8 +1164,8 @@ export const features: Feature[] = [
     status: 'beta',
     benefits: [
       'Connect Gmail, Slack, or another service with one sign-in',
+      'Connect an app right in the chat, the moment an agent asks for it',
       'See where your sign-in lives before you connect',
-      'Add a second account for the same service, each with its own label',
       'Choose the exact actions each agent may use, account by account',
       'Pause or disconnect an account any time, from one screen',
     ],

@@ -144,11 +144,14 @@ export function assertPathSegment(name: string): string {
 }
 
 /**
- * Assert that `candidate` resolves to `root` itself or to something nested
- * under it.
+ * Assert that `candidate` resolves to something nested under `root` — never
+ * `root` itself.
  *
  * The `path.sep` suffix is what stops a prefix collision — without it,
- * `/cache/packages-evil` reads as living under `/cache/packages`.
+ * `/cache/packages-evil` reads as living under `/cache/packages`. The root
+ * itself is refused because every caller names one entry inside it and may
+ * then `rm(recursive)` that entry: a key such as `x/..` resolves to the root,
+ * and removing "it" emptied the whole directory (DOR-2304).
  *
  * @param root - The directory the path must stay under.
  * @param candidate - The path to check.
@@ -158,7 +161,7 @@ export function assertPathSegment(name: string): string {
 export function assertContainedIn(root: string, candidate: string): string {
   const resolvedRoot = path.resolve(root);
   const resolved = path.resolve(candidate);
-  if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) {
+  if (!resolved.startsWith(resolvedRoot + path.sep)) {
     throw new PathEscapeError(root, candidate);
   }
   return candidate;

@@ -5,6 +5,8 @@ import { rssFeedAlternateTypes } from '@/lib/metadata';
 import { Providers } from './providers';
 import { CookieConsentBanner } from '@/layers/widgets/cookie-consent';
 import { AnalyticsIdentity } from '@/layers/widgets/analytics-identity';
+import { env } from '@/env';
+import { cloudAccountsForwarding } from '@/lib/cloud-accounts/forward';
 import './globals.css';
 
 const ibmPlexSans = IBM_Plex_Sans({
@@ -84,7 +86,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           {children}
           <CookieConsentBanner />
-          <AnalyticsIdentity />
+          {/* Accounts handed to the accounts service (DOR-2441) means the
+              session lives on that service's host; asking this one would
+              always answer "signed out", once per page view. */}
+          {cloudAccountsForwarding(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN) ? null : <AnalyticsIdentity />}
         </Providers>
       </body>
     </html>

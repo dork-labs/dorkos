@@ -147,6 +147,9 @@ export const APPLY_SHAPE_ACTION: GatedAction = {
   id: 'shapes.apply',
   title: 'Switch to a Shape',
   tier: 'destructive',
+  // No permission area yet: the tier alone gates it (spec `agent-permissions`
+  // assigns areas to everything else in phase 3), so it resolves no permission.
+  area: null,
   // The Shape name is the whole decision: it names the manifest whose schedules,
   // permission modes, and extensions are about to be applied.
   approvalDisplayFields: ['name'],
@@ -186,6 +189,8 @@ export function createShapesRouter(deps: ShapesRouterDeps): Router {
     return enforceCapabilityTier({
       action: APPLY_SHAPE_ACTION,
       input: { name },
+      // `APPLY_SHAPE_ACTION.area` is null, so there is no permission to resolve.
+      permission: null,
       ...(identity ? { identity } : {}),
       ...(approvalToken ? { approvalToken } : {}),
       retryChannel: 'http-header',

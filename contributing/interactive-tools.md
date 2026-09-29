@@ -18,7 +18,7 @@ Two more systems are separate but related, each with its own section below:
 
 ## Architecture
 
-The interactive tools pattern connects three layers: the SDK callback, the streaming generator, and the client UI. The key challenge is that `canUseTool` is a synchronous callback that must return a `Promise<PermissionResult>`, while the user response arrives later over HTTP or in-process transport.
+The interactive tools pattern connects three layers: the SDK callback, the streaming generator, and the client UI. The key challenge is that `canUseTool` is a synchronous callback that must return a `Promise<PermissionResult>`, while the user response arrives later over HTTP.
 
 **A prompt waits in two stages** (spec `ask-parks-on-timeout`). It counts down for `SESSIONS.INTERACTION_TIMEOUT_MS`, and past that it PARKS: the promise stays unresolved, the tool call stays held, and the person is told the agent is waiting. Only at `SESSIONS.INTERACTION_PARK_CEILING_MS` is the model handed a refusal. The whole wait — the entry shapes, both timers, the sentences and the log lines — lives in `messaging/interaction-wait.ts`; the handlers below just arm it. An unattended session (a scheduled task run) is the one exception and refuses at the countdown, because nobody is coming back to it.
 
@@ -47,7 +47,6 @@ sendMessage() generator loop (Promise.race)
 StreamEvent yielded to client
   |
   |  HttpTransport: SSE event -> onEvent callback
-  |  DirectTransport: AsyncGenerator iteration -> onEvent callback
   |
   v
 useChatSession processes event
@@ -66,7 +65,6 @@ User responds (clicks button / selects option)
 Transport method called (submitAnswers / approveTool / denyTool)
   |
   |  HttpTransport: POST to /api/sessions/:id/submit-answers (or /approve, /deny)
-  |  DirectTransport: calls runtime method directly
   |
   v
 Runtime resolves the deferred Promise
@@ -269,7 +267,7 @@ Full walkthrough for a mode that asks (every mode but `bypassPermissions`).
 
 For any tool that is not `AskUserQuestion`, and is not in the auto-approved sets (read-only Claude Code tools and DorkOS agent tools), the `createCanUseTool` callback consults `resolveModeDecision(session.permissionMode)`; when it returns `'ask'`, the callback calls `handleToolApproval`. Only `bypassPermissions` returns `'allow'` — every other mode (`default`, `acceptEdits`, `auto`, `plan`, `dontAsk`) asks, each for its own reason (see the TSDoc on `resolveModeDecision`). The auto-approved tool sets are defined as module-level `Set` constants (`READ_ONLY_TOOLS` and `DORKOS_AGENT_TOOLS`) to avoid per-call reconstruction. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`) are always auto-approved regardless of permission mode.
 
-`DORKOS_AGENT_TOOLS` is **not** `mcp__dorkos__*`. It is a hand-written set of exactly **28** prefixed names, listed in `interactive-handlers.ts`: the eight room CONVERSATION-and-lookup verbs (`post_to_room`, `react_to_room_entry`, `read_room_history`, `search_room_history`, `list_member_rooms`, `search_member_rooms`, `get_room`, `find_room`), the five that ARRANGE rooms (`create_room`, `add_room_members`, `remove_room_members`, `update_room`, `leave_room` — these five carry a bound none of the others has, the per-agent `roomsManage` grant a person must switch on before they run at all, DOR-1611), five Relay tools (`relay_notify_user`, `relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_register_endpoint`), six Mesh tools (`mesh_list`, `mesh_inspect`, `mesh_discover`, `mesh_register`, `mesh_status`, `mesh_query_topology`), `get_agent`, `memory_write`, and the two UI-control tools (`control_ui`, `get_ui_state`). Every other DorkOS tool prompts like any other MCP tool. The exclusions are deliberate: all four destructive actions are absent (`tasks_delete`, `mesh_unregister`, `marketplace.uninstall` via its `marketplace_uninstall` tool, and `operator.update_agent_boundaries`), and so are `config_patch` and the other seven `marketplace_*` tools. `core/__tests__/mcp-tool-gate.test.ts` asserts every name in the set is a real tool and that none is `destructive`, so promoting a tool in `mcp-tool-tiers.ts` without removing it here fails. Do not widen the set to a prefix, and do not derive it from `act` + `observe`: either change would auto-approve tools nobody chose, which is fail-open on the one axis that costs something. The `interactive-handlers.ts` TSDoc has the full argument.
+`DORKOS_AGENT_TOOLS` is **not** `mcp__dorkos__*`. It is a hand-written set of exactly **29** prefixed names, listed in `interactive-handlers.ts`: the eight room CONVERSATION-and-lookup verbs (`post_to_room`, `react_to_room_entry`, `read_room_history`, `search_room_history`, `list_member_rooms`, `search_member_rooms`, `get_room`, `find_room`), the six that ARRANGE rooms (`create_room`, `add_room_members`, `remove_room_members`, `update_room`, `leave_room`, `archive_room` — these six sit in the Rooms permission area, so the permission gate inside `registry.invoke` still refuses or asks about them whatever this set says), five Relay tools (`relay_notify_user`, `relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_register_endpoint`), six Mesh tools (`mesh_list`, `mesh_inspect`, `mesh_discover`, `mesh_register`, `mesh_status`, `mesh_query_topology`), `get_agent`, `memory_write`, and the two UI-control tools (`control_ui`, `get_ui_state`). Every other DorkOS tool prompts like any other MCP tool. The exclusions are deliberate: all five destructive actions are absent (`tasks_delete`, `mesh_unregister`, `marketplace.uninstall` via its `marketplace_uninstall` tool, `operator.update_agent_boundaries`, and `operator.update_agent_execution`), and so are `config_patch` and the other eight `marketplace_*` tools. `core/__tests__/mcp-tool-gate.test.ts` asserts every name in the set is a real tool and that none is `destructive`, so promoting a tool in `mcp-tool-tiers.ts` without removing it here fails. Do not widen the set to a prefix, and do not derive it from `act` + `observe`: either change would auto-approve tools nobody chose, which is fail-open on the one axis that costs something. The `interactive-handlers.ts` TSDoc has the full argument.
 
 Membership is **necessary but not sufficient** (DOR-625). `isAutoAllowedCall(toolName, input)` has the last word, and one member needs it: `control_ui` is a multiplexer — one tool name carrying 22 different effects chosen by its `action` argument. Twenty-one only move pixels; `apply_layout` drives the client to `POST /api/shapes/:name/apply`, which writes a `SKILL.md` into the person's own skills root for every schedule that Shape declares, records a receipt naming what it wrote, rewrites `ui.shapes.active` in `~/.dork/config.json`, creates, rebinds and **deletes** scheduled tasks, and turns extensions on and off. It was auto-allowed under a comment claiming the UI tools have "no system access", which was false for that one action, in every permission mode including `default`.
 
@@ -668,7 +666,7 @@ return { behavior: 'allow', updatedInput: input };
 
 ### Step 3: Add transport method
 
-Add a method to the `Transport` interface and implement it in both transports:
+Add a method to the `Transport` interface and implement it in HttpTransport and update the test mocks:
 
 ```typescript
 // packages/shared/src/transport.ts
@@ -695,7 +693,7 @@ submitMyNewResult(sessionId: string, toolCallId: string, result: MyResult): bool
 }
 ```
 
-Implement in `HttpTransport` (POST to a new route) and `DirectTransport` (call the runtime directly).
+Implement in `HttpTransport` (POST to a new route) and update the test mocks.
 
 **Important:** Handle 409 responses in your transport method. The server returns 409 with `{ code: 'INTERACTION_ALREADY_RESOLVED' }` when the SDK resolves the interaction before the HTTP request arrives. Treat this as success in the client.
 
@@ -773,7 +771,6 @@ The `control_ui` tool is exposed on the external MCP server (`/mcp`) and availab
 | `toggle_panel`         | `panel`: (same as above)                                         | Toggle a named panel                                                                                                                                                                                                                                                                                  |
 | `open_sidebar`         | (none)                                                           | Open the sidebar                                                                                                                                                                                                                                                                                      |
 | `close_sidebar`        | (none)                                                           | Close the sidebar                                                                                                                                                                                                                                                                                     |
-| `switch_sidebar_tab`   | `tab`: `overview` / `sessions` / `schedules` / `connections`     | Switch the sidebar tab — embedded (Obsidian) app only; a no-op on the web cockpit                                                                                                                                                                                                                     |
 | `open_canvas`          | `content?`: `UiCanvasContent`, `preferredWidth?`: 20--80         | Open canvas panel with content                                                                                                                                                                                                                                                                        |
 | `update_canvas`        | `content`: `UiCanvasContent`                                     | Update canvas content without reopening                                                                                                                                                                                                                                                               |
 | `close_canvas`         | (none)                                                           | Close the canvas panel                                                                                                                                                                                                                                                                                |
@@ -894,7 +891,7 @@ This two-way channel -- `uiState` in (client tells agent what is visible) and `u
 
 ## Capability Approval Holds
 
-A third, separate system covers DorkOS's own destructive MCP tools -- the ones the [action approvals](../docs/guides/action-approvals.mdx) guide describes for end users, such as `tasks_delete`, `mesh_unregister`, `marketplace.uninstall`, and `operator.update_agent_boundaries`, gated by `services/core/capabilities/tier-enforcement.ts`. It shares nothing with the SDK's `canUseTool` pattern above: there is no `pendingInteractions` entry and no deferred promise on the session.
+A third, separate system covers DorkOS's own destructive MCP tools -- the ones the [action approvals](../docs/guides/action-approvals.mdx) guide describes for end users, such as `tasks_delete`, `mesh_unregister`, `marketplace.uninstall`, `operator.update_agent_boundaries`, and `operator.update_agent_execution`, gated by `services/core/capabilities/tier-enforcement.ts`. It shares nothing with the SDK's `canUseTool` pattern above: there is no `pendingInteractions` entry and no deferred promise on the session.
 
 Before DOR-939, a held capability call returned `approval_required` immediately and ended the turn -- the operator approved on the dashboard, then had to tell the agent to retry. Now the call can HOLD instead (`capability-approval-hold.ts`, spec `approvals-resume-inline`): it pushes the same `PendingApproval` the dashboard renders as a `capability_approval_required` event onto the session, waits up to ten minutes for the operator's decision, and on a grant resumes the held call and returns the real result in the SAME turn -- no retry needed.
 
@@ -1008,10 +1005,9 @@ The snapshot reads the selector `listPendingInteractions(entries, Date.now())` (
 
 ### Transport Abstraction
 
-Both `HttpTransport` and `DirectTransport` implement the same `Transport` interface, so interactive tool components work identically in both environments:
+`HttpTransport` implements the `Transport` interface, so interactive tool components share one contract across the browser, phone web app, and desktop renderer:
 
 - **HttpTransport** (standalone web): Makes POST requests to Express routes (`/approve`, `/deny`, `/submit-answers`). The route handler calls the runtime methods.
-- **DirectTransport** (Obsidian plugin): Calls runtime methods directly in-process.
 
 Components use `useTransport()` to get the current transport and never know which adapter is active.
 

@@ -549,7 +549,7 @@ describe('Command Palette Integration', () => {
     const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
+    expect(mockOpenConnections).toHaveBeenCalledWith();
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 

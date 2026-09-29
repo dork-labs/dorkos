@@ -1,6 +1,6 @@
 /**
  * Confirmation provider — gates marketplace mutation tools (install,
- * uninstall, create-package) behind explicit user approval.
+ * uninstall, update, create-package) behind explicit user approval.
  *
  * Two implementations cover the contexts in which an MCP marketplace tool may be
  * invoked:
@@ -43,13 +43,17 @@ import {
 } from '../core/approvals/index.js';
 import {
   describeDisclosedEffects,
+  describeEffectsInFull,
   disclosedEffectsOf,
   type DisclosedEffects,
 } from '../marketplace/disclosed-effects.js';
 import { logger } from '../../lib/logger.js';
+import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
+import { describeUpdatesInFull, UPDATE_DETAIL_MAX_LENGTH } from './update-approval-detail.js';
 
 /** The kind of mutation a confirmation request is gating. */
-export type ConfirmationOperation = 'install' | 'uninstall' | 'create-package';
+export type ConfirmationOperation =
+  'install' | 'uninstall' | 'update' | 'create-package' | 'create-agent-from-template';
 
 /**
  * Result of a confirmation request, discriminated by `status`.
@@ -68,6 +72,22 @@ export type ConfirmationResult =
   | { status: 'pending'; token: string; reason?: string };
 
 /**
+ * One settings file a template carries, as the card writes it out (DOR-2325):
+ * its text with every hidden or control character made visible, or why it is
+ * not shown. The shape `inspectTemplate` produces.
+ */
+export interface TemplateSettingsFileShown {
+  /** Its path in the template. */
+  path: string;
+  /** Its size. */
+  bytes: number;
+  /** Its text, made visible; absent when `omitted` says why. */
+  content?: string;
+  /** Too long to show, not text, or a link (which is never copied). */
+  omitted?: 'too-long' | 'not-text' | 'link';
+}
+
+/**
  * Payload for {@link ConfirmationProvider.requestInstallConfirmation}.
  *
  * Every field here is part of what the user actually agreed to, so every field
@@ -77,6 +97,11 @@ export type ConfirmationResult =
  * let a retry change the effect the user approved.
  */
 export interface ConfirmationRequest {
+  /**
+   * The package the operation is about. For an update, which can cover several,
+   * the distinct names in order, joined with `, ` — a label; {@link updates}
+   * carries the exact reinstalls.
+   */
   packageName: string;
   /**
    * Which marketplace to act in. Absent means "search every enabled
@@ -106,6 +131,19 @@ export interface ConfirmationRequest {
    */
   packageType?: string;
   /**
+   * Update only: every reinstall the apply would make — the installation, its
+   * versions, and everything its new version would run (DOR-2195).
+   *
+   * Bound as a set of `{ installPath, latestVersion, disclosed }`: the installation by its path
+   * (unique, where a name is not — a plugin and an agent can share one), and the
+   * hooks, scheduled jobs and MCP servers of the new version the person was
+   * shown. Order does not matter, since two scans may list the same
+   * installations differently. So an approval cannot be stretched over one more
+   * installation, or over a new version that runs something else. Every field is
+   * listed in full on the card's detail; a list too long for it is refused.
+   */
+  updates?: readonly ApprovableUpdate[];
+  /**
    * Install only: everything the install would do, as the person was shown it.
    *
    * The EXECUTABLE part of it is bound into the approval — every hook command
@@ -116,6 +154,33 @@ export interface ConfirmationRequest {
    * for the whole of that line and why it falls where it does.
    */
   preview?: PermissionPreview;
+  /**
+   * Install only: the shipped-content hash of the package the preview staged
+   * (`marketplace/lib/content-hash.ts`). Bound, so an approval covers these
+   * bytes and no others (DOR-2306).
+   */
+  contentHash?: string;
+  /**
+   * Install only, shown on the card and not bound: the version and where the
+   * package comes from, so a person can tell what they are approving (the
+   * binding above already pins the bytes).
+   */
+  origin?: { version?: string; source?: string };
+  /**
+   * Create-agent-from-template only (DOR-2325): what the template brings into
+   * the new agent's folder. `disclosed` (what its skills run and may do
+   * without asking) is bound like an install's; `findings` (harness
+   * configuration files it carries) is shown in full, and bound through
+   * {@link contentHash}, since they are files among the bytes it pins;
+   * `settings` is each of those files written out, so a person reads what the
+   * new agent's sessions will load rather than only its name.
+   * `projectPath` carries the folder the agent lands in, and is bound.
+   */
+  templateDisclosure?: {
+    disclosed: DisclosedEffects;
+    findings: readonly string[];
+    settings?: readonly TemplateSettingsFileShown[];
+  };
   /**
    * Opaque label for the agent that asked, shown on the approval card so an
    * operator can see WHO wants this. Not part of the effect, so deliberately not
@@ -142,9 +207,12 @@ export interface MarketplaceConfirmationContext {
    *
    * ## What it is actually set for, which is more than the line above implies
    *
-   * `callerContext` (`marketplace-capabilities.ts`) sets this on `context.approval`
-   * OR `context.trusted`. The first is the tier gate's spent approval and only
-   * reaches `destructive` capabilities. The second is a caller that proved it may
+   * `callerContext` (`marketplace-capabilities.ts`) sets this on a person's yes
+   * for this action OR `context.trusted`. The first is the tier gate's spent
+   * approval (a destructive call, or an `act` call whose Tools & packages area is
+   * set to Ask), or an Allowed the person set on this one action (spec
+   * `agent-permissions`); an area-level Allowed never counts, so the undecided
+   * install keeps this confirmation. The second is a caller that proved it may
    * DECIDE approvals — and it is not tier-scoped, so a trusted caller installing a
    * package (`marketplace.install` is tier `act`, gated by nothing upstream) skips
    * this provider entirely and no card is ever shown.
@@ -194,11 +262,32 @@ export interface ConfirmationProvider {
   resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult>;
 }
 
+/** The id a template-creation card is raised under (DOR-2325). */
+export const TEMPLATE_CREATION_CAPABILITY_ID = 'agents.create_from_template';
+
+/**
+ * Describe {@link TEMPLATE_CREATION_CAPABILITY_ID} for an approval card.
+ * `destructive`, because the new agent's sessions run what the template brings.
+ *
+ * @param capabilityId - The id `ApprovalService` is resolving.
+ * @returns The descriptor, or `undefined` for any other id.
+ */
+export function describeTemplateCreationCapability(
+  capabilityId: string
+): { title: string; tier: 'destructive' } | undefined {
+  if (capabilityId !== TEMPLATE_CREATION_CAPABILITY_ID) return undefined;
+  return { title: 'Create an agent from a template', tier: 'destructive' };
+}
+
 /** Capability id each marketplace operation is gated as. */
 const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
   install: 'marketplace.install',
   uninstall: 'marketplace.uninstall',
+  update: 'marketplace.update',
   'create-package': 'marketplace.create_package',
+  // Not a capability anyone invokes: it names the card (DOR-2325), and
+  // `describeTemplateCreationCapability` gives it a title and tier.
+  'create-agent-from-template': TEMPLATE_CREATION_CAPABILITY_ID,
 };
 
 /**
@@ -222,7 +311,7 @@ interface MarketplaceBinding {
  * the binding is the whole guarantee: the user consented to one specific effect,
  * and a retry that changes any of these is a different effect. `purge` is the
  * sharpest case — approving a reversible uninstall must never license one that
- * deletes `.dork/data/` and `.dork/secrets.json`.
+ * deletes the files the person and their agents added or changed.
  *
  * It also binds the EXECUTABLE part of the permission preview — the hook command
  * strings and the scheduled jobs, via {@link disclosedEffectsOf} — because an
@@ -237,11 +326,14 @@ interface MarketplaceBinding {
  *   disclosed, so a caller can name what a stale approval no longer covers.
  */
 function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
-  const disclosed = disclosedEffectsOf(req.preview);
+  const disclosed = req.templateDisclosure?.disclosed ?? disclosedEffectsOf(req.preview);
   return {
     capabilityId: CAPABILITY_IDS[req.operation],
     inputHash: hashApprovalInput({
-      packageName: req.packageName,
+      // An update's name is only a label over `updates`, which is bound below as
+      // a set; binding the label too would re-ask whenever a scan listed the same
+      // packages in another order.
+      packageName: req.updates ? null : req.packageName,
       // Absence is bound as absence: an unnamed marketplace searches every
       // enabled source, which is not the same effect as a pinned one.
       marketplace: req.marketplace ?? null,
@@ -249,11 +341,85 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
       purge: req.purge ?? false,
       projectPath: req.projectPath ?? null,
       packageType: req.packageType ?? null,
+      updates: req.updates ? canonicalUpdates(req.updates) : null,
       // Absence is bound as absence here too: an operation that previews nothing
       // must not hash the same as one whose package declares nothing.
       disclosed,
+      // The staged files the card describes (DOR-2306): a source that moves
+      // after the card is a different install.
+      contentHash: req.contentHash ?? null,
     }),
     disclosed,
+  };
+}
+
+/**
+ * What an update approval binds: each installation, the version it would move
+ * to, and what that version would run, in one canonical order (by install path), so the binding is the
+ * set and not the order a scan listed it in.
+ *
+ * @param updates - The reinstalls, in whatever order the scan listed them.
+ * @returns The bound pairs, sorted by install path.
+ */
+function canonicalUpdates(
+  updates: readonly ApprovableUpdate[]
+): Pick<ApprovableUpdate, 'installPath' | 'latestVersion' | 'disclosed' | 'contentHash'>[] {
+  return updates
+    .map((u) => ({
+      installPath: u.installPath,
+      latestVersion: u.latestVersion,
+      disclosed: u.disclosed,
+      contentHash: u.contentHash,
+    }))
+    .sort((a, b) => a.installPath.localeCompare(b.installPath));
+}
+
+/**
+ * Refuse an update whose full list will not fit on one card. The detail is the
+ * one place a person reads every command in full, so a cut list would be an
+ * approval for commands nobody saw. Fails closed: nothing runs.
+ *
+ * @param count - How many reinstalls the request carried.
+ * @returns A declined result saying how to ask for fewer at a time.
+ */
+function tooManyUpdatesRefusal(count: number): ConfirmationResult {
+  return {
+    status: 'declined',
+    reason:
+      `These ${count} updates, and everything their new versions would run, are too much to show ` +
+      `on one approval card, so DorkOS did not ask. Nothing was changed. Update fewer at a time: ` +
+      `check first, then apply with the installPaths of a few of them.`,
+  };
+}
+
+/** Whether an install's full list would be cut on the card. */
+function tooLongToShow(req: ConfirmationRequest): boolean {
+  if (req.operation === 'create-agent-from-template') {
+    return describeTemplateInFull(req).length > UPDATE_DETAIL_MAX_LENGTH;
+  }
+  return (
+    req.operation === 'install' &&
+    req.preview !== undefined &&
+    describeInstallInFull(req).length > UPDATE_DETAIL_MAX_LENGTH
+  );
+}
+
+/** Refuse a request whose full list will not fit on one card; nothing runs. */
+function tooMuchToShowRefusal(req: ConfirmationRequest): ConfirmationResult {
+  if (req.operation === 'create-agent-from-template') {
+    return {
+      status: 'declined',
+      reason:
+        'This template brings too much to show in full on one approval card, so DorkOS did ' +
+        'not ask. Nothing was created. A person can review it and create the agent themselves ' +
+        'with `dorkos agent create --template`.',
+    };
+  }
+  return {
+    status: 'declined',
+    reason:
+      'This package runs too much to show in full on one approval card, so DorkOS did not ask. ' +
+      'Nothing was changed. A person can review and install it themselves with `dorkos install`.',
   };
 }
 
@@ -292,6 +458,76 @@ function unbindableRefusal(
   };
 }
 
+/**
+ * The full text of an install card: who asked, the version and where it comes
+ * from, and everything the package runs on its own, written out whole.
+ */
+function describeInstallInFull(req: ConfirmationRequest): string {
+  // An agent package lands in its own folder, and that folder is where the new
+  // agent's sessions run (DOR-2325).
+  const agent = req.packageType === 'agent';
+  const where = agent
+    ? 'in the new agent’s sessions'
+    : req.projectPath
+      ? 'declared, but not started for a project install'
+      : 'in every session';
+  const lines = [
+    `Asked by ${req.requestedBy ? JSON.stringify(req.requestedBy) : 'a caller that did not say who it is'}.`,
+    `Version ${JSON.stringify(req.origin?.version ?? 'not stated')}, from ${JSON.stringify(req.origin?.source ?? req.marketplace ?? 'any enabled marketplace')}.`,
+    ...(agent && req.projectPath ? [`A new agent, in ${JSON.stringify(req.projectPath)}.`] : []),
+    '',
+    ...describeEffectsInFull(disclosedEffectsOf(req.preview), where),
+  ];
+  return lines.join('\n');
+}
+
+/**
+ * Every line of a template card's detail (DOR-2325): who asked, where it comes
+ * from and lands, the harness configuration it carries, and what its skills
+ * run, each written out whole.
+ */
+function describeTemplateInFull(req: ConfirmationRequest): string {
+  const findings = req.templateDisclosure?.findings ?? [];
+  const disclosed = req.templateDisclosure?.disclosed ?? null;
+  return [
+    `Asked by ${req.requestedBy ? JSON.stringify(req.requestedBy) : 'a caller that did not say who it is'}.`,
+    `From ${JSON.stringify(req.origin?.source ?? 'a template that was not named')}, into ${JSON.stringify(req.projectPath ?? 'the default agents folder')}.`,
+    '',
+    ...(findings.length > 0
+      ? [
+          'Settings it carries, which the new agent’s sessions load (hooks, permission rules, servers):',
+          ...findings.map((f) => `- ${JSON.stringify(f)}`),
+          '',
+          ...(req.templateDisclosure?.settings ?? []).flatMap(describeSettingsFile),
+        ]
+      : ['It carries no settings files for the new agent’s sessions.', '']),
+    ...describeEffectsInFull(disclosed, 'in the new agent’s sessions'),
+  ].join('\n');
+}
+
+/**
+ * One settings file, written out whole under its name. Every line carries a
+ * `│ ` gutter, so nothing in the file can pass itself off as the card's own
+ * text; hidden and control characters were already made visible.
+ */
+function describeSettingsFile(file: TemplateSettingsFileShown): string[] {
+  const name = JSON.stringify(file.path);
+  if (file.content === undefined) {
+    const why =
+      file.omitted === 'link'
+        ? 'is a link, which is never copied into the new agent'
+        : file.omitted === 'not-text'
+          ? `is not text (${file.bytes} bytes)`
+          : `is too long to show (${file.bytes} bytes)`;
+    return [`${name} ${why}.`, ''];
+  }
+  return [
+    `${name} (${file.bytes} bytes):`,
+    ...file.content.split('\n').map((line) => `│ ${line}`),
+    '',
+  ];
+}
+
 /** Where an operation lands, for the card: a named project or the global scope. */
 function scopeOf(req: ConfirmationRequest): string {
   return req.projectPath ? ` in ${quoteSummaryValue(req.projectPath)}` : '';
@@ -314,13 +550,27 @@ function summaryOf(req: ConfirmationRequest): string {
   const marketplace = req.marketplace ? quoteSummaryValue(req.marketplace) : undefined;
   switch (req.operation) {
     case 'install':
-      return `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
-    case 'uninstall':
-      return req.purge
-        ? `Uninstall ${name}${scopeOf(req)} and delete its saved data and secrets`
-        : `Uninstall ${name}${scopeOf(req)}, keeping its saved data`;
+      return req.packageType === 'agent'
+        ? `Add the agent ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}. Its sessions will run what the package brings, listed below.`
+        : `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
+    case 'uninstall': {
+      const base = req.purge
+        ? `Uninstall ${name}${scopeOf(req)} and delete the files you and your agents added or changed`
+        : `Uninstall ${name}${scopeOf(req)}, keeping the files you and your agents added or changed`;
+      // Removing an agent package removes the agent from the team, and a
+      // reinstall does not bring any of this back (DOR-2245).
+      return req.packageType === 'agent'
+        ? `${base}. This removes the agent from your team: its rooms, schedules (paused), sign-ins, access tokens, community memberships and connection access go, and reinstalling does not restore them`
+        : base;
+    }
+    case 'update': {
+      const count = req.updates?.length ?? 0;
+      return `Update ${count} installed ${count === 1 ? 'package' : 'packages'} to a newer version, each where it is installed. What each new version runs is listed below.`;
+    }
     case 'create-package':
       return `Create the ${req.packageType ? quoteSummaryValue(req.packageType) : 'new'} package ${name} in ${marketplace ?? 'your personal marketplace'}`;
+    case 'create-agent-from-template':
+      return `Create the agent ${name} from the template ${quoteSummaryValue(req.origin?.source ?? 'unnamed')}. Its sessions will run what the template brings, listed below.`;
   }
 }
 
@@ -328,7 +578,9 @@ function summaryOf(req: ConfirmationRequest): string {
 const OPERATION_NOUNS: Record<ConfirmationOperation, string> = {
   install: 'install',
   uninstall: 'uninstall',
+  update: 'update',
   'create-package': 'package creation',
+  'create-agent-from-template': 'agent creation',
 };
 
 /**
@@ -396,6 +648,10 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * @param req - The confirmation request payload.
    */
   async requestInstallConfirmation(req: ConfirmationRequest): Promise<ConfirmationResult> {
+    if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
+      return tooManyUpdatesRefusal(req.updates.length);
+    }
+    if (tooLongToShow(req)) return tooMuchToShowRefusal(req);
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
@@ -421,6 +677,13 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       capabilityId: binding.capabilityId,
       inputHash: binding.inputHash,
       summary: summaryOf(req),
+      ...(req.updates
+        ? { detail: describeUpdatesInFull(req.updates) }
+        : req.operation === 'create-agent-from-template'
+          ? { detail: describeTemplateInFull(req) }
+          : req.operation === 'install' && req.preview
+            ? { detail: describeInstallInFull(req) }
+            : {}),
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
     return ticket.token;
@@ -444,6 +707,10 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * @param req - The operation the caller is about to run.
    */
   async resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult> {
+    if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
+      return tooManyUpdatesRefusal(req.updates.length);
+    }
+    if (tooLongToShow(req)) return tooMuchToShowRefusal(req);
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);

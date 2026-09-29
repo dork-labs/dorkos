@@ -88,3 +88,27 @@ describe('RoomSessionLedger.bindingForSession', () => {
     expect(ledger.bindingForSession('id-a')).toMatchObject({ sessionId: 'id-c' });
   });
 });
+
+describe('RoomSessionLedger.retiredIdsFor', () => {
+  it('answers every retired id whose rename chain ends at the binding`s id, and no others', () => {
+    // An app-resumed turn on an old id is granted the same copy of a room's
+    // files, so the turn-start refresh has to ask about those ids too
+    // (spec `agent-home-desk` §6.1).
+    const { ledger } = ledgerWith({ roomId: 'room-1', authorId: 'author-ana', sessionId: 'c' });
+    ledger.retire('a', 'b');
+    ledger.retire('b', 'c');
+    ledger.retire('x', 'y');
+
+    expect(ledger.retiredIdsFor('c').sort()).toEqual(['a', 'b']);
+    expect(ledger.retiredIdsFor('y')).toEqual(['x']);
+    expect(ledger.retiredIdsFor('nobody')).toEqual([]);
+  });
+
+  it('survives a tangled table without looping', () => {
+    const { ledger } = ledgerWith({ roomId: 'room-1', authorId: 'author-ana', sessionId: 'c' });
+    ledger.retire('p', 'q');
+    ledger.retire('q', 'p');
+
+    expect(ledger.retiredIdsFor('c')).toEqual([]);
+  });
+});

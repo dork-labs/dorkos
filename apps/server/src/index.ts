@@ -1,4 +1,5 @@
 import path from 'path';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
@@ -41,6 +42,7 @@ import {
   configManager,
   ConfigBootError,
 } from './services/core/config-manager.js';
+import { readOperatorDisplayName } from './services/core/config/operator-display-name.js';
 import { logConfigWrite } from './services/core/operator/config-write.js';
 import { initClaudeAccountApplier } from './services/core/operator/config-patch.js';
 import { applyClaudeAccountChange } from './services/runtimes/claude-code/account-switch.js';
@@ -51,13 +53,17 @@ import {
 } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
 import { getLocalCockpitPort } from './lib/trusted-origins.js';
+import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
-import { wireLiveChangeBroadcasts } from './services/core/streams/live-change-broadcasts.js';
+import {
+  connectorAgentRequestsChangedAnnouncer,
+  wireLiveChangeBroadcasts,
+} from './services/core/streams/live-change-broadcasts.js';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
 import { WebPushChannel } from './services/notifications/channels/web-push.js';
@@ -126,8 +132,13 @@ import { ConnectorEventNativeDestination } from './services/connectors/events/ch
 import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
+import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
 import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
-import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
+import {
+  ConnectorProviderBootstrapper,
+  TEST_CONNECTOR_PROVIDER_TYPE,
+} from './services/connectors/bootstrap.js';
+import { SignInRefresher } from './services/connectors/resources/sign-in-refresh.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
 import { ConnectorAuthorityCleanupService } from './services/connectors/authority-cleanup-service.js';
@@ -137,6 +148,9 @@ import { ConnectorReconciliationService } from './services/connectors/reconcilia
 import { ConnectorAuthenticationFlowService } from './services/connectors/resources/authentication-flow-service.js';
 import { ConnectorLifecycleService } from './services/connectors/resources/lifecycle-service.js';
 import { ConnectorOperatorQueryService } from './services/connectors/resources/operator-query-service.js';
+import { ConnectorSessionAccessService } from './services/connectors/resources/session-access-service.js';
+import { ConnectorAppActionsService } from './services/connectors/resources/app-actions-service.js';
+import { CatalogLogoService } from './services/connectors/resources/catalog-logos.js';
 import { ManagedAuthoritySyncService } from './services/connectors/resources/managed-authority-sync-service.js';
 import { ManagedCloudConnectorProvider } from './services/connectors/providers/managed/managed-cloud.js';
 import { legacyDefaultProviderInstanceId } from './services/connectors/legacy-connection-migration.js';
@@ -182,7 +196,11 @@ import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
-import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
+import {
+  relayStartsEnabled,
+  setRelayEnabled,
+  setRelayInitError,
+} from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import { RELAY_NOT_BUILT } from './services/relay/task-dispatch/readiness.js';
 import {
@@ -200,6 +218,32 @@ import { setAgentPathLookup } from './services/mesh/agent-path-lookup.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
+import { createPermissionsRouter } from './routes/permissions.js';
+import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
+import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
+import {
+  PermissionObserver,
+  createPermissionService,
+  observedPermissionReader,
+  permissionActions,
+  readAgentPermissionsFromManifest,
+  ArrivalRecord,
+  narrowingReader,
+  narrowingContext,
+  createArrivalStep,
+  captureLiveStandingGrants,
+  readStandingGrantLicence,
+  readRawManifestFile,
+  recordEndedStandingGrants,
+  runPermissionRetirements,
+  runPermissionUpgradeSweep,
+  recordPermissionChange,
+  agentRequestWriter,
+  personWriter,
+  createAlwaysSuggestion,
+} from './services/core/permissions/index.js';
+import { onTrustStopChange } from './services/core/operator/config-write.js';
+import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
 import { createSearchRouter } from './routes/search.js';
@@ -222,11 +266,20 @@ import { warnRedundantEnabledEntries } from './services/core-extensions/warn-red
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
 import { createExtensionsRouter } from './routes/extensions.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
-import { gitTreeSource } from './services/marketplace/lib/git-tree.js';
+import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
 import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
 import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
+import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.js';
+import {
+  legacySweepDirs,
+  rebuildLegacyRecords,
+  removeRecordTempLeftovers,
+  type LegacySweepSummary,
+} from './services/marketplace/lib/integrity/legacy-record-sweep.js';
+import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
+import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -258,12 +311,19 @@ import {
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
+import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
+import {
+  createEveryAgentArrivalReaction,
+  createEveryAgentEndedRecorder,
+  setOnEveryAgentEnded,
+} from './services/connectors/every-agent-activity.js';
+import { recordConnectionsClosedByNewLink } from './services/connectors/app-connection-way.js';
 import {
   startSkillsWatcher,
   startTurnEndReprojection,
@@ -274,9 +334,15 @@ import { onProjectorTurnBoundary } from './services/session/session-state-projec
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
+import { globalConsentRecorder } from './services/marketplace/global-plugin-consent.js';
+import {
+  askAboutWithheldGlobalPlugins,
+  describeGlobalActivationCapability,
+} from './services/marketplace/ask-withheld-global-plugins.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
   TokenConfirmationProvider,
+  describeTemplateCreationCapability,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
@@ -299,19 +365,15 @@ import {
   initAgentIdentityService,
   getAgentIdentityService,
   ensureInSessionAgentIdentity,
+  homeOf,
+  resolveAgentHome,
+  canonicalDir,
+  setAgentHomeRegistry,
   createCapabilityAttributionObserver,
   createCapabilityGateAuditObserver,
   createAgentIdentityUnregisterCascade,
 } from './services/core/agent-identity/index.js';
-import {
-  ApprovalGrantService,
-  ApprovalService,
-  initStandingGrantPosture,
-  readStandingGrantPosture,
-  readStandingGrantSettings,
-  revokeStandingGrantsIfPostureForbids,
-  resolveApprovalTtlMs,
-} from './services/core/approvals/index.js';
+import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
 import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
 import type { DebugDeps } from './routes/debug.js';
@@ -320,8 +382,7 @@ import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.j
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
   initCapabilityTierGate,
-  initToolGroupGate,
-  manifestToolGroupGrants,
+  initPermissionGate,
   type CapabilityRegistry,
 } from './services/core/capabilities/index.js';
 import {
@@ -362,6 +423,7 @@ import {
 import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
 import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
 import { RemoteRoomSubscriptionRuntime } from './services/communities/remote/remote-room-subscription-runtime.js';
+import { RemoteRedactionSync } from './services/communities/remote/remote-redaction-sync.js';
 import { registerRemoteCommunityUnregisterCascade } from './services/communities/remote/mesh-unregister-cascade.js';
 import { isCurrentLocalMeshAgent } from './services/communities/remote/local-agent-authority.js';
 import { INTERVALS } from './config/constants.js';
@@ -371,9 +433,11 @@ import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import {
   createWorkspaceSubsystem,
+  WorkspaceReconcilerLifecycle,
   resolveWorkspaceRoot,
   setWorkspaceManager,
   setWorkspaceRoot,
+  type WorkspaceStore,
 } from './services/workspace/index.js';
 import {
   createRoomSubsystem,
@@ -389,7 +453,14 @@ import {
   setRoomMergeService,
 } from './services/rooms/index.js';
 import { visibleRoomsForCaller } from './services/rooms/visible-rooms-for-caller.js';
-import { roomSessionPlace } from './services/rooms/repo/room-worktree-cwd.js';
+import { roomSessionPlace } from './services/rooms/repo/room-turn-place.js';
+import type { RoomSessionPlacePort } from './services/workspace/room-session-place.js';
+import {
+  frozenRoomWorktrees,
+  migrateRoomTranscripts,
+  roomWorktreesOfAgent,
+} from './services/runtimes/claude-code/migrate-room-transcripts.js';
+import { resolveClaudeRootSet } from './services/runtimes/claude-code/claude-config-dir.js';
 import {
   readRoomRepoConfig,
   RoomFileEditor,
@@ -416,6 +487,11 @@ import {
   type TeamRoomDeps,
 } from './services/rooms/ensure-team-room.js';
 import { createMomentDetectors } from './services/rooms/moments/index.js';
+import {
+  diskEvidence,
+  registerRoomUnregisterCascade,
+  sweepDepartedAgentSeats,
+} from './services/rooms/manage/departed-agents.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
@@ -445,6 +521,21 @@ import {
   formatFirstRunTelemetryNotice,
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
+import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
+import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
+import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
+import { SessionContextStore } from './services/session/fleet/session-context-store.js';
+import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
+import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
+import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
+import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
+import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
+import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
+import {
+  claudeDefaultAccountFolder,
+  dropClaudeAccountRenameMarkers,
+} from './services/runtimes/claude-code/claude-config-dir.js';
+import { machineDefaultCodexHome } from './services/runtimes/codex/codex-home.js';
 import {
   initObservability,
   shutdownObservability,
@@ -459,6 +550,11 @@ import {
   setMessageQueueStore,
   setSessionEventStore,
   setStagedContextStore,
+  SessionLimitStore,
+  setSessionLimitStore,
+  startLimitPlanning,
+  installContinueService,
+  installResumeService,
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
@@ -493,6 +589,9 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
+let accountUsageStore: AccountUsageStore | undefined;
+/** Stops the out-of-usage planner and the continue service (spec claude-account-fleet D9). */
+let stopSessionContinuation: (() => void) | undefined;
 // The relay's DEFAULT runtime — what answers a relay message that names no
 // runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
 // agent-to-agent send to a mesh agent). The relay carries every registered
@@ -511,6 +610,16 @@ let claudeRuntime: ClaudeCodeRuntime | null = null;
 let relayAgentRuntime: (AgentRuntimeLike & { readonly type: string }) | null = null;
 let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
+/**
+ * The marketplace's confirmation provider, once composed: the agents router
+ * reads it for an agent's template creation card (DOR-2325).
+ */
+let templateConfirmationProvider: ConfirmationProvider | undefined;
+/**
+ * The marketplace installer and data directory, once composed: the agents
+ * router creates an agent from a marketplace package through it (DOR-2325).
+ */
+let agentPackageInstaller: { installer: MarketplaceInstaller; dorkHome: string } | undefined;
 let adapterRegistry: AdapterRegistry | undefined;
 let adapterManager: AdapterManager | undefined;
 let traceStore: TraceStore | undefined;
@@ -519,6 +628,7 @@ let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
 let remoteCommunitySubscriptions: RemoteRoomSubscriptionRuntime | undefined;
+let remoteRedactionSync: RemoteRedactionSync | undefined;
 let extensionManager: ExtensionManager | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
 let testComposioFixture:
@@ -569,6 +679,7 @@ function registeredAgentRoots(
  * @param summary - The sweep's totals.
  */
 function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
+  registerRestoredAgents(summary.restoredAgentRoots);
   const { settled, kept, discarded, inFlightTargets } = summary;
   if (settled + kept + discarded + inFlightTargets.length > 0) {
     logger.info(
@@ -579,6 +690,58 @@ function logInstallSweep(scope: string, summary: InstallSweepSummary): void {
   // there has aged past the point where its owner matters.
   retryInFlightTargetsLater(inFlightTargets, logger, (retry) =>
     logInstallSweep(`${scope} (retry)`, { ...retry, inFlightTargets: [] })
+  );
+}
+
+/** Agent folders recovery restored before Mesh started, registered once it has. */
+const agentRootsAwaitingMesh: string[] = [];
+
+/**
+ * Register again the agents whose interrupted uninstall recovery rolled back
+ * (DOR-2245): their `agent.json` is back, but the uninstall had already taken
+ * them off the team. The global sweep runs before Mesh exists, so its roots
+ * wait for {@link flushRestoredAgents}.
+ *
+ * @param roots - {@link InstallSweepSummary.restoredAgentRoots}.
+ */
+function registerRestoredAgents(roots: readonly string[]): void {
+  if (!meshCore) {
+    agentRootsAwaitingMesh.push(...roots);
+    return;
+  }
+  const mesh = meshCore;
+  for (const root of roots) {
+    mesh.syncFromDisk(root).catch((err: unknown) => {
+      logger.warn(`[Marketplace] Could not register the restored agent at ${root}`, logError(err));
+    });
+  }
+}
+
+/** Register the agents {@link registerRestoredAgents} held until Mesh started. */
+function flushRestoredAgents(): void {
+  registerRestoredAgents(agentRootsAwaitingMesh.splice(0));
+}
+
+/**
+ * The project install-recovery sweep, and the projects it read. The legacy
+ * record sweep (DOR-2197) waits for it, so a root is settled before its record
+ * is rebuilt, and reads the same projects.
+ */
+let projectInstallRecovery: Promise<unknown> = Promise.resolve();
+/** Aborted on shutdown, so the legacy record sweep stops between installs. */
+const legacyRecordSweep = new AbortController();
+let sweptProjects: string[] = [];
+
+/**
+ * Log what the legacy record sweep did, when it did anything.
+ *
+ * @param summary - The sweep's outcome lists.
+ */
+function logLegacySweep(summary: LegacySweepSummary): void {
+  const { rebuilt, mismatch, noSource, fetchFailed } = summary;
+  if (rebuilt.length + mismatch.length + noSource.length + fetchFailed.length === 0) return;
+  logger.info(
+    `[Marketplace] Records for packages an older DorkOS installed: ${rebuilt.length} rebuilt, ${mismatch.length} changed since install, ${noSource.length} installed from a local folder, ${fetchFailed.length} to retry`
   );
 }
 
@@ -598,6 +761,8 @@ let turnEndReprojection: TurnEndReprojection | undefined;
  * the caller uses `?.`.
  */
 let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
+// Passive until workspace bootstrap; disposal stays terminal if startup resumes later.
+const workspaceReconcilerLifecycle = new WorkspaceReconcilerLifecycle();
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
@@ -607,6 +772,9 @@ let managedUsageMirrorRecoveryInterval: ReturnType<typeof setInterval> | undefin
 // Stops the approval expiry sweep (DOR-1932). A function rather than a timer
 // handle because the sweep owns its own interval and hands back a closer.
 let stopApprovalExpirySweep: (() => void) | undefined;
+// Stops the periodic connector sign-in refresh and every waiting automatic
+// check of a way that stopped answering (DOR-2501).
+let stopConnectorFreshness: (() => void) | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -728,6 +896,10 @@ async function start() {
     });
   });
 
+  // The retired standing-permission settings, which the capture below needs to
+  // tell a live standing permission from a void one (`ended-standing-grants.ts`).
+  // Nothing removes them until that capture is done.
+  const standingGrantLicence = readStandingGrantLicence(dorkHome);
   try {
     initConfigManager(dorkHome);
   } catch (error) {
@@ -751,6 +923,34 @@ async function start() {
   // imported by the write path, and an unwired write says so instead of claiming
   // an apply that never happened.
   initClaudeAccountApplier(() => void applyClaudeAccountChange());
+
+  // Per-account usage for every runtime (spec `claude-account-fleet` D2, §6 R):
+  // the ledger files under `<dorkHome>/runtimes/<runtime>/usage/` are its
+  // persistence, shared with flow. Built right after config so the first turn
+  // already records into it. `default` resolves from config and the OS home
+  // only (the two helpers below), never from this process's environment.
+  accountUsageStore = new AccountUsageStore({
+    dorkHome,
+    readConfig: () => readConfigFile(configManager.path),
+    resolveDefaultRoot: (runtime, config) =>
+      runtime === 'claude-code'
+        ? claudeDefaultAccountFolder(config)
+        : runtime === 'codex'
+          ? { path: machineDefaultCodexHome(), warnings: [] }
+          : { path: null, warnings: [] },
+    broadcast: (usage) => eventFanOut.broadcast('account_usage', usage),
+  });
+  await accountUsageStore.load().catch((err: unknown) => {
+    logger.warn('[DorkOS] account usage store failed to load; usage starts empty', {
+      err: String(err),
+    });
+  });
+  setAccountUsageStore(accountUsageStore);
+  // An in-app account change is reconciled at once; `flow accounts add` and hand
+  // edits never reach onChange, which is why the store's 60 s scan reconciles too.
+  configManager.onChange((change) => {
+    if (change.sections.includes('runtimes')) void accountUsageStore?.reconcileAccounts();
+  });
 
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
   // initLogger was already called above with defaults — re-init with config values.
@@ -806,7 +1006,19 @@ async function start() {
   if (preMigrationSnapshot) {
     logger.info(`[DB] Snapshot taken before migrating: ${preMigrationSnapshot}`);
   }
+  // Standing permissions are retired and their table is dropped by the next
+  // migration; the live ones are recorded first, so the permission sweep can
+  // write one history line for each once the Activity log exists.
+  captureLiveStandingGrants(db, dorkHome, logger, standingGrantLicence);
   runMigrations(db);
+  // Only now may the settings the capture read go: see `retireStandingGrantSettings`.
+  try {
+    configManager.retireStandingGrantSettings();
+  } catch (error) {
+    logger.warn('[Permissions] could not remove the retired standing-permission settings', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   logger.info(`[DB] Consolidated database ready at ${dbPath}`);
 
   // Construct canonical connector identity and attachment services before Mesh
@@ -821,6 +1033,9 @@ async function start() {
   const connectorRegistry = new ConnectorRegistry({
     db,
     configuredOwner: { ownerKind: 'local_install', ownerId: connectorInstallationId },
+    catalogCache: new ConnectorCatalogCache({
+      dir: path.join(dorkHome, 'cache', 'connectors', 'catalog'),
+    }),
   });
   const connectorAuthorityCleanup = new ConnectorAuthorityCleanupService({ db });
   const connectorBootEpoch = randomUUID();
@@ -861,11 +1076,47 @@ async function start() {
   // restart, so what that receipt points at has to survive one too (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
 
+  // A session's usage limit, kept so a restart or an idle eviction does not
+  // turn a limited session back into a merely failed one (spec
+  // claude-account-fleet D4).
+  const sessionLimitStore = new SessionLimitStore(db);
+  setSessionLimitStore(sessionLimitStore);
+  // How past limits ended is kept for 30 days (spec claude-account-ui §7.1).
+  try {
+    sessionLimitStore.sweepHistory();
+  } catch (err) {
+    logger.warn('[session-limits] could not sweep the limit history', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read
   // and write the `session_metadata` table. Must happen before any route or
   // service uses these methods. See ADR 0255.
   runtimeRegistry.setDb(db);
+
+  // Usage and context shown the moment a session opens, before any turn (spec
+  // `claude-account-fleet` §6 U): every new projector is stamped from the usage
+  // store and `session_context`, live ones follow the store in memory (never
+  // through a session's event log), and a launch re-stamps the account it
+  // settled on.
+  const sessionStatusHydration = installSessionStatusHydration({
+    usageStore: () => accountUsageStore,
+    contextStore: new SessionContextStore(db),
+    resolveRuntime: async (sessionId) => {
+      try {
+        return await runtimeRegistry.resolveForSession(sessionId);
+      } catch {
+        return undefined;
+      }
+    },
+    resolveCwd: async (sessionId) =>
+      (await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null)) ?? DEFAULT_CWD,
+  });
+  onSessionAccountLaunched((sessionId, root, perToken) =>
+    sessionStatusHydration.noteAccountLaunched(sessionId, root, perToken)
+  );
 
   // Initialize the Better Auth identity core over the consolidated DB. Mounted
   // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate
@@ -904,6 +1155,73 @@ async function start() {
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
+  // Sharing with every agent that ends as a side effect (a disconnect, a move
+  // to a DorkOS account) is recorded too, so every change to it leaves a
+  // trace. Set here, before any provider registers, so boot-time changes count.
+  setOnEveryAgentEnded(createEveryAgentEndedRecorder(activityService));
+  // Records a change to an agent's permissions that was made by editing its
+  // settings file rather than through DorkOS. The last-seen values live in
+  // DorkOS's own data directory, never the agent's.
+  // Agents that arrived and whose folder's settings have not been screened yet
+  // (review D1). Built with the observer so both exist before any agent does.
+  const arrivalRecord = new ArrivalRecord({
+    file: path.join(dorkHome, 'permissions', 'pending-arrivals.json'),
+    logger,
+  });
+  const permissionObserver = new PermissionObserver({
+    snapshotFile: path.join(dorkHome, 'permissions', 'observed-agent-permissions.json'),
+    agentAt: (agentPath) => {
+      const agent = meshCore?.listWithPaths().find((a) => a.projectPath === agentPath);
+      return agent ? { id: agent.id, name: agent.displayName || agent.name } : undefined;
+    },
+    // The whole static catalog, not the live registry: this is built before the
+    // live registry is composed, and every action's area is fixed in code.
+    read: readAgentPermissionsFromManifest,
+    areaOfAction: (() => {
+      let areas: Map<string, PermissionAreaId | null> | undefined;
+      return (actionId: string) => {
+        areas ??= new Map(
+          permissionActions(composeCapabilityRegistryForDocs()).map((a) => [a.id, a.area])
+        );
+        return areas.get(actionId);
+      };
+    })(),
+    activity: activityService,
+    logger,
+  });
+
+  // The single boot-composed Capability Registry — operator + marketplace +
+  // self-description folded into one immutable registry (spec
+  // `capability-registry`). Composed once below, after the dependency bags above
+  // are settled, then shared by both MCP servers and the `/api/capabilities/catalog`
+  // route. The factory/router closures below capture this `let` and read it lazily
+  // (they run per request, after boot has assigned it) — assigned once, but after
+  // those closures are defined, so it cannot be a `const` initialized in place.
+  // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
+  let capabilityRegistry: CapabilityRegistry | undefined;
+
+  // The permission gate's sources, wired right after the observer and the
+  // arrival record exist, before anything that can start a session, a
+  // scheduled run or a room turn (relay connections, community subscriptions,
+  // the task scheduler): all of them read an agent's own settings through this
+  // reader, the one place an arriving agent's unscreened folder settings are
+  // narrowed (review D1). Mesh and the registry are read lazily, when a read
+  // happens; until the gate is wired its default reader reads no agent's own
+  // settings at all.
+  initPermissionGate({
+    readConfig: () => configManager.get('permissions'),
+    // Fresh off the manifest on every call, and compared with the last value
+    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
+    readAgentPermissions: narrowingReader(observedPermissionReader(permissionObserver), {
+      arrivals: arrivalRecord,
+      agentAt: (agentPath) =>
+        meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
+      context: () => narrowingContext(configManager, capabilityRegistry),
+    }),
+    // The tool-list builders hide an action whose permission is Blocked; they
+    // read this catalog, per build, off the composed registry.
+    listActions: () => permissionActions(capabilityRegistry),
+  });
   const retentionDays = env.DORKOS_ACTIVITY_RETENTION_DAYS ?? 30;
   try {
     const pruned = await activityService.prune(retentionDays);
@@ -961,6 +1279,39 @@ async function start() {
 
   // A finished turn, and the history row an error leaves when it clears.
   watchSessionLifecycle();
+  // What happens next when a session's account runs out: its plan and state,
+  // the advisor's claims, and the recorder behind `accounts.markContinued`
+  // (spec claude-account-fleet D9 and §X). After the usage store, which it
+  // watches, and the Activity feed, which records each move.
+  {
+    const stopPlanning = startLimitPlanning();
+    const uninstallContinue = installContinueService({
+      activity: activityService,
+      // Read when an automatic handoff fires, long after boot: the app and its
+      // Mesh and room ports exist by then (the app is created further down).
+      launchDeps: () => ({
+        meshCore: app.locals.meshCore as MeshCore | undefined,
+        roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
+      }),
+    });
+    // Waits for an account's reset, confirms it with a reading and resumes the
+    // session by itself. After the planner, which settles pre-restart `auto`
+    // plans before this re-arms the stored waits.
+    const uninstallResume = installResumeService({
+      launchDeps: () => ({
+        meshCore: app.locals.meshCore as MeshCore | undefined,
+        roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
+      }),
+      // Task 2.2's idle probe, for an account the store cannot confirm on its
+      // own. An account it cannot probe is still confirmed from store readings.
+      probe: probeForReset,
+    });
+    stopSessionContinuation = () => {
+      uninstallResume();
+      stopPlanning();
+      uninstallContinue();
+    };
+  }
   // How every Ask ended — including the ones nobody answered.
   watchAskResolution();
   // A runtime whose sign-in stopped working, noticed at whichever turn trips
@@ -968,6 +1319,9 @@ async function start() {
   watchRuntimeSigninFailures();
   // Nothing tells the server it was updated, so it compares versions on boot.
   void announceInstalledVersion(dorkHome);
+  // Git older than 2.38 cannot refuse a folder set up to look like a git
+  // repository; say so once, in plain words (DOR-2326).
+  void warnAboutGitProtection();
   // "While you were away" — composed once the day's first activity arrives.
   watchShiftReport(notificationStore);
 
@@ -1310,33 +1664,39 @@ async function start() {
   // not the managed layer is enabled: which checkouts exist on disk is true
   // either way, and that honesty is the whole point of the /workspaces page.
   setWorkspaceRoot(resolveWorkspaceRoot({ dorkHome, config: workspaceConfig }));
+  // The managed checkouts' owners, read by the home resolver (§3.1 source 3).
+  // Unset while the managed layer is off, where no checkout has an owner.
+  let managedWorkspaces: WorkspaceStore | undefined;
   if (workspaceConfig.enabled) {
-    const { service: workspaceService, reconciler: workspaceReconciler } = createWorkspaceSubsystem(
-      {
-        db,
-        dorkHome,
-        config: workspaceConfig,
-        listAttachedSessions: async (workspacePath) => {
-          try {
-            // Aggregate across every registered runtime (ADR-0310) — a workspace
-            // may hold Codex or OpenCode sessions, not just the default runtime's.
-            const { sessions } = await aggregateSessionList({
-              runtimes: runtimeRegistry.listRuntimes(),
-              projectDir: workspacePath,
-            });
-            return sessions.map((s) => ({
-              sessionId: s.id,
-              cwd: s.cwd ?? workspacePath,
-              title: s.title,
-            }));
-          } catch {
-            return [];
-          }
-        },
-      }
-    );
+    const {
+      service: workspaceService,
+      reconciler: workspaceReconciler,
+      store: workspaceStore,
+    } = createWorkspaceSubsystem({
+      db,
+      dorkHome,
+      config: workspaceConfig,
+      listAttachedSessions: async (workspacePath) => {
+        try {
+          // Aggregate across every registered runtime (ADR-0310) — a workspace
+          // may hold Codex or OpenCode sessions, not just the default runtime's.
+          const { sessions } = await aggregateSessionList({
+            runtimes: runtimeRegistry.listRuntimes(),
+            projectDir: workspacePath,
+          });
+          return sessions.map((s) => ({
+            sessionId: s.id,
+            cwd: s.cwd ?? workspacePath,
+            title: s.title,
+          }));
+        } catch {
+          return [];
+        }
+      },
+    });
+    managedWorkspaces = workspaceStore;
     setWorkspaceManager(workspaceService);
-    workspaceReconciler.start();
+    workspaceReconcilerLifecycle.start(workspaceReconciler);
     logger.info('[Workspace] WorkspaceManager registered');
   }
 
@@ -1385,6 +1745,9 @@ async function start() {
             ? isCurrentLocalMeshAgent(meshCore, localAgentId)
             : false,
         changes: { changed: publishRemoteCommunityDeliveryChanges },
+        // Bound below, once the sync exists: it rebuilds search and deletes files for a
+        // revoked mirror whose content the store just deleted.
+        mirrorPurged: (purge) => remoteRedactionSync?.afterPurge(purge),
       });
       return {
         mirrorAccess: remoteCommunityRuntime.mirrorAccess,
@@ -1418,6 +1781,13 @@ async function start() {
     remoteCommunityRuntime.outbox,
     remoteCommunityRuntime
   );
+  remoteRedactionSync = new RemoteRedactionSync({
+    db,
+    mirrors: remoteCommunityRuntime.mirrors,
+    readers: (communityRef, ownerAuthorId) =>
+      getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    attachmentBytes: roomAttachmentBytes,
+  });
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,
     enrollments: remoteCommunityRuntime.enrollments,
@@ -1425,9 +1795,13 @@ async function start() {
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     resolveConnectionAccess: async (communityRef, ownerAuthorId) =>
       (await getRemotePairingService().status(communityRef, ownerAuthorId)).access,
+    readOnlyConnections: () => getRemoteConnectionStore().readOnlyConnections(),
     resolveLocalAgentAuthor: (localAgentId) =>
       resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
     isReady: () => meshStartupReconciled && meshCore !== undefined,
+    // Messages deleted, removed, or erased on a Community server leave this machine's mirror
+    // and its search index too (member erasure task 2.1).
+    redactions: remoteRedactionSync,
   });
   setRemoteCommunityLifecycle(remoteCommunitySubscriptions);
   // Native room streams need Mesh's trusted manifest-to-path registry. Start
@@ -1465,20 +1839,9 @@ async function start() {
   const resolveOperatorAuthorId = (): string => resolveOperatorAuthor(roomAuthors).id;
 
   // The REAL name a bridged group sees prefixed on an operator's post (chats-
-  // as-channels §6.7, DOR-899). `config.profile.displayName` ("what the user
-  // likes to be called", spec `user-profile-onboarding`) is the only place a
-  // real human name is stored on this machine — NOT `roomAuthors`' own
-  // `displayName` for this same person, which `bindOwner` fixes at `'You'`
-  // forever on purpose (the right word from the operator's own cockpit seat,
-  // the wrong one on the wire in somebody else's group). `sanitizeIdentity`
-  // runs the same label treatment every other agent-writable profile value
-  // gets before it reaches a line DorkOS wrote — `config_patch` can set this
-  // field mid-conversation, so it is not purely operator-authored text.
-  const resolveOperatorDisplayName = (): string | null => {
-    const raw = configManager.getAll().profile.displayName;
-    if (!raw) return null;
-    return sanitizeIdentity(raw) ?? null;
-  };
+  // as-channels §6.7, DOR-899) — never the room registry's 'You'. One reader,
+  // shared with the rooms domain's agent context (DOR-2458).
+  const resolveOperatorDisplayName = readOperatorDisplayName;
 
   // A room's own files (spec `project-rooms` §3). Same doctrine as the
   // attachment store above: WHERE they live is decided here and nowhere else,
@@ -1558,6 +1921,16 @@ async function start() {
       queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
       assertCanWriteFiles: (roomId, authorId) => roomService.assertCanWriteFiles(roomId, authorId),
       operatorGitName: resolveOperatorDisplayName,
+      // A signed-in person's own name (spec `agent-home-desk` §7.1). The owner's
+      // is their profile name, never the registry's 'You'; anybody else's is the
+      // name the registry holds for their account.
+      personName: (authorId) =>
+        roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null)
+          ? resolveOperatorDisplayName()
+          : (sanitizeIdentity(roomAuthors.getById(authorId)?.displayName ?? '') ?? null),
+      // One quiet entry per person's change, in the room's own voice (§7.2).
+      announce: (roomId, input) => roomService.postFileChangeEvent(roomId, input),
+      uploadStagingRoot: () => path.join(dorkHome, '.temp', 'room-uploads'),
       files: roomFiles,
     })
   );
@@ -1570,23 +1943,48 @@ async function start() {
     hasRepo: (roomId) => roomRepoService.hasRepo(roomId),
     listStrandedWorktrees: (roomId) => roomRepoService.listStrandedWorktrees(roomId),
     reapAfterDays: () => readRoomRepoConfig().worktreeReapDays,
-    // The claim map is the only live record that an agent is mid-turn, and once
-    // the cwd rung landed (DOR-1597) its worktree IS that turn's working
-    // directory. Without this the sweep can delete the directory a turn is
-    // standing in — a turn that only reads leaves no mark on any timestamp.
+    // The claim map is the only live record that an agent is mid-turn, and a
+    // live room turn is granted its worktree and works on it by path. Without
+    // this the sweep can delete the copy a turn is working on — a turn that
+    // only reads leaves no mark on any timestamp.
     busyAgentPaths: () => roomService.listBusyAgentPaths(),
   });
-  // And the cwd rung can now find it: every room turn asks this manager where
-  // to run before its context is built (`resolve-session-cwd.ts` rung 2, spec
-  // §3.5).
+  // Every room turn in a room with files is granted its agent's copy through
+  // this manager before its context is built (`room-turn-place.ts`, spec
+  // `agent-home-desk` §5.1).
   setRoomWorktreeManager(roomWorktrees);
-  // The other half of a turn running somewhere new: session storage is derived
-  // per working directory (ADR-0310), so a room turn's conversation is filed
-  // under the WORKTREE it ran in and an agent's own folder no longer holds all
-  // of its history. The fan-out behind Recent and the daily counts is told
-  // where else to look, and which rows are bound to whom.
+  // Which folders are agent homes, for every identity read (spec
+  // `agent-home-desk` §3.1). Each lookup is read per call off the live
+  // registry (assigned later in boot), so an agent unregistered a moment ago is
+  // nobody's home at once and nothing is cached across a registration.
+  setAgentHomeRegistry({
+    isRegisteredHome: (dir) => meshCore?.getByPath(dir) !== undefined,
+    listRegisteredHomes: () => meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
+    // Canonically: a checkout path may be stored realpath'd while the turn
+    // names it through a symlink, or the other way round.
+    managedWorkspaceOwner: (dir) => {
+      const target = canonicalDir(dir);
+      const owned = managedWorkspaces
+        ?.list()
+        .find(
+          (ws) =>
+            ws.owner?.kind === 'agent' &&
+            (path.resolve(ws.path) === dir || canonicalDir(ws.path) === target)
+        );
+      return owned?.owner?.ref ?? null;
+    },
+    roomsDir: path.join(dorkHome, 'rooms'),
+  });
+  // Where else an agent's conversations are: session storage is derived per
+  // working directory (ADR-0310), and room turns stood in their agent's copy of
+  // the room's files until spec `agent-home-desk` moved them home. Claude Code's
+  // transcripts are moved home at startup (below); Codex lists by the folder a
+  // thread was first seen in and OpenCode cannot move a session, so the folders
+  // those turns stood in stay scanned — a FROZEN list, read once at startup and
+  // never grown, because no turn stands in a room's copy any more (§8.1).
+  let frozenWorktrees: readonly string[] = [];
   setAgentSessionSources({
-    extraDirs: (agentPath) => roomWorktrees.listWorktreesForAgent(agentPath),
+    extraDirs: (agentPath) => Promise.resolve(roomWorktreesOfAgent(frozenWorktrees, agentPath)),
     boundSessionIds: (agentPath) =>
       Promise.resolve(runtimeRegistry.listSessionIdsForAgentPath(agentPath)),
   });
@@ -1773,12 +2171,8 @@ async function start() {
 
   // Initialize Relay if enabled
   const relayConfig = configManager.get('relay');
-  // Env var wins when explicitly set; fall back to config when not set.
-  // boolFlag defaults to false even when unset, so check process.env directly.
-
-  const relayEnabled =
-    // eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
-    'DORKOS_RELAY_ENABLED' in process.env ? env.DORKOS_RELAY_ENABLED : relayConfig.enabled;
+  // DORKOS_RELAY_ENABLED wins only when set; unset, the saved setting decides.
+  const relayEnabled = relayStartsEnabled(env.DORKOS_RELAY_ENABLED, relayConfig.enabled);
 
   // Phase A: core relay infrastructure (RelayCore + TraceStore)
   // AdapterManager construction is deferred to Phase C (after meshCore init)
@@ -1846,6 +2240,8 @@ async function start() {
       // ADR-0043: the reconciler rebuilds the DB from files by walking the
       // managed agents home dir (DorkBot + installed agents) every pass.
       agentsHomeDir: path.join(dorkHome, 'agents'),
+      // A room's files are never an agent's home (spec `agent-home-desk` §3.3).
+      roomFilesDir: path.join(dorkHome, 'rooms'),
       logger,
     });
     logger.info('[Mesh] MeshCore initialized');
@@ -1880,6 +2276,14 @@ async function start() {
       registerRemoteCommunityUnregisterCascade(meshCore, roomAuthors, remoteCommunitySubscriptions);
     }
 
+    // An unregistered agent leaves every channel roster in the same moment
+    // (DOR-2095); its direct messages keep it, drawn as retired, and its
+    // messages keep their author. Its seats are kept aside and given back if
+    // the same agent is registered again. Registered before startup
+    // reconciliation, because the reconciler's orphan sweep unregisters
+    // through this same signal and must not leave a seat behind either.
+    registerRoomUnregisterCascade(meshCore, roomService, logger);
+
     // Wire the cwd -> agent lookup notification emitters read from (session
     // lifecycle, ask resolution): both fire from module-level projector
     // subscriptions registered before this line runs, so they read this
@@ -1911,6 +2315,86 @@ async function start() {
     } catch (err) {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
+
+    // Move room transcripts filed under worktree folders to their agents' homes
+    // (spec `agent-home-desk` §8.1): room turns stand at home now, so that is
+    // where Claude Code resumes them and where DorkOS reads them. HERE because
+    // it needs the loaded registry (it decides whose a worktree is, and an
+    // empty list would write the marker having moved nothing) and must finish
+    // before any room turn can launch — rooms start answering once relay and
+    // HTTP are up, below. It can throw; a throw leaves the marker unwritten, so
+    // the next start tries again, and must never stop this one.
+    try {
+      await migrateRoomTranscripts({
+        dorkHome,
+        claudeRoots: resolveClaudeRootSet(),
+        agentPaths: meshCore.listWithPaths().map((agent) => agent.projectPath),
+      });
+    } catch (err) {
+      logger.warn('[rooms] could not move room transcripts to agent homes yet', logError(err));
+    }
+
+    // The permission upgrade (spec `agent-permissions` D13), after the mesh and
+    // Activity are up: on every boot, fold whatever retired permission setting is
+    // still on disk (a manifest's `enabledToolGroups`/`tierCeiling`, the config's
+    // `agentContext`) and record what that decided; once per server version,
+    // record what the config migration changed. Non-fatal: a failure costs the
+    // audit line, never the boot, and a manifest is still folded on every read.
+    try {
+      const mesh = meshCore;
+      const upgradeDeps: Parameters<typeof runPermissionUpgradeSweep>[0] = {
+        version: SERVER_VERSION,
+        config: {
+          get: () => configManager.get('permissions'),
+          set: (next) => configManager.set('permissions', next),
+        },
+        agents: () =>
+          mesh.listWithPaths().map((a) => ({
+            id: a.id,
+            name: a.name,
+            ...(a.displayName ? { displayName: a.displayName } : {}),
+            projectPath: a.projectPath,
+          })),
+        readRawManifest: readRawManifestFile,
+        writeFolded: async (agentId, fields) => {
+          const write = async () => {
+            await mesh.update(agentId, fields);
+          };
+          const agentPath = mesh.listWithPaths().find((a) => a.id === agentId)?.projectPath;
+          // The sweep's own write is not an outside change.
+          if (agentPath) await permissionObserver.writing(agentPath, fields.permissions, write);
+          else await write();
+        },
+        retireAgentContext: () => configManager.retireAgentContext(),
+        activity: activityService,
+        logger,
+      };
+      await runPermissionRetirements(upgradeDeps);
+      await runPermissionUpgradeSweep(upgradeDeps);
+    } catch (err) {
+      logger.warn('[Permissions] Upgrade sweep failed', logError(err));
+    }
+    // Standing permissions this upgrade ended, one history line each. Runs
+    // whenever the capture file exists, not once per version: the file is the
+    // record that the lines are still owed.
+    try {
+      const mesh = meshCore;
+      await recordEndedStandingGrants({
+        dorkHome,
+        agents: () =>
+          mesh.listWithPaths().map((a) => ({
+            id: a.id,
+            name: a.name,
+            ...(a.displayName ? { displayName: a.displayName } : {}),
+            projectPath: a.projectPath,
+          })),
+        actionTitle: (id) => capabilityRegistry?.get(id)?.title ?? titleForMcpTool(id) ?? id,
+        activity: activityService,
+        logger,
+      });
+    } catch (err) {
+      logger.warn('[Permissions] Could not record the ended standing permissions', logError(err));
+    }
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
@@ -1924,9 +2408,14 @@ async function start() {
     // itself was making there, and only to entries whose names prove they are
     // DorkOS's own records. Fire-and-forget: each target is settled under its
     // install lock, so an install that races it simply waits.
+    flushRestoredAgents();
     try {
       const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
-      recoverInterruptedInstalls(projects.flatMap(projectSweepDirs), logger)
+      sweptProjects = projects;
+      projectInstallRecovery = recoverInterruptedInstalls(
+        projects.flatMap(projectSweepDirs),
+        logger
+      )
         .then((summary) => logInstallSweep('project installs', summary))
         .catch((err: unknown) => {
           logger.warn('[Marketplace] Project install recovery failed', logError(err));
@@ -1987,6 +2476,54 @@ async function start() {
     // Mesh failure is non-fatal: server continues without mesh routes.
   }
 
+  // The room worktree folders room turns stood in before they moved home, read
+  // once and never grown — see `setAgentSessionSources` above.
+  frozenWorktrees = await frozenRoomWorktrees(dorkHome).catch(() => []);
+
+  // Carry any Claude account the '0.87.0' config migration renamed (a row called
+  // `default`, now `default-N`) through to its references: agent manifests,
+  // schedules with their approvals, and schedule files (spec
+  // `claude-account-fleet` §6 R). Wired once the agent registry and the task
+  // tables exist, and run at once, before any schedule file watcher starts, so
+  // a sync never reads a file halfway through the move.
+  if (accountUsageStore) {
+    const mesh = meshCore;
+    accountUsageStore.setReferenceMover({
+      move: (renames) =>
+        moveAccountReferences(renames, {
+          agents: mesh
+            ? {
+                list: () =>
+                  mesh.list().map((agent) => ({
+                    id: agent.id,
+                    account: agent.account,
+                    projectPath: mesh.getProjectPath(agent.id) ?? undefined,
+                  })),
+                setAccount: async (agentId, account) => {
+                  await mesh.update(agentId, { account });
+                },
+              }
+            : undefined,
+          renameScheduleAccount: (from, to) =>
+            renameScheduleAccount(db, from, to, (schedule) =>
+              isPackageOwned(
+                schedule.filePath,
+                packageOwnershipContext(
+                  dorkHome,
+                  schedule.agentId ? mesh?.getProjectPath(schedule.agentId) : undefined
+                )
+              )
+            ),
+        }),
+      dropMarkers: async (ids) => {
+        dropClaudeAccountRenameMarkers(configManager, ids);
+      },
+    });
+    // Fresh, not the one a config write or the scan may have in flight: that one
+    // started without the mover.
+    await accountUsageStore.reconcileAccounts({ fresh: true });
+  }
+
   // Open #team, the room the home tab renders, and seat every registered agent
   // in it (team-room-home spec D3.1).
   //
@@ -2014,6 +2551,23 @@ async function start() {
     defaultAgentName: () => configManager.getAll().agents.defaultAgent,
   };
   ensureTeamRoom(teamRoomDeps);
+
+  // Repair the channel rosters unregisters left behind before the cascade above
+  // existed (DOR-2095). Only once the registry has been reconciled against disk:
+  // "no longer registered" is a question the registry answers, and a sweep
+  // reading one that has not caught up would be guessing. Idempotent, so it runs
+  // every boot; non-blocking and non-fatal, because a roster repair is never a
+  // reason for the server not to start.
+  if (meshCore && meshStartupReconciled) {
+    const mesh = meshCore;
+    sweepDepartedAgentSeats({
+      rooms: roomService,
+      evidence: diskEvidence(() => mesh.listDenied()),
+      logger,
+    }).catch((err: unknown) => {
+      logger.warn('[rooms] could not repair channel rosters', logError(err));
+    });
+  }
 
   // Typing in #team without addressing anybody reaches your DEFAULT agent, and
   // that is an `always` membership on an ordinary room rather than a routing
@@ -2391,15 +2945,6 @@ async function start() {
   // by the time the first MCP request arrives this is either populated or
   // intentionally undefined (relay disabled).
   let marketplaceMcpDeps: MarketplaceMcpDeps | undefined;
-  // The single boot-composed Capability Registry — operator + marketplace +
-  // self-description folded into one immutable registry (spec
-  // `capability-registry`). Composed once below, after the dependency bags above
-  // are settled, then shared by both MCP servers and the `/api/capabilities/catalog`
-  // route. The factory/router closures below capture this `let` and read it lazily
-  // (they run per request, after boot has assigned it) — assigned once, but after
-  // those closures are defined, so it cannot be a `const` initialized in place.
-  // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
-  let capabilityRegistry: CapabilityRegistry | undefined;
 
   // Approval primitive (spec `agent-trust` §3.3) — one instance, injected into
   // the marketplace confirmation provider and the approvals router so they share
@@ -2414,13 +2959,28 @@ async function start() {
   const approvalTtlMs = resolveApprovalTtlMs(env.DORKOS_APPROVAL_TTL_MS);
   const approvalService = new ApprovalService(db, {
     ...(approvalTtlMs !== undefined ? { ttlMs: approvalTtlMs } : {}),
+    // A request a room's own turn raised is shown in that room (spec
+    // `agent-permissions` D7). The binding follows a session's rekey, which is
+    // why it is resolved when a card is read rather than stored.
+    roomForSession: (sessionId) => roomStore.sessionLedger.bindingForSession(sessionId)?.roomId,
+    // After three one-time Allows in a week for the same agent and action, the
+    // next card suggests Always allow, until "Not now" (spec
+    // `agent-permissions`). Read from the permission history in the same
+    // database, when each card is read.
+    suggestAlways: createAlwaysSuggestion(db),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
       if (capability) return { title: capability.title, tier: capability.tier };
-      // One id that is not a capability anyone can invoke: the card raised when an
-      // installed package wants to write shell commands into a coding agent's hook
-      // files (DOR-522). Without this the card would show the raw id.
-      return describeHookProjectionCapability(capabilityId);
+      // Two ids that are not capabilities anyone can invoke: the card raised when
+      // an installed package wants to write shell commands into a coding agent's
+      // hook files (DOR-522), and the one a global package raises before its
+      // programs load into every session (DOR-2306). Without these the card
+      // would show the raw id.
+      return (
+        describeHookProjectionCapability(capabilityId) ??
+        describeGlobalActivationCapability(capabilityId) ??
+        describeTemplateCreationCapability(capabilityId)
+      );
     },
   });
   // An answer given after the in-session hold gave up has to reach the agent that
@@ -2493,46 +3053,6 @@ async function start() {
   } catch (err) {
     logger.warn('[Escalation] Could not re-arm from pending approvals', logError(err));
   }
-  // Standing permissions: the operator's "stop asking about this agent doing
-  // this thing", bounded by a clock. The store is injected into the approvals
-  // router and registered with the posture seam, which ends every live
-  // permission when login or the master switch is turned off.
-  const approvalGrantService = new ApprovalGrantService(db);
-  initStandingGrantPosture(approvalGrantService);
-  try {
-    const purgedGrants = approvalGrantService.purgeExpired();
-    if (purgedGrants > 0) {
-      logger.info(`[Approvals] Purged ${purgedGrants} long-expired standing permissions`);
-    }
-  } catch (err) {
-    logger.warn('[Approvals] Failed to purge expired standing permissions (non-fatal)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-  // No permission may be live unless BOTH settings license one. The posture seam
-  // above catches a setting being turned off through `PATCH /api/config`, but
-  // `dorkos config set` writes the file directly and out of process, so it reaches
-  // no seam at all. This is the floor under both: a restart always starts from a
-  // state that matches the settings, rather than waking permissions the operator
-  // switched the feature — or login — off with.
-  try {
-    revokeStandingGrantsIfPostureForbids(readStandingGrantPosture());
-    // …and end the ones an out-of-process settings round trip already voided
-    // (DOR-520). The sweep above cannot see those: by the time the server starts,
-    // the switch is back on and the posture looks fine. The store refuses them on
-    // every read regardless of this call; running it here is what makes the stored
-    // rows say so too, instead of reading as permissions that quietly expired.
-    const voided = approvalGrantService.revokeVoidedByPosture();
-    if (voided > 0) {
-      logger.info(
-        `[Approvals] Ended ${voided} standing permission(s) that a settings change had voided`
-      );
-    }
-  } catch (err) {
-    logger.warn('[Approvals] Failed to reconcile standing permissions with the setting', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
   const managedExecutionContexts = new ManagedConnectorExecutionContextStore();
   const managedCloudProviderInstanceId = legacyDefaultProviderInstanceId(
     'dorkos-managed'
@@ -2576,6 +3096,11 @@ async function start() {
         displayName: server.displayName,
         connection: { transport: server.transport, url: server.url },
       })),
+    onClosedByNewLink: (closed) => {
+      void recordConnectionsClosedByNewLink(activityService, closed).catch((err: unknown) =>
+        logger.warn('[Connectors] Could not record connections closed by a new link', { err })
+      );
+    },
     managedCloud: {
       instanceId: managedCloudProviderInstanceId,
       configured: () => getCloudLinkManager().getSummary().linked,
@@ -2596,6 +3121,17 @@ async function start() {
             credentials: credentialProvider,
             // Test-mode connect flows use the actual dial origin of this server.
             localOrigin,
+            // A saved-again key starts a brand new scripted provider whose
+            // account ids never repeat (DOR-2451) — so a delete has to wipe
+            // this provider's own connection history too, or a stale row
+            // from an earlier key save just sits there under the same
+            // stable instance id forever.
+            purgeConnections: () =>
+              connectorRegistry.purgeTestConnectorConnections(
+                legacyDefaultProviderInstanceId(
+                  TEST_CONNECTOR_PROVIDER_TYPE
+                ) as ConnectorProviderInstanceId
+              ),
           });
         },
       },
@@ -2603,6 +3139,18 @@ async function start() {
   });
   getCloudLinkManager().setManagedProviderSync(() => connectorBootstrapper.reloadManagedCloud());
   await connectorBootstrapper.registerBootProviders();
+  // Sign-ins can end at the service without DorkOS taking part: list each
+  // way's accounts every 15 minutes (and when the owner opens Connections) so
+  // an expired sign-in stops showing as working.
+  const connectorSignIns = new SignInRefresher({
+    registry: connectorRegistry,
+    ways: connectorBootstrapper,
+  });
+  connectorSignIns.start();
+  stopConnectorFreshness = () => {
+    connectorSignIns.stop();
+    connectorBootstrapper.stop();
+  };
   const connectorAuthenticationFlows = new ConnectorAuthenticationFlowService({
     db,
     registry: connectorRegistry,
@@ -2653,6 +3201,13 @@ async function start() {
         displayName: agent.displayName ?? agent.name,
       })),
     managedAuthority: managedConnectorAuthority,
+    activity: activityService,
+    // With login off DorkOS cannot tell the app from a program on this
+    // computer, so the trail says exactly that rather than "You".
+    writer: () =>
+      configManager.get('auth')?.enabled === true
+        ? { actorType: 'user', actorLabel: 'Your signed-in account' }
+        : { actorType: 'user', actorLabel: 'Someone on this computer' },
   });
   const connectorUsage = new ConnectorUsageStore(db);
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
@@ -2763,10 +3318,23 @@ async function start() {
         : undefined;
     }
   );
+  const connectorAppActions = new ConnectorAppActionsService({
+    db,
+    registry: connectorRegistry,
+    dorkHome,
+  });
+  // A logo's source is looked up in the kept app lists only, never listed.
+  const catalogLogos = new CatalogLogoService({
+    dorkHome,
+    logoUrlFor: (serviceSlug) => connectorRegistry.keptLogoUrl(serviceSlug),
+  });
   const connectorOperatorQueries = new ConnectorOperatorQueryService({
     db,
     registry: connectorRegistry,
+    keptLogos: () => catalogLogos.keptServiceIds(),
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
+    appConnections: () => connectorBootstrapper.appConnections(),
+    wayHealth: (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),
@@ -2785,9 +3353,12 @@ async function start() {
       },
     },
   });
-  const connectorAuthorization = new ConnectorExecutionAuthorizationService(db, connectorRegistry, {
-    ownsAgent: connectorOwnsAgent,
-  });
+  const connectorAuthorization = new ConnectorExecutionAuthorizationService(
+    db,
+    connectorRegistry,
+    { ownsAgent: connectorOwnsAgent },
+    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
+  );
   const connectorProgramPrincipals = new ConnectorProgramPrincipalService(db);
   const connectorRuntimePrincipals = meshCore
     ? new ConnectorRuntimePrincipalService({
@@ -2902,6 +3473,10 @@ async function start() {
         },
         nudge: nudgePrivateSession,
       },
+      // A request a room's own turn raised is answered in that room; the
+      // binding follows a session's rekey, so it is read when a card is read.
+      roomForSession: (sessionId) => roomStore.sessionLedger.bindingForSession(sessionId)?.roomId,
+      onChanged: connectorAgentRequestsChangedAnnouncer(eventFanOut),
     });
     void connectorAgentRequests.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Could not recover agent service requests', logError(error));
@@ -2916,7 +3491,8 @@ async function start() {
     {
       revalidatePrincipal: async (principal) =>
         connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
-    }
+    },
+    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
   );
   const connectorBroker = new ConnectorExecutionBroker(
     connectorAuthorization,
@@ -2933,7 +3509,8 @@ async function start() {
       },
     },
     undefined,
-    managedExecutionContexts
+    managedExecutionContexts,
+    connectorRegistry
   );
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the
@@ -3104,18 +3681,23 @@ async function start() {
       // the caller resolution to the owner's left 712 tests green.
       listVisibleRooms: (caller) => visibleRoomsForCaller(roomService, caller),
     };
-    claudeRuntime.setMcpServerFactory((session, sessionId) =>
+    claudeRuntime.setMcpServerFactory((session, sessionId, launch) =>
       // Managed servers first and `dorkos` last so it can never be shadowed —
       // the ordering guarantee lives in `mergeSessionMcpServers`
       // (spec `mcp-server-management` §6).
       mergeSessionMcpServers({
         // The agent's ENABLED managed servers, injected inline so no `.mcp.json`
-        // is written. The agent workspace is the session cwd; a non-agent
-        // session has no manifest and contributes nothing.
-        managed:
-          session.cwd && agentMcpServerService
-            ? toSdkMcpServers(agentMcpServerService.injectableServersForCwd(session.cwd))
-            : {},
+        // is written. Keyed on the agent the session acts as — its own folder
+        // even when it stands in a room worktree (DOR-2091) — so a non-agent or
+        // refused session has no manifest and contributes nothing.
+        managed: (() => {
+          const agentDir = launch?.identity
+            ? homeOf(launch.identity)
+            : homeOf(resolveAgentHome(session.cwd));
+          return agentDir && agentMcpServerService
+            ? toSdkMcpServers(agentMcpServerService.injectableServersForCwd(agentDir))
+            : {};
+        })(),
         // `marketplaceMcpDeps` is populated later in boot (the relay-enabled
         // marketplace-wiring block). This factory closure runs per query, so it
         // reads the captured binding lazily — by the time any session dispatches
@@ -3126,7 +3708,11 @@ async function start() {
           session,
           sessionId,
           marketplaceMcpDeps,
-          capabilityRegistry
+          capabilityRegistry,
+          launch?.hiddenToolNames,
+          // Whose identity the tools act as, as the launch resolved it — the
+          // agent a room worktree belongs to, not the worktree (DOR-2091).
+          launch?.identity
         ),
       })
     );
@@ -3149,7 +3735,7 @@ async function start() {
     requireMcpEnabled,
     createMcpAuth({ surface: 'mcp' }),
     mcpRateLimiter,
-    createMcpRouter((caller) => {
+    createMcpRouter(async (caller) => {
       if (!claudeRuntime || !mcpToolDeps) {
         throw new Error(
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
@@ -3158,13 +3744,21 @@ async function start() {
       // The server is rebuilt per request, so who is calling — the agent that
       // presented a token, the person the auth middleware verified, or neither
       // — is captured by the capability tool handlers it registers.
+      //
+      // What a Blocked permission hides from this caller (spec
+      // `agent-permissions` D15): its own settings when it identified itself,
+      // the install's defaults when it did not.
+      const visibility = await resolveToolVisibilityFor(caller.identity?.agentPath, {
+        inactive: Boolean(caller.identity?.inactive),
+      });
       return createExternalMcpServer(
         mcpToolDeps,
         marketplaceMcpDeps,
         capabilityRegistry,
         caller.identity,
         caller.userId,
-        caller.agentIdentityPresented
+        caller.agentIdentityPresented,
+        visibility.hiddenToolNames
       );
     })
   );
@@ -3281,7 +3875,19 @@ async function start() {
     // column existed have none — so without this pass the first sync would park
     // every schedule an alpha user already approved. Runs BEFORE any watcher
     // starts, and matches nothing on the second boot.
-    const backfilled = taskStore.backfillApprovalGrants();
+    // Approvals recorded in an older key format move onto today's key, extended
+    // with the timezone (DOR-2307) and the settings (DOR-2323) each schedule
+    // already runs with. Before the backfill and before any watcher, for the
+    // same reason as both: a sync that found a stale-shaped key would park an
+    // approved schedule.
+    const upgraded = taskStore.approvals.upgradeLegacyApprovalKeys();
+    if (upgraded > 0) {
+      logger.info(
+        `[Tasks] Carried ${upgraded} approval(s) over to include each schedule's timezone and settings`
+      );
+    }
+
+    const backfilled = taskStore.approvals.backfillApprovalGrants();
     if (backfilled > 0) {
       logger.info(`[Tasks] Kept ${backfilled} already-approved schedule(s) approved`);
     }
@@ -3441,8 +4047,16 @@ async function start() {
     '/api/connectors',
     createConnectorResourcesRouter({
       query: connectorOperatorQueries,
+      logos: catalogLogos,
       authentication: connectorAuthenticationFlows,
       lifecycle: connectorLifecycle,
+      actions: connectorAppActions,
+      signIns: connectorSignIns,
+      sessionAccess: new ConnectorSessionAccessService({
+        db,
+        query: connectorOperatorQueries,
+        overrides: sessionConnectorAttachmentStore,
+      }),
       resolveOwner: () => connectorOwner,
       loginEnabled: () => configManager.get('auth').enabled,
     })
@@ -3541,6 +4155,7 @@ async function start() {
     bindings: roomStore.sessionLedger,
     authors: roomAuthors,
     worktrees: () => roomWorktrees,
+    sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
@@ -3602,6 +4217,21 @@ async function start() {
     relayFailedToStart: relayEnabled && !relayCore,
     adaptersFailedToStart: relayEnabled && Boolean(relayCore) && !adapterManager,
     meshFailedToStart: !meshCore,
+    // Every installation, verified against what was installed (DOR-2197): the
+    // same one-entry-per-installation scan the Installed view lists.
+    installedPackages: {
+      listIntegrity: async () => {
+        const scopes = (meshCore?.listWithPaths() ?? []).map((a) => ({
+          projectPath: a.projectPath,
+          id: a.id,
+          name: a.displayName ?? a.name,
+        }));
+        const verified = await withIntegrity(await scanInstallationsAcrossScopes(dorkHome, scopes));
+        return verified.map(({ name, integrity }) => ({ name, integrity }));
+      },
+    },
+    // The same once-per-process read the startup warning logged (DOR-2326).
+    gitProtection: installedGitProtection,
   } satisfies DeepHealthDeps;
 
   // The same live reads, for `GET /api/debug/*`. A separate bag from the one
@@ -3681,8 +4311,31 @@ async function start() {
   // after the seat and in that order deliberately: "tangerines joined your team"
   // is a line about a member of the room, so the roster is settled before the
   // room says so (team-room-home spec D5.1).
+  const announceEveryAgentInheritance = createEveryAgentArrivalReaction({
+    activity: activityService,
+    everyAgentGrants: () => connectorOperatorQueries.everyAgentGrants(connectorOwner),
+  });
+  // Set once the permission service exists, below. Every arrival path
+  // (create, the register route, the mesh_register tool, a discovery scan)
+  // reaches the listener, so this is where an arriving folder's own
+  // permission settings are screened (review D1).
+  const arrivalScreen: { run?: (agentId: string) => Promise<{ written: boolean }> } = {};
+  const onArrival = createArrivalStep({
+    arrivals: arrivalRecord,
+    screen: () => arrivalScreen.run,
+    logger,
+  });
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
+    // Marks the agent pending before anything awaits, so every reader narrows
+    // its folder's settings until the screened ones are in its file.
+    await onArrival(agent.id);
     joinTeamRoom(teamRoomDeps, agent.path);
+    // Every arrival path funnels here, so this is where an agent that inherits
+    // apps shared with every agent is announced — never silently (ADR
+    // 260926-192625). A failure must not fail the arrival.
+    await announceEveryAgentInheritance(agent).catch((err: unknown) =>
+      logger.warn('[Connectors] Could not record every-agent inheritance', { err })
+    );
     momentDetectors.agentCreated(agent);
     // Migrate anything this agent's project still keeps in the old shape, then
     // watch its `.agents/skills/` — NOW rather than at the next restart. Boot
@@ -3753,9 +4406,62 @@ async function start() {
     app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(agentMcpOAuthService));
   }
 
+  // Permissions (spec `agent-permissions` D10): the one way in for what agents
+  // may do. Mounted at `/api` BEFORE the agents router so
+  // `/api/agents/:id/permissions` reaches it first. The registry is read lazily:
+  // it is composed after the routes are mounted.
+  // The one owner of every permission write (spec `agent-permissions` D10):
+  // the permissions pages and the request card's Always allow both write here.
+  const permissionService = createPermissionService({
+    config: configManager,
+    mesh: () => meshCore,
+    registry: () => capabilityRegistry,
+    activity: activityService,
+    observer: permissionObserver,
+    arrivals: arrivalRecord,
+  });
+  arrivalScreen.run = (agentId) => permissionService.screenArrivedAgent(agentId);
+  // A screen interrupted by a restart, or one whose write failed, is retried
+  // now; its agent stays narrowed until one lands.
+  for (const agentId of arrivalRecord.pendingIds()) {
+    if (!meshCore?.get(agentId)) {
+      arrivalRecord.clear(agentId);
+      continue;
+    }
+    void arrivalScreen
+      .run(agentId)
+      .then((screened) => {
+        if (screened.written) arrivalRecord.clear(agentId);
+      })
+      .catch(() => undefined);
+  }
+  // An agent that leaves is forgotten by both records, so a later folder
+  // reusing its id is screened as the newcomer it is.
+  meshCore?.onUnregister((agentId) => {
+    arrivalRecord.clear(agentId);
+    void permissionObserver.forget(agentId);
+  });
+  app.use(
+    '/api',
+    createPermissionsRouter({
+      permissions: permissionService,
+      activity: activityService,
+    })
+  );
+  mountedRouters.push('permissions');
+
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
-  app.use('/api/agents', createAgentsRouter(meshCore));
+  // The confirmation provider is composed further down this boot, inside the
+  // marketplace block; read lazily so an agent's template creation raises a card
+  // once it exists and fails closed until then (DOR-2325).
+  app.use(
+    '/api/agents',
+    createAgentsRouter(meshCore, {
+      confirmationProvider: () => templateConfirmationProvider,
+      marketplace: () => agentPackageInstaller,
+    })
+  );
 
   // The team roster — one READ of every identity on this install (ADR
   // 260806-222535). Always mounted, and mounted even when the mesh did not
@@ -3846,13 +4552,18 @@ async function start() {
 
   // Approvals — always available. The cockpit lists what is waiting on a person
   // and records their decision (spec `agent-trust` §3.3).
+  // The test-only seam that seeds a request card reads it from here; production
+  // mounts no test router, so nothing else does.
+  app.locals.approvalService = approvalService;
   app.use(
     '/api/approvals',
-    createApprovalsRouter(approvalService, approvalGrantService, {
+    createApprovalsRouter(approvalService, {
       activity: activityService,
-      // The permissions list names the action the way the approval card does, from
-      // the registry rather than from whoever asked. Read lazily for the same
-      // reason `approvalService` reads it lazily: the registry is composed later.
+      // An "Always allow" writes through the one permission write owner, like
+      // Settings does (spec `agent-permissions` D7).
+      permissions: permissionService,
+      // Names the action for the answer's audit line. Read lazily: the registry
+      // is composed later in boot.
       describeCapability: (capabilityId) => capabilityRegistry?.get(capabilityId),
     })
   );
@@ -4023,6 +4734,23 @@ async function start() {
       });
     }
     const marketplaceFetcher = new PackageFetcher(marketplaceCache, gitTreeSource, logger);
+    // Give packages an older DorkOS installed an exact installed-files record,
+    // in the background once interrupted installs are settled (DOR-2197). It
+    // never blocks startup and writes nothing it cannot prove; what it cannot
+    // rebuild waits for the next boot or the "Check files" action.
+    void projectInstallRecovery
+      .then(() => removeRecordTempLeftovers())
+      .then(() =>
+        rebuildLegacyRecords(
+          legacySweepDirs(dorkHome, sweptProjects),
+          { fetcher: marketplaceFetcher, logger },
+          { signal: legacyRecordSweep.signal }
+        )
+      )
+      .then(logLegacySweep)
+      .catch((err: unknown) => {
+        logger.warn('[Marketplace] Rebuilding records for older installs failed', logError(err));
+      });
     const marketplaceResolver = new PackageResolver(marketplaceSourceManager, marketplaceCache);
     const marketplaceConflictDetector = new ConflictDetector(dorkHome, adapterManager);
     const marketplacePreviewBuilder = new PermissionPreviewBuilder(
@@ -4036,9 +4764,15 @@ async function start() {
       extensionManager,
       logger,
     });
+    // One agent-registry surface for the flows that take an agent off the team
+    // (DOR-2245): an uninstalled agent package, and an agent a different
+    // package with the same name replaces.
+    const marketplaceAgentRegistry = createMeshAgentRegistry(() => meshCore);
     const marketplaceAgentFlow = new AgentInstallFlow({
       dorkHome,
       agentCreator: { createAgentWorkspace },
+      getMeshCore: () => meshCore,
+      agentRegistry: marketplaceAgentRegistry,
       logger,
     });
     const marketplaceSkillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
@@ -4060,6 +4794,13 @@ async function start() {
       shapeDeactivator: { getActiveShapeName, clearActiveShape },
       // Delete the schedules a removed Shape created so its tick stops firing.
       shapeScheduleTeardown: shapeScheduleService,
+      // An uninstalled agent package's agent leaves the team (DOR-2245): the
+      // full unregister cascade, and back again if the uninstall rolls back.
+      agentRegistry: marketplaceAgentRegistry,
+      // An install made before installed-files records existed gets one rebuilt
+      // from the commit it was installed at (DOR-2245 §9).
+      rebuildLegacy: (installRoot: string) =>
+        rebuildInstalledFiles(installRoot, { fetcher: marketplaceFetcher, logger }),
       logger,
     });
 
@@ -4133,6 +4874,22 @@ async function start() {
     });
     marketplaceCacheRetention.start();
 
+    // Ask a person about every global package held back from sessions because
+    // nobody approved what it runs (DOR-2306). Fire-and-forget: a card stays
+    // open for the approval window, and a yes reloads the plugins sessions get.
+    const askAboutWithheldGlobals = (): void => {
+      askAboutWithheldGlobalPlugins({
+        dorkHome,
+        approvals: approvalService,
+        onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
+      }).catch((err) => {
+        logger.warn('[Marketplace] Asking about held-back global packages failed', { err });
+      });
+    };
+    // Once at start: packages installed before this version, or changed on disk
+    // while DorkOS was off, are asked about now rather than at the next install.
+    askAboutWithheldGlobals();
+
     // The one post-change notifier, handed to BOTH surfaces that mutate installed
     // packages: the HTTP router below and the marketplace MCP tools
     // (`marketplaceMcpDeps`). It is required on both deps types, so a surface
@@ -4148,6 +4905,9 @@ async function start() {
         claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
           logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
         });
+        // A global change can leave a package held back from every session until
+        // a person approves what it runs (DOR-2306): ask now, in the background.
+        if (ctx.projectPath === undefined) askAboutWithheldGlobals();
         // Harness Sync auto-projection (GAP-4): project the changed plugin's
         // assets to the project's other harnesses. Fire-and-forget; the
         // service is internally best-effort and never throws, but we still
@@ -4159,6 +4919,18 @@ async function start() {
         logger.warn('[Marketplace] Post-change notification failed', { err });
       }
     };
+
+    // Build the confirmation provider that gates marketplace mutations. There is
+    // exactly one, and no way to switch it off: it records an approval the
+    // operator decides from the approval card (`POST /api/approvals/:id/grant|deny`).
+    // Automation answers that approval through the same routes a person uses
+    // rather than skipping it (DOR-501). Shared by the MCP tools and the HTTP
+    // update route, so an agent's update raises the same card on both (DOR-2306).
+    const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
+      approvalService
+    );
+    templateConfirmationProvider = confirmationProvider;
+    agentPackageInstaller = { installer: marketplaceInstaller, dorkHome };
 
     app.use(
       '/api/marketplace',
@@ -4177,6 +4949,12 @@ async function start() {
         dorkHome,
         listAgentScopes,
         onPluginsChanged,
+        confirmationProvider,
+        consent: globalConsentRecorder,
+        heldBackCards: {
+          approvals: approvalService,
+          onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
+        },
       })
     );
     mountedRouters.push('marketplace');
@@ -4219,15 +4997,6 @@ async function start() {
       });
     }
 
-    // Build the confirmation provider that gates marketplace mutation tools.
-    // There is exactly one, and no way to switch it off: it records an approval
-    // the operator decides from the cockpit's approval card
-    // (`POST /api/approvals/:id/grant|deny`). Automation answers that approval
-    // through the same routes a person uses rather than skipping it (DOR-501).
-    const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
-      approvalService
-    );
-
     marketplaceMcpDeps = {
       dorkHome,
       installer: marketplaceInstaller,
@@ -4235,7 +5004,9 @@ async function start() {
       fetcher: marketplaceFetcher,
       cache: marketplaceCache,
       uninstallFlow: marketplaceUninstallFlow,
+      updateFlow: marketplaceUpdateFlow,
       confirmationProvider,
+      consent: globalConsentRecorder,
       onPluginsChanged,
       listAgentScopes,
       logger,
@@ -4309,6 +5080,9 @@ async function start() {
   capabilityRegistry = composeDorkOsCapabilityRegistry(
     {
       logger,
+      // An agent's approved `change_permission` writes through the same owner
+      // Settings does (spec `agent-permissions` D9).
+      permissionService,
       ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
       ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
       // Ordinary MCP surfaces expose only provider-neutral discovery. Private
@@ -4375,29 +5149,43 @@ async function start() {
       const task = taskStore?.getTask(id);
       return task ? (task.displayName ?? task.name) : undefined;
     },
+    // What a person calls the room: `#slug` for a channel, the title otherwise,
+    // the same rule the client's `roomDisplayTitle` follows.
+    room: (id) => {
+      const room = roomStore.getRoom(id);
+      if (!room) return undefined;
+      return room.kind === 'channel' && room.slug ? `#${room.slug}` : room.title;
+    },
   });
   initCapabilityTierGate({
     approvals: approvalService,
     onAttempt: createCapabilityGateAuditObserver(activityService),
-    // Standing permissions (spec `agent-approval-settings` §3.3). Both halves are
-    // read per gated call rather than captured here: the master switch can be
-    // turned off between two invocations and a permission runs out on a clock, so
-    // the guarantee "the very next call asks again" has to come from a fresh read.
-    standingGrants: {
-      enabled: () => readStandingGrantSettings().enabled,
-      findLive: (agentPath, capabilityId) => approvalGrantService.findLive(agentPath, capabilityId),
-    },
   });
-  // Arm the per-agent tool-group gate beside it (spec `rooms-management-tools`,
-  // DOR-1611). It runs in the same choke point, one step earlier, and answers a
-  // different question: not "is this caller restricted" but "does this caller hold
-  // this grant". Unwired it refuses every capability that declares a group, so an
-  // omission here fails closed. The audit hook is the SAME observer the tier gate
-  // uses, so a refusal shows up in the Activity feed as `capability.denied` — the
-  // operator sees what an agent tried and did not get.
-  initToolGroupGate({
-    grants: manifestToolGroupGrants(),
-    onAttempt: createCapabilityGateAuditObserver(activityService),
+  // Wire the permission half of the same gate (spec `agent-permissions` D6):
+  // the live `permissions` config section, read per call like everything else
+  // this gate decides on. The agent's own overrides are read fresh off its
+  // manifest file by the default source.
+  // A Files & commands stop moved through a general config door (the Runtimes
+  // settings, `PATCH /api/config`, or a config patch a person approved) is a
+  // permission change like any other, so it lands in the permission history
+  // (spec `agent-permissions` D10). The preset writes its stop itself and
+  // records it with the preset, so it does not come through here.
+  onTrustStopChange((moves, write) => {
+    void recordPermissionChange(activityService, {
+      changes: moves.map((move) => ({
+        target: { kind: 'default' },
+        key: { kind: 'files', ...(move.runtime ? { runtime: move.runtime } : {}) },
+        before: move.before,
+        after: move.after,
+      })),
+      surface: write.writer.kind === 'agent' ? 'agent-request' : 'api',
+      // A general config door cannot say who is behind it; an agent's patch
+      // reached a trust stop only because a person approved it on a card.
+      writer:
+        write.writer.kind === 'agent'
+          ? agentRequestWriter({ name: write.writer.agentName ?? 'An agent' })
+          : personWriter('local-trust'),
+    });
   });
   if (connectorRuntimePrincipals) {
     const agentScopedRuntimePrincipals = new AgentIdentitySnapshotPrincipalPort({
@@ -4412,7 +5200,17 @@ async function start() {
       agentServerFactory: async (principal) => {
         const identity = await agentScopedRuntimePrincipals.identityFor(principal);
         if (!identity) return null;
-        return createAgentRuntimeMcpServer(capabilityRegistry!, principal, identity);
+        // What a Blocked permission hides from this agent (spec
+        // `agent-permissions` D15), read fresh for this turn.
+        const visibility = await resolveToolVisibilityFor(identity.agentPath, {
+          inactive: Boolean(identity.inactive),
+        });
+        return createAgentRuntimeMcpServer(
+          capabilityRegistry!,
+          principal,
+          identity,
+          visibility.hiddenToolNames
+        );
       },
     });
     for (const runtime of runtimeRegistry.listRuntimes()) {
@@ -4830,7 +5628,19 @@ async function start() {
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
+  await workspaceReconcilerLifecycle.dispose();
   logger.info('[DorkOS] shutting down services');
+  stopSessionContinuation?.();
+  stopSessionContinuation = undefined;
+  if (accountUsageStore) {
+    accountUsageStore.stop();
+    await accountUsageStore.flush().catch((err: unknown) => {
+      logger.warn('[DorkOS] account usage flush failed at shutdown', { err: String(err) });
+    });
+    setAccountUsageStore(undefined);
+    accountUsageStore = undefined;
+  }
+  legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
   remoteCommunitySubscriptions = undefined;
   setRemoteCommunitySubscriptionProbe(undefined);
@@ -4859,6 +5669,8 @@ async function shutdownServices() {
     stopApprovalExpirySweep();
     stopApprovalExpirySweep = undefined;
   }
+  stopConnectorFreshness?.();
+  stopConnectorFreshness = undefined;
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
   // Give back every port an open dev-server preview is holding.
@@ -4920,9 +5732,8 @@ async function shutdownServices() {
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.
   await shutdownObservability();
-  // Give up the data directory last, once nothing is still writing to it. The
-  // admin restart path calls this function and then spawns a successor, so the
-  // release has to happen here rather than in shutdown().
+  // Retain the existing final lock release for admin restart's successor handoff.
+  // Workspace disposal alone does not prove that every server writer is quiescent.
   releaseInstanceLock?.();
   releaseInstanceLock = undefined;
 }
@@ -4970,6 +5781,14 @@ process.on('unhandledRejection', (reason) => {
 });
 
 start().catch(async (err) => {
+  try {
+    await workspaceReconcilerLifecycle.dispose();
+  } catch (cleanupError) {
+    logger.error(
+      '[workspace] Reconciliation disposal failed during startup cleanup:',
+      cleanupError
+    );
+  }
   // A later startup failure must not leave the owned offline listener running.
   await testComposioFixture?.close();
   testComposioFixture = undefined;

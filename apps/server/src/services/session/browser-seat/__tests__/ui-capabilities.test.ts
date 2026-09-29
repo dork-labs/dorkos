@@ -51,7 +51,6 @@ const EXPECTED: Record<string, { tool: string; tier: string; args: string[] }> =
     args: [
       'action',
       'panel',
-      'tab',
       'content',
       'documentId',
       'sourcePath',

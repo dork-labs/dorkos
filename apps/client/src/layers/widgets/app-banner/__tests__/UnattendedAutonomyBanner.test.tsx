@@ -127,7 +127,7 @@ describe('UnattendedAutonomyBanner', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Connections' }));
 
     expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith({ to: '/connections', search: { region: 'messaging' } });
+    expect(navigate).toHaveBeenCalledWith({ to: '/connections', search: {} });
   });
 
   it('sends a person to the tasks page', async () => {

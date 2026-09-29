@@ -14,7 +14,7 @@ import {
   Label,
 } from '@/layers/shared/ui';
 import { useIsMobile, useReportIssue } from '@/layers/shared/model';
-import { cn, getPlatform } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import { useSendFeedback } from '../model/use-send-feedback';
 import { useScreenshotAttachment } from '../model/use-screenshot-attachment';
 import {
@@ -121,12 +121,6 @@ export function FeedbackDialog({
   const { isSubmitting, sessionId, route, buildDiagnostics, send } = useSendFeedback();
   const reportIssue = useReportIssue();
   const showConversation = Boolean(sessionId);
-  // Obsidian's in-process transport forwards only the light telemetry event and
-  // drops `screenshot` by design (feedback-attachments decision 8), so offering
-  // the capture there would promise something the send path cannot keep. The
-  // embed is the single place `DirectTransport` is built, and the same
-  // `onOpen` sets this flag (`apps/obsidian-plugin/src/views/CopilotView.tsx`).
-  const showScreenshot = !getPlatform().isEmbedded;
   const signedIn = Boolean(currentUser);
 
   const messageId = useId();
@@ -184,7 +178,7 @@ export function FeedbackDialog({
   // attach the new session's transcript instead.
   const [draftSessionId, setDraftSessionId] = useState(sessionId);
   const messageRef = useRef<HTMLTextAreaElement>(null);
-  const screenshot = useScreenshotAttachment({ enabled: open && showScreenshot });
+  const screenshot = useScreenshotAttachment({ enabled: open });
 
   const hasWords = message.trim().length > 0;
   const hasDraft = hasWords || screenshot.dataUrl !== null || element !== null;
@@ -201,9 +195,7 @@ export function FeedbackDialog({
       // must not be waiting on the next open — that would show a crosshair over
       // an app nobody asked to point at.
       setPointPhase(null);
-      // A surface that cannot send a picture must not be holding one either, so
-      // the embedded transport ignores whatever a caller passed.
-      const initialShot = showScreenshot ? initialScreenshotDataUrl : undefined;
+      const initialShot = initialScreenshotDataUrl;
       const callerBroughtContent = Boolean(prefillMessage || crashStack || initialShot);
       if (callerBroughtContent || !hasDraft) {
         const nextKind = initialKind ?? 'feedback';
@@ -334,7 +326,7 @@ export function FeedbackDialog({
       includeConversation,
       anonymous,
       ...(draftCrashStack ? { crashStack: draftCrashStack } : {}),
-      ...(showScreenshot && screenshot.dataUrl ? { screenshotDataUrl: screenshot.dataUrl } : {}),
+      ...(screenshot.dataUrl ? { screenshotDataUrl: screenshot.dataUrl } : {}),
       ...(element ? { element } : {}),
       ...(notifyEmail ? { notifyEmail } : {}),
     });
@@ -375,7 +367,7 @@ export function FeedbackDialog({
   // The whole dialog takes the paste and the drop — a picture aimed anywhere on
   // it is a picture meant for it, and the drop target being one small box is the
   // usual reason a drag "does nothing".
-  const captureHandlers = showScreenshot ? screenshot.handlers : undefined;
+  const captureHandlers = screenshot.handlers;
 
   // Stepping aside, not closing: `open` — the prop the form's reset watches — is
   // untouched, so the message, the chips and the email are all still there when
@@ -388,7 +380,7 @@ export function FeedbackDialog({
   // or a paste afterwards replaces it, and then the element keeps its name but
   // no longer has a picture of its own.
   const elementHasShot = Boolean(element && elementShot && screenshot.dataUrl === elementShot);
-  const showScreenshotThumb = showScreenshot && Boolean(screenshot.dataUrl) && !elementHasShot;
+  const showScreenshotThumb = Boolean(screenshot.dataUrl) && !elementHasShot;
   const needsWords = !hasWords && (Boolean(screenshot.dataUrl) || element !== null);
 
   return (
@@ -500,7 +492,7 @@ export function FeedbackDialog({
                 )}
 
                 <ComposerToolbar
-                  showPictureTools={showScreenshot}
+                  showPictureTools={true}
                   isPreparing={screenshot.isPreparing}
                   hasPointed={element !== null}
                   hasWords={hasWords}
@@ -566,9 +558,7 @@ export function FeedbackDialog({
             route={route}
             showConversation={showConversation}
             sessionId={sessionId}
-            {...(showScreenshot && screenshot.dataUrl
-              ? { screenshotDataUrl: screenshot.dataUrl }
-              : {})}
+            {...(screenshot.dataUrl ? { screenshotDataUrl: screenshot.dataUrl } : {})}
           />
         </ResponsiveDialogContent>
       </ResponsiveDialog>

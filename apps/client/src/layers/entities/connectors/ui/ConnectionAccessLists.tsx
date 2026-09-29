@@ -1,33 +1,20 @@
-import { ArrowUpRight, Cable } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { ConnectorSessionEffectiveAccess } from '@dorkos/shared/connector-resource-schemas';
 import {
   useAgentConnectorConnections,
   useSessionConnectorConnections,
+  useSetSessionConnectorAccess,
 } from '../model/use-connector-resources';
-import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
-import { getPlatform } from '@/layers/shared/lib';
-import { EmbeddedConnectionsNotice } from './EmbeddedConnectionsNotice';
+import { Badge, Button, QueryErrorState, Skeleton, Switch } from '@/layers/shared/ui';
+import { serviceName } from '../lib/access-copy';
+import { ServiceMark } from './ServiceMark';
 
-const SESSION_ACCESS_COPY = {
-  inherited: 'Inherited from agent',
-  session_only: 'Allowed only in this session',
-  disabled: 'Disabled in this session',
+/** Where a chat's usable access comes from, as its badge says it. */
+const SESSION_SOURCE_COPY = {
+  agent: 'Inherited from agent',
+  this_chat: 'Allowed only in this session',
 } as const;
-
-const DOMINATING_REASON_COPY = {
-  none: null,
-  connection_paused: 'The account is paused.',
-  connection_revoked: 'The account was disconnected.',
-  authentication_required: 'The account needs to be signed in again.',
-  grant_revoked: 'This access was removed.',
-  session_detached: 'This session is blocked from using the account.',
-  reconciliation_required: 'The account access needs review.',
-  authority_sync_required: 'Account access has not finished updating.',
-} as const;
-
-function serviceName(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 
 /** Canonical account grants shown from one agent profile. */
 export function AgentConnectionAccessList({
@@ -43,9 +30,6 @@ export function AgentConnectionAccessList({
 
   if (query.isPending) return <Skeleton className="h-24 w-full rounded-lg" />;
   if (query.isError) {
-    if (getPlatform().isEmbedded) {
-      return <EmbeddedConnectionsNotice title="Account access is unavailable here" />;
-    }
     return (
       <QueryErrorState
         title="Couldn’t load account access"
@@ -85,18 +69,18 @@ export function AgentConnectionAccessList({
       ) : (
         <ul className="space-y-1.5">
           {connections.map((connection) => {
-            const usable =
-              connection.lifecycle === 'connected' &&
-              connection.authenticationStatus === 'active' &&
-              connection.reconciliationStatus === 'ready' &&
-              connection.authoritySync.status === 'ready';
+            const usable = connection.readiness.state === 'ready';
             return (
               <li
                 key={connection.connectionId}
                 data-testid={`agent-connection-${connection.connectionId}`}
                 className="bg-muted/40 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2"
               >
-                <Cable className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                <ServiceMark
+                  iconKey={connection.toolkit}
+                  displayName={serviceName(connection.toolkit)}
+                  className="size-7"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
                     {serviceName(connection.toolkit)} ({connection.label})
@@ -104,9 +88,14 @@ export function AgentConnectionAccessList({
                   <p className="text-muted-foreground text-xs">
                     {connection.operationRevisionIds.length} approved{' '}
                     {connection.operationRevisionIds.length === 1 ? 'action' : 'actions'}
+                    {connection.everyAgent && ' · given to every agent'}
                   </p>
                 </div>
-                <Badge size="xs" variant={usable ? 'secondary' : 'outline'}>
+                <Badge
+                  size="xs"
+                  variant={usable ? 'secondary' : 'outline'}
+                  title={usable ? undefined : connection.readiness.copy.owner}
+                >
                   {usable ? 'Available' : 'Unavailable'}
                 </Badge>
               </li>
@@ -118,7 +107,32 @@ export function AgentConnectionAccessList({
   );
 }
 
-/** Canonical effective account access shown in Session Inspector. */
+/** What the per-chat switch does, said once above the list. */
+const THIS_CHAT_SWITCH_NOTE =
+  'Turning an app off here only affects this chat. Turning it back on puts back the access this chat had, and never adds any.';
+
+/** Why a switch did not change, when the server gave no reason of its own. */
+const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change it. Nothing changed. Try again.';
+
+/**
+ * What to say when a switch did not change. A refusal the owner can't retry
+ * past (the chat is limited for another agent) is said in the server's own
+ * words; anything else may pass, so it asks to try again.
+ */
+function switchFailure(error: Error | null): string {
+  return (error as { code?: string } | null)?.code === 'session_access_other_agent'
+    ? error!.message
+    : THIS_CHAT_SWITCH_FAILED;
+}
+
+/**
+ * Canonical effective account access shown in Session Inspector, with the
+ * owner's per-chat switch on every app the agent was given account-wide.
+ * Everything a row says is the server's: a switch shows where the server
+ * sends `thisChat`, and an app that is off there is exactly where readiness
+ * names `turn_on_for_this_chat` as the fix. The switch writes, and the list
+ * shows the readiness the server answers with; it is never guessed here.
+ */
 export function SessionConnectionAccessList({
   sessionId,
   onManage,
@@ -183,38 +197,79 @@ export function SessionConnectionAccessList({
           {emptyAction}
         </div>
       ) : (
-        connections.map((connection) => {
-          const reason = DOMINATING_REASON_COPY[connection.dominatingReason];
-          return (
-            <div
+        <>
+          {connections.some((connection) => connection.thisChat) && (
+            <p className="text-muted-foreground px-1 pb-1 text-xs">{THIS_CHAT_SWITCH_NOTE}</p>
+          )}
+          {connections.map((connection) => (
+            <SessionConnectionRow
               key={connection.connectionId}
-              data-testid={`session-connection-${connection.connectionId}`}
-              className="bg-muted/40 rounded-md px-2.5 py-2"
-            >
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-sm font-medium">
-                  {serviceName(connection.toolkit)} ({connection.label})
-                </span>
-                <Badge
-                  size="xs"
-                  variant={connection.access === 'disabled' ? 'outline' : 'secondary'}
-                >
-                  {SESSION_ACCESS_COPY[connection.access]}
-                </Badge>
-              </div>
-              <p
-                className={
-                  reason ? 'text-destructive mt-1 text-xs' : 'text-muted-foreground mt-1 text-xs'
-                }
-              >
-                {reason ??
-                  `${connection.operationRevisionIds.length} actions available in this session.`}
-              </p>
-            </div>
-          );
-        })
+              sessionId={sessionId}
+              connection={connection}
+            />
+          ))}
+        </>
       )}
       {connections.length > 0 && footer}
     </section>
+  );
+}
+
+/** One app in a chat's list: its name, the server's readiness, and the switch when it has one. */
+function SessionConnectionRow({
+  sessionId,
+  connection,
+}: {
+  sessionId: string;
+  connection: ConnectorSessionEffectiveAccess;
+}) {
+  const setAccess = useSetSessionConnectorAccess(sessionId);
+  const ready = connection.readiness.state === 'ready';
+  const name = `${serviceName(connection.toolkit)} (${connection.label})`;
+  return (
+    <div
+      data-testid={`session-connection-${connection.connectionId}`}
+      data-reason={connection.readiness.reason}
+      className="bg-muted/40 rounded-md px-2.5 py-2"
+    >
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-medium">{name}</span>
+            <Badge size="xs" variant={ready ? 'secondary' : 'outline'}>
+              {ready ? SESSION_SOURCE_COPY[connection.source] : 'Not available'}
+            </Badge>
+          </div>
+          <p
+            className={
+              ready ? 'text-muted-foreground mt-1 text-xs' : 'text-status-warning-fg mt-1 text-xs'
+            }
+          >
+            {ready
+              ? `${connection.operationRevisionIds.length} actions available in this session.`
+              : connection.readiness.copy.owner}
+          </p>
+        </div>
+        {connection.thisChat && (
+          <Switch
+            aria-label={`${name} in this chat`}
+            data-testid={`session-connection-switch-${connection.connectionId}`}
+            checked={connection.thisChat === 'on'}
+            disabled={setAccess.isPending}
+            onCheckedChange={(on) =>
+              setAccess.mutate({ connectionId: connection.connectionId, on })
+            }
+            className="mt-0.5 shrink-0"
+          />
+        )}
+      </div>
+      {/* Only while there is still a switch: a refused change refetches the
+          server's view, and a row that lost its switch has nothing to try again. */}
+      {setAccess.isError && connection.thisChat && (
+        <p role="alert" className="text-destructive mt-1 text-xs">
+          {switchFailure(setAccess.error)}
+        </p>
+      )}
+    </div>
   );
 }

@@ -1,0 +1,210 @@
+<h2>1 of 6 · "An extension wants to run" in the inbox (DOR-2517)</h2>
+<p class="subtitle">
+  You update the flow plugin. Its extension needs your OK before it runs. Today it waits silently in
+  Settings. Now it asks in the bell list, top right. Which card shape?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 13px/1.5 system-ui;
+  }
+  .ax-pop {
+    width: 360px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    color: #18181b;
+  }
+  .ax-pophead {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid #f4f4f5;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 12px;
+  }
+  .ax-cap {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    padding: 8px 14px 2px;
+  }
+  .ax-card {
+    margin: 8px 10px;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .ax-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px 14px;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-ico {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #f4f4f5;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #3f3f46;
+  }
+  .ax-t {
+    font-weight: 600;
+    font-size: 13px;
+    color: #18181b;
+  }
+  .ax-src {
+    font-size: 11px;
+    color: #52525b;
+    font-family: ui-monospace, monospace;
+  }
+  .ax-btns {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .ax-b {
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    border: 1px solid #d4d4d8;
+    background: #fff;
+    color: #18181b;
+  }
+  .ax-b.pri {
+    background: #18181b;
+    color: #fff;
+    border-color: #18181b;
+  }
+  .ax-link {
+    font-size: 12px;
+    color: #18181b;
+    text-decoration: underline;
+  }
+  .ax-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d97706;
+    flex: none;
+    margin-top: 7px;
+  }
+  .ax-hist {
+    opacity: 0.85;
+  }
+  .ax-dlg {
+    width: 360px;
+    margin-top: 10px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    padding: 14px;
+    color: #18181b;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A full card, answer it right there (my pick)</h3>
+      <p>Same card family as tool and schedule approvals. The why is on the card. One click.</p>
+      <div class="ax">
+        <div class="ax-pop">
+          <div class="ax-pophead">
+            <span>Activity</span><span class="ax-muted">1 needs you</span>
+          </div>
+          <div class="ax-cap">Needs you</div>
+          <div class="ax-card">
+            <div style="display: flex; gap: 8px">
+              <div class="ax-ico">⧉</div>
+              <div>
+                <div class="ax-t">Flow wants to run</div>
+                <div class="ax-src">from the flow plugin · dork-labs/marketplace</div>
+              </div>
+            </div>
+            <p class="ax-muted" style="margin: 8px 0 0">
+              None of it has run yet. Allowing it lets its code run inside DorkOS, signed in as you.
+              It adds a Flow tab and a Flow settings page. Allow it only if you trust where it came
+              from.
+            </p>
+            <div class="ax-btns">
+              <span class="ax-b pri">Allow it to run</span><span class="ax-b">Not now</span>
+            </div>
+          </div>
+          <div class="ax-cap">Earlier</div>
+          <div class="ax-row ax-hist">
+            <div class="ax-ico">⧉</div>
+            <div>
+              <div style="font-size: 12px; color: #18181b">You allowed Flow to run</div>
+              <div class="ax-muted">2:14pm · Flow tab added</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>A short row, details in a dialog</h3>
+      <p>Takes less room in the list. You click "Review", read the details, then allow.</p>
+      <div class="ax">
+        <div class="ax-pop">
+          <div class="ax-pophead">
+            <span>Activity</span><span class="ax-muted">1 needs you</span>
+          </div>
+          <div class="ax-row">
+            <span class="ax-dot"></span>
+            <div style="flex: 1">
+              <div class="ax-t">Flow is waiting for your OK to run</div>
+              <div class="ax-muted">flow plugin · just now</div>
+            </div>
+            <span class="ax-b">Review</span>
+          </div>
+        </div>
+        <div class="ax-dlg">
+          <div class="ax-t">Allow Flow to run?</div>
+          <div class="ax-src" style="margin: 2px 0 8px">
+            from the flow plugin · dork-labs/marketplace
+          </div>
+          <p class="ax-muted" style="margin: 0">
+            None of it has run yet. Allowing it lets its code run inside DorkOS, signed in as you.
+            Allow it only if you trust where it came from.
+          </p>
+          <div class="ax-btns" style="justify-content: flex-end">
+            <span class="ax-b">Not now</span><span class="ax-b pri">Allow it to run</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Same for both</h3>
+  <ul>
+    <li>
+      <b>Not now</b> is safe. Nothing is removed. The card moves to "Earlier" as "Not allowed yet ·
+      Allow in Settings".
+    </li>
+    <li>An update from the same place never asks again. A new source asks once.</li>
+    <li>After Allow, the Flow tab appears. No reload.</li>
+  </ul>
+</div>

@@ -3,6 +3,7 @@ import type { SessionStatusEvent, ConnectionState } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import {
   useSessionStatus,
+  useSessionStreamStatus,
   useSessionChatStore,
   useModels,
   useHasConfirmedAuto,
@@ -24,6 +25,9 @@ import {
   useGitStatus,
   isGitStatusOk,
   useRuntimeChip,
+  useSessionAccount,
+  accountChipPromotion,
+  useStatusUsage,
   useSessionDiagnostics,
   useStatusBarPins,
   useSessionPopoverShortcut,
@@ -35,9 +39,11 @@ import {
   useMakeDefaultStop,
   MakeDefaultStopLine,
   type StatusPromotionContext,
+  showsStaleMark,
 } from '@/layers/features/status';
 import { findWorkingMode, needsConsentRitual } from '@/layers/shared/lib';
 import { useAutonomyAcknowledgement } from '@/layers/entities/config';
+import { useNow } from '@/layers/shared/model';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
@@ -97,6 +103,9 @@ export function ChatStatusSection({
   // server-side row to resolve `sessionId` against.
   const runtimeChip = useRuntimeChip(sessionId);
   const status = useSessionStatus(sessionId, sessionStatus, isStreaming, runtimeChip.runtime);
+  // Which account this session spends, and how it is doing: the one source the
+  // chip and its promotion rule both read.
+  const account = useSessionAccount(sessionId || null);
 
   const { pins } = useStatusBarPins();
 
@@ -106,8 +115,20 @@ export function ChatStatusSection({
   // and they resolve to the same values, since both paths read the same stores
   // through the same selectors and the optimistic overrides are now shared.
   const diagnostics = useSessionDiagnostics(sessionId);
-  const usage = diagnostics.usage;
+  // Usage is account-wide and shows from the moment the session opens (spec
+  // `claude-account-ui` §6.8): the account's reading, unless a live turn frame
+  // is newer.
+  const statusUsage = useStatusUsage(sessionId, account, diagnostics.usage);
+  const usage = statusUsage.usage;
+  // The same clock and rule the usage item reads, so the budget pays for the
+  // "· old" the item is drawing, from the same tick (04 §13).
+  const nowTick = useNow();
+  const now = new Date(nowTick);
+  const usageStale = showsStaleMark(usage, statusUsage.observedAt, now);
   const contextUsage = diagnostics.contextUsage;
+  // The session's own context reading, which a reopened session has before any
+  // turn, with the time it was measured.
+  const contextReading = useSessionStreamStatus(sessionId)?.contextUsage ?? null;
   const usageRevealOpen = useUsageReveal((s) => s.open);
   const setUsageRevealOpen = useUsageReveal((s) => s.setOpen);
 
@@ -431,7 +452,11 @@ export function ChatStatusSection({
             isDefault: runtimeChip.runtime === runtimeCaps.defaultRuntime,
             canSelect: runtimeChip.canSelect,
           },
+    // `null` whenever the chip draws nothing, which is also what lets the usage
+    // item show (`isUsageAbsorbed`).
+    account: accountChipPromotion(account),
     usage,
+    usageStale,
     subagentsInFlight: liveSubagentCount,
   };
 
@@ -461,12 +486,17 @@ export function ChatStatusSection({
     gitStatus,
     workspace,
     runtimeChip,
+    account,
     contextPercent: displayContextPercent,
     contextUsage,
+    contextReading,
     compact: inlineCompact
       ? { pending: compaction.pending, onCompact: compaction.onCompact }
       : null,
     usage,
+    usageSource: statusUsage.source,
+    usageObservedAt: statusUsage.observedAt,
+    now,
     supportsCostTracking: activeCaps?.supportsCostTracking ?? true,
     runningSubagents,
     liveSubagentCount,
@@ -528,6 +558,8 @@ export function ChatStatusSection({
       {/* Usage & cost reveal — pinned open by the /context intent (DOR-109). */}
       <UsageRevealPopover
         usage={usage ?? null}
+        accountUsage={statusUsage.accountUsage}
+        observedAt={statusUsage.observedAt}
         open={usageRevealOpen}
         onOpenChange={setUsageRevealOpen}
       />

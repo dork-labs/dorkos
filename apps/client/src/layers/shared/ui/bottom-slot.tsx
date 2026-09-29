@@ -9,14 +9,6 @@
  * of the scroller, pinned above the footer, highest priority wins, and the next
  * card waits its turn.
  *
- * **It decides nothing about who qualifies.** Callers hand it an ordered list
- * and it renders the first whose `show` is true. That keeps the arbiter in
- * `shared/` — the cockpit's candidates come from three different features, and
- * the Obsidian embed's list is one promo — without this layer knowing what any
- * of them are. The corollary binds callers: a candidate's `show` must be
- * answerable WITHOUT rendering it, or a card that draws nothing still wins the
- * slot and the next one never speaks.
- *
  * The zone between a session's transcript and its composer is the second
  * surface with the same problem, and uses the same slot (DOR-1759).
  *

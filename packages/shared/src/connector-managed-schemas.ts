@@ -7,6 +7,7 @@
  *
  * @module shared/connector-managed-schemas
  */
+import { ConnectionGrantSubjectSchema } from '@dork-labs/cloud-api';
 import { z } from 'zod';
 import { ConnectorEventDestinationSchema } from './connector-event-schemas.js';
 import {
@@ -73,6 +74,16 @@ export const ManagedConnectorAuthorityCommandSchema = z.discriminatedUnion('kind
   ManagedAuthorityCommandBaseSchema.extend({
     kind: z.literal('replace_agent_grants'),
     agentId: z.string().min(1).max(200),
+    revisions: z
+      .array(ManagedConnectorOperationSelectorSchema)
+      .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
+  }).strict(),
+  // The owner-wide subject (ADR 260926-192625, DOR-2439): the complete set of
+  // exact reviewed revisions every agent of the connection's owner may call,
+  // including agents added later. It names no agent, so no agent id can ever
+  // stand for it, and an empty set ends it.
+  ManagedAuthorityCommandBaseSchema.extend({
+    kind: z.literal('replace_every_agent_grants'),
     revisions: z
       .array(ManagedConnectorOperationSelectorSchema)
       .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
@@ -159,6 +170,12 @@ export const ManagedConnectorExecutionRequestSchema = z
     attemptIndex: z.number().int().positive(),
     managedConnectionId: z.string().min(1).max(200),
     agentId: z.string().min(1).max(200),
+    /**
+     * Which grant scope `grantScopeVersion` names. Absent means the named
+     * agent's own scope; `every_agent` means the owner-wide scope, and
+     * `agentId` is still the agent making the call.
+     */
+    grantSubject: ConnectionGrantSubjectSchema.optional(),
     grantScopeVersion: z.number().int().positive(),
     attribution: ManagedConnectorExecutionAttributionSchema,
     revision: ManagedConnectorOperationSelectorSchema,

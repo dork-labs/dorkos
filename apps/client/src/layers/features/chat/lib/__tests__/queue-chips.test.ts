@@ -65,10 +65,6 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     // No claim about the task being over, in any wording. This is the assertion
     // the old copy failed.
     expect(notice).not.toMatch(/finish|done|over|ended|complete/i);
-    // And no claim about WHO holds it. The lock holder is a client id: a room
-    // (`ROOMS.CLIENT_ID`), an MCP sign-in resume, or the Obsidian transport all
-    // hold turns with no window anywhere, so "another window" would be a fresh
-    // unchecked assertion in the sentence written to remove one.
     expect(notice).not.toMatch(/window|tab|browser/i);
     // And it is not the silent one: the words really did go to the back of the
     // line, so staying quiet would be the DOR-1268 lie again.

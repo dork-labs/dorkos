@@ -139,7 +139,12 @@ async function fixture(destination: 'room' | 'channel' = 'room') {
     receivedAt: BASE,
   });
   const managed = { ready: () => true, reconcile: async () => true };
-  const target = { resolve: async () => undefined, bind: async () => {}, current: () => false };
+  const target = {
+    resolve: async () => undefined,
+    bind: async () => {},
+    current: () => false,
+    holdsSeedMode: () => true,
+  };
   const sessions = new ConnectorEventSessionSourceAdapter(
     subscriptions,
     protection,

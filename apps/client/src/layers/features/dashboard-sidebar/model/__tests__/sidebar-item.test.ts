@@ -23,7 +23,6 @@ function manifest(id: string, overrides: Partial<AgentManifest> = {}): AgentMani
     registeredAt: '2026-07-01T00:00:00.000Z',
     registeredBy: 'test',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
     ...overrides,
   } as AgentManifest;

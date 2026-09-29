@@ -8,6 +8,8 @@
 !packages
 !packages/shared
 !packages/shared/**
+!packages/ui
+!packages/ui/**
 !packages/cloud-api
 !packages/cloud-api/**
 !packages/eslint-config

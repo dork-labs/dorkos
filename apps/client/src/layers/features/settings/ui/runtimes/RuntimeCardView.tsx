@@ -302,7 +302,7 @@ export function RuntimeCardView({
 
       {brokenDefault && (
         <p
-          className="flex items-start gap-1.5 px-4 pb-3 text-xs text-amber-700 dark:text-amber-400"
+          className="text-status-warning-fg flex items-start gap-1.5 px-4 pb-3 text-xs"
           data-testid={`runtime-default-broken-${type}`}
         >
           <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
@@ -312,7 +312,7 @@ export function RuntimeCardView({
 
       {expiringSignIn && (
         <p
-          className="flex items-start gap-1.5 px-4 pb-3 text-xs text-amber-700 dark:text-amber-400"
+          className="text-status-warning-fg flex items-start gap-1.5 px-4 pb-3 text-xs"
           data-testid={`runtime-sign-in-expiring-${type}`}
         >
           <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />

@@ -12,6 +12,9 @@ const webEnvSchema = z.object({
   // of time — see resolveBaseURL() in lib/auth.ts. VERCEL_URL is the per-deploy
   // host, VERCEL_BRANCH_URL the stable per-branch alias (both without protocol).
   VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
+  // `1` on the platform at runtime. The accounts proxy reads it beside
+  // VERCEL_ENV before trusting the platform-set caller address (DOR-2443).
+  VERCEL: z.string().optional(),
   VERCEL_URL: z.string().optional(),
   VERCEL_BRANCH_URL: z.string().optional(),
 
@@ -110,6 +113,26 @@ const webEnvSchema = z.object({
         .map((id) => id.trim())
         .filter(Boolean)
     ),
+
+  // The origin of a separate DorkOS accounts service (DOR-2441). UNSET BY
+  // DEFAULT, and unset means this site serves sign-in, the device link, the
+  // instance registry and the admin console itself, exactly as before. When set
+  // (an https origin, no path), the site sends those pages and their API to that
+  // origin instead, and its two scheduled jobs stand down. See
+  // `lib/cloud-accounts/forward.ts` for which paths move and why pages are redirected
+  // while API calls are proxied.
+  DORKOS_CLOUD_ACCOUNTS_ORIGIN: z.string().optional(),
+  // Shared with the accounts service, the same value on both (DOR-2443). With
+  // it, a proxied account request tells the service the caller's address, so
+  // the service can rate limit each caller rather than the site as one. At
+  // least 32 characters; shorter counts as unset. Unset, proxied requests are
+  // sent exactly as before. Server-only, never logged. See
+  // `lib/cloud-accounts/forward.ts`.
+  DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET: z.string().optional(),
+  // Exactly `1`, beside DORKOS_CLOUD_ACCOUNTS_ORIGIN, also sends managed
+  // connections to the accounts service (`lib/cloud-accounts/forward.ts`). Set
+  // it only after the service serves them; unset, they stay here, unavailable.
+  DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD: z.string().optional(),
 
   // Shared secret gating the scheduled-cleanup cron (DOR-194). Vercel Cron sends
   // it as `Authorization: Bearer <CRON_SECRET>` when this env var is set. Optional

@@ -34,9 +34,15 @@
  * @module services/core/cloud/credits-inference
  */
 import { InferenceTokenSchema, V1_ROUTES, type InferenceToken } from '@dork-labs/cloud-api';
+import { CloudApiResponseError } from '@dork-labs/cloud-api/client';
 import { env } from '../../../env.js';
-import { logger, logError } from '../../../lib/logger.js';
-import { createCloudV1Client } from './v1-client.js';
+import { logger } from '../../../lib/logger.js';
+import {
+  captureCloudV1Context,
+  problemOf,
+  resolveCloudInstanceId,
+  type CloudV1Context,
+} from './v1-client.js';
 
 /** The environment variable that decides whether credits may be spent. */
 export const CREDITS_FLAG_NAME = 'DORKOS_CLOUD_CREDITS';
@@ -68,8 +74,9 @@ export function creditsFlagEnabled(): boolean {
   return CREDITS_ENABLED;
 }
 
-/** The minted token, held only in memory. `null` until something primes it. */
-let minted: InferenceToken | null = null;
+/** A minted token is usable only while its original local link remains current. */
+let minted: { token: InferenceToken; isCurrent: () => boolean } | null = null;
+let attemptGeneration = 0;
 
 /** Injectable clock so the expiry check is testable without waiting. */
 let now: () => number = () => Date.now();
@@ -84,15 +91,24 @@ let now: () => number = () => Date.now();
 export function __setCreditsStateForTests(state: {
   token: InferenceToken | null;
   now?: () => number;
+  isCurrent?: () => boolean;
 }): void {
-  minted = state.token;
-  if (state.now) now = state.now;
+  minted =
+    state.token === null
+      ? null
+      : { token: state.token, isCurrent: state.isCurrent ?? (() => true) };
+  attemptGeneration += 1;
+  now = state.now ?? (() => Date.now());
 }
 
 /** Whether the held token is present and still inside its validity window. */
 function live(): InferenceToken | null {
   if (minted === null) return null;
-  return Date.parse(minted.expiresAt) > now() ? minted : null;
+  if (!minted.isCurrent() || Date.parse(minted.token.expiresAt) <= now()) {
+    minted = null;
+    return null;
+  }
+  return minted.token;
 }
 
 /**
@@ -109,23 +125,48 @@ function live(): InferenceToken | null {
  * keys on an opaque agent reference and not on a seat — and the header slot that
  * carries it is a listed follow-up.
  *
- * @param instanceId - This instance's opaque identifier, for attribution.
  */
-export async function primeCreditsInference(instanceId: string): Promise<boolean> {
+export async function primeCreditsInference(): Promise<boolean> {
   if (!CREDITS_ENABLED) return false;
-  const client = createCloudV1Client();
-  if (client === null) return false;
+  return primeCreditsInferenceWithContext(captureCloudV1Context());
+}
+
+/**
+ * Testable mint core. Production enters only after its module-scope paid gate.
+ * A test can provide a captured fake-transport context without arming that gate.
+ * @internal
+ */
+export async function primeCreditsInferenceWithContext(
+  context: CloudV1Context | null
+): Promise<boolean> {
+  const attempt = ++attemptGeneration;
+  if (context === null) return false;
   try {
-    minted = await client.post(V1_ROUTES.inferenceTokens, InferenceTokenSchema, {
+    const instanceId = await resolveCloudInstanceId(context);
+    if (!context.isCurrent() || attempt !== attemptGeneration) return false;
+    if (instanceId === null) {
+      minted = null;
+      return false;
+    }
+    const token = await context.client.post(V1_ROUTES.inferenceTokens, InferenceTokenSchema, {
       body: { instanceId },
     });
+    if (!context.isCurrent() || attempt !== attemptGeneration) return false;
+    minted = { token, isCurrent: context.isCurrent };
     return true;
   } catch (error) {
-    // Never log the body: a mint response carries a credential.
-    logger.warn(
-      '[Cloud] Could not obtain an inference token; credits stay unselected',
-      logError(error)
-    );
+    const status =
+      problemOf(error)?.status ?? (error instanceof CloudApiResponseError ? error.status : null);
+    if (
+      context.isCurrent() &&
+      attempt === attemptGeneration &&
+      status !== null &&
+      [401, 404].includes(status)
+    ) {
+      minted = null;
+    }
+    // Even schema errors can quote response values; keep credentials out of logs.
+    logger.warn('[Cloud] Could not obtain an inference token', { status });
     return false;
   }
 }
@@ -148,7 +189,12 @@ export async function primeCreditsInference(instanceId: string): Promise<boolean
  * @param runtime - The runtime about to launch.
  */
 export function creditsTurnEnv(runtime: string): Record<string, string> {
-  return creditsEnvFor(live(), runtime, CREDITS_ENABLED);
+  return creditsTurnEnvFor(runtime, CREDITS_ENABLED);
+}
+
+/** Testable launch read; production supplies only the module-scope paid decision. @internal */
+export function creditsTurnEnvFor(runtime: string, enabled: boolean): Record<string, string> {
+  return creditsEnvFor(live(), runtime, enabled);
 }
 
 /**

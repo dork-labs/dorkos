@@ -58,12 +58,25 @@ export interface ResponsivePopoverProps {
    * too, and the heading is `Content`'s sibling.
    */
   fullHeight?: boolean;
+  /**
+   * Mobile only (the desktop popover always moves focus in). Move focus into the
+   * sheet when it opens, as the desktop popover does. Off by default because
+   * vaul leaves focus where it was, which keeps a software keyboard from
+   * springing up over a sheet that opens on a field. Turn it on for a sheet with
+   * no field at the top: otherwise focus stays on the control that opened it,
+   * which a modal sheet has just hidden from assistive technology.
+   */
+  autoFocus?: boolean;
 }
 
 /** Renders a Popover on desktop or a bottom Drawer on mobile. */
-function ResponsivePopover({ children, fullHeight = false, ...props }: ResponsivePopoverProps) {
+function ResponsivePopover({
+  children,
+  fullHeight = false,
+  autoFocus,
+  ...props
+}: ResponsivePopoverProps) {
   const isDesktop = !useIsMobile();
-  const Comp = isDesktop ? Popover : Drawer;
 
   const ctxValue = React.useMemo<ResponsivePopoverContextValue>(
     () => ({ isDesktop, fullHeight }),
@@ -72,7 +85,13 @@ function ResponsivePopover({ children, fullHeight = false, ...props }: Responsiv
 
   return (
     <ResponsivePopoverContext.Provider value={ctxValue}>
-      <Comp {...props}>{children}</Comp>
+      {isDesktop ? (
+        <Popover {...props}>{children}</Popover>
+      ) : (
+        <Drawer {...props} {...(autoFocus ? { autoFocus: true } : {})}>
+          {children}
+        </Drawer>
+      )}
     </ResponsivePopoverContext.Provider>
   );
 }

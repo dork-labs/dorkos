@@ -22,6 +22,7 @@
  * @module features/file-explorer/lib/save-errors
  */
 import { RoomFileConflictResponseSchema, type RoomFileConflict } from '@dorkos/shared/room-files';
+import { ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK } from './crud-errors';
 
 /**
  * The sentence for each refusal a save can come back with.
@@ -75,6 +76,7 @@ const SAVE_REFUSAL_COPY = new Map<string, string>([
   ],
   ['ROOM_NOT_FOUND', 'This room is not there any more.'],
   ['ROOM_ARCHIVED', 'This room is archived, so its files cannot be changed.'],
+  [ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK],
 ]);
 
 /**

@@ -230,6 +230,31 @@ export class EditBaselineStore {
     return pending;
   }
 
+  /**
+   * Drop this session's baselines for these files, and only these.
+   *
+   * Called when something OTHER than the session's agent moved the files — the
+   * room's turn-start refresh fast-forwarding an agent's copy of a room's files
+   * (spec `agent-home-desk` §6.1). First-touch-wins would otherwise keep the
+   * pre-refresh bytes as the base, and the review surface would report what
+   * other people merged as this agent's edits. Forgotten, the next edit
+   * captures the refreshed bytes as its base. A path with no baseline, or a
+   * session with none, is a no-op.
+   *
+   * @param sessionId - Session whose baselines to drop.
+   * @param absPaths - Absolute paths, spelled as they were captured.
+   */
+  forget(sessionId: string, absPaths: readonly string[]): void {
+    const forSession = this.sessions.get(sessionId);
+    if (!forSession) return;
+    for (const absPath of absPaths) {
+      const existing = forSession.entries.get(absPath);
+      if (!existing) continue;
+      forSession.entries.delete(absPath);
+      forSession.totalBytes -= existing.bytes.byteLength;
+    }
+  }
+
   /** Drop every baseline for a session (called on stream teardown / eviction). */
   clearSession(sessionId: string): void {
     this.sessions.delete(sessionId);

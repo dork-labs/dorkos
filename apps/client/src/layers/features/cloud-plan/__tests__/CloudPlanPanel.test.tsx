@@ -15,10 +15,10 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance.json' with { type: 'json' };
-import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-free.json' with { type: 'json' };
-import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-by-model.json' with { type: 'json' };
-import nudgeFixture from '@dork-labs/cloud-api/fixtures/v1/billing/nudge.json' with { type: 'json' };
+import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance-denominated.json' with { type: 'json' };
+import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-denominated.json' with { type: 'json' };
+import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-denominated.json' with { type: 'json' };
+import nudgeFixture from '@dork-labs/cloud-api/fixtures/v1/billing/nudge-denominated.json' with { type: 'json' };
 import orgFixture from '@dork-labs/cloud-api/fixtures/v1/seats/org.json' with { type: 'json' };
 import seatFixture from '@dork-labs/cloud-api/fixtures/v1/seats/seat.json' with { type: 'json' };
 import membersFixture from '@dork-labs/cloud-api/fixtures/v1/seats/members.json' with { type: 'json' };
@@ -128,8 +128,9 @@ describe('the plan-aware surfaces', () => {
     // The remote-access MODE is wire-supplied; the words for it describe the
     // mechanism and name no plan.
     expect(screen.getByText('Bring your own tunnel')).toBeInTheDocument();
-    // Micro-units formatted once, at the edge: 1250000 millionths.
-    expect(screen.getByText('1.25')).toBeInTheDocument();
+    // Credit figures in the unit the service served: 612,345 micro at the
+    // fixture's placeholder 250 per credit is 2,449 credits, rounded down.
+    expect(screen.getByText('2,449 credits')).toBeInTheDocument();
   });
 
   it('breaks credits down by the labels the service supplied, never by its keys', async () => {
@@ -149,9 +150,9 @@ describe('the plan-aware surfaces', () => {
     expect(
       await screen.findByText(new RegExp(nudgeFixture.suggestedPlanDisplayName, 'i'))
     ).toBeInTheDocument();
-    // The saving is the service's subtraction, rendered as given: 28000000
-    // millionths.
-    expect(screen.getByText(/28\.00/)).toBeInTheDocument();
+    // The saving is the service's subtraction, rendered as given, as money:
+    // 2,654,321 micro to the currency's minor unit.
+    expect(screen.getByText(/Difference: .*2\.65\./)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(
       screen.queryByText(new RegExp(nudgeFixture.suggestedPlanDisplayName, 'i'))

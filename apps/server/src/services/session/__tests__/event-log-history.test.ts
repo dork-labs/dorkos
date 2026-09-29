@@ -903,7 +903,7 @@ describe('reconstructHistoryFromEvents — compaction boundaries', () => {
     // out-of-turn boundary is given a seq and NEVER persisted — this fold can
     // only meet one where the events come from the live projector's in-memory
     // log, which is `readLogBackedHistory`'s no-store fallback: unit tests and
-    // embedded hosts with no Db. Every boundary a real deployment produces
+    // unit tests with no Db. Every boundary a real deployment produces
     // today rides a turn (see the mixed-turn and between-turns cases above).
     // Pinned so the fold stays total rather than because a durable out-of-turn
     // boundary is a case we serve.

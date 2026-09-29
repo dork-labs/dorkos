@@ -30,7 +30,7 @@ const require = createRequire(import.meta.url);
  * Everything the running instance of an extension was built from, as one
  * comparable string: the directory it was read from, the manifest fields that
  * decide what gets mounted, and — for an extension with a server entry — the
- * content hash of its server ENTRY FILE.
+ * content hash of its compiled server bundle.
  *
  * This is what makes {@link ExtensionServerLifecycle.initialize} idempotent. The
  * client asks the server to initialize every server-side extension on every page
@@ -41,16 +41,13 @@ const require = createRequire(import.meta.url);
  * that field is the CLIENT bundle's hash, which answers a different question and
  * would have missed an edited `server.ts`.
  *
- * **Its limit, worth knowing before trusting it:** the hash covers the entry
- * file's own bytes, nothing it imports (`ExtensionCompiler.compileServer` hashes
- * the entry it reads, and its bundle cache is keyed the same way). So editing a
- * helper module that `server.ts` imports does not change this key and does not
- * restart the extension — the same blind spot the compile cache has always had,
- * now also deciding whether to restart. `reload_extensions --id <ext>` restarts
- * unconditionally and is the way out.
+ * The bundle hash covers everything `server.ts` imports, because it is the
+ * hash of the bundled output (`ExtensionCompiler.compileServer`, DOR-2491): an
+ * edit to a helper module changes the bundle and so restarts the extension,
+ * while an edit that leaves the output identical does not.
  *
  * @param record - The extension's discovery record.
- * @param serverSourceHash - Content hash of the compiled server entry file, or
+ * @param serverSourceHash - Content hash of the compiled server bundle, or
  *   `null` for a proxy-only extension (there is no server source to hash).
  */
 function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null): string {
@@ -133,7 +130,7 @@ export class ExtensionServerLifecycle {
     // `dataProxy`-only branch below as well as the `require()` of a server entry:
     // a proxy hands extension-authored config the server's outbound reach and its
     // stored secrets, which is the same consent question one step quieter.
-    if (!mayRunExtensionCode(id, record.origin, configManager.get('extensions').approvedToRun)) {
+    if (!mayRunExtensionCode(record, configManager.get('extensions'))) {
       logger.warn(
         `[Extensions] Server init refused for ${id}: waiting for a person to approve it ` +
           `(${EXTENSION_NOT_APPROVED_CODE})`
@@ -208,6 +205,7 @@ export class ExtensionServerLifecycle {
       // Not in cache yet
     }
 
+    let registered: (() => void) | undefined;
     try {
       const mod = require(tempFile);
       const registerFn = mod.default ?? mod;
@@ -216,11 +214,14 @@ export class ExtensionServerLifecycle {
       }
 
       const router = Router();
-      const { ctx, getScheduledCleanups } = createDataProviderContext({
+      const { ctx, getScheduledCleanups, releaseAccounts } = createDataProviderContext({
         extensionId: id,
         extensionDir: record.path,
         dorkHome: this.dorkHome,
       });
+      // A register() that throws after adding an account listener or advisor
+      // must not leave it behind: this instance never becomes active.
+      registered = releaseAccounts;
 
       const result = await registerFn(router, ctx);
       const cleanup = typeof result === 'function' ? result : null;
@@ -236,8 +237,10 @@ export class ExtensionServerLifecycle {
         router,
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
+        releaseAccounts,
         sourceKey,
       });
+      registered = undefined;
 
       // A fixed `server.ts` took over, so the failure mark this method wrote
       // above no longer describes anything.
@@ -246,13 +249,15 @@ export class ExtensionServerLifecycle {
       logger.info(`[Extensions] Server initialized for ${id}`);
       return { ok: true };
     } catch (err) {
+      registered?.();
       logger.error(`[Extensions] Server init failed for ${id}:`, err);
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
   /**
-   * Shut down a server-side extension: cancel tasks, call cleanup, remove router.
+   * Shut down a server-side extension: cancel tasks, call cleanup, remove its
+   * account listeners and advisor, remove router.
    *
    * @param id - Extension identifier
    */
@@ -275,6 +280,10 @@ export class ExtensionServerLifecycle {
         logger.warn(`[Extensions] Cleanup error for ${id}:`, err);
       }
     }
+
+    // After the extension's own cleanup, so it can still unregister gracefully;
+    // whatever it left behind goes now.
+    active.releaseAccounts?.();
 
     this.serverExtensions.delete(id);
     logger.info(`[Extensions] Server shutdown for ${id}`);

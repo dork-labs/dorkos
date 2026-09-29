@@ -136,9 +136,8 @@ export interface TurnCeilingLimits {
  * The limits used when a host wires none.
  *
  * A ceiling that only exists when somebody remembers to configure it is not a
- * ceiling: the publish pipeline is constructed in tests, in the Obsidian
- * in-process transport, and by any future host, and every one of them dispatches
- * real turns. So the default is the shipped config default rather than
+ * ceiling: the publish pipeline is constructed in tests and by every host
+ * that dispatches real turns. So the default is the shipped config default rather than
  * "unlimited" — forgetting to wire this narrows nothing.
  *
  * @returns The shipped limits, read from the one place they are declared.

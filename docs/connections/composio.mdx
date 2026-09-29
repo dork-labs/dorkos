@@ -45,7 +45,7 @@ Create a Composio project and copy its project API key. A user account key begin
 
 ### Save the key
 
-Open **Connections**, expand **Advanced account setup**, and paste the key into the Composio card. Your browser sends it to your local DorkOS server when you save. The server keeps it in the local encrypted credential store, does not return or echo it after saving, and leaves it out of normal logs.
+Open **Settings › Connections**. Under **How DorkOS reaches your apps**, open **Add another way** (if nothing is set up yet, the choices are already open) and paste the key into the **Your Composio key** entry. Your browser sends it to your local DorkOS server when you save. The server keeps it in the local encrypted credential store, does not return or echo it after saving, and leaves it out of normal logs.
 
 </Step>
 
@@ -63,9 +63,9 @@ Your installation calls Composio directly for this route. It also receives signe
 
 ## Use DorkOS-managed access
 
-Open **Connections → Accounts**. If the app asks you to link your DorkOS account, choose **Link DorkOS account**. This opens **Settings → Access**. Select **Link this instance** and finish the DorkOS sign-in flow.
+Link your DorkOS account first: open **Settings → Access**, select **Link this instance**, and finish the DorkOS sign-in flow.
 
-Return to **Connections → Accounts** and select **Connect service**. Search for Gmail, Google Drive, Linear, or another service. Choose its account button, such as **Use a Gmail account**. You do not need your own Composio key for this route. The service tile opens a sign-in flow bound to your account. DorkOS uses its server project key and a private account identity derived from your signed-in owner and linked installation. The browser cannot choose another owner, installation, Composio user, or callback.
+Then open **Connections** and select **Connect** on Gmail, Google Drive, Linear, or another app, or search for it. You do not need your own Composio key for this route. Connect opens a sign-in flow bound to your account. DorkOS uses its server project key and a private account identity derived from your signed-in owner and linked installation. The browser cannot choose another owner, installation, Composio user, or callback.
 
 DorkOS chooses the sign-in method in this order:
 
@@ -75,7 +75,11 @@ DorkOS chooses the sign-in method in this order:
 4. A service that needs no account fields asks the owner to confirm before continuing.
 5. A service that needs an unsupported method or custom developer setup stays visible with that requirement.
 
-The actions available after OAuth depend on the scopes approved during consent. You then grant a named agent only the exact action versions it may use. For example, Gmail can offer read or write actions when the approved scopes allow them, but neither set is automatic. Gmail send and draft actions are available to review when consent allows them. Actions whose effects are uncertain require the stricter approval level.
+The actions available after OAuth depend on the scopes approved during consent. You then choose which agents can use the account, and how much they can do. Nothing is automatic:
+
+- **Read** lets agents look without changing anything, such as reading email or finding free time in your calendar.
+- **Read and write**, for Gmail and Google Calendar, also lets agents send, create and edit things, such as sending an email, replying, saving a draft, labeling a message or adding an event. Other apps offer **Read** only for now.
+- Some actions are never part of a level, and you allow them one at a time: deleting anything, sharing a calendar, forwarding or redirecting mail, changing who your mail is sent as or how it is delivered, turning on an automatic reply, changing many messages at once, moving an event to another calendar, and watching for changes. So is any action whose effect DorkOS can't tell for sure.
 
 [Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. That interval does not describe webhook delivery or Slack and Telegram Messaging.
 
@@ -88,6 +92,12 @@ Managed availability has two separate switches:
 
 Accounts are enabled after the real-account check passed. Managed notifications stay off until their separate live delivery check passes. A configured key alone does not enable either capability.
 
+### If your DorkOS account link ends
+
+Managed access runs through your linked DorkOS account. If that link ends — you unlink it, or DorkOS can no longer confirm it — the accounts you reached that way stop working locally, even though the sign-in at the service (Gmail's own consent, for example) is untouched and still live there. Linking this computer again with the same DorkOS account can bring those accounts back, unless its earlier link was removed from that account. If it was, or you link a different account or a different computer, reconnect them from **Connections** once you've linked. To end the sign-in at the service itself while the link is down, remove the access directly in that service's own account settings — look for an entry named **Composio**, not DorkOS, since Composio is who actually holds the connection.
+
+Revoking the computer from **Linked instances** on your dorkos.ai account is different: it ends those sign-ins at the service for you. DorkOS signs each app out right away, and if the service can't be reached just then, it keeps trying until the sign-in is gone. Deleting your DorkOS account does the same first. If a sign-in can't be ended yet, you're sent back to your account page, which says this can take up to a day and to request deletion again from there later; after a day, the account is deleted anyway and DorkOS records which sign-in is left so it can be ended by hand.
+
 ## Add notifications
 
 <Callout type="warn">
@@ -95,11 +105,13 @@ Accounts are enabled after the real-account check passed. Managed notifications 
   are available for your chosen route. This does not affect Slack or Telegram Messaging.
 </Callout>
 
-Open a connected account and choose **Notifications**. Select an activity type, any supported filter, the receiving agent, and the destination. Action access does not grant notification access.
+Open a connected account's side panel, then **More** and choose the activity — Gmail names it "When a new email arrives…"; another app names its own. Select any supported filter, the receiving agent, and the destination. Action access does not grant notification access.
+
+Every notification sent to an agent lands in one chat with that agent, so a busy inbox stays one conversation. Each row says how its newest event went: delivered, on its way, being tried again, or what stopped it. **Open chat** takes you to that chat. A notification that can no longer work, because the app changed that kind of activity or you changed the key, says it stopped for good.
 
 For a managed notification, DorkOS hosting keeps an encrypted delivery copy until your linked installation stores it or the original seven-day window ends. Your installation then keeps its protected copy until the destination outcome is known or that same deadline ends. Cleanup runs in bounded sweeps, so physical deletion can happen after the logical deadline.
 
-Removing a notification closes its local permission immediately. DorkOS then removes the upstream subscription when it still owns that subscription and the service is available. To change a filter, agent, or destination, remove the notification and create a reviewed replacement.
+Removing a notification takes it off the list and closes its local permission immediately, whatever state it is in. DorkOS then removes the upstream subscription when it still owns that subscription, and keeps trying in the background if the service doesn't answer. To change a filter, agent, or destination, remove the notification and create a reviewed replacement.
 
 ## Inspect approved access from the CLI
 

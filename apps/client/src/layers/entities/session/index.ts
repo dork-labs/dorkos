@@ -3,11 +3,7 @@
  *
  * @module entities/session
  */
-export {
-  useSessions,
-  useSessionListWarnings,
-  insertOptimisticSession,
-} from './model/query/use-sessions';
+export { useSessions, insertOptimisticSession } from './model/query/use-sessions';
 export { useAgentSessions } from './model/query/use-agent-sessions';
 export { selectAgentSessions } from './lib/select-agent-sessions';
 export { switchAgentCwd } from './lib/switch-agent-cwd';
@@ -36,6 +32,10 @@ export { deriveStatusBarValues } from './lib/derive-status-bar';
 export { selectRenderedStatus } from './lib/select-rendered-status';
 export { useSessionRenderedStatus } from './model/status/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
+// The sidebar row's out-of-usage rule, which the session header's account
+// badge follows too so the two never disagree (spec `claude-account-ui` §6.3).
+export { sessionLimitDisplay } from './lib/session-limit-text';
+export type { SessionLimitDisplay } from './lib/session-limit-text';
 export { useSessionRuntime } from './model/query/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/navigation/use-session-id';
 export type { SetSessionIdOptions } from './model/navigation/use-session-id';
@@ -70,10 +70,7 @@ export type { SetDirOptions } from './model/navigation/use-directory-state';
 export { useModels, modelsQueryOptions } from './model/query/use-models';
 export { useSubagents } from './model/query/use-subagents';
 export { useSessionSearch } from './model/navigation/use-session-search';
-export {
-  useSessionScopedCwd,
-  isSessionScopeReady,
-} from './model/navigation/use-session-scoped-cwd';
+export { useSessionScopedCwd } from './model/navigation/use-session-scoped-cwd';
 export type { SessionScopedCwd } from './model/navigation/use-session-scoped-cwd';
 export {
   useSessionChatStore,
@@ -93,6 +90,7 @@ export {
   useSessionStreamStore,
   useSessionStreamState,
   useSessionStreamStatus,
+  useSessionUsageArrivedAt,
   useSessionStreamLifecycle,
   useSessionSteerable,
   useSessionAwaitingDecision,
@@ -156,11 +154,6 @@ export { useRenameSession } from './model/rename/use-rename-session';
 // UI — session row display primitive
 export { SessionRow } from './ui/SessionRow';
 export type { SessionRowProps } from './ui/SessionRow';
-// The session row in the sidebar's own grammar (`shared/ui/SidebarRow`). Kept
-// out of `SessionRow`'s `variant` union on purpose: this one renders its own
-// list item, so it belongs inside a `SidebarMenu` and nowhere a `<div>` row goes.
-export { SessionRowSidebar } from './ui/SessionRowSidebar';
-export type { SessionRowSidebarProps } from './ui/SessionRowSidebar';
 export { SessionContextGauge } from './ui/SessionContextGauge';
 // The leaf that holds the live verb, so the sidebar model never has to (R1).
 export { SessionVerbLine } from './ui/SessionVerbLine';
@@ -170,6 +163,9 @@ export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
 export { SessionOriginMark } from './ui/SessionOriginMark';
+// The sidebar's account dot (spec `claude-account-ui` §6.2); the Dev
+// Playground shows it by palette color.
+export { AccountMark } from './ui/AccountMark';
 export {
   humanOriginSessionIds,
   partitionSessionsByOrigin,

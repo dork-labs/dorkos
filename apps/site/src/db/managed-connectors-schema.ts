@@ -26,7 +26,12 @@ import {
 import { user } from './auth-schema';
 import { instance } from './instance-schema';
 
-/** One random hosted connector tenant per Better Auth account. */
+/**
+ * The hosted connector tenant for a Better Auth account. Its owner index is
+ * deliberately not unique, so code must never rely on it for one row per owner:
+ * `resolveConnectorTenant` is the one path that creates tenants, and it
+ * serializes creation per owner itself.
+ */
 export const connectorTenant = pgTable(
   'connector_tenant',
   {
@@ -38,7 +43,7 @@ export const connectorTenant = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('connector_tenant_owner_unique').on(table.ownerUserId),
+    index('connector_tenant_owner_idx').on(table.ownerUserId),
     uniqueIndex('connector_tenant_provider_user_unique').on(table.providerUserId),
   ]
 );
@@ -151,7 +156,11 @@ export const managedConnectorOperationRevision = pgTable(
   ]
 );
 
-/** One exact active or retained grant for an agent on a linked instance. */
+/**
+ * One exact active or retained grant on a linked instance, for one agent or,
+ * with `agent_id` set to `EVERY_AGENT_GRANT_ROW`, for every agent of the
+ * owner (DOR-2439).
+ */
 export const managedConnectorGrant = pgTable(
   'managed_connector_grant',
   {
@@ -212,7 +221,12 @@ export const managedConnectorAuthorityCommand = pgTable(
     connectionId: text('connection_id').notNull(),
     kind: text('kind')
       .notNull()
-      .$type<'replace_agent_grants' | 'set_connection_lifecycle' | 'set_event_subscription'>(),
+      .$type<
+        | 'replace_agent_grants'
+        | 'replace_every_agent_grants'
+        | 'set_connection_lifecycle'
+        | 'set_event_subscription'
+      >(),
     agentId: text('agent_id'),
     scopeKey: text('scope_key').notNull(),
     scopeVersion: integer('scope_version').notNull(),

@@ -29,6 +29,8 @@ function buildApproval(index: number): PendingApproval {
     summary: `Uninstall "package-${index}"`,
     requestedBy: '/Users/dev/agents/dorkbot',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
   };
@@ -77,7 +79,7 @@ describe('ApprovalList’s cap', () => {
 
     act(() => holdDecidedApproval(approvals[0], 'granted'));
 
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     // Six still-waiting requests, plus the receipt. The receipt is extra, not
     // instead of one of them.
     expect(cardCount()).toBe(7);

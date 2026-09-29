@@ -43,7 +43,7 @@ import {
 export const DEFAULT_CAPABILITY_LIMIT = 50;
 
 /**
- * How few matches a `domain`, `query` or `toolGroup` filter must leave before the projection
+ * How few matches a `domain`, `query` or `area` filter must leave before the projection
  * expands the page to full detail without being asked.
  *
  * A filter is a signal that the caller has something specific in mind, and
@@ -112,17 +112,14 @@ export const serializedCapabilitySchema = z.object({
   outputSchema: jsonSchema,
   surfaces: surfacesSchema,
   /**
-   * The per-agent grant this capability requires, when it declares one (absent
-   * for the ungated majority).
+   * The permission area this capability belongs to, or `null` when its tier
+   * alone decides (spec `agent-permissions` D2).
    *
-   * Declared here because it is already SERVED here — `registry.catalog()`
-   * spreads it onto the entry — and a field that ships but is not in the schema
-   * is a field OpenAPI describes wrongly and the `SerializedEntry` type below
-   * cannot see. That gap is not academic: the cockpit's two Tools tabs read the
-   * tools behind a grant off this catalog, which is what keeps them from
-   * carrying the static list that drifted three times over (DOR-499, DOR-1611).
+   * Declared here because it is SERVED here — `registry.catalog()` puts it on
+   * every entry — and a field that ships but is not in the schema is a field
+   * OpenAPI describes wrongly and the `SerializedEntry` type below cannot see.
    */
-  toolGroup: z.string().optional(),
+  area: z.string().nullable(),
 });
 
 /**
@@ -181,15 +178,15 @@ export const listCapabilitiesInputSchema = z.object({
       'Return only capabilities whose id, title, or description contains this text ' +
         '(case-insensitive substring).'
     ),
-  toolGroup: z
+  area: z
     .string()
     .trim()
     .min(1)
     .optional()
     .describe(
-      'Return only capabilities behind this per-agent grant, e.g. roomsManage — the ones a ' +
-        'person has to switch on for an agent before they run at all. Exact match, ' +
-        'case-sensitive, and it narrows like the two filters above.'
+      "Return only capabilities in this permission area, e.g. 'rooms' — the ones a person " +
+        'can set to Blocked, Ask, or Allowed together. Exact match, case-sensitive, and it ' +
+        'narrows like the two filters above.'
     ),
   detail: z
     .enum(['compact', 'full'])
@@ -197,7 +194,7 @@ export const listCapabilitiesInputSchema = z.object({
     .describe(
       "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing " +
         'description and the input and output JSON Schemas. Defaults to compact, and to full only ' +
-        `when a domain, query or toolGroup filter narrows the catalog to ${FULL_DETAIL_THRESHOLD} ` +
+        `when a domain, query or area filter narrows the catalog to ${FULL_DETAIL_THRESHOLD} ` +
         'matches or fewer. A broad filter stays compact — ask for full detail explicitly if you ' +
         'want it.'
     ),
@@ -395,7 +392,7 @@ function buildGuidance(args: {
       ? "Each entry is compact; set detail:'full', or narrow until few enough match, for descriptions and schemas."
       : "Each entry carries its full description and both JSON Schemas; set detail:'compact' for id, title, tier, and a one-line summary instead.";
   const narrow = args.filtered
-    ? 'Narrow further with a more specific domain, query or toolGroup.'
+    ? 'Narrow further with a more specific domain, query or area.'
     : "Narrow with domain (e.g. domain:'mcp') or a query substring.";
   return `${capped}${sizing} ${narrow}`;
 }
@@ -434,13 +431,12 @@ export function projectCatalog(
       `${c.id}\n${c.title}\n${c.description}`.toLowerCase().includes(query)
     );
   }
-  // Exact and case-SENSITIVE, unlike the two above, because a grant key is an
+  // Exact and case-SENSITIVE, unlike the two above, because an area id is an
   // identifier the caller already holds rather than text it is searching for —
-  // `roomsManage` is the string the manifest stores and the capability declares,
-  // and matching it loosely would invent a second spelling of a key that has
-  // exactly one.
-  if (input.toolGroup !== undefined) {
-    matches = matches.filter((c) => c.toolGroup === input.toolGroup);
+  // `rooms` is the string the capability declares, and matching it loosely would
+  // invent a second spelling of a key that has exactly one.
+  if (input.area !== undefined) {
+    matches = matches.filter((c) => c.area === input.area);
   }
 
   const sorted = [...matches].sort((a, b) => a.id.localeCompare(b.id));
@@ -450,7 +446,7 @@ export function projectCatalog(
   // filter at all meant `query:'a'` — which matches nearly everything — served
   // more characters than the unfiltered dump this module replaced, under the
   // default limit, so with no cursor and no guidance to say so.
-  const filtered = domain !== undefined || query !== undefined || input.toolGroup !== undefined;
+  const filtered = domain !== undefined || query !== undefined || input.area !== undefined;
   const detail = input.detail ?? (filtered && total <= FULL_DETAIL_THRESHOLD ? 'full' : 'compact');
 
   const offset = input.cursor

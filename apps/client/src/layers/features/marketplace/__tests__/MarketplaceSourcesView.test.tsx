@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { IsRestoringProvider } from '@tanstack/react-query';
 import type { MarketplaceSource } from '@dorkos/shared/marketplace-schemas';
 import {
   useMarketplaceSources,
@@ -21,6 +22,9 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplaceSources: vi.fn(),
   useAddMarketplaceSource: vi.fn(),
   useRemoveMarketplaceSource: vi.fn(),
+  // The listing flows (note, Refresh) run against the real hook and a mock
+  // Transport in MarketplaceSourcesView.listing.test.tsx.
+  useRefreshMarketplaceSource: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
 }));
 
 const addMutate = vi.fn();
@@ -132,6 +136,22 @@ describe('MarketplaceSourcesView', () => {
 
       expect(screen.getByText(/no marketplaces added yet/i)).toBeInTheDocument();
       expect(screen.getByText(/add a git registry/i)).toBeInTheDocument();
+    });
+
+    it('holds the skeleton, not the empty state, while the boot cache is restoring', () => {
+      // A paused query during the restore reports `isLoading: false` with no
+      // data (DOR-1914) — the empty state would invite adding a first source
+      // over a list that has several.
+      setSourcesState({ data: undefined, isLoading: false });
+
+      const { container } = render(
+        <IsRestoringProvider value={true}>
+          <MarketplaceSourcesView />
+        </IsRestoringProvider>
+      );
+
+      expect(screen.queryByText(/no marketplaces added yet/i)).toBeNull();
+      expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
     });
 
     it('renders one card per source with name, URL, and date', () => {
@@ -304,7 +324,7 @@ describe('MarketplaceSourcesView', () => {
       await user.click(screen.getByRole('button', { name: /^remove dorkos-official$/i }));
 
       expect(removeMutate).toHaveBeenCalledTimes(1);
-      expect(removeMutate).toHaveBeenCalledWith('dorkos-official');
+      expect(removeMutate.mock.calls[0][0]).toBe('dorkos-official');
     });
 
     it('disables all remove buttons while a removal is in flight', () => {

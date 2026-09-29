@@ -5,7 +5,7 @@ import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 import { TOUCH_TARGET_PX, touchHeight } from '../../pages/touch-reach';
 import { PHONE, settled } from '../rooms/room-sheet-helpers';
 
-// One cockpit at a time, with the ceiling this repo's other room specs use.
+// One app at a time, with the ceiling this repo's other room specs use.
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 
 /**
@@ -251,22 +251,17 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   test('a plain size="sm" Button clears 44px below the md breakpoint (DOR-771)', async ({
     page,
   }) => {
-    // None of this file's other cases happen to render an UNMODIFIED
-    // `size="sm"` Button — the ones reachable from Home/Library/You either
-    // carry their own fixed height (`AttentionSignalRow`'s `h-6` "Open →")
-    // or use a different touch-target mechanism (`min-h-11` hit-slop) than
-    // the one DOR-771 changed. The Dev Playground's own Button showcase
-    // renders the primitive with no overrides at all — `RESPONSIVE_SIZE_CLASSES`
-    // and nothing else decides its height — so this is the ruler actually
-    // observing the class this PR touched, not a proxy for it.
-    await page.goto('/dev/components');
-    const small = page.getByRole('button', { name: 'Small', exact: true });
+    // The client Card example renders an unmodified size="sm" Button through
+    // the shared UI facade. It keeps this a check of the client's emitted CSS
+    // after the generic Button gallery moved to the standalone catalog.
+    await page.goto('/dev/components#card');
+    const card = page.locator('section').filter({
+      has: page.getByRole('heading', { name: /^Card Link to Card/ }),
+    });
+    const small = card.getByRole('button', { name: 'Disconnect', exact: true });
     await expect(small).toBeVisible();
-    // The Button showcase sits partway down a long page — `evaluate` (which
-    // `touchHeight` uses to read `getBoundingClientRect`) does not scroll a
-    // target into view the way an action like `.click()` would, so an
-    // off-screen box measures against whatever pixel happens to be at those
-    // coordinates instead.
+    // touchHeight checks hit reach as well as geometry, so bring the target
+    // into view before asking which element occupies its coordinates.
     await small.scrollIntoViewIfNeeded();
     expect(await touchHeight(small)).toBeGreaterThanOrEqual(TOUCH_TARGET_PX - 1);
   });

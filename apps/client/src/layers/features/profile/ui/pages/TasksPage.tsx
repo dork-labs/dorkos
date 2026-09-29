@@ -11,7 +11,7 @@
  *
  * @module features/profile/ui/pages/TasksPage
  */
-import { useAgentToolStatus } from '@/layers/entities/agent';
+import { useTasksEnabled } from '@/layers/entities/tasks';
 import { TasksView } from '@/layers/features/session-list';
 import type { ProfilePageContentProps } from './types';
 
@@ -19,18 +19,17 @@ import type { ProfilePageContentProps } from './types';
  * This agent's schedules and recent runs.
  *
  * The row that pushes this page is not drawn at all when the server has tasks
- * switched off (`useManagedAgentFacts`), so the only "off" state this page has
- * to answer for is the per-agent one — which `TasksView` already says in its own
- * words, with a door into the Tasks surface beside it.
+ * switched off (`useManagedAgentFacts`). A Blocked Tasks & schedules permission
+ * is not an "off" here: it stops the AGENT changing schedules, and the ones a
+ * person made still run, so they are still listed.
  */
 export function TasksPage({ member }: ProfilePageContentProps) {
-  const projectPath = member.agent?.projectPath ?? null;
-  const toolStatus = useAgentToolStatus(projectPath);
+  const tasksEnabled = useTasksEnabled();
   const agentId = member.agent?.manifestId ?? null;
 
   return (
     <div className="min-h-0 flex-1" data-slot="profile-tasks">
-      <TasksView toolStatus={toolStatus.tasks} agentId={agentId} />
+      <TasksView available={tasksEnabled} agentId={agentId} />
     </div>
   );
 }

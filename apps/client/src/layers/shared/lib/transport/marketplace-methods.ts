@@ -14,12 +14,17 @@ import type {
   InstallOptions,
   InstallResult,
   UninstallOptions,
+  ListInstalledOptions,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
-  UpdateOptions,
-  UpdateResult,
+  ApplyUpdatesOptions,
+  InstallationUpdatesResult,
   InstalledPackage,
-  MarketplaceSource,
   AddSourceInput,
+  AddedMarketplaceSource,
+  ListedMarketplaceSource,
+  RefreshedMarketplaceSource,
 } from '@dorkos/shared/marketplace-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 
@@ -89,27 +94,70 @@ export function createMarketplaceMethods(baseUrl: string) {
       );
     },
 
-    // --- Update ---
+    // --- Updates ---
 
-    updateMarketplacePackage(name: string, opts?: UpdateOptions): Promise<UpdateResult> {
-      return fetchJSON<UpdateResult>(
+    checkMarketplaceUpdates(projectPath?: string): Promise<InstallationUpdatesResult> {
+      const qs = buildQueryString({ projectPath });
+      return fetchJSON<InstallationUpdatesResult>(baseUrl, `/marketplace/updates${qs}`);
+    },
+
+    async applyMarketplaceUpdates({
+      targets,
+      projectPath,
+    }: ApplyUpdatesOptions): Promise<InstallationUpdatesResult> {
+      // `apply: true` is the route's literal switch: a POST without it is
+      // refused, so an empty or mistyped body can never reinstall anything.
+      // Each target carries what the person was shown, sent back untouched.
+      const result = await fetchJSON<InstallationUpdatesResult | { status: string }>(
         baseUrl,
-        `/marketplace/packages/${encodeURIComponent(name)}/update`,
+        '/marketplace/updates',
         {
           method: 'POST',
-          body: JSON.stringify(opts ?? {}),
+          body: JSON.stringify({
+            apply: true,
+            targets,
+            ...(projectPath !== undefined && { projectPath }),
+          }),
         }
+      );
+      // A 202 is the answer for an agent, whose update waits on an approval
+      // card. The app is the person, so it should never get one; if it does,
+      // say so rather than hand back a result with nothing in it.
+      if (!('checks' in result)) {
+        throw new Error(
+          'DorkOS is waiting for someone to approve these updates, so nothing was changed.'
+        );
+      }
+      return result;
+    },
+
+    async reviewHeldBackPackage(name: string): Promise<void> {
+      await fetchJSON<{ status: string }>(
+        baseUrl,
+        `/marketplace/held-back/${encodeURIComponent(name)}/review`,
+        { method: 'POST' }
       );
     },
 
     // --- Installed packages ---
 
-    listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]> {
-      const params = projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : '';
+    listInstalledPackages(
+      projectPath?: string,
+      opts?: ListInstalledOptions
+    ): Promise<InstalledPackage[]> {
+      const qs = buildQueryString({ projectPath, verify: opts?.verify ? 'true' : undefined });
       return fetchJSON<{ packages: InstalledPackage[] }>(
         baseUrl,
-        `/marketplace/installed${params}`
+        `/marketplace/installed${qs}`
       ).then((r) => r.packages);
+    },
+
+    checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult> {
+      return fetchJSON<CheckFilesResult>(
+        baseUrl,
+        `/marketplace/packages/${encodeURIComponent(name)}/check-files`,
+        { method: 'POST', body: JSON.stringify(opts ?? {}) }
+      );
     },
 
     listPackageInstallations(name: string): Promise<InstalledPackage[]> {
@@ -121,17 +169,26 @@ export function createMarketplaceMethods(baseUrl: string) {
 
     // --- Sources ---
 
-    listMarketplaceSources(): Promise<MarketplaceSource[]> {
-      return fetchJSON<{ sources: MarketplaceSource[] }>(baseUrl, '/marketplace/sources').then(
-        (r) => r.sources
-      );
+    listMarketplaceSources(): Promise<ListedMarketplaceSource[]> {
+      return fetchJSON<{ sources: ListedMarketplaceSource[] }>(
+        baseUrl,
+        '/marketplace/sources'
+      ).then((r) => r.sources);
     },
 
-    addMarketplaceSource(input: AddSourceInput): Promise<MarketplaceSource> {
-      return fetchJSON<MarketplaceSource>(baseUrl, '/marketplace/sources', {
+    addMarketplaceSource(input: AddSourceInput): Promise<AddedMarketplaceSource> {
+      return fetchJSON<AddedMarketplaceSource>(baseUrl, '/marketplace/sources', {
         method: 'POST',
         body: JSON.stringify(input),
       });
+    },
+
+    refreshMarketplaceSource(name: string): Promise<RefreshedMarketplaceSource> {
+      return fetchJSON<RefreshedMarketplaceSource>(
+        baseUrl,
+        `/marketplace/sources/${encodeURIComponent(name)}/refresh`,
+        { method: 'POST' }
+      );
     },
 
     /**

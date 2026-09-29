@@ -16,6 +16,28 @@ export const ConnectionStatusSchema = z
   .enum(['pending', 'active', 'degraded', 'expired', 'revoked'])
   .describe('The lifecycle state of a managed connection.');
 
+/**
+ * Who one hosted connection grant covers.
+ *
+ * `agent` covers one named agent. `every_agent` covers every agent of the
+ * connection's owner, including agents added after the grant was given. Both
+ * carry the same guarantees: a grant names exact reviewed operation revisions
+ * and nothing else, a new or changed revision stays off until the owner
+ * reviews it, and taking a grant away takes effect on the next call. Only the
+ * owner can give an `every_agent` grant; an agent never can.
+ *
+ * A mechanism enum: it says whose calls a grant answers for, not what anybody
+ * bought.
+ */
+export const ConnectionGrantSubjectSchema = z
+  .enum(['agent', 'every_agent'])
+  .describe(
+    'Who a hosted connection grant covers: one named agent, or every agent of the connection`s owner including agents added later.'
+  );
+
+/** Who one hosted connection grant covers. */
+export type ConnectionGrantSubject = z.infer<typeof ConnectionGrantSubjectSchema>;
+
 /** One toolkit the catalog offers. */
 export const ToolkitSummarySchema = z
   .object({

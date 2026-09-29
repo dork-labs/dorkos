@@ -27,7 +27,7 @@
  *
  * Nothing this key touches is consent-gated, and the last describe block is what
  * keeps that true: an upgrade boot must leave `runtimes.defaultTrustStop`,
- * `ui.autonomyAcknowledgedAt` and `approvals.standingGrants` exactly where it
+ * `ui.autonomyAcknowledgedAt` exactly where it
  * found them, whichever side of the door the person is on.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -271,7 +271,9 @@ describe('the 0.67.0 migration and invariant A1 (nothing consent-gated flips)', 
     expect(manager.getDot('runtimes.codex.defaultTrustStop')).toBeNull();
     expect(manager.getDot('runtimes.opencode.defaultTrustStop')).toBeNull();
     expect(manager.getDot('ui.autonomyAcknowledgedAt')).toBeNull();
-    expect(manager.getDot('approvals.standingGrants')).toBe(false);
+    // Standing permissions were retired by `'0.83.0'`, which this upgrade also
+    // runs; nothing turned them on on the way.
+    expect(manager.getDot('approvals')).toBeUndefined();
     expect(manager.getDot('mesh.scanRoots')).toEqual([]);
   });
 
@@ -289,18 +291,12 @@ describe('the 0.67.0 migration and invariant A1 (nothing consent-gated flips)', 
         defaultTrustStop: 'autonomy',
         claudeCode: claudeCodeBlock(),
       },
-      approvals: {
-        standingGrants: true,
-        trustWindowMinutes: 60,
-        standingGrantsVoidBefore: null,
-      },
     });
 
     const manager = new ConfigManager(dir);
 
     expect(manager.getDot('runtimes.defaultTrustStop')).toBe('autonomy');
     expect(manager.getDot('ui.autonomyAcknowledgedAt')).toBe('2026-08-01T09:30:00.000Z');
-    expect(manager.getDot('approvals.standingGrants')).toBe(true);
     // …and the safety-neutral flips still happened for them.
     expect(manager.getDot('scheduler.maxConcurrentRuns')).toBe(4);
     expect(manager.getDot('runtimes.claudeCode.persistentSession')).toBe(true);

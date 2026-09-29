@@ -7,6 +7,12 @@ import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
+// Login off, so the agent bar on `PATCH /agents/:id` (DOR-2328) reads only the
+// agent header; the real config store is not opened in these route tests.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn(), getAll: vi.fn() },
+}));
+
 // Mock boundary validation — default to passthrough (returns path as-is)
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -719,6 +725,38 @@ describe('Mesh routes', () => {
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { name: 'Updated Agent' });
     });
 
+    it.each([
+      ['runtime', 'codex'],
+      ['model', 'opus'],
+      ['effort', 'max'],
+    ])(
+      'refuses an AGENT changing any agent’s %s, pointing at the tool that asks (DOR-2328)',
+      async (field, value) => {
+        // Purpose: this route has no caller guard of its own, and an agent can
+        // reach it for ANY agent, not only itself.
+        const res = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .send({ [field]: value });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('NEEDS_APPROVAL');
+        expect(res.body.error).toContain('update_agent_execution');
+        expect(meshCore.update).not.toHaveBeenCalled();
+      }
+    );
+
+    it('lets a person change an agent’s model here', async () => {
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'opus' });
+
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ model: 'opus' });
+
+      expect(res.status).toBe(200);
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', { model: 'opus' });
+    });
+
     // Both halves of the narrowed catch (DOR-486 re-review). It used to catch
     // EVERYTHING `update` could throw and answer `409 MANIFEST_UNREADABLE` with
     // the raw message, so a schema-invalid merge — a different bug entirely —
@@ -730,7 +768,7 @@ describe('Mesh routes', () => {
 
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
-        .send({ tierCeiling: 'act' });
+        .send({ displayName: 'Ana' });
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('MANIFEST_UNREADABLE');
@@ -745,7 +783,7 @@ describe('Mesh routes', () => {
 
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
-        .send({ tierCeiling: 'act' });
+        .send({ displayName: 'Ana' });
 
       // It reaches the error middleware, which is where an unexpected failure
       // belongs — this route no longer relabels it. What the handler chooses to
@@ -757,27 +795,34 @@ describe('Mesh routes', () => {
       expect(JSON.stringify(res.body)).not.toContain('Fix or remove the file');
     });
 
-    it('is the ONE way the rooms-management grant is set (DOR-1611, spec §D6)', async () => {
-      // The other half of the asymmetry. `updateAgentManifest` — the
-      // agent-reachable path behind `PATCH /api/agents/current` and the
-      // `update_agent` MCP tool — refuses a patch that names `roomsManage`,
-      // because a grant the governed agent can set for itself is not a grant.
-      // The operator's route does not come through there, and must keep working:
-      // otherwise the switch has no way in at all.
-      meshCore.update.mockReturnValue({
-        ...MOCK_MANIFEST,
-        enabledToolGroups: { roomsManage: true },
-      });
-
+    it('refuses a body carrying permissions, since this route has no caller guard', async () => {
+      // Spec `agent-permissions` D10: any local program can reach this route, so
+      // it must never write what an agent may do. The permission routes are the
+      // one way in, behind a person and with an audit event.
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
-        .send({ enabledToolGroups: { roomsManage: true } });
+        .send({ permissions: { areas: { rooms: 'allowed' } } });
 
-      expect(res.status).toBe(200);
-      expect(meshCore.update).toHaveBeenCalledWith('agent-1', {
-        enabledToolGroups: { roomsManage: true },
-      });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('USE_PERMISSIONS_API');
+      expect(meshCore.update).not.toHaveBeenCalled();
     });
+
+    it.each([
+      [{ enabledToolGroups: { tasks: false, roomsManage: true } }, 'enabledToolGroups'],
+      [{ tierCeiling: 'act' }, 'tierCeiling'],
+    ])(
+      'refuses a retired permission field rather than silently dropping it',
+      async (body, field) => {
+        // Stripped, it would answer 200 for a setting that no longer exists. Both
+        // folded into the agent's permissions (spec `agent-permissions` D13).
+        const res = await request(fixtureServer).patch('/api/mesh/agents/agent-1').send(body);
+
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([field]);
+        expect(meshCore.update).not.toHaveBeenCalled();
+      }
+    );
 
     it("carries an agent's model and effort through to the manifest write", async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet', effort: 'low' });

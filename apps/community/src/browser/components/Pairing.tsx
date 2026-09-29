@@ -1,6 +1,13 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createAuthClient } from 'better-auth/react';
 import { Check, KeyRound, Laptop2, ShieldCheck } from 'lucide-react';
-import { describeError, RequestError, request } from '../api.js';
+import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
+import { describeError, hostRequest, RequestError, request } from '../api.js';
+import { HostPolicyLinks } from './HostLinks.js';
+import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
+
+const authClient = createAuthClient({ baseURL: window.location.origin });
 
 type PairingStatus = {
   pairingId: string;
@@ -14,34 +21,64 @@ const scopeLabel = {
   post: 'Post messages',
   'enroll-agent': 'Add your agents',
 };
+/**
+ * Whether the host holds the community in this page's path. A pairing approved during a hold
+ * stays read-only after release, so the page says so before anyone approves it. Any failure
+ * reads as not held: the note is advice, and the server decides what the grant can do.
+ */
+async function isHeldCommunity(path = window.location.pathname): Promise<boolean> {
+  const communityId = path.match(/^\/c\/([^/]+)\//u)?.[1];
+  if (!communityId) return false;
+  try {
+    const body = await hostRequest<{ memberships: CommunityWireMembershipSummary[] }>(
+      '/api/v1/memberships'
+    );
+    return body.memberships.some(
+      (membership) => membership.communityId === communityId && membership.lifecycle === 'held'
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Review and decide on a verifier-bound local install request. */
 export function Pairing({ search = location.search }: { search?: string }) {
   const pairingId = new URLSearchParams(search).get('pairingId');
   const [status, setStatus] = useState<PairingStatus | null>(null);
-  const [error, setError] = useState(pairingId ? '' : 'This approval link is incomplete.');
+  const [error, setError] = useState(() =>
+    pairingId ? (takeSignInError() ?? '') : 'This approval link is incomplete.'
+  );
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [held, setHeld] = useState(false);
   const emailInput = useRef<HTMLInputElement>(null);
+  const providers = useSignInOptions();
 
   const loadPairing = useCallback(
-    async (isCurrent: () => boolean = () => true) => {
+    async (isCurrent: () => boolean = () => true, allowPending = true) => {
       if (!pairingId) return;
       try {
         const body = await request<PairingStatus>(
           `/api/v1/pairings/${encodeURIComponent(pairingId)}`
         );
         if (!isCurrent()) return;
+        if (!allowPending && body.status === 'pending') {
+          setStatus(null);
+          setError('This connection request changed. Start again from your local app.');
+          return;
+        }
         setStatus(body);
         setNeedsSignIn(false);
         setError('');
+        const onHold = await isHeldCommunity();
+        if (isCurrent()) setHeld(onHold);
       } catch (cause) {
         if (!isCurrent()) return;
         setStatus(null);
         if (cause instanceof RequestError && cause.status === 401) {
           setNeedsSignIn(true);
-          setError('');
         } else {
           setNeedsSignIn(false);
           setError(describeError(cause));
@@ -78,6 +115,28 @@ export function Pairing({ search = location.search }: { search?: string }) {
     }
   }
 
+  async function social(provider: 'google' | 'github' | 'oidc') {
+    if (!pairingId) return;
+    setBusy(true);
+    setError('');
+    try {
+      // Keep only the request identifier, on this exact host and tenant path. Provider errors
+      // append their own query parameters; unrelated URL input must not enter the callback.
+      const callback = new URL(window.location.pathname, window.location.origin);
+      callback.searchParams.set('pairingId', pairingId);
+      const callbackURL = callback.toString();
+      const result = await authClient.signIn.social({
+        provider,
+        callbackURL,
+        errorCallbackURL: callbackURL,
+      });
+      if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
+    } catch (cause) {
+      setError(describeError(cause));
+      setBusy(false);
+    }
+  }
+
   async function decide(action: 'approve' | 'decline') {
     if (!pairingId) return;
     setBusy(true);
@@ -90,7 +149,12 @@ export function Pairing({ search = location.search }: { search?: string }) {
           : previous
       );
     } catch (cause) {
-      setError(describeError(cause));
+      if (cause instanceof RequestError && [401, 403, 409].includes(cause.status)) {
+        setStatus(null);
+        await loadPairing(() => true, cause.status === 401);
+      } else {
+        setError(describeError(cause));
+      }
     } finally {
       setBusy(false);
     }
@@ -112,47 +176,82 @@ export function Pairing({ search = location.search }: { search?: string }) {
         <h1>Connect a local install</h1>
         <p className="muted mb-7">Review what this install can do before approving.</p>
         {error && (
-          <div className="notice error" role="alert">
+          <Notice tone="error" role="alert">
             {error}
-          </div>
+          </Notice>
         )}
         {needsSignIn && (
-          <form className="panel" onSubmit={(event) => void signIn(event)}>
-            <div className="notice mb-5">
-              Sign in to review this connection. The request will stay on this page.
-            </div>
-            <div className="field">
-              <label htmlFor="pairing-email">Email</label>
-              <input
-                id="pairing-email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                ref={emailInput}
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="pairing-password">Password</label>
-              <input
-                id="pairing-password"
-                type="password"
-                autoComplete="current-password"
-                minLength={8}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-              <span className="hint">
-                Forgot your password? Ask the person running this community for help.
-              </span>
-            </div>
-            <button className="button primary w-full" disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in and review'}
-              <KeyRound size={16} />
-            </button>
-          </form>
+          <>
+            <form className="panel" onSubmit={(event) => void signIn(event)}>
+              <Notice tone="info" className="mb-5">
+                Sign in to review this connection. You’ll return to this request.
+              </Notice>
+              <div className="field">
+                <Label htmlFor="pairing-email">Email</Label>
+                <Input
+                  id="pairing-email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  ref={emailInput}
+                  required
+                />
+              </div>
+              <div className="field">
+                <Label htmlFor="pairing-password">Password</Label>
+                <Input
+                  id="pairing-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+                <span className="hint">
+                  Forgot your password? Ask the person running this community for help.
+                </span>
+              </div>
+              <Button type="submit" variant="default" className="w-full" disabled={busy}>
+                {busy ? 'Signing in…' : 'Sign in and review'}
+                <KeyRound size={16} />
+              </Button>
+            </form>
+            {(providers.google || providers.github || providers.oidc) && (
+              <div className="row mt-4">
+                {providers.google && (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void social('google')}
+                  >
+                    Continue with Google
+                  </Button>
+                )}
+                {providers.github && (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void social('github')}
+                  >
+                    Continue with GitHub
+                  </Button>
+                )}
+                {providers.oidc && (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void social('oidc')}
+                  >
+                    Continue with {providers.oidc.label}
+                  </Button>
+                )}
+              </div>
+            )}
+          </>
         )}
         {!error && !status && !needsSignIn && <p role="status">Loading the request…</p>}
         {status && (
@@ -175,33 +274,36 @@ export function Pairing({ search = location.search }: { search?: string }) {
                 </li>
               ))}
             </ul>
+            {held && status.status === 'pending' && (
+              <Notice tone="info" className="mb-5">
+                The community is on hold, so this connection can only read. Connect again after the
+                hold ends to post.
+              </Notice>
+            )}
             {status.status === 'pending' ? (
               <div className="row">
-                <button
-                  className="button primary"
-                  disabled={busy}
-                  onClick={() => void decide('approve')}
-                >
+                <Button variant="default" disabled={busy} onClick={() => void decide('approve')}>
                   {busy ? 'Working…' : 'Approve connection'}
                   <Check size={17} />
-                </button>
-                <button className="button" disabled={busy} onClick={() => void decide('decline')}>
+                </Button>
+                <Button variant="outline" disabled={busy} onClick={() => void decide('decline')}>
                   Decline
-                </button>
+                </Button>
               </div>
             ) : status.status === 'approved' ? (
-              <div role="status" className="notice success">
+              <Notice role="status" tone="success">
                 Approved. Return to your local app to finish connecting.
-              </div>
+              </Notice>
             ) : (
-              <div role="status" className="notice">
+              <Notice role="status" tone="info">
                 {status.status === 'cancelled'
                   ? 'Connection declined. You can close this page.'
                   : 'This request is no longer available. Start again from your local app.'}
-              </div>
+              </Notice>
             )}
           </div>
         )}
+        <HostPolicyLinks />
       </main>
     </div>
   );

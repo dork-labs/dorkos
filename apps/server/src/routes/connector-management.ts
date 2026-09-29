@@ -7,6 +7,7 @@ import {
   ConnectorAgentRequestDecisionSchema,
 } from '@dorkos/shared/connector-agent-request-schemas';
 import {
+  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorManagementReviewCreateRequestSchema,
   ConnectorManagementReviewDecisionSchema,
   ConnectorReconciliationApplyRequestSchema,
@@ -37,6 +38,14 @@ const ReviewListQuerySchema = z
   .object({ state: z.enum(['pending', 'resolved']).optional() })
   .strict();
 
+/** Agent requests list by lifecycle group and, for one conversation's cards, by session. */
+const AgentRequestListQuerySchema = z
+  .object({
+    state: z.enum(['pending', 'resolved']).optional(),
+    sessionId: z.string().min(1).optional(),
+  })
+  .strict();
+
 /** Dependencies for the connector owner-management HTTP boundary. */
 export interface ConnectorOwnerBoundaryDeps {
   /** Resolve the current deployment's owner from verified server state. */
@@ -57,7 +66,10 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
     'create' | 'get' | 'getProgramStatus' | 'list' | 'resolve'
   >;
   /** Complete-catalog exact grant reconciliation. */
-  readonly reconciliation: Pick<ConnectorReconciliationService, 'preview' | 'apply'>;
+  readonly reconciliation: Pick<
+    ConnectorReconciliationService,
+    'preview' | 'apply' | 'revokeEveryAgent'
+  >;
   /** Owner-only review and resolution for requests raised by runtime agents. */
   readonly agentRequests?: Pick<
     ConnectorAgentRequestService,
@@ -215,7 +227,7 @@ function sendManagementError(res: Response, error: unknown): void {
     const status =
       error.code === 'connection_not_found'
         ? 404
-        : error.code === 'operations_unsupported'
+        : error.code === 'operations_unsupported' || error.code === 'every_agent_unavailable'
           ? 422
           : 409;
     res.status(status).json({ error: error.message, code: error.code });
@@ -325,10 +337,10 @@ export function createConnectorManagementRouter(deps: ConnectorManagementRouterD
     if (!owner) return;
     const requests = requireAgentRequests(res);
     if (!requests) return;
-    const query = parseBody(ReviewListQuerySchema, req.query, res);
+    const query = parseBody(AgentRequestListQuerySchema, req.query, res);
     if (!query) return;
     try {
-      res.json({ requests: requests.listForOwner(owner, query.state) });
+      res.json({ requests: requests.listForOwner(owner, query.state, query.sessionId) });
     } catch (error) {
       sendManagementError(res, error);
     }
@@ -400,6 +412,23 @@ export function createConnectorManagementRouter(deps: ConnectorManagementRouterD
     res.once('close', () => controller.abort());
     try {
       res.status(201).json(await deps.reconciliation.preview(owner, input, controller.signal));
+    } catch (error) {
+      sendManagementError(res, error);
+    }
+  });
+
+  // Stop sharing a connection with every agent. Owner-only like every grant
+  // change, but with no preview: taking access away needs no reviewed catalog,
+  // so it works while the provider is down (ADR 260926-192625).
+  router.delete('/connections/:connectionId/every-agent', async (req, res) => {
+    const owner = resolveConnectorOperator(req, res, deps);
+    if (!owner) return;
+    try {
+      res.json(
+        ConnectorEveryAgentRevokeResponseSchema.parse(
+          await deps.reconciliation.revokeEveryAgent(owner, req.params.connectionId)
+        )
+      );
     } catch (error) {
       sendManagementError(res, error);
     }

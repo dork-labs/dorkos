@@ -5,7 +5,6 @@ import {
   AUTONOMY_ACK_REQUIRED_CODE,
   hasStandingAutonomyAck,
 } from '../services/core/approvals/autonomy-consent.js';
-import { reportUsageEvent } from '../services/core/usage-reporter.js';
 import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
@@ -20,24 +19,17 @@ import {
 } from '@dorkos/shared/schemas';
 import type {
   InterruptReceipt,
-  ModelOption,
   PermissionModeId,
+  SessionListResponse,
   StoredSessionSettingsResponse,
 } from '@dorkos/shared/types';
 import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { isAutonomyStop, needsConsentRitual } from '@dorkos/shared/permission-semantics';
-import { readManifest } from '@dorkos/shared/manifest';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
-import { runInDispatch } from '../lib/dispatch-context.js';
-import {
-  recordDispatchEnd,
-  recordDispatchStart,
-} from '../services/observability/dispatch-buffers.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import {
   readCallerAuthority,
@@ -55,17 +47,19 @@ import {
   listRecentSessions,
   listPendingInteractionsAcrossSessions,
   countSessionsPerDay,
-  getOrCreateProjector,
-  persistenceModeFor,
-  dispatchMessage,
   clearQueuedMessages,
   applySessionOriginOverlays,
+  applySessionFleetOverlay,
+  sessionFleetOverlayDeps,
   sessionOriginResolvers,
   overlayStoredSettings,
   callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSessionCwdOrNull,
+  peekProjector,
 } from '../services/session/index.js';
+import { accountUsageForSession } from '../services/session/fleet/session-account.js';
+import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import {
   sessionQueueListHandler,
@@ -79,13 +73,19 @@ import sessionCanvasRouter from './session-canvas.js';
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
-import path from 'node:path';
-import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
-import { getWorkspaceManager } from '../services/workspace/index.js';
+import { rejectUnknownModel } from './session-model-gate.js';
 import {
-  resolveSessionCwdWithRoom,
-  type RoomSessionPlacePort,
-} from '../services/workspace/room-session-cwd.js';
+  cancelContinueHandler,
+  continueOptionsHandler,
+  continueSessionHandler,
+  limitHistoryHandler,
+  waitForResetHandler,
+} from './session-continue.js';
+import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
+import {
+  dispatchSessionMessage,
+  isSessionLaunchRefusal,
+} from '../services/session/launch/launch-session.js';
 // A control request that outlived its bound is not a claude-code-only idea, but
 // claude-code is the only runtime with one today, so the class still lives with
 // its clock. A second runtime growing one is the signal to move it somewhere
@@ -208,7 +208,7 @@ function answeredBy(res: Response): string | undefined {
 }
 
 // GET /api/sessions - List sessions aggregated across all registered runtimes
-// (ADR-0310). Responds with the { sessions, warnings? } envelope rather than a
+// (ADR-0310). Responds with the { sessions, warnings?, accountUsage? } envelope rather than a
 // bare array: aggregation degrades gracefully per runtime, and the in-band
 // warnings[] must survive both transports (an HTTP header would be invisible
 // to the Direct in-process transport). See SessionListResponseSchema.
@@ -240,7 +240,15 @@ router.get('/', async (req, res) => {
   // applies too, so a room turn reads the same way whichever one a client heard
   // it from (DOR-1141).
   applySessionOriginOverlays(page, sessionOriginResolvers(req.app.locals));
-  res.json(warnings.length > 0 ? { sessions: page, warnings } : { sessions: page });
+  // The fleet fields (spec claude-account-fleet D7): each session's account,
+  // live status and work item, and the usage of the accounts on the page. One
+  // pass over the page, from memory plus one limit query.
+  const accountUsage = await applySessionFleetOverlay(page, sessionFleetOverlayDeps());
+  res.json({
+    sessions: page,
+    ...(warnings.length > 0 && { warnings }),
+    ...(accountUsage && { accountUsage }),
+  } satisfies SessionListResponse);
 });
 
 // GET /api/sessions/recent - Most-recent sessions across ALL agents (DOR-329).
@@ -444,6 +452,31 @@ router.get('/:id', async (req, res) => {
   // keys off the session it actually resolved, not the id asked for.
   overlayStoredSettings([session], runtimeRegistry);
   applySessionOriginOverlays([session], sessionOriginResolvers(req.app.locals));
+  // The same fleet fields the list carries, so a session reads the same either
+  // way (spec claude-account-fleet D7). It runs FIRST: the usage block below
+  // spreads onto the status it sets, and both merge rather than replace.
+  // The accounts' usage is the list envelope's, so it is not returned here.
+  await applySessionFleetOverlay([session], sessionFleetOverlayDeps());
+  // The account's cached usage, so a single-session read shows it before any
+  // turn (spec `claude-account-fleet` §6 U). A live projector's stamp is the
+  // one its snapshot carries; otherwise it is read from the store here. This
+  // read never creates a projector or a settings row.
+  const live = peekProjector(sessionId)?.getStatus();
+  const accountUsage =
+    live?.accountUsage ??
+    (await accountUsageForSession(getAccountUsageStore(), runtime, sessionId, projectDir));
+  // A runtime with no usage ledger (test-mode) has nothing to add here.
+  if (accountUsage) {
+    session.status = {
+      ...(session.status ?? { lifecycle: live?.lifecycle ?? 'idle', limit: live?.limit ?? null }),
+      accountUsage,
+    };
+  }
+  // A session the fleet overlay could not name (no transcript and no folder it
+  // matched) still has an account once its usage resolved one.
+  if (session.accountId === undefined && session.status?.accountUsage?.accountId) {
+    session.accountId = session.status.accountUsage.accountId;
+  }
   res.json(session);
 });
 
@@ -552,110 +585,6 @@ function rejectUndeclaredPermissionMode(
   const ids = declared.values.map((descriptor) => descriptor.id);
   if (ids.includes(permissionMode)) return null;
   return `The ${runtime.type} runtime cannot run permission mode '${permissionMode}'. It supports: ${ids.join(', ')}.`;
-}
-
-/**
- * Check a requested model against the catalog its runtime offers, returning an
- * operator-readable message when the runtime cannot run it (or `null` when the
- * model is fine).
- *
- * The same argument as {@link rejectUndeclaredPermissionMode}: the wire carries
- * any string, and only the session's runtime can say whether the model id it was
- * handed is real. Persisting one it cannot run buys nothing — the turn fails
- * later with "That model isn't available", by which point the person has already
- * typed their message (DOR-1660).
- *
- * Which runtime that is, is {@link modelGateAuthority}'s question, and it is a
- * real one: an unbound session HAS no runtime, only an inference.
- *
- * ## It degrades, on purpose
- *
- * A catalog only convicts when it is fit to — {@link catalogUnfitToConvict} is
- * that whole question, and both of its answers land here as an accepted write.
- *
- * Matching allows `resolvedModel` as well as `value` because claude-code's
- * catalog rows are ALIASES (`sonnet`, `opus`) naming the wire id they expand to;
- * a session that persisted the wire id must keep working.
- *
- * WRITE PATH ONLY: a session already persisted on a now-absent model still loads
- * and runs, and the picker surfaces it as unavailable so the person can choose.
- *
- * @param runtime - The runtime that owns the session being updated.
- * @param model - The model id the request asks to store.
- */
-async function rejectUnknownModel(runtime: AgentRuntime, model: string): Promise<string | null> {
-  let offered: ModelOption[];
-  try {
-    offered = await runtime.getSupportedModels();
-  } catch {
-    logger.debug('[model gate] declined: the catalog probe threw', {
-      runtime: runtime.type,
-      model,
-    });
-    return null;
-  }
-  const unfit = catalogUnfitToConvict(offered);
-  if (unfit) {
-    logger.debug(`[model gate] declined: ${unfit}`, { runtime: runtime.type, model });
-    return null;
-  }
-  if (offered.some((option) => option.value === model || option.resolvedModel === model)) {
-    return null;
-  }
-  return `The ${runtime.type} runtime cannot run model '${model}'. Pick one from the model menu.`;
-}
-
-/**
- * Why this catalog has no standing to refuse a model, or `null` when it does.
- *
- * Absence from a catalog is only evidence against a model when the catalog is
- * both COMPLETE and CONFIRMED. Two states fail that, and they are the same
- * epistemic state wearing different clothes — no usable evidence — so the gate
- * declines in both rather than convicting on a guess. The string is the reason,
- * logged by {@link rejectUnknownModel}: the two declines are indistinguishable
- * from outside (each one accepts the write), so the reason is worth saying
- * rather than leaving the next person debugging a "why did this go through" to
- * re-derive it. At `debug`, which means DEV ONLY — the default level is `info`
- * in production, so this line is dropped there. That is the right trade for a
- * path whose outcome is a successful write: nothing is being diagnosed in
- * production from its absence, and an operator who needs it can raise the level.
- *
- * **Empty** is not a claim that the runtime has no models — it is what a runtime
- * returns when it cannot answer: an unreachable OpenCode sidecar, a claude-code
- * warm-up that timed out, `test-mode`, which has no catalog at all. Refusing on
- * an empty list would turn a probe failure into a locked picker. (A throwing
- * `getSupportedModels` is read the same way, at the call site.)
- *
- * **Unverified** is the same failure with rows in it. When OpenCode reports no
- * connected provider it still offers a menu — the models.dev universe, sorted
- * and cut to the highest-signal 200, every row marked `unverified` (DOR-1660).
- * That list is explicitly a guess, and the UI says so out loud on three surfaces
- * (`UnverifiedCatalogNotice`). An operator who supplied credentials through
- * provider env vars can genuinely run a model that sorted past the cut, and the
- * gate used to answer "the opencode runtime cannot run" it — DOR-1660's
- * complaint ("it offers models that cannot run") inverted at a new door.
- *
- * ## Why ANY unverified row is enough, not only an all-unverified list
- *
- * The flag describes the MENU, not the row: per its schema, an `unverified` row
- * "comes from a shortened, unconfirmed menu". One such row is therefore testimony
- * that a shortened menu fed this list, and a shortened menu's ABSENCES prove
- * nothing — which is the only thing the gate reads a catalog for. It is also the
- * definition every client surface already uses (`models.some((m) =>
- * m.unverified)` in `ModelRow`, `ModelSelectionList`, `AgentExecutionRows`), so
- * the server refuses exactly when the picker is not warning the person. Today's
- * only producer is all-or-nothing, so `some` and `every` agree on real data;
- * `some` is the reading that stays honest if a future producer mixes a confirmed
- * spine with guessed additions.
- *
- * @param offered - The catalog rows the runtime answered with.
- */
-function catalogUnfitToConvict(offered: ModelOption[]): string | null {
-  if (offered.length === 0) return 'the runtime offered no catalog';
-  if (offered.some((option) => option.unverified)) {
-    return 'the catalog is a shortened, unconfirmed menu';
-  }
-  return null;
 }
 
 /**
@@ -839,11 +768,6 @@ router.patch('/:id', async (req, res) => {
     //   the whole set by
     //   `services/runtimes/__tests__/permission-semantics.test.ts`. This door
     //   would be the wrong place for it: there is no request to refuse.
-    // - **Obsidian.** `DirectTransport` calls `runtime.updateSession` in-process
-    //   and bypasses this route entirely, so the embedded cockpit's dial is
-    //   gated by its dialog alone. Pre-existing property of that seam, widened
-    //   by nothing here; the checkbox is withheld there for a related reason
-    //   (see `AutonomyConfirmDialog`).
     const descriptor = declaredMode(runtime, requestedMode);
     if (descriptor && needsConsentRitual(descriptor) && !acknowledgedAutonomy) {
       if (!hasStandingAutonomyAck()) {
@@ -1024,58 +948,6 @@ router.post('/:id/reload-plugins', async (req, res) => {
   }
 });
 
-/**
- * Choose the runtime type for a newly-created session.
- *
- * Priority: explicit `body.runtime` hint > agent-manifest `runtime` field
- * (read from `<cwd>/.dork/agent.json`) > server default runtime type.
- *
- * Subsequent `POST /:id/messages` calls for the same `sessionId` do NOT
- * re-run this — `persistSessionRuntime` is first-write-wins, so the row
- * set by the first call is authoritative.
- *
- * The runtime is chosen FIRST because the other two execution defaults hang off
- * it: which model and effort a new session starts with is a per-runtime question
- * (`services/session/resolve-session-defaults.ts`), answered against the runtime
- * this returns, and seeded onto the same first write.
- */
-async function resolveRuntimeTypeForNewSession(opts: {
-  runtimeHint?: string;
-  agentPath?: string;
-  cwd?: string;
-}): Promise<string> {
-  if (opts.runtimeHint) return opts.runtimeHint;
-
-  // Look for an agent manifest in the provided agentPath or cwd. Fall back
-  // silently when no manifest exists or the read fails — a missing manifest
-  // is not an error on the hot path.
-  const manifestDir = opts.agentPath ?? opts.cwd;
-  if (manifestDir) {
-    try {
-      const manifest = await readManifest(manifestDir);
-      // The manifest names a runtime PREFERENCE — honor it only when that
-      // runtime is registered in this process. Unlike the explicit body hint
-      // (which 400s when unknown), an unregistered manifest runtime soft-falls
-      // back to the default: the test-mode server (DORKOS_TEST_RUNTIME=true)
-      // registers ONLY 'test-mode' while every manifest on disk says
-      // 'claude-code' (the AgentRuntime enum has no test-mode member), so
-      // without this guard no agent-seeded session can ever start there.
-      if (manifest?.runtime) {
-        if (runtimeRegistry.has(manifest.runtime)) return manifest.runtime;
-        logger.info('[POST /messages] manifest runtime not registered; using default', {
-          manifestRuntime: manifest.runtime,
-          defaultRuntime: runtimeRegistry.getDefaultType(),
-          manifestDir,
-        });
-      }
-    } catch {
-      // Fall through to default
-    }
-  }
-
-  return runtimeRegistry.getDefaultType();
-}
-
 // POST /api/sessions/:id/messages — Accept a message (trigger-only, ADR-0264;
 // accept-only, spec `persistent-session-runtime` §3.3).
 //
@@ -1095,7 +967,9 @@ async function resolveRuntimeTypeForNewSession(opts: {
 // bound to the turn's real duration and released on completion AND on error; a
 // detached failure is surfaced INTO the projector so `/events` consumers see it.
 // See `services/session/message-dispatcher.ts` and `trigger-turn.ts` for the
-// orchestration and the lock/error invariants.
+// orchestration and the lock/error invariants, and
+// `services/session/launch/launch-session.ts` for the binding this route shares
+// with every other surface that starts a session from a message.
 router.post('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -1104,232 +978,29 @@ router.post('/:id/messages', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const {
-    content,
-    cwd,
-    context,
-    runtime: runtimeHint,
-    account: accountHintRaw,
-    agentPath,
-    workspaceKey,
-    workspaceProvider,
-    seedContext,
-    disposition,
-  } = parsed.data;
-
-  // `agentPath` is durable ownership provenance, not an ordinary cwd hint. A
-  // caller may name it only when Mesh currently knows that exact registered
-  // agent directory. This keeps the first-write session binding authoritative
-  // without letting client metadata manufacture an agent owner.
-  let verifiedAgentPath: string | undefined;
-  if (agentPath !== undefined) {
-    const meshCore = req.app.locals.meshCore as MeshCore | undefined;
-    const isRegistered = meshCore?.listWithPaths().some((agent) => agent.projectPath === agentPath);
-    if (!isRegistered) {
-      return sendError(
-        res,
-        400,
-        'Choose a registered agent before starting this session',
-        'INVALID_AGENT_PATH'
-      );
-    }
-    verifiedAgentPath = agentPath;
-  }
-
-  // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
-  // server provisions-or-reuses the managed workspace from the source repo
-  // (`cwd`) and runs the turn with `cwd = workspace.path` + its port block.
-  // Additive + resilient: with no key (or a disabled/failing manager) the turn
-  // proceeds with the original cwd, byte-for-byte unchanged.
-  let effectiveCwd = cwd;
-  if (workspaceKey) {
-    try {
-      const source = cwd ?? DEFAULT_CWD;
-      const projectKey = sanitizeWorkspaceKey(path.basename(source));
-      const workspace = await getWorkspaceManager().ensure({
-        projectKey,
-        key: workspaceKey,
-        source,
-        provider: workspaceProvider,
-      });
-      effectiveCwd = workspace.path;
-      logger.info('[POST /messages] bound to workspace', {
-        sessionId,
-        workspaceKey,
-        path: workspace.path,
-      });
-    } catch (err) {
-      logger.warn('[POST /messages] workspace binding skipped', {
-        sessionId,
-        workspaceKey,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  } else {
-    // No unit-of-work key, so ask the precedence chain where this turn belongs
-    // (`services/workspace/resolve-session-cwd.ts`). `workspaceKey` above keeps
-    // its precedence deliberately: it is a per-turn statement about this piece
-    // of work, which is strictly more specific than a standing per-agent
-    // preference.
-    //
-    // The `default` rung is translated back into saying NOTHING, and that is
-    // load-bearing rather than fussy. Every runtime already falls back to
-    // `DEFAULT_CWD` on an absent cwd, so the turn runs in the same directory
-    // either way — but `effectiveCwd` is also what stamps `projector.cwd`
-    // below, overwriting whatever an `/events` subscribe put there. A turn that
-    // has no opinion about its directory must not acquire one here.
-    //
-    // The room binding is offered to the chain rather than resolved here
-    // (DOR-1624). A conversation this machine also answers in a room runs its
-    // room turns in that room's worktree, so a resume from the app that took the
-    // ordinary rungs would put the operator in the agent's own folder and hide
-    // every uncommitted edit the agent has made in the room. The port answers
-    // `null` for every other session, which leaves the chain exactly as it was.
-    const resolved = await resolveSessionCwdWithRoom(
-      { cwd, agentPath: verifiedAgentPath, sessionId },
-      req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined
-    );
-    if (resolved.rung !== 'default') effectiveCwd = resolved.cwd;
-  }
-
-  // First-message binding: choose + persist the runtime BEFORE resolving.
-  // `persistSessionRuntime` binds a session that has none — including one whose
-  // row a pre-launch settings change already created — and leaves an
-  // already-bound session completely alone, so a later call passing a different
-  // (or no) hint changes nothing. The first message wins.
-  const runtimeType = await resolveRuntimeTypeForNewSession({
-    runtimeHint,
-    agentPath: verifiedAgentPath,
-    cwd,
-  });
-  if (!runtimeRegistry.has(runtimeType)) {
-    return sendError(res, 400, `Unknown runtime: ${runtimeType}`, 'UNKNOWN_RUNTIME');
-  }
-  // The registry seeds this session's model, effort and trust stop from the
-  // server defaults if this call is what BINDS it — see `resolveSessionDefaults`
-  // — filling only what nobody chose, and re-checking a mode chosen before the
-  // runtime was known against what this one declares. Nothing is written for a
-  // session that is already bound, so a running conversation keeps whatever it
-  // is running with.
-  //
-  // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
-  // where that claim is true: a message posted to `/api/sessions/:id/messages`
-  // came from a person at a control panel holding the session's event stream
-  // open. Rooms, tasks and bindings never pass through here, and each names
-  // itself at its own call (DOR-2105).
-  const isNewSession = await runtimeRegistry.persistSessionRuntime(
-    sessionId,
-    runtimeType,
-    { kind: 'interactive' },
-    verifiedAgentPath
-  );
-  // Fire the anonymous `session_created` usage event exactly once, on the write
-  // that binds the session (no-op unless usage telemetry is on).
-  if (isNewSession)
-    reportUsageEvent({ event: 'session_created', properties: { runtime: runtimeType } });
-
-  // The billing-account launch hint, on exactly the `runtime` hint's lifecycle
-  // (ADR 260821-205323, mirroring ADR-0255). It is honored only on the send that
-  // CREATED this session, and only for claude-code — after launch the account is
-  // a fact on disk that nothing can move (ADR 260801-204127), and no other
-  // runtime has accounts at all. Anything else is ignored out loud rather than
-  // silently, because the person who picked it believed it would apply.
-  //
-  // Whether the id NAMES a registered account is deliberately not asked here:
-  // the resolver falls through an unknown id to the next rung so a launch never
-  // fails over a billing setting, and a 400 here would be exactly that failure.
-  let accountHint: string | undefined;
-  if (accountHintRaw !== undefined) {
-    if (isNewSession && runtimeType === 'claude-code') {
-      accountHint = accountHintRaw;
-    } else {
-      logger.warn('[POST /messages] ignoring account hint', {
-        sessionId,
-        account: accountHintRaw,
-        runtime: runtimeType,
-        reason: isNewSession ? 'runtime has no accounts' : 'session already launched',
-      });
-    }
-  }
 
   // Read X-Client-Id header, or generate UUID if missing
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
 
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-
-  // One id for this whole dispatch, minted BEFORE the trigger so the line that
-  // announces it already carries it and a reader can start there.
-  const dispatchId = newDispatchId();
-  logger.info('[POST /messages] trigger', { sessionId, contentLength: content.length, dispatchId });
-  recordDispatchStart({ dispatchId, origin: 'session', sessionId });
-
-  // The POST body's cwd is operator-chosen and authoritative — overwrite any
-  // earlier stamp from a subscribe-path default (an /events connect without
-  // ?cwd falls back to the workspace root, which would otherwise pin this
-  // session's liveness to the wrong agent first-writer-wins).
-  // Persist the completed-turn stream (DOR-189) so it survives a server
-  // restart: everything for a log-backed runtime, and for the rest the narrow
-  // record its own transcript cannot answer for — including the permission
-  // decisions this turn was gated on. Enabling here — before the turn is fed —
-  // guarantees the turn_end flush regardless of whether an /events subscribe
-  // has already minted (and persistence-enabled) the projector.
-  const projector = getOrCreateProjector(sessionId, effectiveCwd, {
-    persist: persistenceModeFor(runtime.getCapabilities()),
+  const result = await dispatchSessionMessage({
+    // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
+    // where that claim is true: a message posted to `/api/sessions/:id/messages`
+    // came from a person at a control panel holding the session's event stream
+    // open. Rooms, tasks and bindings never pass through here, and each names
+    // itself at its own call (DOR-2105).
+    origin: { kind: 'interactive' },
+    sessionId,
+    request: parsed.data,
+    clientId,
+    meshCore: req.app.locals.meshCore as MeshCore | undefined,
+    roomSessionPlace: req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
   });
-  if (effectiveCwd !== undefined) projector.cwd = effectiveCwd;
-
-  // Trigger the detached turn. The projector is keyed by the client-facing id
-  // (stable across the new-session remap, since the projector registry and
-  // `/events` both resolve by it); the canonical id is captured for the body.
-  //
-  // **The scope wraps `dispatchMessage`, and that placement is the whole phase.**
-  // The dispatcher CONSTRUCTS the detached generator chain and then awaits only
-  // the canonical-id race, so entering the dispatch here binds the context to
-  // the chain itself — an async generator created inside an ALS scope keeps
-  // that scope for its whole life. The turn therefore stays correlated long
-  // after this `await` resolves and the 202 has been sent (ADR-0264's `void
-  // turn;`). A scope placed around the awaited race INSIDE the dispatcher would
-  // expire at the 202 and correlate nothing; see
-  // `__tests__/sessions-dispatch-correlation.test.ts`, which fails if it moves.
-  const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
-    dispatchMessage({
-      sessionId,
-      clientId,
-      content,
-      cwd: effectiveCwd,
-      context,
-      // Background this turn's opener attached to it. It rides the neutral
-      // context bag, never `content`: the prompt stays the person's message
-      // byte for byte, and the seed is stripped from every rendered transcript.
-      ...(seedContext ? { seedContext } : {}),
-      // Only ever set on the session-creating claude-code send (see above).
-      ...(accountHint ? { accountHint } : {}),
-      // Absent means `queue`, which is also what every disposition resolves to
-      // until the native rungs land (P4). The receipt says which it was.
-      ...(disposition ? { disposition } : {}),
-      projector,
-      runtime,
-      onError: (err) => {
-        logger.warn('[POST /messages] detached turn error', {
-          sessionId,
-          ...logError(err),
-        });
-      },
-      // The 202 has long since gone out by the time this fires. It is the only
-      // moment the server learns how a detached turn ended, which is exactly
-      // what the debug buffer is asked for during an incident.
-      onSettled: (outcome) =>
-        recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered'),
-    })
-  );
-
-  if (result.queued) {
-    logger.info('[POST /messages] queued behind the running turn', {
-      sessionId,
-      dispatchId,
-      messageId: result.outcome.messageId,
-      queuePosition: result.queuePosition,
-    });
+  if (isSessionLaunchRefusal(result)) {
+    // A request naming something that does not exist is the caller's mistake;
+    // a turn refused for WHERE it would stand is a conflict with the session.
+    const status =
+      result.refused === 'ROOM_SESSION_MOVED' || result.refused === 'DESK_NOT_OWN' ? 409 : 400;
+    return sendError(res, status, result.message, result.refused);
   }
 
   res.status(202).json({
@@ -1521,6 +1192,15 @@ router.post('/:id/command-intents/:intent', sessionCommandIntentHandler);
 // rule. A person is the gate; an agent is refused `PEOPLE_ONLY` and reaches its
 // own canvas through `control_ui` and `read_canvas_document` instead.
 router.use('/:id/canvas', sessionCanvasRouter);
+
+// Out of usage: continue on another account or model, or wait for the reset
+// (spec claude-account-fleet D9). Handlers in `session-continue.ts`.
+router.get('/:id/continue-options', continueOptionsHandler);
+router.post('/:id/continue', continueSessionHandler);
+router.post('/:id/continue/cancel', cancelContinueHandler);
+router.post('/:id/wait', waitForResetHandler);
+// How past limits ended, for the transcript (spec claude-account-ui §7.1).
+router.get('/:id/limit-history', limitHistoryHandler);
 
 // POST /api/sessions/:id/devtools/ingest — DevTools bridge capture sink (DOR-213).
 // Session-gated (credentialed same-origin client call), Zod-validated, batch-capped.

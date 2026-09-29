@@ -35,6 +35,8 @@ export interface RelayDispatchDeps {
   runs: RunAccounting;
   /** Resolves the task's effective working directory; throws when its agent is gone. */
   resolveCwd: (task: Task) => Promise<string>;
+  /** The home of the task's agent, resolved with the cwd; absent for an agent-less task. */
+  forAgent?: string;
 }
 
 /** Fallback deadline for a dispatch envelope when the task sets none. */
@@ -138,6 +140,9 @@ export async function dispatchRunViaRelay(
     runId: run.id,
     prompt: task.prompt,
     cwd: effectiveCwd,
+    // The task's agent, so the receiving runtime reads identity from its home
+    // (spec `agent-home-desk` §3.2 row 12). Absent for an agent-less task.
+    ...(deps.forAgent !== undefined ? { forAgent: deps.forAgent } : {}),
     // Defence in depth, symmetric with the direct path (`executeRunDirect`): the
     // `??` branch is unreachable through the shipped store, where
     // `pulse_schedules.permission_mode` is NOT NULL DEFAULT, but a row that
@@ -147,7 +152,10 @@ export async function dispatchRunViaRelay(
     // ...and read in the RESOLVED runtime's own mode vocabulary (DOR-1615).
     permissionMode:
       task.permissionMode ??
-      resolveScheduledRunPermissionMode({ capabilities: execution.capabilities }),
+      resolveScheduledRunPermissionMode({
+        capabilities: execution.capabilities,
+        agent: execution.agent,
+      }),
     taskName: task.name,
     cron: task.cron,
     trigger: run.trigger,
@@ -179,6 +187,12 @@ export async function dispatchRunViaRelay(
     // which is byte-for-byte what every relay envelope carried before.
     ...(execution.settings.model !== undefined ? { model: execution.settings.model } : {}),
     ...(execution.settings.effort !== undefined ? { effort: execution.settings.effort } : {}),
+    // The schedule's own Claude account (DOR-2384), for the receiver to hand the
+    // runtime as its launch hint. Absent keeps every envelope without one
+    // byte-for-byte what it was.
+    ...(execution.settings.accountHint !== undefined
+      ? { account: execution.settings.accountHint }
+      : {}),
   };
 
   // No `replyTo`. Nothing subscribes to a task run's progress: this function

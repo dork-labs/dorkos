@@ -15,8 +15,9 @@ import { test, expect } from '../fixtures';
  *      across a reload — the server config gains `defaultTrustStop: 'autonomy'`
  *      with a recorded `autonomyAcknowledgedAt` and `fullPowerChoice: 'full'`,
  *      and the mesh opens; a reload does not undo any of it;
- *   3. DECLINE ("Keep asking me first") records `fullPowerChoice: 'supervised'`,
- *      touches nothing consent-gated, and PERSISTS across a reload.
+ *   3. DECLINE ("Keep asking me first") records `fullPowerChoice: 'supervised'`
+ *      and the Careful preset (Files & commands: Ask first), touches nothing
+ *      consent-gated, and PERSISTS across a reload.
  *
  * ## It RUNS in CI (no skip gate), and how it stays out of other specs' way
  *
@@ -43,7 +44,6 @@ interface PowerConfigView {
   autonomyAcknowledgedAt: string | null;
   fullPowerDecidedAt: string | null;
   fullPowerChoice: string | null;
-  standingGrants: boolean;
 }
 
 /**
@@ -66,14 +66,12 @@ async function readPowerConfig(request: APIRequestContext): Promise<PowerConfigV
       fullPowerChoice?: string | null;
     };
     executionDefaults?: { trustStop?: string | null };
-    approvals?: { standingGrants?: boolean };
   };
   return {
     defaultTrustStop: config.executionDefaults?.trustStop ?? null,
     autonomyAcknowledgedAt: config.ui?.autonomyAcknowledgedAt ?? null,
     fullPowerDecidedAt: config.ui?.fullPowerDecidedAt ?? null,
     fullPowerChoice: config.ui?.fullPowerChoice ?? null,
-    standingGrants: config.approvals?.standingGrants ?? false,
   };
 }
 
@@ -177,8 +175,6 @@ test.describe('Onboarding power stage @full-power', () => {
     expect(config.defaultTrustStop).toBe('autonomy');
     expect(config.autonomyAcknowledgedAt).not.toBeNull();
     expect(config.fullPowerChoice).toBe('full');
-    // Login off on this leg → standing grants (a login-gated path) stays off.
-    expect(config.standingGrants).toBe(false);
     expect(await readMeshOpen(request)).toBe(true);
 
     // The choice survives a reload: nothing is undone and the decision sticks.
@@ -202,16 +198,18 @@ test.describe('Onboarding power stage @full-power', () => {
     const config = await readPowerConfig(request);
     expect(config.fullPowerChoice).toBe('supervised');
     expect(config.fullPowerDecidedAt).not.toBeNull();
-    expect(config.defaultTrustStop).toBeNull();
+    // The Careful preset sets Files & commands to Ask first (spec
+    // `agent-permissions` D5): the answer is written down, never left to a
+    // runtime's own default.
+    expect(config.defaultTrustStop).toBe('ask');
     expect(config.autonomyAcknowledgedAt).toBeNull();
-    expect(config.standingGrants).toBe(false);
     expect(await readMeshOpen(request)).toBe(false);
 
     await page.reload();
     await basePage.waitForAppReady();
     const afterReload = await readPowerConfig(request);
     expect(afterReload.fullPowerChoice).toBe('supervised');
-    expect(afterReload.defaultTrustStop).toBeNull();
+    expect(afterReload.defaultTrustStop).toBe('ask');
     expect(afterReload.fullPowerDecidedAt).not.toBeNull();
   });
 

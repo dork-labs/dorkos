@@ -43,6 +43,7 @@ const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'),
   peerDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
 };
 
 /** Every `.ts` file under `src/`, excluding tests. */
@@ -65,7 +66,7 @@ describe('packaging', () => {
     expect(manifest.publishConfig?.access).toBe('public');
   });
 
-  it('ships its declarations, its client and its fixtures', () => {
+  it('ships its declarations, its client, its display formatter and its fixtures', () => {
     expect(manifest.files).toContain('dist');
     expect(manifest.files).toContain('fixtures');
     expect(manifest.exports?.['.']).toEqual({
@@ -76,6 +77,29 @@ describe('packaging', () => {
       types: './dist/client.d.ts',
       default: './dist/client.js',
     });
+    expect(manifest.exports?.['./display']).toEqual({
+      types: './dist/display.d.ts',
+      default: './dist/display.js',
+    });
+  });
+
+  // Emptying `dist/` is a publish concern, so it lives in `prepublishOnly` and
+  // never in `build`. `build` runs while other things read `dist/`: every API
+  // leg of the browser suite boots through `turbo run build`, beside two Vite
+  // dev servers whose startup dependency scan resolves this package through
+  // `exports` -> `dist/`. A `build` that deletes `dist/` first leaves it absent
+  // for the whole `tsc` run; a scan landing in that window aborts, and every
+  // dependency is then discovered at runtime, re-optimized and force-reloaded
+  // under whichever test runs first (the queue's `browser-test` red of
+  // 2026-09-27: duplicate React copies, "Cannot read properties of null
+  // (reading 'useMemo')").
+  it('empties dist/ only for a publish, never on an ordinary build', () => {
+    const scripts = manifest.scripts ?? {};
+    expect(scripts.build, 'build must leave the existing dist/ in place').not.toMatch(
+      /\bclean\b|rmSync|\brm\b|rimraf/
+    );
+    expect(scripts.prepublishOnly).toMatch(/^pnpm run clean && pnpm run build$/);
+    expect(scripts.clean).toMatch(/rmSync\('dist'/);
   });
 
   it('declares zod as a peer and nothing as a runtime dependency', () => {
@@ -108,6 +132,21 @@ describe('packaging', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('publishes from an empty dist, but never empties dist on an ordinary build', () => {
+    // Publish: tsc never removes an output whose source is gone and `files`
+    // ships all of dist/, so a stale file would ride along (it did, in 0.87.0).
+    expect(manifest.scripts?.prepublishOnly).toBe('pnpm run clean && pnpm run build');
+    // …and `clean` really empties dist/, or the publish step above cleans nothing.
+    expect(manifest.scripts?.clean).toMatch(/rmSync\('dist',\{recursive:true,force:true\}\)/);
+    // Build: several turbo processes build this package at once (every e2e leg
+    // runs its own `turbo run build`) while a Vite dev server is already
+    // resolving imports from dist/. A build that deletes dist/ first leaves the
+    // package unresolvable for a moment; Vite's dependency scan fails on it,
+    // discovers dependencies late and re-optimizes under a loaded page, which
+    // ends with two copies of React and stalled the merge queue's browser suite.
+    expect(manifest.scripts?.build).toBe('tsc -p tsconfig.build.json');
   });
 
   it('resolves to no workspace link in the lockfile', () => {

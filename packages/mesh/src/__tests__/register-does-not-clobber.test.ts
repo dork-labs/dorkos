@@ -59,7 +59,6 @@ function makeManifest(overrides: Partial<AgentManifest> & { id: string }): Agent
     registeredAt: '2026-08-10T00:00:00.000Z',
     registeredBy: 'test',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
     ...overrides,
   };

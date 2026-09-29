@@ -1,12 +1,23 @@
+import { Button, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
+import { HoldBanner } from './components/HoldBanner.js';
 import { Manage } from './components/Manage.js';
 import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { rememberCommunity } from './remembered-community.js';
-import { describeError, hostRequest, RequestError, request } from './api.js';
+import { ErasureBanner } from './components/Erasure.js';
+import {
+  communityBasePath,
+  describeError,
+  hostRequest,
+  isCommunityPath,
+  RequestError,
+  request,
+  shortNameBasePath,
+} from './api.js';
 import { readInviteFragment } from './invite-fragment.js';
 import { readPendingAdmission } from './admission.js';
 import {
@@ -30,6 +41,8 @@ export function CommunityApp() {
   const inviteTokenRef = useRef(inviteToken);
   const [community, setCommunity] = useState<Community | null>(null);
   const [communityLifecycle, setCommunityLifecycle] = useState<CommunityLifecycle | null>(null);
+  const [communityShortName, setCommunityShortName] = useState<string | null>(null);
+  const [deletionNoticeAt, setDeletionNoticeAt] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [unadmitted, setUnadmitted] = useState(false);
   const [hostSignIn, setHostSignIn] = useState(false);
@@ -40,7 +53,9 @@ export function CommunityApp() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // A DorkOS app opens `/c/<id>/settings[/<section>]` for invite, leave and
   // settings: those need this person's own sign-in, never the installation's.
-  const [settingsRoute] = useState(() => parseCommunitySettingsPath(window.location.pathname));
+  const [settingsRoute] = useState(() =>
+    parseCommunitySettingsPath(window.location.pathname, shortNameBasePath())
+  );
   const [settings, setSettings] = useState(settingsRoute !== null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -52,7 +67,7 @@ export function CommunityApp() {
     [channels, selectedId]
   );
   const returnToChooser = useCallback(() => {
-    if (/^\/c\/[^/]+(?:\/|$)/u.test(window.location.pathname)) returnToChooserWithNotice();
+    if (isCommunityPath(window.location.pathname)) returnToChooserWithNotice();
   }, []);
   const eraseInviteToken = useCallback(() => {
     inviteTokenRef.current = null;
@@ -94,11 +109,13 @@ export function CommunityApp() {
         returnToChooser();
         return null;
       }
-      if (membership.lifecycle !== 'active' && membership.lifecycle !== 'archived') {
+      if (!['active', 'archived', 'held'].includes(membership.lifecycle)) {
         returnToChooser();
         return null;
       }
       setCommunityLifecycle(membership.lifecycle);
+      setDeletionNoticeAt(membership.deletionNoticeAt);
+      setCommunityShortName(membership.shortName);
       return membership.lifecycle;
     },
     [returnToChooser]
@@ -127,7 +144,7 @@ export function CommunityApp() {
         setCommunity(metadata);
         rememberCommunity(metadata.id);
         if (window.location.pathname === '/' || window.location.pathname === '/join')
-          window.history.replaceState(null, '', `/c/${metadata.id}`);
+          window.history.replaceState(null, '', communityBasePath(metadata.id));
         const joinPath = /\/join$/u.test(window.location.pathname);
         if (inviteTokenRef.current && joinPath) {
           setMe(null);
@@ -149,7 +166,10 @@ export function CommunityApp() {
             setAdmissionResume({ kind: 'lost' });
           } catch (cause) {
             if (!active) return;
-            if (cause instanceof RequestError && cause.status === 409) {
+            if (
+              cause instanceof RequestError &&
+              (cause.status === 409 || cause.code === 'COMMUNITY_HELD')
+            ) {
               setAdmissionResume({ kind: 'refused', cause });
               setMe(null);
               return;
@@ -165,7 +185,7 @@ export function CommunityApp() {
           setMe(current);
           setUnadmitted(false);
           // Joined: the join URL has nothing left to resume, so a later reload enters directly.
-          if (joinPath) window.history.replaceState(null, '', `/c/${metadata.id}`);
+          if (joinPath) window.history.replaceState(null, '', communityBasePath(metadata.id));
           await refreshChannels();
         } catch (cause) {
           if (!active) return;
@@ -185,7 +205,7 @@ export function CommunityApp() {
         if (cause instanceof RequestError && cause.status === 404) {
           // An unknown tenant ID gets the same answer as one this account cannot enter; only
           // a host with no community at all offers first-host setup.
-          if (/^\/c\//u.test(window.location.pathname)) returnToChooser();
+          if (isCommunityPath(window.location.pathname)) returnToChooser();
           setCommunity(null);
           setMe(null);
         } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_SELECTION_REQUIRED') {
@@ -234,9 +254,9 @@ export function CommunityApp() {
           <p role="alert" className="muted">
             {error}
           </p>
-          <button className="button primary" onClick={() => setRevision((old) => old + 1)}>
+          <Button variant="default" onClick={() => setRevision((old) => old + 1)}>
             Try again
-          </button>
+          </Button>
         </div>
       </main>
     );
@@ -251,22 +271,22 @@ export function CommunityApp() {
           <p className="muted">
             Open the community now, or connect a DorkOS installation as a separate next step.
           </p>
-          <button
-            className="button primary"
+          <Button
+            variant="default"
             onClick={() => {
               setAdmissionComplete(false);
               setRevision((old) => old + 1);
             }}
           >
             Open community
-          </button>
-          <div className="notice mt-4">
+          </Button>
+          <Notice tone="info" className="mt-4">
             <strong>Connect this DorkOS installation</strong>
             <p className="small muted mb-0">
               In the DorkOS app, open Connections, then Messaging, then Communities. Each
               installation needs its own approval.
             </p>
-          </div>
+          </Notice>
         </section>
       </main>
     );
@@ -292,8 +312,8 @@ export function CommunityApp() {
       />
     );
   const leaveSettingsPath = () => {
-    if (community && parseCommunitySettingsPath(window.location.pathname))
-      window.history.replaceState(null, '', `/c/${community.id}`);
+    if (community && parseCommunitySettingsPath(window.location.pathname, shortNameBasePath()))
+      window.history.replaceState(null, '', communityBasePath(community.id));
   };
   const choose = (id: string) => {
     setSelectedId(id);
@@ -301,7 +321,8 @@ export function CommunityApp() {
     setMobileOpen(false);
     leaveSettingsPath();
   };
-  const readOnly = communityLifecycle === 'archived';
+  const held = communityLifecycle === 'held';
+  const readOnly = communityLifecycle === 'archived' || held;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`} aria-label="Community channels">
@@ -309,9 +330,13 @@ export function CommunityApp() {
           <p className="eyebrow">DorkOS Community</p>
           <h1>{community?.name ?? 'Your community'}</h1>
           <p className="small muted mb-0">Signed in as {me.member.displayName}</p>
-          <button className="button mt-3 w-full" onClick={() => window.location.assign('/')}>
+          <Button
+            variant="outline"
+            className="mt-3 w-full"
+            onClick={() => window.location.assign('/')}
+          >
             Switch community
-          </button>
+          </Button>
         </div>
         <div className="sidebar-list">
           <p className="sidebar-section">Your channels</p>
@@ -381,22 +406,25 @@ export function CommunityApp() {
       <section className="main-area">
         <header className="topbar">
           <div className="row">
-            <button
-              className="button ghost mobile-only"
+            <Button
+              variant="ghost"
+              className="mobile-only"
               aria-label="Open channel navigation"
               onClick={() => setMobileOpen(true)}
             >
               <Menu size={20} />
-            </button>
+            </Button>
             <div>
               <p className="eyebrow mb-0">
-                {readOnly
-                  ? 'Archived community'
-                  : settings
-                    ? 'Settings'
-                    : selected?.visibility === 'private'
-                      ? 'Private channel'
-                      : 'Channel'}
+                {held
+                  ? 'On hold'
+                  : readOnly
+                    ? 'Archived community'
+                    : settings
+                      ? 'Settings'
+                      : selected?.visibility === 'private'
+                        ? 'Private channel'
+                        : 'Channel'}
               </p>
               <h2>{settings ? 'Your space' : selected ? `# ${selected.name}` : 'Welcome'}</h2>
             </div>
@@ -406,33 +434,36 @@ export function CommunityApp() {
               <span className="small muted hidden sm:inline">
                 {selected.archived ? 'Archived' : selected.joined ? 'Joined' : 'Explore'}
               </span>
-              <button className="button" aria-label="Manage" onClick={() => setSettings(true)}>
+              <Button variant="outline" aria-label="Manage" onClick={() => setSettings(true)}>
                 <Settings2 size={16} />
                 <span className="hidden sm:inline">Manage</span>
-              </button>
+              </Button>
             </div>
           )}
           {settings && (
-            <button
-              className="button"
+            <Button
+              variant="outline"
               onClick={() => {
                 setSettings(false);
                 leaveSettingsPath();
               }}
             >
               <X size={16} /> Close
-            </button>
+            </Button>
           )}
         </header>
         {error && (
-          <div className="notice error m-3" role="alert">
+          <Notice tone="error" className="m-3" role="alert">
             {error}
-          </div>
+          </Notice>
         )}
+        <ErasureBanner communityId={community!.id} />
+        {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (
           <Manage
             communityId={community!.id}
             communityName={community!.name}
+            communityAddress={`${window.location.origin}${communityShortName ? `/${communityShortName}` : `/c/${community!.id}`}`}
             me={me.member}
             channels={channels}
             initialSection={settingsRoute?.section ?? null}
@@ -448,22 +479,27 @@ export function CommunityApp() {
               setSignedOut(true);
             }}
             readOnly={readOnly}
+            held={held}
           />
         ) : selected ? (
           <ChannelView
             key={selected.id}
+            communityId={community!.id}
             channel={selected}
+            me={me.member}
             onChanged={onChanged}
+            onMemberStale={() => void refreshCurrentMember().catch(() => {})}
             readOnly={readOnly}
+            held={held}
           />
         ) : (
           <div className="settings">
             <div className="panel p-8">
               <h2>No channels yet</h2>
               <p className="muted">An admin can create a channel from Settings.</p>
-              <button className="button primary" onClick={() => setSettings(true)}>
+              <Button variant="default" onClick={() => setSettings(true)}>
                 Open settings
-              </button>
+              </Button>
             </div>
           </div>
         )}
