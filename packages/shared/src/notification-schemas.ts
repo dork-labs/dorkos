@@ -95,6 +95,12 @@ export const NOTIFICATION_KINDS = [
    * Standing, per copy and version; `notable`, so it never reaches a phone.
    */
   'extension.approval',
+  /**
+   * An extension asks a person something through `ctx.inbox` (spec
+   * `flow-multiproject` §7). Standing, one per extension and key; `blocking`,
+   * so it may reach a phone, with generic push text.
+   */
+  'extension.decision',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */
@@ -175,6 +181,46 @@ export const NotificationOutcomeSchema = z
 /** How a standing condition ended. */
 export type NotificationOutcome = (typeof NOTIFICATION_OUTCOMES)[number];
 
+/**
+ * Who settled an extension's decision (spec `flow-multiproject` §7.9).
+ *
+ * `person`: somebody answered in DorkOS. `deadline`: the agent's pick was
+ * applied when nobody answered in time. `agent` and `rule`: the extension let
+ * an agent it trusts, or a setting the person chose, decide. `extension`: the
+ * extension settled or withdrew it itself, or it was answered on the
+ * extension's own page.
+ */
+export const DECISION_RESOLVED_BY = ['person', 'deadline', 'agent', 'rule', 'extension'] as const;
+
+/** Who settled an extension's decision. */
+export const DecisionResolvedBySchema = z.enum(DECISION_RESOLVED_BY).openapi('DecisionResolvedBy');
+
+/** Who settled an extension's decision. */
+export type DecisionResolvedBy = (typeof DECISION_RESOLVED_BY)[number];
+
+/**
+ * What an `extension.decision` history row carries beyond its title and body,
+ * so the inbox can tell "you answered" from "decided while you were away" and
+ * draw a chat to watch.
+ */
+export const NotificationDecisionSchema = z
+  .object({
+    /** The extension that raised it. */
+    extensionId: z.string().min(1),
+    /** Who settled it. */
+    resolvedBy: DecisionResolvedBySchema,
+    /** Who, in words, for `agent`, `rule` and `extension`; otherwise null. */
+    resolvedByLabel: z.string().nullable(),
+    /** True for a decision that was never asked (`ctx.inbox.record`). */
+    recorded: z.boolean(),
+    /** A chat the extension started about it, drawn as "· Watch". */
+    watch: z.object({ sessionId: z.string().min(1), label: z.string().min(1) }).nullable(),
+  })
+  .openapi('NotificationDecision');
+
+/** What an `extension.decision` history row carries. */
+export type NotificationDecision = z.infer<typeof NotificationDecisionSchema>;
+
 /** How a surface should draw an action button. */
 export const NOTIFICATION_ACTION_STYLES = ['primary', 'danger', 'neutral'] as const;
 
@@ -249,6 +295,8 @@ export const NotificationDTOSchema = z
     resolvedAt: z.string().optional(),
     /** How it ended. Set exactly when {@link resolvedAt} is. */
     outcome: NotificationOutcomeSchema.optional(),
+    /** Who decided, on an `extension.decision` history row only. */
+    decision: NotificationDecisionSchema.optional(),
   })
   .openapi('Notification');
 

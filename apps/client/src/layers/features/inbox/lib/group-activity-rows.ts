@@ -108,8 +108,33 @@ function groupShapeKey(
   return `${agentId}:${kind}:${tone}`;
 }
 
+/**
+ * Three or more consecutive decisions an extension made while the person was
+ * away (spec `flow-multiproject` §7.9): `extension.decision` history rows
+ * whose `decision.resolvedBy` is not `person`, folded into one "While you
+ * were away · 5" row. History, never asks.
+ */
+export interface InboxAwayItem {
+  type: 'away';
+  /** The oldest member's id: stable while newer rows join the run. */
+  id: string;
+  /** Which run this is, stable across renders (`away#<nth>`), for expand state. */
+  stateKey: string;
+  /** Newest first. */
+  notifications: readonly NotificationDTO[];
+}
+
 /** What {@link groupActivityRows} hands back, in source order. */
-export type InboxListItem = InboxRowItem | InboxGroupItem;
+export type InboxListItem = InboxRowItem | InboxGroupItem | InboxAwayItem;
+
+/** Whether a row is a decision made without the person, which folds into "While you were away". */
+function decidedWhileAway(notification: NotificationDTO): boolean {
+  return (
+    notification.kind === 'extension.decision' &&
+    notification.decision !== undefined &&
+    notification.decision.resolvedBy !== 'person'
+  );
+}
 
 /**
  * Fold consecutive runs sharing `agentId`, `kind` AND tone into groups of
@@ -135,9 +160,30 @@ export function groupActivityRows(notifications: readonly NotificationDTO[]): In
   const shapeOccurrences = new Map<string, number>();
   let i = 0;
 
+  let awayRuns = 0;
+
   while (i < notifications.length) {
     const first = notifications[i];
     const agentId = first.agentId;
+
+    if (decidedWhileAway(first)) {
+      let j = i + 1;
+      while (j < notifications.length && decidedWhileAway(notifications[j])) j += 1;
+      const run = notifications.slice(i, j);
+      if (run.length >= MIN_BURST_SIZE) {
+        items.push({
+          type: 'away',
+          id: run[run.length - 1].id,
+          stateKey: `away#${awayRuns}`,
+          notifications: run,
+        });
+        awayRuns += 1;
+      } else {
+        for (const notification of run) items.push({ type: 'row', notification });
+      }
+      i = j;
+      continue;
+    }
 
     if (agentId === undefined || !isGroupableKind(first.kind)) {
       items.push({ type: 'row', notification: first });

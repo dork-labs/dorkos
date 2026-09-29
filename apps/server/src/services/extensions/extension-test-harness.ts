@@ -103,10 +103,37 @@ export class MockExtensionAPI {
   /** No-op: client-side navigation. */
   navigate(): void {}
 
-  /** Returns stub state with all nulls. */
+  /** Returns stub state with all nulls, and login off. */
   getState(): ExtensionReadableState {
-    return { currentCwd: null, activeSessionId: null, agentId: null, currentProject: null };
+    return {
+      currentCwd: null,
+      activeSessionId: null,
+      agentId: null,
+      currentProject: null,
+      requireLogin: false,
+    };
   }
+
+  /** No-op: answers nothing was settled. */
+  async answerDecision(): Promise<{
+    resolved: boolean;
+    message: null;
+    navigate: null;
+    watch: null;
+  }> {
+    return { resolved: false, message: null, navigate: null, watch: null };
+  }
+
+  /** No-op: no open decisions in a test run. */
+  async listDecisions(): Promise<never[]> {
+    return [];
+  }
+
+  /** No-op per-project settings: nothing stored, writes dropped. */
+  readonly projectSettings = {
+    get: async (): Promise<null> => null,
+    set: async (): Promise<void> => {},
+  };
 
   /** No-op: state subscription. */
   subscribe(): () => void {

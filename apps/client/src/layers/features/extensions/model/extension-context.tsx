@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { registerExtensionRemount } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
+import { useSyncRequireLogin } from './use-sync-require-login';
 import { useSyncCurrentAgentId, useReconcileExplicitAgentPath } from '@/layers/entities/agent';
 import { useCurrentProjectSync } from '@/layers/entities/project';
 import type { LoadedExtension, ExtensionAPIDeps } from './types.js';
@@ -115,6 +116,9 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   // can tell extensions which agent they run beside (getState().agentId).
   useSyncCurrentAgentId();
 
+  // Mirror Require login, so an extension can say who may change a setting
+  // only a person should (getState().requireLogin, spec flow-multiproject §7.10).
+  useSyncRequireLogin();
   // And the selected cwd's project, for getState().currentProject (spec
   // `flow-multiproject` §6.4).
   useCurrentProjectSync();

@@ -104,6 +104,17 @@ export function extensionApprovalSignalId(approval: {
 }
 
 /**
+ * The id an extension's open decision carries (spec `flow-multiproject` §7.5):
+ * core's own id for the row, which stays the same while the extension updates
+ * the decision in place.
+ *
+ * @param decisionId - Core's id for the decision.
+ */
+export function extensionDecisionSignalId(decisionId: string): string {
+  return `extension-decision:${decisionId}`;
+}
+
+/**
  * Whether a captured prompt reads as a question or a permission prompt.
  *
  * An MCP elicitation is not its own kind — it is a prompt from a server

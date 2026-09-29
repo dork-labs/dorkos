@@ -7,7 +7,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expectTypeOf, it, expect } from 'vitest';
 import type {
+  DecisionActions,
+  DecisionAnswer,
+  DecisionAnswerResult,
   ExtensionAPI,
+  ExtensionDecisionView,
   ExtensionPageOptions,
   ExtensionPageProps,
   ExtensionPointId,
@@ -20,8 +24,19 @@ import type {
 import type {
   DataProviderContext,
   LimitedSessionInfo,
+  DecisionActionEvent,
+  DecisionActionResult,
+  DecisionActor,
+  DecisionInput,
+  DecisionOffer,
+  DecisionOutcome,
+  DecisionWatch,
+  InboxApi,
   ProjectInfo,
+  ProjectSettingsReader,
   ProjectsApi,
+  RaisedDecision,
+  RecordedDecisionInput,
   SessionInfo,
 } from '../server-extension-api.js';
 import type * as Contract from '../__fixtures__/seam-contract/seams.contract.js';
@@ -44,7 +59,7 @@ describe('extension seam contract', () => {
 
   it('matches the context and session members it covers both ways', () => {
     expectTypeOf<
-      Pick<DataProviderContext, 'projects'>
+      Pick<DataProviderContext, 'projects' | 'inbox' | 'requirePerson' | 'projectSettings'>
     >().toEqualTypeOf<Contract.DataProviderContextSeams>();
     expectTypeOf<
       Pick<SessionInfo, 'trackerItems' | 'trackerItem'>
@@ -54,6 +69,29 @@ describe('extension seam contract', () => {
     >().toEqualTypeOf<Contract.SessionInfoSeams>();
   });
 
+  it('matches the inbox and project-settings types both ways', () => {
+    expectTypeOf<DecisionActions>().toEqualTypeOf<Contract.DecisionActions>();
+    expectTypeOf<DecisionAnswer>().toEqualTypeOf<Contract.DecisionAnswer>();
+    expectTypeOf<DecisionAnswerResult>().toEqualTypeOf<Contract.DecisionAnswerResult>();
+    expectTypeOf<ExtensionDecisionView>().toEqualTypeOf<Contract.ExtensionDecisionView>();
+    expectTypeOf<DecisionInput>().toEqualTypeOf<Contract.DecisionInput>();
+    expectTypeOf<RaisedDecision>().toEqualTypeOf<Contract.RaisedDecision>();
+    expectTypeOf<DecisionOutcome>().toEqualTypeOf<Contract.DecisionOutcome>();
+    expectTypeOf<DecisionActor>().toEqualTypeOf<Contract.DecisionActor>();
+    expectTypeOf<DecisionActionEvent>().toEqualTypeOf<Contract.DecisionActionEvent>();
+    expectTypeOf<DecisionWatch>().toEqualTypeOf<Contract.DecisionWatch>();
+    expectTypeOf<DecisionActionResult>().toEqualTypeOf<Contract.DecisionActionResult>();
+    expectTypeOf<DecisionOffer>().toEqualTypeOf<Contract.DecisionOffer>();
+    expectTypeOf<RecordedDecisionInput>().toEqualTypeOf<Contract.RecordedDecisionInput>();
+    expectTypeOf<InboxApi>().toEqualTypeOf<Contract.InboxApi>();
+    expectTypeOf<ProjectSettingsReader>().toEqualTypeOf<Contract.ProjectSettingsReader>();
+  });
+
+  it('gives the server half no way to write per-project settings (§7.10)', () => {
+    expectTypeOf<ProjectSettingsReader>().not.toHaveProperty('set');
+    expectTypeOf<DataProviderContext['projectSettings']>().not.toHaveProperty('set');
+  });
+
   it('matches the client seams (pages, status bar, tab marker, navigate) both ways', () => {
     expectTypeOf<ExtensionPointId>().toEqualTypeOf<Contract.ExtensionPointId>();
     expectTypeOf<ExtensionPageProps>().toEqualTypeOf<Contract.ExtensionPageProps>();
@@ -61,12 +99,19 @@ describe('extension seam contract', () => {
     expectTypeOf<StatusBarSlotContext>().toEqualTypeOf<Contract.StatusBarSlotContext>();
     expectTypeOf<StatusBarItemOptions>().toEqualTypeOf<Contract.StatusBarItemOptions>();
     expectTypeOf<
-      Pick<ExtensionReadableState, 'currentProject'>
+      Pick<ExtensionReadableState, 'currentProject' | 'requireLogin'>
     >().toEqualTypeOf<Contract.ExtensionReadableStateSeams>();
     expectTypeOf<
       Pick<
         ExtensionAPI,
-        'registerPage' | 'registerStatusBarItem' | 'setTabMarker' | 'navigate' | 'isSlotAvailable'
+        | 'registerPage'
+        | 'registerStatusBarItem'
+        | 'setTabMarker'
+        | 'navigate'
+        | 'isSlotAvailable'
+        | 'answerDecision'
+        | 'listDecisions'
+        | 'projectSettings'
       >
     >().toEqualTypeOf<Contract.ExtensionAPISeams>();
   });
