@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
+import { BLOB_DELETE_TIMEOUT_MS, BLOB_LOCK_TIMEOUT_MS } from '../deletion-worker.js';
 import { releaseCommunityShortNames } from '../host/short-names.js';
 import type { BlobStore } from '../storage/index.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
@@ -9,9 +10,10 @@ import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
 const LEGAL_HOLD_RECHECK = "interval '5 minutes'";
 
 /**
- * Lock the import's community and report whether a host legal hold stands on it. A held
- * community is never removed (ADR 260924-215422): the pass queues no file and deletes no row,
- * and the import is looked at again later, so it finishes once the host releases the hold.
+ * Report whether a host legal hold stands on the import's community, whose row the caller
+ * already holds `FOR UPDATE` (placing a hold takes the same lock). A held community is never
+ * removed (ADR 260924-215422): the pass deletes no row and queues no file, and the import is
+ * looked at again later, so it finishes once the host releases the hold.
  */
 async function legallyHeld(
   client: PoolClient,
@@ -19,7 +21,7 @@ async function legallyHeld(
   communityId: string
 ): Promise<boolean> {
   const community = await client.query<{ legal_hold_at: Date | null }>(
-    'SELECT legal_hold_at FROM communities WHERE id=$1 FOR UPDATE',
+    'SELECT legal_hold_at FROM communities WHERE id=$1',
     [communityId]
   );
   if (!community.rows[0]?.legal_hold_at) return false;
@@ -29,6 +31,35 @@ async function legallyHeld(
     [importId]
   );
   return true;
+}
+
+/**
+ * Lock an import that needs tearing down and its community, community first, the same order
+ * every host route takes them in. Returns the community, or null when there is nothing to do.
+ */
+async function lockTarget(
+  client: PoolClient,
+  importId: string,
+  skipLocked: boolean
+): Promise<string | null> {
+  const target = await client.query<{ community_id: string | null }>(
+    'SELECT community_id FROM community_imports WHERE id=$1',
+    [importId]
+  );
+  const communityId = target.rows[0]?.community_id;
+  if (!communityId) return null;
+  const skip = skipLocked ? ' SKIP LOCKED' : '';
+  const community = await client.query(`SELECT 1 FROM communities WHERE id=$1 FOR UPDATE${skip}`, [
+    communityId,
+  ]);
+  if (!community.rowCount) return null;
+  const job = await client.query(
+    `SELECT 1 FROM community_imports
+     WHERE id=$1 AND community_id=$2 AND state IN ('cancelled','failed') AND settled_at IS NULL
+     FOR UPDATE${skip}`,
+    [importId, communityId]
+  );
+  return job.rowCount ? communityId : null;
 }
 
 /** What one teardown pass did. */
@@ -50,13 +81,7 @@ export async function teardownImport(
   importId: string
 ): Promise<TeardownOutcome> {
   const queued = await transaction(pool, async (client) => {
-    const job = await client.query<{ community_id: string | null }>(
-      `SELECT community_id FROM community_imports
-       WHERE id=$1 AND state IN ('cancelled','failed') AND settled_at IS NULL
-       FOR UPDATE SKIP LOCKED`,
-      [importId]
-    );
-    const communityId = job.rows[0]?.community_id;
+    const communityId = await lockTarget(client, importId, true);
     if (!communityId) return null;
     if (await legallyHeld(client, importId, communityId)) return 'held';
     // Progress rows and the staging reference are what keep these files from the cleanup
@@ -86,7 +111,21 @@ export async function teardownImport(
 
   for (const key of queued.keys) {
     try {
-      await blobStore.delete(key);
+      // Each file is deleted while the community row is held FOR SHARE, after checking for a
+      // legal hold, as the tenant deletion worker does: placing a hold takes that row FOR
+      // UPDATE, so once it commits no further file is removed here. Both halves are bounded so
+      // one slow file never holds the row for long.
+      const held = await transaction(pool, async (client) => {
+        await client.query(`SET LOCAL statement_timeout = '${BLOB_LOCK_TIMEOUT_MS}'`);
+        const current = await client.query<{ legal_hold_at: Date | null }>(
+          'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
+          [queued.communityId]
+        );
+        if (!current.rows[0] || current.rows[0].legal_hold_at) return true;
+        await blobStore.delete(key, { signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS) });
+        return false;
+      });
+      if (held) return 'waiting';
     } catch (error) {
       await pool.query(
         `UPDATE pending_blob_deletions
@@ -110,12 +149,7 @@ export async function teardownImport(
   }
 
   return transaction(pool, async (client) => {
-    const job = await client.query<{ community_id: string | null }>(
-      `SELECT community_id FROM community_imports
-       WHERE id=$1 AND state IN ('cancelled','failed') AND settled_at IS NULL FOR UPDATE`,
-      [importId]
-    );
-    const communityId = job.rows[0]?.community_id;
+    const communityId = await lockTarget(client, importId, false);
     if (!communityId) return 'skipped';
     if (await legallyHeld(client, importId, communityId)) return 'waiting';
     // A stale reservation (its writer's lease is over) is moved to cleanup here, as the pending

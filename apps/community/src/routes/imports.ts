@@ -238,19 +238,27 @@ export function registerImportRoutes(
     await readJson(c, CommunityAdminImportMutationRequestSchema);
     const importId = parseImportId(c.req.param('id'));
     const row = await transaction(pool, async (client) => {
+      // Community first, then the import: the order the import worker and every host route
+      // take them in, so a cancel racing the worker's last step waits instead of deadlocking.
+      const target = await loadImport(client, importId);
+      const held = target?.community_id
+        ? await client.query<{ legal_hold_at: Date | null }>(
+            'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
+            [target.community_id]
+          )
+        : null;
       const current = await loadImport(client, importId, 'FOR UPDATE');
       await assertHostActor(client, actor, now());
       if (!current) throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
       if (current.state === 'cancelled') return current;
       if (current.state === 'ready' || current.state === 'failed')
         throw new ApiError(409, 'STATE_CONFLICT', 'This import has already finished.');
+      // An unfinished import keeps its community, so the row locked above is still its own.
+      if (current.community_id !== target?.community_id)
+        throw new ApiError(409, 'STATE_CONFLICT', 'This import changed. Try again.');
       // Cancelling removes the unclaimed community, so a legal hold refuses it as it refuses
       // the host's other deletions. FOR SHARE: placing a hold takes the row FOR UPDATE.
-      const held = await client.query<{ legal_hold_at: Date | null }>(
-        'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
-        [current.community_id]
-      );
-      if (held.rows[0]?.legal_hold_at) throw legalHoldActive();
+      if (held?.rows[0]?.legal_hold_at) throw legalHoldActive();
       // Clearing the lease fences a worker that holds this job: its next write finds no lease.
       const cancelled = await client.query<ImportRow>(
         `UPDATE community_imports SET state='cancelled',lease_token=NULL,next_attempt_at=now(),

@@ -11,6 +11,7 @@ import { CommunityExportManifestV1Schema } from '@dorkos/shared/community-wire';
 import { sweepImports } from '../imports/worker.js';
 import { teardownImport } from '../imports/teardown.js';
 import { acquireUploadLease, renewUploadLease } from '../imports/upload.js';
+import type { BlobStore } from '../storage/index.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import {
   buildArchive,
@@ -31,6 +32,7 @@ import {
   bootstrapHost,
   expectStatus,
   startTenancyHarness,
+  waitForLockWaiters,
   type TenancyHarness,
 } from './tenancy-test-harness.js';
 
@@ -538,6 +540,104 @@ it('keeps an import’s community under a legal hold until the hold is released'
   } finally {
     clock = new Date();
   }
+});
+
+// Purpose: the import worker's last restore step locks the community, then the import. A
+// cancel that took the import first and then waited for the community would deadlock with it
+// (DOR-2277's shape); the cancel takes the community first, so it waits and then succeeds.
+it('waits behind a worker holding the community instead of deadlocking on cancel', async () => {
+  const { importId, communityId } = await createImport(h, { bearer: keyImport });
+  const worker = await h.pool.connect();
+  try {
+    await worker.query('BEGIN');
+    await worker.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
+    const cancel = h.call(`/api/v1/host/imports/${importId}/cancel`, {
+      bearer: keyImport,
+      body: {},
+    });
+    await waitForLockWaiters(h, 1, 'FROM communities');
+    // The worker's second lock, as its fenced step takes it. A deadlock aborts one side here.
+    await worker.query('SELECT 1 FROM community_imports WHERE id=$1 FOR UPDATE', [importId]);
+    await worker.query('COMMIT');
+    const answered = await cancel;
+    expect(answered.status).toBe(200);
+    expect((await answered.json()).state).toBe('cancelled');
+  } finally {
+    await worker.query('ROLLBACK').catch(() => undefined);
+    worker.release();
+  }
+});
+
+// Purpose: teardown deletes files outside any long transaction, so a legal hold placed while it
+// is deleting one must stop it before the next: each delete holds the community row FOR SHARE
+// after checking for a hold, as the tenant deletion worker does.
+it('stops an import teardown before its next file when a legal hold is placed', async () => {
+  const legalHold = (method: 'PUT' | 'DELETE', communityId: string) =>
+    h.call(`/api/v1/host/communities/${communityId}/legal-hold`, {
+      method,
+      cookie: operatorCookie,
+      ...(method === 'PUT' ? { body: { reference: null } } : {}),
+    });
+  const target = await createImport(h, { bearer: keyImport });
+  await expectStatus(
+    await uploadArchive(h, target.importId, buildArchive(minimalManifest()), {
+      bearer: target.uploadToken,
+    }),
+    200,
+    'upload'
+  );
+  // A second stored file, so there is a next file for the hold to save.
+  const second = sha256(randomUUID());
+  await h.pool.query(
+    `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state,
+       byte_size,checksum,stored_at)
+     VALUES($1,$2,'import_staging',1,'stored',1,$3,now())`,
+    [second, target.communityId, sha256('x')]
+  );
+  await expectStatus(
+    await h.call(`/api/v1/host/imports/${target.importId}/cancel`, {
+      bearer: keyImport,
+      body: {},
+    }),
+    200,
+    'cancel'
+  );
+  let entered!: () => void;
+  let release!: () => void;
+  const inside = new Promise<void>((resolve) => (entered = resolve));
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const deleted: string[] = [];
+  const store: BlobStore = {
+    put: (input) => h.blobStore.put(input),
+    get: (key, options) => h.blobStore.get(key, options),
+    listNamespace: (options) => h.blobStore.listNamespace(options),
+    delete: async (key, options) => {
+      deleted.push(key);
+      if (deleted.length === 1) {
+        entered();
+        await gate;
+      }
+      return h.blobStore.delete(key, options);
+    },
+  };
+  const tearing = teardownImport(h.pool, store, target.importId);
+  await inside;
+  const placing = legalHold('PUT', target.communityId);
+  // The hold waits for the file deletion in progress, which holds the row FOR SHARE.
+  await waitForLockWaiters(h, 1, 'legal_hold_at');
+  release();
+  const [outcome, placed] = await Promise.all([tearing, placing]);
+  expect(placed.status).toBe(200);
+  expect(outcome).toBe('waiting');
+  expect(deleted).toHaveLength(1);
+  expect(await count('SELECT 1 FROM communities WHERE id=$1', [target.communityId])).toBe(1);
+  expect(
+    await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [target.communityId])
+  ).toBe(1);
+
+  await expectStatus(await legalHold('DELETE', target.communityId), 200, 'release');
+  await settleImports();
+  expect(await count('SELECT 1 FROM communities WHERE id=$1', [target.communityId])).toBe(0);
 });
 
 // Purpose: an upload token is a one-time secret. It never appears in a host read, a list,

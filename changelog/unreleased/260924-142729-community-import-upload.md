@@ -6,6 +6,7 @@ covers:
   - 'fix(community): drop a file upload that stops sending for a minute (DOR-2258)'
   - 'feat(community): give an imported community its web address when the import starts (DOR-2258)'
   - 'fix(community): keep an importing community under a legal hold (DOR-2258)'
+  - "fix(community): lock an import's community before the import, and stop teardown under a new legal hold (DOR-2258)"
 ---
 
 ### Added
