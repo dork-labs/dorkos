@@ -31,12 +31,12 @@ function foldersBefore(tag: string): string {
   return folder;
 }
 
-describe('agents ask by level (0125, 0126)', () => {
+describe('agents ask by level (0127, 0128)', () => {
   it('reads each open request’s named actions by class, then drops the names', () => {
     const sqlite = new Database(':memory:');
     try {
       const db = drizzle(sqlite);
-      migrate(db, { migrationsFolder: foldersBefore('0125_agent_request_access') });
+      migrate(db, { migrationsFolder: foldersBefore('0127_agent_request_access') });
       const now = '2026-09-28T00:00:00.000Z';
       sqlite
         .prepare(
