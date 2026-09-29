@@ -41,16 +41,29 @@ import {
  * several communities (the server's `COMMUNITY_SELECTION_REQUIRED`). The
  * address is right as far as it goes, so "check the address" would send the
  * person looking for a typo that is not there; they need one community's own
- * link. Every other failure keeps the general message.
+ * link, so the example is built on the host they typed. Every other failure keeps the general
+ * message.
+ *
+ * @param error - Why the start failed.
+ * @param address - The address the person submitted.
  */
-function startErrorMessage(error: unknown): string {
+function startErrorMessage(error: unknown, address: string | undefined): string {
   if (
     typeof error === 'object' &&
     error !== null &&
     (error as { code?: unknown }).code === 'COMMUNITY_SELECTION_REQUIRED'
   )
-    return 'That address has more than one community on it. Enter the link for the one you want: its short address, like https://spaces.example.com/acme, or its full link, which has /c/ in it.';
+    return `That address has more than one community on it. Enter the link for the one you want: its short address, like ${shortAddressExample(address)}, or its full link, which has /c/ in it.`;
   return 'Couldn’t connect. Check the community address and try again.';
+}
+
+/** A short address on the host the person typed, or a generic one when it cannot be read. */
+function shortAddressExample(address: string | undefined): string {
+  try {
+    return `${new URL(address ?? '').origin}/your-community`;
+  } catch {
+    return 'https://spaces.example.com/acme';
+  }
 }
 
 /** What the connect dialog was opened for. */
@@ -316,11 +329,11 @@ function ConnectCommunityBody({
   }, [view]);
 
   const start = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (address: string) => {
       if (!authority || !isCommunityAuthorityCurrent(authority))
         throw new Error('Community owner is still loading.');
       const result = await transport.startCommunityConnection({
-        url: url.trim(),
+        url: address,
         installName: installName.trim(),
       });
       if (!isCommunityAuthorityCurrent(authority)) throw new Error('Community owner changed.');
@@ -339,7 +352,7 @@ function ConnectCommunityBody({
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!url.trim() || !installName.trim() || start.isPending) return;
-    start.mutate();
+    start.mutate(url.trim());
   }
 
   function endConnection(ending: CommunityConnectionDescriptor) {
@@ -421,7 +434,7 @@ function ConnectCommunityBody({
           </div>
           {start.error && (
             <p role="alert" className="text-destructive text-sm">
-              {startErrorMessage(start.error)}
+              {startErrorMessage(start.error, start.variables)}
             </p>
           )}
         </ResponsiveDialogBody>
