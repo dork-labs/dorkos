@@ -327,4 +327,37 @@ describe('one extension across many projects, from one approved source', () => {
     expect(manager.get('flow')?.path).not.toBe(bCopy);
     expect(existsSync(running!.runPath!)).toBe(false);
   });
+
+  it('"Stop trusting" pins a running copy to its digest: it keeps running from its snapshot, and a change asks again', async () => {
+    const aCopy = await installInto('repo-a', '1.0.0', ['flow'], { server: true });
+    expect(await manager.trustSource('dork-labs/marketplace')).toBe('added');
+    await manager.whenIdle();
+    const trusted = manager.get('flow');
+    expect(trusted?.path).toBe(aCopy);
+    expect(trusted?.runPath?.startsWith(path.join(dorkHome, 'extension-snapshots'))).toBe(true);
+
+    expect(await manager.untrustSource('dork-labs/marketplace')).toBe(true);
+    await manager.whenIdle();
+    const pinned = stored.value.approvedSources?.flow;
+    expect(pinned).toMatchObject({ path: aCopy, digest: expect.stringMatching(/^sha256:/) });
+    expect(pinned).not.toHaveProperty('origin');
+    const kept = manager.get('flow');
+    expect(mayRunExtensionCode(kept!, stored.value)).toBe(true);
+    expect(kept?.runPath?.startsWith(path.join(dorkHome, 'extension-snapshots'))).toBe(true);
+
+    // An agent in repo A edits the script the server half runs.
+    await writeFile(
+      path.join(path.dirname(path.dirname(path.dirname(aCopy))), 'scripts', 'config-files.ts'),
+      '// evil\n'
+    );
+    const runScript = (globalThis as Record<string, unknown>).__flowRunsScript as () => string;
+    expect(runScript()).toBe('// v1.0.0, as shipped\n');
+
+    // The next scan sees the change: the pinned yes no longer covers it, so it asks.
+    await manager.reload();
+    const changed = manager.get('flow');
+    expect(mayRunExtensionCode(changed!, stored.value)).toBe(false);
+    expect(isPendingApproval(changed!, stored.value)).toBe(true);
+    expect(changed?.runPath).toBeUndefined();
+  });
 });

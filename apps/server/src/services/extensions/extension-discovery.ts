@@ -147,11 +147,16 @@ export class ExtensionDiscovery {
         if (proof.pinnedDigest) rec.pinnedDigest = proof.pinnedDigest;
       }
       if (proof.problem) rec.originProblem = proof.problem;
-      if (proof.problem === 'changed' && onDisk.folder.kind === 'digest') {
+      if (onDisk.folder.kind === 'digest') {
+        // What a digest-pinned approval of this copy is compared with.
         rec.currentDigest = onDisk.folder.digest;
-        // A person said yes to these exact files: the compile holds them to it.
+        // A person's yes named these exact files (a changed copy's fresh yes,
+        // or "Stop trusting" keeping a running copy): the compile, and the
+        // snapshot it runs from, hold it to them.
         const approved = config.approvedSources?.[rec.id];
-        if (approved?.digest === rec.currentDigest) rec.pinnedDigest = rec.currentDigest;
+        if (approved?.digest && approved.digest === rec.currentDigest) {
+          rec.pinnedDigest = rec.currentDigest;
+        }
       }
     }
 

@@ -37,6 +37,7 @@ import {
 import {
   EXTENSION_NOT_APPROVED_CODE,
   approvedSourceOf,
+  isApprovedByDigest,
   isApprovedByOrigin,
   isApprovedByPath,
   isApprovedCopy,
@@ -310,7 +311,8 @@ export class ExtensionManager {
 
   /**
    * Point every project copy that runs by its trusted origin — not by the
-   * person's approval of that folder — at a verified snapshot of its plugin
+   * person's approval of that folder — or by a yes pinned to its exact files,
+   * at a verified snapshot of its plugin
    * (`extension-snapshots.ts`), so what it runs, at load and at runtime, can
    * no longer be changed from inside the project. A copy whose snapshot cannot
    * be made (its files changed since the scan) loses its origin instead of
@@ -321,18 +323,24 @@ export class ExtensionManager {
   private async placeSnapshots(records: readonly ExtensionRecord[]): Promise<void> {
     const approvals = configManager.get('extensions');
     for (const record of records) {
-      if (record.scope !== 'local' || !record.sourcePlugin || !record.trustedOrigin) continue;
-      if (!record.pinnedDigest || isApprovedByPath(record, approvals)) continue;
-      if (!isApprovedByOrigin(record, approvals) && !isFromTrustedSource(record, approvals)) {
-        continue;
-      }
+      if (record.scope !== 'local' || !record.sourcePlugin || !record.pinnedDigest) continue;
+      // A yes pinned to these exact files runs them from the snapshot too.
+      const pinned = isApprovedByDigest(record, approvals);
+      const byOrigin =
+        !!record.trustedOrigin &&
+        !isApprovedByPath(record, approvals) &&
+        (isApprovedByOrigin(record, approvals) || isFromTrustedSource(record, approvals));
+      if (!pinned && !byOrigin) continue;
       const installRoot = installRootOf(record.path);
       const root = await ensureSnapshot(this.dorkHome, installRoot, record.pinnedDigest);
       if (root) {
         record.runPath = path.join(root, path.relative(installRoot, record.path));
       } else {
+        // Its files changed since the scan: nothing here may run, by origin or
+        // by a yes pinned to the files it had.
         record.trustedOrigin = undefined;
         record.pinnedDigest = undefined;
+        record.currentDigest = undefined;
         record.originProblem = 'changed';
       }
     }
@@ -637,8 +645,9 @@ export class ExtensionManager {
    * Stop trusting `source` (spec `flow-multiproject` §9.3). Extensions from it
    * that are turned ON stay on, exactly as they are: each copy that runs today
    * only because of this source is given its own approval, pinned to that copy
-   * (its folder and plugin, never the origin), so nothing the person is using
-   * stops. Everything else from the source — a turned-off extension, a newer
+   * (its folder and plugin, never the origin) and, for a project copy, to its
+   * files' digest, so it keeps running from its verified snapshot and any
+   * change asks again. Nothing the person is using stops. Everything else from the source — a turned-off extension, a newer
    * copy, a new extension — asks again. Only the person-bar route may call this.
    *
    * @param source - A normalized `owner/repo`.
@@ -655,10 +664,13 @@ export class ExtensionManager {
       if (isApprovedCopy(rec, before)) continue;
       if (!isEnabled(rec.id, before, this.coreExtensions)) continue;
       if (!approvedToRun.includes(rec.id)) approvedToRun.push(rec.id);
-      // Pinned to this copy alone: no origin, so a newer copy from the source
-      // does not ride on it.
+      // Pinned to this copy's files alone: no origin, so a newer copy from the
+      // source does not ride on it, and its digest, so it keeps running from
+      // the verified snapshot of exactly those files and any change asks again.
       const { origin: _origin, ...pinned } = approvedSourceOf(rec);
-      approvedSources[rec.id] = pinned;
+      approvedSources[rec.id] = rec.currentDigest
+        ? { ...pinned, digest: rec.currentDigest }
+        : pinned;
     }
     configManager.set('extensions', {
       ...before,
@@ -867,6 +879,10 @@ export class ExtensionManager {
         configManager.get('extensions')
       );
     }
+
+    // A yes to these exact files runs them from their verified snapshot,
+    // from the first start on.
+    await this.placeSnapshots([record]);
 
     if (this.needsServer(record)) {
       const result = await this.serverLifecycle.initialize(id, record);

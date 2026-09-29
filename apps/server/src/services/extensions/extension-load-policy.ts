@@ -237,6 +237,9 @@ export function isApprovedByPath(copy: ExtensionCopy, approvals: ExtensionApprov
   if (copy.originProblem === 'changed') {
     return !!source.digest && source.digest === copy.currentDigest;
   }
+  // An approval pinned to a digest ("Stop trusting" keeping a copy that ran by
+  // its source) covers those files only: any change asks again.
+  if (source.digest) return source.digest === copy.currentDigest;
   return true;
 }
 
@@ -255,6 +258,19 @@ export function isApprovedByOrigin(copy: ExtensionCopy, approvals: ExtensionAppr
   const stored = approvals.approvedSources?.[copy.id]?.origin;
   const own = copy.trustedOrigin;
   return !!stored && !!own && stored.plugin === own.plugin && stored.source === own.source;
+}
+
+/**
+ * Whether the stored approval for this copy is pinned to a folder digest: the
+ * copy then runs from a verified snapshot of exactly those files
+ * (`extension-snapshots.ts`), never from its live folder.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the approval fields of it.
+ */
+export function isApprovedByDigest(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+  const digest = approvals.approvedSources?.[copy.id]?.digest;
+  return !!digest && digest === copy.currentDigest && isApprovedByPath(copy, approvals);
 }
 
 /**
