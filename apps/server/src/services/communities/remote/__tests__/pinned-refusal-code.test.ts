@@ -5,19 +5,11 @@
  */
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import {
-  PinnedHttpError,
-  SSE_ERROR_BODY_MAX_BYTES,
-  parseCommunityOrigin,
-  pinnedJson,
-  pinnedSse,
-} from '../pinned-origin.js';
+import { PinnedHttpError, parseCommunityOrigin, pinnedJson, pinnedSse } from '../pinned-origin.js';
 
 let server: Server;
 let port = 0;
 let next: { status: number; body: string; endless?: boolean } = { status: 200, body: '{}' };
-/** Bytes an endless refusal managed to write before the reader hung up. */
-let endlessWritten = 0;
 
 beforeAll(async () => {
   server = createServer((_request, response) => {
@@ -26,10 +18,9 @@ beforeAll(async () => {
       response.end(next.body);
       return;
     }
-    endlessWritten = 0;
     const chunk = Buffer.alloc(4096, 0x20);
     const pump = () => {
-      while (!response.destroyed && response.write(chunk)) endlessWritten += chunk.length;
+      while (!response.destroyed && response.write(chunk));
       if (!response.destroyed) response.once('drain', pump);
     };
     response.on('close', () => undefined);
@@ -95,8 +86,8 @@ it('keeps a refused stream’s code', async () => {
   expect(error).toMatchObject({ status: 410, remoteCode: 'COMMUNITY_DELETED' });
 });
 
-// Purpose (review 4): a refusal whose body never ends is cut off at the cap, not drained until
-// the stream's 30-second timeout. It fails if the reader keeps reading past the cap.
+// Purpose (review 4): a refusal whose body never ends is cut off at the 16 KB cap
+// (SSE_ERROR_BODY_MAX_BYTES), not drained until the stream's 30-second timeout. It fails if the reader keeps reading past the cap.
 it('stops reading an endless refusal at the cap, and keeps no code', async () => {
   next = { status: 410, body: '', endless: true };
   const started = Date.now();
@@ -104,5 +95,6 @@ it('stops reading an endless refusal at the cap, and keeps no code', async () =>
   expect(Date.now() - started).toBeLessThan(5_000);
   expect(error).toBeInstanceOf(PinnedHttpError);
   expect((error as PinnedHttpError).remoteCode).toBeUndefined();
-  expect(endlessWritten).toBeLessThan(SSE_ERROR_BODY_MAX_BYTES * 64);
+  // Not a byte count of what the server wrote: that measures the OS socket buffer (megabytes on
+  // Linux), not this reader. The time above is what an uncapped reader fails.
 });
