@@ -145,15 +145,26 @@ jobs:
       - name: Resolve the fork point and the base branch tip
         id: base
         run: |
+          # The checkout above is already full history (fetch-depth: 0). Never pass
+          # --depth to a fetch here: a shallow fetch into a full clone writes
+          # .git/shallow and cuts the base branch's history at that depth, so for a
+          # branch that forked from further back `git merge-base` finds nothing and
+          # exits 1, which under `bash -e` fails this required step with no message
+          # (DOR-2560; the same defect as the changelog fragment check, #2343).
           if [[ "${{ github.event_name }}" == "merge_group" ]]; then
             base_tip="${{ github.event.merge_group.base_sha }}"
-            git fetch --no-tags origin "$base_tip" || git fetch --no-tags --depth=200 origin
+            git fetch --no-tags origin "$base_tip" || git fetch --no-tags origin
             fork_point="$base_tip"
             echo "merge group: base pinned to the commit this will merge onto"
           else
-            git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            if [[ -f "$(git rev-parse --git-dir)/shallow" ]]; then
+              echo "::error::The history is shallow, so the fork point cannot be found reliably."
+              exit 1
+            fi
             base_tip="$(git rev-parse "origin/${{ github.base_ref }}")"
-            fork_point="$(git merge-base "$base_tip" HEAD)"
+            fork_point="$(git merge-base "$base_tip" HEAD)" ||
+              { echo "::error::No merge base between $base_tip and HEAD; is the history complete?"; exit 1; }
           fi
           echo "fork_point=$fork_point" >> "$GITHUB_OUTPUT"
           echo "base_tip=$base_tip" >> "$GITHUB_OUTPUT"

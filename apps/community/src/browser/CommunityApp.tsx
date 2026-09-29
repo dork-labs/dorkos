@@ -29,9 +29,12 @@ import type { Channel, Community, CommunityLifecycle, Me } from './types.js';
 function isCommunityUnavailable(cause: unknown): cause is RequestError {
   return (
     cause instanceof RequestError &&
-    ['COMMUNITY_UNAVAILABLE', 'COMMUNITY_SUSPENDED', 'COMMUNITY_DELETION_PENDING'].includes(
-      cause.code
-    )
+    [
+      'COMMUNITY_UNAVAILABLE',
+      'COMMUNITY_SUSPENDED',
+      'COMMUNITY_DELETION_PENDING',
+      'COMMUNITY_DELETED',
+    ].includes(cause.code)
   );
 }
 

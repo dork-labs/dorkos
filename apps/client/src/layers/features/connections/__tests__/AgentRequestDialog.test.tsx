@@ -104,7 +104,9 @@ function transportFor(request: ConnectorAgentRequestItem = REQUEST): Transport {
     connectionId: 'connection-1' as never,
     reconciliationStatus: 'ready',
     authoritySync: { status: 'ready' },
-    grants: [{ agentId: 'agent-1', operationRevisionIds: ['read-v1', 'write-v1'] }],
+    grants: [
+      { agentId: 'agent-1', operationRevisionIds: ['read-v1', 'write-v1'], level: 'read-write' },
+    ],
   });
   vi.mocked(transport.resolveConnectorAgentRequest).mockImplementation(
     async (_id, decision): Promise<ConnectorAgentRequestItem> =>
@@ -168,7 +170,9 @@ describe('AgentRequestDialog', () => {
     );
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
       previewId: 'preview-1',
-      grants: [{ agentId: 'agent-1', operationRevisionIds: ['read-v1', 'write-v1'] }],
+      grants: [
+        { agentId: 'agent-1', operationRevisionIds: ['read-v1', 'write-v1'], level: 'read-write' },
+      ],
     });
   });
 

@@ -14,7 +14,11 @@ interface ReconciliationCandidate {
 interface ReconciliationPreview {
   previewId: string;
   candidates: ReconciliationCandidate[];
-  currentGrants: Array<{ agentId: string; operationRevisionIds: string[] }>;
+  currentGrants: Array<{
+    agentId: string;
+    level?: 'read' | 'read-write';
+    operationRevisionIds: string[];
+  }>;
 }
 
 interface ManagementReview {
@@ -56,8 +60,10 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       await expect(access.getByTestId('connector-access-outcome')).toHaveText('Access updated');
 
       const afterAccess = await previewConnection(request, harness.apiUrl, connectionId);
+      // Choosing Read keeps the level itself, so Read follows the app (DOR-2506).
       expect(afterAccess.currentGrants).toContainEqual({
         agentId: seeded.agentId,
+        level: 'read',
         operationRevisionIds: [read!.operationRevisionId],
       });
 
@@ -92,6 +98,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         review: { reviewRequestId: review.reviewRequestId, state: 'approved' },
       });
       const afterReview = await previewConnection(request, harness.apiUrl, connectionId);
+      // An approved exact review replaces the level with exact actions.
       expect(afterReview.currentGrants).toContainEqual({
         agentId: seeded.agentId,
         operationRevisionIds: [read!.operationRevisionId, write!.operationRevisionId].sort(),

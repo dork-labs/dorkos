@@ -23,6 +23,7 @@ import {
   whileLauncherRuns,
   writePrivateClipboardShim,
 } from './community-deploy-live-capture.js';
+import { inspectCommunityLiveTarball } from './community-deploy-live-tarball.js';
 import {
   describeCommunityLiveGateFailure,
   describeLauncherStop,
@@ -141,11 +142,35 @@ async function main(): Promise<void> {
   // Likewise the launcher, so a failure elsewhere never leaves its PTY waiting on a prompt.
   let launcher: LauncherRun | null = null;
   const journalDirectory = join(durableHome, 'launches', 'community');
+  // An unreleased tarball is copied into the retained run directory and checked there before any
+  // npm, profile or service call; the only process is a local `tar` read of the copy. Install and
+  // recovery then use that verified copy, never the original path.
+  let tarball: Awaited<ReturnType<typeof inspectCommunityLiveTarball>> | null = null;
+  if (config.source.kind === 'tarball') {
+    try {
+      await mkdir(durableHome, { recursive: true, mode: 0o700 });
+      tarball = await inspectCommunityLiveTarball(
+        config.source.path,
+        join(durableHome, 'package-under-test')
+      );
+    } catch (error) {
+      // Nothing was installed or created anywhere yet; both directories are this run's own.
+      await rm(durableHome, { recursive: true, force: true });
+      await rm(runDirectory, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  // For a tarball this is the package's own version, which is also the Community image and signed
+  // manifest version the launcher deploys; it must already be released.
+  const version = config.source.kind === 'release' ? config.source.version : tarball!.version;
+  const source = tarball
+    ? tarball.receipt
+    : { kind: 'release' as const, released: true as const, version };
   const launchArgs = [
     'community',
     'deploy',
     '--version',
-    config.version,
+    version,
     '--fly-org',
     config.flyOrganization,
     '--fly-region',
@@ -163,22 +188,39 @@ async function main(): Promise<void> {
     return journals.length === 1 ? journals[0]!.slice(0, -'.json'.length) : null;
   };
   const recoveryFor = (runId: string) =>
-    communityLiveGateRecoveryCommand(config.version, launchArgs.slice(2), runId, durableHome);
+    communityLiveGateRecoveryCommand(
+      version,
+      launchArgs.slice(2),
+      runId,
+      durableHome,
+      tarball?.path
+    );
   try {
     // Every profile and network operation occurs after all arms have been checked above.
-    const published = parsePublishedVersion(
-      await command(
-        'npm',
-        ['view', `dorkos@${config.version}`, 'version', '--json'],
-        process.env,
-        'published-version'
-      )
-    );
-    if (published !== config.version) throw new CommunityLiveGateError('exact-published-version');
+    // A published run proves the exact version is on npm first; an unreleased run installs the
+    // tarball it already checked against its sidecar.
+    if (!tarball) {
+      const published = parsePublishedVersion(
+        await command(
+          'npm',
+          ['view', `dorkos@${version}`, 'version', '--json'],
+          process.env,
+          'published-version'
+        )
+      );
+      if (published !== version) throw new CommunityLiveGateError('exact-published-version');
+    }
     const install = join(runDirectory, 'install');
     await command(
       'npm',
-      ['install', '--prefix', install, '--no-audit', '--no-fund', `dorkos@${config.version}`],
+      [
+        'install',
+        '--prefix',
+        install,
+        '--no-audit',
+        '--no-fund',
+        tarball ? tarball.path : `dorkos@${version}`,
+      ],
       process.env,
       'package-install'
     );
@@ -346,7 +388,8 @@ async function main(): Promise<void> {
     await writeFile(
       receiptPath,
       JSON.stringify({
-        version: config.version,
+        version,
+        source,
         appName,
         budgetUsd: config.budgetUsd,
         before,
@@ -359,7 +402,7 @@ async function main(): Promise<void> {
       { mode: 0o600, flag: 'wx' }
     );
     process.stdout.write(
-      `Community live gate passed for ${config.version} at ${appName}; receipt ${receiptPath}\n`
+      `Community live gate passed for ${version}${tarball ? ` (unreleased tarball from ${tarball.receipt.commit.slice(0, 12)})` : ''} at ${appName}; receipt ${receiptPath}\n`
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {

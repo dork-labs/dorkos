@@ -152,6 +152,7 @@ function deletionProjection(row: {
     attempts: row.attempts ?? 0,
     requestedBy: row.requested_by,
     returnsTo: row.returns_to,
+    takedown: null,
   };
 }
 

@@ -8,7 +8,8 @@ const identity = {
   id: 'addon_fixture_01',
   name: 'community-fixture-bucket',
   status: 'ready',
-  options: { public: false },
+  // The shape Fly really answers for a bucket created without options (DOR-2559).
+  options: null,
   organization: { slug: 'fixture-org' },
   addOnProvider: { name: 'tigris' },
   app: { id: 'app_fixture_01', name: 'community-fixture-app' },
@@ -53,14 +54,33 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     const request = vi
       .fn()
       .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
-      .mockResolvedValueOnce(json({ data: { createAddOn: { addOn: identity } } }))
+      .mockResolvedValueOnce(
+        json({
+          data: {
+            createAddOn: {
+              addOn: {
+                ...identity,
+                environment: {
+                  AWS_ACCESS_KEY_ID: 'tid_CANARY',
+                  AWS_SECRET_ACCESS_KEY: 'tsec_CANARY',
+                  BUCKET_NAME: identity.name,
+                },
+              },
+            },
+          },
+        })
+      )
       .mockResolvedValueOnce(json({ data: { node: identity } }));
     const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
 
-    await expect(client.createTigris(createInput())).resolves.toMatchObject({
-      addOnId: identity.id,
-      public: false,
-    });
+    const created = await client.createTigris(createInput());
+    expect(created.identity).toMatchObject({ addOnId: identity.id, public: false });
+    expect(JSON.stringify(created)).not.toContain('CANARY');
+    await expect(created.credentials!.use(async (values) => Object.keys(values))).resolves.toEqual([
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+    ]);
+    expect(String(request.mock.calls[1][1]?.body)).toContain('environment');
     await expect(client.readTigris(identity.id)).resolves.toMatchObject({
       addOnId: identity.id,
       organizationSlug: identity.organization.slug,
@@ -70,6 +90,32 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     expect(JSON.parse(String(request.mock.calls[2][1]?.body)).variables).toEqual({
       id: identity.id,
     });
+  });
+
+  it("reads a bucket's keys by exact ID and refuses an unsafe ID before any request", async () => {
+    const request = vi.fn().mockResolvedValueOnce(
+      json({
+        data: {
+          node: {
+            id: identity.id,
+            environment: { AWS_ACCESS_KEY_ID: 'tid_a', AWS_SECRET_ACCESS_KEY: 'tsec_b' },
+          },
+        },
+      })
+    );
+    const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
+    const credentials = await client.readTigrisCredentials(identity.id);
+    await expect(credentials!.use(async (values) => values.AWS_SECRET_ACCESS_KEY)).resolves.toBe(
+      'tsec_b'
+    );
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({
+      query: expect.stringContaining('DorkosReadTigrisCredentials'),
+      variables: { id: identity.id },
+    });
+    await expect(client.readTigrisCredentials('unsafe/id')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    expect(request).toHaveBeenCalledOnce();
   });
 
   it('classifies malformed create output as uncertain without disclosing provider text', async () => {

@@ -22,6 +22,8 @@ import { IMPORT_POLL_MS, pruneImports, sweepImports } from './imports/worker.js'
 import { IMPORT_UPLOAD_LEASE_MS } from './imports/store.js';
 import { sweepImportTempDirs } from './imports/upload.js';
 import { configureServerTimeouts } from './http.js';
+import { createEvidenceSink, tidyEvidenceSink } from './takedown/evidence/sink.js';
+import { sweepTakedownEvidence } from './takedown/worker.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
@@ -38,6 +40,8 @@ pool.on('error', (error: Error & { code?: string }) => {
   console.error('Community database connection lost', error.code ?? error.name);
 });
 const blobStore = createBlobStore(config);
+const evidenceSink = createEvidenceSink(config.evidence);
+await tidyEvidenceSink(evidenceSink);
 const app = createCommunityApp({ config, pool, blobStore });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
@@ -200,8 +204,26 @@ const imports = setInterval(() => {
     });
 }, IMPORT_POLL_MS);
 imports.unref();
+let copyingEvidence = false;
+const takedownEvidence = setInterval(() => {
+  if (copyingEvidence) return;
+  copyingEvidence = true;
+  void sweepTakedownEvidence(pool, blobStore, evidenceSink, {
+    alertHours: config.limits.takedownEvidenceAlertHours,
+  })
+    .catch((error: unknown) => {
+      console.error(
+        'Community takedown evidence unavailable',
+        error instanceof Error ? error.name : 'unknown'
+      );
+    })
+    .finally(() => {
+      copyingEvidence = false;
+    });
+}, 15_000);
+takedownEvidence.unref();
 const onSignal = createSignalHandler(
-  createStop({ server, pool, timers: [cleanup, erasures, exports, imports] })
+  createStop({ server, pool, timers: [cleanup, erasures, exports, imports, takedownEvidence] })
 );
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);

@@ -59730,6 +59730,13 @@
                               "type": "string",
                               "minLength": 1
                             }
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "read",
+                              "read-write"
+                            ]
                           }
                         },
                         "required": [
@@ -59751,6 +59758,13 @@
                             "type": "string",
                             "minLength": 1
                           }
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "read",
+                            "read-write"
+                          ]
                         }
                       },
                       "required": [
@@ -59891,6 +59905,13 @@
                             "type": "string",
                             "minLength": 1
                           }
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "read",
+                            "read-write"
+                          ]
                         }
                       },
                       "required": [
@@ -59909,6 +59930,13 @@
                           "type": "string",
                           "minLength": 1
                         }
+                      },
+                      "level": {
+                        "type": "string",
+                        "enum": [
+                          "read",
+                          "read-write"
+                        ]
                       }
                     },
                     "required": [
@@ -60015,6 +60043,13 @@
                               "type": "string",
                               "minLength": 1
                             }
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "read",
+                              "read-write"
+                            ]
                           }
                         },
                         "required": [
@@ -60033,6 +60068,13 @@
                             "type": "string",
                             "minLength": 1
                           }
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "read",
+                            "read-write"
+                          ]
                         }
                       },
                       "required": [

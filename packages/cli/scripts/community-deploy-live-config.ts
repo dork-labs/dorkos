@@ -4,6 +4,7 @@
  * This module contains no process or network boundary so its refusal behavior can be tested
  * without touching a provider.
  */
+import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 
 const ENABLED = '1';
@@ -36,9 +37,17 @@ const SETTINGS_ENV = {
 } as const;
 
 /**
- * Every environment name the gate requires, and so every name that must never be passed to
- * ordinary test or CI tasks. Built from the same constants {@link parseCommunityLiveGateConfig}
- * reads, so the list and the parser cannot disagree.
+ * An unreleased package to test instead of a published version: the absolute path of a `.tgz`
+ * that `pnpm --filter dorkos pack:community-live` wrote, beside its provenance sidecar. Exactly one
+ * of this and {@link SETTINGS_ENV}.version must be set. It lets a fix be tried against the real
+ * services before anything is published, and the receipt says the run was not a release.
+ */
+export const COMMUNITY_LIVE_GATE_TARBALL_ENV = 'DORKOS_COMMUNITY_LIVE_PACKAGE_TARBALL';
+
+/**
+ * Every environment name the gate requires in its default, published-release mode. Built from the
+ * same constants {@link parseCommunityLiveGateConfig} reads, so the list and the parser cannot
+ * disagree. {@link COMMUNITY_LIVE_GATE_TARBALL_ENV} can stand in for the version.
  */
 export const COMMUNITY_LIVE_GATE_ENV = [
   ...COMMUNITY_LIVE_GATE_ARMS,
@@ -46,10 +55,23 @@ export const COMMUNITY_LIVE_GATE_ENV = [
   ...Object.values(SETTINGS_ENV),
 ] as const;
 
+/** Every name the gate reads, and so every name that must never reach an ordinary task. */
+export const COMMUNITY_LIVE_GATE_ALL_ENV = [
+  ...COMMUNITY_LIVE_GATE_ENV,
+  COMMUNITY_LIVE_GATE_TARBALL_ENV,
+] as const;
+
+/** Where the launcher under test comes from. */
+export type CommunityLiveGateSource =
+  /** An exact version published on npm. */
+  | { kind: 'release'; version: string }
+  /** A local, unreleased package tarball; its version is read from the tarball itself. */
+  | { kind: 'tarball'; path: string };
+
 /** Validated, non-secret choices for one disposable live run. */
 export interface CommunityLiveGateConfig {
-  /** Exact published DorkOS version. */
-  version: string;
+  /** The published version, or the unreleased tarball, whose launcher the run installs. */
+  source: CommunityLiveGateSource;
   /** Explicitly designated Fly test organization slug. */
   flyOrganization: string;
   /** Explicit Fly Machine region. */
@@ -62,15 +84,42 @@ export interface CommunityLiveGateConfig {
   budgetUsd: number;
 }
 
-/** Build a recovery command that survives deletion of the disposable package install. */
+/**
+ * Build a recovery command that survives deletion of the disposable package install.
+ *
+ * @param version - The published version, used when no tarball is given.
+ * @param args - The launch's own arguments.
+ * @param runId - The run to resume.
+ * @param dorkHome - The retained data directory holding its journal.
+ * @param tarballPath - For an unreleased run, the tarball it installed; it must stay in place.
+ */
 export function communityLiveGateRecoveryCommand(
   version: string,
   args: readonly string[],
   runId: string,
-  dorkHome: string
+  dorkHome: string,
+  tarballPath?: string
 ): string {
   const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
-  return `DORK_HOME=${quote(dorkHome)} npx --yes ${quote(`dorkos@${version}`)} community deploy ${args.map(quote).join(' ')} --resume ${quote(runId)}`;
+  const packageArgs =
+    tarballPath === undefined
+      ? quote(`dorkos@${version}`)
+      : `--package ${quote(tarballPath)} dorkos`;
+  return `DORK_HOME=${quote(dorkHome)} npx --yes ${packageArgs} community deploy ${args.map(quote).join(' ')} --resume ${quote(runId)}`;
+}
+
+/** Whether a value can name the tarball: an absolute `.tgz` path with no control characters. */
+function isTarballPath(value: string | undefined): value is string {
+  return (
+    value !== undefined &&
+    value.length <= 4096 &&
+    isAbsolute(value) &&
+    value.endsWith('.tgz') &&
+    ![...value].some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code < 0x20 || code === 0x7f;
+    })
+  );
 }
 
 /** Refusal raised before the release gate is allowed to cross a process boundary. */
@@ -100,12 +149,27 @@ export function parseCommunityLiveGateConfig(
     invalid.push(COMMUNITY_LIVE_GATE_CHARGE_ACKNOWLEDGEMENT_ENV);
   }
 
-  const version = VersionSchema.safeParse(environment[SETTINGS_ENV.version]);
+  // Exactly one source: a published version or an unreleased tarball, never both and never none.
+  const rawVersion = environment[SETTINGS_ENV.version];
+  const rawTarball = environment[COMMUNITY_LIVE_GATE_TARBALL_ENV];
+  const version = VersionSchema.safeParse(rawVersion);
+  let source: CommunityLiveGateSource | null = null;
+  if (rawVersion !== undefined && rawTarball !== undefined) {
+    invalid.push(SETTINGS_ENV.version, COMMUNITY_LIVE_GATE_TARBALL_ENV);
+  } else if (rawTarball !== undefined) {
+    if (isTarballPath(rawTarball)) source = { kind: 'tarball', path: rawTarball };
+    else invalid.push(COMMUNITY_LIVE_GATE_TARBALL_ENV);
+  } else if (rawVersion === undefined) {
+    invalid.push(SETTINGS_ENV.version, COMMUNITY_LIVE_GATE_TARBALL_ENV);
+  } else if (version.success) {
+    source = { kind: 'release', version: version.data };
+  } else {
+    invalid.push(SETTINGS_ENV.version);
+  }
   const flyOrganization = IdentifierSchema.safeParse(environment[SETTINGS_ENV.flyOrganization]);
   const flyRegion = RegionSchema.safeParse(environment[SETTINGS_ENV.flyRegion]);
   const neonOrganization = IdentifierSchema.safeParse(environment[SETTINGS_ENV.neonOrganization]);
   const neonRegion = RegionSchema.safeParse(environment[SETTINGS_ENV.neonRegion]);
-  if (!version.success) invalid.push(SETTINGS_ENV.version);
   if (!flyOrganization.success) invalid.push(SETTINGS_ENV.flyOrganization);
   if (!flyRegion.success) invalid.push(SETTINGS_ENV.flyRegion);
   if (!neonOrganization.success) invalid.push(SETTINGS_ENV.neonOrganization);
@@ -117,7 +181,7 @@ export function parseCommunityLiveGateConfig(
   }
   if (
     invalid.length > 0 ||
-    !version.success ||
+    source === null ||
     !flyOrganization.success ||
     !flyRegion.success ||
     !neonOrganization.success ||
@@ -126,7 +190,7 @@ export function parseCommunityLiveGateConfig(
     throw new CommunityLiveGateNotArmedError([...new Set(invalid)]);
 
   return {
-    version: version.data,
+    source,
     flyOrganization: flyOrganization.data,
     flyRegion: flyRegion.data,
     neonOrganization: neonOrganization.data,

@@ -9,7 +9,8 @@ import { runProviderCommand } from './provider-process.js';
 
 const SAFE_SECRET_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 const SAFE_DIGEST = /^[A-Za-z0-9][A-Za-z0-9:+/=_-]{0,255}$/u;
-const EXPECTED_TIGRIS_SECRET_NAMES = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'] as const;
+/** The app secret names a Tigris bucket's access keys are set under (as flyctl sets them). */
+export const EXPECTED_TIGRIS_SECRET_NAMES = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'] as const;
 
 const TokenEnvelopeSchema = z
   .object({

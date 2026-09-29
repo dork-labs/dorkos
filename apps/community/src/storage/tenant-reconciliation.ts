@@ -19,7 +19,8 @@ interface ManagedRow {
   blob_key: string;
   community_id: string;
   purpose: Purpose | 'legacy_cleanup';
-  state: 'reserved' | 'stored' | 'committed' | 'pending_delete';
+  // `evidence_hold` bytes are owned and left alone: no reference names them, and none is needed.
+  state: 'reserved' | 'stored' | 'committed' | 'pending_delete' | 'evidence_hold';
   byte_size: string | null;
   checksum: string | null;
   lease_expired: boolean;
@@ -387,7 +388,7 @@ async function reconcileWithLock(
         if (existing) {
           await client.query(
             `UPDATE managed_blobs SET state='pending_delete'
-             WHERE blob_key=$1 AND community_id=$2 AND state<>'committed'`,
+             WHERE blob_key=$1 AND community_id=$2 AND state<>'committed' AND state<>'evidence_hold'`,
             [key, community.id]
           );
         } else {

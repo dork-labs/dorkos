@@ -363,8 +363,9 @@ export function registerImportRoutes(
         await rm(received.directory, { recursive: true, force: true });
       }
     } finally {
-      if (lease) await releaseUploadLease(pool, importId, lease).catch(() => undefined);
+      // The slot first: it is this replica's own and need not wait on a database round trip.
       releaseSlot();
+      if (lease) await releaseUploadLease(pool, importId, lease).catch(() => undefined);
     }
   });
 

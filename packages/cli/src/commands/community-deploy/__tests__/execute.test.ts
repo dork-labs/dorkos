@@ -7,6 +7,7 @@ import {
   type CommunityCreationDependencies,
 } from '../execute.js';
 import { ProviderMutationError } from '../provider-mutation.js';
+import { TigrisSessionError } from '../tigris-session.js';
 
 const plan = createLaunchPlan({
   dorkosVersion: '0.76.0',
@@ -143,6 +144,74 @@ describe('Community creation executor', () => {
       pendingIntent: { provider: 'fly' },
       lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
     });
+  });
+
+  // A bucket this launch created and bound, whose keys are not on the app and cannot be fetched
+  // again, is not an uncertain creation (DOR-2559 review). The stop names what is missing, keeps the
+  // intent open so a resume inspects again instead of creating, and a resume after the operator
+  // stages the keys by hand completes.
+  it('records a missing-keys stop for Tigris, then completes on resume once keys are added', async () => {
+    const harness = dependencies();
+    // A resume re-checks the finished Neon step, which needs its whole topology.
+    const neonProject = {
+      id: 'project-id',
+      organizationId: 'org-dorian',
+      name: 'dorkos-community-test',
+      relatedResources: {
+        neonBranchId: 'br-1',
+        neonDatabaseId: '42',
+        neonRoleId: 'community_owner',
+        neonEndpointId: 'ep-1',
+      },
+    };
+    vi.mocked(harness.value.neon.create).mockResolvedValue(neonProject);
+    vi.mocked(harness.value.neon.inspect).mockResolvedValue(neonProject);
+    vi.mocked(harness.value.tigris.inspect).mockRejectedValueOnce(
+      new TigrisSessionError('MISSING_TIGRIS_SECRETS')
+    );
+    await expect(
+      executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
+    ).rejects.toMatchObject({ code: 'MISSING_TIGRIS_SECRETS' });
+    const stopped = harness.persisted();
+    expect(stopped).toMatchObject({
+      state: 'neon_project_created',
+      pendingIntent: { provider: 'tigris' },
+      resources: { tigrisBucketId: 'bucket-id' },
+      lastSafeError: { category: 'invalid-response', code: 'MISSING_TIGRIS_SECRETS' },
+    });
+
+    const resumed = await executeCommunityCreationPhase(plan, stopped, harness.value);
+    expect(harness.value.tigris.create).toHaveBeenCalledOnce();
+    expect(resumed).toMatchObject({
+      state: 'bucket_created',
+      pendingIntent: null,
+      lastSafeError: null,
+      resources: { tigrisBucketId: 'bucket-id' },
+    });
+  });
+
+  it('still records any other failed bucket inspection as uncertain', async () => {
+    const harness = dependencies();
+    vi.mocked(harness.value.tigris.inspect).mockRejectedValueOnce(
+      new ProviderMutationError('INVALID_RESPONSE')
+    );
+    await expect(
+      executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
+    ).rejects.toEqual(new CommunityCreationUncertainError('tigris'));
+    expect(harness.persisted()).toMatchObject({
+      state: 'uncertain',
+      lastSafeError: { code: 'CREATION_OUTCOME_UNCERTAIN' },
+    });
+  });
+
+  it('never treats a missing-keys failure from another service as anything but uncertain', async () => {
+    const harness = dependencies();
+    vi.mocked(harness.value.neon.inspect).mockRejectedValueOnce(
+      new TigrisSessionError('MISSING_TIGRIS_SECRETS')
+    );
+    await expect(
+      executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
+    ).rejects.toEqual(new CommunityCreationUncertainError('neon'));
   });
 
   it('refuses a bucket attached to any app other than the exact created app', async () => {
