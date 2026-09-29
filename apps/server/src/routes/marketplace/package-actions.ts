@@ -9,7 +9,7 @@ import { logger } from '../../lib/logger.js';
 import { disclosedEffectsOf } from '../../services/marketplace/preview/disclosed-effects.js';
 import type { ApprovedPackage } from '../../services/marketplace/consent/global-plugin-consent.js';
 import { packageContentHash } from '../../services/marketplace/lib/content-hash.js';
-import { PackageNotInstalledError } from '../../services/marketplace/flows/uninstall.js';
+import { PackageNotInstalledError } from '../../services/marketplace/flows/uninstall/uninstall.js';
 import {
   installationUpdateName,
   PackageNotInstalledForUpdateError,

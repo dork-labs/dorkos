@@ -103,8 +103,10 @@ apps/server/src/services/marketplace/
 │   ├── git.ts                   # github, url and git-subdir: one fetch
 │   ├── relative-path.ts         # A path inside a local marketplace
 │   └── npm.ts                   # Not supported yet (throws)
-├── lib/                         # Shared machinery: records, carry-over, git, npm, integrity, …
-├── flows/                       # install-{plugin,agent,skill-pack,adapter,shape}, uninstall, update
+├── lib/                         # Shared machinery: git, npm, integrity, …
+│   └── records/                 # installed-files (the record), tree-scan, carry-plan, carry-over, …
+├── flows/                       # install-{plugin,agent,skill-pack,adapter,shape}, update
+│   └── uninstall/               # uninstall (the flow), locate, side-effects, support (types)
 ├── __tests__/                   # Cross-cutting and integration suites; each folder has its own
 └── fixtures/
     └── (sample packages used by integration tests)
@@ -154,7 +156,7 @@ Destination: `${dorkHome}/plugins/<name>/` (global only — adapters are never p
 
 Passes `target: installPath`. The engine restores the previous package contents if activation fails; the `relay-adapters.json` mutation is undone separately by the compensating `removeAdapter` call, because a filesystem restore cannot reach the adapter config file.
 
-### Uninstall flow (`flows/uninstall.ts`)
+### Uninstall flow (`flows/uninstall/`)
 
 Removes a previously installed package by name. Plugin/skill-pack/adapter packages live under `plugins/<name>/`; agent packages under `agents/<name>/`; shape packages under `shapes/<name>/` — under either scope root, the global `${dorkHome}` or a project's own `${projectPath}/.dork`. The probe walks the project's roots first (a project install shadows a same-named global one), then the global roots, and both halves come from `installRootsUnder()` so the probe can never miss a root an install flow writes to. Probing the project scope for `plugins/` alone is what left every project-scoped agent installable but not removable (DOR-994).
 
@@ -293,7 +295,7 @@ A crash skips steps 7 and 8, so recovery reads the record instead (`services/mar
 
 **The key is canonical, not the caller's spelling.** `withFileLock` keys on `path.resolve`, which normalises `..` but does not follow symlinks — and its own header tells callers not to lean on the key normalising for them. A project-scope target is built by joining a caller-supplied `projectPath`, so `/work/proj` and a symlink `/work/current` pointing at it are one directory under two keys, which is no lock at all. `withInstallTargetLock` therefore realpaths the target (resolving through its deepest existing ancestor, since a fresh install's target does not exist yet) before locking. The install/uninstall/update/preview routes independently pass the canonical `projectPath` that their boundary check already resolved, instead of the raw body string — belt and braces. The tier-gate calls still hash the **raw** arguments, so an approval token minted by `dorkos call marketplace.uninstall` is still honoured.
 
-**Uninstall shares the lock.** `flows/uninstall.ts` does not use `runTransaction`, but it has the identical destructive pair (move the install root aside; restore that copy if a side-effect throws), so it takes `withInstallTargetLock` on the located install root. Its `locate()` runs outside the lock — the path to lock is not known until it has — and the residue there is loud rather than destructive: inside the lock the flow first settles any interrupted install at that root (§5.0) and reads it again, so a package removed between the probe and the lock — or a half-written fresh install that settling removes — is reported as not installed.
+**Uninstall shares the lock.** `flows/uninstall/uninstall.ts` does not use `runTransaction`, but it has the identical destructive pair (move the install root aside; restore that copy if a side-effect throws), so it takes `withInstallTargetLock` on the located install root. Its `locate()` runs outside the lock — the path to lock is not known until it has — and the residue there is loud rather than destructive: inside the lock the flow first settles any interrupted install at that root (§5.0) and reads it again, so a package removed between the probe and the lock — or a half-written fresh install that settling removes — is reported as not installed.
 
 **Update holds the lock across both of its halves (DOR-1722).** `MarketplaceInstaller.update()` is an uninstall, a by-hand removal of the data-only install root, and then a fresh install. Each half takes the lock for itself, and while that was all the serialisation there was, the gap between them was open: an install that landed in it was deleted by that by-hand `rm` — no backup, no error, its caller already told it had succeeded. So `update()` now takes `withInstallTargetLock` once, around the lot. To let the halves keep taking it from inside that hold, `withInstallTargetLock` is **re-entrant for anything the holder's async context reaches**: a call whose canonical key an outer call in the same context already holds runs inline instead of queueing behind its own caller (`withFileLock` throws in that situation, which is the right default for a file writer and a hard stop for a composite operation). Exclusion is unaffected for nested work — the outer hold is what keeps other contexts out, and one async context cannot race itself. Read the grant as "every continuation the holder's context propagates to", not as the dynamic extent of the hold: work that escapes the critical section (a `setTimeout` scheduled inside it) still carries the `AsyncLocalStorage` store afterwards, and a take from there runs inline against a target nobody holds. `withFileLock` has the same property, but an escape there throws loudly where this one is silent, so it fails open; no marketplace caller schedules work that outlives its critical section, and whoever writes one takes the lock from a context that does not already hold it.
 

@@ -80,7 +80,7 @@ import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/f
 import {
   PackageNotInstalledError,
   type UninstallFlow,
-} from '../../services/marketplace/flows/uninstall.js';
+} from '../../services/marketplace/flows/uninstall/uninstall.js';
 import type { UpdateFlow } from '../../services/marketplace/flows/update.js';
 import {
   GitCommitNotFoundError,

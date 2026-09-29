@@ -317,7 +317,7 @@ import {
   getEnabledExtensionIds,
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
-import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
+import { UninstallFlow } from './services/marketplace/flows/uninstall/uninstall.js';
 import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/installer/marketplace-installer.js';

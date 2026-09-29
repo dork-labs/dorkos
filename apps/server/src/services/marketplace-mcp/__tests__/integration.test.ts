@@ -48,8 +48,11 @@ import type {
   PreviewResult,
 } from '../../marketplace/installer/marketplace-installer.js';
 import type { InstallRequest, InstallResult, PermissionPreview } from '../../marketplace/types.js';
-import type { UninstallFlow } from '../../marketplace/flows/uninstall.js';
-import type { UninstallRequest, UninstallResult } from '../../marketplace/flows/uninstall.js';
+import type { UninstallFlow } from '../../marketplace/flows/uninstall/uninstall.js';
+import type {
+  UninstallRequest,
+  UninstallResult,
+} from '../../marketplace/flows/uninstall/support.js';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 
 import { registerMarketplaceTools } from './register-marketplace-tools.js';

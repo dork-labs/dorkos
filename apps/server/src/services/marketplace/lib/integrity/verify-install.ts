@@ -26,7 +26,8 @@ import type { InstallCheckInfo, InstallIntegrity } from '@dorkos/shared/marketpl
 import { readInstallMetadataStrict } from '../../installed-metadata.js';
 import { fetchableSourceOf } from '../records/legacy-record.js';
 import { lastCheck } from './check-results.js';
-import { lstatChain, readInstalledFiles } from '../records/installed-files.js';
+import { readInstalledFiles } from '../records/installed-files.js';
+import { lstatChain } from '../records/tree-scan.js';
 import { cachedHashFile } from './file-hash-cache.js';
 import { addedEffectFiles } from './strict-differences.js';
 import { keptFilesKeyOf } from './keep-unproven.js';

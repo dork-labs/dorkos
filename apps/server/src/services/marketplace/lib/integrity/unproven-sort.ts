@@ -12,12 +12,8 @@ import { isReservedPackagePath } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { PackageFetcher } from '../../package-fetcher.js';
 import { withInstallTargetLock } from '../../transaction.js';
-import {
-  hashFile,
-  lstatChain,
-  readInstalledFiles,
-  writeInstalledFiles,
-} from '../records/installed-files.js';
+import { readInstalledFiles, writeInstalledFiles } from '../records/installed-files.js';
+import { hashFile, lstatChain } from '../records/tree-scan.js';
 import { stageInstalledCommit } from '../records/legacy-record.js';
 import { STRICT_RECORD_TEMP_PREFIX } from './strict-differences.js';
 import type { StrictRebuildResult } from './strict-record.js';

@@ -19,7 +19,7 @@ import type { InstallerLike } from '../services/marketplace/installer/marketplac
 import type { GlobalConsentRecorder } from '../services/marketplace/consent/global-plugin-consent.js';
 import type { AskAboutWithheldGlobalPluginsOptions } from '../services/marketplace/consent/ask-withheld-global-plugins.js';
 import type { ConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
-import type { UninstallFlow } from '../services/marketplace/flows/uninstall.js';
+import type { UninstallFlow } from '../services/marketplace/flows/uninstall/uninstall.js';
 import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import type { NotifyPluginsChanged } from '../services/marketplace/types.js';
 import type { AgentScopeRef } from '../services/marketplace/installed-scanner.js';
@@ -32,13 +32,6 @@ import { mountPackageActionRoutes } from './marketplace/package-actions.js';
 import { mountPackageRoutes } from './marketplace/packages.js';
 import { mountSourceRoutes } from './marketplace/sources.js';
 import { mountUpdateRoutes } from './marketplace/updates.js';
-
-/**
- * Re-export the canonical {@link InstalledPackage} type from this route module
- * so external callers that historically imported it from `routes/marketplace`
- * keep working after the scan helper moved into `services/marketplace/`.
- */
-export type { InstalledPackage } from '../services/marketplace/installed-scanner.js';
 
 /** Dependencies injected into {@link createMarketplaceRouter}. */
 export interface MarketplaceRouteDeps {

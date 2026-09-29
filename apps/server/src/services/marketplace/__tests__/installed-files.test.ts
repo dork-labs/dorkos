@@ -13,21 +13,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   computeInstalledFiles,
-  hashFile,
   isInstallWhole,
   isProvenPackageFile,
   LegacyInstallError,
-  lstatChain,
-  planCarryOver,
   readInstalledFiles,
   sameSource,
-  scanTree,
   writeInstalledFiles,
-  type CarryOverInput,
   type InstalledFiles,
-  type StagedFacts,
-  type TreeScan,
 } from '../lib/records/installed-files.js';
+import { planCarryOver, type CarryOverInput, type StagedFacts } from '../lib/records/carry-plan.js';
+import { hashFile, lstatChain, scanTree, type TreeScan } from '../lib/records/tree-scan.js';
 
 const dirs: string[] = [];
 afterEach(async () => {

@@ -20,12 +20,11 @@ import type {
   PluginPackageManifest,
   ShapePackageManifest,
 } from '@dorkos/marketplace';
+import { PackageNotInstalledError, UninstallFlow } from '../../flows/uninstall/uninstall.js';
 import {
-  PackageNotInstalledError,
-  UninstallFlow,
   type UninstallShapeDeactivator,
   type UninstallShapeScheduleTeardown,
-} from '../../flows/uninstall.js';
+} from '../../flows/uninstall/support.js';
 import { InvalidPackageNameError } from '../../lib/package-paths.js';
 import { computeInstalledFiles, writeInstalledFiles } from '../../lib/records/installed-files.js';
 import { currentRecordOwner, formatRecordOwner } from '../../lib/records/record-owner.js';

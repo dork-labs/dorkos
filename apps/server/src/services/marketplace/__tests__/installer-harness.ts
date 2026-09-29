@@ -43,7 +43,7 @@ import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
 import { ShapeInstallFlow } from '../flows/install-shape.js';
 import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
-import { UninstallFlow } from '../flows/uninstall.js';
+import { UninstallFlow } from '../flows/uninstall/uninstall.js';
 
 /**
  * The stubbed side-effect surfaces, exposed so a test can assert which ones

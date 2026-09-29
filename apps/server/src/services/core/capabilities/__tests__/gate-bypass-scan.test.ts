@@ -234,7 +234,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/extensions.ts': 'the same route, behind the same person bar — see the enable entry',
       'services/marketplace/flows/install-plugin.ts':
         'rolls back extensions it turned on when the rest of an install failed',
-      'services/marketplace/flows/uninstall.ts':
+      'services/marketplace/flows/uninstall/side-effects.ts':
         'turns off the extensions a package being removed brought with it, behind the uninstall tier gate (uninstallFlow.uninstall is itself on this list)',
       'services/shapes/apply-shape.ts':
         'turns off the extensions the PREVIOUS Shape turned on; same gate as the enable entry',

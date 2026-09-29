@@ -24,17 +24,9 @@ import { constants as fsConstants, type Stats } from 'node:fs';
 import { copyFile, lstat, mkdir, readlink, rename, rm, symlink, utimes } from 'node:fs/promises';
 import path from 'node:path';
 import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
-import {
-  entryStatOf,
-  isNeverCarried,
-  planCarryOver,
-  sameEntryStat,
-  scanTree,
-  type CarryOverPlan,
-  type EntryStat,
-  type InstalledFiles,
-  type StagedFacts,
-} from './installed-files.js';
+import { isNeverCarried, type InstalledFiles } from './installed-files.js';
+import { planCarryOver, type CarryOverPlan, type StagedFacts } from './carry-plan.js';
+import { entryStatOf, sameEntryStat, scanTree, type EntryStat } from './tree-scan.js';
 import { freeSavedFileName, freeSavedFolderName, makeInert } from '../saved-copies/saved-copies.js';
 
 /** The `lstat` identities the late-write pass compares against. */

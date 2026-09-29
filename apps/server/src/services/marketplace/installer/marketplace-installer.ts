@@ -42,7 +42,7 @@ import type { AgentInstallFlow } from '../flows/install-agent.js';
 import type { PluginInstallFlow } from '../flows/install-plugin.js';
 import type { ShapeInstallFlow } from '../flows/install-shape.js';
 import type { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
-import type { UninstallFlow } from '../flows/uninstall.js';
+import type { UninstallFlow } from '../flows/uninstall/uninstall.js';
 import { locateInstallRoot } from '../lib/locate-install.js';
 import {
   hostOf,

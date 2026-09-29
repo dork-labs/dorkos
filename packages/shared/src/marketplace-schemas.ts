@@ -10,7 +10,7 @@
  *   - `apps/server/src/routes/marketplace.ts` — AggregatedPackage, InstalledPackage, AddSourceInput
  *   - `apps/server/src/services/marketplace/types.ts` — PermissionPreview, InstallResult,
  *     InstallRequest, MarketplaceSource, ConflictReport
- *   - `apps/server/src/services/marketplace/flows/uninstall.ts` — UninstallResult
+ *   - `apps/server/src/services/marketplace/flows/uninstall/uninstall.ts` — UninstallResult
  *   - `apps/server/src/services/marketplace/flows/update.ts` — UpdateResult, UpdateCheckResult,
  *     InstallationUpdateCheck, InstallationUpdatesResult
  *   - `apps/server/src/services/shapes/apply-shape.ts` — ApplyShapeResult, AppliedShape,
@@ -924,7 +924,7 @@ export interface ListInstalledOptions {
 /**
  * The outcome of a successful uninstall.
  *
- * Mirrors `UninstallResult` in `apps/server/src/services/marketplace/flows/uninstall.ts`.
+ * Mirrors `UninstallResult` in `apps/server/src/services/marketplace/flows/uninstall/uninstall.ts`.
  */
 export interface UninstallResult {
   ok: boolean;

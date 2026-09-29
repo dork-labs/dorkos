@@ -32,7 +32,7 @@ import { flowOwnership } from '../lib/flow-ownership.js';
 import { readInstalledFiles, sameSource } from '../lib/records/installed-files.js';
 import { runTransaction } from '../transaction.js';
 import type { AgentInstallIdentity, InstallRequest, InstallResult } from '../types.js';
-import type { UninstallAgentRegistry } from './uninstall.js';
+import type { UninstallAgentRegistry } from './uninstall/support.js';
 import { freeSavedFileName, makeInert } from '../lib/saved-copies/saved-copies.js';
 
 /**

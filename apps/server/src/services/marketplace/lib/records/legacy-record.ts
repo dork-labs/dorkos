@@ -48,14 +48,12 @@ import type { PackageFetcher } from '../../package-fetcher.js';
 import { isFullCommitSha } from '../git/git-tree.js';
 import {
   computeInstalledFiles,
-  hashFile,
   isNeverCarried,
-  lstatChain,
-  scanTree,
   writeInstalledFiles,
   type InstalledFiles,
   type UnprovenWhy,
 } from './installed-files.js';
+import { hashFile, lstatChain, scanTree } from './tree-scan.js';
 import { strictDifferences } from '../integrity/strict-differences.js';
 import { materializePackageSchedules } from '../schedules/materialize-schedules.js';
 import { stagePackageContents } from '../stage-package.js';

@@ -25,7 +25,8 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
-import { UninstallFlow, type UninstallFlowDeps } from '../../flows/uninstall.js';
+import { UninstallFlow } from '../../flows/uninstall/uninstall.js';
+import { type UninstallFlowDeps } from '../../flows/uninstall/support.js';
 import {
   computeInstalledFiles,
   readInstalledFiles,

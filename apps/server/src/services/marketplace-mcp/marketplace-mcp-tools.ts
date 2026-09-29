@@ -23,7 +23,7 @@ import type { InstallerLike } from '../marketplace/installer/marketplace-install
 import type { MarketplaceSourceManager } from '../marketplace/sources/marketplace-source-manager.js';
 import type { PackageFetcher } from '../marketplace/package-fetcher.js';
 import type { MarketplaceCache } from '../marketplace/cache/marketplace-cache.js';
-import type { UninstallFlow } from '../marketplace/flows/uninstall.js';
+import type { UninstallFlow } from '../marketplace/flows/uninstall/uninstall.js';
 import type { UpdateFlow } from '../marketplace/flows/update.js';
 import type { GlobalConsentRecorder } from '../marketplace/consent/global-plugin-consent.js';
 import type { AgentScopeRef } from '../marketplace/installed-scanner.js';
