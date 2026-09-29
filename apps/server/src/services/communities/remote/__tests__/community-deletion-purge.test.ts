@@ -23,6 +23,7 @@ import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
 import { RemoteMirrorStore, type NativeMirrorEntry } from '../mirror-store.js';
 import { RemoteRoomSubscriptionBridge } from '../remote-room-subscription-bridge.js';
 import { RemoteRedactionSync } from '../remote-redaction-sync.js';
+import { sweepOrphanedMirrors } from '../orphaned-mirror-sweep.js';
 
 const DELETED = 'remote_deleted' as CommunityRef;
 const OTHER_COMMUNITY = 'remote_other' as CommunityRef;
@@ -159,5 +160,62 @@ describe('a community going away', () => {
       expect(found(word)).toBeGreaterThan(0);
       expect(await onDisk(kept.file)).toBe(true);
     }
+  });
+
+  // Purpose (review 4): at startup, copies whose connection no longer exists (a disconnect whose
+  // purge failed, or one from before disconnects purged) are handed to the revoke path, and a
+  // copy whose connection still exists, in any state, is never touched. It fails if the sweep
+  // skips an orphan or purges a live connection's copies.
+  it('sweeps copies left by a connection that no longer exists, and only those', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      new CommunityAgentEnrollmentStore(harness.db),
+      () => null
+    );
+    const owner = harness.human;
+    const ensure = (community: CommunityRef) =>
+      mirrors.ensureRoom({
+        communityRef: community,
+        remoteRoomId: ROOM,
+        title: 'General',
+        topic: null,
+        ownerAuthorId: owner,
+        accessors: [],
+        authorizedAt: '2026-09-29T00:00:00.000Z',
+      }).id;
+    const orphan = ensure(DELETED);
+    const live = ensure(OTHER_COMMUNITY);
+    // Revoked by a disconnect whose purge then failed: its room is still here.
+    const stranded = ensure(OTHER_OWNERS);
+    mirrors.revoke(OTHER_OWNERS, owner);
+    const connections = new Set([`${OTHER_COMMUNITY}\0${owner}`]);
+    const revoke = vi.fn((ref: CommunityRef, ownerAuthorId: string) =>
+      bridge.revokeConnection(ref, ownerAuthorId)
+    );
+    const deps = {
+      mirrors,
+      hasConnection: async (ref: CommunityRef, ownerAuthorId: string) =>
+        connections.has(`${ref}\0${ownerAuthorId}`),
+      revoke,
+    };
+
+    expect(await sweepOrphanedMirrors(deps)).toBe(2);
+    expect(revoke.mock.calls).toEqual(
+      expect.arrayContaining([
+        [DELETED, owner],
+        [OTHER_OWNERS, owner],
+      ])
+    );
+    expect(harness.store.getRoom(orphan)).toBeNull();
+    expect(harness.store.getRoom(stranded)).toBeNull();
+    expect(harness.store.getRoom(live)).not.toBeNull();
+
+    // Once purged, the orphan's revoked mapping is not swept again.
+    revoke.mockClear();
+    expect(await sweepOrphanedMirrors(deps)).toBe(0);
+    expect(revoke).not.toHaveBeenCalled();
   });
 });

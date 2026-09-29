@@ -682,7 +682,11 @@ export const CommunityConnectionAccessSchema = z
     effective: CommunityWireGrantCapabilitiesSchema,
     lastKnown: z
       .strictObject({
-        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending']),
+        /**
+         * `deleted` is never sent by a Community: an installation records it after seeing
+         * `deletion_pending` and then the community's `404` (DOR-2334).
+         */
+        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending', 'deleted']),
         capabilities: CommunityWireGrantCapabilitiesSchema,
         verifiedAt: timestamp,
       })
@@ -723,12 +727,13 @@ export const CommunityConnectionAccessSchema = z
     }
     if (
       (access.lastKnown?.lifecycle === 'suspended' ||
-        access.lastKnown?.lifecycle === 'deletion_pending') &&
+        access.lastKnown?.lifecycle === 'deletion_pending' ||
+        access.lastKnown?.lifecycle === 'deleted') &&
       Object.values(access.lastKnown.capabilities).some(Boolean)
     ) {
       context.addIssue({
         code: 'custom',
-        message: 'Suspended or deleting access has no effective capabilities.',
+        message: 'Suspended, deleting or deleted access has no effective capabilities.',
       });
     }
   });

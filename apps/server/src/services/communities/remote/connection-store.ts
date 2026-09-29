@@ -220,6 +220,11 @@ export class RemoteConnectionStore {
       .map((record) => ({ communityRef: record.ref, ownerAuthorId: record.ownerKey }));
   }
 
+  /** Whether this owner still has a connection record for this ref, in any state. */
+  async has(ref: CommunityRef, ownerKey: string): Promise<boolean> {
+    return (await this.read()).some((record) => record.ref === ref && record.ownerKey === ownerKey);
+  }
+
   /** Remove expired pending proof before list/status can display it after restart. */
   async sweepExpired(ownerKey: string, busy: ReadonlySet<CommunityRef> = new Set()): Promise<void> {
     await this.exclusive(async () => {

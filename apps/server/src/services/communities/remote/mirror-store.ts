@@ -841,6 +841,33 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     );
   }
 
+  /**
+   * Every owner connection that still has mirrored content on this machine: a mirror not yet
+   * revoked, or a revoked one whose local room was never purged. What the boot sweep checks
+   * against the connection records (DOR-2334).
+   */
+  mirroredConnections(): { communityRef: CommunityRef; ownerAuthorId: string }[] {
+    const pairs = new Map<string, { communityRef: CommunityRef; ownerAuthorId: string }>();
+    for (const row of this.db
+      .select({
+        communityRef: communityRoomMirrors.communityRef,
+        ownerAuthorId: communityRoomMirrors.ownerAuthorId,
+        state: communityRoomMirrors.state,
+        room: rooms.id,
+      })
+      .from(communityRoomMirrors)
+      .leftJoin(rooms, eq(rooms.id, communityRoomMirrors.localRoomId))
+      .all()) {
+      if (row.state === 'revoked' && row.room === null) continue;
+      const communityRef = row.communityRef as CommunityRef;
+      pairs.set(`${communityRef}\0${row.ownerAuthorId}`, {
+        communityRef,
+        ownerAuthorId: row.ownerAuthorId,
+      });
+    }
+    return [...pairs.values()];
+  }
+
   /** Mark a temporary outage: only the owner may read their last authorized rooms. */
   markStale(communityRef: CommunityRef, ownerAuthorId: string): void {
     this.db

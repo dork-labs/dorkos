@@ -1003,6 +1003,92 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     // Purpose: nothing that is not a definite deletion purges. A hold, an outage, another 423, and
     // a bare 404 (which a missing channel also answers) all keep every copy. It fails if the
     // classifier widens to any of them.
+    const pending = () => {
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = `${qualified}/me/connection-access`;
+      rejectedStatus = 423;
+      rejectedCode = 'COMMUNITY_DELETION_PENDING';
+    };
+    const lastKnown = async (store: RemoteConnectionStore, ref: string, owner: string) =>
+      (await store.list(owner)).find((row) => row.ref === ref)?.access;
+
+    // Purpose (review 1): a purge that throws never fails the connection list, and the no-access
+    // deletion state is recorded whatever the purge did. It fails if the purge runs first or
+    // its error escapes.
+    it('records the deletion and answers even when the purge throws', async () => {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => {
+        throw new Error('purge failed');
+      });
+      const service = new RemoteCommunityPairingService(store, revokeConnection);
+      const started = await service.start(
+        'throwing-owner',
+        `${origin}/c/${remoteCommunityId}`,
+        'x'
+      );
+      await service.poll(started.connection.ref, 'throwing-owner');
+      approved = false;
+      pending();
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+      await expect(service.list('throwing-owner')).resolves.toHaveLength(1);
+      await expect(service.status(started.connection.ref, 'throwing-owner')).resolves.toMatchObject(
+        { access: { lastKnown: { lifecycle: 'deletion_pending' } } }
+      );
+      expect(await lastKnown(store, started.connection.ref, 'throwing-owner')).toMatchObject({
+        state: 'verified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: { lifecycle: 'deletion_pending' },
+      });
+      warn.mockRestore();
+      await service.disconnect(started.connection.ref, 'throwing-owner');
+    });
+
+    // Purpose (review 2): while a deletion stays pending, a purge that succeeded is not repeated
+    // on every check; one that failed is tried again. It fails if every check purges, or if a
+    // failed purge is never retried.
+    it('purges once while the deletion is pending, and retries only a failed purge', async () => {
+      const { service, revokeConnection, ref } = await connectedWith('once-owner');
+      pending();
+      revokeConnection.mockRejectedValueOnce(new Error('purge failed'));
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      await service.status(ref, 'once-owner');
+      await service.status(ref, 'once-owner');
+      await service.status(ref, 'once-owner');
+      await service.status(ref, 'once-owner');
+      warn.mockRestore();
+      // Failed, retried and succeeded, then left alone.
+      expect(revokeConnection).toHaveBeenCalledTimes(2);
+      await service.disconnect(ref, 'once-owner');
+    });
+
+    // Purpose (review 3): after a deletion was seen pending, the community's `404 NOT_FOUND` is
+    // final: recorded as deleted, purged if it was not yet, and not shown as merely offline. It
+    // fails if the 404 is treated as an outage after a pending deletion.
+    it('records a finished deletion after a pending one', async () => {
+      const { store, service, revokeConnection, ref } = await connectedWith('finished-owner');
+      pending();
+      revokeConnection.mockRejectedValueOnce(new Error('purge failed'));
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      await service.status(ref, 'finished-owner');
+      rejectedStatus = 404;
+      rejectedCode = 'NOT_FOUND';
+      const finished = await service.status(ref, 'finished-owner');
+      await service.status(ref, 'finished-owner');
+      warn.mockRestore();
+
+      expect(finished.access).toMatchObject({
+        state: 'verified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: { lifecycle: 'deleted' },
+      });
+      expect((await lastKnown(store, ref, 'finished-owner'))?.lastKnown?.lifecycle).toBe('deleted');
+      // The failed purge was retried by the 404, then not repeated.
+      expect(revokeConnection).toHaveBeenCalledTimes(2);
+      await service.disconnect(ref, 'finished-owner');
+    });
+
     const notGone: Array<[string, 'hold' | number, string | undefined]> = [
       ['a host hold (read-only)', 'hold', undefined],
       ['a 5xx', 503, undefined],
