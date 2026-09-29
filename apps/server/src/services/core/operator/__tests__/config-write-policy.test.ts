@@ -148,9 +148,13 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
+      // Where each account may work, and which accounts each project may use:
+      // they bound where a credential is used (spec flow-multiproject §8).
+      'runtimes.claudeCode.accounts[].onlyProjects',
       'runtimes.claudeCode.accounts[].path',
       'runtimes.claudeCode.defaultAccount',
       'runtimes.claudeCode.defaultAccountColor',
+      'runtimes.claudeCode.defaultAccountOnlyProjects',
       'runtimes.claudeCode.defaultTrustStop',
       // Which found account folders Settings stops offering: it curates the
       // roster, and its only writer is the dismiss route (claude-account-ui §7.4).
@@ -160,6 +164,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // turned it off wanted the gigabyte back, and the Control Center's 'Warm
       // agents' switch is where they say so (DOR-1497).
       'runtimes.claudeCode.persistentSession',
+      'runtimes.claudeCode.projectAccounts',
       'runtimes.codex.binaryPath',
       'runtimes.codex.credentialRef',
       'runtimes.codex.defaultTrustStop',
@@ -448,6 +453,7 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
+      'runtimes.claudeCode.accounts[].onlyProjects',
       'runtimes.claudeCode.accounts[].path',
     ]);
   });

@@ -307,7 +307,8 @@ describe('ManagedCloudConnectorProvider', () => {
       status: 'error',
       code: 'MANAGED_LINK_REQUIRED',
       retryable: false,
-      message: expect.stringContaining('Settings > Access'),
+      message:
+        'This computer isn’t linked to a DorkOS account, so nothing was sent. Ask the person to link it in Settings › Access in the DorkOS app.',
     });
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(manager.getSummary().linked).toBe(false);
@@ -329,7 +330,8 @@ describe('ManagedCloudConnectorProvider', () => {
     expect(await provider(manager).execute(command())).toEqual({
       status: 'outcome_unknown',
       code: 'MANAGED_EXECUTION_OUTCOME_UNKNOWN',
-      message: 'The hosted service did not confirm the managed connector outcome.',
+      message:
+        'DorkOS’s servers didn’t confirm whether the action ran. Check the app before trying again.',
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });

@@ -61,7 +61,7 @@ const persistent = vi.hoisted(() => ({ on: false }));
 // directory this laptop has.
 vi.mock('../claude-config-dir.js', () => ({
   resolveActiveClaudeRoot: () => account.root,
-  resolveLaunchAccountRoot: () => account.root,
+  resolveLaunchAccountRoot: () => ({ ok: true, root: account.root, accountId: 'default' }),
   resolveClaudeRootSet: () => [account.root],
   claudeConfigDirEnv: (root: string) => ({ CLAUDE_CONFIG_DIR: root }),
   describeClaudeCodeAccounts: () => ({

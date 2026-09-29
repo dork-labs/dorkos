@@ -71,7 +71,8 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       await page.goto(`/connections?review=${encodeURIComponent(review.reviewRequestId)}`);
       const dialog = page.getByTestId('connector-review-dialog');
       await expect(dialog.getByText('work', { exact: true })).toBeVisible();
-      await expect(dialog.getByText('gmail', { exact: true })).toBeVisible();
+      // The app by name, never its raw id.
+      await expect(dialog.getByText('Gmail', { exact: true })).toBeVisible();
       await expect(dialog.getByText('List')).toBeVisible();
       await expect(dialog.getByText('Send')).toBeVisible();
       await dialog.getByRole('button', { name: 'Approve access' }).click();

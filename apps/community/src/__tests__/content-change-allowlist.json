@@ -3,5 +3,7 @@
   "unposted-upload-sweep": "routes/attachments.ts sweepExpiredAttachments: DELETE FROM attachments ... entry_id IS NULL. An unbound upload belongs to no entry.",
   "tenant-deletion": "deletion-worker.ts: the whole community goes, and no reader remains.",
   "erasure-rewrite-mentions": "erasure/erasure.ts rewriteMentions: bumps the content version and writes one redaction row per changed entry (rule 1).",
-  "erasure-files": "erasure/erasure.ts eraseFiles: bumps the content version and writes one redaction row per bound entry whose file it deleted (rule 1)."
+  "erasure-files": "erasure/erasure.ts eraseFiles: bumps the content version and writes one redaction row per bound entry whose file it deleted (rule 1).",
+  "import-restore": "imports/restore.ts insertImportedRows: INSERT INTO entry_mentions for entries created in the same transaction, in an unclaimed community nobody can read yet, so nothing cached has seen them.",
+  "import-teardown": "imports/teardown.ts: removes the rows of an import's own unclaimed community, which nobody has ever been able to read; no reader holds a copy."
 }

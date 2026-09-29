@@ -1025,6 +1025,9 @@ router.post('/:id/messages', async (req, res) => {
     workspaceCaller: workspaceCallerOf(req, res),
   });
   if (isSessionLaunchRefusal(result)) {
+    // The account may not work in this project: the plain sentence, with the
+    // project and account it is about (spec `flow-multiproject` §8.3).
+    if (result.accountError) return res.status(409).json(result.accountError.toBody());
     // A request naming something that does not exist is the caller's mistake;
     // a turn refused for WHERE it would stand is a conflict with the session.
     const status =

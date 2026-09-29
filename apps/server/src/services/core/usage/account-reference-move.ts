@@ -6,7 +6,10 @@
  * A reference names an account by id, and three kinds live outside the config
  * file: an agent manifest's `account` (moved through the mesh registry, which
  * writes the file first), a schedule's `account` with its approval, and the
- * schedule's `SKILL.md` (`services/tasks/approvals/account-rename.ts`).
+ * schedule's `SKILL.md` (`services/tasks/approvals/account-rename.ts`). One
+ * lives inside it: each project's allow list
+ * (`runtimes.claudeCode.projectAccounts[*].allow`, spec `flow-multiproject`
+ * §8.1), so a project that allowed the account still allows it.
  *
  * A stored session limit (`session_limits.account_id`, spec
  * claude-account-fleet D4) is deliberately NOT a reference to move. Its table
@@ -74,6 +77,8 @@ export interface AccountReferenceSites {
     | undefined;
   /** Move every schedule (row, approval, file) from one account id to another; package-owned ones stay. */
   renameScheduleAccount(from: string, to: string): Promise<unknown>;
+  /** Rewrite the id inside every project's allow list (whole-object config write). */
+  renameInProjectAccounts(from: string, to: string): void;
 }
 
 /**
@@ -109,6 +114,7 @@ export async function moveAccountReferences(
       await sites.agents.setAccount(agent.id, to);
     }
     await sites.renameScheduleAccount(from, to);
+    sites.renameInProjectAccounts(from, to);
     logger.info('[account-usage] moved every reference to a renamed Claude account', { from, to });
   }
   return true;

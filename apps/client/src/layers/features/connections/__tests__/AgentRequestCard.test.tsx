@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -243,19 +243,25 @@ describe('AgentRequestCard — no account yet', () => {
         newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
       },
     } as never);
-    vi.mocked(transport.getConnectorProviders).mockResolvedValue([
-      {
-        type: 'composio',
-        configured: false,
-        registered: false,
-        custody: 'managed',
-        disclosure: 'Composio keeps sign-ins.',
-      },
-    ] as never);
+    vi.mocked(transport.getConnectorProviders).mockResolvedValue({
+      providers: [
+        {
+          type: 'composio',
+          providerInstanceId: 'composio-1',
+          configured: false,
+          registered: false,
+          custody: 'managed',
+          disclosure: 'Composio keeps sign-ins.',
+        },
+      ],
+      appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
+    } as never);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
-    expect(await screen.findByTestId('first-connect-step')).toBeInTheDocument();
+    const step = await screen.findByTestId('first-connect-step');
+    // Composio isn't set up, so its key is the choice the step offers.
+    expect(within(step).getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
     expect(transport.startConnectorAgentRequestAuthentication).not.toHaveBeenCalled();
   });
 
@@ -1010,7 +1016,7 @@ describe('AgentRequestCard — an account that needs attention first', () => {
       providerInstanceId: 'composio-1',
       toolkit: 'gmail',
       state: 'failed',
-      reason: 'The service could not complete sign-in.',
+      reason: 'Sign-in didn’t finish. Try again.',
     } as never);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
@@ -1109,7 +1115,7 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
     expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    await user.click(screen.getByRole('button', { name: 'Check if it’s done' }));
     await waitFor(() =>
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
         decision: 'current_access',

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import { appCount, splitByImpact } from '@/layers/entities/connectors';
-import { groupAppsByWay, keyWayName } from '../lib/connection-ways';
+import { groupAppsByWay } from '../lib/connection-ways';
 import { createMockConnectionReadiness } from '@dorkos/test-utils';
 
 function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
@@ -134,10 +134,8 @@ describe('splitByImpact', () => {
 });
 
 describe('naming', () => {
-  it('counts apps and names each way in plain words', () => {
+  it('counts apps in plain words', () => {
     expect(appCount(1)).toBe('1 app');
     expect(appCount(4)).toBe('4 apps');
-    expect(keyWayName('composio')).toBe('Your Composio key');
-    expect(keyWayName('nango')).toBe('Your Nango server');
   });
 });

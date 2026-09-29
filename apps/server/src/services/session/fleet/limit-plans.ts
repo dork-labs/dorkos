@@ -29,7 +29,7 @@
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { LimitPlan, SessionLimit } from '@dorkos/shared/schemas';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import type { LimitedSessionInfo, SessionInfo } from '@dorkos/extension-api/server';
+import type { AdvisorContext, LimitedSessionInfo, SessionInfo } from '@dorkos/extension-api/server';
 import { logger } from '../../../lib/logger.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
@@ -40,6 +40,8 @@ import {
   validateLimitedPlan,
 } from '../../core/usage/account-advisor.js';
 import { rankAccounts, type AccountRanking } from '../../core/usage/account-ranking.js';
+import { configManager } from '../../core/config-manager.js';
+import { accountEligibility, projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { onProjectorLimitSet, peekProjector } from '../session-state-projector.js';
 import { flowRunsFor } from './flow-run-link.js';
@@ -219,14 +221,24 @@ export async function limitedInfoOf(stored: StoredSessionLimit): Promise<Limited
  * @param stored - The session's stored limit.
  */
 export function rankForLimit(stored: StoredSessionLimit): Promise<AccountRanking> {
-  return rankAccounts({
+  return rankAccounts(limitRankingContext(stored));
+}
+
+/**
+ * What a limited session's accounts are ranked for: continuing, as a person
+ * sees it, in the folder it ran in, the limited account left out.
+ *
+ * @param stored - The session's stored limit.
+ */
+export function limitRankingContext(stored: StoredSessionLimit): AdvisorContext {
+  return {
     purpose: 'continue',
     caller: 'person',
     cwd: cwdOf(stored) ?? '',
     runtime: LIMIT_RUNTIME,
     sessionId: stored.sessionId,
     ...(stored.limit.accountId ? { excludeAccountId: stored.limit.accountId } : {}),
-  });
+  };
 }
 
 /**
@@ -561,9 +573,15 @@ async function planEpisode(stored: StoredSessionLimit): Promise<void> {
   let claimedBy: string | null = null;
   if (hasAccountAdvisor()) {
     claimedBy = await askClaim(stored);
+    // An `auto` target must be an account that may work in this folder's
+    // project; one that may not degrades the plan to `ask` (spec
+    // `flow-multiproject` §8.4), exactly as an unregistered one does.
+    const project = await projectOfFolder(info.cwd);
     const answer = validateLimitedPlan(await callAdvisor('onLimited', info), {
       limitedAccountId: stored.limit.accountId,
-      isRegistered: isRegisteredAccount,
+      isRegistered: (id) =>
+        isRegisteredAccount(id) &&
+        accountEligibility(configManager, LIMIT_RUNTIME, id, project).eligible,
     });
     if (answer?.mode === 'wait') {
       plan = {

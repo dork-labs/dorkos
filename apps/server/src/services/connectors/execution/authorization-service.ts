@@ -255,7 +255,7 @@ export class ConnectorExecutionAuthorizationService {
     if (!isServerPrincipal(principal)) {
       return refuse(
         'CONNECTOR_PRINCIPAL_REQUIRED',
-        'Connector execution requires a verified caller.'
+        'DorkOS couldn’t tell who is running this action, so it didn’t run.'
       );
     }
     const owner = ownerColumns(principal.claims.owner);
@@ -306,7 +306,7 @@ export class ConnectorExecutionAuthorizationService {
     if (!isServerPrincipal(input.principal)) {
       return refuse(
         'CONNECTOR_PRINCIPAL_REQUIRED',
-        'Connector execution requires a verified caller.'
+        'DorkOS couldn’t tell who is running this action, so it didn’t run.'
       );
     }
     const actor = await this.resolveActor(input.principal, input.requestedAgentId);
@@ -327,7 +327,7 @@ export class ConnectorExecutionAuthorizationService {
     if (!isServerPrincipal(input.principal) || !this.preparedExecutions.has(prepared)) {
       return refuse(
         'CONNECTOR_PRINCIPAL_REQUIRED',
-        'Connector execution requires a verified caller.'
+        'DorkOS couldn’t tell who is running this action, so it didn’t run.'
       );
     }
     return this.prepareResolved(input, {
@@ -350,10 +350,7 @@ export class ConnectorExecutionAuthorizationService {
       row.ownerKind !== owner.ownerKind ||
       row.ownerId !== owner.ownerId
     ) {
-      return refuse(
-        'CONNECTOR_OWNER_MISMATCH',
-        'The selected connection does not belong to this caller.'
-      );
+      return refuse('CONNECTOR_OWNER_MISMATCH', 'That account isn’t one this agent can use.');
     }
     if (
       row.lifecycleState === 'connected' &&
@@ -378,7 +375,7 @@ export class ConnectorExecutionAuthorizationService {
     if (row.classification !== expectedClassification) {
       return refuse(
         'CONNECTOR_CAPABILITY_MISMATCH',
-        'The operation classification does not match this execution capability.'
+        'This action is a different kind than this tool runs. Use the tool named for its kind: the read, write or destructive tool.'
       );
     }
     if (row.toolkit !== row.operationToolkit) {
@@ -413,7 +410,7 @@ export class ConnectorExecutionAuthorizationService {
     if (managedHostedRevisionId && !managedHostedRevisionId.success) {
       return refuse(
         'CONNECTOR_MANAGED_REVISION_REQUIRED',
-        'Review this managed action again before using it.'
+        'The person needs to review this action again before you can use it. Ask them to check this account’s access on the Connections page in the DorkOS app.'
       );
     }
     const argumentsValue = this.validateArguments(row.inputSchemaJson, input.target.arguments);
@@ -502,7 +499,7 @@ export class ConnectorExecutionAuthorizationService {
       if (requestedAgentId !== undefined) {
         return refuse(
           'CONNECTOR_AGENT_OVERRIDE_DENIED',
-          'Runtime execution cannot override its bound agent.'
+          'This action runs as the agent in this chat. It can’t run as another agent.'
         );
       }
       return {
@@ -516,23 +513,17 @@ export class ConnectorExecutionAuthorizationService {
       if (requestedAgentId !== undefined && requestedAgentId !== claims.agentId) {
         return refuse(
           'CONNECTOR_AGENT_OVERRIDE_DENIED',
-          'An agent cannot borrow another agent’s grants.'
+          'An agent can’t use another agent’s access.'
         );
       }
       return { actorKind: 'agent', actorId: claims.agentId, agentId: claims.agentId };
     }
     if (claims.kind === 'program' || claims.kind === 'operator') {
       if (!requestedAgentId) {
-        return refuse(
-          'CONNECTOR_AGENT_REQUIRED',
-          'Choose the owned agent whose connector grants apply.'
-        );
+        return refuse('CONNECTOR_AGENT_REQUIRED', 'Say which of your agents this action runs as.');
       }
       if (!(await this.agentOwnership.ownsAgent(claims.owner, requestedAgentId))) {
-        return refuse(
-          'CONNECTOR_AGENT_NOT_OWNED',
-          'The selected agent does not belong to this caller.'
-        );
+        return refuse('CONNECTOR_AGENT_NOT_OWNED', 'That agent isn’t one of yours.');
       }
       return {
         actorKind: claims.kind,
@@ -543,7 +534,7 @@ export class ConnectorExecutionAuthorizationService {
     }
     return refuse(
       'CONNECTOR_CALLER_UNSUPPORTED',
-      'This caller cannot execute connector operations.'
+      'Only an agent, or a program the person allowed, can run app actions.'
     );
   }
 

@@ -112,7 +112,7 @@ describe('firstConnectReason', () => {
   it('names the working way that does not reach this app', () => {
     expect(
       firstConnectReason({ ways: [nango], newApps: { status: 'ready', way: nango } }, notion)
-    ).toBe('Nango can’t reach Notion yet.');
+    ).toBe('Your Nango server can’t reach Notion yet.');
     const account = {
       kind: 'dorkos_account' as const,
       type: 'dorkos-managed',

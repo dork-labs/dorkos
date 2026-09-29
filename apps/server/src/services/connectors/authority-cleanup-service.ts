@@ -11,6 +11,7 @@ import {
   isNull,
   type Db,
 } from '@dorkos/db';
+import { ACCESS_ENDED_COPY } from '@dorkos/shared/connector-schemas';
 import type { ConnectorAuthorityCleanupPort } from './authority-cleanup-port.js';
 
 /** Construction options for exact connector authority cleanup. */
@@ -64,7 +65,7 @@ export class ConnectorAuthorityCleanupService implements ConnectorAuthorityClean
       tx.update(approvals)
         .set({
           state: 'denied',
-          denyReason: 'Connector authority was removed.',
+          denyReason: ACCESS_ENDED_COPY.connection_removed,
           decidedAt: now,
           consumedAt: now,
         })
@@ -77,7 +78,7 @@ export class ConnectorAuthorityCleanupService implements ConnectorAuthorityClean
         .set({
           state: 'expired',
           resolvedAt: now,
-          resolutionSummary: 'Connector authority was removed.',
+          resolutionSummary: ACCESS_ENDED_COPY.connection_removed,
           resolutionJson: null,
           authorityRevokedAt: now,
           authorityRevokeReason: input.reason,
@@ -119,7 +120,7 @@ export class ConnectorAuthorityCleanupService implements ConnectorAuthorityClean
       tx.update(approvals)
         .set({
           state: 'denied',
-          denyReason: 'Connector authority was removed.',
+          denyReason: ACCESS_ENDED_COPY[input.reason],
           decidedAt: now,
           consumedAt: now,
         })
@@ -137,7 +138,7 @@ export class ConnectorAuthorityCleanupService implements ConnectorAuthorityClean
         .set({
           state: 'expired',
           resolvedAt: now,
-          resolutionSummary: 'Connector authority was removed.',
+          resolutionSummary: ACCESS_ENDED_COPY[input.reason],
           resolutionJson: null,
           authorityRevokedAt: now,
           authorityRevokeReason: input.reason,

@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import {
   accessLevelRevisionIds,
   actionNameFromSlug,
+  OPERATION_CLASSIFICATION_LABELS,
   type ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import { useConnectorConnections } from '@/layers/entities/connectors';
@@ -25,6 +26,7 @@ import {
   selectionsFromPreview,
   type AgentOperationSelections,
 } from '../../lib/reconciliation-selection';
+import { olderVersionIds } from '../../lib/older-versions';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { AccessOutcome } from './AccessOutcome';
 
@@ -126,7 +128,7 @@ export function ConnectionAccessDialog({
           ) : saveOutcome && !saved ? (
             <Button variant="secondary" onClick={access.checkSync} disabled={access.isCheckingSync}>
               <RefreshCw className="size-4" aria-hidden />
-              {access.isCheckingSync ? 'Checking…' : 'Check sync status'}
+              {access.isCheckingSync ? 'Checking…' : 'Check if it’s done'}
             </Button>
           ) : !needsRefresh && preview && !saved ? (
             <Button
@@ -182,6 +184,7 @@ function ReconciliationEditor({
       ) : (
         <div className="space-y-2">
           {preview.agents.map((agent) => {
+            const older = olderVersionIds(preview.candidates);
             const selection = selections[agent.agentId];
             const selected = new Set(selection?.operationRevisionIds ?? []);
             // The level the owner chose, kept as the app changes; ticking
@@ -276,18 +279,29 @@ function ReconciliationEditor({
                                   preview.connection.toolkit
                                 )}
                               </span>
-                              <Badge size="xs" variant="secondary">
-                                {candidate.capabilityClassification}
+                              <Badge
+                                size="xs"
+                                variant={
+                                  candidate.capabilityClassification === 'destructive'
+                                    ? 'destructive'
+                                    : 'secondary'
+                                }
+                              >
+                                {
+                                  OPERATION_CLASSIFICATION_LABELS[
+                                    candidate.capabilityClassification
+                                  ]
+                                }
                               </Badge>
                               {!candidate.supported && (
                                 <Badge size="xs" variant="outline">
                                   No longer available
                                 </Badge>
                               )}
+                              {older.has(candidate.operationRevisionId) && (
+                                <span className="text-muted-foreground text-xs">Older version</span>
+                              )}
                             </div>
-                            <p className="text-muted-foreground mt-0.5 text-xs">
-                              Version {candidate.toolkitVersion}
-                            </p>
                           </div>
                         </li>
                       );

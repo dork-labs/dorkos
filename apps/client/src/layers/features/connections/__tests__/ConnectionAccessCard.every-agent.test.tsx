@@ -286,7 +286,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     ).toBeInTheDocument();
     // The shared set includes delete, so the warning says so.
     expect(screen.getByTestId('every-agent-warning')).toHaveTextContent(
-      'Every agent — including ones you add later — could send and delete email as you.'
+      'Every agent — including ones you add later — could send email and take high-risk actions as you.'
     );
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
@@ -314,7 +314,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
 
     await user.click(await screen.findByRole('radio', { name: /Every agent/ }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    await user.click(await screen.findByRole('button', { name: 'Check sync status' }));
+    await user.click(await screen.findByRole('button', { name: 'Check if it’s done' }));
     expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
   });

@@ -30,6 +30,7 @@ import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
 import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
+import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -573,6 +574,7 @@ const registry = new OpenAPIRegistry();
 registerConnectorEventOpenApi(registry);
 registerSessionContinueOpenApi(registry);
 registerProjectsOpenApi(registry);
+registerAccountEligibilityOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -980,7 +982,9 @@ registry.registerPath({
     '`/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would ' +
     "run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own " +
     'folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the ' +
-    "room's files), and nothing was started. The `202` also carries the CANONICAL session id: for a " +
+    "room's files), or because the account the new session would run on may not work in " +
+    "its folder's project (`account_not_allowed_here`, with `project` and `accountId`), " +
+    'and nothing was started. The `202` also carries the CANONICAL session id: for a ' +
     'brand-new session this is the real id assigned during the turn (it differs from ' +
     'the client-supplied id), so the client re-keys its URL and `/events` subscription ' +
     'to it. To avoid missing the turn, a client should be subscribed to `/events` ' +
@@ -1005,7 +1009,9 @@ registry.registerPath({
     409: {
       description:
         'Refused before anything started, for where the turn would run ' +
-        '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`); the body says what to do instead',
+        '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in ' +
+        'this project (`account_not_allowed_here`, whose body also names `project` and ' +
+        '`accountId`); the body says what to do instead',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

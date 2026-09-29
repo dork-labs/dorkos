@@ -123,6 +123,34 @@ describe('ClaudeAccountsSection', () => {
   });
   afterEach(cleanup);
 
+  // Purpose: an account kept to projects says so on its own row, and every
+  // project list is visible and removable from here (spec flow-multiproject §8.5).
+  it('shows "Only for" on a kept account and lists project limits', async () => {
+    renderSection({
+      resolvedAccount: HOME,
+      inherited: true,
+      accounts: [
+        {
+          id: 'work',
+          path: WORK,
+          label: 'Work',
+          color: '#12ab9f',
+          colorIsDefault: false,
+          isAccountRoot: true,
+          onlyProjects: [{ root: '/work/client-app', name: 'client-app' }],
+        },
+      ],
+      projectAccounts: [
+        { project: { root: '/work/client-app', name: 'client-app' }, allow: ['work'] },
+      ],
+    });
+    const row = await screen.findByTestId('claude-account-row');
+    expect(within(row).getByText('Only for client-app')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Limit to projects…' })).toBeInTheDocument();
+    const limits = screen.getByTestId('project-limits');
+    expect(within(limits).getByText('Uses only Work')).toBeInTheDocument();
+  });
+
   it('renders as a boxed sub-section headed "Billing account"', async () => {
     renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
 
@@ -880,12 +908,17 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(spacer).toHaveAttribute('aria-hidden', 'true');
       expect(spacer.tagName).toBe('SPAN');
       expect(spacer).not.toHaveAttribute('tabindex');
-      // The dot is the row's one tab stop: no remove button, nothing extra.
-      expect(within(main).getAllByRole('button')).toHaveLength(1);
+      // The dot and "Limit to projects…" are the row's tab stops: no remove
+      // button, nothing extra (spec flow-multiproject §8.5 adds the second).
+      expect(
+        within(main)
+          .getAllByRole('button')
+          .map((b) => b.textContent)
+      ).toEqual(['', 'Limit to projects…']);
       const tabbable = main.querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
       );
-      expect(tabbable).toHaveLength(1);
+      expect(tabbable).toHaveLength(2);
       // The registered rows keep their real button and have no spacer.
       const acme = screen.getAllByTestId('claude-account-row')[0]!;
       expect(within(acme).queryByTestId('claude-account-remove-spacer')).not.toBeInTheDocument();

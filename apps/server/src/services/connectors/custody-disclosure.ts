@@ -26,31 +26,18 @@ import type { ConnectorCustody } from '@dorkos/shared/connector-provider';
 export const MANAGED_CUSTODY_CANONICAL_SENTENCE =
   "Composio stores your connected accounts' login access in its own secure vault, not on your computer.";
 
-/** Context a disclosure needs to name the service it is about. */
-export interface CustodyDisclosureContext {
-  /**
-   * Human-facing service (or remote server) name, e.g. `'Gmail'` or `'Notion'`.
-   * Interpolated into the managed and external copy; ignored by self-host,
-   * whose promise is about the user's own infrastructure, not any one service.
-   */
-  service: string;
-}
-
 /**
  * Return the plain-language custody disclosure for one custody class, ready to
- * show before connect and on each account row.
+ * show before connect and on each account row. The words never name the way
+ * or the app: the surface already shows both beside it.
  *
  * Throws on an unknown custody class rather than returning a blank — a missing
  * disclosure is a loud failure, never a silently unlabeled connection (spec §4,
  * §Security Considerations: the disclosure is a security control, not just copy).
  *
  * @param custody - The provider's custody stance.
- * @param ctx - Service naming context; see {@link CustodyDisclosureContext}.
  */
-export function custodyDisclosure(
-  custody: ConnectorCustody,
-  ctx: CustodyDisclosureContext
-): string {
+export function custodyDisclosure(custody: ConnectorCustody): string {
   switch (custody) {
     case 'managed':
       // Managed (Composio): preserve the required custody fact without making
@@ -60,50 +47,25 @@ export function custodyDisclosure(
         'Choose which agents can use this account. You can disconnect anytime.'
       );
     case 'self-host':
-      // Self-host (Nango) — tokens stay in the operator's own infrastructure.
+      // Self-host (Nango): sign-ins stay in the operator's own database. It
+      // never promises nothing leaves: actions still go out to the app itself.
       return (
-        "You're connecting through your own Nango server. The keys to this connection are " +
-        'stored in your database, on infrastructure you control. Nothing about this connection ' +
-        'leaves your systems.'
+        "You're connecting through your own Nango server. Its sign-ins are stored in your own " +
+        'database, on computers you control, not with DorkOS.'
       );
     case 'external':
-      // External (raw MCP) — DorkOS may hold access details for the MCP
+      // External (raw MCP): DorkOS may hold access details for the MCP
       // endpoint, while login credentials used behind it stay with that server.
       return (
-        `This tool connects straight to ${ctx.service}. DorkOS uses the connection details you ` +
-        'configured to check the server before adding it. Any login needed by its tools stays ' +
-        'with that server.'
+        "This app's tools connect straight to its own server. DorkOS uses the connection details " +
+        'you set up to check that server before adding it. Any sign-in its tools need stays with ' +
+        'that server.'
       );
     default:
       // Exhaustiveness guard: a new ConnectorCustody member must add its copy
       // here rather than fall through to a blank, undisclosed connection.
       return assertUnreachableCustody(custody);
   }
-}
-
-/**
- * The account-row shape a disclosure line is derived from — the subset of a
- * `ConnectedAccount` custody rendering needs.
- */
-export interface DisclosableAccount {
-  /** Custody stance echoed onto the account. */
-  custody: ConnectorCustody;
-  /** Service slug, used as the service name when no friendlier label exists. */
-  toolkit: string;
-  /** User-facing label, preferred as the service name in the disclosure. */
-  label: string;
-}
-
-/**
- * Derive the disclosure line for one connected-account row. This is the
- * structural guarantee that every rendered account carries its own truthful
- * custody line: any surface listing accounts calls this, and it always returns
- * a non-empty line or throws.
- *
- * @param account - The account whose custody line is needed.
- */
-export function disclosureForAccount(account: DisclosableAccount): string {
-  return custodyDisclosure(account.custody, { service: account.label || account.toolkit });
 }
 
 /**

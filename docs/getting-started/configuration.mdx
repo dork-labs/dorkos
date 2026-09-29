@@ -638,6 +638,24 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
       type: 'string[]',
       default: '[]',
     },
+    'runtimes.claudeCode.accounts[].onlyProjects': {
+      description:
+        'The projects this account may work in, as the full paths of their main folders, or `null` for any project. An account kept to projects is never used in a folder outside a project. DorkOS holds to this whoever picks the account: you, a schedule or an agent. Set it with Limit to projects… on the account in Settings → Runtimes.',
+      type: 'string[] | null',
+      default: 'null',
+    },
+    'runtimes.claudeCode.defaultAccountOnlyProjects': {
+      description:
+        "The same rule for this computer's own Claude sign-in (Main): the projects it may work in, or `null` for any project.",
+      type: 'string[] | null',
+      default: 'null',
+    },
+    'runtimes.claudeCode.projectAccounts': {
+      description:
+        'For each project, the accounts it may use, by account id (`default` is Main). A project that is not listed may use every account. An account works in a project only when both its own rule and the project allow it. The Flow extension or a script sets a list (`PUT /api/runtimes/claude-code/project-accounts`); see and remove them under Project limits in Settings → Runtimes.',
+      type: 'Record<string, { allow: string[] }>',
+      default: '{}',
+    },
     'runtimes.claudeCode.defaultModel': {
       description:
         'The model a new Claude Code chat starts on. When `null`, Claude Code picks. Chats you already have are not changed.',

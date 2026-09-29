@@ -126,6 +126,30 @@ describe('ConnectionAccessDialog', () => {
     expect(line).toHaveTextContent('stop sharing this account with every agent');
   });
 
+  it('marks the older of an action listed twice in the exact-actions list', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const send = PREVIEW.candidates.find((c) => c.operationRevisionId === 'write-v2')!;
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
+      ...PREVIEW,
+      candidates: [
+        ...PREVIEW.candidates,
+        { ...send, operationRevisionId: 'write-v1', toolkitVersion: '2026-08-01' },
+      ],
+    });
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+
+    const bo = await screen.findByRole('group', { name: 'Access for Bo' });
+    await user.click(within(bo).getByRole('button', { name: 'Advanced' }));
+    const rows = within(bo).getAllByRole('listitem');
+    const sendRows = rows.filter((row) => row.textContent?.includes('Send'));
+    expect(sendRows).toHaveLength(2);
+    expect(sendRows.filter((row) => row.textContent?.includes('Older version'))).toHaveLength(1);
+  });
+
   it('says nothing about every agent when it is not shared', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
@@ -273,7 +297,7 @@ describe('ConnectionAccessDialog', () => {
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
     expect(transport.getConnectorConnection).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    await user.click(screen.getByRole('button', { name: 'Check if it’s done' }));
     expect(await screen.findByText('Access updated')).toBeInTheDocument();
     expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
@@ -315,13 +339,13 @@ describe('ConnectionAccessDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save access' }));
     expect(await screen.findByText('Access update pending')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    await user.click(screen.getByRole('button', { name: 'Check if it’s done' }));
     expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
   });
 
-  it('explains that a pending removal is already closed locally', async () => {
+  it('explains that a pending removal has already ended locally', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
@@ -340,7 +364,7 @@ describe('ConnectionAccessDialog', () => {
     await user.click(within(ada).getByRole('button', { name: 'No access' }));
     await user.click(screen.getByRole('button', { name: 'Save access' }));
 
-    expect(await screen.findByText(/Removed access is already closed/)).toBeInTheDocument();
+    expect(await screen.findByText(/Access you removed has already ended/)).toBeInTheDocument();
     expect(screen.queryByText(/remains unavailable/)).not.toBeInTheDocument();
   });
 
@@ -365,13 +389,13 @@ describe('ConnectionAccessDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save access' }));
 
     expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
-      'Access sync failed'
+      'Access didn’t update'
     );
     expect(screen.getByText(/Provider confirmation timed out/)).toBeInTheDocument();
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
-    expect(await screen.findByText(/The access change was not repeated/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Check if it’s done' }));
+    expect(await screen.findByText(/DorkOS didn’t send it again/)).toBeInTheDocument();
     expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
   });
@@ -436,7 +460,7 @@ describe('ConnectionAccessDialog', () => {
 });
 
 describe('ManagementReviewDialog', () => {
-  it('shows the frozen provider, custody, and affected-agent impact before disconnect', async () => {
+  it('shows the app, its status and where its sign-in is kept in plain words, and the impact, before disconnect', async () => {
     const disconnect: ConnectorManagementReviewItem = {
       reviewRequestId: 'review-disconnect',
       requesterKind: 'program',
@@ -463,8 +487,57 @@ describe('ManagementReviewDialog', () => {
       <ManagementReviewDialog reviewRequestId="review-disconnect" open onOpenChange={vi.fn()} />
     );
 
-    expect(await screen.findByText('Composio keeps this sign-in')).toBeInTheDocument();
+    expect(await screen.findByText('Kept in Composio’s vault')).toBeInTheDocument();
+    // Plain words, never the stored app id or status value.
+    expect(screen.getByText('Gmail')).toBeInTheDocument();
+    expect(screen.getByText('Connected')).toBeInTheDocument();
+    expect(screen.queryByText('gmail')).not.toBeInTheDocument();
+    expect(screen.queryByText('active')).not.toBeInTheDocument();
     expect(screen.getByText('This will remove this account from 1 agent.')).toBeInTheDocument();
+  });
+
+  it('marks the older of two identical-looking actions with a quiet hint', async () => {
+    const twice: ConnectorManagementReviewItem = {
+      reviewRequestId: 'review-twice',
+      requesterKind: 'program',
+      action: { version: 1, kind: 'disconnect', connectionId: 'connection-1' as never },
+      context: {
+        kind: 'disconnect',
+        connection: CONNECTION_CONTEXT,
+        affectedAgentCount: 1,
+        everyAgent: false,
+        affectedOperations: [
+          {
+            operationRevisionId: 'send-old',
+            operationSlug: 'gmail.send',
+            toolkitVersion: '2026-08-01',
+            capabilityClassification: 'destructive',
+          },
+          {
+            operationRevisionId: 'send-new',
+            operationSlug: 'gmail.send',
+            toolkitVersion: '2026-09-01',
+            capabilityClassification: 'destructive',
+          },
+        ],
+      },
+      targetStatus: 'available',
+      state: 'pending',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2099-09-06T01:00:00.000Z',
+    };
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorManagementReview).mockResolvedValue(twice);
+    renderWith(
+      transport,
+      <ManagementReviewDialog reviewRequestId="review-twice" open onOpenChange={vi.fn()} />
+    );
+
+    expect(await screen.findAllByText('Send')).toHaveLength(2);
+    expect(screen.getAllByText('Older version')).toHaveLength(1);
+    // The class reads as a risk, never as a verb the action may not be.
+    expect(screen.getAllByText('High risk')).toHaveLength(2);
+    expect(screen.queryByText(/2026-0/)).not.toBeInTheDocument();
   });
 
   it('says plainly when an agent keeps access through every agent, and when every agent loses it', async () => {
@@ -749,7 +822,7 @@ describe('ManagementReviewDialog', () => {
         completedAt: '2026-09-06T00:11:00.000Z',
       },
       heading: 'Sign-in didn’t finish',
-      detail: /start a new connection request/i,
+      detail: 'Sign-in didn’t finish. You can connect it yourself on the Connections page.',
     },
     {
       poll: {
@@ -762,7 +835,8 @@ describe('ManagementReviewDialog', () => {
         completedAt: '2026-09-06T01:00:00.000Z',
       },
       heading: 'Sign-in didn’t finish',
-      detail: /start a new connection request/i,
+      detail:
+        'The sign-in took too long and ended. You can connect it yourself on the Connections page.',
     },
     {
       poll: {
@@ -776,7 +850,8 @@ describe('ManagementReviewDialog', () => {
         completedAt: '2026-09-06T00:10:01.000Z',
       },
       heading: 'Sign-in didn’t finish',
-      detail: /provider response was lost/i,
+      detail:
+        'DorkOS couldn’t tell whether the sign-in started. You can connect it yourself on the Connections page.',
     },
   ])('shows the terminal authentication state as $heading', async ({ poll, heading, detail }) => {
     const user = userEvent.setup();

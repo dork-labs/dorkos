@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
 import { ExternalLink, ShieldAlert } from 'lucide-react';
-import type {
-  ConnectorManagementReviewContext,
-  ConnectorManagementReviewItem,
+import {
+  CONNECTION_STATUS_LABELS,
+  OPERATION_CLASSIFICATION_LABELS,
+  type ConnectorManagementReviewContext,
+  type ConnectorManagementReviewItem,
 } from '@dorkos/shared/connector-schemas';
 import {
+  serviceName,
   useConnectorManagementReview,
   useConnectorReviewAuthentication,
   useResolveConnectorManagementReview,
@@ -27,6 +30,7 @@ import {
   managementOperationLabel,
   presentManagementReview,
 } from '../lib/management-review-presentation';
+import { olderVersionIds } from '../lib/older-versions';
 
 /**
  * A tool or program's request to change a connection, with the owner's
@@ -70,10 +74,6 @@ export function ManagementReviewDialog({
   const authenticationState = poll.isError
     ? 'check_failed'
     : (poll.data?.state ?? (checkAuthentication ? 'checking' : 'required'));
-  const authenticationFailureReason =
-    poll.data?.state === 'failed' || poll.data?.state === 'start_unknown'
-      ? poll.data.reason
-      : undefined;
   const presentation = useMemo(() => (review ? presentManagementReview(review) : null), [review]);
 
   const decide = (decision: 'approved' | 'denied') => {
@@ -127,8 +127,8 @@ export function ManagementReviewDialog({
                   <div>
                     <p className="text-sm font-medium">This request can’t be approved</p>
                     <p className="text-muted-foreground mt-1 text-sm">
-                      The account, agent, or service setup changed after the request was created.
-                      You can still deny it.
+                      The account, the agent or how DorkOS reaches the app changed after this
+                      request was made. You can still deny it.
                     </p>
                   </div>
                 </div>
@@ -165,17 +165,19 @@ export function ManagementReviewDialog({
                   <p className="text-muted-foreground text-sm">
                     {authenticationState === 'connected'
                       ? 'Sign-in finished and the account is ready.'
-                      : authenticationState === 'failed' ||
-                          authenticationState === 'expired' ||
-                          authenticationState === 'start_unknown'
-                        ? `${authenticationFailureReason ?? 'This sign-in request failed or expired.'} Start a new connection request to try again.`
-                        : authenticationState === 'pending' ||
-                            authenticationState === 'starting' ||
-                            authenticationState === 'checking'
-                          ? 'Finish signing in to the service. This page will update when the account is ready.'
-                          : authenticationState === 'check_failed'
-                            ? 'The account may still be connected. Check again before starting another request.'
-                            : 'Approval did not connect an account. Continue to the service and finish signing in.'}
+                      : authenticationState === 'expired'
+                        ? 'The sign-in took too long and ended. You can connect it yourself on the Connections page.'
+                        : authenticationState === 'start_unknown'
+                          ? 'DorkOS couldn’t tell whether the sign-in started. You can connect it yourself on the Connections page.'
+                          : authenticationState === 'failed'
+                            ? 'Sign-in didn’t finish. You can connect it yourself on the Connections page.'
+                            : authenticationState === 'pending' ||
+                                authenticationState === 'starting' ||
+                                authenticationState === 'checking'
+                              ? 'Finish signing in to the service. This page will update when the account is ready.'
+                              : authenticationState === 'check_failed'
+                                ? 'The account may still be connected. Check again before starting another request.'
+                                : 'Approval did not connect an account. Continue to the service and finish signing in.'}
                   </p>
                   {authenticationState === 'check_failed' ? (
                     <Button onClick={() => void poll.refetch()} disabled={poll.isFetching}>
@@ -258,9 +260,9 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
   if (context.kind === 'connect') {
     return (
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg border p-4 text-sm">
-        <dt>Service</dt>
-        <dd className="font-medium">{context.toolkit}</dd>
-        <dt>Through</dt>
+        <dt>App</dt>
+        <dd className="font-medium">{serviceName(context.toolkit)}</dd>
+        <dt>Connected through</dt>
         <dd>{context.providerDisplayName}</dd>
         {context.label && (
           <>
@@ -277,6 +279,7 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
       : context.kind === 'remove_agent_access' || context.kind === 'disconnect'
         ? context.affectedOperations
         : [];
+  const older = olderVersionIds(operations);
   const agent =
     context.kind === 'set_agent_access' || context.kind === 'remove_agent_access'
       ? context.agent
@@ -286,10 +289,10 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg border p-4 text-sm">
         <dt>Account</dt>
         <dd className="font-medium">{context.connection.label}</dd>
-        <dt>Service</dt>
-        <dd>{context.connection.toolkit}</dd>
+        <dt>App</dt>
+        <dd>{serviceName(context.connection.toolkit)}</dd>
         <dt>Status</dt>
-        <dd>{context.connection.status}</dd>
+        <dd>{CONNECTION_STATUS_LABELS[context.connection.status]}</dd>
         <dt>Sign-in</dt>
         <dd data-testid="connector-review-custody">{custodyDescription(context.connection)}</dd>
         {agent && (
@@ -330,13 +333,22 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
                 key={operation.operationRevisionId}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
               >
-                <span className="text-sm">{managementOperationLabel(operation.operationSlug)}</span>
-                <span className="flex items-center gap-2">
-                  <Badge size="xs" variant="secondary">
-                    {operation.capabilityClassification}
-                  </Badge>
-                  <span className="text-foreground text-xs">v{operation.toolkitVersion}</span>
+                <span className="text-sm">
+                  {managementOperationLabel(operation.operationSlug)}
+                  {older.has(operation.operationRevisionId) && (
+                    <span className="text-muted-foreground ml-2 text-xs">Older version</span>
+                  )}
                 </span>
+                <Badge
+                  size="xs"
+                  variant={
+                    operation.capabilityClassification === 'destructive'
+                      ? 'destructive'
+                      : 'secondary'
+                  }
+                >
+                  {OPERATION_CLASSIFICATION_LABELS[operation.capabilityClassification]}
+                </Badge>
               </li>
             ))}
           </ul>
@@ -351,11 +363,11 @@ function custodyDescription(
 ): string {
   switch (connection.custody) {
     case 'managed':
-      return `${connection.providerDisplayName} keeps this sign-in`;
+      return 'Kept in Composio’s vault';
     case 'self-host':
-      return `Your ${connection.providerDisplayName} server keeps this sign-in`;
+      return 'Kept on your own Nango server';
     case 'external':
-      return `${connection.providerDisplayName} supplies this connection`;
+      return 'Handled by the app’s own server';
   }
 }
 

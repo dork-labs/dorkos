@@ -188,6 +188,34 @@ function managedService(
 }
 
 describe('ConnectDialog', () => {
+  it.each([
+    [
+      'your own Composio key',
+      'managed' as const,
+      'Any usage charges go to your own Composio account.',
+    ],
+    ['your own Nango server', 'self-host' as const, null],
+  ])('says who pays only when someone does: %s', (_way, custody, line) => {
+    const base = managedService(undefined, capabilities.authentication, 'byo');
+    const account = base.intents[0]!;
+    const service: ConnectorCatalogService = {
+      ...base,
+      intents: [
+        {
+          ...account,
+          routes: account.kind === 'account' ? [{ ...account.routes[0]!, custody }] : [],
+        } as typeof account,
+      ],
+    };
+    renderDialog(createMockTransport(), service);
+
+    const disclosure = screen.getByTestId('connect-disclosure');
+    expect(disclosure).not.toHaveTextContent('billed to you');
+    expect(disclosure).not.toHaveTextContent('covers its use');
+    if (line) expect(disclosure).toHaveTextContent(line);
+    else expect(disclosure).not.toHaveTextContent(/usage charges/);
+  });
+
   it('defaults to an available managed route, discloses custody, then waits for explicit agent access', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
@@ -217,7 +245,7 @@ describe('ConnectDialog', () => {
       1
     );
     expect(screen.getByTestId('connect-disclosure')).toHaveTextContent(
-      'Continue to Composio to approve access to Gmail'
+      'A sign-in page opens next, where you let DorkOS use Gmail.'
     );
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() =>
@@ -281,7 +309,9 @@ describe('ConnectDialog', () => {
     );
 
     expect(
-      screen.getByText(/Enter the account details requested by Linear on dorkos.ai/)
+      screen.getByText(
+        'Enter the account details Linear asks for on dorkos.ai. DorkOS passes them on without saving them.'
+      )
     ).toBeInTheDocument();
     expect(screen.queryByLabelText(/API key|token|password/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Enter account details' }));
@@ -341,7 +371,7 @@ describe('ConnectDialog', () => {
     );
 
     expect(
-      screen.getByText(/uses the custom sign-in setup configured for this service/)
+      screen.getByText('Linear signs in with the sign-in page set up for it.')
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
   });
@@ -380,7 +410,7 @@ describe('ConnectDialog', () => {
     vi.mocked(transport.startConnectorAuthentication).mockReturnValue(new Promise(() => undefined));
     renderDialog(transport);
 
-    await user.click(screen.getByRole('button', { name: 'Change setup' }));
+    await user.click(screen.getByRole('button', { name: 'Connect another way' }));
     expect(screen.getByRole('button', { name: /Unavailable provider/i })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /My provider/i }));
     expect(screen.getByTestId('connect-disclosure')).toHaveTextContent('Your account stores');
@@ -528,7 +558,7 @@ describe('ConnectDialog', () => {
         appConnections: { ways: [way], newApps: { status: 'ready', way } },
       });
       await user.click(screen.getByRole('button', { name: /Use my Composio key/ }));
-      await user.type(screen.getByLabelText('Composio API key'), 'ck-test');
+      await user.type(screen.getByLabelText('Composio project key'), 'ck-test');
       await user.click(
         within(screen.getByTestId('provider-card-composio')).getByRole('button', {
           name: 'Save key',
@@ -631,14 +661,18 @@ describe('ConnectDialog', () => {
       vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
         services: [builtInGmail],
         warnings: [
-          { code: 'catalog_provider_unavailable', message: 'composio is temporarily unavailable.' },
+          {
+            code: 'catalog_provider_unavailable',
+            message:
+              'Your Composio key didn’t answer, so its apps aren’t shown. Try again in a moment.',
+          },
         ],
         appConnections: { ways: [way], newApps: { status: 'ready', way } },
       });
       renderDialog(transport, builtInGmail);
 
       expect(await screen.findByText('Couldn’t reach Gmail just now')).toBeInTheDocument();
-      expect(screen.getByText(/Composio didn’t answer/)).toBeInTheDocument();
+      expect(screen.getByText(/Your Composio key didn’t answer/)).toBeInTheDocument();
       expect(screen.queryByTestId('first-connect-step')).not.toBeInTheDocument();
       const reads = vi.mocked(transport.getConnectorCatalog).mock.calls.length;
       await user.click(screen.getByRole('button', { name: 'Retry' }));
@@ -683,7 +717,11 @@ describe('ConnectDialog', () => {
           },
         ],
         warnings: [
-          { code: 'catalog_provider_unavailable', message: 'nango is temporarily unavailable.' },
+          {
+            code: 'catalog_provider_unavailable',
+            message:
+              'Your Nango server didn’t answer, so its apps aren’t shown. Try again in a moment.',
+          },
         ],
         appConnections: { ways: [way], newApps: { status: 'ready', way } },
       });

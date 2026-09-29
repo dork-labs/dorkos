@@ -40,7 +40,7 @@
  *
  * ## What is withheld, and why only that
  *
- * Two classes, and nothing else:
+ * Three classes, and nothing else:
  *
  * 1. **Secrets and the things that locate them.** The
  *    `SENSITIVE_CONFIG_KEYS` values, plus every credential *reference*:
@@ -55,8 +55,17 @@
  *    account this install is linked to (often a person's email). No operator task
  *    needs it, and `cloud.instanceTokenConfigured` already answers "is this
  *    install linked".
+ * 3. **A person's own decisions that no agent task reads.** Which copy of an
+ *    extension an approval is for and which ones were declined
+ *    (`extensions.approvedSources`, `extensions.dismissedApprovals`), and which
+ *    projects each Claude account may work in (`runtimes.claudeCode.
+ *    accounts[].onlyProjects`, `.defaultAccountOnlyProjects`,
+ *    `.projectAccounts`, spec `flow-multiproject` §8). Withheld on
+ *    need-to-know, not for confidentiality: an agent refused by one of them
+ *    is told in a sentence naming the project or the extension, which is all
+ *    it can act on, and it must not plan around rules only a person changes.
  *
- * Absolute paths (`server.cwd`, `server.boundary`, `mesh.scanRoots`,
+ * Other absolute paths (`server.cwd`, `server.boundary`, `mesh.scanRoots`,
  * `workspace.rootPath`, `runtimes.*.binaryPath`, `relay.dataDir`,
  * `agents.defaultDirectory`, and the agent `projectPath`s inside the
  * `ui.sidebar` item references)
@@ -403,6 +412,13 @@ export const CONFIG_DISCLOSURE = {
   // (spec claude-account-ui §7.4). Folder paths, the same class as
   // `accounts[].path` above: exposed on purpose, and naming no secret.
   'runtimes.claudeCode.dismissedFolders': 'expose',
+  // Which projects each account may work in, and which accounts each project
+  // may use (spec `flow-multiproject` §8): absolute folders on this machine, and
+  // nothing an agent needs. A launch it asks for that the rules refuse is
+  // answered with a sentence naming the project, which is all it can act on.
+  'runtimes.claudeCode.accounts[].onlyProjects': 'withhold',
+  'runtimes.claudeCode.defaultAccountOnlyProjects': 'withhold',
+  'runtimes.claudeCode.projectAccounts': 'withhold',
   // The execution defaults a new session on each runtime starts with. A model id
   // and an effort rung are the same class of thing as `runtimes.default`: they
   // describe HOW work runs here, name no credential and no person, and an agent

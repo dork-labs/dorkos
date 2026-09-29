@@ -22,6 +22,7 @@
  */
 import type { ActivityCategory, ActorType } from '@dorkos/shared/activity-schemas';
 import {
+  connectionAccessWords,
   serviceNameFromToolkit,
   type ConnectorOperationClassification,
 } from '@dorkos/shared/connector-schemas';
@@ -94,20 +95,6 @@ export interface EveryAgentChange {
 /** A service's display name from its toolkit id; the one rule the app uses too. */
 export const serviceName = serviceNameFromToolkit;
 
-/**
- * What a set of classifications lets an agent do, in words: `read`,
- * `read and write`, `read, write and delete`.
- *
- * @param classifications - The classifications of the granted actions.
- */
-export function accessWords(classifications: readonly ConnectorOperationClassification[]): string {
-  const words = (['read', 'write', 'destructive'] as const)
-    .filter((level) => classifications.includes(level))
-    .map((level) => (level === 'destructive' ? 'delete' : level));
-  if (words.length <= 1) return words[0] ?? '';
-  return `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
-}
-
 function joinNames(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? '';
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
@@ -131,8 +118,8 @@ export async function recordEveryAgentChange(
     change.after.length === 0
       ? `Stopped sharing ${name} with every agent`
       : change.before.length === 0
-        ? `Shared ${name} with every agent, including agents added later: ${accessWords(change.after)}`
-        : `Changed what every agent can do with ${name}: ${accessWords(change.after)}`;
+        ? `Shared ${name} with every agent, including agents added later: ${connectionAccessWords(change.after)}`
+        : `Changed what every agent can do with ${name}: ${connectionAccessWords(change.after)}`;
   await sink.emit({
     actorType: writer.actorType,
     actorLabel: writer.actorLabel,
@@ -168,7 +155,7 @@ export function createEveryAgentArrivalReaction(deps: {
     const agentName = agent.displayName ?? agent.name;
     const items = connections.map(
       (grant) =>
-        `${serviceName(grant.toolkit)} (${grant.label}, ${accessWords(grant.access.classifications)}${
+        `${serviceName(grant.toolkit)} (${grant.label}, ${connectionAccessWords(grant.access.classifications)}${
           grant.lifecycle === 'paused' ? ', paused' : ''
         })`
     );

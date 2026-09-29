@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ConnectorCustody } from '@dorkos/shared/connector-provider';
-import {
-  MANAGED_CUSTODY_CANONICAL_SENTENCE,
-  custodyDisclosure,
-  disclosureForAccount,
-} from '../custody-disclosure.js';
+import { MANAGED_CUSTODY_CANONICAL_SENTENCE, custodyDisclosure } from '../custody-disclosure.js';
 
 describe('custody-disclosure', () => {
   describe('copy-drift guard (the ADR sentence must never silently change)', () => {
@@ -17,14 +13,14 @@ describe('custody-disclosure', () => {
     });
 
     it('managed disclosure contains the canonical ADR sentence verbatim', () => {
-      const copy = custodyDisclosure('managed', { service: 'Gmail' });
+      const copy = custodyDisclosure('managed');
       expect(copy).toContain(MANAGED_CUSTODY_CANONICAL_SENTENCE);
     });
   });
 
   describe('per-class copy', () => {
     it('managed discloses custody and explicit agent choice without an auth-method promise', () => {
-      const copy = custodyDisclosure('managed', { service: 'Gmail' });
+      const copy = custodyDisclosure('managed');
       expect(copy).toContain('Choose which agents can use this account.');
       expect(copy).not.toContain('password');
       expect(copy).not.toContain('Connecting');
@@ -32,46 +28,36 @@ describe('custody-disclosure', () => {
       expect(copy).toContain('disconnect anytime');
     });
 
-    it('self-host discloses the operator-controlled infrastructure', () => {
-      const copy = custodyDisclosure('self-host', { service: 'Slack' });
-      expect(copy).toContain('stored in your database, on infrastructure you control');
-      expect(copy).toContain('leaves your systems');
+    it('self-host says where sign-ins live, and never that nothing leaves', () => {
+      const copy = custodyDisclosure('self-host');
+      expect(copy).toBe(
+        "You're connecting through your own Nango server. Its sign-ins are stored in your own " +
+          'database, on computers you control, not with DorkOS.'
+      );
+      // Actions still go out to the app itself, so the old promise was false.
+      expect(copy).not.toContain('leaves your systems');
     });
 
-    it('external distinguishes configured server access from tool login custody', () => {
-      const copy = custodyDisclosure('external', { service: 'Notion' });
-      expect(copy).toBe(
-        'This tool connects straight to Notion. DorkOS uses the connection details you configured ' +
-          'to check the server before adding it. Any login needed by its tools stays with that server.'
+    it('external distinguishes configured server access from tool login custody, naming no raw type', () => {
+      expect(custodyDisclosure('external')).toBe(
+        "This app's tools connect straight to its own server. DorkOS uses the connection details " +
+          'you set up to check that server before adding it. Any sign-in its tools need stays with ' +
+          'that server.'
       );
     });
 
     it('every class returns a non-empty line', () => {
       for (const custody of ['managed', 'self-host', 'external'] as ConnectorCustody[]) {
-        expect(custodyDisclosure(custody, { service: 'X' }).length).toBeGreaterThan(0);
+        expect(custodyDisclosure(custody).length).toBeGreaterThan(0);
       }
     });
   });
 
   describe('structural rule: no row renders without a disclosure line', () => {
-    it('derives a disclosure line for an account, preferring its label as the service name', () => {
-      const line = disclosureForAccount({
-        custody: 'external',
-        toolkit: 'notion',
-        label: 'Notion Workspace',
-      });
-      expect(line).toContain('Notion Workspace');
-    });
-
-    it('falls back to the toolkit slug when an account has no label', () => {
-      const line = disclosureForAccount({ custody: 'external', toolkit: 'notion', label: '' });
-      expect(line).toContain('notion');
-    });
-
     it('an unknown/absent custody class throws rather than rendering blank', () => {
-      expect(() =>
-        custodyDisclosure('vendor-cloud' as unknown as ConnectorCustody, { service: 'X' })
-      ).toThrow(/no custody disclosure/);
+      expect(() => custodyDisclosure('vendor-cloud' as unknown as ConnectorCustody)).toThrow(
+        /no custody disclosure/
+      );
     });
   });
 });

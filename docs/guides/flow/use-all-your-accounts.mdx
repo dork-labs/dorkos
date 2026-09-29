@@ -36,6 +36,18 @@ The app and flow share one list of accounts, so an account you add in Settings s
 
 **Schedules** don't pick an account themselves. A scheduled run uses its agent's account (**Runs on** in the agent's profile), or else your default. When flow starts sessions on its own, it picks the account by role.
 
+## Keep an account to its projects
+
+A work or client account should only ever work on that client's code. To say so, open Settings, then **Runtimes**. On the account's row under **Billing account**, choose **Limit to projects…**, pick **Only these projects**, tick the projects it belongs to, then choose **Save**. The row then says **Only for client-app**.
+
+DorkOS holds to this wherever an account is picked: by you, by a schedule, by an agent or by flow. In any other project, the account shows in the chat's account menu but can't be chosen, with the line **Only for client-app** beside it. If something asks for it anyway, DorkOS refuses and says why, and it never quietly runs the work on another account instead. When nobody named an account, DorkOS uses the next account that may work there.
+
+An account kept to projects is also never used in a folder that isn't in a project.
+
+A project can limit which accounts it uses too. The Flow extension can set a project's list, and a script can set one with `PUT /api/runtimes/claude-code/project-accounts` and the body `{ "project": "<folder>", "allow": ["work"] }` (`null` in place of the list lets it use every account again). Each project with a list shows under **Project limits** on the Claude Code card in **Runtimes**, with **Remove** to let it use every account again. An account works in a project only when both its own limit and the project's allow it.
+
+The limits apply when an account is picked for new work. A chat that is already running keeps its account.
+
 ## Set it up from the terminal
 
 In these commands, `flow` is short for `node --experimental-strip-types <flow-root>/scripts/flow.ts`.

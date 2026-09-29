@@ -1,9 +1,10 @@
 /** Concrete local effects for approved P2 connector management reviews. */
 import { ulid } from 'ulidx';
 import { and, connectorOperationRevisions, eq, inArray, type Db } from '@dorkos/db';
-import type {
-  ConnectionId,
-  ConnectorManagementReviewAction,
+import {
+  LINK_NEEDED_TO_CHANGE_ACCESS_COPY,
+  type ConnectionId,
+  type ConnectorManagementReviewAction,
 } from '@dorkos/shared/connector-schemas';
 import { endAgentAccessLevels, replaceNamedAgentGrants } from './execution/access-levels.js';
 import type { ConnectorAuthorityCleanupPort } from './authority-cleanup-port.js';
@@ -136,7 +137,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
           if (!this.managedAuthority) {
             throw new ConnectorManagementActionError(
               'managed_sync_unavailable',
-              'DorkOS cannot update this connection right now. Relink it and try again.'
+              LINK_NEEDED_TO_CHANGE_ACCESS_COPY
             );
           }
           const staged = this.managedAuthority.stageAgentAccessRemoval({
@@ -240,7 +241,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
       if (!this.managedAuthority) {
         throw new ConnectorManagementActionError(
           'managed_sync_unavailable',
-          'DorkOS cannot update this connection right now. Relink it and try again.'
+          LINK_NEEDED_TO_CHANGE_ACCESS_COPY
         );
       }
       // Exact actions replace any level first, so the level can never widen

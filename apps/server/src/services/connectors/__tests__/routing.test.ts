@@ -66,6 +66,21 @@ describe('recommendConnector', () => {
     expect(recommendations.some((r) => r.kind === 'relay-adapter')).toBe(false);
   });
 
+  it('explains each way in plain words an agent can repeat, never a raw type or banned noun', async () => {
+    const { recommendations } = await recommendConnector('slack', {
+      registry,
+      relay: relayWith({ slack: 'Slack' }),
+    });
+
+    expect(recommendations.map((r) => r.reason)).toEqual([
+      'Slack works best as a chat app in DorkOS, so messages go both ways. The person sets it up under Messaging on the Connections page.',
+      'Your Composio key can connect Slack.',
+    ]);
+    for (const { reason } of recommendations) {
+      expect(reason).not.toMatch(/adapter|connector|gateway|provider|integration/i);
+    }
+  });
+
   it('carries custody on the gateway recommendation so the picker can disclose', async () => {
     const { recommendations } = await recommendConnector('gmail', { registry });
     expect(recommendations[0]!.custody).toBe('managed');

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { configureServerTimeouts, REQUEST_TIMEOUT_MS } from '../http.js';
 import { UploadSlots, assertTempSpace, sweepImportTempDirs } from '../imports/upload.js';
+import { isRetryableProviderError } from '../storage/blob-store.js';
 
 let scratch = '';
 afterEach(async () => {
@@ -66,5 +67,23 @@ describe('sweepImportTempDirs', () => {
     await writeFile(join(scratch, 'community-import-live', 'f'), 'x');
     expect(await sweepImportTempDirs(10 * 60_000, scratch)).toBe(2);
     expect((await readdir(scratch)).sort()).toEqual(['community-import-live', 'other-old']);
+  });
+});
+
+describe('isRetryableProviderError', () => {
+  // Purpose: S3 failures arrive without a Node error code; a server fault, throttling, or a
+  // timeout must read as "try again", and a client error must not.
+  it('reads the AWS SDK marks for a retryable failure', () => {
+    const aws = (fields: Record<string, unknown>) => Object.assign(new Error('x'), fields);
+    expect(isRetryableProviderError(aws({ $fault: 'server' }))).toBe(true);
+    expect(isRetryableProviderError(aws({ $metadata: { httpStatusCode: 503 } }))).toBe(true);
+    expect(isRetryableProviderError(aws({ $metadata: { httpStatusCode: 429 } }))).toBe(true);
+    expect(isRetryableProviderError(aws({ $retryable: {} }))).toBe(true);
+    expect(isRetryableProviderError(aws({ name: 'SlowDown' }))).toBe(true);
+    expect(isRetryableProviderError(aws({ name: 'TimeoutError' }))).toBe(true);
+    expect(
+      isRetryableProviderError(aws({ $fault: 'client', $metadata: { httpStatusCode: 403 } }))
+    ).toBe(false);
+    expect(isRetryableProviderError(new Error('plain'))).toBe(false);
   });
 });

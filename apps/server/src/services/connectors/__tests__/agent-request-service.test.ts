@@ -204,6 +204,17 @@ describe('ConnectorAgentRequestService', () => {
     });
   }
 
+  it('refuses a turn that lost its access in plain words, never "runtime" or "authority"', async () => {
+    const requests = service({
+      runtimePrincipals: { revalidatePrincipal: vi.fn(async () => false) },
+    });
+
+    await expect(requests.create(principal(), INPUT)).rejects.toMatchObject({
+      code: 'authority_expired',
+      message: 'This turn can’t ask for access anymore. Start a new turn and try again.',
+    });
+  });
+
   /** Give the agent live grants the way the shared access card's save would. */
   function grantLive(revisionIds: string[], connectionId = 'connection-1'): void {
     for (const operationRevisionId of revisionIds) {
@@ -821,6 +832,9 @@ describe('ConnectorAgentRequestService', () => {
       expect(message).toContain('could not load the full list of services');
       expect(message).toContain('Try again');
       expect(message).not.toContain('Composio is down');
+      // The app by its name, never its quoted id.
+      expect(message).toContain('so Gmail could not be checked');
+      expect(message).not.toContain('"gmail"');
     });
 
     it('reads nothing loaded plus a warning as a retry, not as nothing set up', async () => {
@@ -848,6 +862,8 @@ describe('ConnectorAgentRequestService', () => {
         expect(message).toContain(why);
         expect(message).toContain(fix);
         expect(message).not.toContain('connect an app');
+        expect(message).toContain('DorkOS cannot check Acme right now');
+        expect(message).not.toContain('"acme"');
       }
     );
 

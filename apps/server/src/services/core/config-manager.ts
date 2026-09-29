@@ -2837,6 +2837,65 @@ export function seedDefaultAccountColor(store: {
 }
 
 /**
+ * Migration body: seed the account rules (spec `flow-multiproject` §8.1, N6)
+ * for configs persisted before an account could be kept to projects:
+ * `runtimes.claudeCode.projectAccounts: {}`,
+ * `runtimes.claudeCode.defaultAccountOnlyProjects: null`, and
+ * `onlyProjects: null` on each registry row that lacks it.
+ *
+ * Every value is "no rule", which is exactly how every account behaved before
+ * the rules existed, so nothing anyone sees changes. Nested leaves under a
+ * block every stored config already has, so conf's defaults merge never writes
+ * them and this body is the only thing that does.
+ *
+ * Additive and idempotent: writes only what is absent, edits rows by position
+ * so every other member of every row survives (as `seedDefaultAccountColor`
+ * keeps every other `claudeCode` member), and writes the whole `runtimes`
+ * section, never a dotted key: `projectAccounts` is keyed by paths, which
+ * contain dots. A config with no `runtimes.claudeCode` object is skipped (the
+ * schema default supplies the block on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedAccountProjectRules(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  const current = block as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...current };
+  let changed = false;
+  if (!('projectAccounts' in current)) {
+    next.projectAccounts = {};
+    changed = true;
+  }
+  if (!('defaultAccountOnlyProjects' in current)) {
+    next.defaultAccountOnlyProjects = null;
+    changed = true;
+  }
+  if (Array.isArray(current.accounts)) {
+    let rowsChanged = false;
+    const rows = current.accounts.map((row: unknown) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row) || 'onlyProjects' in row) {
+        return row;
+      }
+      rowsChanged = true;
+      return { ...(row as Record<string, unknown>), onlyProjects: null };
+    });
+    if (rowsChanged) {
+      next.accounts = rows;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  store.set('runtimes', { ...(runtimes as Record<string, unknown>), claudeCode: next });
+}
+
+/**
  * Migration body: seed `runtimes.claudeCode.dismissedFolders` as an empty list
  * (spec `claude-account-ui` §7.4): the account folders a person dismissed from
  * Settings' "Found on this computer" list.
@@ -4589,6 +4648,24 @@ export const CONFIG_MIGRATIONS = {
     // `seedExtensionsDismissedApprovals`.
     seedExtensionsDismissedApprovals(store);
   },
+  // 0.92.0 has merged (DOR-2517, extension approvals a person said "Not now"
+  // to), so 0.93.0 is the next key. Frozen from merge, not from the release
+  // bump, for the reason `'0.60.0'` above states; anything further opens
+  // `'0.94.0'`.
+  //
+  // Disjoint from every other key here: it adds two nested leaves under
+  // `runtimes.claudeCode` and one leaf on each `accounts[]` row, none of which
+  // anything above names, and keeps every member `'0.65.0'`, `'0.87.0'`,
+  // `'0.90.0'` and `'0.91.0'` write there.
+  '0.93.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.claudeCode.projectAccounts`, `.defaultAccountOnlyProjects` and
+    // `accounts[].onlyProjects` — which accounts may work in which projects
+    // (spec `flow-multiproject` §8, DOR-2526). See `seedAccountProjectRules`.
+    seedAccountProjectRules(store);
+  },
 } as const;
 
 /**
@@ -4755,6 +4832,14 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
       anyOf: [{ type: 'string' }, { type: 'null' }],
       default: null,
     };
+    // The account rules (spec `flow-multiproject` §8.1) are hand-editable too,
+    // and every reader reads a wrong shape as "no rule" (`readProjectRootList`,
+    // `readEligibilityRules`, and the tolerant Zod schemas). Ajv refusing one
+    // would move the whole config aside for a fresh file, losing every other
+    // setting over one bad edit, so both accept any value here. Their defaults
+    // stay, as the generated nodes had them.
+    properties.defaultAccountOnlyProjects = { default: null };
+    properties.projectAccounts = { default: {} };
     return;
   }
   if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;

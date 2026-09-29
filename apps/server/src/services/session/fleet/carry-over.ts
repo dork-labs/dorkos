@@ -28,6 +28,8 @@ import type { ActivityService } from '../../activity/activity-service.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { callAdvisor, validateCarryOverSeed } from '../../core/usage/account-advisor.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
+import { configManager } from '../../core/config-manager.js';
+import { assertAccountEligible, projectOfFolder } from '../../core/usage/account-eligibility.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
 import {
@@ -324,6 +326,17 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
       'DorkOS does not know which folder this session worked in, so it cannot continue it elsewhere.'
     );
   }
+  // Defence in depth (spec `flow-multiproject` §8.4): whoever chose the
+  // target, a person, the advisor or the automatic handoff, it must be an
+  // account that may work in this folder's project. Callers check first; this
+  // is the last word before anything is written.
+  const targetRuntimeName = request.targetRuntime ?? SOURCE_RUNTIME;
+  assertAccountEligible(
+    configManager,
+    targetRuntimeName,
+    targetAccountId,
+    await projectOfFolder(cwd)
+  );
   const settings = (await runtimeRegistry.getSessionSettings(source.sessionId)) ?? {};
   const sourceRuntime = await runtimeRegistry
     .getSessionRuntimeType(source.sessionId)
@@ -382,6 +395,7 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
     ...(automatic ? { countsTowardLaunchCap: true, unattended: true } : {}),
   });
   if (isSessionLaunchRefusal(result)) {
+    if (result.accountError) throw result.accountError;
     throw new CarryOverError(409, result.refused, result.message);
   }
   if (!result.accepted || !result.canonicalId) {

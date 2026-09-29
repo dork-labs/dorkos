@@ -19,6 +19,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { readManifest } from '@dorkos/shared/manifest';
 import { resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import { AccountNotAllowedError } from '../../../core/usage/account-eligibility.js';
 import { SessionStore } from '../sessions/session-store.js';
 import { TranscriptReader } from '../sessions/transcript-reader.js';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
@@ -48,7 +49,7 @@ vi.mock('../claude-config-dir.js', async (importOriginal) => ({
   resolveActiveClaudeRoot: () => ACTIVE,
   // A spy rather than a plain arrow: the `accountRootForSession` cases below
   // assert WHICH rung it was asked for (the agent manifest's pinned account).
-  resolveLaunchAccountRoot: vi.fn(() => ACTIVE),
+  resolveLaunchAccountRoot: vi.fn(() => ({ ok: true, root: ACTIVE, accountId: 'default' })),
 }));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn() }));
 vi.mock('../../../../lib/logger.js', () => ({
@@ -147,7 +148,10 @@ describe('D8 env-lock call sites', () => {
       await runtime.accountRootForSession('first-turn', '/work');
 
       expect(readManifest).toHaveBeenCalledWith('/work');
-      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: 'account-b' });
+      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({
+        agentAccountId: 'account-b',
+        project: null,
+      });
     });
 
     it("reads the pin from the agent's HOME, never from a checkout's own `.dork/` (DOR-2355)", async () => {
@@ -166,7 +170,10 @@ describe('D8 env-lock call sites', () => {
 
       expect(readManifest).toHaveBeenCalledWith('/agents/ana');
       expect(readManifest).not.toHaveBeenCalledWith('/ws/ana-fix');
-      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: 'account-home' });
+      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({
+        agentAccountId: 'account-home',
+        project: null,
+      });
     });
 
     it('pins nothing for a folder that is no agent`s home, whatever it carries', async () => {
@@ -177,7 +184,10 @@ describe('D8 env-lock call sites', () => {
       await runtime.accountRootForSession('first-turn', '/somewhere/else');
 
       expect(readManifest).not.toHaveBeenCalled();
-      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: undefined });
+      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({
+        agentAccountId: undefined,
+        project: null,
+      });
     });
 
     it('still answers when the agent manifest cannot be read', async () => {
@@ -187,7 +197,26 @@ describe('D8 env-lock call sites', () => {
       const runtime = runtimeWithProbe(undefined);
 
       await expect(runtime.accountRootForSession('first-turn', '/work')).resolves.toBe(ACTIVE);
-      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({ agentAccountId: undefined });
+      expect(resolveLaunchAccountRoot).toHaveBeenCalledWith({
+        agentAccountId: undefined,
+        project: null,
+      });
+    });
+
+    it('predicts no account when the ladder refuses the launch (spec flow-multiproject §8.4)', async () => {
+      // Purpose: a launch the account rules would refuse must not be predicted
+      // to bill some account; billing and sign-in surfaces read null instead.
+      vi.mocked(readManifest).mockResolvedValue({ account: 'work' } as never);
+      vi.mocked(resolveLaunchAccountRoot).mockReturnValueOnce({
+        ok: false,
+        error: new AccountNotAllowedError(null, 'work', {
+          reason: 'only-projects',
+          allowedProjects: [{ root: '/projects/client-app', name: 'client-app' }],
+        }),
+      });
+      const runtime = runtimeWithProbe(undefined);
+
+      await expect(runtime.accountRootForSession('first-turn', '/work')).resolves.toBeNull();
     });
   });
 

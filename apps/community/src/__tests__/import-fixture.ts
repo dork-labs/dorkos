@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { strFromU8, unzipSync, Zip, ZipPassThrough } from 'fflate';
+import { strFromU8, unzipSync, Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { runHostKeyCommand } from '../host-keys.js';
 import type { HostApiKeyScope } from '../host/authority.js';
@@ -28,13 +28,15 @@ export async function issueKey(h: TenancyHarness, scopes: HostApiKeyScope[]): Pr
 
 /**
  * Write a version 1 export archive exactly as the version 1 exporter does: `manifest.json`
- * first, then each file under its archive path, every entry stored without compression.
+ * first, then each file under its archive path, every entry stored without compression
+ * unless `deflate` compresses the files.
  * `entries` overrides the default layout, for archives that break the rules on purpose.
  */
 export function buildArchive(
   manifest: unknown,
   files: ReadonlyMap<string, Uint8Array> = new Map(),
-  entries?: readonly [string, Uint8Array][]
+  entries?: readonly [string, Uint8Array][],
+  options: { deflate?: boolean } = {}
 ): Buffer {
   const layout: [string, Uint8Array][] = entries
     ? [...entries]
@@ -48,7 +50,8 @@ export function buildArchive(
     chunks.push(chunk);
   });
   for (const [name, bytes] of layout) {
-    const file = new ZipPassThrough(name);
+    const file =
+      options.deflate && name !== 'manifest.json' ? new ZipDeflate(name) : new ZipPassThrough(name);
     zip.add(file);
     file.push(bytes, true);
   }
@@ -204,14 +207,14 @@ export function versionOneExport(): Buffer {
 
 /**
  * Make a real owner export of a community on this server (version 2, prepared by the export
- * worker), download it, and open it.
+ * worker) and download the whole archive.
  */
-export async function ownerExport(
+export async function ownerExportArchive(
   h: TenancyHarness,
   communityId: string,
   ownerCookie: string,
   password: string
-): Promise<OpenedArchive> {
+): Promise<Buffer> {
   const base = `/api/v1/communities/${communityId}`;
   const requested = await h.call(`${base}/owner/export`, {
     cookie: ownerCookie,
@@ -225,7 +228,17 @@ export async function ownerExport(
     200,
     'download export'
   );
-  return openArchive(Buffer.from(await download.arrayBuffer()));
+  return Buffer.from(await download.arrayBuffer());
+}
+
+/** Make a real owner export of a community on this server, download it, and open it. */
+export async function ownerExport(
+  h: TenancyHarness,
+  communityId: string,
+  ownerCookie: string,
+  password: string
+): Promise<OpenedArchive> {
+  return openArchive(await ownerExportArchive(h, communityId, ownerCookie, password));
 }
 
 /**

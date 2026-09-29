@@ -19,9 +19,13 @@ export interface NeedsYouLine {
 
 type Services = ReadonlyMap<string, ConnectorCatalogService>;
 
-/** "A program", or the owner's own account asking through another door. */
+/**
+ * Who asks: "A program", or "Something using your sign-in" when the request
+ * came in with the owner's own sign-in from outside the page (the command
+ * line, an API call). It may not have been the person, so it never says "you".
+ */
 function requester(review: ConnectorManagementReviewItem): string {
-  return review.requesterKind === 'program' ? 'A program' : 'A request made as you';
+  return review.requesterKind === 'program' ? 'A program' : 'Something using your sign-in';
 }
 
 /** "Gmail (work)", named by the catalog with the account's own label. */
