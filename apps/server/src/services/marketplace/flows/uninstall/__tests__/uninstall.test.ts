@@ -20,15 +20,16 @@ import type {
   PluginPackageManifest,
   ShapePackageManifest,
 } from '@dorkos/marketplace';
-import { PackageNotInstalledError, UninstallFlow } from '../../flows/uninstall/uninstall.js';
+import { UninstallFlow } from '../uninstall.js';
+import { PackageNotInstalledError } from '../support.js';
+import { type UninstallShapeDeactivator, type UninstallShapeScheduleTeardown } from '../support.js';
+import { InvalidPackageNameError } from '../../../lib/package-paths.js';
 import {
-  type UninstallShapeDeactivator,
-  type UninstallShapeScheduleTeardown,
-} from '../../flows/uninstall/support.js';
-import { InvalidPackageNameError } from '../../lib/package-paths.js';
-import { computeInstalledFiles, writeInstalledFiles } from '../../lib/records/installed-files.js';
-import { currentRecordOwner, formatRecordOwner } from '../../lib/records/record-owner.js';
-import { _internal as recoveryInternal } from '../../recovery/install-recovery.js';
+  computeInstalledFiles,
+  writeInstalledFiles,
+} from '../../../lib/records/installed-files.js';
+import { currentRecordOwner, formatRecordOwner } from '../../../lib/records/record-owner.js';
+import { _internal as recoveryInternal } from '../../../recovery/install-recovery.js';
 import { randomUUID } from 'node:crypto';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */

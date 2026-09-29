@@ -25,16 +25,16 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
-import { UninstallFlow } from '../../flows/uninstall/uninstall.js';
-import { type UninstallFlowDeps } from '../../flows/uninstall/support.js';
+import { UninstallFlow } from '../uninstall.js';
+import { type UninstallFlowDeps } from '../support.js';
 import {
   computeInstalledFiles,
   readInstalledFiles,
   writeInstalledFiles,
-} from '../../lib/records/installed-files.js';
-import * as journalModule from '../../lib/records/uninstall-journal.js';
-import { migrateSavedCopies } from '../../lib/saved-copies/migrate-saved-copies.js';
-import { recoverInterruptedInstall } from '../../recovery/install-recovery.js';
+} from '../../../lib/records/installed-files.js';
+import * as journalModule from '../../../lib/records/uninstall-journal.js';
+import { migrateSavedCopies } from '../../../lib/saved-copies/migrate-saved-copies.js';
+import { recoverInterruptedInstall } from '../../../recovery/install-recovery.js';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -440,7 +440,7 @@ describe('uninstalling an older install nothing proves (DOR-2322)', () => {
       })
     );
     await put(root, 'notes/mine.txt', 'mine');
-    const { rebuildInstalledFiles } = await import('../../lib/records/legacy-record.js');
+    const { rebuildInstalledFiles } = await import('../../../lib/records/legacy-record.js');
     const { noopLogger } = await import('@dorkos/shared/logger');
     const offline = (installRoot: string) =>
       rebuildInstalledFiles(installRoot, {
@@ -470,7 +470,7 @@ describe('uninstalling an older install nothing proves (DOR-2322)', () => {
     const dorkHome = await home();
     const root = path.join(dorkHome, 'plugins', 'pkg');
     await installed(root, { 'a.md': 'a' });
-    const { readInstalledFiles: read } = await import('../../lib/records/installed-files.js');
+    const { readInstalledFiles: read } = await import('../../../lib/records/installed-files.js');
     const record = await read(root);
     await put(root, 'old.md', 'old');
     await writeInstalledFiles(root, {

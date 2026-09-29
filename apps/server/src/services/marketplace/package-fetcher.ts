@@ -869,7 +869,7 @@ export function isFileUrl(source: string): boolean {
  *
  * Exported so every local-source code path shares one conversion (DOR-412):
  * `PackageFetcher`'s own `file://` handling here, and
- * `MarketplaceInstaller.buildFetchableSource`'s `marketplaceRoot`
+ * `PackageStager.buildFetchableSource`'s `marketplaceRoot`
  * population, previously each carried their own `new URL(source).pathname`,
  * which left directory names with spaces percent-encoded and mishandled
  * Windows drive letters.

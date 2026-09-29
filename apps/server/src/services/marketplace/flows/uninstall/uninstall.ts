@@ -34,7 +34,8 @@
  * The steps live beside it: `locate.ts` finds the install root, and
  * `side-effects.ts` captures and runs what removing a package undoes
  * elsewhere (extensions, adapters, schedules, Shapes, an agent). The request,
- * result and dependency types are in `support.ts`.
+ * result and dependency types, and the not-installed error, are in
+ * `support.ts`.
  *
  * @module services/marketplace/flows/uninstall/uninstall
  */
@@ -85,19 +86,6 @@ import {
 
 /** Package identity files: always the package's, moved last, restored first. */
 const IDENTITY_FILES = [PACKAGE_MANIFEST_PATH, CLAUDE_PLUGIN_MANIFEST_PATH];
-
-/** Thrown when {@link UninstallFlow.uninstall} cannot find the requested package. */
-export class PackageNotInstalledError extends Error {
-  /**
-   * Build a `PackageNotInstalledError` for the supplied package name.
-   *
-   * @param name - The package name that could not be located on disk.
-   */
-  constructor(public readonly name: string) {
-    super(`Package not installed: ${name}`);
-    this.name = 'PackageNotInstalledError';
-  }
-}
 
 /**
  * The files the record lists as unproven (a rebuild could not prove them, or

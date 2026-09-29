@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type { PluginPackageManifest } from '@dorkos/marketplace';
-import { PluginInstallFlow } from '../../flows/install-plugin.js';
+import { PluginInstallFlow } from '../install-plugin.js';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {

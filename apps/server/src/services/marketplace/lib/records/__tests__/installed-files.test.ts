@@ -20,9 +20,9 @@ import {
   sameSource,
   writeInstalledFiles,
   type InstalledFiles,
-} from '../lib/records/installed-files.js';
-import { planCarryOver, type CarryOverInput, type StagedFacts } from '../lib/records/carry-plan.js';
-import { hashFile, lstatChain, scanTree, type TreeScan } from '../lib/records/tree-scan.js';
+} from '../installed-files.js';
+import { planCarryOver, type CarryOverInput, type StagedFacts } from '../carry-plan.js';
+import { hashFile, lstatChain, scanTree, type TreeScan } from '../tree-scan.js';
 
 const dirs: string[] = [];
 afterEach(async () => {

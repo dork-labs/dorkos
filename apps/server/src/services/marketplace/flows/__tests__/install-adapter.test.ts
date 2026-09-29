@@ -14,10 +14,7 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterPackageManifest } from '@dorkos/marketplace';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
-import {
-  ADAPTER_PROJECT_PATH_IGNORED_WARNING,
-  AdapterInstallFlow,
-} from '../../flows/install-adapter.js';
+import { ADAPTER_PROJECT_PATH_IGNORED_WARNING, AdapterInstallFlow } from '../install-adapter.js';
 
 /** Build a no-op logger that records calls for assertion. */
 function buildLogger(): Logger {

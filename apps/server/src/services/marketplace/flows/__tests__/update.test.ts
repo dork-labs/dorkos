@@ -19,21 +19,21 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
-import { applyAsShown } from '../apply-as-shown.js';
+import { applyAsShown } from '../../__tests__/apply-as-shown.js';
 import { packageContentHash } from '../../lib/content-hash.js';
 import type { MarketplaceJson, PluginPackageManifest, SourceKey } from '@dorkos/marketplace';
-import { UPDATE_CHECK_CONCURRENCY, UPDATE_MEMO_TTL_MS, UpdateFlow } from '../../flows/update.js';
+import { UPDATE_CHECK_CONCURRENCY, UPDATE_MEMO_TTL_MS, UpdateFlow } from '../update.js';
 import {
   PackageNotInstalledForUpdateError,
   pickInstallation,
   selectInstallations,
-} from '../../flows/update-selection.js';
+} from '../update-selection.js';
 import type {
   InstallationUpdateCheck,
   InstallerLike,
   UpdateCheckResult,
   UpdateFlowDeps,
-} from '../../flows/update-types.js';
+} from '../update-types.js';
 import type { InstallMetadata } from '../../installed-metadata.js';
 import { scanInstallationRecords } from '../../installed-scanner.js';
 import type {

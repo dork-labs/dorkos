@@ -1,6 +1,7 @@
 /**
  * The uninstall flow's request and result, the ports it removes side effects
- * through, and what its steps pass each other.
+ * through, what its steps pass each other, and the error when no install of
+ * the package is found.
  *
  * @module services/marketplace/flows/uninstall/support
  */
@@ -178,6 +179,19 @@ export interface LocatedPackage {
   installRoot: string;
   manifest: MarketplacePackageManifest | null;
   inferredType: PackageType;
+}
+
+/** Thrown when {@link UninstallFlow.uninstall} cannot find the requested package. */
+export class PackageNotInstalledError extends Error {
+  /**
+   * Build a `PackageNotInstalledError` for the supplied package name.
+   *
+   * @param name - The package name that could not be located on disk.
+   */
+  constructor(public readonly name: string) {
+    super(`Package not installed: ${name}`);
+    this.name = 'PackageNotInstalledError';
+  }
 }
 
 /** Returns true if `target` exists on disk. */

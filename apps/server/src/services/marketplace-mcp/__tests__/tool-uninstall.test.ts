@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { initBoundary } from '../../../lib/boundary.js';
 import { createUninstallHandler, UninstallInputSchema } from '../tool-uninstall.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
-import { PackageNotInstalledError } from '../../marketplace/flows/uninstall/uninstall.js';
+import { PackageNotInstalledError } from '../../marketplace/flows/uninstall/support.js';
 import {
   type UninstallRequest,
   type UninstallResult,

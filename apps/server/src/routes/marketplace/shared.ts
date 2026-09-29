@@ -20,7 +20,7 @@ import {
   PackageNotFoundError,
   MarketplaceNotFoundError,
 } from '../../services/marketplace/package-resolver.js';
-import { PackageNotInstalledError } from '../../services/marketplace/flows/uninstall/uninstall.js';
+import { PackageNotInstalledError } from '../../services/marketplace/flows/uninstall/support.js';
 import { UnsupportedSourceUrlError } from '../../services/marketplace/sources/source-url-policy.js';
 import {
   GitCommitNotFoundError,

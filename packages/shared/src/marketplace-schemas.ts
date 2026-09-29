@@ -7,10 +7,12 @@
  * browser-safe (no Node.js imports).
  *
  * Server-side source of truth:
- *   - `apps/server/src/routes/marketplace.ts` — AggregatedPackage, InstalledPackage, AddSourceInput
+ *   - `apps/server/src/routes/marketplace.ts` — AggregatedPackage
+ *   - `apps/server/src/services/marketplace/installed-scanner.ts` — InstalledPackage
+ *   - `apps/server/src/routes/marketplace/sources.ts` — AddSourceInput (as `AddSourceBodySchema`)
  *   - `apps/server/src/services/marketplace/types.ts` — PermissionPreview, InstallResult,
  *     InstallRequest, MarketplaceSource, ConflictReport
- *   - `apps/server/src/services/marketplace/flows/uninstall/uninstall.ts` — UninstallResult
+ *   - `apps/server/src/services/marketplace/flows/uninstall/support.ts` — UninstallResult
  *   - `apps/server/src/services/marketplace/flows/update.ts` — UpdateResult, UpdateCheckResult,
  *     InstallationUpdateCheck, InstallationUpdatesResult
  *   - `apps/server/src/services/shapes/apply-shape.ts` — ApplyShapeResult, AppliedShape,
@@ -924,7 +926,7 @@ export interface ListInstalledOptions {
 /**
  * The outcome of a successful uninstall.
  *
- * Mirrors `UninstallResult` in `apps/server/src/services/marketplace/flows/uninstall/uninstall.ts`.
+ * Mirrors `UninstallResult` in `apps/server/src/services/marketplace/flows/uninstall/support.ts`.
  */
 export interface UninstallResult {
   ok: boolean;
@@ -1141,7 +1143,7 @@ export interface PackageProvides {
  * PER INSTALLATION — a package installed globally and on two agents yields
  * three entries — so consumers can show and manage each scope independently.
  *
- * Mirrors `InstalledPackage` in `apps/server/src/routes/marketplace.ts`.
+ * Mirrors `InstalledPackage` in `apps/server/src/services/marketplace/installed-scanner.ts`.
  */
 export interface InstalledPackage {
   name: string;

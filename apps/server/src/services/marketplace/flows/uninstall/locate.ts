@@ -13,8 +13,12 @@ import {
   type InstallRootCandidate,
 } from '../../lib/locate-install.js';
 import { hasInstallRecords } from '../../recovery/install-recovery.js';
-import type { LocatedPackage, UninstallFlowDeps, UninstallRequest } from './support.js';
-import { PackageNotInstalledError } from './uninstall.js';
+import {
+  type LocatedPackage,
+  PackageNotInstalledError,
+  type UninstallFlowDeps,
+  type UninstallRequest,
+} from './support.js';
 
 /**
  * Read and parse `.dork/manifest.json` from an install root, returning

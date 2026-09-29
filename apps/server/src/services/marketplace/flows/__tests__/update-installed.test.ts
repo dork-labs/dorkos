@@ -15,7 +15,7 @@ import {
   updatesNotAsShown,
   type ApprovableUpdate,
   type InstalledUpdatesDeps,
-} from '../../flows/update-installed.js';
+} from '../update-installed.js';
 import type { DisclosedEffects } from '../../preview/disclosed-effects.js';
 import type { InstallationRecord } from '../../installed-scanner.js';
 

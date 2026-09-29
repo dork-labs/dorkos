@@ -18,7 +18,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
 import { atomicMove } from '../../lib/atomic-move.js';
-import { SHAPE_PROJECT_PATH_IGNORED_WARNING, ShapeInstallFlow } from '../../flows/install-shape.js';
+import { SHAPE_PROJECT_PATH_IGNORED_WARNING, ShapeInstallFlow } from '../install-shape.js';
 
 // Spy on atomicMove so one test can force an activate-phase failure (a rename
 // fault on the staging → target move) and exercise the transaction's restore

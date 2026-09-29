@@ -16,7 +16,7 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AgentPackageManifest } from '@dorkos/marketplace';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { AgentInstallFlow } from '../../flows/install-agent.js';
+import { AgentInstallFlow } from '../install-agent.js';
 
 /** Construct a no-op {@link Logger} backed by spies for assertions. */
 function buildLogger(): Logger {

@@ -556,8 +556,8 @@ const LocalInstallationUpdatesResultSchema = z.object({
 });
 
 /**
- * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall/uninstall.js').UninstallResult}.
- * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall/uninstall.ts`.
+ * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall/support.js').UninstallResult}.
+ * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall/support.ts`.
  */
 const LocalUninstallResultSchema = z.object({
   ok: z.boolean(),

@@ -77,10 +77,8 @@ import {
   UnsupportedSourceUrlError,
 } from '../../services/marketplace/sources/source-url-policy.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/flows/install-shape.js';
-import {
-  PackageNotInstalledError,
-  type UninstallFlow,
-} from '../../services/marketplace/flows/uninstall/uninstall.js';
+import { type UninstallFlow } from '../../services/marketplace/flows/uninstall/uninstall.js';
+import { PackageNotInstalledError } from '../../services/marketplace/flows/uninstall/support.js';
 import type { UpdateFlow } from '../../services/marketplace/flows/update.js';
 import {
   GitCommitNotFoundError,

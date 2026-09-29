@@ -21,7 +21,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { SkillPackPackageManifest } from '@dorkos/marketplace';
-import { SkillPackInstallFlow } from '../../flows/install-skill-pack.js';
+import { SkillPackInstallFlow } from '../install-skill-pack.js';
 import { _internal as transactionInternal } from '../../transaction.js';
 
 const VALID_SKILL_BODY = '# Body\n\nA short skill body for tests.';
