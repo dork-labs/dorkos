@@ -30,6 +30,7 @@ import { ConnectorSubscriptionService } from '../events/subscription-service.js'
 import { ConnectorSubscriptionStore } from '../events/subscription-store.js';
 import {
   CONNECTOR_REQUEST_RATE_LIMIT,
+  openAgentRequest,
   ConnectorAgentRequestService,
   ConnectorAgentRequestSourceAdapter,
   type ConnectorAgentRequestAuthorityPort,
@@ -221,7 +222,16 @@ describe('ConnectorAgentRequestService', () => {
     }
   }
 
-  function realEventGrants(count: number) {
+  function realEventGrants(
+    count: number,
+    probes: {
+      /** Whether the destination check at each call (0-based) passes. */
+      authorize?: (call: number) => boolean;
+      /** Throws to fail a trigger at the service for the given call (0-based). */
+      reconcileTrigger?: (call: number) => void;
+    } = {}
+  ) {
+    let triggerCalls = 0;
     const store = new ConnectorSubscriptionStore(db);
     const definitions: ConnectorEventDefinition[] = Array.from({ length: count }, (_, index) => ({
       eventType: `gmail.event_${index}`,
@@ -244,14 +254,17 @@ describe('ConnectorAgentRequestService', () => {
         status: 'ok',
         definitions,
       })),
-      reconcileTrigger: vi.fn<ConnectorEventCapability['reconcileTrigger']>(async (input) => ({
-        status: 'found' as const,
-        trigger: {
-          providerTriggerRef: `trigger-${input.definition.eventType}`,
-          externalAccountRef: input.externalAccountRef,
-          enabled: true,
-        },
-      })),
+      reconcileTrigger: vi.fn<ConnectorEventCapability['reconcileTrigger']>(async (input) => {
+        probes.reconcileTrigger?.(triggerCalls++);
+        return {
+          status: 'found' as const,
+          trigger: {
+            providerTriggerRef: `trigger-${input.definition.eventType}`,
+            externalAccountRef: input.externalAccountRef,
+            enabled: true,
+          },
+        };
+      }),
       createTrigger: vi.fn<ConnectorEventCapability['createTrigger']>(async () => ({
         status: 'error' as const,
         code: 'PROVIDER_PRECHECK_FAILED' as const,
@@ -270,7 +283,10 @@ describe('ConnectorAgentRequestService', () => {
     const providerRegistry = {
       resolveProviderInstance: () => ({ events }) as ConnectorProvider,
     };
-    const destinations = { authorize: vi.fn(() => true) };
+    let authorizeCalls = 0;
+    const destinations = {
+      authorize: vi.fn(async () => probes.authorize?.(authorizeCalls++) ?? true),
+    };
     const subscriptions = new ConnectorSubscriptionService(
       store,
       providerRegistry,
@@ -2095,6 +2111,7 @@ describe('ConnectorAgentRequestService', () => {
       describe: vi.fn(describe),
       approve: vi.fn(approve),
       ready: vi.fn(() => ready),
+      withdraw: vi.fn(),
     };
     const requests = service({ eventGrants, resume: undefined });
     const created = await requests.create(principal(), eventInput);
@@ -2212,6 +2229,7 @@ describe('ConnectorAgentRequestService', () => {
         };
       }),
       ready: vi.fn(() => false),
+      withdraw: vi.fn(),
     };
     const requests = service({ eventGrants, resume: undefined });
     const created = await requests.create(principal(), {
@@ -2307,6 +2325,7 @@ describe('ConnectorAgentRequestService', () => {
         };
       }),
       ready: vi.fn(() => true),
+      withdraw: vi.fn(),
     };
     const requests = service({ eventGrants, resume: undefined });
     const created = await requests.create(principal(), {
@@ -2384,6 +2403,7 @@ describe('ConnectorAgentRequestService', () => {
             : { state: 'unavailable', selections: [] };
         }),
         ready: vi.fn(() => state() === 'ready'),
+        withdraw: vi.fn(),
       };
     }
 
@@ -2536,6 +2556,256 @@ describe('ConnectorAgentRequestService', () => {
       expect(db.select().from(connectorAgentRequests).get()).toEqual(before.request);
       expect(db.select().from(connectorReviewRequests).get()).toEqual(before.review);
       expect(onChanged.mock.calls.length).toBe(calls);
+    });
+  });
+  describe('taking back an answer stops its updates (fix round 2)', () => {
+    const EVENTS = ['gmail.event_0', 'gmail.event_1'];
+
+    function liveSubscriptions(): number {
+      return (
+        db.$client
+          .prepare(
+            'SELECT COUNT(*) AS count FROM connector_event_subscriptions WHERE enabled = 1 AND revoked_at IS NULL'
+          )
+          .get() as { count: number }
+      ).count;
+    }
+
+    function consentCommands(): number {
+      return (
+        db.$client
+          .prepare('SELECT COUNT(*) AS count FROM connector_event_consent_commands')
+          .get() as { count: number }
+      ).count;
+    }
+
+    it('stops the first update switched on when the second fails, so Not now means none arrive', async () => {
+      // The trigger at the service fails for the second scope, after the first
+      // was already switched on.
+      const { grants, scopes } = realEventGrants(2, {
+        reconcileTrigger: (call) => {
+          if (call === 1) throw new Error('service dropped the second trigger');
+        },
+      });
+      const requests = service({ eventGrants: grants, resume: undefined });
+      const created = await requests.create(principal(), { ...INPUT, requestedEvents: EVENTS });
+      grantLive(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: scopes,
+        })
+      ).rejects.toThrow('service dropped the second trigger');
+      expect(liveSubscriptions()).toBe(0);
+      expect(consentCommands()).toBe(0);
+      expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, { decision: 'denied' })
+      ).resolves.toMatchObject({ status: 'denied' });
+      expect(liveSubscriptions()).toBe(0);
+    });
+
+    it('stops updates switched on before a refused destination, so "without updates" sends none', async () => {
+      // One scope: the destination passes the two checks before switching it
+      // on, and is refused at the final check after.
+      const { grants, scopes } = realEventGrants(1, { authorize: (call) => call < 2 });
+      const requests = service({ eventGrants: grants, resume: undefined });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.event_0'],
+      });
+      grantLive(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: scopes,
+        })
+      ).rejects.toMatchObject({ code: 'event_selection_unavailable' });
+      expect(liveSubscriptions()).toBe(0);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).resolves.toMatchObject({ status: 'granted', grantedEvents: [] });
+      expect(liveSubscriptions()).toBe(0);
+      // A subscription the review made and then took back leaves the list too.
+      expect(
+        db.$client
+          .prepare(
+            'SELECT COUNT(*) AS count FROM connector_event_subscriptions WHERE removed_at IS NULL'
+          )
+          .get()
+      ).toEqual({ count: 0 });
+    });
+
+    it('lets the person pick a different set after a failed pick', async () => {
+      let refuse = true;
+      const { grants, scopes } = realEventGrants(2, {
+        // While refusing: the destination passes until the check after switching on.
+        authorize: (call) => !refuse || call < 2,
+      });
+      const requests = service({ eventGrants: grants, resume: undefined });
+      const created = await requests.create(principal(), { ...INPUT, requestedEvents: EVENTS });
+      grantLive(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: [scopes[0]!],
+        })
+      ).rejects.toMatchObject({ code: 'event_selection_unavailable' });
+      refuse = false;
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: [scopes[1]!],
+        })
+      ).resolves.toMatchObject({ status: 'granted', grantedEvents: ['gmail.event_1'] });
+      expect(liveSubscriptions()).toBe(1);
+    });
+
+    it('takes the answer back when approving updates throws', async () => {
+      const approve = vi.fn<ConnectorEventGrantPort['approve']>(async () => {
+        throw new Error('event side crashed');
+      });
+      const withdraw = vi.fn<ConnectorEventGrantPort['withdraw']>();
+      const requests = service({
+        resume: undefined,
+        eventGrants: {
+          describe: (_owner, scopes) =>
+            scopes.map((scope) => ({
+              definitionId: scope.definitionId,
+              eventType: 'gmail.event_0',
+            })),
+          approve,
+          ready: () => false,
+          withdraw,
+        },
+      });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.event_0'],
+      });
+      grantLive(['revision-read']);
+      const scope = {
+        connectionId: CONNECTION_ID,
+        definitionId: 'definition-0',
+        filter: {},
+        agentId: 'agent-1',
+        destination: { kind: 'agent' as const, id: 'agent-1' },
+      };
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: [scope],
+        })
+      ).rejects.toThrow('event side crashed');
+      expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
+      expect(withdraw).toHaveBeenCalledWith(
+        OWNER,
+        expect.stringMatching(/^id-/),
+        expect.any(String)
+      );
+      await expect(
+        requests.resolve(OWNER, created.requestId, { decision: 'denied' })
+      ).resolves.toMatchObject({ status: 'denied' });
+    });
+
+    it('never leaves a request answered on one side and unanswered on the other when answers race', async () => {
+      // Two identical answers: the first's updates come back unavailable while
+      // the second's come back ready after the first took the answer back.
+      let releaseSecond!: () => void;
+      const secondGate = new Promise<void>((resolve) => {
+        releaseSecond = resolve;
+      });
+      let calls = 0;
+      const withdraw = vi.fn<ConnectorEventGrantPort['withdraw']>();
+      const eventGrants: ConnectorEventGrantPort = {
+        describe: (_owner, scopes) =>
+          scopes.map((scope) => ({ definitionId: scope.definitionId, eventType: 'gmail.event_0' })),
+        approve: vi.fn<ConnectorEventGrantPort['approve']>(async (_owner, review) => {
+          const call = calls++;
+          const selections = review.scopes.map((scope) => ({
+            subscriptionId: 'subscription-1',
+            scopeVersion: 1,
+            definitionId: scope.definitionId,
+            eventScopeHash: 'a'.repeat(64),
+          }));
+          if (call === 0) return { state: 'unavailable', selections: [] };
+          await secondGate;
+          return { state: 'ready', selections, appliedEventScopeHash: 'b'.repeat(64) };
+        }),
+        ready: () => true,
+        withdraw,
+      };
+      const requests = service({ eventGrants, resume: undefined });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.event_0'],
+      });
+      grantLive(['revision-read']);
+      const decision = {
+        decision: 'current_access' as const,
+        connectionId: CONNECTION_ID,
+        eventScopes: [
+          {
+            connectionId: CONNECTION_ID,
+            definitionId: 'definition-0',
+            filter: {},
+            agentId: 'agent-1',
+            destination: { kind: 'agent' as const, id: 'agent-1' },
+          },
+        ],
+      };
+
+      // Settled from the start, so the early refusal is never an unhandled rejection.
+      const answers = Promise.allSettled([
+        requests.resolve(OWNER, created.requestId, decision),
+        requests.resolve(OWNER, created.requestId, decision),
+      ]);
+      // Let the unavailable one take the answer back before the other finishes.
+      await expect.poll(() => withdraw.mock.calls.length).toBeGreaterThanOrEqual(1);
+      releaseSecond();
+      const settled = await answers;
+      // Neither is passed off as a success over a request that reads as unanswered.
+      for (const outcome of settled) {
+        expect(outcome).toMatchObject({
+          status: 'rejected',
+          reason: expect.objectContaining({ code: 'event_selection_unavailable' }),
+        });
+      }
+
+      const item = requests.getForOwner(OWNER, created.requestId);
+      expect(item.status).toBe('awaiting_owner');
+      const review = db.select().from(connectorReviewRequests).get()!;
+      expect(review).toMatchObject({ state: 'pending', resolutionJson: null });
+      // What the late approval switched on is stopped too.
+      expect(withdraw.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('which requests count as open', () => {
+    it('does not count an unanswered request past its time, even before anything expires it', async () => {
+      // `create()` expires overdue requests first; this reads the check alone.
+      const requests = service({ requestTtlMs: 1_000 });
+      const created = await requests.create(principal(), INPUT);
+      const later = new Date(NOW.getTime() + 2_000).toISOString();
+      expect(openAgentRequest(db, 'agent-1', 'gmail', NOW.toISOString())?.request.id).toBe(
+        created.requestId
+      );
+      expect(openAgentRequest(db, 'agent-1', 'gmail', later)).toBeUndefined();
     });
   });
 });

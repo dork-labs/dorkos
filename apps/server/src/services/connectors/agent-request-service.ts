@@ -48,6 +48,7 @@ import {
   type ConnectionId,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorEventGrantPort } from './events/grant-port.js';
+import { ConnectorSubscriptionError } from './events/subscription-store.js';
 import {
   isServerPrincipal,
   type ConnectorOwnerAuthority,
@@ -977,6 +978,11 @@ export class ConnectorAgentRequestService {
     // request resumes only once both the access and the updates are live.
     this.validateEventScopes(owner, row.request, decision.connectionId, decision.eventScopes);
     const claimed = this.resolveWithCurrentAccess(owner, row.request, row.review, decision);
+    const unavailable = () =>
+      new ConnectorAgentRequestError(
+        'event_selection_unavailable',
+        'Those updates can’t be set up right now. Choose them again, or answer without updates.'
+      );
     let result: Awaited<ReturnType<ConnectorEventGrantPort['approve']>>;
     try {
       result = await this.options.eventGrants!.approve(
@@ -985,15 +991,15 @@ export class ConnectorAgentRequestService {
         signal
       );
     } catch (error) {
-      this.withdrawAnswer(requestId, claimed.reviewId, decision);
+      this.withdrawAnswer(owner, requestId, claimed.reviewId, decision);
+      // A refusal at the consent boundary (a destination or definition that
+      // changed, or a stale pick) is the person's to answer differently.
+      if (error instanceof ConnectorSubscriptionError) throw unavailable();
       throw error;
     }
     if (result.state === 'unavailable') {
-      this.withdrawAnswer(requestId, claimed.reviewId, decision);
-      throw new ConnectorAgentRequestError(
-        'event_selection_unavailable',
-        'Those updates can’t be set up right now. Choose them again, or answer without updates.'
-      );
+      this.withdrawAnswer(owner, requestId, claimed.reviewId, decision);
+      throw unavailable();
     }
     const resolvedEvents: ResolvedEventSelectionEnvelope = {
       version: 1,
@@ -1002,8 +1008,26 @@ export class ConnectorAgentRequestService {
     };
     const ready = result.state === 'ready';
     const now = this.now().toISOString();
-    this.options.db.transaction((tx) => {
-      tx.update(connectorAgentRequests)
+    const claimJson = canonicalJson({
+      version: 1,
+      decision,
+    } satisfies ConnectorAgentResolutionClaim);
+    // Finish only the answer this call recorded. Another identical answer may
+    // have been taken back while this one waited on the event side (its
+    // updates failed); then this one is taken back too, never passed off as
+    // allowed over a request that reads as unanswered (DOR-2503).
+    const finished = this.options.db.transaction((tx): boolean => {
+      const review = tx
+        .select({
+          state: connectorReviewRequests.state,
+          resolutionJson: connectorReviewRequests.resolutionJson,
+        })
+        .from(connectorReviewRequests)
+        .where(eq(connectorReviewRequests.id, claimed.reviewId))
+        .get();
+      if (review?.resolutionJson !== claimJson) return false;
+      const changed = tx
+        .update(connectorAgentRequests)
         .set({
           resolvedEventsJson: canonicalJson(resolvedEvents),
           ...(ready && { resumeState: 'ready' as const }),
@@ -1015,19 +1039,34 @@ export class ConnectorAgentRequestService {
             eq(connectorAgentRequests.resumeState, 'pending')
           )
         )
-        .run();
+        .run().changes;
+      if (changed !== 1) {
+        // Nothing left pending: an identical answer already finished it.
+        const current = tx
+          .select({ outcome: connectorAgentRequests.outcome })
+          .from(connectorAgentRequests)
+          .where(eq(connectorAgentRequests.id, requestId))
+          .get();
+        return current?.outcome === 'granted';
+      }
       if (ready) {
         tx.update(connectorReviewRequests)
           .set({ state: 'approved', resolvedAt: now, resolutionSummary: 'Access ready' })
           .where(
             and(
               eq(connectorReviewRequests.id, claimed.reviewId),
-              eq(connectorReviewRequests.state, 'pending')
+              eq(connectorReviewRequests.state, 'pending'),
+              eq(connectorReviewRequests.resolutionJson, claimJson)
             )
           )
           .run();
       }
+      return true;
     });
+    if (!finished) {
+      this.withdrawAnswer(owner, requestId, claimed.reviewId, decision);
+      throw unavailable();
+    }
     if (ready) this.notifyResolved(requestId);
     else this.options.onChanged?.();
     return this.getForOwner(owner, requestId);
@@ -1035,15 +1074,23 @@ export class ConnectorAgentRequestService {
 
   /**
    * Take back an answer recorded for updates that could not be set up, so the
-   * request is unanswered again. Only the exact answer this call recorded is
-   * taken back; one that has since finished or changed is left alone.
+   * request is unanswered again, and stop whatever the event side prepared or
+   * switched on under its review, in one transaction: an update the person
+   * then turns down never arrives, and a different pick can be approved under
+   * the same review. Only the exact answer this call recorded is taken back;
+   * one that has since finished or changed is left alone. The event side is
+   * cleared whenever the request reads as unanswered, including when another
+   * identical answer already took it back, since this call's own approval may
+   * have prepared updates again after that.
    */
   private withdrawAnswer(
+    owner: ConnectorOwnerAuthority,
     requestId: string,
     reviewId: string,
     decision: Extract<ConnectorAgentRequestDecision, { decision: 'current_access' }>
   ): void {
     const claim: ConnectorAgentResolutionClaim = { version: 1, decision };
+    const now = this.now().toISOString();
     const withdrawn = this.options.db.transaction((tx) => {
       const changed = tx
         .update(connectorReviewRequests)
@@ -1056,25 +1103,37 @@ export class ConnectorAgentRequestService {
           )
         )
         .run().changes;
-      if (changed !== 1) return false;
-      tx.update(connectorAgentRequests)
-        .set({
-          outcome: null,
-          resumeState: 'pending',
-          resolvedConnectionId: null,
-          resolvedOperationRevisionIdsJson: null,
-          resolvedEventsJson: null,
-          resolvedAt: null,
-        })
-        .where(
-          and(
-            eq(connectorAgentRequests.id, requestId),
-            eq(connectorAgentRequests.outcome, 'granted'),
-            eq(connectorAgentRequests.resumeState, 'pending')
+      if (changed === 1) {
+        tx.update(connectorAgentRequests)
+          .set({
+            outcome: null,
+            resumeState: 'pending',
+            resolvedConnectionId: null,
+            resolvedOperationRevisionIdsJson: null,
+            resolvedEventsJson: null,
+            resolvedAt: null,
+          })
+          .where(
+            and(
+              eq(connectorAgentRequests.id, requestId),
+              eq(connectorAgentRequests.outcome, 'granted'),
+              eq(connectorAgentRequests.resumeState, 'pending')
+            )
           )
-        )
-        .run();
-      return true;
+          .run();
+      }
+      const review = tx
+        .select({
+          state: connectorReviewRequests.state,
+          resolutionJson: connectorReviewRequests.resolutionJson,
+        })
+        .from(connectorReviewRequests)
+        .where(eq(connectorReviewRequests.id, reviewId))
+        .get();
+      if (review?.state === 'pending' && review.resolutionJson === null) {
+        this.options.eventGrants?.withdraw(owner, reviewId, now);
+      }
+      return changed === 1;
     });
     if (withdrawn) this.options.onChanged?.();
   }
@@ -2285,8 +2344,13 @@ function elsewhereMessage(
   );
 }
 
-/** One agent's open request for one app: unanswered, or allowed and not yet delivered. */
-function openAgentRequest(
+/**
+ * One agent's open request for one app: unanswered, or allowed and not yet
+ * delivered, and in either case not past its time. Exported for its own test.
+ *
+ * @internal
+ */
+export function openAgentRequest(
   tx: Db | DbTransaction,
   agentId: string,
   serviceSlug: string,

@@ -139,6 +139,55 @@ export class ConnectorEventGrantService implements ConnectorEventGrantPort {
     return { examined, ready };
   }
 
+  /**
+   * Stop every subscription generation a review prepared or switched on, and
+   * forget the review's consent, in one transaction (DOR-2503). A generation
+   * that has since moved on (the owner changed it on the page) is left alone.
+   * A subscription the review created (its first generation) also leaves the
+   * owner's list, since they never set it up; one that existed before stays
+   * on it, stopped. Any trigger at the service is retired by the existing
+   * cleanup maintenance (`ConnectorSubscriptionService.recoverCleanup`), which
+   * picks up bindings no live subscription uses.
+   */
+  withdraw(owner: ConnectorOwnerAuthority, reviewId: string, now: string): void {
+    const ownerId = owner.kind === 'user' ? owner.userId : owner.installationId;
+    this.store.db.transaction(() => {
+      const command = this.store.db.$client
+        .prepare(
+          'SELECT selections_json FROM connector_event_consent_commands WHERE owner_kind = ? AND owner_id = ? AND review_id = ?'
+        )
+        .get(owner.kind, ownerId, reviewId) as { selections_json: string } | undefined;
+      if (!command) return;
+      const parsed: unknown = JSON.parse(command.selections_json);
+      const selections = Array.isArray(parsed)
+        ? parsed.flatMap((item: unknown) => {
+            const selection =
+              item && typeof item === 'object' && 'selection' in item ? item.selection : null;
+            return selection &&
+              typeof selection === 'object' &&
+              'subscriptionId' in selection &&
+              typeof selection.subscriptionId === 'string' &&
+              'scopeVersion' in selection &&
+              typeof selection.scopeVersion === 'number'
+              ? [{ subscriptionId: selection.subscriptionId, scopeVersion: selection.scopeVersion }]
+              : [];
+          })
+        : [];
+      const stop = this.store.db.$client.prepare(
+        `UPDATE connector_event_subscriptions SET enabled = 0, revoked_at = ?, updated_at = ?,
+         removed_at = CASE WHEN ? = 1 THEN ? ELSE removed_at END, scope_version = scope_version + 1
+         WHERE id = ? AND scope_version = ? AND revoked_at IS NULL`
+      );
+      for (const { subscriptionId, scopeVersion } of selections)
+        stop.run(now, now, scopeVersion, now, subscriptionId, scopeVersion);
+      this.store.db.$client
+        .prepare(
+          'DELETE FROM connector_event_consent_commands WHERE owner_kind = ? AND owner_id = ? AND review_id = ?'
+        )
+        .run(owner.kind, ownerId, reviewId);
+    });
+  }
+
   /** Persist exact reviewed selections once, then reconcile only those generations. */
   async approve(
     owner: ConnectorOwnerAuthority,

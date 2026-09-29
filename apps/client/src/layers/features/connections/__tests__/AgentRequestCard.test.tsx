@@ -550,6 +550,25 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     );
   });
 
+  it('reads a changed update choice as "pick again", never as a lost connection', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
+      Object.assign(new Error('conflict'), { code: 'review_conflict' })
+    );
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+    const unanswered = await screen.findByTestId('agent-request-unanswered');
+    expect(unanswered).not.toHaveTextContent('didn’t reach the server');
+    expect(screen.getByRole('button', { name: 'Pick updates again' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
   it('answers without updates straight from the failure', async () => {
     const user = userEvent.setup();
     const transport = updatesTransport();

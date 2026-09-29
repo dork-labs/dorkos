@@ -433,6 +433,7 @@ describe('private receipt adoption', () => {
         appliedEventScopeHash: 'b'.repeat(64),
       }),
       ready: () => eventReady,
+      withdraw: () => undefined,
     };
     const source = new ConnectorAgentRequestSourceAdapter(
       db,

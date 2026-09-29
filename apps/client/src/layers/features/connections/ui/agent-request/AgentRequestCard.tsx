@@ -33,6 +33,15 @@ export interface AgentRequestCardProps {
   className?: string;
 }
 
+/** Refusals that mean "these updates can't be set up": pick again or answer without them. */
+const UPDATE_REFUSALS = new Set([
+  'event_selection_unavailable',
+  'review_conflict',
+  'destination_unavailable',
+  'definition_changed',
+  'invalid_filter',
+]);
+
 /** Why "Not now" did not save. Declining writes nothing, so nothing changed. */
 const DECLINE_FAILED = 'Couldn’t save your answer. Nothing changed. Try again.';
 
@@ -65,6 +74,10 @@ function unansweredReason(
     case 'authority_sync_failed':
       return { reason: 'the access is still being set up.', retry: true };
     case 'event_selection_unavailable':
+    case 'review_conflict':
+    case 'destination_unavailable':
+    case 'definition_changed':
+    case 'invalid_filter':
       // Sending the same updates again would fail the same way, so the card
       // offers the two answers that can work instead of a retry.
       return {
@@ -162,7 +175,7 @@ export function AgentRequestCard({
     const { reason, retry } = unansweredReason(resolve.error, agentName, serviceName);
     const updatesFailed =
       updatesFor !== null &&
-      (resolve.error as { code?: string } | null)?.code === 'event_selection_unavailable';
+      UPDATE_REFUSALS.has((resolve.error as { code?: string } | null)?.code ?? '');
     return (
       <AccessCardFrame
         titleId={`agent-request-unanswered-${request.requestId}`}

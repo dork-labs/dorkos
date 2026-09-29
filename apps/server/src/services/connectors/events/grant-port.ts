@@ -36,6 +36,14 @@ export interface ConnectorEventGrantPort {
     review: ConnectorEventGrantReview,
     signal: AbortSignal
   ): Promise<ConnectorEventGrantResult>;
+  /**
+   * Take back everything an approval prepared or switched on under one review:
+   * stop each of its subscription generations and forget its consent, so no
+   * update arrives for an answer that was taken back and a different pick can
+   * be approved under the same review. Synchronous, so a caller can run it in
+   * the same transaction as its own state change. Idempotent.
+   */
+  withdraw(owner: ConnectorOwnerAuthority, reviewId: string, now: string): void;
 }
 /** Existing managed authority outbox adapter; true requires the exact stored event-scope ACK. */
 export interface ManagedEventConsentAuthority {
