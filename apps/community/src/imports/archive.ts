@@ -59,7 +59,7 @@ async function manifestVersion(
   try {
     const archive = await openZipArchive(
       new SegmentedBlobSource(blobStore, [{ key: staging.key, byteSize: staging.byteSize }]),
-      { allowName: () => true, signal }
+      { allowName: () => true, maxEntries: 10_001, signal }
     );
     let manifestEntry: ZipEntry | undefined;
     for await (const entry of archive.entries()) {

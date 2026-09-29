@@ -7,6 +7,7 @@ covers:
   - 'fix(community): measure shortened channel names the way the app does (DOR-2259)'
   - 'fix(community): name a newer export as one this host cannot read (DOR-2259)'
   - 'fix(community): show an import on the host page with the shared controls (DOR-2259)'
+  - 'fix(community): show keyboard focus on the export file chooser, and name it by its words (DOR-2259)'
 ---
 
 ### Added

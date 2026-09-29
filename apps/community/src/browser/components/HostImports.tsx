@@ -46,9 +46,9 @@ const STATES: Record<ImportState, string> = {
   cancelled: 'Cancelled',
 };
 
-/** A count with its noun, singular for one. */
-function count(value: number, noun: string): string {
-  return `${value.toLocaleString()} ${noun}${value === 1 ? '' : 's'}`;
+/** A count with its noun, singular for one; `plural` when adding an s is wrong. */
+function count(value: number, noun: string, plural = `${noun}s`): string {
+  return `${value.toLocaleString()} ${value === 1 ? noun : plural}`;
 }
 
 /** A byte size in the largest unit that keeps it above one. */
@@ -148,7 +148,8 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
             variant="outline"
             className={`justify-self-start ${busy ? 'pointer-events-none opacity-50' : ''}`}
           >
-            <Label aria-disabled={busy} className="relative">
+            {/* The input is invisible, so its keyboard focus shows on the button around it. */}
+            <Label className="has-[:focus-visible]:border-dui-ring has-[:focus-visible]:ring-dui-ring/50 relative has-[:focus-visible]:ring-[3px]">
               <FileUp size={16} /> {file ? 'Choose another file' : 'Choose export file'}
               <input
                 ref={fileInput}
@@ -156,7 +157,6 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
                 // is the button itself.
                 className="absolute -inset-px cursor-pointer opacity-0"
                 type="file"
-                aria-label="Export file (.zip)"
                 accept=".zip,application/zip"
                 disabled={busy}
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
@@ -259,7 +259,7 @@ export function HostImportStatus({
     ) : null;
   const report = current.report;
   return (
-    <div className="mt-3" aria-label="Import">
+    <div className="mt-3" role="group" aria-label="Import">
       <p className="small mb-1" aria-live="polite">
         <strong>Import:</strong> {STATES[current.state]}
       </p>
@@ -275,7 +275,9 @@ export function HostImportStatus({
           {count(report.historicalMembers, 'past member')},{' '}
           {count(report.historicalAgents, 'past agent')}.
           {report.shortened > 0 &&
-            ` ${report.shortened.toLocaleString()} channel names or descriptions are too long and will be shortened.`}
+            ` ${count(report.shortened, 'channel name or description', 'channel names or descriptions')} ${
+              report.shortened === 1 ? 'was' : 'were'
+            } too long for this host and ${current.state === 'ready' ? 'have been' : 'will be'} shortened.`}
         </p>
       )}
       <div className="row flex-wrap gap-2">

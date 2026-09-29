@@ -832,11 +832,18 @@ test('a host moves a community in from its owner’s export and watches it throu
     await page.goto(`${baseUrl}/host`);
     const section = page.getByRole('region', { name: 'Move a community here' });
     await section.getByLabel('Name of the moved community').fill('Moved Place');
-    await section
-      .getByLabel('Export file (.zip)')
-      .setInputFiles(
-        fileURLToPath(new URL('../src/__tests__/fixtures/owner-export-v1.zip', import.meta.url))
-      );
+    // The file chooser is a button whose visible words are its name, and keyboard focus on it
+    // shows a ring even though the file input inside it is invisible.
+    const chooser = section.getByLabel('Choose export file');
+    const shadow = () =>
+      chooser.evaluate((input) => getComputedStyle(input.closest('label')!).boxShadow);
+    const resting = await shadow();
+    await section.getByLabel('Name of the moved community').press('Tab');
+    await expect(chooser).toBeFocused();
+    await expect.poll(shadow).not.toBe(resting);
+    await chooser.setInputFiles(
+      fileURLToPath(new URL('../src/__tests__/fixtures/owner-export-v1.zip', import.meta.url))
+    );
     await expect(section).toContainText('owner-export-v1.zip will be sent when the import starts.');
     await section.getByRole('button', { name: 'Start import' }).click();
     await expect(section).toContainText('Export received. It is being checked now.');
