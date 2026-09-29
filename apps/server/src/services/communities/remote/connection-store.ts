@@ -220,9 +220,26 @@ export class RemoteConnectionStore {
       .map((record) => ({ communityRef: record.ref, ownerAuthorId: record.ownerKey }));
   }
 
-  /** Whether this owner still has a connection record for this ref, in any state. */
-  async has(ref: CommunityRef, ownerKey: string): Promise<boolean> {
-    return (await this.read()).some((record) => record.ref === ref && record.ownerKey === ownerKey);
+  /**
+   * Every owner's connection, in any state, as the file on disk holds it — or `null` when there
+   * is no file at all. Unlike every other read here, an absent file is NOT "no connections": the
+   * orphaned-mirror sweep deletes copies whose connection is missing, so it must be able to tell
+   * "positively none" from "not loaded". An unreadable or invalid file throws.
+   */
+  async connectionsIfLoaded(): Promise<
+    { communityRef: CommunityRef; ownerAuthorId: string }[] | null
+  > {
+    let text: string;
+    try {
+      text = await readFile(this.file, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    return z
+      .array(RecordSchema)
+      .parse(JSON.parse(text))
+      .map((record) => ({ communityRef: record.ref, ownerAuthorId: record.ownerKey }));
   }
 
   /** Remove expired pending proof before list/status can display it after restart. */

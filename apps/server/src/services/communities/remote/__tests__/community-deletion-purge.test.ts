@@ -9,7 +9,7 @@
  *
  * @module services/communities/remote/__tests__/community-deletion-purge
  */
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ulid } from 'ulidx';
@@ -23,7 +23,9 @@ import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
 import { RemoteMirrorStore, type NativeMirrorEntry } from '../mirror-store.js';
 import { RemoteRoomSubscriptionBridge } from '../remote-room-subscription-bridge.js';
 import { RemoteRedactionSync } from '../remote-redaction-sync.js';
-import { sweepOrphanedMirrors } from '../orphaned-mirror-sweep.js';
+import { orphanedMirrorSweepDeps, sweepOrphanedMirrors } from '../orphaned-mirror-sweep.js';
+import { RemoteConnectionStore } from '../connection-store.js';
+import { logger } from '../../../../lib/logger.js';
 
 const DELETED = 'remote_deleted' as CommunityRef;
 const OTHER_COMMUNITY = 'remote_other' as CommunityRef;
@@ -162,60 +164,137 @@ describe('a community going away', () => {
     }
   });
 
-  // Purpose (review 4): at startup, copies whose connection no longer exists (a disconnect whose
-  // purge failed, or one from before disconnects purged) are handed to the revoke path, and a
-  // copy whose connection still exists, in any state, is never touched. It fails if the sweep
-  // skips an orphan or purges a live connection's copies.
-  it('sweeps copies left by a connection that no longer exists, and only those', async () => {
-    const harness = createRoomHarness({ agents: agentLookupFor({}) });
-    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
-    const bridge = new RemoteRoomSubscriptionBridge(
-      mirrors,
-      harness.service,
-      new CommunityAgentEnrollmentStore(harness.db),
-      () => null
-    );
-    const owner = harness.human;
-    const ensure = (community: CommunityRef) =>
-      mirrors.ensureRoom({
-        communityRef: community,
-        remoteRoomId: ROOM,
-        title: 'General',
-        topic: null,
-        ownerAuthorId: owner,
-        accessors: [],
-        authorizedAt: '2026-09-29T00:00:00.000Z',
-      }).id;
-    const orphan = ensure(DELETED);
-    const live = ensure(OTHER_COMMUNITY);
-    // Revoked by a disconnect whose purge then failed: its room is still here.
-    const stranded = ensure(OTHER_OWNERS);
-    mirrors.revoke(OTHER_OWNERS, owner);
-    const connections = new Set([`${OTHER_COMMUNITY}\0${owner}`]);
-    const revoke = vi.fn((ref: CommunityRef, ownerAuthorId: string) =>
-      bridge.revokeConnection(ref, ownerAuthorId)
-    );
-    const deps = {
-      mirrors,
-      hasConnection: async (ref: CommunityRef, ownerAuthorId: string) =>
-        connections.has(`${ref}\0${ownerAuthorId}`),
-      revoke,
-    };
+  describe('the startup sweep of copies whose connection is gone', () => {
+    const OTHER_REF = 'remote_other_ref' as CommunityRef;
 
-    expect(await sweepOrphanedMirrors(deps)).toBe(2);
-    expect(revoke.mock.calls).toEqual(
-      expect.arrayContaining([
-        [DELETED, owner],
-        [OTHER_OWNERS, owner],
-      ])
-    );
-    expect(harness.store.getRoom(orphan)).toBeNull();
-    expect(harness.store.getRoom(stranded)).toBeNull();
-    expect(harness.store.getRoom(live)).not.toBeNull();
+    /** Real mirrors and bridge, and the real connection store in its own data directory. */
+    async function sweepSetup() {
+      const harness = createRoomHarness({ agents: agentLookupFor({}) });
+      const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-orphan-sweep-'));
+      dirs.push(dorkHome);
+      const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+      const bridge = new RemoteRoomSubscriptionBridge(
+        mirrors,
+        harness.service,
+        new CommunityAgentEnrollmentStore(harness.db),
+        () => null
+      );
+      const owner = harness.human;
+      const otherOwner = harness.authors.human('someone-else').id;
+      const ensure = (community: CommunityRef, ownerAuthorId = owner) =>
+        mirrors.ensureRoom({
+          communityRef: community,
+          remoteRoomId: ROOM,
+          title: 'General',
+          topic: null,
+          ownerAuthorId,
+          accessors: [],
+          authorizedAt: '2026-09-29T00:00:00.000Z',
+        }).id;
+      const revoke = vi.fn((ref: CommunityRef, ownerAuthorId: string) =>
+        bridge.revokeConnection(ref, ownerAuthorId)
+      );
+      const store = new RemoteConnectionStore(dorkHome);
+      const file = path.join(dorkHome, 'communities', 'remote', 'connections.json');
+      const writeConnections = async (text: string) => {
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, text);
+      };
+      const record = (ref: CommunityRef, ownerKey: string) => ({
+        ref,
+        ownerKey,
+        remoteCommunityId: 'community-id',
+        label: 'A community',
+        pinnedOrigin: 'https://community.example',
+        connectedHumanMemberId: 'member-id',
+        status: 'connected',
+        pairingId: null,
+        expiresAt: null,
+        agentIds: [],
+        access: null,
+      });
+      const sweep = () => sweepOrphanedMirrors(orphanedMirrorSweepDeps(store, mirrors, revoke));
+      return {
+        harness,
+        mirrors,
+        owner,
+        otherOwner,
+        ensure,
+        revoke,
+        file,
+        writeConnections,
+        record,
+        sweep,
+      };
+    }
 
-    // Once purged, the orphan's revoked mapping is not swept again.
-    revoke.mockClear();
-    expect(await sweepOrphanedMirrors(deps)).toBe(0);
-    expect(revoke).not.toHaveBeenCalled();
+    // Purpose (review 4): an orphan is swept, and a connection that still exists for the same
+    // ref and owner is not; a record for the same ref under ANOTHER owner, or for the same owner
+    // under ANOTHER ref, does not vouch for the orphan. It fails if the match ignores the owner
+    // or the ref, or if a live connection's copies are purged.
+    it('sweeps exactly the connections with no record, matched on ref AND owner', async () => {
+      const s = await sweepSetup();
+      const orphan = s.ensure(DELETED);
+      const live = s.ensure(OTHER_COMMUNITY);
+      // Revoked by a disconnect whose purge then failed: its room is still here.
+      const stranded = s.ensure(OTHER_OWNERS);
+      s.mirrors.revoke(OTHER_OWNERS, s.owner);
+      await s.writeConnections(
+        JSON.stringify([
+          s.record(OTHER_COMMUNITY, s.owner),
+          s.record(DELETED, s.otherOwner),
+          s.record(OTHER_REF, s.owner),
+        ])
+      );
+
+      expect(await s.sweep()).toBe(2);
+      expect(s.revoke.mock.calls).toEqual(
+        expect.arrayContaining([
+          [DELETED, s.owner],
+          [OTHER_OWNERS, s.owner],
+        ])
+      );
+      expect(s.revoke).toHaveBeenCalledTimes(2);
+      expect(s.harness.store.getRoom(orphan)).toBeNull();
+      expect(s.harness.store.getRoom(stranded)).toBeNull();
+      expect(s.harness.store.getRoom(live)).not.toBeNull();
+
+      // Once purged, the orphan's revoked mapping is not swept again.
+      s.revoke.mockClear();
+      expect(await s.sweep()).toBe(0);
+      expect(s.revoke).not.toHaveBeenCalled();
+    });
+
+    // Purpose (review 4): the sweep deletes, so it fails CLOSED: a connection list that is
+    // missing, unreadable, not JSON, or holds an invalid record sweeps nothing. It fails if any
+    // of those reads as "no connections".
+    it.each([
+      ['there is no connection list', async () => undefined],
+      [
+        'the list is not JSON',
+        async (s: Awaited<ReturnType<typeof sweepSetup>>) => s.writeConnections('{not json'),
+      ],
+      [
+        'a record is invalid',
+        async (s: Awaited<ReturnType<typeof sweepSetup>>) =>
+          s.writeConnections(JSON.stringify([{ ...s.record(DELETED, s.owner), status: 'bogus' }])),
+      ],
+      [
+        'the list cannot be read',
+        async (s: Awaited<ReturnType<typeof sweepSetup>>) =>
+          mkdir(s.file, { recursive: true }).then(() => undefined),
+      ],
+    ])('sweeps nothing when %s', async (_label, arrange) => {
+      const s = await sweepSetup();
+      const orphan = s.ensure(DELETED);
+      await arrange(s);
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+      expect(await s.sweep()).toBe(0);
+      expect(s.revoke).not.toHaveBeenCalled();
+      expect(s.harness.store.getRoom(orphan)).not.toBeNull();
+      expect(warn).toHaveBeenCalledOnce();
+      warn.mockRestore();
+    });
   });
 });

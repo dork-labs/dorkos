@@ -1089,6 +1089,28 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await service.disconnect(ref, 'finished-owner');
     });
 
+    // Purpose (review 3): only the Community's `404 NOT_FOUND` (with its code) finishes a pending
+    // deletion. A bare 404 (an older server, a proxy) or a 5xx after a pending deletion keeps it
+    // pending. It fails if any 404 after a pending deletion counts as deleted.
+    it.each([
+      ['a bare 404', 404, undefined],
+      ['a 5xx', 503, undefined],
+    ] as Array<[string, number, string | undefined]>)(
+      'keeps a pending deletion pending on %s',
+      async (_label, status, code) => {
+        const { store, service, ref } = await connectedWith('still-pending-owner');
+        pending();
+        await service.status(ref, 'still-pending-owner');
+        rejectedStatus = status;
+        rejectedCode = code;
+        await service.status(ref, 'still-pending-owner');
+        expect((await lastKnown(store, ref, 'still-pending-owner'))?.lastKnown?.lifecycle).toBe(
+          'deletion_pending'
+        );
+        await service.disconnect(ref, 'still-pending-owner');
+      }
+    );
+
     const notGone: Array<[string, 'hold' | number, string | undefined]> = [
       ['a host hold (read-only)', 'hold', undefined],
       ['a 5xx', 503, undefined],
