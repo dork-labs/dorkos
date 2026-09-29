@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { CommunityExportManifestV2 } from '@dorkos/shared/community-wire';
 import { bufferReader } from '../archive/__tests__/archive-test-helpers.js';
 import { readManifestVersion } from '../imports/archive.js';
-import { ImportFailure } from '../imports/manifest.js';
+import { ImportFailure, parseManifest } from '../imports/manifest.js';
 import { ndjsonLines, parseRow } from '../imports/ndjson.js';
 import {
   collectionLines,
@@ -435,6 +435,22 @@ describe('opening a version 2 export', () => {
       expect(await failure(validate(build(change)))).toBe(code);
     });
   }
+
+  // Purpose: a takedown's evidence archive (and any scope but owner) is never importable, and
+  // is named as not an owner export by the scope itself, not by a schema that may learn the
+  // scope later.
+  it('refuses an evidence archive as not an owner export', async () => {
+    for (const scope of ['evidence', 'personal', 'something-new'])
+      expect(await failure(validate(build((p) => Object.assign(p.manifest, { scope }))))).toBe(
+        'IMPORT_NOT_OWNER_EXPORT'
+      );
+    const v1 = Buffer.from(
+      JSON.stringify({ version: 1, scope: 'evidence', requesterMemberId: id(1) })
+    );
+    expect(() => parseManifest(v1)).toThrow(
+      expect.objectContaining({ code: 'IMPORT_NOT_OWNER_EXPORT' })
+    );
+  });
 
   // Purpose: an archive whose manifest version is neither 1 nor 2 is named as unsupported
   // before either version's rules run, and one with no manifest as damaged.

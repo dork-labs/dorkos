@@ -143,7 +143,10 @@ export function parseManifest(bytes: Buffer): CommunityExportManifestV1 {
       Number.isInteger(version) ? 'IMPORT_VERSION_UNSUPPORTED' : 'IMPORT_ARCHIVE_INVALID'
     );
   }
-  if (scope === 'personal') throw new ImportFailure('IMPORT_NOT_OWNER_EXPORT');
+  // Any scope but owner (a personal export, a takedown's evidence archive, or one a later
+  // version adds) is refused by name, before the schema, whatever scopes the schema knows.
+  if (typeof scope === 'string' && scope !== 'owner')
+    throw new ImportFailure('IMPORT_NOT_OWNER_EXPORT');
   const parsed = CommunityExportManifestV1Schema.safeParse(raw);
   if (!parsed.success) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
   return parsed.data;

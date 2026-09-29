@@ -3,6 +3,7 @@ covers:
   - 'feat(community): import version 1 and 2 exports of any size, uploaded in parts (DOR-2296)'
   - 'fix(community): harden version 2 import after review (DOR-2296)'
   - 'fix(community): let agent logs import, and tear a failed import down fast (DOR-2296)'
+  - 'fix(community): refuse every export scope but owner by name, evidence included (DOR-2296)'
 ---
 
 ### Added
