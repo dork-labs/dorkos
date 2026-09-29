@@ -130,6 +130,17 @@ describe('describeLauncherStop', () => {
     expect(describeLauncherStop(journal)).toBeNull();
   });
 
+  // The code is checked against this checkout's list, so a code only a newer published launcher
+  // knows is dropped: the failure stays the bare step rather than printing something unchecked.
+  it('says nothing for a code only a newer launcher knows', () => {
+    expect(
+      describeLauncherStop({
+        ...STOPPED_JOURNAL,
+        lastSafeError: { category: 'uncertain', code: 'SOME_FUTURE_CODE' },
+      })
+    ).toBeNull();
+  });
+
   it('never repeats a provider it does not recognise', () => {
     expect(
       describeLauncherStop({ ...STOPPED_JOURNAL, pendingIntent: { provider: 'token=abc' } })

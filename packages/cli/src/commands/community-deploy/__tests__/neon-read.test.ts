@@ -57,6 +57,15 @@ cat "$FIXTURE_PATH"
         latitude: 39.96,
         longitude: -83,
       },
+      // Neon reports an unknown location as "" ("Empty if unknown"). It is unknown, not 0, 0,
+      // and one such region must not fail the whole list.
+      {
+        id: 'aws-fixture-unknown-1',
+        name: 'Fixture region without a known location',
+        isDefault: false,
+        latitude: null,
+        longitude: null,
+      },
     ]);
   });
   it('rejects every mutation of trusted active-region fields', async () => {

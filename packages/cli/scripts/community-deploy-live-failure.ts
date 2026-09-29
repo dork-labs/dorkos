@@ -27,6 +27,10 @@ export const PUBLISHED_LAUNCHER_STEP = 'published-launcher';
 /**
  * Only the two fields worth reporting, each held to its fixed vocabulary, so nothing else a
  * journal holds (or a newer launcher adds to it) can reach the gate's output.
+ *
+ * The code is checked against THIS checkout's error-code list, not the published launcher's. A
+ * code that only the published version knows (version skew) is dropped, and the failure falls
+ * back to the bare `published-launcher` step: it loses detail, never prints something unchecked.
  */
 const LauncherStopSchema = z.object({
   lastSafeError: z.object({ code: LaunchSafeErrorCodeSchema }).nullable().catch(null),
