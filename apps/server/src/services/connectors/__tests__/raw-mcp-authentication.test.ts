@@ -69,6 +69,17 @@ function deferred() {
   return { promise, resolve };
 }
 
+/**
+ * The signal `disconnect` gets in every real caller (`management-action-service.ts`):
+ * one that never fires. None of the raw-MCP fixtures here register a `managed`
+ * lifecycle port, so `ConnectorLifecycleService` never reads this signal at all —
+ * `AbortSignal.timeout(1000)` armed a real wall-clock timer for nothing, tight
+ * enough to trip under parallel suite load (DOR-2472).
+ */
+function disconnectSignal(): AbortSignal {
+  return new AbortController().signal;
+}
+
 describe('raw MCP durable authentication', () => {
   let dir: string;
   let db: Db;
@@ -412,7 +423,7 @@ describe('raw MCP durable authentication', () => {
     const connected = await context.service.poll(OWNER, first.flowId);
     if (connected.state !== 'connected') throw new Error('expected connection');
     const reconnect = await context.service.reconnect(OWNER, connected.connectionId, 'reconnect');
-    await context.lifecycle.disconnect(OWNER, connected.connectionId, AbortSignal.timeout(1000));
+    await context.lifecycle.disconnect(OWNER, connected.connectionId, disconnectSignal());
     const restarted = boot();
     expect(await restarted.service.poll(OWNER, initial.flowId)).toMatchObject({ state: 'failed' });
     expect(await restarted.service.poll(OWNER, reconnect.flowId)).toMatchObject({
@@ -444,7 +455,7 @@ describe('raw MCP durable authentication', () => {
       const polling = context.service.poll(OWNER, pending.flowId);
       await entered.promise;
       if (change === 'disconnect')
-        await context.lifecycle.disconnect(OWNER, account.connectionId, AbortSignal.timeout(1000));
+        await context.lifecycle.disconnect(OWNER, account.connectionId, disconnectSignal());
       else if (change === 'owner')
         db.update(connectorProviderInstances)
           .set({ ownerId: 'foreign' })

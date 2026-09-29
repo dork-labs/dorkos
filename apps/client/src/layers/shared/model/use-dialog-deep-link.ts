@@ -106,8 +106,8 @@ export type SettingsDeepLinkTarget = SettingsTabTarget | SettingsRouteTarget;
  * them.
  */
 const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
-  channels: { kind: 'route', path: '/connections', search: { region: 'messaging' } },
-  integrations: { kind: 'route', path: '/connections', search: { region: 'messaging' } },
+  channels: { kind: 'route', path: '/connections' },
+  integrations: { kind: 'route', path: '/connections' },
   security: { kind: 'tab', tab: 'access', section: 'security' },
   account: { kind: 'tab', tab: 'access', section: 'account' },
   advanced: 'danger',
@@ -147,9 +147,6 @@ function resolveSettingsDeepLink(raw: string | undefined): SettingsDeepLinkTarge
 }
 
 /**
- * What these hooks do when there is no router to navigate — the Obsidian embed
- * renders `App` directly, with no `RouterProvider` (see `use-safe-router.ts`).
- *
  * There is no URL to write, so open/close fall back to the app store's plain
  * open flag. `DialogHost` already opens a dialog on `storeOpen || urlIsOpen`, so
  * the two signals are interchangeable for open/close; only the *tab* is lost,
@@ -389,11 +386,6 @@ export interface ProfileDeepLink {
  * which is what makes back mean "close this" instead of "leave the page".
  * `?profilePage=` rides alongside it as the page pushed on top, so a page of a
  * profile is an address too.
- *
- * With no router (the Obsidian embed) the store carries the open flag, the
- * subject and the page, so the profile still opens on the right identity — the
- * one thing a store fallback for Settings cannot do, since a tab has no
- * equivalent.
  */
 export function useProfileDeepLink(): ProfileDeepLink {
   const search = useSafeSearch() as { profile?: string; profilePage?: string };
@@ -474,23 +466,25 @@ export function isDualSignalDialog(panel: UiPanelId): panel is UiPanelId & DualS
   return Object.hasOwn(DIALOG_SEARCH_PARAMS, panel);
 }
 
+/** Where on the Connections page to land. */
+interface OpenConnectionsOptions {
+  /** A connected app's id (a connection or a chat app) whose side panel opens. */
+  app?: string;
+}
+
 /**
- * Go to the Connections page, at one of its two halves.
+ * Go to the Connections page, optionally with one app's side panel open.
  *
- * Replaces the `?relay=open` dialog hook. The messaging surface is a page now,
- * so "open it" is a navigation, not an open flag — and the region is a scroll
- * target rather than a tab, because both halves are always rendered.
- *
- * With no router (the Obsidian embed) this is a no-op rather than a lie: there
- * is nowhere to navigate to, and the old fallback opened a dialog that no
- * longer exists.
+ * Replaces the `?relay=open` dialog hook. The page is one list of apps, so
+ * "open it" is a navigation, not an open flag, and the only place worth
+ * naming is one app's panel (`?app=`).
  */
-export function useOpenConnections(): (region?: 'messaging' | 'accounts') => void {
+export function useOpenConnections(): (options?: OpenConnectionsOptions) => void {
   const navigate = useSafeNavigate();
   return useCallback(
-    (region?: 'messaging' | 'accounts') => {
+    (options?: OpenConnectionsOptions) => {
       if (!navigate) return;
-      navigate({ to: '/connections', search: { region } as never });
+      navigate({ to: '/connections', search: (options?.app ? { app: options.app } : {}) as never });
     },
     [navigate]
   );

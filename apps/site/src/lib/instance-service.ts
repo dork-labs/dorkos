@@ -369,6 +369,11 @@ export async function listInstances(auth: Auth, userId: string): Promise<Instanc
  * 401s) and stamp `revokedAt`. Ownership is enforced — a user can only revoke
  * their own instances.
  *
+ * The apps the instance connected through the account are ended separately,
+ * in the managed-connection tables this adapter-only module never touches:
+ * the revoke route does it at once, and the scheduled sweep does it for a
+ * revoke from any other path (see `connectors/managed/instance-revocation/`).
+ *
  * @param auth - The Better Auth instance.
  * @param args.userId - The signed-in account performing the revoke.
  * @param args.instanceId - The instance to revoke.

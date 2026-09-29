@@ -39,15 +39,15 @@ DorkOS sends one small message to dorkos.ai about once a day. This is how we can
 }
 ```
 
-| Field                | What it is                                                                                                  |
-| -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `instanceId`         | A random id created on your machine. Marks one install so we do not double-count you. Not traceable to you. |
-| `dorkosVersion`      | Which version of DorkOS you are running.                                                                    |
-| `os`                 | Your platform and chip type, like `darwin-arm64`. Not your hostname.                                        |
-| `runtimesConfigured` | Which agent runtimes you have turned on, like Claude Code or Codex.                                         |
-| `tunnelEnabled`      | Whether you use the tunnel to reach DorkOS from your phone. True or false only.                             |
-| `cloudLinked`        | Whether this install is linked to a DorkOS account. True or false only.                                     |
-| `counts`             | Rough totals of your agents, tasks, and relay adapters. Just numbers, never their names or contents.        |
+| Field                | What it is                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `instanceId`         | A random id created on your machine. Marks one install so we do not double-count you. Not traceable to you.       |
+| `dorkosVersion`      | Which version of DorkOS you are running.                                                                          |
+| `os`                 | Your platform and chip type, like `darwin-arm64`. Not your hostname.                                              |
+| `runtimesConfigured` | Which agent runtimes you have turned on, like Claude Code or Codex.                                               |
+| `tunnelEnabled`      | Whether you use the tunnel to reach DorkOS from your phone. True or false only.                                   |
+| `cloudLinked`        | Whether this install is linked to a DorkOS account. True or false only.                                           |
+| `counts`             | Rough totals of your agents, tasks, and chat apps and other bridges. Just numbers, never their names or contents. |
 
 ## What it never sends
 

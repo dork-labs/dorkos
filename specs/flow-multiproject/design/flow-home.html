@@ -1,0 +1,228 @@
+<h2>4 of 6 · Flow home: every project on one page</h2>
+<p class="subtitle">
+  A full page at /flow. It shows only when you have 2 or more projects. With one, /flow just opens
+  that project. It's sorted by what needs you. The question: a list, or cards?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-page {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 14px 16px;
+    color: #18181b;
+  }
+  .ax-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ax-top h4 {
+    margin: 0;
+    font-size: 16px;
+    color: #18181b;
+  }
+  .ax-btn {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    border: 1px solid #d4d4d8;
+    background: #fff;
+    color: #18181b;
+  }
+  .ax-tabs {
+    display: flex;
+    gap: 14px;
+    font-size: 12px;
+    color: #71717a;
+    border-bottom: 1px solid #f4f4f5;
+    margin: 10px 0 8px;
+    padding-bottom: 5px;
+  }
+  .ax-tabs .on {
+    color: #18181b;
+    font-weight: 600;
+    border-bottom: 2px solid #18181b;
+  }
+  .ax-cap {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    margin: 12px 0 4px;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 11px;
+  }
+  .ax-r {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-g {
+    flex: 1;
+    min-width: 0;
+  }
+  .ax-ib {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid #e4e4e7;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+  }
+  .ax-pn {
+    font-weight: 600;
+    width: 130px;
+    flex: none;
+  }
+  .ax-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .ax-card {
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .ax-card.hot {
+    border-color: #d97706;
+  }
+  .ax-menu {
+    margin-top: 10px;
+    width: 210px;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    background: #fff;
+  }
+  .ax-menu div {
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #18181b;
+  }
+  .ax-menu .on {
+    background: #f4f4f5;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A calm list in three bands (my pick)</h3>
+      <p>
+        Reads top to bottom: what needs you, what's wrong, then the quiet ones in one line each.
+        Works on a phone as it is.
+      </p>
+      <div class="ax">
+        <div class="ax-page">
+          <div class="ax-top">
+            <h4>Flow</h4>
+            <span style="flex: 1"></span><span class="ax-btn">Pause all projects ▾</span>
+          </div>
+          <div class="ax-tabs"><span class="on">Projects</span><span>Capacity this week</span></div>
+          <div class="ax-cap">Needs you · 3</div>
+          <div class="ax-r">
+            <span class="ax-pn">dorkos</span
+            ><span class="ax-g">DOR-2387 is ready for your review</span><span class="ax-ib">👎</span
+            ><span class="ax-ib">👍</span>
+          </div>
+          <div class="ax-r">
+            <span class="ax-pn">dorkos</span
+            ><span class="ax-g">An agent asked: keep the old API?</span
+            ><span class="ax-btn">Answer</span>
+          </div>
+          <div class="ax-r">
+            <span class="ax-pn">blintz</span><span class="ax-g">Reconnect Linear</span
+            ><span class="ax-btn">Reconnect</span>
+          </div>
+          <div class="ax-cap">Something's off · 1</div>
+          <div class="ax-r">
+            <span class="ax-pn">client-api</span><span class="ax-g">Paused until 9:00 tomorrow</span
+            ><span class="ax-btn">Resume</span>
+          </div>
+          <div class="ax-cap">All fine · 2</div>
+          <div class="ax-r">
+            <span class="ax-pn">dorkos-site</span
+            ><span class="ax-g ax-muted">2 running · 4 up next</span>
+          </div>
+          <div class="ax-r">
+            <span class="ax-pn">client-app</span
+            ><span class="ax-g ax-muted">Nothing ready to work on</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>A card per project</h3>
+      <p>
+        Each project is a tile. Nice with 3 to 6 projects. With more, you scroll and hunt. On a
+        phone it turns into a list anyway.
+      </p>
+      <div class="ax">
+        <div class="ax-page">
+          <div class="ax-top">
+            <h4>Flow</h4>
+            <span style="flex: 1"></span><span class="ax-btn">Pause all projects ▾</span>
+          </div>
+          <div class="ax-tabs"><span class="on">Projects</span><span>Capacity this week</span></div>
+          <div class="ax-grid">
+            <div class="ax-card hot">
+              <b>dorkos</b>
+              <div class="ax-muted">2 need you · 2 running</div>
+              <div style="margin-top: 6px"><span class="ax-btn">Open</span></div>
+            </div>
+            <div class="ax-card hot">
+              <b>blintz</b>
+              <div class="ax-muted">Can't reach Linear</div>
+              <div style="margin-top: 6px"><span class="ax-btn">Reconnect</span></div>
+            </div>
+            <div class="ax-card">
+              <b>client-api</b>
+              <div class="ax-muted">Paused until 9:00 tomorrow</div>
+              <div style="margin-top: 6px"><span class="ax-btn">Resume</span></div>
+            </div>
+            <div class="ax-card">
+              <b>dorkos-site</b>
+              <div class="ax-muted">2 running · 4 up next</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Same for both: every pause asks how long</h3>
+  <div class="ax">
+    <div class="ax-menu">
+      <div class="on">Until tomorrow 9am</div>
+      <div>For 1 hour</div>
+      <div>Until I resume</div>
+    </div>
+  </div>
+  <ul>
+    <li>While paused, the button reads "Paused until 9:00" with Resume next to it.</li>
+    <li>Clicking a project opens its view, the same one as the Flow tab, as a full page.</li>
+    <li>"Capacity this week" is the second tab, never the default.</li>
+  </ul>
+</div>

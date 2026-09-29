@@ -107,6 +107,19 @@ describe('heldSentence', () => {
     );
   });
 
+  it('does not promise one room when the agent is working in several (DOR-2104)', () => {
+    // With `rooms.maxConcurrentTurnsPerAgent` above one, an agent at its limit
+    // has several turns in the way and whichever finishes first may free it.
+    // The named room is only the one it has been in longest, so the sentence
+    // keeps it as a place to look and stops promising it.
+    expect(heldSentence(['Mio Clicker PM'], '#mio-engagement', true)).toBe(
+      'Mio Clicker PM will pick this up when it finishes in #mio-engagement or another conversation'
+    );
+    expect(heldSentence(['Mio Clicker PM'], null, true)).toBe(
+      'Mio Clicker PM will pick this up when it finishes one of its other conversations'
+    );
+  });
+
   it('drops the room once more than one agent is waiting', () => {
     // With two there is more than one conversation in the way, and naming one of
     // them would be picking a favourite that the sentence cannot justify.

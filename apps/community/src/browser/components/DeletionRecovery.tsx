@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button } from '@dork-labs/ui';
 import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
 import { describeError, request } from '../api.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
@@ -44,9 +45,9 @@ export function DeletionRecovery({ communityId }: { communityId: string }) {
           <p role="alert">
             {error || 'Deletion settings are only available to this community’s owner.'}
           </p>
-          <a className="button" href="/">
-            Back to your communities
-          </a>
+          <Button asChild variant="outline">
+            <a href="/">Back to your communities</a>
+          </Button>
         </section>
       )}
     </main>

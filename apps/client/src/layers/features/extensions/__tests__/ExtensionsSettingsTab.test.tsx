@@ -396,7 +396,7 @@ describe('ExtensionsSettingsTab', () => {
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(screen.getByText(/requires dorkos.*99\.0\.0/i)).toBeInTheDocument();
+      expect(screen.getByText(/needs dorkos 99\.0\.0 or newer/i)).toBeInTheDocument();
     });
   });
 

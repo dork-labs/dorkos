@@ -1,0 +1,92 @@
+# Implementation log: marketplace-package-file-ownership (DOR-2245)
+
+The spec is `02-specification.md` (revision 7). This log records what shipped for each task, where the code differs from the spec and why, and the verification run.
+
+## Phase A: the contract and the standalone modules
+
+This phase ran before DOR-2194 lands. None of it touches `marketplace-installer.ts` install/update, `flows/uninstall.ts`, `flows/update.ts` or `lib/locate-install.ts`.
+
+| Task                                   | Commit      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1 `userEditable`, reserved paths     | `91f4ac2b5` | **Deviation:** `userEditable` is `.optional()`, not `.default([])`. A defaulted field makes every hand-built manifest literal in the server's tests a type error, because the output type requires the field. Readers use `userEditable ?? []`. Mutation-checked: 3 of 3 critical lines killed.                                                                                                                                                                                                                                                                              |
+| 1.2 `RESERVED_PATH_SHIPPED`            | `2fab5e4d0` | `validatePackage(path, { tree: 'installed' })` skips the check; the installed scanner passes it. A mutation first survived because the `node_modules` fixture was not a reserved name; the fixture was fixed so the test can fail.                                                                                                                                                                                                                                                                                                                                           |
+| 1.3 shared types + markers             | `4a5a6db8d` | `MARKETPLACE_STAGE_DIR_MARKER` and `MARKETPLACE_UNINSTALL_DIR_MARKER` were appended to DOR-2273's `MARKETPLACE_INSTALL_SIBLING_MARKERS`. The server's `UninstallResult` mirror is left for task 2.5, which lies in the files DOR-2194 touches.                                                                                                                                                                                                                                                                                                                               |
+| 1.4 `writeConventionFileIfAbsent`      | `4bf948aa4` | Mutation-checked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 2.10 strip reserved paths when staging | `8d78cb4b9` |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 2.1 record module + classifier         | `9517b972c` | **Deviation from TDD order:** the module was written before its tests. Every critical line was then mutation-checked: 18 mutations. The first run left 5 survivors, each of which became a new test or a code simplification (two redundant `throughSymlink` checks and a redundant exclusion were removed). One behaviour was refined while testing: a pending `.dork-new` that the person edited is theirs, and is saved rather than refreshed.                                                                                                                            |
+| 3.1 `${CLAUDE_PLUGIN_DATA}` in harness | `79448e427` | **Deviations:** the `export` prefix applies to the Claude Code settings merge only. The generated Codex/Cursor/Copilot hook file is shared, and Copilot also runs PowerShell. The prefix is also kept out of `projectedHooks`, so existing hook approvals still match. The adopt-refusal sentences (`adopt/refusals.ts` S7b / `bodyToken`) are unchanged: they are frozen copy about any `${CLAUDE_…}` token in authored skills, not about installed packages. Existing tests that compared exact settings command strings now strip the prefix through one helper per file. |
+
+## Phase B: installer, uninstall, update and recovery
+
+Rebased onto `a875cc496` (DOR-2194 and DOR-2249 merged). The spec was reconciled first (`046584159`); DOR-2274 moved flow's settings to `<project>/.agents/flow/`, so the proof below uses a real flow install from before that move.
+
+| Task                                      | Commit      | Notes                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2.4 an identity decides what is installed | `ea4b6adfe` | `hasPackageIdentity` (a `.dork/manifest.json` or `.claude-plugin/plugin.json`) gates `locateInstallRoot`, the uninstall probe and the conflict detector, so a root holding only kept files reads as not installed.                                                                                                       |
+| 2.2 transaction ownership                 | `8c26e1ff4` | Staging moved to a same-filesystem sibling; the person's files are cloned from the live root before the backup move, then a late-write pass runs before commit. **Addition:** `recoverInterruptedInstall` gained an `ignore` option so a transaction's second settle does not treat its own staging dir as crash debris. |
+| 2.3 every install flow                    | `6167f6e6d` | One helper (`lib/flow-ownership.ts`) for all five flows; the transaction creates `.dork/data`.                                                                                                                                                                                                                           |
+| 2.5 in-place journaled uninstall          | `f8654eb99` | **Deviation:** the flow option is `replacing: true` (an update's uninstall half) and replaces `deactivateShape`, which only covered one of the things an update must skip (the agent's removal from the team is the other).                                                                                              |
+| 2.11 recovery rows                        | `58a95c0ae` | Stage dirs are deleted; uninstall siblings follow their journal (kept without one), and a rollback restores a parked `agent.json`. A committed backup beside an install missing a recorded file is kept.                                                                                                                 |
+| 2.6 update                                | `caccb738f` | The `os.tmpdir()` snapshot, copy-back and `findInstallRootFromPreservedPath` are deleted, not deprecated.                                                                                                                                                                                                                |
+| 2.7 agent adoption                        | `f219a8bcb` | `createAgentWorkspace(input, meshCore, { marketplace: true })`. Adoption announces `registered` only when the agent was not already on the team.                                                                                                                                                                         |
+| 2.8 legacy record                         | `a8a5d1a1b` | The reserved paths (`.dork/data`, secrets) are left out of the "kept" warning, which counts "item(s)".                                                                                                                                                                                                                   |
+| 2.9 copy                                  | `376f3993d` | Operating-skills pack bumped to v24.                                                                                                                                                                                                                                                                                     |
+| 4.1 docs                                  | `a897e460e` | One changelog fragment covers the whole item.                                                                                                                                                                                                                                                                            |
+
+### 4.2 proof
+
+Run through temporary vitest harnesses (deleted, never committed) against the real installer, the real fetcher and real child processes, on this Mac (APFS, the machine under heavy load from other agents: load ~20).
+
+**A real legacy flow install.** A copy of a working flow 0.7.3 install (commit `ee1c8eb`, settings in `config/`, no installed-files record) was reinstalled from a `git archive` of the current `plugins/flow` (0.10.0) through `installer.install`:
+
+- The legacy rebuild fetched exactly one commit, `ee1c8eb…` at `plugins/flow` under the install-time name `flow`, and the rebuilt record was trusted (not `inferred`): 145 files, neither `config/config.json` nor `config/config.local.json` listed.
+- Both settings files are byte-identical before and after (sha256 prefixes `90690cabefd6d67e`, `7cd8e21cfa5fdc44`).
+- No `.dork-old` or `.dork-new` copies, no file notices. One warning, as expected: the new version came from a local path, so the source changed.
+- 2103 ms end to end, including the fetch.
+
+**SIGKILL.** On a fresh copy of the same install (870 files, plus an extension so the uninstall has a side effect to stop in), a child process was killed with SIGKILL at three points, and `recoverInterruptedInstall` was run afterwards. Each time the root came back byte-identical to the snapshot and no sibling was left:
+
+| Killed                                                         | Left beside the root      | Recovery                 |
+| -------------------------------------------------------------- | ------------------------- | ------------------------ |
+| mid-uninstall, in the side effects (after the journaled moves) | `flow.dorkos-uninstall-…` | `uninstall: rolled-back` |
+| mid-install, after the new tree was moved in, before commit    | `flow.dorkos-bak-…`       | `backup: rolled-back`    |
+| mid-install, while staging                                     | `flow.dorkos-stage-…`     | stage dir deleted        |
+
+A first attempt spawned the child through `pnpm exec`; SIGKILL then hit pnpm while the real node process lived on, so recovery correctly reported the records as in flight and settled nothing. The proof kills the node process itself.
+
+**~1 GB.** 2000 person files of 512 KB (1,048,576,000 bytes) under the root of a flow install with a record:
+
+- Reinstall (clone the person's files into the staged tree, late-write pass, commit): **3235 ms**; all 2000 files present afterwards.
+- Uninstall (journaled move of the recorded files only): **263 ms**; the person's 2000 files stayed in place.
+
+### Code review fixes
+
+Every fix began with a test that failed first; the three survivors in item 7 were mutation-checked.
+
+| #   | Fix                                                                                                                                              | Commit      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+| 1   | An agent's own `SOUL.md`, `MEMORY.md` and `agent.json` replace an unrecorded shipped seed (they were treated as a collision and set aside)       | `0e6e50ab8` |
+| 2   | Reserved and identity paths compare NFKC-folded and lower-cased, so `.dork/Secrets.json` is refused, stripped and never user-editable            | `43331e340` |
+| 3   | The legacy trust check and fallback read only regular files reached through real directories (a FIFO hung it; a symlink could reach `/dev/zero`) | `2e0076a66` |
+| 4   | `finishUninstall` prunes the record before deleting the sibling                                                                                  | `8132ef643` |
+| 5   | A different-source agent install runs the full unregister cascade before setting the old identity aside                                          | `1100fdb8d` |
+| 6   | An agent uninstall moves `agent.json` to the parked name (a git-tracked one is still only copied)                                                | `bc43cd16c` |
+| 7   | Tests kill M7 (roll forward after side effects), M16 (untouched-clone guard) and M15 (inode compared)                                            | `4a0c138ed` |
+| 8   | The startup sweep names agent folders a rolled-back uninstall restored; the server syncs them once Mesh is up                                    | `8d1a0424d` |
+| 9   | Identity `.dork-old` copies are journaled and removed on rollback                                                                                | `4bc93672c` |
+| 10  | The denial check compares real paths                                                                                                             | `3f54bc645` |
+| 12  | Only directories the uninstall emptied are pruned; a person's empty folder stays (kills M23)                                                     | see log     |
+
+### Delta review fixes (after rebasing onto DOR-2195)
+
+| #   | Fix                                                                                                                                                                                                                                                                           | Commit      |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 1   | `assertInstallable` (schedules croner rejects, unparseable `SKILL.md`) runs before the update's uninstall half; failures it cannot predict (npm, disk, an extension compiled against npm dependencies) still leave the package uninstalled with the person's files and record | `8311e85a6` |
+| 2   | `userEditable` may not reach an effect-bearing path: the defaults are `EFFECT_BEARING_PATHS`, which the preview readers now import, and `validatePackage` refuses paths plugin.json declares (`USER_EDITABLE_EFFECT_PATH`); all 14 marketplace plugins still validate         | `7439ccdc5` |
+| 3   | Journal `moves[].path`, `unitFiles[]` and `savedCopies[]` are `RecordPathSchema`s; a tampered journal is unreadable and its sibling kept                                                                                                                                      | `748aef76a` |
+| 4   | `settleInterruptedInstall` reports `restoredAgent`; the uninstall flow registers that agent again before removing it                                                                                                                                                          | `9b55c8294` |
+| 5   | `types.ts` doc comment on its own line                                                                                                                                                                                                                                        | `d165320f1` |
+
+### Verification
+
+See the report for the final targeted runs.

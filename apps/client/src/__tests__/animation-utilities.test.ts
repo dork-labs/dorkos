@@ -2,16 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 
-// Read the app's single CSS entry point straight from disk. The Radix/shadcn
-// surfaces (sheet, dialog, popover, dropdown-menu, context-menu, select,
-// tooltip, hover-card, alert-dialog) all style their arrival — and every one of
-// them but `dropdown-menu` and `select`, which leave at once on purpose
-// (DOR-1834, DOR-1835), their departure too — with
-// `data-[state=open]:animate-in`, `slide-in-from-*`, `fade-*`, `zoom-*`. Those
-// utilities are NOT part of core Tailwind — they come from `tw-animate-css`.
-// Without the import they resolve to nothing and every one of those surfaces
-// pops instead of animating. This guards the import against silent removal.
+// The client imports one package-owned animation entry after Tailwind. Following
+// that boundary protects real utilities without demanding duplicate imports.
+const uiRoot = dirname(createRequire(import.meta.url).resolve('@dork-labs/ui/package.json'));
+const sharedCss = readFileSync(resolve(uiRoot, 'tailwind.css'), 'utf8');
 const indexCss = readFileSync(
   resolve(dirname(fileURLToPath(import.meta.url)), '../index.css'),
   'utf8'
@@ -32,22 +28,24 @@ const twAnimateCss = readFileSync(
 );
 
 describe('animation utilities wiring (index.css)', () => {
-  it('imports tw-animate-css so data-[state] animation utilities resolve', () => {
-    expect(indexCss).toMatch(/@import\s+['"]tw-animate-css['"]/);
+  it('loads animation utilities once through the shared package entry', () => {
+    expect(indexCss).toMatch(/@import\s+['"]@dork-labs\/ui\/tailwind.css['"]/);
+    expect(indexCss).not.toMatch(/@import\s+['"]tw-animate-css['"]/);
+    expect(sharedCss.match(/@import\s+['"]tw-animate-css['"]/g)).toHaveLength(1);
   });
 
-  it('imports tw-animate-css after tailwindcss so its @utility rules land in the utilities layer', () => {
+  it('loads shared animation utilities after Tailwind without changing its layer', () => {
     const tailwindIndex = indexCss.indexOf("@import 'tailwindcss'");
-    const animateIndex = indexCss.search(/@import\s+['"]tw-animate-css['"]/);
+    const sharedIndex = indexCss.search(/@import\s+['"]@dork-labs\/ui\/tailwind.css['"]/);
     expect(tailwindIndex).toBeGreaterThanOrEqual(0);
-    expect(animateIndex).toBeGreaterThan(tailwindIndex);
+    expect(sharedIndex).toBeGreaterThan(tailwindIndex);
   });
 
   it('defines the collapsible keyframes the Collapsible primitive wears', () => {
     // This repo has shipped a class name whose keyframe did not exist twice
     // (`animate-tasks` for months, and `animations.md` pointed at accordion
     // keyframes that were never written) — a dead animation looks exactly like
-    // a working one in a diff. `shared/ui/collapsible.tsx` wears both of these.
+    // a working one in a diff. the shared Collapsible implementation wears both of these.
     // The keyframes live in `tw-animate-css`, not `index.css` (DOR-1751): a
     // hand-written duplicate shipped here once, and — measured against the
     // compiled stylesheet — the library's rule is the one that actually wins,

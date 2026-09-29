@@ -41,7 +41,7 @@
  *
  * @module services/notifications/emitters/capability-approval
  */
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { cancelEscalationByKey } from '../escalation-service.js';
 import { notificationEntry, type NotificationPayload } from '../notification-registry.js';
@@ -79,7 +79,9 @@ export function capabilityApprovalPayload(
   return {
     approvalId: approval.approvalId,
     capabilityId: approval.capabilityId,
-    capabilityTitle: approval.capabilityTitle,
+    // The same heading the card draws, so a connected-app action reads "Delete
+    // message in Gmail cannot be undone…" rather than restating a generic title.
+    capabilityTitle: approvalHeading(approval),
     ...(agentId ? { agentId } : {}),
     requestedBy: approval.requestedBy ?? UNNAMED_REQUESTER,
   };

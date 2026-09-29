@@ -5,7 +5,9 @@
  * — both enabled and disabled — augmented with the package count derived
  * from each source's `marketplace.json#plugins.length`. Counts are best
  * effort: a fetch failure for one source falls back to `packageCount: 0`
- * and logs a warning rather than failing the entire call.
+ * and logs a warning rather than failing the entire call. Each row also
+ * carries `lastFetch`, which says whether that 0 is an empty marketplace or a
+ * listing that didn't load (DOR-2324).
  *
  * The actual `server.tool(...)` registration is performed by the phase-4
  * server-wiring task (#14) which imports this factory alongside its
@@ -14,6 +16,8 @@
  *
  * @module services/marketplace-mcp/tool-list-marketplaces
  */
+import type { SourceLastFetch } from '@dorkos/shared/marketplace-schemas';
+import { describeLastFetch } from '../marketplace/source-listing.js';
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 
 /**
@@ -30,6 +34,12 @@ interface ListedMarketplace {
   enabled: boolean;
   /** Number of plugin entries in the source's `marketplace.json` (0 on error). */
   packageCount: number;
+  /**
+   * How the most recent fetch of the listing went (DOR-2324) — including the
+   * one this call just made. It is what tells an empty marketplace (`fetched`,
+   * 0 packages) from one whose listing didn't load (`failed`, with a reason).
+   */
+  lastFetch: SourceLastFetch;
 }
 
 /**
@@ -66,6 +76,7 @@ export function createListMarketplacesHandler(deps: MarketplaceMcpDeps) {
           source: src.source,
           enabled: src.enabled,
           packageCount,
+          lastFetch: await describeLastFetch(deps.cache, src.name),
         };
       })
     );

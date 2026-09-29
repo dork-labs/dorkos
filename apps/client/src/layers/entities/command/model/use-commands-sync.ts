@@ -9,10 +9,6 @@ import { useEventSubscription } from '@/layers/shared/model';
  * invalidates every `['commands']` query so the chat command palette re-fetches
  * the runtime's authoritative list — newly-installed plugin commands (e.g.
  * `/flow:*`) appear, removed ones disappear — without a page reload.
- *
- * Mount once near the app root. In embedded mode (Obsidian) the in-process
- * transport yields no generic events, so the subscription is an inert no-op
- * there; that surface relies on the install mutation's direct invalidation.
  */
 export function useCommandsSync(): void {
   const queryClient = useQueryClient();

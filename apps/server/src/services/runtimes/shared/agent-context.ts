@@ -26,7 +26,7 @@
  * @module services/runtimes/shared/agent-context
  */
 import os from 'node:os';
-import { readManifest } from '@dorkos/shared/manifest';
+import { readHomeManifest, type AgentHome } from '../../core/agent-identity/index.js';
 import { agentBrowserStateFileOf } from '@dorkos/shared/agent-browser';
 import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
 import {
@@ -231,10 +231,10 @@ You are one session of this agent. Other sessions of you exist in other rooms, D
  * worst case is bounded and known** — it is a prompt budget, not disk thrift.
  *
  * @param agentId - The agent whose memory this is, for the log line.
- * @param agentPath - The agent's own directory. The provider resolves
+ * @param agentPath - The agent's registered home. The provider resolves
  *   `<agentPath>/.dork/MEMORY.md` itself; nothing here builds a path.
  */
-async function buildMemoryBlock(agentId: string, agentPath: string): Promise<string> {
+async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<string> {
   let snapshot: MemorySnapshot;
   try {
     snapshot = await getMemoryProvider().getSnapshot({ agentId, agentPath });
@@ -407,11 +407,12 @@ function buildAgentBrowserBlock(servers: readonly ManagedMcpServer[]): string {
  * Injection order: identity -> persona (SOUL.md) -> safety boundaries (NOPE.md)
  * -> session model -> DorkOS knowledge.
  *
- * @param cwd - Working directory to check for agent manifest and convention files.
+ * @param home - The agent's registered home — the only folder its manifest and
+ *   convention files are read from (spec `agent-home-desk` I1).
  * @returns XML block string, or empty string if no manifest.
  */
-async function buildAgentBlock(cwd: string): Promise<AgentContextAppend> {
-  const manifest = await readManifest(cwd);
+async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
+  const manifest = await readHomeManifest(home);
   if (!manifest) return EMPTY_APPEND;
 
   // Zod v4 + openapi extension drops persona fields from inferred type
@@ -436,7 +437,7 @@ async function buildAgentBlock(cwd: string): Promise<AgentContextAppend> {
   const soulEnabled = conventions?.soul !== false;
 
   if (soulEnabled) {
-    let soulContent = await readConventionFile(cwd, 'SOUL.md');
+    let soulContent = await readConventionFile(home, 'SOUL.md');
 
     if (soulContent) {
       // If SOUL.md has a trait section, regenerate it with current trait values
@@ -456,7 +457,7 @@ async function buildAgentBlock(cwd: string): Promise<AgentContextAppend> {
   const nopeEnabled = conventions?.nope !== false;
 
   if (nopeEnabled) {
-    const nopeContent = await readConventionFile(cwd, 'NOPE.md');
+    const nopeContent = await readConventionFile(home, 'NOPE.md');
     if (nopeContent) {
       blocks.push(`<agent_safety_boundaries>\n${nopeContent}\n</agent_safety_boundaries>`);
     }
@@ -469,7 +470,7 @@ async function buildAgentBlock(cwd: string): Promise<AgentContextAppend> {
   blocks.push(buildSessionModelBlock());
 
   // --- Agent memory block (default ON) ---
-  const memory = conventions?.memory !== false ? await buildMemoryBlock(manifest.id, cwd) : '';
+  const memory = conventions?.memory !== false ? await buildMemoryBlock(manifest.id, home) : '';
 
   // --- Everything after the memory block ---
   const tail: string[] = [];
@@ -543,14 +544,20 @@ const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '' };
  * tool documentation: identity changes when the agent is edited, tool docs never
  * change, and the cacheable prefix should be the part that never moves.
  *
- * @param cwd - The session's working directory. Agent identity, persona, and
- *   safety boundaries are read from its `.dork/` convention files; an empty
- *   string comes back for a directory that hosts no agent manifest.
+ * @param home - The home of the agent the session acts as, resolved through
+ *   `resolveAgentHome`, or `undefined` for a session about a directory. Agent
+ *   identity, persona, and safety boundaries are read from its `.dork/`
+ *   convention files — never from `cwd`, whose committed `.dork/` may be a
+ *   stale branch's or another agent's (spec `agent-home-desk` I1, I2).
+ * @param cwd - The session's working directory, for the `<env>` block.
  * @returns The joined blocks, or `''` when nothing could be built.
  */
-export async function buildAgentContextAppend(cwd: string): Promise<AgentContextAppend> {
+export async function buildAgentContextAppend(
+  home: AgentHome | undefined,
+  cwd: string
+): Promise<AgentContextAppend> {
   const [agent, profile, envBlock] = await Promise.all([
-    settle(buildAgentBlock(cwd), EMPTY_APPEND),
+    home ? settle(buildAgentBlock(home), EMPTY_APPEND) : EMPTY_APPEND,
     settle(Promise.resolve(buildUserProfileBlockFromConfig()), ''),
     settle(buildEnvBlock(cwd), ''),
   ]);

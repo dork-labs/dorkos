@@ -10,7 +10,7 @@ import type { RoomEntry } from '@/layers/entities/room';
 export type ReplyArrival =
   /** It was already there when the panel opened. Drawn at rest. */
   | 'at-rest'
-  /** It landed while the panel was open. The connector draws, it bounces in. */
+  /** It landed while the panel was open: it drops in with a bounce (design record §5.3). */
   | 'dropped'
   /**
    * It landed while its author was on the presence line — so it IS the answer

@@ -12,18 +12,17 @@
  * what esbuild actually does, which is exactly how the directory case
  * below survived an earlier round of this fix.
  *
- * 1. `compile()`/`compileServer()` read the entry point themselves via
- *    plain `fs.readFile`, to compute the content hash a cache entry would
- *    be keyed by — BEFORE esbuild ever runs. An unreadable entry point
- *    (`chmod 000`) fails HERE. This used to be unguarded: the rejection
- *    propagated uncaught through `compile()`/`compileServer()`, then
- *    through `ExtensionServerLifecycle.initialize()` and
+ * 1. An unreadable entry point (`chmod 000`). This once failed in a plain
+ *    `fs.readFile` the compiler made before esbuild ran, and the rejection
+ *    propagated uncaught through `compileServer()`, then through
+ *    `ExtensionServerLifecycle.initialize()` and
  *    `ExtensionManager.initialize()`'s per-extension loop — a transient
  *    permission or file-descriptor error on ONE extension's entry point
- *    could abort startup for every extension queued after it.
- * 2. Once past that read, esbuild's own binary reads the entry point again
- *    (and everything it imports) while bundling. An unreadable file the
- *    entry point *imports* fails HERE instead, inside `build()`, and
+ *    could abort startup for every extension queued after it. esbuild now
+ *    reads the entry itself, and its failure must degrade the same way.
+ * 2. esbuild's own binary reads everything the entry point imports while
+ *    bundling. An unreadable file the entry point *imports* fails inside
+ *    `build()`, and
  *    rejects with a `BuildFailure` carrying a POPULATED `errors[]` — the
  *    same *shape* a genuine compile error has, distinguished only by
  *    esbuild's own "Cannot read file ...: permission denied" prose (see
@@ -50,6 +49,17 @@ import path from 'path';
 import os from 'os';
 import { ExtensionCompiler } from '../extension-compiler.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
+
+/**
+ * Assert the compiler recorded no build of `extId` in `cacheDir`: an
+ * uncached failure leaves no manifest behind to replay.
+ */
+async function expectNothingCached(cacheDir: string, extId: string): Promise<void> {
+  const entries = await fs.readdir(cacheDir).catch(() => [] as string[]);
+  expect(entries.filter((e) => e.startsWith(`${extId}.`) && e.endsWith('.manifest.json'))).toEqual(
+    []
+  );
+}
 
 /** True when this process can bypass a `chmod 000` file permission (root on POSIX). */
 const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
@@ -87,7 +97,7 @@ describe.skipIf(isRoot)('ExtensionCompiler — real filesystem, unreadable files
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('does not cache or crash on an unreadable entry point (fails before esbuild runs)', async () => {
+  it('does not cache or crash on an unreadable entry point', async () => {
     const serverPath = path.join(tmpDir, 'server.ts');
     await fs.writeFile(serverPath, 'export default function register() {}');
     await fs.chmod(serverPath, 0o000);
@@ -95,16 +105,14 @@ describe.skipIf(isRoot)('ExtensionCompiler — real filesystem, unreadable files
 
     const record = makeServerRecord('unreadable-entry-ext', tmpDir, serverPath);
 
-    // The bug this guards: this used to reject uncaught (a plain Node
-    // EACCES from fs.readFile, never reaching any of the compiler's own
-    // error handling) instead of resolving to a structured error result.
+    // The bug this guards: this used to reject uncaught instead of
+    // resolving to a structured error result.
     const result = await compiler.compileServer(record);
 
     expect('error' in result).toBe(true);
     if (!('error' in result)) throw new Error('expected error result');
     expect(result.error.errors[0]?.text).toMatch(/EACCES|permission denied/);
-    // No source was ever read, so there is no content hash to cache
-    // against — this failure is uncacheable by construction.
+    // An environment failure is never cached, so it has no cache key.
     expect(result.sourceHash).toBe('');
 
     // Nothing under the server cache dir claims this extension id.
@@ -142,14 +150,10 @@ describe.skipIf(isRoot)('ExtensionCompiler — real filesystem, unreadable files
     // not some other error (e.g. a resolution failure with different text).
     expect(result.error.errors[0]?.text).toMatch(/Cannot read file .*: permission denied/);
 
-    const cachedErrorPath = path.join(
-      tmpDir,
-      'cache',
-      'extensions',
-      'server',
-      `unreadable-import-ext.${result.sourceHash}.error.json`
+    await expectNothingCached(
+      path.join(tmpDir, 'cache', 'extensions', 'server'),
+      'unreadable-import-ext'
     );
-    await expect(fs.access(cachedErrorPath)).rejects.toThrow();
 
     // Restore readability (simulating the environment recovering) and
     // confirm the next attempt succeeds instead of replaying a cached error.
@@ -199,14 +203,10 @@ describe.skipIf(isRoot)('ExtensionCompiler — real filesystem, unreadable files
       result.error.errors.some((e) => /Cannot read directory .*: permission denied/.test(e.text))
     ).toBe(true);
 
-    const cachedErrorPath = path.join(
-      tmpDir,
-      'cache',
-      'extensions',
-      'server',
-      `unreadable-dir-ext.${result.sourceHash}.error.json`
+    await expectNothingCached(
+      path.join(tmpDir, 'cache', 'extensions', 'server'),
+      'unreadable-dir-ext'
     );
-    await expect(fs.access(cachedErrorPath)).rejects.toThrow();
 
     // Directory readable again — confirm the next attempt succeeds instead
     // of replaying a cached error.

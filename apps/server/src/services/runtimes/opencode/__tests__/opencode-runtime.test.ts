@@ -61,6 +61,15 @@ import {
   assistantMessage,
   messageUpdated,
 } from './opencode-sse-fixtures.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../providers/check-dependencies.js', () => ({
   checkOpenCodeDependencies: vi.fn(),
@@ -2325,7 +2334,7 @@ describe('OpenCodeRuntime', () => {
 
       const prompt = JSON.stringify(harness.client.session.promptAsync.mock.calls.at(-1));
       expect(prompt).toContain('dorkos_connections_connectors_list_granted_connections');
-      expect(prompt).toContain('Currently granted accounts for this agent session: 1');
+      expect(prompt).toContain('Accounts this agent session can use right now: 1');
       expect(prompt).not.toContain('private-revision');
       const connectorAdd = harness.client.mcp.add.mock.calls.find(
         (call) => call[0]?.body?.name === 'dorkos_connections'
@@ -2730,6 +2739,56 @@ describe('OpenCodeRuntime', () => {
       } finally {
         fixture.close();
       }
+    });
+
+    describe('a room turn (DOR-2091, spec `agent-home-desk` §5.1)', () => {
+      // A room turn stands in its agent's HOME and names that agent: it is bound
+      // as the agent and asks for its `dorkos` server; a turn naming ANOTHER
+      // agent gets no binding. Seeded: dropping the room-turn cross-check
+      // reddens the second.
+      /** Run one room turn for `agentPath` standing in the agent's home, to completion. */
+      async function roomTurnFor(harness: ReturnType<typeof makeRuntime>, agentPath: string) {
+        const { finished } = consume(
+          harness.runtime.sendMessage(nextSessionId(), 'hello', {
+            cwd: DIRECTORY,
+            roomTurn: {
+              roomId: '01ROOM',
+              authorId: 'author-1',
+              turnId: 'turn-1',
+              cwd: DIRECTORY,
+              agentPath,
+            },
+          })
+        );
+        const connection = await openTurn(harness);
+        for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+          connection.push(globalEvent(DIRECTORY, event));
+        }
+        await finished;
+      }
+
+      it('binds the turn to the AGENT and asks for its dorkos server', async () => {
+        const harness = makeRuntime();
+        const principals = enableConnectorTools(harness);
+
+        await roomTurnFor(harness, DIRECTORY);
+
+        expect(principals.openTurn).toHaveBeenCalledWith(
+          expect.objectContaining({ agentPath: DIRECTORY }),
+          expect.anything()
+        );
+        expect(resolveDorkosMcpInjection).toHaveBeenCalledWith(DIRECTORY, expect.anything());
+      });
+
+      it("gives a turn for ANOTHER agent no binding in this agent's home", async () => {
+        const harness = makeRuntime();
+        const principals = enableConnectorTools(harness);
+
+        await roomTurnFor(harness, '/agents/someone-else');
+
+        expect(principals.openTurn).not.toHaveBeenCalled();
+        expect(resolveDorkosMcpInjection).not.toHaveBeenCalledWith(DIRECTORY, expect.anything());
+      });
     });
   });
 });

@@ -24,6 +24,21 @@ function invalidateProfileReaders(queryClient: ReturnType<typeof useQueryClient>
   void queryClient.invalidateQueries({ queryKey: roomKeys.details() });
 }
 
+/** How a surface that shows a write's refusal itself opts out of the toast. */
+export interface InlineErrorOptions {
+  /**
+   * Whether this failure is being shown by the surface right now. Asked when
+   * the failure lands, so it must answer `false` once the surface is gone —
+   * see `useMountedRef` — or a failure after it closed is shown nowhere.
+   */
+  isShownInline?: (error: Error) => boolean;
+}
+
+/** The mutation `meta` for {@link InlineErrorOptions}; empty when not given. */
+function inlineMeta(options: InlineErrorOptions | undefined) {
+  return options?.isShownInline ? { isShownInline: options.isShownInline } : undefined;
+}
+
 /** What a photo write needs: the bytes and a name for the multipart part. */
 export interface AvatarUpload {
   /** The chosen file. */
@@ -33,15 +48,17 @@ export interface AvatarUpload {
 /**
  * Save what the operator wants to be called.
  *
+ * @param options - How the calling surface shows a refusal itself.
  * @returns A TanStack mutation taking the new display name.
  */
-export function useUpdateProfileName() {
+export function useUpdateProfileName(options?: InlineErrorOptions) {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (displayName: string) => transport.updateProfile(displayName),
     onSuccess: () => invalidateProfileReaders(queryClient),
+    meta: inlineMeta(options),
   });
 }
 
@@ -104,9 +121,10 @@ export function useSetIdentityLinkedToMe() {
  * nothing agent-reachable writes a handle stays a property of one route rather
  * than a rule two routes have to keep agreeing on.
  *
+ * @param options - How the calling surface shows a refusal itself.
  * @returns A TanStack mutation taking the author id and the wanted handle.
  */
-export function useSetAuthorHandle() {
+export function useSetAuthorHandle(options?: InlineErrorOptions) {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
@@ -114,5 +132,6 @@ export function useSetAuthorHandle() {
     mutationFn: ({ authorId, handle }: { authorId: string; handle: string }) =>
       transport.setAuthorHandle(authorId, handle),
     onSuccess: () => invalidateProfileReaders(queryClient),
+    meta: inlineMeta(options),
   });
 }

@@ -94,6 +94,19 @@ describe('deriveDefaultName', () => {
   it('handles SSH-style git URLs by treating the whole string as a path', () => {
     expect(deriveDefaultName('git@github.com:dorkos/marketplace.git')).toBe('marketplace');
   });
+
+  it.each([
+    ['https://github.com/acme/.github', 'github'],
+    ['https://github.com/acme/-team_tools', 'team_tools'],
+    ['https://example.com/my%20plugins', 'my-plugins'],
+    ['file:///Users/me/My Marketplace', 'my-marketplace'],
+    ['https://github.com/acme/...', 'marketplace'],
+  ])('derives a name the server accepts from %s (DOR-2304)', (url, name) => {
+    // Purpose: the server now refuses names that could not key the listing
+    // cache, and a name the CLI made up itself must never be one of them.
+    expect(deriveDefaultName(url)).toBe(name);
+    expect(deriveDefaultName(url)).toMatch(/^[a-z0-9][a-z0-9._-]{0,127}$/);
+  });
 });
 
 describe('runMarketplaceAdd', () => {
@@ -132,6 +145,53 @@ describe('runMarketplaceAdd', () => {
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allLogs).toContain("Added marketplace 'dorkos-community'");
     expect(allLogs).toContain('https://github.com/dorkos/marketplace');
+  });
+
+  it('says the listing is ready and how many packages it names (DOR-2304)', async () => {
+    // Purpose: the operator learns in plain words that they can install now.
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse(201, { ...SOURCE_FIXTURE_A, listing: { fetched: true, packageCount: 12 } })
+        )
+    );
+
+    const code = await runMarketplaceAdd({ url: 'https://github.com/dorkos/marketplace' });
+
+    expect(code).toBe(0);
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).toContain('Fetched its listing: 12 packages.');
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('says the listing could not be fetched yet, why, and how to retry — and still exits 0 (DOR-2304)', async () => {
+    // Purpose: the add worked, so the exit code says so; the warning names
+    // the reason and the exact refresh command to run later.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(201, {
+          ...SOURCE_FIXTURE_A,
+          listing: {
+            fetched: false,
+            reason: "the marketplace server didn't answer within 15 seconds",
+          },
+        })
+      )
+    );
+
+    const code = await runMarketplaceAdd({ url: 'https://github.com/dorkos/marketplace' });
+
+    expect(code).toBe(0);
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).toContain("Added marketplace 'dorkos-community'");
+    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allErr).toContain(
+      "Couldn't fetch its listing yet: the marketplace server didn't answer within 15 seconds."
+    );
+    expect(allErr).toContain('dorkos marketplace refresh dorkos-community');
   });
 
   it('uses --name when supplied', async () => {
@@ -291,6 +351,7 @@ describe('renderSourcesTable', () => {
   it('renders header + rows aligned to widest cell', () => {
     const table = renderSourcesTable([SOURCE_FIXTURE_A, SOURCE_FIXTURE_B]);
     const lines = table.split('\n');
+    // A server older than DOR-2324 sends no lastFetch: no empty PACKAGES column.
     expect(lines[0]).toMatch(/^NAME\s+SOURCE\s+ENABLED$/);
     expect(lines[1]).toContain('dorkos-community');
     expect(lines[1]).toContain('https://github.com/dorkos/marketplace');
@@ -316,6 +377,65 @@ describe('renderSourcesTable', () => {
     expect(lines[1]).toMatch(/https:\/\/example\.com\/a+\.\.\./);
     const truncatedSegment = lines[1].match(/https:\/\/example\.com\/a+\.\.\./);
     expect(truncatedSegment?.[0].length).toBeLessThanOrEqual(sourceCellMaxWidth);
+  });
+  it("shows how each source's last fetch went, and why one failed (DOR-2324)", () => {
+    // Purpose: the terminal tells the same story as the app's rows: packages
+    // ready, never loaded, or an older copy still listed, with the reason.
+    const when = new Date('2026-09-20T08:00:00.000Z').toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    const table = renderSourcesTable([
+      {
+        ...SOURCE_FIXTURE_A,
+        name: 'ok',
+        lastFetch: { state: 'fetched', checkedAt: 'x', packageCount: 12 },
+      },
+      {
+        ...SOURCE_FIXTURE_A,
+        name: 'one',
+        lastFetch: { state: 'fetched', checkedAt: 'x', packageCount: 1 },
+      },
+      { ...SOURCE_FIXTURE_A, name: 'new', lastFetch: { state: 'never' } },
+      {
+        ...SOURCE_FIXTURE_A,
+        name: 'broken',
+        lastFetch: {
+          state: 'failed',
+          checkedAt: 'x',
+          reason: "there's no marketplace listing at that address",
+        },
+      },
+      {
+        ...SOURCE_FIXTURE_A,
+        name: 'old',
+        lastFetch: {
+          state: 'stale',
+          checkedAt: 'x',
+          reason: 'the server at that address refused the connection',
+          copyFetchedAt: '2026-09-20T08:00:00.000Z',
+          packageCount: 3,
+        },
+      },
+      { ...SOURCE_FIXTURE_A, name: 'legacy' },
+    ]);
+    const row = (name: string) => table.split('\n').find((l) => l.startsWith(`${name} `)) ?? '';
+
+    expect(table.split('\n')[0]).toMatch(/^NAME\s+SOURCE\s+ENABLED\s+PACKAGES$/);
+    expect(row('ok')).toMatch(/12 packages$/);
+    expect(row('one')).toMatch(/1 package$/);
+    expect(row('new')).toMatch(/not fetched yet$/);
+    expect(row('broken')).toMatch(/didn't load$/);
+    expect(row('old')).toMatch(/3 packages \(older copy\)$/);
+    expect(row('legacy')).toMatch(/yes$/);
+    expect(table).toContain(
+      "broken: its packages didn't load: there's no marketplace listing at that address. " +
+        'Run `dorkos marketplace refresh broken` to try again.'
+    );
+    expect(table).toContain(
+      "old: couldn't fetch its listing: the server at that address refused the connection. " +
+        `Still listing the copy from ${when}.`
+    );
   });
 });
 
@@ -417,6 +537,38 @@ describe('runMarketplaceRefresh', () => {
 
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allLogs).toContain('Refreshed dorkos-community: 47 packages.');
+  });
+
+  it('says plainly when it could only show the last copy, and exits 1 (DOR-2304)', async () => {
+    // Purpose: a refresh is "check now". When the source can't be reached the
+    // server answers with its last copy marked stale; printing "Refreshed"
+    // would claim a check that did not happen.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(200, {
+          marketplace: { name: 'dorkos-community', plugins: new Array(3).fill({}) },
+          fetchedAt: '2026-04-06T09:30:00.000Z',
+          stale: true,
+          reason: 'the server at that address refused the connection',
+        })
+      )
+    );
+
+    const code = await runMarketplaceRefresh({ name: 'dorkos-community' });
+
+    expect(code).toBe(1);
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).not.toContain('Refreshed');
+    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    const when = new Date('2026-04-06T09:30:00.000Z').toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    expect(allErr).toContain(
+      `Couldn't reach dorkos-community: the server at that address refused the connection. ` +
+        `Still showing the last copy, from ${when} (3 packages).`
+    );
   });
 
   it('falls back to the "packages" field name when "plugins" is absent', async () => {

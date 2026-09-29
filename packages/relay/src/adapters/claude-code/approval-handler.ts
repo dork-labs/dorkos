@@ -3,7 +3,8 @@
  *
  * Subscribes to `relay.system.approval.>` to receive tool approval decisions
  * published by chat adapters (Slack, Telegram) when users click Approve/Deny
- * on interactive approval cards.
+ * on interactive approval cards. A decision from any other sender is refused
+ * before anything else looks at it (DOR-2431).
  *
  * Extracted from ClaudeCodeAdapter to keep each sub-module focused on a single
  * responsibility.
@@ -11,9 +12,14 @@
  * @module relay/adapters/claude-code-approval-handler
  */
 
+import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { RelayPublisher, Unsubscribe } from '../../types.js';
+import type { RelayPublisher, TraceStoreLike, Unsubscribe } from '../../types.js';
 import type { AgentRuntimeLike } from './types.js';
+import {
+  APPROVAL_BRIDGE_PRINCIPAL_PREFIX,
+  approvalBridgePlatformOf,
+} from '../../lib/approval-principal.js';
 
 /** Subject pattern for approval responses from all chat adapters. */
 export const APPROVAL_SUBJECT_PATTERN = 'relay.system.approval.>';
@@ -80,10 +86,77 @@ export type ApprovalAuthorizer = (decision: {
   readonly respondedBy: string | undefined;
 }) => boolean;
 
+/** Where a refused approval is recorded, beside the warning it logs. */
+export type ApprovalTraceStore = Pick<TraceStoreLike, 'insertSpan'>;
+
+/**
+ * Refuse an approval no chat adapter sent (DOR-2431).
+ *
+ * Everything in the payload — session id, tool call id, platform, user id — is
+ * something the agent waiting on the card knows or can learn, so the payload
+ * proves nothing about who clicked. The envelope's `from` is stamped by the
+ * publish pipeline and is not reachable from a model: every `relay_send*` tool
+ * stamps the caller's own identity, and the one HTTP ingress that takes a
+ * caller's `from` refuses every `relay.system.*` principal. So only the
+ * principal a chat adapter publishes a real click as
+ * ({@link APPROVAL_BRIDGE_PRINCIPAL_PREFIX}) is accepted, and the platform it
+ * names must be the one the payload claims, because the authorizer's approver
+ * allowlist is per platform.
+ *
+ * This runs BEFORE `authorize`, for room-bound and unbound sessions alike. That
+ * is what makes the authorizer's "a session no room owns is allowed" branch
+ * safe: that branch answers "may a click from this platform approve this
+ * session?", and it is now only ever asked about a click a chat adapter carried.
+ *
+ * @param envelope - The approval envelope.
+ * @param platform - The platform the payload claims.
+ * @param log - Where the refusal is logged.
+ * @param traceStore - Where the refusal is recorded as a failed span.
+ * @returns The platform the sender speaks for, or `undefined` when the approval
+ *   was refused and must go no further.
+ */
+function acceptedSenderPlatform(
+  envelope: RelayEnvelope,
+  platform: string | undefined,
+  log: Pick<Console, 'warn'>,
+  traceStore: ApprovalTraceStore
+): string | undefined {
+  const senderPlatform = approvalBridgePlatformOf(envelope.from);
+  if (senderPlatform !== undefined && (platform === undefined || platform === senderPlatform)) {
+    return senderPlatform;
+  }
+  const reason =
+    senderPlatform === undefined
+      ? `only a chat connection (${APPROVAL_BRIDGE_PRINCIPAL_PREFIX}*) may answer an approval card`
+      : `the sender speaks for ${senderPlatform} but the approval claims ${platform}`;
+  log.warn(
+    `[CCA] approval-handler: refusing an approval from ${envelope.from} on ${envelope.subject} — ${reason}`
+  );
+  const now = Date.now();
+  traceStore.insertSpan({
+    messageId: envelope.id,
+    traceId: randomUUID(),
+    spanId: randomUUID(),
+    parentSpanId: null,
+    subject: envelope.subject,
+    fromEndpoint: envelope.from,
+    toEndpoint: 'approval:refused',
+    status: 'failed',
+    budgetHopsUsed: envelope.budget.hopCount,
+    budgetTtlRemainingMs: envelope.budget.ttl - now,
+    sentAt: now,
+    deliveredAt: now,
+    processedAt: now,
+    error: `Refused approval from ${envelope.from}: ${reason}`,
+  });
+  return undefined;
+}
+
 /**
  * Handle a single approval response envelope.
  *
- * Validates the payload, asks `authorize`, calls `approveTool()`, and logs the
+ * Validates the payload, refuses any sender that is not a chat adapter, asks
+ * `authorize`, calls `approveTool()`, and logs the
  * outcome. Returns quietly if the interaction was not found (e.g., already
  * timed out) — the deferred promise has already been settled.
  *
@@ -107,14 +180,18 @@ export type ApprovalAuthorizer = (decision: {
  * @param agentRuntimes - The runtimes to offer the decision to, default first
  * @param log - Logger instance for diagnostics
  * @param authorize - Whether this platform user may authorize this session's
- *   tool call. Runs BEFORE any runtime is touched; a refusal logs one line and
- *   has no other effect.
+ *   tool call. Runs BEFORE any runtime is touched, and only for a sender that
+ *   passed the chat-adapter check; a refusal logs one line and has no other
+ *   effect.
+ * @param traceStore - Where an approval from any other sender is recorded as a
+ *   failed span.
  */
 export function handleApprovalResponse(
   envelope: RelayEnvelope,
   agentRuntimes: readonly AgentRuntimeLike[],
   log: Pick<Console, 'warn' | 'debug'>,
-  authorize: ApprovalAuthorizer
+  authorize: ApprovalAuthorizer,
+  traceStore: ApprovalTraceStore
 ): void {
   const approval = parseApprovalPayload(envelope.payload);
   if (!approval) {
@@ -125,7 +202,13 @@ export function handleApprovalResponse(
     return;
   }
 
-  const { toolCallId, sessionId, approved, platform = 'unknown' } = approval;
+  // The sender first, before the authorizer: see {@link acceptedSenderPlatform}.
+  // The platform is the one the sender speaks for, which equals the payload's
+  // claim whenever the payload makes one.
+  const platform = acceptedSenderPlatform(envelope, approval.platform, log, traceStore);
+  if (platform === undefined) return;
+
+  const { toolCallId, sessionId, approved } = approval;
 
   if (!authorize({ sessionId, platform, respondedBy: approval.respondedBy })) {
     // The second of two independent gates: the adapter's own `mayApprove` ran
@@ -173,14 +256,16 @@ export function handleApprovalResponse(
  * @param log - Logger instance for diagnostics
  * @param authorize - Whether the clicking platform user may authorize the
  *   session's tool call. Required; see {@link ApprovalAuthorizer}.
+ * @param traceStore - Where an approval no chat adapter sent is recorded.
  */
 export function subscribeApprovalHandler(
   relay: RelayPublisher,
   agentRuntimes: readonly AgentRuntimeLike[],
   log: Pick<Console, 'warn' | 'debug'>,
-  authorize: ApprovalAuthorizer
+  authorize: ApprovalAuthorizer,
+  traceStore: ApprovalTraceStore
 ): Unsubscribe {
   return relay.subscribe(APPROVAL_SUBJECT_PATTERN, (envelope) => {
-    handleApprovalResponse(envelope, agentRuntimes, log, authorize);
+    handleApprovalResponse(envelope, agentRuntimes, log, authorize, traceStore);
   });
 }

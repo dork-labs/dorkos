@@ -15,6 +15,10 @@
 export {
   ApprovalService,
   APPROVAL_TTL_MS,
+  BLOCKED_REQUEST_DENY_COOLDOWN_MS,
+  isAlwaysOffered,
+  type ApprovalAnswerScope,
+  type BlockedRequestLimit,
   resolveApprovalTtlMs,
   MIN_APPROVAL_TTL_MS,
   type ApprovalConsumeResult,
@@ -34,25 +38,6 @@ export {
   startApprovalExpirySweep,
   type ApprovalExpiryTickResult,
 } from './approval-expiry-sweep.js';
-export {
-  ApprovalGrantService,
-  type ApprovalGrantInput,
-  type ApprovalGrantPosture,
-  type ApprovalGrantRow,
-} from './approval-grant-service.js';
-export {
-  readStandingGrantPosture,
-  readStandingGrantSettings,
-  readStandingGrantVoidFloor,
-  type StandingGrantSettings,
-} from './standing-grant-settings.js';
-export {
-  initStandingGrantPosture,
-  resetStandingGrantPosture,
-  revokeStandingGrantsIfPostureForbids,
-  revokeStandingGrantsIfPostureNarrowed,
-  type StandingGrantPosture,
-} from './standing-grant-posture.js';
 export { hashApprovalInput, ApprovalInputNotBindableError } from './approval-input-hash.js';
 export {
   quoteSummaryValue,

@@ -753,11 +753,19 @@ describe('a claim lives until its turn is done', () => {
         'this room to say the message is waiting'
       );
       const waiting = presenceFor(ana).filter((event) => event.state === 'held');
-      expect(waiting[0].heldBehind).toEqual({ roomId: elsewhere.id, othersWaiting: false });
+      expect(waiting[0].heldBehind).toEqual({
+        roomId: elsewhere.id,
+        othersWaiting: false,
+        severalInTheWay: false,
+      });
       expect(waiting[0].entryId).toBe(first.id);
-      // No title, no topic, no text — an id and a boolean, and nothing else that
+      // No title, no topic, no text — an id and two booleans, and nothing else that
       // could describe a conversation this reader may not be in.
-      expect(Object.keys(waiting[0].heldBehind!).sort()).toEqual(['othersWaiting', 'roomId']);
+      expect(Object.keys(waiting[0].heldBehind!).sort()).toEqual([
+        'othersWaiting',
+        'roomId',
+        'severalInTheWay',
+      ]);
 
       // Typing again does not open a second indicator.
       service.post(room.id, { authorId: human, text: '@ana hello?' });

@@ -181,3 +181,53 @@ describe('ContextItem — every part can give up pixels except the number', () =
     }
   });
 });
+
+describe('ContextItem — the cached reading and its freshness (spec claude-account-ui §6.8)', () => {
+  const NOW = new Date('2026-09-28T12:00:00.000Z');
+  const reading = (observedAt: string) => ({
+    totalTokens: 50_000,
+    maxTokens: 200_000,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    observedAt,
+  });
+
+  /** Open the breakdown tooltip the way a keyboard user does. */
+  function openTooltip() {
+    fireEvent.focus(screen.getByLabelText('Context window usage'));
+  }
+
+  it('heads the tooltip with the cached totals and says how old they are', async () => {
+    render(<ContextItem percent={25} reading={reading('2026-09-28T11:48:00.000Z')} now={NOW} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.getByText('25%')).toBeInTheDocument();
+    openTooltip();
+    expect((await screen.findAllByText('50.0k / 200.0k tokens')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('as of 12 min ago').length).toBeGreaterThan(0);
+  });
+
+  it('reads "just now" for a reading under a minute old', async () => {
+    render(
+      <ContextItem
+        percent={21}
+        contextUsage={mockContextUsage}
+        reading={reading('2026-09-28T11:59:30.000Z')}
+        now={NOW}
+      />,
+      { wrapper: Wrapper }
+    );
+    openTooltip();
+    expect((await screen.findAllByText('just now')).length).toBeGreaterThan(0);
+  });
+
+  it('adds no freshness line when the reading carries no time', async () => {
+    render(<ContextItem percent={21} contextUsage={mockContextUsage} now={NOW} />, {
+      wrapper: Wrapper,
+    });
+    openTooltip();
+    await screen.findAllByText('42.0k / 200.0k tokens');
+    expect(screen.queryByText(/as of|just now/)).toBeNull();
+  });
+});

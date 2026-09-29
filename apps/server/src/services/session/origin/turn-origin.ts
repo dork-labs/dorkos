@@ -94,6 +94,28 @@ export type TurnOrigin =
    */
   | { readonly kind: 'connector-event' }
   /**
+   * An agent started this session through the `session_start` tool. Nobody
+   * chose a trust stop for it: the operator's stop is a promise about a person
+   * who can answer, and the agent that asked for the session is not that
+   * person. Its power comes only from the tool's own clamped `permissionMode`,
+   * so the row seeds no operator stop.
+   */
+  | { readonly kind: 'agent-launch' }
+  /**
+   * A limited session's work carried over to a new session on another account
+   * (spec `claude-account-fleet` D9), by a person or by the account advisor.
+   * The new session's settings row is copied from the source session before
+   * the send, and that copy is the power: this origin adds none.
+   */
+  | { readonly kind: 'account-handoff' }
+  /**
+   * A limited session's account reset and core resumed the SAME session by
+   * itself (spec `claude-account-fleet` D9 "Wait, then resume by itself"). The
+   * session is already bound, so its settings row decides its power: this
+   * origin adds none.
+   */
+  | { readonly kind: 'account-resume' }
+  /**
    * The in-process end-to-end harness, reachable only on a server started with
    * `DORKOS_TEST_RUNTIME`. It drives a runtime tool against a session it binds
    * itself.
@@ -184,11 +206,24 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // make a stranger's message strictly more powerful than the grant it
     // arrived under.
     //
+    // An agent launching a session does not hand it the operator's trust stop;
+    // whatever power it gets is the tool's clamped mode, set on its own.
+    //
+    // A carry-over's row already holds the source session's model, effort and
+    // mode, copied before the send; the origin must not add the operator's stop
+    // on top of what the session already had.
+    //
+    // A resume after an account's reset goes to a session that is already
+    // bound: its row is its power, and the origin must not add to it.
+    //
     // The harness is not a surface anybody ships to.
     case 'schedule':
     case 'relay-binding':
     case 'agent-dm':
     case 'connector-event':
+    case 'agent-launch':
+    case 'account-handoff':
+    case 'account-resume':
     case 'test-harness':
       return 'none';
     default: {

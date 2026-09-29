@@ -728,6 +728,10 @@ function toStatusChange(data: StreamData): RawSessionEvent | null {
   // subscription fields), so it merges whole-object like `model`/`cost`.
   if (data.usage !== undefined) status.usage = data.usage as StatusChangePayload['usage'];
 
+  // A hard usage limit (spec claude-account-fleet D4), or `null` to clear one.
+  // Whole-object like `usage`; absent leaves the held limit alone.
+  if (data.limit !== undefined) status.limit = data.limit as StatusChangePayload['limit'];
+
   const contextUsage = toPartialContextUsage(data);
   if (contextUsage !== null) status.contextUsage = contextUsage;
 
@@ -749,11 +753,17 @@ function toStatusChange(data: StreamData): RawSessionEvent | null {
 /**
  * Build a partial `contextUsage` carrying ONLY the token fields present on the
  * source event, or `null` when none are present. Omitting a field lets the
- * projector preserve its prior value rather than zeroing it.
+ * projector preserve its prior value rather than zeroing it. A context reading
+ * (`contextTokens`) is stamped with `observedAt`.
  */
 function toPartialContextUsage(data: StreamData): PartialContextUsage | null {
   const usage: PartialContextUsage = {};
-  if (data.contextTokens !== undefined) usage.totalTokens = Number(data.contextTokens);
+  if (data.contextTokens !== undefined) {
+    usage.totalTokens = Number(data.contextTokens);
+    // A live reading is dated now, so a client can say how fresh the gauge is
+    // and a restored reading (spec `claude-account-fleet` §6 U) reads as older.
+    usage.observedAt = new Date().toISOString();
+  }
   if (data.contextMaxTokens !== undefined) usage.maxTokens = Number(data.contextMaxTokens);
   if (data.outputTokens !== undefined) usage.outputTokens = Number(data.outputTokens);
   if (data.cacheReadTokens !== undefined) usage.cacheReadTokens = Number(data.cacheReadTokens);

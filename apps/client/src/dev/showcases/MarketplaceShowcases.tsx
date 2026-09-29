@@ -11,17 +11,19 @@
  *
  * @module dev/showcases/MarketplaceShowcases
  */
-import { useMemo } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CONNECTOR_ADAPTER_TYPE } from '@dorkos/marketplace';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { IsolatedQueryProvider } from './marketplace-query-provider';
+import {
+  InstalledPackagesViewShowcase,
+  ConfirmUpdatesDialogShowcase,
+} from './MarketplaceUpdateShowcases';
 
 // The barrel first, then the leaves it does not carry — see the import rule in
 // `.claude/skills/maintaining-dev-playground/SKILL.md`.
 import {
-  InstalledPackagesView,
   MarketplaceSidebar,
   MarketplaceSourcesView,
   PackageCard,
@@ -39,7 +41,7 @@ import { InstallConfirmationDialog } from '@/layers/features/marketplace/ui/Inst
 import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/PermissionPreviewSection';
 import { MarketplaceToolbar } from '@/layers/features/marketplace/ui/MarketplaceToolbar';
 
-import { marketplaceKeys } from '@/layers/entities/marketplace';
+import { marketplaceKeys, PreviewRefusedNotice } from '@/layers/entities/marketplace';
 
 import {
   MOCK_PACKAGES,
@@ -55,44 +57,11 @@ import {
   MOCK_PERMISSION_PREVIEW_BLOCKING,
   MOCK_PERMISSION_PREVIEW_MANY_FILES,
   MOCK_PERMISSION_PREVIEW_ESCAPES,
+  MOCK_PERMISSION_PREVIEW_AGENT_WORKSPACE,
+  MOCK_PREVIEW_REFUSED_ERROR,
   MOCK_DORK_HOME,
-  MOCK_INSTALLED_PACKAGES,
   MOCK_SOURCES,
 } from './marketplace-mocks';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build an isolated QueryClient with marketplace package data pre-seeded.
- *
- * Each invocation returns a new client to ensure showcase sections are fully
- * independent. The `staleTime: Infinity` prevents background refetches that
- * would hit the server (which is not running in the playground context).
- */
-function makeSeededQueryClient(seed: (qc: QueryClient) => void): QueryClient {
-  const qc = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, staleTime: Infinity, refetchOnWindowFocus: false },
-    },
-  });
-  seed(qc);
-  return qc;
-}
-
-/** Wrapper providing an isolated QueryClient with pre-seeded data. */
-function IsolatedQueryProvider({
-  seed,
-  children,
-}: {
-  seed: (qc: QueryClient) => void;
-  children: React.ReactNode;
-}) {
-  // useMemo ensures the client is created once per component mount.
-  const qc = useMemo(() => makeSeededQueryClient(seed), []); // eslint-disable-line react-hooks/exhaustive-deps
-  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
-}
 
 // ---------------------------------------------------------------------------
 // PackageCard showcase
@@ -396,7 +365,7 @@ function PermissionPreviewSectionShowcase() {
   return (
     <PlaygroundSection
       title="PermissionPreviewSection"
-      description="Human-readable breakdown of everything a package will do on install. A one-line verdict leads, then the three groups a person must see before trusting a stranger's package — commands, jobs, conflicts — start expanded and the other four open on a click, counts in their headings. The file effects name the folder, count each action, and hide the paths behind a disclosure. A warning row appears only when a file lands outside the folder the caller says the install targets."
+      description="Human-readable breakdown of everything a package will do on install. When the server refuses to preview a package (it refuses to install it too), a refusal notice takes its place and names why. A one-line verdict leads, then the three groups a person must see before trusting a stranger's package — commands, jobs, conflicts — start expanded and the other four open on a click, counts in their headings. The file effects name the folder, count each action, and hide the paths behind a disclosure. A warning row appears only when a file lands outside the folder the caller says the install targets."
     >
       <ShowcaseLabel>Minimal (no secrets, no hosts, no conflicts)</ShowcaseLabel>
       <ShowcaseDemo>
@@ -437,41 +406,18 @@ function PermissionPreviewSectionShowcase() {
           installBase={MOCK_DORK_HOME}
         />
       </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// InstalledPackagesView showcase
-// ---------------------------------------------------------------------------
-
-/** InstalledPackagesView in empty, populated states. */
-function InstalledPackagesViewShowcase() {
-  return (
-    <PlaygroundSection
-      title="InstalledPackagesView"
-      description="Manage installed packages — list with per-row update and two-click uninstall actions."
-    >
-      <ShowcaseLabel>Empty state</ShowcaseLabel>
+      <ShowcaseLabel>Agent package: skills its sessions load from its folder</ShowcaseLabel>
       <ShowcaseDemo>
-        <IsolatedQueryProvider
-          seed={(qc) => {
-            qc.setQueryData(marketplaceKeys.installed(), []);
-          }}
-        >
-          <InstalledPackagesView />
-        </IsolatedQueryProvider>
+        <PermissionPreviewSection
+          preview={MOCK_PERMISSION_PREVIEW_AGENT_WORKSPACE}
+          installBase={MOCK_DORK_HOME}
+        />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Populated (3 packages)</ShowcaseLabel>
+      <ShowcaseLabel>Refused: the server will not install it</ShowcaseLabel>
       <ShowcaseDemo>
-        <IsolatedQueryProvider
-          seed={(qc) => {
-            qc.setQueryData(marketplaceKeys.installed(), MOCK_INSTALLED_PACKAGES);
-          }}
-        >
-          <InstalledPackagesView />
-        </IsolatedQueryProvider>
+        <PreviewRefusedNotice error={MOCK_PREVIEW_REFUSED_ERROR} />
       </ShowcaseDemo>
     </PlaygroundSection>
   );
@@ -620,6 +566,7 @@ export function MarketplaceShowcases() {
       <InstallConfirmationDialogShowcase />
       <PermissionPreviewSectionShowcase />
       <InstalledPackagesViewShowcase />
+      <ConfirmUpdatesDialogShowcase />
       <MarketplaceSourcesViewShowcase />
       <MarketplaceToolbarShowcase />
       <MarketplaceSidebarShowcase />

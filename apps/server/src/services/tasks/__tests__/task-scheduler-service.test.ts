@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 import path from 'node:path';
-import { mkdir, realpath } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { initBoundary } from '../../../lib/boundary.js';
 import {
@@ -32,6 +37,15 @@ vi.mock('../../relay/relay-state.js', () => ({
 }));
 
 import { isRelayEnabled } from '../../relay/relay-state.js';
+
+vi.mock('../../runtimes/claude-code/claude-config-dir.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../runtimes/claude-code/claude-config-dir.js')>()),
+  // "Nobody can say" by default, which reports nothing; the DOR-2384 cases
+  // answer for themselves.
+  isRegisteredClaudeAccount: vi.fn(() => undefined),
+}));
+
+import { isRegisteredClaudeAccount } from '../../runtimes/claude-code/claude-config-dir.js';
 
 function createMockAgentManager(): SchedulerAgentManager {
   return {
@@ -2028,6 +2042,8 @@ describe('TaskSchedulerService', () => {
       // The unattended briefing the direct path builds, carried on the wire so
       // the receiving process can hand it to the agent (DOR-1567).
       expect(dispatch.systemPromptAppend).toContain('Job: Payload Test');
+      // An agent-less task names no turn agent (DOR-2355).
+      expect(dispatch).not.toHaveProperty('forAgent');
       expect(dispatch.systemPromptAppend).toContain('Do not ask questions');
 
       // Verify publish options
@@ -2041,6 +2057,29 @@ describe('TaskSchedulerService', () => {
       expect(options.budget.callBudgetRemaining).toBe(5);
 
       await service.stop();
+    });
+
+    it('names the task`s agent on the wire, so the receiver reads identity from its home (DOR-2355)', async () => {
+      const agentHome = await mkdtemp(path.join(tmpdir(), 'relay-task-agent-'));
+      try {
+        const task = store.createTask(taskInput({ name: 'Agent relay', agentId: 'agent-r' }));
+        const service = new TaskSchedulerService({
+          store,
+          runtimes: singleRuntimeSource(mockAgent),
+          config: DEFAULT_CONFIG,
+          relay: mockRelay as unknown as RelayCore,
+          meshCore: createMockMeshCore({ 'agent-r': agentHome }),
+        });
+
+        await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+        await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+
+        const dispatch = mockRelay.publish.mock.calls[0][1] as TaskDispatchPayload;
+        expect(dispatch.forAgent).toBe(agentHome);
+        await service.stop();
+      } finally {
+        await rm(agentHome, { recursive: true, force: true });
+      }
     });
 
     it('carries a raised level onto the wire, not the one the clamp put there (DOR-2100)', async () => {
@@ -2068,6 +2107,33 @@ describe('TaskSchedulerService', () => {
 
       const [, payload] = mockRelay.publish.mock.calls[0];
       expect((payload as TaskDispatchPayload).permissionMode).toBe('bypassPermissions');
+
+      await service.stop();
+    });
+
+    it.each([
+      ['carries the schedule’s account on the wire', 'work', 'work'],
+      ['sends no account for a schedule that names none', undefined, undefined],
+    ])('%s (DOR-2384)', async (_label, account, expected) => {
+      // The relay path is the other launch path; a schedule's account has to
+      // reach the receiver the way its model does, and an absent one stays
+      // absent so every envelope without one is what it always was.
+      const task = store.createTask(
+        taskInput({ name: 'Account on the bus', ...(account ? { account } : {}) })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = mockRelay.publish.mock.calls[0];
+      if (expected === undefined) expect(payload).not.toHaveProperty('account');
+      else expect((payload as TaskDispatchPayload).account).toBe(expected);
 
       await service.stop();
     });
@@ -2564,6 +2630,15 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
         expect.objectContaining({ cwd: agentDir })
       )
     );
+    // And the turn names its agent, so identity is read from that home
+    // wherever the run stands (DOR-2355).
+    await vi.waitFor(() =>
+      expect(mockAgent.sendMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        'test',
+        expect.objectContaining({ forAgent: agentDir })
+      )
+    );
     // This run came from `triggerManualRun`, so it is NOT unattended: somebody
     // clicked Run now and is sitting in front of it, and their approval cards
     // stay answerable. Only a fire the timer started carries the flag — see "the
@@ -2771,7 +2846,6 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       registeredAt: new Date().toISOString(),
       registeredBy: 'test',
       personaEnabled: true,
-      enabledToolGroups: {},
       mcpServers: [],
     } as AgentManifest);
     return dir;
@@ -2812,6 +2886,60 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     expect(row.resolvedRuntime).toBe('codex');
     expect(row.resolvedModel).toBe('gpt-5.5');
     await service.stop();
+  });
+
+  it('refuses a `none` agent whose default folder is ANOTHER agent`s home — the dev-checkout fallback', async () => {
+    // Spec `agent-home-desk` §3.4, step 2 before step 4. In a DorkOS dev
+    // checkout the default folder falls back to the repo root, which is the
+    // `dorkos` agent's own home; a `none` agent's run there would read and write
+    // that agent's folder. It is refused, recorded failed with the reason in
+    // plain words, and no turn starts anywhere.
+    const dir = await agentDir({ mode: 'none' });
+    registerTestHomes([dir, DEFAULT_CWD]);
+    try {
+      const task = store.createTask(taskInput({ name: 'Borrowed desk', agentId: 'a-1' }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: runtimesWith(['claude-code', 'codex']),
+        config: { ...DEFAULT_CONFIG },
+        meshCore: meshAt(dir),
+      });
+
+      const row = await runToCompletion(service, task.id);
+
+      expect(row.status).toBe('failed');
+      expect(row.error).toContain('belongs to another agent');
+      expect(row.error).toContain('Set a default folder');
+      for (const manager of Object.values(managers)) {
+        expect(manager!.sendMessage).not.toHaveBeenCalled();
+      }
+      await service.stop();
+    } finally {
+      clearTestHomes();
+    }
+  });
+
+  it('runs a `none` agent at a default folder that is nobody`s home, as that agent', async () => {
+    // The supported value (§3.4 step 4): the operator's default folder, with
+    // identity from the agent's home.
+    const dir = await agentDir({ mode: 'none' });
+    registerTestHomes([dir]);
+    try {
+      const task = store.createTask(taskInput({ name: 'Shared desk', agentId: 'a-1' }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: runtimesWith(['claude-code', 'codex']),
+        config: { ...DEFAULT_CONFIG },
+        meshCore: meshAt(dir),
+      });
+
+      const row = await runToCompletion(service, task.id);
+
+      expect(row.status).not.toBe('failed');
+      await service.stop();
+    } finally {
+      clearTestHomes();
+    }
   });
 
   it('a sticky task moved to another runtime mints a FRESH session, across the real store', async () => {
@@ -3006,6 +3134,117 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     expect(opts).not.toHaveProperty('model');
     expect(opts).not.toHaveProperty('effort');
     await service.stop();
+  });
+
+  it('starts the turn on the schedule’s account, on BOTH agent calls (DOR-2384)', async () => {
+    // `sendMessage` is the seam the claude-code launch ladder reads the hint
+    // from; `ensureSession` gets it because the run's settings travel whole.
+    const task = store.createTask(taskInput({ name: 'On account', account: 'work' }));
+    const service = scheduler(['claude-code']);
+
+    await runToCompletion(service, task.id);
+
+    expect(managers['claude-code']!.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ accountHint: 'work' })
+    );
+    expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ accountHint: 'work' })
+    );
+    await service.stop();
+  });
+
+  it('passes NO account hint when the schedule names none (DOR-2384)', async () => {
+    // No account anywhere keeps today's launch exactly: the ladder never sees a
+    // hint, so the agent's account and then the default decide as before.
+    const task = store.createTask(taskInput({ name: 'No account' }));
+    const service = scheduler(['claude-code']);
+
+    await runToCompletion(service, task.id);
+
+    const [, , sendOpts] = vi.mocked(managers['claude-code']!.sendMessage).mock.calls[0]!;
+    expect(sendOpts).not.toHaveProperty('accountHint');
+    const [, sessionOpts] = vi.mocked(managers['claude-code']!.ensureSession).mock.calls[0]!;
+    expect(sessionOpts).not.toHaveProperty('accountHint');
+    await service.stop();
+  });
+
+  describe('a schedule naming an account nobody registered (DOR-2384)', () => {
+    /** The Activity entries of one kind a run wrote. */
+    const entries = (emit: ReturnType<typeof vi.fn>) =>
+      emit.mock.calls
+        .map(([event]) => event as { eventType: string; summary: string })
+        .filter((event) => event.eventType === 'tasks.account_unavailable');
+
+    /** A scheduler with an Activity feed, driving claude-code runs. */
+    function withFeed(emit: ReturnType<typeof vi.fn>): TaskSchedulerService {
+      return new TaskSchedulerService({
+        store,
+        runtimes: runtimesWith(['claude-code']),
+        config: { ...DEFAULT_CONFIG },
+        activityService: { emit } as unknown as ActivityService,
+      });
+    }
+
+    afterEach(() => {
+      vi.mocked(isRegisteredClaudeAccount).mockReset();
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(undefined);
+    });
+
+    it('says in Activity that the run fell through to the usual account', async () => {
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(false);
+      const emit = vi.fn();
+      const task = store.createTask(taskInput({ name: 'Gone', account: 'old-client' }));
+      const service = withFeed(emit);
+
+      await runToCompletion(service, task.id);
+
+      expect(isRegisteredClaudeAccount).toHaveBeenCalledWith('old-client');
+      expect(entries(emit).map((event) => event.summary)).toEqual([
+        'Gone ran on the usual Claude account, because the account "old-client" it names is not set up in DorkOS',
+      ]);
+      // The run still ran, with the hint for the ladder to fall through.
+      expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ accountHint: 'old-client' })
+      );
+      await service.stop();
+    });
+
+    it('says nothing for a registered account, or when the registry cannot be read', async () => {
+      const emit = vi.fn();
+      const task = store.createTask(taskInput({ name: 'Here', account: 'work' }));
+      const service = withFeed(emit);
+
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(true);
+      await runToCompletion(service, task.id);
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(undefined);
+      await runToCompletion(service, task.id);
+
+      expect(entries(emit)).toEqual([]);
+      await service.stop();
+    });
+
+    it('says nothing for a sticky run resuming its conversation', async () => {
+      // A resumed conversation keeps the account it started on, so the
+      // schedule's account is not read at all and there is nothing to report.
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(false);
+      const emit = vi.fn();
+      const task = store.createTask(
+        taskInput({ name: 'Resumes', account: 'old-client', sticky: true })
+      );
+      const service = withFeed(emit);
+
+      await runToCompletion(service, task.id);
+      expect(entries(emit)).toHaveLength(1);
+      await runToCompletion(service, task.id);
+
+      expect(entries(emit)).toHaveLength(1);
+      await service.stop();
+    });
   });
 
   describe('v1 dispatch routing — the bus can only carry claude-code (decision 7)', () => {
@@ -3342,6 +3581,11 @@ describe('buildTaskAppend', () => {
       prompt: 'Clean temp files',
       cron: '0 2 * * *',
       timezone: null,
+      defaultCron: '0 2 * * *',
+      defaultTimezone: null,
+      timingOverridden: false,
+      packageOwned: null,
+      approvalChanges: [],
       agentId: null,
       enabled: true,
       sticky: false,
@@ -3350,6 +3594,7 @@ describe('buildTaskAppend', () => {
       runtime: null,
       model: null,
       effort: null,
+      account: null,
       status: 'active',
       filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',
@@ -3421,6 +3666,11 @@ describe('buildTaskAppend', () => {
       prompt: 'Clean temp files',
       cron: '0 2 * * *',
       timezone: null,
+      defaultCron: '0 2 * * *',
+      defaultTimezone: null,
+      timingOverridden: false,
+      packageOwned: null,
+      approvalChanges: [],
       agentId: null,
       enabled: true,
       sticky: false,
@@ -3429,6 +3679,7 @@ describe('buildTaskAppend', () => {
       runtime: null,
       model: null,
       effort: null,
+      account: null,
       status: 'active',
       filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',

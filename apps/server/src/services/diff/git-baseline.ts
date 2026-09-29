@@ -16,6 +16,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { GIT, FILE_LIMITS } from '../../config/constants.js';
+import { internalGitArgs } from '../../lib/git-safety.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -33,7 +34,7 @@ export async function gitShowHead(cwd: string, absPath: string): Promise<Buffer 
   // rather than hand git a traversal.
   if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
   try {
-    const { stdout } = await execFileAsync('git', ['show', `HEAD:${rel}`], {
+    const { stdout } = await execFileAsync('git', [...internalGitArgs(), 'show', `HEAD:${rel}`], {
       cwd,
       timeout: GIT.STATUS_TIMEOUT_MS,
       maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER,

@@ -45,6 +45,7 @@ import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { capabilitiesDomain } from '../self-description/capabilities-domain.js';
+import { permissionsDomain } from '../permissions/permission-capabilities.js';
 
 /**
  * Read-only tool names from domains NOT yet migrated onto the Capability
@@ -153,6 +154,10 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  * The rule is what keeps that safe under a real identity; it is not what should
  * be deciding it for no identity at all.
  *
+ * **`list_my_permissions` is the ninth** (spec `agent-permissions` D9), and
+ * **`accounts_usage` the tenth** (spec `claude-account-fleet` D2): see their
+ * lines below.
+ *
  * **Adding a name here needs an argument, and removing one needs a better one.**
  * The drift guard reads this list, so a tool that quietly acquires
  * `readOnlyCarveOut: true` still fails the build.
@@ -174,6 +179,17 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // other, and — for a file document — a path on this machine read as the caller.
   // See the paragraph above.
   'read_canvas',
+  // What an agent may do here, per area and per action (spec `agent-permissions`
+  // D9). No message and no content, but it is the permission posture of the
+  // install, and for an identified caller its own exceptions. A tokenless caller
+  // would get the defaults, which a health check has no need of; an agent asks
+  // with its identity, and that is who the answer is for.
+  'list_my_permissions',
+  // How much of each of the operator's Claude subscriptions is used, and when
+  // each resets (spec `claude-account-fleet` D2). No message and no content, but
+  // it is the operator's billing state and the folders their accounts live in,
+  // which a tokenless health check has no need of.
+  'accounts_usage',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
@@ -194,5 +210,8 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     // domain nobody checks.
     ...roomsDomain.capabilities,
     ...capabilitiesDomain.capabilities,
+    // Listed for the same reason as rooms: it contributes nothing, and naming it
+    // puts `list_my_permissions` under the drift guard.
+    ...permissionsDomain.capabilities,
   ]),
 ]);

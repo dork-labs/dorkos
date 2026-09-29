@@ -98,6 +98,42 @@ describe('partition', () => {
     expect(partition(tied, 3).map((s) => s.map((u) => u.key))).toEqual([['p|a'], ['p|b'], ['p|c']]);
   });
 
+  it('puts pinned units on their shard and balances the rest around them', () => {
+    const pinned = ['p|f3.spec.ts', 'p|f7.spec.ts'];
+    const shards = partition(units, 4, { shard: 2, keys: pinned });
+    expect(shards[1].map((u) => u.key)).toEqual(expect.arrayContaining(pinned));
+    for (const [i, s] of shards.entries())
+      if (i !== 1) expect(s.some((u) => pinned.includes(u.key))).toBe(false);
+    expect(
+      shards
+        .flat()
+        .map((u) => u.key)
+        .sort()
+    ).toEqual(units.map((u) => u.key).sort());
+    // The pinned weight counts, so the pinned shard is not handed a full share on top.
+    const loads = shards.map(load);
+    expect(Math.max(...loads) - Math.min(...loads)).toBeLessThanOrEqual(
+      Math.max(...units.map((u) => u.weight))
+    );
+  });
+
+  it('gives every shard the same pinned answer whatever order the units arrive in', () => {
+    const pin = { shard: 1, keys: ['p|f3.spec.ts', 'p|f7.spec.ts'] };
+    const a = partition(units, 4, pin).map((s) => s.map((u) => u.key));
+    const b = partition([...units].reverse(), 4, pin).map((s) => s.map((u) => u.key));
+    expect(b).toEqual(a);
+  });
+
+  it('skips a pinned key a filtered run did not collect, and refuses a shard that does not exist', () => {
+    // `--grep` or a file argument filters before the cut; the pin must not
+    // fail that run. A renamed site spec is caught by site-leg.test.ts instead.
+    const shards = partition(units, 4, { shard: 1, keys: ['p|absent.spec.ts', 'p|f3.spec.ts'] });
+    expect(shards[0].map((u) => u.key)).toContain('p|f3.spec.ts');
+    expect(shards.flat()).toHaveLength(units.length);
+    expect(() => partition(units, 4, { shard: 5, keys: ['p|f3.spec.ts'] })).toThrow(/1\.\.4/);
+    expect(() => partition(units, 4, { shard: 0, keys: ['p|f3.spec.ts'] })).toThrow(/1\.\.4/);
+  });
+
   it('refuses a duplicate unit rather than running it twice', () => {
     expect(() => partition([unit('p|a', 1), unit('p|a', 2)], 2)).toThrow(/duplicate/);
   });
@@ -178,11 +214,12 @@ describe('the reporter inside a real Playwright run', () => {
            projects: [{ name: 'fast' }, { name: 'slow', testMatch: 'heavy.spec.ts' }],
            reporter: [
              ['json', { outputFile: process.env.OUT }],
-             [${JSON.stringify(resolve(here, '../balanced-shard-reporter.ts'))}, { timings: './timings.json' }],
+             [${JSON.stringify(resolve(here, '../balanced-shard-reporter.ts'))}, { timings: './timings.json', ...JSON.parse(process.env.PIN ?? '{}') }],
            ],
          };`
       );
-      const run = (args: string[], out: string) =>
+      const pin = { pin: { shard: 3, keys: ['fast|light-a.spec.ts'], booted: true } };
+      const run = (args: string[], out: string, pinOption: object = pin) =>
         spawnSync(process.execPath, [cli, 'test', '--config', 'playwright.config.ts', ...args], {
           cwd: fixture,
           encoding: 'utf8',
@@ -193,6 +230,7 @@ describe('the reporter inside a real Playwright run', () => {
             USERPROFILE: fixture,
             SystemRoot: process.env.SystemRoot,
             OUT: join(fixture, out),
+            PIN: JSON.stringify(pinOption),
           },
         });
 
@@ -253,6 +291,18 @@ describe('the reporter inside a real Playwright run', () => {
       );
       // Duration, not count: the 900 s and 600 s units open separate shards.
       expect(home.get('slow|heavy.spec.ts')).not.toBe(home.get('fast|heavy.spec.ts'));
+      // The pinned unit ran on its shard (index 2 is shard 3), and only there.
+      expect(home.get('fast|light-a.spec.ts')).toBe(2);
+
+      // The shard that owns a pin refuses to run it when its leg was not booted,
+      // instead of timing out spec by spec on a closed port.
+      const unbooted = { pin: { ...pin.pin, booted: false } };
+      const refused = run(['--shard=3/3'], 'refused.json', unbooted);
+      expect(refused.status).not.toBe(0);
+      expect(refused.stdout + refused.stderr).toContain('did not boot the leg they need');
+      // Any other shard does not need the leg and runs normally.
+      const other = run(['--shard=1/3'], 'other.json', unbooted);
+      expect(other.status, other.stdout + other.stderr).toBe(0);
     } finally {
       rmSync(fixture, { recursive: true, force: true });
     }

@@ -72,8 +72,9 @@ describe('ExtensionCompiler', () => {
     expect('code' in result).toBe(true);
     if ('code' in result) {
       expect(result.code).toContain('activate');
-      expect(result.sourceHash).toHaveLength(16);
-      expect(result.sourceHash).toBe(contentHash(source));
+      // The key is the bundle's own content hash, so it changes exactly
+      // when the served code does.
+      expect(result.sourceHash).toBe(contentHash(result.code));
     }
   });
 
@@ -396,8 +397,7 @@ describe('ExtensionCompiler', () => {
         expect(result.code).toContain('register');
         // CJS format uses module.exports or exports
         expect(result.code).toContain('module.exports');
-        expect(result.sourceHash).toHaveLength(16);
-        expect(result.sourceHash).toBe(contentHash(source));
+        expect(result.sourceHash).toBe(contentHash(result.code));
       }
     });
 

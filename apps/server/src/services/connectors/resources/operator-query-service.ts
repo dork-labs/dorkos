@@ -1,10 +1,7 @@
 /** Provider-neutral owner catalog, connection, access, and lifecycle projections. */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import {
-  projectConnectorAuthentication,
-  type ConnectorAuthenticationSetup,
-} from '@dorkos/shared/connector-provider';
+import { projectConnectorAuthentication } from '@dorkos/shared/connector-provider';
 import {
   agents,
   and,
@@ -24,14 +21,20 @@ import {
   type Db,
 } from '@dorkos/db';
 import {
+  connectorCatalogLogoPath,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionSummarySchema,
   ConnectorDisconnectImpactSchema,
   ConnectorAgentConnectionsSchema,
+  ConnectorEveryAgentGrantsSchema,
   ConnectorSessionConnectionsSchema,
   type ConnectorAgentConnections,
+  type ConnectorAppConnections,
+  type ConnectorEveryAgentAccess,
+  type ConnectorEveryAgentGrants,
   type ConnectorAuthoritySyncState,
+  type ConnectorCatalogProviderRoute,
   type ConnectorCatalogResourcePage,
   type ConnectorConnectionDetail,
   type ConnectorConnectionSummary,
@@ -49,14 +52,26 @@ import type {
   ManagedConnectorUsageRequest,
   ManagedConnectorUsageResponse,
 } from '@dorkos/shared/connector-managed-usage-schemas';
+import { appReachProblem, signInThroughFor, type AppReachProblem } from '../app-connection-way.js';
+import {
+  deriveConnectionReadiness,
+  registryWayHealth,
+  type ConnectionReadinessFacts,
+  type ConnectionWayHealthPort,
+} from '../readiness/connection-readiness.js';
+import {
+  managedAgentAccess,
+  type ManagedGrantSubjects,
+} from '../execution/managed-agent-access.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
+import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
+import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';
+import { LEGACY_PENDING_REASON } from './managed-authority-sync-service.js';
 
-const CATALOG_PROVIDER_PAGE_SIZE = 100;
-const CATALOG_PROVIDER_PAGE_LIMIT = 100;
 const CatalogCursorSchema = z
   .object({ offset: z.number().int().nonnegative(), queryHash: z.string().length(64) })
   .strict();
@@ -109,6 +124,19 @@ export interface ConnectorOperatorQueryServiceOptions {
   readonly managedUsage?: ConnectorManagedUsageQueryPort;
   /** Recover an absent hosted provider before a normal catalog read. */
   readonly recoverManagedProvider?: () => Promise<void>;
+  /** Every way set up to reach apps, and the one new apps use. */
+  readonly appConnections?: () => Promise<ConnectorAppConnections>;
+  /**
+   * The live health of the way one connected account goes through. Without
+   * it, only the registry is read: a way that is down names no fix.
+   */
+  readonly wayHealth?: ConnectionWayHealthPort;
+  /**
+   * The service ids whose logo this server already keeps. An app whose own
+   * list sends no logo (the DorkOS account's) still shows one another service
+   * brought for the same id.
+   */
+  readonly keptLogos?: () => Promise<ReadonlySet<string>>;
 }
 
 function ownerColumns(owner: ConnectorOwnerAuthority): {
@@ -154,20 +182,64 @@ function encodeCatalogCursor(offset: number, query: string): string {
   );
 }
 
+/** A catalog row while it is being assembled from built-ins, Relay and live routes. */
+interface CatalogServiceDraft {
+  serviceSlug: string;
+  displayName: string;
+  iconKey: string;
+  accountRoutes: ConnectorCatalogProviderRoute[];
+  builtIn?: BuiltInApp;
+  /** The first logo URL a live service sent for the app; the server's logo route fetches it. */
+  logoUrl?: string;
+  /** The first description a live service sent; the built-in line wins over it. */
+  description?: string;
+}
+
+/** A built-in app's place in the hand-picked order; every other service sorts after them. */
+function popularRank(serviceSlug: string): number {
+  const index = BUILT_IN_APPS.findIndex((app) => app.serviceSlug === serviceSlug);
+  return index === -1 ? BUILT_IN_APPS.length : index;
+}
+
+/** "a" or "an" for a service name, by its first letter ("an Asana account"). */
+function indefiniteArticle(name: string): 'a' | 'an' {
+  return /^[aeiou]/i.test(name) ? 'an' : 'a';
+}
+
+/** Whether any field contains the (already lower-cased) query; an empty query matches all. */
+function matchesQuery(query: string, ...fields: string[]): boolean {
+  return !query || fields.some((field) => field.toLowerCase().includes(query));
+}
+
 /** One catalog service, reduced to what an agent service request needs. */
-export interface ConnectorServiceDirectoryEntry {
+export type ConnectorServiceDirectoryEntry = {
   /** Exact service id an agent passes as `serviceSlug`. */
   readonly serviceSlug: string;
   /** Human-facing service name. */
   readonly displayName: string;
-  /** False for a Messaging-only row: the person sets it up; an agent cannot ask for it. */
-  readonly requestable: boolean;
-}
+} & (
+  | {
+      readonly requestable: true;
+      /**
+       * `false` for a popular app no way reaches yet. It can still be asked
+       * for: the request's card walks the person through the fix
+       * ({@link ConnectorServiceDirectory.reachProblem}) before sign-in.
+       */
+      readonly reached: boolean;
+    }
+  | {
+      readonly requestable: false;
+      /** Why an agent cannot ask for it: a chat app the person sets up themselves. */
+      readonly unavailableBecause: 'messaging_only';
+    }
+);
 
 /** The whole service catalog, as agent requests validate against it. */
 export interface ConnectorServiceDirectory {
   /** Every listed service, Messaging-only rows included. */
   readonly services: readonly ConnectorServiceDirectoryEntry[];
+  /** Why no way reaches the services marked `reached: false`. */
+  readonly reachProblem: AppReachProblem;
   /** Non-empty when some route could not list every service it offers. */
   readonly warnings: readonly { readonly code: string; readonly message: string }[];
   /** Type of every registered route, e.g. `composio`. Never a person's label for it. */
@@ -183,6 +255,9 @@ export class ConnectorOperatorQueryService {
   private readonly agentOwnership: ConnectorAgentOwnershipPort;
   private readonly managedUsage: ConnectorManagedUsageQueryPort | undefined;
   private readonly recoverManagedProvider: (() => Promise<void>) | undefined;
+  private readonly appConnections: (() => Promise<ConnectorAppConnections>) | undefined;
+  private readonly wayHealth: ConnectionWayHealthPort;
+  private readonly keptLogos: (() => Promise<ReadonlySet<string>>) | undefined;
 
   /** Construct owner projections over canonical connector state. */
   constructor(options: ConnectorOperatorQueryServiceOptions) {
@@ -193,6 +268,9 @@ export class ConnectorOperatorQueryService {
     this.agentOwnership = options.agentOwnership;
     this.managedUsage = options.managedUsage;
     this.recoverManagedProvider = options.recoverManagedProvider;
+    this.appConnections = options.appConnections;
+    this.wayHealth = options.wayHealth ?? registryWayHealth(options.registry);
+    this.keptLogos = options.keptLogos;
   }
 
   /** Return a bounded account-free catalog page across every live provider. */
@@ -212,12 +290,15 @@ export class ConnectorOperatorQueryService {
       signal: input.signal,
     });
     const page = all.slice(offset, offset + limit);
+    // Read after the catalog, which may have just recovered the DorkOS account route.
+    const appConnections = await this.appConnections?.();
     return ConnectorCatalogResourcePageSchema.parse({
       services: page,
       ...(offset + page.length < all.length
         ? { nextCursor: encodeCatalogCursor(offset + page.length, query) }
         : {}),
       warnings,
+      ...(appConnections && { appConnections }),
     });
   }
 
@@ -226,6 +307,10 @@ export class ConnectorOperatorQueryService {
    * for it. The same read as {@link catalog} — managed recovery, provider
    * paging, Relay rows, warnings — so a service the agent-facing lookup lists is
    * a service an agent request accepts, and one it omits is refused (DOR-2231).
+   *
+   * Every app with an account to sign in to can be asked for, a popular app no
+   * way reaches yet included (DOR-2494): its request's card runs the one-time
+   * step first. Only a chat app, which has no account, is not requestable.
    */
   async serviceDirectory(signal: AbortSignal): Promise<ConnectorServiceDirectory> {
     const { all, warnings } = await this.collectCatalog({
@@ -233,14 +318,24 @@ export class ConnectorOperatorQueryService {
       includeAuthenticationSetup: false,
       signal,
     });
+    // Read after the catalog, which may have just recovered the DorkOS account route.
+    const appConnections = await this.appConnections?.();
     return {
-      services: all.map((service) => ({
-        serviceSlug: service.serviceSlug,
-        displayName: service.displayName,
-        requestable: service.intents.some((intent) => intent.kind === 'account'),
-      })),
+      services: all.map((service): ConnectorServiceDirectoryEntry => {
+        const account = service.intents.find((intent) => intent.kind === 'account');
+        const base = { serviceSlug: service.serviceSlug, displayName: service.displayName };
+        if (account?.kind !== 'account') {
+          return { ...base, requestable: false, unavailableBecause: 'messaging_only' };
+        }
+        return { ...base, requestable: true, reached: account.routes.length > 0 };
+      }),
       warnings,
       routeTypes: this.registry.listProviders().map((provider) => provider.type),
+      reachProblem: appConnections
+        ? appReachProblem(appConnections.newApps, warnings.length > 0)
+        : this.registry.listProviders().length > 0
+          ? 'app_not_reached'
+          : 'nothing_set_up',
     };
   }
 
@@ -252,29 +347,30 @@ export class ConnectorOperatorQueryService {
     this.registry.assertAvailable();
     await this.recoverManagedProvider?.();
     const query = input.query;
-    const services = new Map<
-      string,
-      {
-        serviceSlug: string;
-        displayName: string;
-        iconKey: string;
-        accountRoutes: Array<
-          ConnectorProviderDisclosure & {
-            authKind: 'oauth2' | 'api-key' | 'none';
-            authenticationSetup?: ConnectorAuthenticationSetup;
-          }
-        >;
-      }
-    >();
+    const services = new Map<string, CatalogServiceDraft>();
     const warnings: Array<{ code: string; message: string }> = [];
 
+    // Popular apps first, so the list is never empty before a way to reach
+    // apps is set up; everything live below merges into them by service id.
+    for (const app of BUILT_IN_APPS) {
+      if (!matchesQuery(query, app.serviceSlug, app.displayName, app.category, app.description)) {
+        continue;
+      }
+      services.set(app.serviceSlug, {
+        serviceSlug: app.serviceSlug,
+        displayName: app.displayName,
+        iconKey: app.serviceSlug,
+        accountRoutes: [],
+        builtIn: app,
+      });
+    }
+
     for (const { manifest } of this.relay?.getCatalog?.() ?? []) {
+      // Plumbing (the internal agent relay) and retired chat apps are not
+      // something a person connects.
+      if (manifest.category === 'internal' || manifest.deprecated) continue;
       const displayName = manifest.displayName ?? manifest.type;
-      if (
-        query &&
-        !manifest.type.toLowerCase().includes(query) &&
-        !displayName.toLowerCase().includes(query)
-      ) {
+      if (services.has(manifest.type) || !matchesQuery(query, manifest.type, displayName)) {
         continue;
       }
       services.set(manifest.type, {
@@ -288,60 +384,67 @@ export class ConnectorOperatorQueryService {
     await Promise.all(
       this.registry.listProviders().map(async (provider) => {
         try {
-          let cursor: string | undefined;
-          for (let pageIndex = 0; pageIndex < CATALOG_PROVIDER_PAGE_LIMIT; pageIndex += 1) {
-            input.signal.throwIfAborted();
-            const result = await provider.listToolkitPage({
-              ...(cursor ? { cursor } : {}),
-              ...(query ? { query } : {}),
-              limit: CATALOG_PROVIDER_PAGE_SIZE,
-              signal: input.signal,
+          // The kept whole list: paging and search slice it here, so neither
+          // asks the service again while the copy is fresh.
+          const result = await this.registry.readCatalog(provider, input.signal);
+          if (result.status === 'unsupported') {
+            warnings.push({
+              code: 'catalog_unavailable',
+              message: `${this.providerDisplayName(provider)} cannot list services right now.`,
             });
-            if (result.status === 'unsupported') {
-              warnings.push({
-                code: 'catalog_unavailable',
-                message: `${this.providerDisplayName(provider)} cannot list services right now.`,
-              });
-              return;
-            }
-            for (const rawToolkit of result.toolkits) {
-              const toolkit = projectConnectorAuthentication(
-                rawToolkit,
-                input.includeAuthenticationSetup === true
-              );
-              const disclosure = this.providerDisclosure(provider);
-              const routeAuthentication =
-                disclosure.capabilities.authentication.status === 'available'
-                  ? (toolkit.authentication ?? disclosure.capabilities.authentication)
-                  : disclosure.capabilities.authentication;
-              const current = services.get(toolkit.slug) ?? {
-                serviceSlug: toolkit.slug,
-                displayName: toolkit.displayName,
-                iconKey: toolkit.slug,
-                accountRoutes: [],
-              };
-              current.accountRoutes.push({
-                ...disclosure,
-                ...(toolkit.authentication && {
-                  capabilities: {
-                    ...disclosure.capabilities,
-                    authentication: routeAuthentication,
-                  },
-                }),
-                authKind: toolkit.authKind,
-                ...(toolkit.authenticationSetup
-                  ? { authenticationSetup: toolkit.authenticationSetup }
-                  : {}),
-              });
-              services.set(toolkit.slug, current);
-            }
-            cursor = result.nextCursor;
-            if (!cursor) return;
+            return;
           }
-          warnings.push({
-            code: 'catalog_truncated',
-            message: `${this.providerDisplayName(provider)} returned more services than DorkOS can list safely.`,
-          });
+          const signInThrough = signInThroughFor(provider.type);
+          const disclosure = this.providerDisclosure(provider);
+          for (const rawToolkit of result.toolkits) {
+            if (
+              !matchesQuery(
+                query,
+                rawToolkit.slug,
+                rawToolkit.displayName,
+                rawToolkit.description ?? ''
+              )
+            ) {
+              continue;
+            }
+            const toolkit = projectConnectorAuthentication(
+              rawToolkit,
+              input.includeAuthenticationSetup === true
+            );
+            const routeAuthentication =
+              disclosure.capabilities.authentication.status === 'available'
+                ? (toolkit.authentication ?? disclosure.capabilities.authentication)
+                : disclosure.capabilities.authentication;
+            const current = services.get(toolkit.slug) ?? {
+              serviceSlug: toolkit.slug,
+              displayName: toolkit.displayName,
+              iconKey: toolkit.slug,
+              accountRoutes: [],
+            };
+            current.logoUrl ??= toolkit.logoUrl;
+            current.description ??= toolkit.description;
+            current.accountRoutes.push({
+              ...disclosure,
+              ...(toolkit.authentication && {
+                capabilities: {
+                  ...disclosure.capabilities,
+                  authentication: routeAuthentication,
+                },
+              }),
+              authKind: toolkit.authKind,
+              ...(toolkit.authenticationSetup
+                ? { authenticationSetup: toolkit.authenticationSetup }
+                : {}),
+              ...(signInThrough !== undefined && { signInThrough }),
+            });
+            services.set(toolkit.slug, current);
+          }
+          if (result.truncated) {
+            warnings.push({
+              code: 'catalog_truncated',
+              message: `${this.providerDisplayName(provider)} returned more services than DorkOS can list safely.`,
+            });
+          }
         } catch (error) {
           if (input.signal.aborted) throw error;
           warnings.push({
@@ -352,32 +455,50 @@ export class ConnectorOperatorQueryService {
       })
     );
 
+    const kept = await this.keptLogos?.();
     const all = [...services.values()]
-      .map((service) => {
+      .map(({ accountRoutes, builtIn, logoUrl, description, ...service }) => {
+        const logo =
+          logoUrl || kept?.has(service.serviceSlug)
+            ? connectorCatalogLogoPath(service.serviceSlug)
+            : undefined;
         const intents: ConnectorCatalogResourcePage['services'][number]['intents'] = [];
-        if (this.relay?.getManifest(service.serviceSlug)) {
+        if (builtIn?.chat || this.relay?.getManifest(service.serviceSlug)) {
           intents.push({
             kind: 'messages',
             displayName: `Messages through a ${service.displayName} bot`,
             relayAdapterType: service.serviceSlug,
           });
         }
-        if (service.accountRoutes.length > 0) {
+        if (accountRoutes.length > 0 || builtIn?.account) {
           intents.push({
             kind: 'account',
-            displayName: `Use a ${service.displayName} account`,
-            routes: service.accountRoutes.sort(
+            displayName: `Use ${indefiniteArticle(service.displayName)} ${service.displayName} account`,
+            routes: accountRoutes.sort(
               (left, right) =>
                 (left.mode === 'managed' ? 0 : 1) - (right.mode === 'managed' ? 0 : 1) ||
                 left.displayName.localeCompare(right.displayName)
             ),
           });
         }
-        return { ...service, intents };
+        // DorkOS's own line for a built-in app wins over the service's.
+        const line = builtIn?.description ?? description;
+        return {
+          ...service,
+          intents,
+          ...(line && { description: line }),
+          ...(logo && { logo }),
+          ...(builtIn && {
+            category: builtIn.category,
+            popular: true,
+            ...(builtIn.signInName && { signInName: builtIn.signInName }),
+          }),
+        };
       })
-      .map(({ accountRoutes: _routes, ...service }) => service)
+      // Popular apps lead in their hand-picked order; everything else follows by name.
       .sort(
         (left, right) =>
+          popularRank(left.serviceSlug) - popularRank(right.serviceSlug) ||
           left.displayName.localeCompare(right.displayName) ||
           left.serviceSlug.localeCompare(right.serviceSlug)
       );
@@ -520,7 +641,8 @@ export class ConnectorOperatorQueryService {
     owner: ConnectorOwnerAuthority,
     connectionId: string
   ): ConnectorDisconnectImpact {
-    if (!this.ownedConnection(owner, connectionId)) this.connectionNotFound();
+    const owned = this.ownedConnection(owner, connectionId);
+    if (!owned) this.connectionNotFound();
     const agents = this.db
       .select({ agentId: connectionOperationGrants.agentId })
       .from(connectionOperationGrants)
@@ -564,6 +686,7 @@ export class ConnectorOperatorQueryService {
     return ConnectorDisconnectImpactSchema.parse({
       connectionId,
       affectedAgentCount: new Set(agents.flatMap((row) => (row.agentId ? [row.agentId] : []))).size,
+      everyAgent: this.everyAgentAccess(connectionId) !== null,
       affectedSessionCount: new Set(sessions.map((row) => row.sessionId)).size,
       affectedSubscriptionCount: subscriptions.length,
       pendingDeliveryCount: pendingDeliveries,
@@ -578,6 +701,60 @@ export class ConnectorOperatorQueryService {
     if (!(await this.agentOwnership.ownsAgent(owner, agentId))) {
       throw new ConnectorOperatorQueryError('agent_not_found', 'Agent not found.');
     }
+    return ConnectorAgentConnectionsSchema.parse({
+      agentId,
+      connections: this.agentGrantedConnections(owner, agentId).map((row) => ({
+        connectionId: row.connectionId,
+        toolkit: row.toolkit,
+        label: row.label,
+        lifecycle: lifecycle(row),
+        authenticationStatus: row.authenticationStatus,
+        reconciliationStatus: row.reconciliationStatus,
+        operationRevisionIds: [...row.operationRevisionIds].sort(),
+        everyAgent: row.everyAgent,
+        authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
+        // This agent's own readiness: its own hosted access, never another's.
+        readiness: this.agentReadiness(row, agentId, row),
+      })),
+    });
+  }
+
+  /** One agent's readiness on one account it was given. */
+  private agentReadiness(
+    row: {
+      lifecycleState: 'connected' | 'disconnected';
+      enabled: boolean;
+      authenticationStatus: 'active' | 'expired' | 'revoked' | 'pending';
+      reconciliationStatus: 'ready' | 'migration_needs_reconcile';
+      externalCleanupState: 'not_required' | 'pending' | 'complete' | 'failed' | 'unknown';
+      externalAccountRef: string;
+      providerInstanceId: string;
+      mode: 'managed' | 'byo';
+    },
+    agentId: string,
+    granted: ManagedGrantSubjects,
+    overrides: Partial<ConnectionReadinessFacts> = {}
+  ) {
+    return deriveConnectionReadiness({
+      lifecycle: lifecycle(row),
+      authenticationStatus: row.authenticationStatus,
+      reconciliationStatus: row.reconciliationStatus,
+      ...(row.mode === 'managed' && {
+        authoritySync: managedAgentAccess(this.db, row.externalAccountRef, agentId, granted).sync,
+      }),
+      externalCleanup: row.externalCleanupState,
+      mode: row.mode,
+      way: this.wayHealth(row.providerInstanceId),
+      ...overrides,
+    });
+  }
+
+  /**
+   * Every live connection one agent holds a grant on, its own or through
+   * "every agent", with the facts readiness needs and which kinds of grant
+   * give it the account.
+   */
+  private agentGrantedConnections(owner: ConnectorOwnerAuthority, agentId: string) {
     const owned = ownerColumns(owner);
     const rows = this.db
       .select({
@@ -590,6 +767,7 @@ export class ConnectorOperatorQueryService {
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         externalAccountRef: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
         mode: connectorProviderInstances.mode,
         revisionId: connectionOperationGrants.operationRevisionId,
       })
@@ -610,28 +788,126 @@ export class ConnectorOperatorQueryService {
         )
       )
       .all();
-    const grouped = new Map<string, (typeof rows)[number] & { operationRevisionIds: string[] }>();
-    for (const row of rows) {
-      const current = grouped.get(row.connectionId) ?? { ...row, operationRevisionIds: [] };
-      current.operationRevisionIds.push(row.revisionId);
+    // Every agent inherits the owner's every-agent grants, so they belong in
+    // this agent's effective access exactly as the authorization check counts
+    // them: on every connection, managed ones included (DOR-2439), with no
+    // per-agent exclusion.
+    const inherited = this.db
+      .select({
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        lifecycleState: connections.lifecycleState,
+        externalCleanupState: connections.externalCleanupState,
+        enabled: connections.enabled,
+        authenticationStatus: connections.status,
+        reconciliationStatus: connections.grantReconciliationStatus,
+        externalAccountRef: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
+        mode: connectorProviderInstances.mode,
+        revisionId: connectionOperationGrants.operationRevisionId,
+      })
+      .from(connectionOperationGrants)
+      .innerJoin(connections, eq(connections.id, connectionOperationGrants.connectionId))
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          everyAgentGrantSubject(),
+          isNull(connectionOperationGrants.revokedAt),
+          isNull(connections.removedAt),
+          eq(connectorProviderInstances.ownerKind, owned.ownerKind),
+          eq(connectorProviderInstances.ownerId, owned.ownerId)
+        )
+      )
+      .all();
+    const grouped = new Map<
+      string,
+      (typeof rows)[number] & {
+        operationRevisionIds: Set<string>;
+        everyAgent: boolean;
+        named: boolean;
+      }
+    >();
+    for (const [row, everyAgent] of [
+      ...rows.map((row) => [row, false] as const),
+      ...inherited.map((row) => [row, true] as const),
+    ]) {
+      const current = grouped.get(row.connectionId) ?? {
+        ...row,
+        operationRevisionIds: new Set<string>(),
+        everyAgent: false,
+        named: false,
+      };
+      current.operationRevisionIds.add(row.revisionId);
+      current.everyAgent ||= everyAgent;
+      current.named ||= !everyAgent;
       grouped.set(row.connectionId, current);
     }
-    return ConnectorAgentConnectionsSchema.parse({
-      agentId,
-      connections: [...grouped.values()].map((row) => ({
-        connectionId: row.connectionId,
-        toolkit: row.toolkit,
-        label: row.label,
-        lifecycle: lifecycle(row),
-        authenticationStatus: row.authenticationStatus,
-        reconciliationStatus: row.reconciliationStatus,
-        operationRevisionIds: row.operationRevisionIds.sort(),
-        authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
-      })),
+    return [...grouped.values()];
+  }
+
+  /**
+   * Return what any agent of this owner inherits from every-agent grants: the
+   * answer to "what will a new agent get?" (ADR 260926-192625). There is no
+   * per-agent exclusion, so this needs no agent id and holds for an agent that
+   * has not been created yet. Disconnected and removed connections carry no
+   * live grant and are left out.
+   */
+  everyAgentGrants(owner: ConnectorOwnerAuthority): ConnectorEveryAgentGrants {
+    const owned = ownerColumns(owner);
+    const rows = this.db
+      .select({
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        enabled: connections.enabled,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          isNull(connections.removedAt),
+          eq(connections.lifecycleState, 'connected'),
+          eq(connectorProviderInstances.ownerKind, owned.ownerKind),
+          eq(connectorProviderInstances.ownerId, owned.ownerId)
+        )
+      )
+      .all();
+    return ConnectorEveryAgentGrantsSchema.parse({
+      connections: rows
+        .flatMap((row) => {
+          const access = this.everyAgentAccess(row.connectionId);
+          return access
+            ? [
+                {
+                  connectionId: row.connectionId,
+                  toolkit: row.toolkit,
+                  label: row.label,
+                  lifecycle: row.enabled ? ('connected' as const) : ('paused' as const),
+                  access,
+                },
+              ]
+            : [];
+        })
+        .sort(
+          (left, right) =>
+            left.label.localeCompare(right.label) ||
+            left.connectionId.localeCompare(right.connectionId)
+        ),
     });
   }
 
-  /** Return effective exact grants for one verified canonical session. */
+  /**
+   * Return what one verified canonical session's agent can use, account by
+   * account: where the access comes from (the agent, or this chat alone), the
+   * exact revisions, and readiness for this agent in this chat.
+   */
   async sessionConnections(
     owner: ConnectorOwnerAuthority,
     sessionId: string
@@ -640,54 +916,30 @@ export class ConnectorOperatorQueryService {
     if (!resolved) {
       throw new ConnectorOperatorQueryError('session_not_found', 'Session not found.');
     }
-    const inherited = await this.agentConnections(owner, resolved.agentId);
+    const agentId = resolved.agentId;
+    const owned = ownerColumns(owner);
     const byConnection = new Map<
       string,
-      {
+      Omit<ConnectorSessionConnections['connections'][number], 'connectionId'> & {
         connectionId: string;
-        toolkit: string;
-        label: string;
-        access: 'inherited' | 'session_only' | 'disabled';
-        operationRevisionIds: string[];
-        dominatingReason:
-          | 'none'
-          | 'connection_paused'
-          | 'connection_revoked'
-          | 'authentication_required'
-          | 'session_detached'
-          | 'reconciliation_required'
-          | 'authority_sync_required';
       }
-    >(
-      inherited.connections.map((connection) => [
-        connection.connectionId,
-        {
-          connectionId: connection.connectionId,
-          toolkit: connection.toolkit,
-          label: connection.label,
-          access:
-            connection.lifecycle === 'connected' &&
-            connection.authenticationStatus === 'active' &&
-            connection.reconciliationStatus === 'ready' &&
-            connection.authoritySync.status === 'ready'
-              ? ('inherited' as const)
-              : ('disabled' as const),
-          operationRevisionIds: [...connection.operationRevisionIds],
-          dominatingReason:
-            connection.lifecycle === 'paused'
-              ? ('connection_paused' as const)
-              : connection.lifecycle === 'disconnected'
-                ? ('connection_revoked' as const)
-                : connection.authenticationStatus !== 'active'
-                  ? ('authentication_required' as const)
-                  : connection.reconciliationStatus !== 'ready'
-                    ? ('reconciliation_required' as const)
-                    : connection.authoritySync.status !== 'ready'
-                      ? ('authority_sync_required' as const)
-                      : ('none' as const),
-        },
-      ])
-    );
+    >();
+    // Accounts the agent holds account-wide, while still connected: the only
+    // ones the owner can switch on or off for this chat, since the switch only
+    // hides the app here or undoes that, and never adds access.
+    const switchable = new Set<string>();
+    for (const row of this.agentGrantedConnections(owner, agentId)) {
+      if (row.lifecycleState === 'connected') switchable.add(row.connectionId);
+      byConnection.set(row.connectionId, {
+        connectionId: row.connectionId,
+        toolkit: row.toolkit,
+        label: row.label,
+        source: 'agent',
+        operationRevisionIds: [...row.operationRevisionIds].sort(),
+        readiness: this.agentReadiness(row, agentId, row),
+        ...(switchable.has(row.connectionId) && { thisChat: 'on' as const }),
+      });
+    }
     const overrides = this.db
       .select({
         connectionId: sessionConnectionOverrides.connectionId,
@@ -703,6 +955,7 @@ export class ConnectorOperatorQueryService {
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
         externalAccountRef: connections.externalAccountRef,
+        providerInstanceId: connections.providerInstanceId,
       })
       .from(sessionConnectionOverrides)
       .innerJoin(connections, eq(connections.id, sessionConnectionOverrides.connectionId))
@@ -714,70 +967,86 @@ export class ConnectorOperatorQueryService {
         and(
           eq(sessionConnectionOverrides.sessionId, sessionId),
           isNull(connections.removedAt),
-          eq(connectorProviderInstances.ownerKind, ownerColumns(owner).ownerKind),
-          eq(connectorProviderInstances.ownerId, ownerColumns(owner).ownerId)
+          eq(connectorProviderInstances.ownerKind, owned.ownerKind),
+          eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
       )
       .all();
     for (const override of overrides) {
-      const validOwner = override.agentId === resolved.agentId && !override.needsReconciliation;
-      const sessionRevisionRows = this.db
-        .select({ revisionId: connectionOperationGrants.operationRevisionId })
-        .from(connectionOperationGrants)
-        .where(
-          and(
-            eq(connectionOperationGrants.subjectType, 'session'),
-            eq(connectionOperationGrants.subjectId, sessionId),
-            eq(connectionOperationGrants.connectionId, override.connectionId),
-            eq(connectionOperationGrants.agentId, resolved.agentId),
-            isNull(connectionOperationGrants.revokedAt)
+      // A chat's own override decides alone (agent-grant-scope.ts): turned
+      // off, handed to another agent, or waiting on a review, nothing else
+      // counts here; turned on, only this chat's own grants do.
+      const ownOverride = override.agentId === agentId;
+      const turnedOff = !ownOverride || override.state === 'detached';
+      const sessionRevisions =
+        ownOverride && override.state === 'attached' && !override.needsReconciliation
+          ? this.db
+              .select({ revisionId: connectionOperationGrants.operationRevisionId })
+              .from(connectionOperationGrants)
+              .where(
+                and(
+                  eq(connectionOperationGrants.subjectType, 'session'),
+                  eq(connectionOperationGrants.subjectId, sessionId),
+                  eq(connectionOperationGrants.connectionId, override.connectionId),
+                  eq(connectionOperationGrants.agentId, agentId),
+                  isNull(connectionOperationGrants.revokedAt)
+                )
+              )
+              .all()
+              .map((row) => row.revisionId)
+              .sort()
+          : [];
+      // Turned on with nothing of its own, or waiting on reconciliation: its
+      // agent can't use the account here, so it reads as turned off here. When
+      // the agent holds the account account-wide, the owner's switch turns it
+      // back on (DOR-2448) and readiness names that as the fix; otherwise
+      // there is nothing to put back, and no fix.
+      const nothingHere =
+        turnedOff || override.needsReconciliation || sessionRevisions.length === 0;
+      // The owner limited this chat by hand for the agent it belonged to
+      // before: turning it on here would drop that limit, so there is no
+      // switch (the write refuses it too, session-access-service.ts).
+      const limitedForAnotherAgent =
+        !ownOverride &&
+        override.agentId !== null &&
+        override.state === 'attached' &&
+        this.db
+          .select({ id: connectionOperationGrants.id })
+          .from(connectionOperationGrants)
+          .where(
+            and(
+              eq(connectionOperationGrants.subjectType, 'session'),
+              eq(connectionOperationGrants.subjectId, sessionId),
+              eq(connectionOperationGrants.connectionId, override.connectionId),
+              eq(connectionOperationGrants.agentId, override.agentId),
+              isNull(connectionOperationGrants.revokedAt)
+            )
           )
-        )
-        .all();
-      const rowLifecycle = lifecycle(override);
-      const authorityReady =
-        this.authoritySync(override.mode, override.externalAccountRef).status === 'ready';
+          .get() !== undefined;
+      const canSwitch = switchable.has(override.connectionId) && !limitedForAnotherAgent;
       byConnection.set(override.connectionId, {
         connectionId: override.connectionId,
         toolkit: override.toolkit,
         label: override.label,
-        access:
-          validOwner &&
-          override.state === 'attached' &&
-          sessionRevisionRows.length > 0 &&
-          rowLifecycle === 'connected' &&
-          override.authenticationStatus === 'active' &&
-          override.reconciliationStatus === 'ready' &&
-          authorityReady
-            ? 'session_only'
-            : 'disabled',
-        operationRevisionIds:
-          validOwner && override.state === 'attached'
-            ? sessionRevisionRows.map((row) => row.revisionId).sort()
-            : [],
-        dominatingReason:
-          rowLifecycle === 'paused'
-            ? 'connection_paused'
-            : rowLifecycle === 'disconnected'
-              ? 'connection_revoked'
-              : override.authenticationStatus !== 'active'
-                ? 'authentication_required'
-                : override.reconciliationStatus !== 'ready'
-                  ? 'reconciliation_required'
-                  : !validOwner
-                    ? 'session_detached'
-                    : override.state === 'detached'
-                      ? 'session_detached'
-                      : sessionRevisionRows.length === 0
-                        ? 'reconciliation_required'
-                        : !authorityReady
-                          ? 'authority_sync_required'
-                          : 'none',
+        source: 'this_chat',
+        operationRevisionIds: sessionRevisions,
+        readiness: this.agentReadiness(
+          override,
+          agentId,
+          { named: true, everyAgent: false },
+          {
+            offForThisChat: nothingHere,
+            canTurnOnForThisChat: canSwitch,
+          }
+        ),
+        ...(canSwitch && {
+          thisChat: nothingHere ? ('off' as const) : ('on' as const),
+        }),
       });
     }
     return ConnectorSessionConnectionsSchema.parse({
       sessionId,
-      agentId: resolved.agentId,
+      agentId,
       connections: [...byConnection.values()].sort(
         (left, right) =>
           left.label.localeCompare(right.label) ||
@@ -843,6 +1112,8 @@ export class ConnectorOperatorQueryService {
       .where(eq(connectorEventSubscriptions.connectionId, row.connectionId))
       .all();
     const usage = await this.usageCounts(row, signal);
+    const authoritySync = this.authoritySync(row.mode, row.externalAccountRef);
+    const rowLifecycle = lifecycle(row);
     return ConnectorConnectionSummarySchema.parse({
       connectionId: row.connectionId,
       providerInstanceId: row.providerInstanceId,
@@ -850,17 +1121,26 @@ export class ConnectorOperatorQueryService {
       label: row.label,
       identityHint: row.identityHint,
       externalCleanup: row.externalCleanupState,
-      lifecycle: lifecycle(row),
+      lifecycle: rowLifecycle,
       authenticationStatus: row.authenticationStatus,
       reconciliationStatus: row.reconciliationStatus,
-      authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
+      authoritySync,
       mode: row.mode,
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       agentCount: new Set(grants.flatMap((grant) => (grant.agentId ? [grant.agentId] : []))).size,
+      everyAgent: this.everyAgentAccess(row.connectionId),
       subscriptionCount: subscriptions.length,
       usage,
-      warnings: [],
+      readiness: deriveConnectionReadiness({
+        lifecycle: rowLifecycle,
+        authenticationStatus: row.authenticationStatus,
+        reconciliationStatus: row.reconciliationStatus,
+        authoritySync,
+        externalCleanup: row.externalCleanupState,
+        mode: row.mode,
+        way: this.wayHealth(row.providerInstanceId),
+      }),
     });
   }
 
@@ -916,7 +1196,9 @@ export class ConnectorOperatorQueryService {
     const rows = this.db
       .select({
         state: connectorManagedAuthorityOutbox.state,
+        scopeKind: connectorManagedAuthorityOutbox.scopeKind,
         safeReason: connectorManagedAuthorityOutbox.safeReason,
+        nextAttemptAt: connectorManagedAuthorityOutbox.nextAttemptAt,
       })
       .from(connectorManagedAuthorityScopes)
       .innerJoin(
@@ -925,7 +1207,24 @@ export class ConnectorOperatorQueryService {
       )
       .where(eq(connectorManagedAuthorityScopes.managedConnectionId, managedConnectionId))
       .all();
-    if (rows.some((row) => row.state === 'pending')) return { status: 'pending' };
+    const pending = rows.filter((row) => row.state === 'pending');
+    if (pending.length > 0) {
+      // Say why it is waiting: the account's own lifecycle first (a stalled
+      // disconnect), then whichever explained command tries again soonest.
+      const explained = pending
+        .filter(
+          (row) => row.safeReason && row.safeReason !== LEGACY_PENDING_REASON && row.nextAttemptAt
+        )
+        .sort(
+          (a, b) =>
+            Number(b.scopeKind === 'connection_lifecycle') -
+              Number(a.scopeKind === 'connection_lifecycle') ||
+            a.nextAttemptAt!.localeCompare(b.nextAttemptAt!)
+        )[0];
+      return explained
+        ? { status: 'pending', reason: explained.safeReason!, retryAt: explained.nextAttemptAt! }
+        : { status: 'pending' };
+    }
     const rejected = rows.find((row) => row.state === 'rejected');
     return rejected
       ? { status: 'failed', reason: rejected.safeReason ?? 'Managed access could not synchronize.' }
@@ -977,6 +1276,33 @@ export class ConnectorOperatorQueryService {
         .where(eq(connectorProviderInstances.id, provider.instanceId))
         .get()?.displayName ?? provider.type
     );
+  }
+
+  /** The live every-agent grant on one connection, or null when there is none. */
+  private everyAgentAccess(connectionId: string): ConnectorEveryAgentAccess | null {
+    const rows = this.db
+      .select({
+        revisionId: connectionOperationGrants.operationRevisionId,
+        classification: connectorOperationRevisions.capabilityClassification,
+      })
+      .from(connectionOperationGrants)
+      .innerJoin(
+        connectorOperationRevisions,
+        eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
+      )
+      .where(
+        and(
+          eq(connectionOperationGrants.connectionId, connectionId),
+          everyAgentGrantSubject(),
+          isNull(connectionOperationGrants.revokedAt)
+        )
+      )
+      .all();
+    if (rows.length === 0) return null;
+    return {
+      operationRevisionIds: [...new Set(rows.map((row) => row.revisionId))].sort(),
+      classifications: [...new Set(rows.map((row) => row.classification))].sort(),
+    };
   }
 
   private connectionNotFound(): never {

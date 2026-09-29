@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCommunityMethods } from '../community-methods';
-import { communityStubs } from '../../direct/community-stubs';
+
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 
 const connection = {
@@ -134,11 +134,5 @@ describe('community connection transport', () => {
       ['/api/community-connections/navigation/installation', 'PUT'],
       ['/api/community-connections/navigation/community-a/destination', 'GET'],
     ]);
-  });
-  it('refuses server-owned mutations in embedded mode', async () => {
-    await expect(communityStubs.listCommunityConnections()).resolves.toEqual([]);
-    await expect(communityStubs.disconnectCommunity('community-a')).rejects.toThrow(
-      'web or desktop'
-    );
   });
 });

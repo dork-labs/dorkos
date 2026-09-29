@@ -10,6 +10,7 @@ import {
   getWorkspaceManager,
   getWorkspaceRoot,
   scanWorktrees,
+  UnsafeWorkspaceSourceError,
 } from '../services/workspace/index.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
@@ -99,6 +100,9 @@ router.post('/', async (req, res) => {
     const workspace = await getWorkspaceManager().ensure(parsed.data);
     res.status(201).json(workspace);
   } catch (err) {
+    if (err instanceof UnsafeWorkspaceSourceError) {
+      return res.status(400).json({ error: err.message, code: 'UNSAFE_WORKSPACE_SOURCE' });
+    }
     logger.error('[workspaces] POST / failed', { err });
     res.status(500).json({ error: 'Internal server error' });
   }

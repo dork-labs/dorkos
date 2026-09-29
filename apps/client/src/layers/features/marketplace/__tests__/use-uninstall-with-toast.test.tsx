@@ -107,6 +107,26 @@ describe('useUninstallWithToast', () => {
       expect(mockError).not.toHaveBeenCalled();
     });
 
+    // Purpose (DOR-2322): an uninstall that kept files it could not prove
+    // says which, under the success line. Fails if its warnings are dropped.
+    it('shows what the uninstall had to say under its success line', () => {
+      const { result } = renderHook(() => useUninstallWithToast());
+      act(() => {
+        result.current.mutate({ name: '@dorkos/code-reviewer' });
+      });
+      const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (result: unknown) => void };
+      act(() => {
+        perCall.onSuccess({
+          ok: true,
+          warnings: ['It kept them: a.md. Delete any you don’t need.'],
+        });
+      });
+      expect(mockSuccess).toHaveBeenCalledWith('Uninstalled Code Reviewer', {
+        id: 'toast-id-abc',
+        description: 'It kept them: a.md. Delete any you don’t need.',
+      });
+    });
+
     it('replaces the loading toast with an error toast on failure', () => {
       const { result } = renderHook(() => useUninstallWithToast());
 

@@ -16,8 +16,7 @@
  * @module features/status/model/use-account-switch
  */
 import { useEffect } from 'react';
-import { claudeAccountName, type ClaudeAccountRef } from '@/layers/shared/lib';
-import { useAppStore, useClaudeAccounts } from '@/layers/shared/model';
+import { useAppStore, useClaudeAccounts, type ClaudeAccountEntry } from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
 
 /**
@@ -28,7 +27,7 @@ import { useCurrentAgent } from '@/layers/entities/agent';
 export const DEFAULT_ACCOUNT_VALUE = '__default__';
 
 /** One account the picker can offer: a registered row, keyed by its registry id. */
-export interface SelectableAccount extends ClaudeAccountRef {
+export interface SelectableAccount extends ClaudeAccountEntry {
   /** The registry id the launch hint carries. Never null — see {@link AccountSwitch.accounts}. */
   id: string;
 }
@@ -58,6 +57,11 @@ export interface AccountSwitch {
    * a name that might be wrong. See {@link useAccountSwitch}.
    */
   defaultLabel: string | undefined;
+  /**
+   * The path of the account {@link defaultLabel} names, so the pre-launch chip
+   * can draw its dot and usage. `undefined` exactly when the label is.
+   */
+  defaultPath: string | undefined;
   /** Hold an account (or the sentinel) as this session's launch hint. */
   choose: (value: string) => void;
 }
@@ -86,7 +90,7 @@ export interface AccountSwitch {
  * read settles the label is `undefined` — silence beats a confident wrong name.
  */
 export function useAccountSwitch(sessionId: string): AccountSwitch {
-  const { accounts, resolvedAccount, isMultiAccount } = useClaudeAccounts();
+  const { accounts, resolvedAccount, isMultiAccount, nameFor } = useClaudeAccounts();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const pendingAccount = useAppStore((s) => s.pendingAccount);
   const setPendingAccount = useAppStore((s) => s.setPendingAccount);
@@ -123,29 +127,31 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
     if (staleHint) setPendingAccount(null);
   }, [staleHint, setPendingAccount]);
 
+  const defaultPath = resolveDefaultPath({
+    resolvedAccount,
+    selectable,
+    // With no working directory there is no agent to pin anything, so the
+    // server default IS the ladder's answer and can be named right away. With
+    // one, the manifest read has to have landed first — the query is disabled
+    // without a path, so its pending state would otherwise never resolve and
+    // the row would read a bare "Default" forever.
+    agentAccountId: selectedCwd ? agentQuery.data?.account : undefined,
+    agentKnown: !selectedCwd || agentQuery.isSuccess,
+  });
+
   return {
     accounts: selectable,
     selectedValue: heldId && isRegistered(heldId) ? heldId : DEFAULT_ACCOUNT_VALUE,
     isMultiAccount,
-    defaultLabel: resolveDefaultLabel({
-      accounts,
-      resolvedAccount,
-      selectable,
-      // With no working directory there is no agent to pin anything, so the
-      // server default IS the ladder's answer and can be named right away. With
-      // one, the manifest read has to have landed first — the query is disabled
-      // without a path, so its pending state would otherwise never resolve and
-      // the row would read a bare "Default" forever.
-      agentAccountId: selectedCwd ? agentQuery.data?.account : undefined,
-      agentKnown: !selectedCwd || agentQuery.isSuccess,
-    }),
+    defaultLabel: defaultPath ? nameFor(defaultPath) : undefined,
+    defaultPath,
     choose: (value: string) =>
       setPendingAccount(value === DEFAULT_ACCOUNT_VALUE ? null : { id: value, sessionId }),
   };
 }
 
 /**
- * The name for "pick nothing" — what the server's ladder would bill.
+ * The account "pick nothing" means — what the server's ladder would bill, as a path.
  *
  * Mirrors `resolveLaunchAccountRoot`'s tier order below the hint: the agent's
  * account when it resolves, else the server default.
@@ -163,28 +169,26 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
  * would leave this row naming the previous account until the stale time lapses —
  * wrong about money, and silently so. Route agent writes through one of the two.
  *
- * @param input.accounts - Every account row the server reported, for naming.
  * @param input.resolvedAccount - The server default's absolute path.
  * @param input.selectable - Registered rows, the only ones an id can name.
  * @param input.agentAccountId - The agent's pinned account id, if it has one.
  * @param input.agentKnown - Whether the agent question has actually been answered.
- * @returns A display name, or `undefined` when the answer is not known yet.
+ * @returns The account's path, or `undefined` when the answer is not known yet.
  */
-function resolveDefaultLabel(input: {
-  accounts: readonly ClaudeAccountRef[];
+function resolveDefaultPath(input: {
   resolvedAccount: string | undefined;
   selectable: readonly SelectableAccount[];
   agentAccountId: string | undefined;
   agentKnown: boolean;
 }): string | undefined {
-  const { accounts, resolvedAccount, selectable, agentAccountId, agentKnown } = input;
+  const { resolvedAccount, selectable, agentAccountId, agentKnown } = input;
   if (!agentKnown) return undefined;
   if (agentAccountId !== undefined) {
     const pinned = selectable.find((account) => account.id === agentAccountId);
     // Only when it RESOLVES. An id the operator has since unregistered makes the
     // server fall through to the default, so naming it here would describe a
     // billing that will not happen.
-    if (pinned) return claudeAccountName(pinned.path, accounts);
+    if (pinned) return pinned.path;
   }
-  return resolvedAccount ? claudeAccountName(resolvedAccount, accounts) : undefined;
+  return resolvedAccount;
 }

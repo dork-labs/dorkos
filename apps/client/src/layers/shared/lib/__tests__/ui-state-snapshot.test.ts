@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { UiState } from '@dorkos/shared/types';
-import { setPlatformAdapter } from '../platform';
+import { describe, it, expect, beforeEach } from 'vitest';
+
 import {
   buildUiStateSnapshot,
   prepareUiStateForSend,
@@ -16,39 +15,9 @@ const baseSource: UiStateSource = {
   relayOpen: false,
   pickerOpen: false,
   sidebarOpen: true,
-  sidebarActiveTab: 'overview',
 };
 
-/** Point `getPlatform()` at an embedded (Obsidian) or standalone-web host. */
-function setEmbedded(isEmbedded: boolean) {
-  setPlatformAdapter({ isEmbedded, openFile: async () => {} });
-}
-
 describe('buildUiStateSnapshot', () => {
-  afterEach(() => {
-    // Restore the default standalone-web adapter (isEmbedded: false).
-    setEmbedded(false);
-  });
-
-  it('maps app-store fields into a UiState, reporting the sidebar tab on the embedded host', () => {
-    setEmbedded(true);
-    const snapshot = buildUiStateSnapshot(
-      {
-        ...baseSource,
-        pickerOpen: true,
-        tasksOpen: true,
-        sidebarActiveTab: 'connections',
-      },
-      '/projects/app'
-    );
-
-    expect(snapshot).toEqual<UiState>({
-      panels: { settings: false, tasks: true, relay: false, picker: true },
-      sidebar: { open: true, activeTab: 'connections' },
-      agent: { id: null, cwd: '/projects/app' },
-    });
-  });
-
   it('no longer reports the canvas at all — the server owns it', () => {
     // The one non-additive schema change in `canvas-agent-seat` (§1.7), from the
     // sending side: this window's view of the canvas is not something the server
@@ -59,13 +28,9 @@ describe('buildUiStateSnapshot', () => {
     expect(snapshot).not.toHaveProperty('canvas');
   });
 
-  it('reports sidebar.activeTab as null on the web cockpit (no sidebar tab strip)', () => {
-    setEmbedded(false);
-    const snapshot = buildUiStateSnapshot(
-      { ...baseSource, sidebarActiveTab: 'connections' },
-      '/projects/app'
-    );
-    expect(snapshot.sidebar).toEqual({ open: true, activeTab: null });
+  it('reports whether the sidebar is open', () => {
+    const snapshot = buildUiStateSnapshot(baseSource, '/projects/app');
+    expect(snapshot.sidebar).toEqual({ open: true });
   });
 
   it('reports a null cwd when it is unknown', () => {

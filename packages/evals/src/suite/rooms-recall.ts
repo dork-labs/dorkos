@@ -92,6 +92,7 @@ import {
 import type { RoomAgentSpec } from './rooms-setup.js';
 import { roomsBurstAnsweredInFullCase } from './rooms-burst.js';
 import { roomsJudgmentCases } from './rooms-judgment.js';
+import { roomsFilesCases } from './rooms-files.js';
 
 /** The agent every probe questions. Mentioned every time, so it always answers. */
 const ADA: RoomAgentSpec = {
@@ -875,4 +876,7 @@ export const roomsCredentialedCases: EvalCase[] = [
   roomsAdversarialInjectionCase,
   roomsBurstAnsweredInFullCase,
   ...roomsJudgmentCases,
+  // A room with files of its own (spec `agent-home-desk`): credentialed for the
+  // same reason, and here so the tier test polices it.
+  ...roomsFilesCases,
 ];

@@ -28,9 +28,14 @@
  *
  * @module services/marketplace/package-fetcher
  */
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  CATALOG_MAX_BYTES,
+  TooLargeError,
+  readResponseTextWithin,
+  readTextFileWithin,
+} from '@dorkos/shared/bounded-read';
 import type { Logger } from '@dorkos/shared/logger';
 import {
   parseDorkosSidecar,
@@ -55,7 +60,7 @@ import {
   GitRemoteUnreachableError,
   isFullCommitSha,
   type GitTreeSource,
-} from './lib/git-tree.js';
+} from './lib/git/git-tree.js';
 
 /**
  * Options for {@link PackageFetcher.fetchPackage} (and the legacy
@@ -389,20 +394,41 @@ export class PackageFetcher {
    *
    * On network failure, falls back to the previously cached copy (if any)
    * and logs a warning. If neither the fetch nor the cache returns a
-   * document, the original fetch error is rethrown.
+   * document, the original fetch error is rethrown. A failure's message is
+   * written for a person: "there's no marketplace listing at that address",
+   * not a status line.
    *
    * @param source - Marketplace source descriptor.
+   * @param options - `staleFallback: false` rethrows the fetch error instead
+   *   of serving the cached copy, for a caller that must know the document
+   *   was fetched just now (adding a source, DOR-2304). Defaults to `true`.
    */
-  async fetchMarketplaceJson(source: MarketplaceSource): Promise<MarketplaceJson> {
+  async fetchMarketplaceJson(
+    source: MarketplaceSource,
+    options: { staleFallback?: boolean } = {}
+  ): Promise<MarketplaceJson> {
+    const startedAt = new Date().toISOString();
     if (isFileUrl(source.source)) {
-      return this.readLocalMarketplaceJson(source);
+      try {
+        const json = await this.readLocalMarketplaceJson(source);
+        await this.recordFetch(source.name, startedAt, json);
+        return json;
+      } catch (err) {
+        await this.recordFetch(source.name, startedAt, err);
+        throw err;
+      }
     }
     const url = resolveMarketplaceJsonUrl(source.source);
     try {
       const json = await this.fetchAndParseMarketplaceJson(url, source.name);
       await this.cache.writeMarketplace(source.name, json);
+      await this.recordFetch(source.name, startedAt, json);
       return json;
     } catch (err) {
+      // Recorded as a failure even when an old copy is served below: the
+      // record is about THIS attempt, and GET /sources pairs it with the
+      // cached copy's own date to say "still showing the copy from …".
+      await this.recordFetch(source.name, startedAt, err);
       // Surface the attempted URL alongside the marketplace name so it's
       // obvious from the log whether the failure is a wrong URL (404 on a
       // typo'd org) or a genuine upstream outage.
@@ -411,7 +437,43 @@ export class PackageFetcher {
         url,
         error: err instanceof Error ? err.message : String(err),
       });
+      if (options.staleFallback === false) throw err;
       return this.serveStaleMarketplace(source.name, err);
+    }
+  }
+
+  /**
+   * Write down how an attempt to fetch a listing went (DOR-2324), for
+   * `GET /sources` to report. Best effort: a record that cannot be written is
+   * logged and never costs the caller its listing.
+   *
+   * @param marketplaceName - The source's name.
+   * @param startedAt - When the attempt started; decides which record is newer.
+   * @param outcome - The listing fetched, or the error the attempt failed with.
+   */
+  private async recordFetch(
+    marketplaceName: string,
+    startedAt: string,
+    outcome: MarketplaceJson | unknown
+  ): Promise<void> {
+    const checkedAt = new Date().toISOString();
+    try {
+      await this.cache.writeFetchStatus(
+        marketplaceName,
+        isFetchedListing(outcome)
+          ? { startedAt, checkedAt, ok: true, packageCount: outcome.plugins.length }
+          : {
+              startedAt,
+              checkedAt,
+              ok: false,
+              reason: outcome instanceof Error ? outcome.message : String(outcome),
+            }
+      );
+    } catch (err) {
+      this.logger.debug('package-fetcher: could not record the fetch outcome', {
+        marketplaceName,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -434,11 +496,19 @@ export class PackageFetcher {
     }
     const url = resolveDorkosSidecarUrl(source.source);
     try {
-      const response = await fetch(url);
+      // The same deadline as marketplace.json; it also bounds reading the body.
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(MARKETPLACE_JSON_TIMEOUT_MS),
+      });
       if (!response.ok) {
+        await response.body?.cancel();
         return null;
       }
-      const raw = await response.text();
+      const raw = await readResponseTextWithin(
+        response,
+        CATALOG_MAX_BYTES,
+        "The marketplace's dorkos.json"
+      );
       const parsed = parseDorkosSidecar(raw);
       if (!parsed.ok) {
         this.logger.warn('package-fetcher: dorkos.json parse failed', {
@@ -449,10 +519,15 @@ export class PackageFetcher {
       }
       return parsed.sidecar;
     } catch (err) {
-      this.logger.debug('package-fetcher: dorkos.json fetch failed (non-fatal)', {
-        marketplaceName: source.name,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      // Too large is the marketplace's doing and worth seeing; a network
+      // failure is routine for an optional file.
+      this.logger[err instanceof TooLargeError ? 'warn' : 'debug'](
+        'package-fetcher: dorkos.json fetch failed (non-fatal)',
+        {
+          marketplaceName: source.name,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      );
       return null;
     }
   }
@@ -467,8 +542,18 @@ export class PackageFetcher {
     const sidecarPath = path.join(root, '.claude-plugin', 'dorkos.json');
     let raw: string;
     try {
-      raw = await readFile(sidecarPath, 'utf-8');
-    } catch {
+      raw = await readTextFileWithin(
+        sidecarPath,
+        CATALOG_MAX_BYTES,
+        "The marketplace's dorkos.json"
+      );
+    } catch (err) {
+      if (err instanceof TooLargeError) {
+        this.logger.warn('package-fetcher: local dorkos.json skipped', {
+          marketplaceName: source.name,
+          error: err.message,
+        });
+      }
       return null;
     }
     const parsed = parseDorkosSidecar(raw);
@@ -516,12 +601,25 @@ export class PackageFetcher {
   private async readLocalMarketplaceJsonRaw(root: string): Promise<string> {
     const rootPath = path.join(root, 'marketplace.json');
     const claudePluginPath = path.join(root, '.claude-plugin', 'marketplace.json');
+    const what = "The marketplace's marketplace.json";
     try {
-      return await readFile(rootPath, 'utf-8');
+      return await readTextFileWithin(rootPath, CATALOG_MAX_BYTES, what);
     } catch (rootErr) {
+      // A root file that is there but too large is the answer, not a reason to
+      // look elsewhere.
+      if (rootErr instanceof TooLargeError) throw rootErr;
       try {
-        return await readFile(claudePluginPath, 'utf-8');
+        return await readTextFileWithin(claudePluginPath, CATALOG_MAX_BYTES, what);
       } catch (pluginErr) {
+        if (pluginErr instanceof TooLargeError) throw pluginErr;
+        // Neither file is there: say so in words a person reads on the add
+        // note or a refresh (DOR-2304), and keep both paths in the log.
+        if (isMissingFile(rootErr) && isMissingFile(pluginErr)) {
+          this.logger.warn('package-fetcher: no local marketplace.json', {
+            tried: [rootPath, claudePluginPath],
+          });
+          throw new Error("there's no marketplace listing in that folder", { cause: pluginErr });
+        }
         // Two failures, and both survive: the root attempt as prose in the
         // message, the `.claude-plugin` attempt as the cause. Chaining the
         // second one is the deliberate half — it is the layout registries
@@ -557,12 +655,21 @@ export class PackageFetcher {
           { cause: err }
         );
       }
-      throw err;
+      throw describeNetworkFailure(err);
     }
     if (!response.ok) {
-      throw new Error(`marketplace.json fetch failed: ${response.status} ${response.statusText}`);
+      await response.body?.cancel();
+      throw new Error(
+        response.status === 404
+          ? "there's no marketplace listing at that address"
+          : `the marketplace server answered with an error (${response.status} ${response.statusText})`
+      );
     }
-    const raw = await response.text();
+    const raw = await readResponseTextWithin(
+      response,
+      CATALOG_MAX_BYTES,
+      "The marketplace's marketplace.json"
+    );
     const parsed = parseMarketplaceJsonLenient(raw);
     if (!parsed.ok) {
       throw new Error(parsed.error);
@@ -696,6 +803,53 @@ export class PackageFetcher {
     });
     return `tmp-${Date.now()}`;
   }
+}
+
+/** True when a recorded outcome is a fetched listing rather than an error. */
+function isFetchedListing(outcome: unknown): outcome is MarketplaceJson {
+  return (
+    typeof outcome === 'object' &&
+    outcome !== null &&
+    !(outcome instanceof Error) &&
+    Array.isArray((outcome as { plugins?: unknown }).plugins)
+  );
+}
+
+/** True for a filesystem error that just means "no file there". */
+function isMissingFile(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+/**
+ * What a network error code means, for the ones a person can act on. undici
+ * reports every connection failure as a bare `fetch failed` and puts the code
+ * on `cause.code`, so without this every one of them reads the same.
+ */
+const NETWORK_FAILURE_REASONS: Readonly<Record<string, string>> = {
+  ENOTFOUND: "couldn't find a server at that address",
+  EAI_AGAIN: "couldn't find a server at that address",
+  ECONNREFUSED: 'the server at that address refused the connection',
+  ECONNRESET: 'the connection to the marketplace server was cut off',
+  ETIMEDOUT: "couldn't connect to the marketplace server in time",
+  UND_ERR_CONNECT_TIMEOUT: "couldn't connect to the marketplace server in time",
+};
+
+/**
+ * Turn a rejected `fetch` into an error whose message a person can read,
+ * keeping the original as its `cause`. An error with no code on its cause is
+ * returned unchanged: there is nothing better to say than what it says.
+ */
+function describeNetworkFailure(err: unknown): unknown {
+  const code =
+    err instanceof Error && typeof (err.cause as { code?: unknown } | undefined)?.code === 'string'
+      ? (err.cause as { code: string }).code
+      : undefined;
+  if (code === undefined) return err;
+  return new Error(
+    NETWORK_FAILURE_REASONS[code] ?? `couldn't reach the marketplace server (${code})`,
+    { cause: err }
+  );
 }
 
 /**

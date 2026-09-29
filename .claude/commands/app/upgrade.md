@@ -212,8 +212,8 @@ the one bump whose risk of waiting exceeds its risk of moving. The 21-day
 rule is for feature bumps (Lane 3).
 
 **Never `pnpm audit --fix`.** It writes blanket overrides with no per-major
-scoping — exactly the shape that broke `gray-matter` when `js-yaml@3` and
-`js-yaml@4` both live in the tree. Write the override yourself.
+scoping — exactly the shape that broke `gray-matter` back when `js-yaml@3`
+and `js-yaml@4` both lived in the tree. Write the override yourself.
 
 ### 1.2 Write the fix
 
@@ -225,8 +225,8 @@ the map — keep the two groups visually separate):
 "pnpm": {
   "overrides": {
     // …deliberate pins above…
-    "js-yaml@3": "^3.15.2",     // one entry PER MAJOR LINE that exists in the lockfile
-    "js-yaml@4": "^4.3.2",
+    "brace-expansion@1": "^1.1.18", // one entry PER MAJOR LINE that exists in the lockfile
+    "brace-expansion@2": "^2.1.4",
     "fflate@0.4": "^0.4.9",     // scope 0.x lines too: a bare `fflate` would drag 0.8.x consumers down
     "hono": "^4.13.5"           // existing entry? raise its floor; a range that merely *admits* the fix does not force it
   }

@@ -237,17 +237,6 @@ function BellStatesShowcase() {
         />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Standing permissions are live, and nothing else is true</ShowcaseLabel>
-      <ShowcaseDemo>
-        <InboxBellPill
-          tone="neutral"
-          glyph="trusted"
-          count={2}
-          text="trusted"
-          label="2 standing permissions are live. Open to see them or end them."
-        />
-      </ShowcaseDemo>
-
       <ShowcaseLabel>A read that failed — never silence</ShowcaseLabel>
       <ShowcaseDemo>
         <InboxBellPill
@@ -255,12 +244,6 @@ function BellStatesShowcase() {
           glyph="waiting"
           text="can't check approvals"
           label="DorkOS could not check for approvals. Open for details."
-        />
-        <InboxBellPill
-          tone="neutral"
-          glyph="untrusted"
-          text="can't check permissions"
-          label="DorkOS could not check which standing permissions are live. Open for details."
         />
       </ShowcaseDemo>
     </PlaygroundSection>

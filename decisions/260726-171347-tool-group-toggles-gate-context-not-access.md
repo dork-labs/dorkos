@@ -1,16 +1,18 @@
 ---
 id: 260726-171347
 title: Tool-group toggles gate context, not access
-status: accepted
+status: superseded
 created: 2026-07-26
 spec: null
 supersedes: 70
-superseded-by: null
+superseded-by: '260923-223904'
 ---
 
 # 260726-171347. Tool-group toggles gate context, not access
 
 ## Status
+
+Superseded (2026-09-24, DOR-2278, spec `agent-permissions` phase 3) by ADR-260923-223904 (one permission model for agent actions): the tool-group documentation switches it decided about are gone. A Blocked permission area now hides its tools from the agent's tool list and leaves their documentation out of the prompt, on every runtime.
 
 Accepted (2026-07-26, DOR-519). Supersedes ADR-0070 (Per-Agent Tool Filtering via
 Domain-Level allowedTools).
@@ -73,7 +75,7 @@ carry, `tasks_delete` and `mesh_unregister`, for three months. Neither was ever
 exposed, because `allowedTools` only decides whether the SDK asks before invoking a
 tool and cannot reach inside the handler where the tier gate sits. (The registry-side
 destructive capabilities, `marketplace.uninstall` and later
-`operator.update_agent_boundaries` among them, are in no tool group and were never in
+`operator.update_agent_boundaries` and `operator.update_agent_execution` among them, are in no tool group and were never in
 those lists. The set is declared across two tables: `mcp-tool-tiers.ts` and
 `defineCapability`.)
 

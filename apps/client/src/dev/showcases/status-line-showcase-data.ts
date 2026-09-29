@@ -10,7 +10,7 @@
  */
 import type { GitStatusResponse, UsageStatus } from '@dorkos/shared/types';
 import type { SessionStatusData } from '@/layers/entities/session';
-import { gitPromotionState } from '@/layers/features/status';
+import { gitPromotionState, showsStaleMark } from '@/layers/features/status';
 import type {
   ActiveSubagent,
   SessionDiagnostics,
@@ -21,7 +21,28 @@ import type {
   StatusItemNodesInput,
 } from '@/layers/features/chat/ui/status/status-item-nodes';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import type { RuntimeChipState } from '@/layers/features/status';
+import type { RuntimeChipState, SessionAccount } from '@/layers/features/status';
+import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
+
+/**
+ * One account on this machine, so the identity gate is closed and the account
+ * chip stays out of the line: these showcases are about the line's budget, and
+ * the chip has its own section on the Conversation page.
+ */
+const NO_ACCOUNT_CHIP: SessionAccount = {
+  visible: false,
+  runtime: 'claude-code',
+  accountId: null,
+  path: null,
+  name: null,
+  color: null,
+  usage: null,
+  limit: null,
+  chipState: 'unknown',
+  trackerItem: null,
+  lifecycle: 'idle',
+  pending: false,
+};
 
 export const AGENT = {
   name: 'dorkbot',
@@ -175,12 +196,27 @@ const DEGRADED_STATUS: SessionStatusData = {
 export interface StatusScenario {
   /** What this state is, in the words a reviewer would use. */
   label: string;
-  /** Live state the promotion rules read. */
-  ctx: StatusPromotionContext;
-  /** Everything the items need, minus `density`. */
-  input: Omit<StatusItemNodesInput, 'density'>;
+  /** Live state the promotion rules read, minus what the row derives (`usageStale`). */
+  ctx: Omit<StatusPromotionContext, 'usageStale'>;
+  /** Everything the items need, minus `density` and the row's clock (`now`). */
+  input: Omit<StatusItemNodesInput, 'density' | 'now'>;
   /** What the Session panel behind the `⋯` reports for this session. */
   diagnostics: SessionDiagnostics;
+}
+
+/**
+ * A scenario's promotion context, with `usageStale` derived from its own usage
+ * by the rule the usage item draws from (`showsStaleMark`), so a showcase row
+ * can never say one thing in the item and budget for another.
+ *
+ * @param scenario - The row's scenario.
+ * @param now - The row's clock, the same one its items read.
+ */
+export function scenarioContext(scenario: StatusScenario, now: Date): StatusPromotionContext {
+  return {
+    ...scenario.ctx,
+    usageStale: showsStaleMark(scenario.input.usage, scenario.input.usageObservedAt, now),
+  };
 }
 
 const HEALTHY_DIAGNOSTICS: SessionDiagnostics = {
@@ -242,7 +278,8 @@ const DEGRADED_DIAGNOSTICS: SessionDiagnostics = {
 /**
  * A resting session: clean tree on the default branch, a third of the context
  * window used, connected, default permissions, the default runtime. Nothing here
- * is news, so almost nothing shows.
+ * is news, so almost nothing shows — except usage and context, which show
+ * whenever they have a reading (spec `claude-account-ui` §6.8), quietly.
  */
 export const HEALTHY: StatusScenario = {
   label: 'Healthy — nothing to report',
@@ -255,6 +292,7 @@ export const HEALTHY: StatusScenario = {
     permissionDescriptor: null,
     plan: { active: false },
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: USAGE_OK,
     subagentsInFlight: 0,
   },
@@ -273,16 +311,48 @@ export const HEALTHY: StatusScenario = {
     gitStatus: CLEAN_GIT,
     workspace: null,
     runtimeChip: DEFAULT_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
     contextPercent: 31,
     contextUsage: null,
+    contextReading: null,
     compact: null,
     usage: USAGE_OK,
+    usageSource: 'live',
+    usageObservedAt: null,
     supportsCostTracking: true,
     runningSubagents: [],
     liveSubagentCount: 0,
     waitingOnSubagents: false,
     connectionState: 'connected',
   },
+  diagnostics: HEALTHY_DIAGNOSTICS,
+};
+
+/** Acct 1 of {@link MOCK_ACCOUNT_USAGE}, with a second account registered: the gate is open. */
+const ACCT_1_CHIP: SessionAccount = {
+  visible: true,
+  runtime: 'claude-code',
+  accountId: MOCK_ACCOUNT_USAGE[0]!.accountId,
+  path: MOCK_ACCOUNT_USAGE[0]!.path,
+  name: MOCK_ACCOUNT_USAGE[0]!.label,
+  color: MOCK_ACCOUNT_USAGE[0]!.color,
+  usage: MOCK_ACCOUNT_USAGE[0]!,
+  limit: null,
+  chipState: 'ok',
+  trackerItem: null,
+  lifecycle: 'idle',
+  pending: false,
+};
+
+/**
+ * The healthy session with two or more Claude accounts: the account chip shows,
+ * and it carries the usage display itself, so the usage item does not show even
+ * though there is a reading (spec `claude-account-ui` §6.8, one usage display).
+ */
+export const ABSORBED_BY_CHIP: StatusScenario = {
+  label: 'Two Claude accounts — the chip carries usage',
+  ctx: { ...HEALTHY.ctx, account: { chipState: 'ok' } },
+  input: { ...HEALTHY.input, sessionId: 'showcase-absorbed', account: ACCT_1_CHIP },
   diagnostics: HEALTHY_DIAGNOSTICS,
 };
 
@@ -311,6 +381,7 @@ export const DEGRADED: StatusScenario = {
     },
     plan: null,
     runtime: { isDefault: false, canSelect: false },
+    account: null,
     usage: USAGE_WARNING,
     subagentsInFlight: RUNNING_SUBAGENTS.length,
   },
@@ -329,10 +400,14 @@ export const DEGRADED: StatusScenario = {
     gitStatus: DIRTY_GIT,
     workspace: null,
     runtimeChip: CODEX_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
     contextPercent: 88,
     contextUsage: null,
+    contextReading: null,
     compact: null,
     usage: USAGE_WARNING,
+    usageSource: 'live',
+    usageObservedAt: null,
     supportsCostTracking: true,
     runningSubagents: RUNNING_SUBAGENTS,
     liveSubagentCount: RUNNING_SUBAGENTS.length,
@@ -358,6 +433,7 @@ export const DEGRADED_ON_DEFAULT: StatusScenario = {
     sessionId: 'showcase-degraded-default',
     status: { ...DEGRADED_STATUS, model: 'claude-opus-4-6' },
     runtimeChip: DEFAULT_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
   },
   diagnostics: {
     ...DEGRADED_DIAGNOSTICS,
@@ -401,6 +477,25 @@ export const RATE_LIMITED: StatusScenario = {
 };
 
 /**
+ * {@link RATE_LIMITED}, read from the account's cached reading two hours old.
+ *
+ * The usage item then says "100% · old", the widest a usage item gets, and it
+ * is rigid: it keeps every pixel. This is the row that proves the budget pays
+ * for that width rather than letting a neighbour paint over the `⋯`
+ * (spec `claude-account-ui` §6.8, 04 §13).
+ */
+export const RATE_LIMITED_STALE: StatusScenario = {
+  ...RATE_LIMITED,
+  label: 'Rate limited, from a reading two hours old',
+  input: {
+    ...RATE_LIMITED.input,
+    sessionId: 'showcase-rate-limited-stale',
+    usageSource: 'account',
+    usageObservedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+  },
+};
+
+/**
  * A turn that has delegated work, with one number beside it.
  *
  * The row where the subagents item is actually drawn: two rigid items is the most
@@ -419,6 +514,7 @@ export const DELEGATING: StatusScenario = {
     permissionDescriptor: null,
     plan: { active: false },
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: USAGE_OK,
   },
   input: {
@@ -426,6 +522,7 @@ export const DELEGATING: StatusScenario = {
     sessionId: 'showcase-delegating',
     status: { ...DEGRADED_STATUS, permissionMode: 'default' },
     runtimeChip: DEFAULT_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
     usage: USAGE_OK,
     connectionState: 'connected',
   },
@@ -480,6 +577,7 @@ export const PLANNING: StatusScenario = {
     permissionDescriptor: PLAN_MODE,
     plan: { active: true },
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: USAGE_OK,
     subagentsInFlight: 0,
   },
@@ -496,10 +594,14 @@ export const PLANNING: StatusScenario = {
     gitStatus: CLEAN_GIT,
     workspace: null,
     runtimeChip: DEFAULT_RUNTIME_CHIP,
+    account: NO_ACCOUNT_CHIP,
     contextPercent: 92,
     contextUsage: null,
+    contextReading: null,
     compact: null,
     usage: USAGE_OK,
+    usageSource: 'live',
+    usageObservedAt: null,
     supportsCostTracking: true,
     runningSubagents: [],
     liveSubagentCount: 0,

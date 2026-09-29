@@ -60,6 +60,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { isRelayEnabled } from '../../relay/relay-state.js';
 import { isTasksEnabled } from '../../tasks/task-state.js';
 import { configManager } from '../config-manager.js';
+import { toolDocGates } from '../../runtimes/claude-code/messaging/tool-doc-gates.js';
 import type { GitStatusResponse } from '@dorkos/shared/types';
 // The real Zod input shapes the marketplace tools are registered with — imported
 // (not re-typed) so the signature-pin test below diffs against the schema itself,
@@ -69,8 +70,19 @@ import { GetInputSchema } from '../../marketplace-mcp/tool-get.js';
 import { ListInstalledInputSchema } from '../../marketplace-mcp/tool-list-installed.js';
 import { RecommendInputSchema } from '../../marketplace-mcp/tool-recommend.js';
 import { InstallInputSchema } from '../../marketplace-mcp/tool-install.js';
+import { UpdateInputSchema } from '../../marketplace-mcp/tool-update.js';
 import { UninstallInputSchema } from '../../marketplace-mcp/tool-uninstall.js';
 import { CreatePackageInputSchema } from '../../marketplace-mcp/tool-create-package.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+  testHome,
+} from '../agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const mockedGetGitStatus = vi.mocked(getGitStatus);
 const mockedReadManifest = vi.mocked(readManifest);
@@ -132,13 +144,13 @@ describe('buildSystemPromptAppend', () => {
   });
 
   it('returns string containing <env> block', async () => {
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).toContain('<env>');
     expect(result).toContain('</env>');
   });
 
   it('<env> contains all required fields', async () => {
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).toContain('Working directory: /test/dir');
     expect(result).toContain('Product: DorkOS');
     expect(result).toMatch(/Version: /);
@@ -150,27 +162,27 @@ describe('buildSystemPromptAppend', () => {
   });
 
   it('does not include Date in env block (SDK injects its own)', async () => {
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).not.toMatch(/Date: /);
   });
 
   it('Version uses SERVER_VERSION from version module', async () => {
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).toContain('Version: 1.2.3');
   });
 
   it('does not include git status (moved to per-message context)', async () => {
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).not.toContain('<git_status>');
   });
 
   it('does not include peer agents (available via mesh_list tool)', async () => {
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).not.toContain('<peer_agents>');
   });
 
   it('does not include ui_state (moved to per-message context)', async () => {
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).not.toContain('<ui_state>');
   });
 
@@ -178,7 +190,7 @@ describe('buildSystemPromptAppend', () => {
     mockedReadManifest.mockResolvedValue(
       makeManifest({ name: 'my-agent', description: 'A helpful agent' })
     );
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).toContain('<env>');
     expect(result).toContain('<agent_identity>');
     expect(result).toContain('Name: my-agent');
@@ -186,14 +198,14 @@ describe('buildSystemPromptAppend', () => {
 
   it('gracefully handles agent block failure', async () => {
     mockedReadManifest.mockRejectedValue(new Error('disk error'));
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).toContain('<env>');
     expect(result).not.toContain('<agent_identity>');
   });
 
   it('places static tool blocks before semi-static agent/env blocks', async () => {
     mockedReadManifest.mockResolvedValue(makeManifest({ name: 'test-agent' }));
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     const relayIdx = result.indexOf('<relay_tools>');
     const envIdx = result.indexOf('<env>');
     const agentIdx = result.indexOf('<agent_identity>');
@@ -211,7 +223,7 @@ describe('buildSystemPromptAppend', () => {
       adapterTools: true,
       tasksTools: true,
     });
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).toContain('<env>');
     expect(result).toContain('<relay_tools>');
     expect(result).toContain('<mesh_tools>');
@@ -220,19 +232,14 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<marketplace_tools>');
   });
 
-  it('includes the marketplace tools block even when every other toggle is off (DOR-529)', async () => {
-    // Marketplace has no enabledToolGroups entry and no feature flag — it is
-    // unconditional, like <ui_tools>, so it must survive every other group
-    // being switched off.
+  it('includes the marketplace tools block even when every other feature is off (DOR-529)', async () => {
+    // Marketplace has no feature flag — only its permission area can take it
+    // away, so it must survive every other block being switched off.
     vi.mocked(isRelayEnabled).mockReturnValue(false);
     vi.mocked(isTasksEnabled).mockReturnValue(false);
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: false,
-      meshTools: false,
-      adapterTools: false,
-      tasksTools: false,
-    });
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (
+      await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', toolDocGates(['agents']))
+    ).text;
     expect(result).not.toContain('<relay_tools>');
     expect(result).not.toContain('<mesh_tools>');
     expect(result).not.toContain('<adapter_tools>');
@@ -242,7 +249,7 @@ describe('buildSystemPromptAppend', () => {
 
   it('excludes relay and adapter blocks when relay is disabled', async () => {
     vi.mocked(isRelayEnabled).mockReturnValue(false);
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     expect(result).toContain('<env>');
     expect(result).toContain('<mesh_tools>');
     expect(result).not.toContain('<relay_tools>');
@@ -286,19 +293,15 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<env>');
   });
 
-  it('excludes all tool blocks when all config toggles are off', async () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: false,
-      meshTools: false,
-      adapterTools: false,
-      tasksTools: false,
-    });
-    const result = (await buildSystemPromptAppend('/test/dir')).text;
+  it('excludes every switchable tool block when every area it documents is Blocked', async () => {
+    const gates = toolDocGates(['messages', 'agents', 'connections', 'tasks', 'packages']);
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', gates)).text;
     expect(result).toContain('<env>');
     expect(result).not.toContain('<relay_tools>');
     expect(result).not.toContain('<mesh_tools>');
     expect(result).not.toContain('<adapter_tools>');
     expect(result).not.toContain('<tasks_tools>');
+    expect(result).not.toContain('<marketplace_tools>');
   });
 });
 
@@ -314,7 +317,7 @@ describe('agent-aware block gating', () => {
 
   it('omits relay block when toolConfig.relay=false', async () => {
     const result = (
-      await buildSystemPromptAppend('/tmp/test', {
+      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
         relay: false,
         mesh: true,
@@ -326,7 +329,7 @@ describe('agent-aware block gating', () => {
 
   it('omits mesh block when toolConfig.mesh=false', async () => {
     const result = (
-      await buildSystemPromptAppend('/tmp/test', {
+      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
         relay: true,
         mesh: false,
@@ -338,7 +341,7 @@ describe('agent-aware block gating', () => {
 
   it('omits tasks block when toolConfig.tasks=false', async () => {
     const result = (
-      await buildSystemPromptAppend('/tmp/test', {
+      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: false,
         relay: true,
         mesh: true,
@@ -350,7 +353,7 @@ describe('agent-aware block gating', () => {
 
   it('omits adapter block when toolConfig.adapter=false', async () => {
     const result = (
-      await buildSystemPromptAppend('/tmp/test', {
+      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
         relay: true,
         mesh: true,
@@ -362,7 +365,7 @@ describe('agent-aware block gating', () => {
 
   it('includes tasks block when toolConfig.tasks=true', async () => {
     const result = (
-      await buildSystemPromptAppend('/tmp/test', {
+      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
         relay: true,
         mesh: true,
@@ -373,7 +376,7 @@ describe('agent-aware block gating', () => {
   });
 
   it('backward compat: no extra args works as before', async () => {
-    const result = (await buildSystemPromptAppend('/tmp/test')).text;
+    const result = (await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test')).text;
     expect(result).toContain('<env>');
   });
 
@@ -386,7 +389,7 @@ describe('agent-aware block gating', () => {
       tasksTools: false,
     });
     const result = (
-      await buildSystemPromptAppend('/tmp/test', {
+      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
         relay: true,
         mesh: true,
@@ -482,7 +485,7 @@ describe('renderContextEntry', () => {
     // production never emits.
     const uiState = {
       panels: { settings: false, tasks: false, relay: false, picker: false },
-      sidebar: { open: true, activeTab: 'sessions' as const },
+      sidebar: { open: true },
       agent: { id: null, cwd: null },
     };
     const result = renderContextEntry({ kind: 'ui_state', scope: 'per-turn', data: uiState });
@@ -513,13 +516,13 @@ describe('buildAgentBlock', () => {
 
   it('returns empty string when readManifest returns null', async () => {
     mockedReadManifest.mockResolvedValue(null);
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).toBe('');
   });
 
   it('includes <agent_identity> with name and id when manifest exists', async () => {
     mockedReadManifest.mockResolvedValue(makeManifest());
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).toContain('<agent_identity>');
     expect(result).toContain('Name: test-agent');
     expect(result).toContain('ID: 01JTEST000000000000000000');
@@ -528,7 +531,7 @@ describe('buildAgentBlock', () => {
 
   it('includes description in identity block when non-empty', async () => {
     mockedReadManifest.mockResolvedValue(makeManifest({ description: 'A test agent' }));
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).toContain('Description: A test agent');
   });
 
@@ -536,19 +539,19 @@ describe('buildAgentBlock', () => {
     mockedReadManifest.mockResolvedValue(
       makeManifest({ capabilities: ['code-review', 'testing'] })
     );
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).toContain('Capabilities: code-review, testing');
   });
 
   it('omits description line when description is empty string', async () => {
     mockedReadManifest.mockResolvedValue(makeManifest({ description: '' }));
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).not.toContain('Description:');
   });
 
   it('omits capabilities line when capabilities is empty array', async () => {
     mockedReadManifest.mockResolvedValue(makeManifest({ capabilities: [] }));
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).not.toContain('Capabilities:');
   });
 
@@ -556,7 +559,7 @@ describe('buildAgentBlock', () => {
     mockedReadManifest.mockResolvedValue(
       makeManifest({ personaEnabled: true, persona: 'You are a helpful backend expert.' })
     );
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).toContain('<agent_persona>');
     expect(result).toContain('You are a helpful backend expert.');
     expect(result).toContain('</agent_persona>');
@@ -566,7 +569,7 @@ describe('buildAgentBlock', () => {
     mockedReadManifest.mockResolvedValue(
       makeManifest({ personaEnabled: false, persona: 'You are a helpful backend expert.' })
     );
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).not.toContain('<agent_persona>');
     expect(result).toContain('<agent_identity>');
   });
@@ -575,13 +578,13 @@ describe('buildAgentBlock', () => {
     mockedReadManifest.mockResolvedValue(
       makeManifest({ personaEnabled: true, persona: undefined })
     );
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).not.toContain('<agent_persona>');
   });
 
   it('excludes <agent_persona> when persona is empty string', async () => {
     mockedReadManifest.mockResolvedValue(makeManifest({ personaEnabled: true, persona: '' }));
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).not.toContain('<agent_persona>');
   });
 
@@ -590,7 +593,7 @@ describe('buildAgentBlock', () => {
     mockedReadManifest.mockResolvedValue(
       makeManifest({ personaEnabled: true, persona: 'Expert persona text.' })
     );
-    const result = (await _buildAgentBlock('/test/dir')).text;
+    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
     expect(result).toContain('<agent_persona>');
     expect(result).toContain('Expert persona text.');
   });
@@ -675,14 +678,8 @@ describe('buildRelayToolsBlock', () => {
     expect(_buildRelayToolsBlock()).toBe('');
   });
 
-  it('returns empty string when config toggle is off', () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: false,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: true,
-    });
-    expect(_buildRelayToolsBlock()).toBe('');
+  it('returns empty string when its permission area is Blocked for the agent', () => {
+    expect(_buildRelayToolsBlock(toolDocGates(['messages']))).toBe('');
   });
 
   it('returns relay context when config is undefined (default behavior)', () => {
@@ -725,14 +722,8 @@ describe('buildMeshToolsBlock', () => {
     expect(result).toContain('</mesh_tools>');
   });
 
-  it('returns empty string when config toggle is off', () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: false,
-      adapterTools: true,
-      tasksTools: true,
-    });
-    expect(_buildMeshToolsBlock()).toBe('');
+  it('returns empty string when its permission area is Blocked for the agent', () => {
+    expect(_buildMeshToolsBlock(toolDocGates(['agents']))).toBe('');
   });
 
   it('returns mesh context when config is undefined (default behavior)', () => {
@@ -779,14 +770,8 @@ describe('buildAdapterToolsBlock', () => {
     expect(_buildAdapterToolsBlock()).toBe('');
   });
 
-  it('returns empty string when config toggle is off', () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: true,
-      adapterTools: false,
-      tasksTools: true,
-    });
-    expect(_buildAdapterToolsBlock()).toBe('');
+  it('returns empty string when its permission area is Blocked for the agent', () => {
+    expect(_buildAdapterToolsBlock(toolDocGates(['connections']))).toBe('');
   });
 
   it('returns adapter context when config is undefined (default behavior)', () => {
@@ -834,14 +819,8 @@ describe('buildTasksToolsBlock', () => {
     expect(_buildTasksToolsBlock()).toBe('');
   });
 
-  it('returns empty string when config toggle is off', () => {
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: false,
-    });
-    expect(_buildTasksToolsBlock()).toBe('');
+  it('returns empty string when its permission area is Blocked for the agent', () => {
+    expect(_buildTasksToolsBlock(toolDocGates(['tasks']))).toBe('');
   });
 
   it('returns tasks context when config is undefined (default behavior)', () => {
@@ -914,6 +893,7 @@ describe('buildMarketplaceToolsBlock', () => {
       ['marketplace_list_installed', ListInstalledInputSchema],
       ['marketplace_recommend', RecommendInputSchema],
       ['marketplace_install', InstallInputSchema],
+      ['marketplace_update', UpdateInputSchema],
       ['marketplace_uninstall', UninstallInputSchema],
       ['marketplace_create_package', CreatePackageInputSchema],
     ];

@@ -35,9 +35,12 @@ import {
   DEGRADED_ON_DEFAULT,
   DELEGATING,
   HEALTHY,
+  ABSORBED_BY_CHIP,
   PLANNING,
   WAITING_ON_BACKGROUND_TASKS,
   RATE_LIMITED,
+  RATE_LIMITED_STALE,
+  scenarioContext,
   SAMPLED_WIDTHS,
   TIER_WIDTHS,
   type StatusScenario,
@@ -125,15 +128,17 @@ function BudgetedLine({
     budget.density === 'full' && scenario.ctx.contextPercent !== null
       ? { pending: false, onCompact: () => {} }
       : null;
+  // One clock for the row, as in `ChatStatusSection`: the item's "· old" and
+  // the budget's charge for it are read from the same rule at the same moment.
+  const now = new Date();
+  const ctx = scenarioContext(scenario, now);
   const nodes = buildStatusItemNodes({
     ...scenario.input,
     compact: inlineCompact,
     density: budget.density,
+    now,
   });
-  const { items, overflow } = applyStatusBudget(
-    selectPromotedItems({ ctx: scenario.ctx, pins, nodes }),
-    budget
-  );
+  const { items, overflow } = applyStatusBudget(selectPromotedItems({ ctx, pins, nodes }), budget);
 
   return (
     <div className="space-y-1.5">
@@ -164,7 +169,7 @@ function BudgetedLine({
               onOpenChange={panel.onOpenChange}
               diagnostics={scenario.diagnostics}
               controls={panel.controls}
-              promotionContext={scenario.ctx}
+              promotionContext={ctx}
               overflowCount={overflow}
             />
           }
@@ -221,6 +226,17 @@ export function StatusLineShowcases() {
           <div className="space-y-5">
             {TIER_WIDTHS.map((width) => (
               <BudgetedLine key={width} scenario={RATE_LIMITED} width={width} />
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Rate limited from an old reading: the wider “100% · old” still fits
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <div className="space-y-5">
+            {TIER_WIDTHS.map((width) => (
+              <BudgetedLine key={width} scenario={RATE_LIMITED_STALE} width={width} />
             ))}
           </div>
         </ShowcaseDemo>
@@ -285,12 +301,20 @@ export function StatusLineShowcases() {
 
       <PlaygroundSection
         title="StatusLine — promoted set"
-        description="The same component at the same width, two session states. Quiet by default means a healthy session says almost nothing; every promotion rule fires at once under stress, which is exactly when severity ordering has to be right."
+        description="The same component at the same width, a few session states. Quiet by default means a healthy session says almost nothing beyond its usage and context, which show whenever there is a reading; every promotion rule fires at once under stress, which is exactly when severity ordering has to be right."
       >
         <ShowcaseLabel>At rest — clean tree, connected, default permissions</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
           <BudgetedLine scenario={HEALTHY} width={648} />
           <BudgetedLine scenario={WAITING_ON_BACKGROUND_TASKS} width={648} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          At rest with two Claude accounts — the account chip carries usage, so the usage item does
+          not show, even pinned
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <BudgetedLine scenario={ABSORBED_BY_CHIP} width={648} pins={['usage']} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Under stress — same width, everything wrong</ShowcaseLabel>
@@ -342,7 +366,7 @@ export function StatusLineShowcases() {
             onOpenChange={plainPanel.onOpenChange}
             diagnostics={DEGRADED.diagnostics}
             controls={plainPanel.controls}
-            promotionContext={DEGRADED.ctx}
+            promotionContext={scenarioContext(DEGRADED, new Date())}
           />
         </ShowcaseDemo>
 
@@ -355,7 +379,7 @@ export function StatusLineShowcases() {
             onOpenChange={countedPanel.onOpenChange}
             diagnostics={DEGRADED.diagnostics}
             controls={countedPanel.controls}
-            promotionContext={DEGRADED.ctx}
+            promotionContext={scenarioContext(DEGRADED, new Date())}
             overflowCount={4}
             urgentAction={{ label: 'Compact conversation — 88% full', onAction: () => {} }}
           />

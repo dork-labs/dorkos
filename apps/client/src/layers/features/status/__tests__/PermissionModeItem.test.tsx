@@ -106,6 +106,7 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  supportsAccounts: true,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -180,6 +181,7 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsAccounts: false,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -231,6 +233,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsAccounts: false,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -286,6 +289,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsAccounts: false,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -338,6 +342,7 @@ const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsAccounts: false,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -479,7 +484,9 @@ describe('PermissionModeItem', () => {
 
       expect(triggerClasses()).not.toContain('text-status-success');
       // The divergence is said instead of shouted — amber, on the caption.
-      expect(screen.getByTestId('trust-dial-caption').className).toContain('amber');
+      expect(screen.getByTestId('trust-dial-caption').className).toContain(
+        'text-status-warning-fg'
+      );
     });
 
     it('leaves the cautious choice plain — nothing shames it', () => {
@@ -737,13 +744,6 @@ describe('PermissionModeItem', () => {
     });
 
     it('says "Send a message first" when disabled, never the loading placeholder', () => {
-      // PROBE A (DOR-2103 re-review), and it is deterministic rather than a
-      // race: the status line passes `disabled={!sessionId}`, the embed's
-      // session store starts null and resets on every directory switch, and
-      // `permissionModeKnown` is false whenever nothing has answered — so both
-      // props are set at once and the ORDER of the two branches decides what a
-      // person sees. Loading won, and a control nobody can use pulsed
-      // "Permissions: still loading" forever for a read nobody had issued.
       mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(
         <PermissionModeItem

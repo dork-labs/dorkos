@@ -119,6 +119,9 @@ function accountIdForSlug(slug: string): ConnectorExternalAccountRef {
   return `mcp:${slug}` as ConnectorExternalAccountRef;
 }
 
+/** Backend type identifier of the raw-MCP baseline provider. */
+export const RAW_MCP_PROVIDER_TYPE = 'mcp';
+
 /**
  * Baseline connector for remote MCP servers. Single-account by construction: a
  * configured server yields at most one connected account. Re-verification uses
@@ -126,7 +129,7 @@ function accountIdForSlug(slug: string): ConnectorExternalAccountRef {
  */
 export class RawMcpConnectorProvider implements ConnectorProvider {
   readonly instanceId: ConnectorProviderInstanceId;
-  readonly type = 'mcp';
+  readonly type = RAW_MCP_PROVIDER_TYPE;
 
   private readonly _servers = new Map<string, RawMcpServerDescriptor>();
   private readonly _probe: (connection: RemoteMcpConnection) => Promise<ProbeOutcome>;
@@ -176,16 +179,9 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
     };
   }
 
-  async listToolkitPage(request: {
-    cursor?: string;
-    query?: string;
-    limit: number;
-    signal: AbortSignal;
-  }) {
+  async listToolkitPage(request: { cursor?: string; limit: number; signal: AbortSignal }) {
     request.signal.throwIfAborted();
-    const all = (await this.listToolkits()).filter((toolkit) =>
-      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
-    );
+    const all = await this.listToolkits();
     const offset = request.cursor ? Number(request.cursor) : 0;
     const toolkits = all.slice(offset, offset + request.limit);
     const next = offset + toolkits.length;

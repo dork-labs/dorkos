@@ -13,7 +13,6 @@ const CROSS_SLICE_KEYS = [
   'dorkos-expand-tool-calls',
   'dorkos-auto-hide-tool-calls',
   'dorkos-promo-enabled',
-  'dorkos-sidebar-active-tab',
   'dorkos-right-panel-state',
   'dorkos-right-panel-layouts',
   'dorkos-pip-panel-state',
@@ -26,7 +25,6 @@ function seed() {
   s.setExpandToolCalls(true);
   s.setAutoHideToolCalls(false);
   s.setPromoEnabled(false);
-  s.setSidebarActiveTab('connections');
   s.setPipGeometry({ x: 1, y: 2, width: 300, height: 200 });
   localStorage.setItem('dorkos-right-panel-state', '{"open":true,"activeTab":"profile"}');
   localStorage.setItem('dorkos-right-panel-layouts', '{"a1":{"open":true}}');
@@ -79,7 +77,6 @@ describe('CoreSlice — resets', () => {
       expect(s.expandToolCalls).toBe(true);
       expect(s.autoHideToolCalls).toBe(false);
       expect(s.promoEnabled).toBe(false);
-      expect(s.sidebarActiveTab).toBe('connections');
       expect(s.pipGeometry).toEqual({ x: 1, y: 2, width: 300, height: 200 });
     });
   });
@@ -109,7 +106,6 @@ describe('CoreSlice — resets', () => {
       expect(s.expandToolCalls).toBe(false);
       expect(s.autoHideToolCalls).toBe(true);
       expect(s.promoEnabled).toBe(true);
-      expect(s.sidebarActiveTab).toBe('overview');
       expect(s.pipGeometry).toBeNull();
     });
   });

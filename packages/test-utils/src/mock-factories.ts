@@ -13,6 +13,15 @@ import type {
   UiCanvasContent,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import {
+  CONNECTION_GONE_AGENT_COPY,
+  CONNECTION_READINESS_COPY,
+  ConnectionReadinessSchema,
+  disconnectStuckOwnerLine,
+  type ConnectionReadiness,
+} from '@dorkos/shared/connector-schemas';
+import type { LimitPlan, SessionLimit } from '@dorkos/shared/session-stream';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type {
   CanvasDocument,
@@ -74,6 +83,98 @@ export function createMockSessionWithReading(overrides: Partial<Session> = {}): 
   });
 }
 
+/**
+ * Create a mock {@link AccountUsage}: a registered Claude Code account on the
+ * Max plan, its 5-hour window at 40% and its weekly window at 72%, both
+ * allowed, so the account reads `ok`. Every time is fixed, so tests never
+ * depend on the clock.
+ *
+ * @param overrides - Fields to replace, such as `state`, `windows` or `label`.
+ */
+export function createMockAccountUsage(overrides: Partial<AccountUsage> = {}): AccountUsage {
+  const observedAt = '2026-09-27T12:00:00.000Z';
+  return {
+    runtime: 'claude-code',
+    accountId: 'acct-2',
+    path: '/Users/test/.claude-acct-2',
+    label: 'Acct 2',
+    color: '#1d8a4a',
+    subscriptionType: 'max',
+    plan: { name: 'max', observedAt, source: 'sdk_event' },
+    credits: null,
+    spend: null,
+    windows: [
+      {
+        key: 'five_hour',
+        label: '5-hour window',
+        usedPct: 40,
+        resetsAt: '2026-09-27T15:00:00.000Z',
+        status: 'allowed',
+        expired: false,
+        observedAt,
+        source: 'sdk_event',
+      },
+      {
+        key: 'seven_day',
+        label: 'Weekly',
+        usedPct: 72,
+        resetsAt: '2026-10-04T09:00:00.000Z',
+        status: 'allowed',
+        expired: false,
+        observedAt,
+        source: 'sdk_event',
+      },
+    ],
+    state: 'ok',
+    limit: null,
+    updatedAt: observedAt,
+    ...overrides,
+  };
+}
+
+/** The state each plan mode puts a limit in when nothing else applies. */
+const STATE_BY_MODE: Record<LimitPlan['mode'], SessionLimit['state']> = {
+  ask: 'limited',
+  auto: 'handing-off',
+  waiting: 'waiting-reset',
+  continued: 'moved',
+};
+
+/**
+ * Create a mock {@link SessionLimit} with the given plan: account `acct-4` out
+ * of its weekly window since a fixed time, resetting Tuesday 3pm UTC.
+ *
+ * - `ask`: nothing happens until the person picks.
+ * - `auto`: the work carries over to `acct-2` ten seconds after the limit.
+ * - `waiting`: the person chose to wait for the reset.
+ * - `continued`: the work carried over to session `session-moved` on `acct-2`.
+ *
+ * @param mode - The plan's mode.
+ * @param overrides - Fields to replace on the limit.
+ */
+export function createMockSessionLimit(
+  mode: LimitPlan['mode'] = 'ask',
+  overrides: Partial<SessionLimit> = {}
+): SessionLimit {
+  const since = '2026-09-27T16:00:00.000Z';
+  const plans: Record<LimitPlan['mode'], LimitPlan> = {
+    ask: { mode: 'ask' },
+    auto: { mode: 'auto', target: 'acct-2', fireAt: '2026-09-27T16:00:10.000Z' },
+    waiting: { mode: 'waiting', resumeAt: '2026-09-29T15:00:00.000Z', autoResume: false },
+    continued: { mode: 'continued', sessionId: 'session-moved', accountId: 'acct-2' },
+  };
+  return {
+    accountId: 'acct-4',
+    window: 'seven_day',
+    resetsAt: '2026-09-29T15:00:00.000Z',
+    since,
+    plan: plans[mode],
+    scope: 'account',
+    state: STATE_BY_MODE[mode],
+    ...overrides,
+  };
+}
+
 /** Create a mock StreamEvent with the given type and data. */
 export function createMockStreamEvent(
   type: StreamEvent['type'],
@@ -108,11 +209,17 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     status: 'active',
     agentId: null,
     timezone: null,
+    defaultCron: '0 9 * * 1-5',
+    defaultTimezone: null,
+    timingOverridden: false,
+    packageOwned: null,
+    approvalChanges: [],
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     filePath: '/tmp/tasks/daily-review/SKILL.md',
     nextRun: new Date(Date.now() + 86400000).toISOString(),
     nextRuns: [],
@@ -161,7 +268,6 @@ const mockAgent: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
   workspace: { mode: 'home' },
 };
@@ -411,8 +517,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       (cwd: string, filePath: string) => `/api/files/raw?cwd=${cwd}&path=${filePath}`
     ),
     // Embedded browser signed URLs — the default mock behaves like the HTTP
-    // transport, returning a resolvable URL. Tests that exercise the
-    // DirectTransport path override these to resolve null.
+    // transport, returning a resolvable URL. Tests for unavailable previews
+    // override these to resolve null.
     createServeUrl: vi.fn(
       async (cwd: string, filePath?: string) =>
         `/api/workbench/serve/mock-token/${filePath ?? 'index.html'}?cwd=${cwd}`
@@ -421,17 +527,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       url: `http://localhost:4999/?__dorkos_preview=mock-token-${port}`,
     })),
     // Default: the port answers. Tests covering the dead-port message override
-    // this with `{ listening: false }`, and DirectTransport tests with `null`.
+    // this with `{ listening: false }`; unavailable probes return `null`.
     probeLoopbackPort: vi.fn(async () => ({ listening: true })),
     // Embedded browser — the default mock behaves like the HTTP transport (it
-    // can serve a page); tests covering the DirectTransport path override
+    // can serve a page); tests for unavailable previews override
     // `supportsWorkbenchServe: false`.
     supportsWorkbenchServe: true,
     ingestDevtoolsCapture: vi.fn(async () => {}),
     postDevtoolsAction: vi.fn(async () => {}),
     uploadDevtoolsRecording: vi.fn(async () => {}),
     // Embedded terminal — the default mock behaves like the HTTP transport
-    // (supported); tests that need the DirectTransport path override
+    // (supported); tests for unsupported terminals override
     // `supportsTerminal: false`.
     supportsTerminal: true,
     openTerminal: vi.fn(async () => ({
@@ -467,7 +573,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     renameEntry: vi.fn().mockResolvedValue({ ok: true }),
     copyEntry: vi.fn().mockResolvedValue({ ok: true }),
     // Reveal behaves like the HTTP transport by default (supported); tests that
-    // need the DirectTransport path override `supportsReveal: false`.
+    // need an unavailable file manager override `supportsReveal: false`.
     supportsReveal: true,
     revealEntry: vi.fn().mockResolvedValue(undefined),
     getConfig: vi.fn().mockResolvedValue({
@@ -519,6 +625,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     readRoomFileContent: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     readRoomRepoStatus: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     saveRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    uploadRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    moveRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    deleteRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    saveAttachmentToRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     repairRoomMain: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     mergeRoomMain: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     readRoomCanvasDiff: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
@@ -632,6 +742,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsManagedMcpServers: true,
           supportsQuestionPrompt: true,
           supportsPlugins: true,
+          supportsAccounts: true,
           permissionModes: {
             supported: true,
             // The mode a claude-code session runs when nothing is stored for it
@@ -707,6 +818,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsMcp: false,
           supportsQuestionPrompt: false,
           supportsPlugins: false,
+          supportsAccounts: false,
           permissionModes: {
             supported: true,
             default: 'default',
@@ -740,8 +852,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
               },
             ],
           },
-          // Effort is real; no bespoke section — Codex's card is the common rows.
-          settings: { configSection: 'codex', supportsEffort: true, sections: [] },
+          // Effort is real; the one bespoke section is the account's usage.
+          settings: {
+            configSection: 'codex',
+            supportsEffort: true,
+            sections: [{ kind: 'runtime-usage' }],
+          },
           features: {},
         },
         opencode: {
@@ -752,6 +868,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsMcp: false,
           supportsQuestionPrompt: false,
           supportsPlugins: false,
+          supportsAccounts: false,
           permissionModes: {
             supported: true,
             default: 'default',
@@ -783,11 +900,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
             ],
           },
           // No effort leaf at OpenCode's API, and its bespoke section is the
-          // power-source picker — both load-bearing absences for the cards.
+          // power-source picker, then the account's usage.
           settings: {
             configSection: 'opencode',
             supportsEffort: false,
-            sections: [{ kind: 'opencode-power-source' }],
+            sections: [{ kind: 'opencode-power-source' }, { kind: 'runtime-usage' }],
           },
           features: {},
         },
@@ -1004,11 +1121,15 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     previewMarketplacePackage: vi.fn(),
     installMarketplacePackage: vi.fn(),
     uninstallMarketplacePackage: vi.fn(),
-    updateMarketplacePackage: vi.fn(),
+    checkMarketplaceUpdates: vi.fn().mockResolvedValue({ checks: [] }),
+    applyMarketplaceUpdates: vi.fn(),
+    reviewHeldBackPackage: vi.fn().mockResolvedValue(undefined),
     listInstalledPackages: vi.fn().mockResolvedValue([]),
+    checkPackageFiles: vi.fn(),
     listPackageInstallations: vi.fn().mockResolvedValue([]),
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
+    refreshMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
     // Harness Sync (spec `harness-sync-status` §5). A clean `ready` status with
     // nothing in it: every existing client test keeps compiling and none of them
@@ -1068,11 +1189,43 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockImplementation((approvalId: string) =>
         Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
       ),
-    // Standing permissions (spec `agent-approval-settings` §3.7)
-    listStandingPermissions: vi.fn().mockResolvedValue({ grants: [] }),
-    revokeStandingPermission: vi
+    dismissAlwaysSuggestion: vi
       .fn()
-      .mockImplementation((grantId: string) => Promise.resolve({ ok: true, grantId })),
+      .mockImplementation((approvalId: string) => Promise.resolve({ ok: true, approvalId })),
+    // Permissions (spec `agent-permissions`)
+    getPermissions: vi.fn().mockResolvedValue({
+      preset: null,
+      defaults: { areas: {}, actions: {} },
+      changeCount: 0,
+      filesAndCommands: {
+        stop: null,
+        presetStop: null,
+        runtimes: [],
+        exceptions: [],
+        followingAgentIds: [],
+      },
+      areas: [],
+      exceptions: [],
+      agentCount: 0,
+    }),
+    getAgentPermissions: vi.fn().mockImplementation((agentId: string) =>
+      Promise.resolve({
+        agentId,
+        agentName: agentId,
+        overrides: {},
+        areas: [],
+        filesAndCommands: {
+          stop: null,
+          source: 'runtime-own',
+          inherited: { stop: null, source: 'runtime-own' },
+        },
+      })
+    ),
+    setPermissionPreset: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    patchPermissionDefaults: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    patchAgentPermissions: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
+    getPermissionHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    undoPermissionChange: vi.fn().mockResolvedValue({ changes: [], skipped: [] }),
     // Team roster (spec `identity-consistency` §W2.2). Honest-empty by default:
     // `warnings` is OMITTED on a clean read, never `[]`, so a test that does
     // not opt into degradation never renders the banner by accident.
@@ -1087,6 +1240,22 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // default that omitted it would let a component read `undefined` in every
     // test and crash only in production.
     search: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+    // Account usage and carrying a limited session over (spec `claude-account-ui`
+    // §6.0). Empty answers, so a component under test shows no account data
+    // unless a test supplies some, and the writes succeed without effect.
+    getAccountUsage: vi.fn().mockResolvedValue({ accounts: [] }),
+    getContinueOptions: vi.fn().mockResolvedValue({
+      plan: { mode: 'ask' },
+      ranking: { accounts: [], recommendedId: null },
+    }),
+    continueSession: vi.fn().mockResolvedValue({ sessionId: 'session-continued' }),
+    waitForReset: vi.fn().mockResolvedValue(undefined),
+    cancelAutoContinue: vi.fn().mockResolvedValue(undefined),
+    getLimitHistory: vi.fn().mockResolvedValue({ entries: [] }),
+    // Found account folders (spec `claude-account-ui` §6.9): none, so the
+    // "Found on this computer" group stays hidden unless a test supplies some.
+    getFoundClaudeFolders: vi.fn().mockResolvedValue({ folders: [] }),
+    dismissFoundClaudeFolder: vi.fn().mockResolvedValue(undefined),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
     // takes its success path unless a test deliberately makes one reject.
@@ -1209,7 +1378,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Connectors (connector-completion spec §Detailed Design 5). Reads default
     // to honest-empty; writes default to unstubbed vi.fn() so a test that
     // exercises them must state what the server would answer.
-    getConnectorProviders: vi.fn().mockResolvedValue([]),
+    getConnectorProviders: vi.fn().mockResolvedValue({
+      providers: [],
+      appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
+    }),
     putConnectorCredential: vi.fn(),
     deleteConnectorCredential: vi.fn(),
     getConnectorCatalog: vi.fn().mockResolvedValue({ services: [], warnings: [] }),
@@ -1232,12 +1404,15 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     pauseConnectorConnection: vi.fn(),
     resumeConnectorConnection: vi.fn(),
     getConnectorDisconnectImpact: vi.fn(),
+    getConnectorAppActions: vi.fn(),
     disconnectConnectorConnection: vi.fn(),
     removeConnectorConnection: vi.fn(),
     getAgentConnectorConnections: vi
       .fn()
       .mockImplementation((agentId: string) => Promise.resolve({ agentId, connections: [] })),
+    getEveryAgentConnectorGrants: vi.fn().mockResolvedValue({ connections: [] }),
     getSessionConnectorConnections: vi.fn(),
+    setSessionConnectorAccess: vi.fn(),
     getAccessibleConnectorConnections: vi.fn().mockResolvedValue({ connections: [] }),
     getAccessibleConnectorOperations: vi
       .fn()
@@ -1249,6 +1424,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getOperatorConnectorUsage: vi.fn().mockResolvedValue({ items: [] }),
     previewConnectorReconciliation: vi.fn(),
     applyConnectorReconciliation: vi.fn(),
+    stopSharingConnectorWithEveryAgent: vi.fn(),
     createConnectorManagementReview: vi.fn(),
     getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
     getConnectorManagementReview: vi.fn(),
@@ -1428,4 +1604,26 @@ export function mockInterruptReceipt(
     ...(reason ? { reason } : {}),
     runtime: overrides.runtime ?? 'fake',
   };
+}
+
+/**
+ * A connected account's server readiness for client fixtures: ready unless
+ * overridden. Client code renders readiness and never derives it, so a fixture
+ * names the state it wants the surface to show; the server's own table
+ * (`deriveConnectionReadiness`) is tested on its own. Words come from the one
+ * copy table unless given, and the result is checked against the schema, so a
+ * fixture can never hold a readiness the server could not send.
+ *
+ * @param overrides - The state, reason, fix or copy to use instead.
+ */
+export function createMockConnectionReadiness(
+  overrides: Partial<ConnectionReadiness> = {}
+): ConnectionReadiness {
+  const reason = overrides.reason ?? 'usable';
+  const copy =
+    overrides.copy ??
+    (reason === 'disconnect_stuck'
+      ? { owner: disconnectStuckOwnerLine('unconfirmed'), agent: CONNECTION_GONE_AGENT_COPY }
+      : CONNECTION_READINESS_COPY[reason]);
+  return ConnectionReadinessSchema.parse({ state: 'ready', ...overrides, reason, copy });
 }

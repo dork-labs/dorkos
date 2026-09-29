@@ -5,6 +5,7 @@
  *
  * @module services/marketplace/types
  */
+import type { CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
 import type {
   MarketplacePackageManifest,
   PackageType,
@@ -13,6 +14,8 @@ import type {
 } from '@dorkos/marketplace';
 import type { NpmDependency } from './lib/npm-dependencies.js';
 import type { DisclosedEffects } from './disclosed-effects.js';
+import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
+import type { InstalledFiles, RecordSource } from './lib/installed-files.js';
 
 /**
  * Describes a package install, uninstall or applied update that just succeeded,
@@ -61,6 +64,50 @@ export interface PreviewHook {
   matcher?: string;
   /** The literal shell command the hook runs. */
   command: string;
+  /**
+   * The skill or command file whose frontmatter declares this hook, when it is
+   * one: Claude Code registers such a hook while that skill is in use.
+   * Absent for a plugin-wide hook.
+   */
+  source?: string;
+}
+
+/**
+ * The tools a skill or command lets the agent use without asking
+ * (`allowed-tools` in its frontmatter). A skill is invoked by the model on the
+ * strength of its description, so this is permission the package grants itself.
+ */
+export interface PreviewSkillTools {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name, from its frontmatter or its location. */
+  skill: string;
+  /** Each allowed-tools entry, verbatim. */
+  tools: string[];
+}
+
+/**
+ * A shell command a skill's, command's, agent's or output style's TEXT runs
+ * when it is used (DOR-2327):
+ * `` !`cmd` `` or a fenced block whose info string is `!`. Claude Code runs it
+ * while it renders the skill, before the model sees it; OpenCode runs the
+ * inline form in the command wrappers Harness Sync writes for it.
+ */
+export interface PreviewSkillCommand {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name, from its frontmatter or its location. */
+  skill: string;
+  /** `inline` for `` !`cmd` ``, `block` for a ```` ```! ```` block. */
+  form: 'inline' | 'block';
+  /** The command exactly as written. */
+  command: string;
+  /**
+   * Whether it names a placeholder (`$ARGUMENTS`, `$1`, a named `$name`) that
+   * Claude Code and OpenCode fill with the text typed after the command BEFORE
+   * running it, so what it runs depends on that text.
+   */
+  usesArguments: boolean;
 }
 
 /**
@@ -163,6 +210,57 @@ export interface InstallRequest {
    * `approvedDisclosure`: no HTTP body schema carries it.
    */
   installRoot?: string;
+  /**
+   * The installer's hand-off to the flows so an install keeps the person's
+   * files (DOR-2245): where the package came from, for the installed-files
+   * record, and how to rebuild the record of an install made before records
+   * existed. Server-internal: set by `MarketplaceInstaller.install()` only.
+   */
+  ownership?: InstallOwnershipContext;
+  /**
+   * The content hash of the package as its preview fetched it
+   * (`lib/content-hash.ts`, DOR-2306). `install()` refuses a staged copy that
+   * hashes differently, for every package type, before writing anything
+   * (DOR-2325): the preview and the install are two fetches, and a source that
+   * served something else to the second is not what was shown or decided on.
+   * Server-internal: the agents route sets it from what the app sent back, and
+   * an untrusted caller's install (`POST /packages/:name/install`,
+   * `marketplace_install`) from its own preview.
+   */
+  approvedContentHash?: string;
+  /**
+   * The package type the preview fetched (DOR-2325). `install()` refuses a
+   * staged package of another type before writing anything: the type decides
+   * where it lands and whether a card was needed, so a source that previews as
+   * a plugin and installs as an agent package is refused. Server-internal, set
+   * beside {@link approvedContentHash}.
+   */
+  approvedPackageType?: PackageType;
+  /**
+   * Agent packages only (DOR-2325): the identity a person chose for the agent
+   * in the app's creation flow, applied as the agent is created in the
+   * package's install folder. Server-internal, set by the agents route.
+   */
+  agentIdentity?: AgentInstallIdentity;
+}
+
+/** See {@link InstallRequest.agentIdentity}. */
+export type AgentInstallIdentity = Pick<
+  CreateAgentOptions,
+  'displayName' | 'icon' | 'color' | 'persona' | 'runtime' | 'capabilities' | 'model' | 'effort'
+>;
+
+/** See {@link InstallRequest.ownership}. */
+export interface InstallOwnershipContext {
+  /** Where the package came from. */
+  source?: RecordSource;
+  /** Rebuild a legacy install's record; `null` when none can be rebuilt. */
+  rebuildLegacy?: (liveRoot: string, stagedTree: string) => Promise<InstalledFiles | null>;
+  /**
+   * Finish the staged tree before its installed-files record is computed, so
+   * the record holds every file as installed (DOR-2318: `skillRef` schedules).
+   */
+  prepareStaged?: (stagingDir: string) => Promise<void>;
 }
 
 /**
@@ -180,6 +278,25 @@ export interface PermissionPreview {
   hooks: PreviewHook[];
   /** Hook declarations the package ships that could not be read */
   unreadableHooks: UnreadablePreviewHook[];
+  /** MCP servers the package starts, with what each runs */
+  mcpServers: PreviewMcpServer[];
+  /** Language (LSP) servers the package starts, with what each runs */
+  lspServers: PreviewLspServer[];
+  /** Background monitors the package runs */
+  monitors: PreviewMonitor[];
+  /** Programs the package puts on the agent's PATH (the files in its `bin/`) */
+  executables: string[];
+  /** Tools each skill or command lets the agent use without asking */
+  skillTools: PreviewSkillTools[];
+  /** Shell commands each skill's or command's text runs when it is used */
+  skillCommands: PreviewSkillCommand[];
+  /** Program declarations (MCP, LSP, monitors) that could not be read */
+  unreadableDeclarations: UnreadableDeclaration[];
+  /**
+   * Shortcuts (symbolic links) in the package, each with a sentence saying it
+   * will not be installed: staging drops every link (DOR-2319).
+   */
+  skippedLinks: { path: string; message: string }[];
   /** Scheduled jobs that will be created, and what each may do unattended */
   schedules: PreviewSchedule[];
   /** Secrets the package will request */
@@ -197,6 +314,62 @@ export interface PermissionPreview {
   requires: { type: string; name: string; version?: string; satisfied: boolean }[];
   /** Conflicts with already-installed packages */
   conflicts: ConflictReport[];
+}
+
+/**
+ * An MCP server a package starts, as Claude Code would launch it. A plugin's
+ * servers load into every session the plugin loads in, so a person approving
+ * the install has to see what each one runs: the command and its arguments
+ * verbatim for a local (`stdio`) server, the address for a remote one.
+ */
+export interface PreviewMcpServer {
+  /** The server's name, the key it is declared under. */
+  name: string;
+  /** `stdio` for a local command, else the declared remote transport (`http`, `sse`, …). */
+  transport: string;
+  /** The program a `stdio` server runs, verbatim. */
+  command?: string;
+  /** Its arguments, verbatim and in order. */
+  args?: string[];
+  /** The address a remote server is reached at. */
+  url?: string;
+}
+
+/** A language (LSP) server a package starts, as Claude Code would launch it. */
+export interface PreviewLspServer {
+  /** The server's name, the key it is declared under. */
+  name: string;
+  /** The program it runs, verbatim. */
+  command: string;
+  /** Its arguments, verbatim and in order. */
+  args: string[];
+}
+
+/** A background monitor a package runs: a command Claude Code keeps running. */
+export interface PreviewMonitor {
+  /** The monitor's declared name. */
+  name: string;
+  /** The command it runs, verbatim. */
+  command: string;
+  /** When it starts (`always`, or `on-skill-invoke:<skill>`), when declared. */
+  when?: string;
+}
+
+/** Which kind of program a declaration we could not read was for. */
+export type UnreadableDeclarationKind = 'mcp-server' | 'lsp-server' | 'monitor';
+
+/**
+ * A program declaration the package ships that could not be read, or that
+ * points outside the package. Reported for the reason {@link UnreadablePreviewHook}
+ * is: "declares something we could not read" must never render as "declares none".
+ */
+export interface UnreadableDeclaration {
+  /** Package-relative path of the declaration (a default file, or where plugin.json points). */
+  path: string;
+  /** Which kind of program it declares. */
+  kind: UnreadableDeclarationKind;
+  /** Set when one entry is malformed; absent when the whole declaration is. */
+  entry?: string;
 }
 
 /**
@@ -240,6 +413,11 @@ export interface InstallResult {
    * is not a record of a package that is still missing its libraries.
    */
   dependencyWarnings?: string[];
+  /**
+   * What the install did with files the person may have changed (DOR-2245).
+   * Each notice is also one plain sentence on {@link InstallResult.warnings}.
+   */
+  fileNotices?: PackageFileNotice[];
 }
 
 /**

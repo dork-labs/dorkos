@@ -6,8 +6,9 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ExecutionDefaults, ModelOption } from '@dorkos/shared/types';
-import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { createMockAccountUsage, createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider, seedAccountUsage } from '@/layers/shared/model';
 import { AgentExecutionRows } from '../ui/AgentExecutionRows';
 
 beforeAll(() => {
@@ -130,7 +131,8 @@ function renderRows(
   executionDefaults: ExecutionDefaults = DEFAULTS,
   models: ModelOption[] = MODELS,
   capabilities: ReturnType<typeof capabilityMap> | typeof WITHHELD = capabilityMap(false),
-  claudeCode: ClaudeCodeConfig | undefined = undefined
+  claudeCode: ClaudeCodeConfig | undefined = undefined,
+  usage: AccountUsage[] = []
 ) {
   const onUpdate = vi.fn();
   const transport = createMockTransport({
@@ -167,6 +169,8 @@ function renderRows(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
+  // What the session list's envelope seeds.
+  seedAccountUsage(queryClient, usage);
   render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
@@ -459,6 +463,29 @@ describe('AgentExecutionRows — the Account row', () => {
       expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
     );
     expect(screen.queryByTestId('agent-account-row')).toBeNull();
+  });
+
+  it('names an unregistered server default by the host label, never ".claude" (§12)', async () => {
+    const MAIN = "Main (this computer's sign-in)";
+    renderRows(
+      manifest(),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      {
+        resolvedAccount: '/Users/dev/.claude',
+        inherited: true,
+        accounts: [
+          { id: 'work', path: '/Users/dev/.claude-work', label: 'Acme Corp', isAccountRoot: true },
+          { id: 'side', path: '/Users/dev/.claude-side', label: 'Side', isAccountRoot: true },
+        ],
+      },
+      [createMockAccountUsage({ accountId: 'default', path: '/Users/dev/.claude', label: MAIN })]
+    );
+    expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent(
+      `server default · ${MAIN}`
+    );
+    expect(screen.queryByText(/\.claude$/)).toBeNull();
   });
 
   it('wears the resolved server default when the agent has no opinion', async () => {

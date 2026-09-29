@@ -123,7 +123,7 @@ export function ApiKeysSection({ loginRequired = true }: ApiKeysSectionProps = {
       )}
 
       {create.error && (
-        <p className="text-xs text-red-500" role="alert">
+        <p className="text-destructive text-xs" role="alert">
           {create.error.message}
         </p>
       )}
@@ -154,7 +154,7 @@ export function ApiKeysSection({ loginRequired = true }: ApiKeysSectionProps = {
       </div>
 
       {revoke.error && (
-        <p className="text-xs text-red-500" role="alert">
+        <p className="text-destructive text-xs" role="alert">
           {revoke.error.message}
         </p>
       )}
@@ -178,7 +178,7 @@ function CreatedKeyReveal({ created, onDone }: { created: CreatedApiKey; onDone:
           aria-label={failed ? 'Couldn’t copy API key. Try again' : 'Copy API key'}
         >
           {copied ? (
-            <Check className="size-4 text-green-500" />
+            <Check className="text-status-success size-4" />
           ) : failed ? (
             <X className="text-destructive size-4" />
           ) : (

@@ -21,6 +21,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   Outlet,
   RouterProvider,
@@ -65,6 +66,11 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
   usePackageInstallations: vi.fn(),
   useUninstallPackage: vi.fn(),
+  // The Installed tab's update count; this flow never reaches a check.
+  useInstalledUpdates: vi
+    .fn()
+    .mockReturnValue({ data: undefined, isFetching: false, error: null, refetch: vi.fn() }),
+  marketplaceKeys: { updates: () => ['marketplace', 'updates'] },
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({
@@ -122,7 +128,13 @@ function renderMarketplace() {
     routeTree,
     history: createMemoryHistory({ initialEntries: ['/marketplace'] }),
   });
-  return render(<RouterProvider router={router} />);
+  // The Marketplace marks its update check stale through the query client when
+  // the installed list changes, so the tree needs one even with the hooks mocked.
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +257,14 @@ const EMPTY_PREVIEW: PermissionPreview = {
   extensions: [],
   hooks: [],
   unreadableHooks: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+  skillCommands: [],
+  skippedLinks: [],
+  unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],
   secrets: [],
@@ -254,6 +274,18 @@ const EMPTY_PREVIEW: PermissionPreview = {
 };
 
 const PKG_DETAIL: MarketplacePackageDetail = {
+  // Runs nothing on its own: what an install is held to (DOR-2306).
+  disclosed: {
+    hooks: [],
+    schedules: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+  },
+  contentHash: 'sha256:staged',
   manifest: {
     name: '@dorkos/pr-linter',
     version: '1.0.0',
@@ -355,7 +387,15 @@ describe('Marketplace install flow integration', () => {
     await user.click(dialogInstallButton);
 
     expect(installHandle.mutateAsync).toHaveBeenCalledTimes(1);
-    expect(installHandle.mutateAsync).toHaveBeenCalledWith({ name: PKG.name });
+    expect(installHandle.mutateAsync).toHaveBeenCalledWith({
+      name: PKG.name,
+      // What the dialog showed the package runs, sent back so the install is
+      // held to it (DOR-2306).
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
+    });
   });
 
   it('clicking Install on the card opens the confirmation dialog directly without the detail sheet', async () => {
@@ -378,7 +418,15 @@ describe('Marketplace install flow integration', () => {
     const dialogInstallButton = within(dialog).getByRole('button', { name: /^install$/i });
     await user.click(dialogInstallButton);
 
-    expect(installHandle.mutateAsync).toHaveBeenCalledWith({ name: PKG.name });
+    expect(installHandle.mutateAsync).toHaveBeenCalledWith({
+      name: PKG.name,
+      // What the dialog showed the package runs, sent back so the install is
+      // held to it (DOR-2306).
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
+    });
   });
 
   it('routes an agent package Install into the creation flow, not the confirm dialog', async () => {

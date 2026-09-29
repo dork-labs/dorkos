@@ -4,6 +4,7 @@ import { PERMISSION_STOPS } from '../permission-semantics.js';
 import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
+  configuredRuntimes,
   healClaudeAccountRename,
   slugifyAccountId,
   claudeAccountId,
@@ -125,6 +126,7 @@ describe('UserConfigSchema', () => {
         responseGate: 'routing',
         maxPostsPerTurn: 3,
         maxCanvasOpsPerTurn: 3,
+        maxConcurrentTurnsPerAgent: 3,
         repo: {
           enabled: true,
           worktreeReapDays: 14,
@@ -157,12 +159,12 @@ describe('UserConfigSchema', () => {
         // honestly knows and what draws no "Suggested by …" note (DOR-1022).
         displayNameSource: null,
         rolePromptDismissedAt: null,
+        identityPromptDismissedAt: null,
       },
-      agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
       memory: { provider: 'builtin' },
-      extensions: { enabled: [], disabled: [], approvedToRun: [] },
+      extensions: { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -204,6 +206,8 @@ describe('UserConfigSchema', () => {
         claudeCode: {
           defaultAccount: null,
           accounts: [],
+          defaultAccountColor: null,
+          dismissedFolders: [],
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
@@ -228,8 +232,17 @@ describe('UserConfigSchema', () => {
         },
       },
       auth: { enabled: false },
-      approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
-      cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      permissions: {
+        preset: null,
+        defaults: { areas: {}, actions: {} },
+        upgradeSweptVersion: null,
+      },
+      cloud: {
+        instanceToken: null,
+        instanceName: null,
+        linkedAccountLabel: null,
+        previousLinkProof: null,
+      },
       connectors: { rawMcpServers: [] },
       providers: {},
     });
@@ -407,44 +420,18 @@ describe('SENSITIVE_CONFIG_KEYS', () => {
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.auth');
     expect(SENSITIVE_CONFIG_KEYS).toContain('mcp.apiKey');
     expect(SENSITIVE_CONFIG_KEYS).toContain('cloud.instanceToken');
+    // The relink proof continues a link with the account's approval (DOR-2521).
+    expect(SENSITIVE_CONFIG_KEYS).toContain('cloud.previousLinkProof');
   });
 
-  it('has exactly 4 sensitive keys', () => {
-    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(4);
+  it('has exactly 5 sensitive keys', () => {
+    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(5);
   });
 
   it('is readonly array', () => {
     expect(Object.isFrozen(SENSITIVE_CONFIG_KEYS)).toBe(false);
     // TypeScript enforces readonly at compile time
     expect(Array.isArray(SENSITIVE_CONFIG_KEYS)).toBe(true);
-  });
-});
-
-describe('approvals.standingGrantsVoidBefore', () => {
-  // The posture floor (DOR-520). The grant store treats a FALSY floor as "no
-  // floor", so the empty string is the one value that would silently disable the
-  // filter instead of tightening it. Every other malformed value already fails
-  // closed — it sorts above every real timestamp, so every permission is voided —
-  // which is why this asserts the direction, not just "invalid is rejected".
-  /** Parse a config carrying one candidate floor value. */
-  function parseFloor(value: unknown) {
-    return UserConfigSchema.safeParse({
-      version: 1,
-      approvals: { standingGrantsVoidBefore: value },
-    });
-  }
-
-  it('accepts a real timestamp and the absence of one', () => {
-    expect(parseFloor('2026-07-26T10:00:00.000Z').success).toBe(true);
-    expect(parseFloor(null).success).toBe(true);
-  });
-
-  it('rejects the empty string, which would disable the filter rather than tighten it', () => {
-    expect(parseFloor('').success).toBe(false);
-  });
-
-  it('rejects a string that is not a timestamp at all', () => {
-    expect(parseFloor('not-a-date').success).toBe(false);
   });
 });
 
@@ -518,6 +505,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         responseGate: 'routing',
         maxPostsPerTurn: 3,
         maxCanvasOpsPerTurn: 3,
+        maxConcurrentTurnsPerAgent: 3,
         repo: {
           enabled: true,
           worktreeReapDays: 14,
@@ -550,12 +538,12 @@ describe('USER_CONFIG_DEFAULTS', () => {
         // honestly knows and what draws no "Suggested by …" note (DOR-1022).
         displayNameSource: null,
         rolePromptDismissedAt: null,
+        identityPromptDismissedAt: null,
       },
-      agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
       memory: { provider: 'builtin' },
-      extensions: { enabled: [], disabled: [], approvedToRun: [] },
+      extensions: { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -597,6 +585,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         claudeCode: {
           defaultAccount: null,
           accounts: [],
+          defaultAccountColor: null,
+          dismissedFolders: [],
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
@@ -621,8 +611,17 @@ describe('USER_CONFIG_DEFAULTS', () => {
         },
       },
       auth: { enabled: false },
-      approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
-      cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      permissions: {
+        preset: null,
+        defaults: { areas: {}, actions: {} },
+        upgradeSweptVersion: null,
+      },
+      cloud: {
+        instanceToken: null,
+        instanceName: null,
+        linkedAccountLabel: null,
+        previousLinkProof: null,
+      },
       connectors: { rawMcpServers: [] },
       providers: {},
     });
@@ -867,7 +866,6 @@ describe('per-field and section-literal defaults agree', () => {
     expect(fromFactory.runtimes.codex.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.opencode.defaultTrustStop).toBeNull();
     expect(fromFactory.ui.autonomyAcknowledgedAt).toBeNull();
-    expect(fromFactory.approvals.standingGrants).toBe(false);
     expect(fromFactory.mesh.scanRoots).toEqual([]);
   });
 });
@@ -1018,6 +1016,8 @@ describe('UserConfigSchema runtimes', () => {
       claudeCode: {
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
+        dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -1053,6 +1053,8 @@ describe('UserConfigSchema runtimes', () => {
       claudeCode: {
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
+        dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -1245,6 +1247,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     expect(UserConfigSchema.parse({ version: 1 }).runtimes.claudeCode).toEqual({
       defaultAccount: null,
       accounts: [],
+      defaultAccountColor: null,
+      dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
@@ -1262,6 +1266,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     expect(result.runtimes.claudeCode).toEqual({
       defaultAccount: null,
       accounts: [],
+      defaultAccountColor: null,
+      dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
@@ -1285,9 +1291,11 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     expect(result.runtimes.claudeCode).toEqual({
       defaultAccount: '/Users/me/.claude2',
       accounts: [
-        { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
-        { id: 'claude2', path: '/Users/me/.claude2', label: null },
+        { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp', color: null },
+        { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
       ],
+      defaultAccountColor: null,
+      dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
@@ -1312,8 +1320,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       },
     });
     expect(parsed.runtimes.claudeCode.accounts).toEqual([
-      { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
-      { id: 'claude3', path: '/Users/me/.claude3', label: null },
+      { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp', color: null },
+      { id: 'claude3', path: '/Users/me/.claude3', label: null, color: null },
     ]);
   });
 
@@ -1892,7 +1900,12 @@ describe('SmartGroupRulesSchema + SidebarGroupSchema kind/rules (smart-agent-gro
 describe('UserConfigSchema extensions (deviation lists)', () => {
   it('defaults to empty enabled and disabled when omitted', () => {
     const result = UserConfigSchema.parse({ version: 1 });
-    expect(result.extensions).toEqual({ enabled: [], disabled: [], approvedToRun: [] });
+    expect(result.extensions).toEqual({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [],
+      approvedSources: {},
+    });
   });
 
   it('defaults disabled to [] when only enabled is provided', () => {
@@ -1904,6 +1917,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       enabled: ['linear-issues'],
       disabled: [],
       approvedToRun: [],
+      approvedSources: {},
     });
   });
 
@@ -1916,6 +1930,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       enabled: [],
       disabled: ['marketplace'],
       approvedToRun: [],
+      approvedSources: {},
     });
   });
 
@@ -1928,6 +1943,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       enabled: ['hello-world'],
       disabled: ['marketplace'],
       approvedToRun: [],
+      approvedSources: {},
     });
   });
 
@@ -1960,12 +1976,34 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       enabled: [],
       disabled: [],
       approvedToRun: ['my-ext'],
+      approvedSources: {},
     });
   });
 
   it('rejects a non-array approvedToRun', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, extensions: { approvedToRun: 'my-ext' } })
+    ).toThrow();
+  });
+
+  it('round-trips the copy an approval was given to (DOR-2383)', () => {
+    const approvedSources = {
+      flow: { path: '/h/.dork/plugins/flow/.dork/extensions/flow', plugin: 'flow' },
+      'my-ext': { path: '/h/.dork/extensions/my-ext' },
+    };
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { approvedToRun: ['flow', 'my-ext'], approvedSources },
+    });
+    expect(result.extensions.approvedSources).toEqual(approvedSources);
+  });
+
+  it('rejects an approved copy with no path', () => {
+    expect(() =>
+      UserConfigSchema.parse({
+        version: 1,
+        extensions: { approvedSources: { flow: { plugin: 'flow' } } },
+      })
     ).toThrow();
   });
 });
@@ -2029,5 +2067,77 @@ describe('claudeAccountId', () => {
     const started = performance.now();
     expect(claudeAccountId({ label: null, path, taken: [] })).toBe('x');
     expect(performance.now() - started).toBeLessThan(100);
+  });
+});
+
+describe('permissions section (spec agent-permissions D4)', () => {
+  // Declared twice on purpose (per field AND in the object-literal default): one
+  // feeds fresh installs, the other feeds a stored `permissions: {}` on upgrade.
+  // They must agree, and this pins both.
+  const EXPECTED = {
+    preset: null,
+    defaults: { areas: {}, actions: {} },
+    upgradeSweptVersion: null,
+  };
+
+  it('defaults the whole section from the object-literal default', () => {
+    expect(UserConfigSchema.parse({ version: 1 }).permissions).toEqual(EXPECTED);
+    expect(USER_CONFIG_DEFAULTS.permissions).toEqual(EXPECTED);
+  });
+
+  it('defaults every field from its own declaration', () => {
+    expect(UserConfigSchema.parse({ version: 1, permissions: {} }).permissions).toEqual(EXPECTED);
+    expect(
+      UserConfigSchema.parse({ version: 1, permissions: { defaults: {} } }).permissions
+    ).toEqual(EXPECTED);
+  });
+
+  it('refuses a state that is not one of the three', () => {
+    expect(() =>
+      UserConfigSchema.parse({
+        version: 1,
+        permissions: { defaults: { areas: { rooms: 'yes' } } },
+      })
+    ).toThrow();
+  });
+
+  it('keeps an area key a newer build knows', () => {
+    const parsed = UserConfigSchema.parse({
+      version: 1,
+      permissions: { defaults: { areas: { future: 'ask' } } },
+    });
+    expect(parsed.permissions.defaults.areas).toEqual({ future: 'ask' });
+  });
+});
+
+describe('configuredRuntimes', () => {
+  /** A dotted-path reader over a flat map, standing in for a config store. */
+  const reader =
+    (values: Record<string, unknown>) =>
+    (key: string): unknown =>
+      values[key];
+
+  it('lists every runtime when nothing turns one off', () => {
+    expect(configuredRuntimes(reader({}))).toEqual(['claude-code', 'codex', 'opencode']);
+  });
+
+  it('drops only a runtime that is explicitly off, keeping claude-code first', () => {
+    expect(configuredRuntimes(reader({ 'runtimes.codex.enabled': false }))).toEqual([
+      'claude-code',
+      'opencode',
+    ]);
+    expect(
+      configuredRuntimes(
+        reader({ 'runtimes.codex.enabled': false, 'runtimes.opencode.enabled': false })
+      )
+    ).toEqual(['claude-code']);
+  });
+
+  it('treats an unreadable value as the default rather than as off', () => {
+    expect(configuredRuntimes(reader({ 'runtimes.opencode.enabled': 'no' }))).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+    ]);
   });
 });

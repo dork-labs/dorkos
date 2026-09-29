@@ -42,7 +42,7 @@
  *
  * Two classes, and nothing else:
  *
- * 1. **Secrets and the things that locate them.** The four
+ * 1. **Secrets and the things that locate them.** The
  *    `SENSITIVE_CONFIG_KEYS` values, plus every credential *reference*:
  *    `providers` and `runtimes.codex.credentialRef` hold `keychain:` / `env:` /
  *    `file:` references (ADR-0315). A reference is not a secret, but a
@@ -248,6 +248,9 @@ export const CONFIG_DISCLOSURE = {
   // ceiling can say why its fourth change to the room's table was refused,
   // instead of retrying into the same wall.
   'rooms.maxCanvasOpsPerTurn': 'expose',
+  // An agent that can read how many conversations it may work in at once can
+  // say why a message is waiting for one of its other turns to finish.
+  'rooms.maxConcurrentTurnsPerAgent': 'expose',
 
   // A room's own files: whether they are available at all, and the bounds a
   // merge is measured against. Plain numbers and a boolean about the person's
@@ -296,11 +299,7 @@ export const CONFIG_DISCLOSURE = {
   'profile.displayNameSource.kind': 'expose',
   'profile.displayNameSource.agentName': 'expose',
   'profile.rolePromptDismissedAt': 'expose',
-
-  'agentContext.relayTools': 'expose',
-  'agentContext.meshTools': 'expose',
-  'agentContext.adapterTools': 'expose',
-  'agentContext.tasksTools': 'expose',
+  'profile.identityPromptDismissedAt': 'expose',
 
   'uploads.maxFileSize': 'expose',
   'uploads.maxFiles': 'expose',
@@ -317,6 +316,10 @@ export const CONFIG_DISCLOSURE = {
   // retrying a load that will keep being refused. It names extension ids the
   // caller can already see in `list_extensions`, so it discloses nothing new.
   'extensions.approvedToRun': 'expose',
+  // Which copy each approval is for (DOR-2383): absolute paths on this machine,
+  // including the home directory. An agent needs none of it — the refusal it
+  // reads already names the id to ask the person about — so it stays in.
+  'extensions.approvedSources': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',
@@ -389,6 +392,14 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.claudeCode.accounts[].id': 'expose',
   'runtimes.claudeCode.accounts[].path': 'expose',
   'runtimes.claudeCode.accounts[].label': 'expose',
+  'runtimes.claudeCode.accounts[].color': 'expose',
+  // The standalone default account's color (DOR-2492): a display hex, the same
+  // class as a row's `color` right above.
+  'runtimes.claudeCode.defaultAccountColor': 'expose',
+  // Account folders a person hid from Settings' "Found on this computer" list
+  // (spec claude-account-ui §7.4). Folder paths, the same class as
+  // `accounts[].path` above: exposed on purpose, and naming no secret.
+  'runtimes.claudeCode.dismissedFolders': 'expose',
   // The execution defaults a new session on each runtime starts with. A model id
   // and an effort rung are the same class of thing as `runtimes.default`: they
   // describe HOW work runs here, name no credential and no person, and an agent
@@ -418,22 +429,25 @@ export const CONFIG_DISCLOSURE = {
 
   'auth.enabled': 'expose',
 
-  // A posture, not a roster. These two say whether standing permissions may
-  // exist here and for how long one lasts; WHICH agents are trusted lives in
-  // SQLite and never passes through config at all, so there is nothing here for
-  // an agent to learn about anyone's trust but its own instance's settings.
-  'approvals.standingGrants': 'expose',
-  'approvals.trustWindowMinutes': 'expose',
-  // Same reasoning one step further: a timestamp saying when this install last
-  // switched standing permissions off names no agent and no person. Exposing it
-  // also lets an agent understand why a permission it used to have stopped
-  // working, which is better than silently finding out.
-  'approvals.standingGrantsVoidBefore': 'expose',
+  // What agents may do here (spec `agent-permissions`). A posture, not a
+  // roster: the preset and the changes on top of it name no person and
+  // no secret, and an agent that can read them can explain a refusal instead of
+  // guessing. Per-agent differences live in each agent's own manifest.
+  'permissions.preset': 'expose',
+  'permissions.defaults.areas': 'expose',
+  'permissions.defaults.actions': 'expose',
+  // Machine bookkeeping: which server version the permission upgrade sweep last
+  // ran for.
+  'permissions.upgradeSweptVersion': 'expose',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',
   // Names the DorkOS account this install is linked to, often an email address.
   'cloud.linkedAccountLabel': 'withhold',
+  // The relink proof of the last dropped instance key: with the same account's
+  // approval it continues the old link and its apps. A credential, so withheld
+  // like the key itself (and, as a SENSITIVE_CONFIG_KEYS entry, flagged).
+  'cloud.previousLinkProof': 'withhold',
 
   // Raw-MCP URLs may contain userinfo, query tokens, or secret path segments.
   // Withhold the complete URL rather than guessing which parts are credentials;
@@ -459,6 +473,7 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
   'tunnel.auth',
   'mcp.apiKey',
   'cloud.instanceToken',
+  'cloud.previousLinkProof',
   'runtimes.codex.credentialRef',
 ];
 
@@ -480,12 +495,16 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
  * to Shape name, and file extension to viewer id. Both value types are closed and
  * non-secret; the agent paths already leave through three exposed scalar arrays
  * and the equally tokenless `GET /api/config`, and a file extension discloses
- * nothing. A record keyed by something a caller should not learn does not belong
+ * nothing. The two permission records map an area id or an action id to one of
+ * three states: both key spaces are DorkOS's own vocabulary, not anything a
+ * person typed about themselves (spec `agent-permissions`). A record keyed by something a caller should not learn does not belong
  * on this list even if its values are harmless.
  */
 export const EXPOSED_RECORD_PATHS: readonly string[] = [
   'ui.shapes.agentDefaults',
   'workbench.defaultViewers',
+  'permissions.defaults.areas',
+  'permissions.defaults.actions',
 ];
 
 /** Read the value at a dot-path, or `undefined` if any segment is missing. */

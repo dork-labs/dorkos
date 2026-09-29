@@ -1,3 +1,4 @@
+import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
@@ -5,7 +6,10 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { ROOM_TURN_LIMIT_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
+  ROOM_TURN_LIMIT_DEFAULTS,
+} from '@dorkos/shared/config-schema';
 
 // Mock tunnel-manager and agent-manager to avoid side effects
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -303,7 +307,7 @@ describe('PATCH /api/config', () => {
     // asserts the STORE as well as the status: a refusal that still wrote would
     // pass a status-only test.
     //
-    // The ten share ONE test per direction rather than getting a case each.
+    // They share ONE test per direction rather than getting a case each.
     // That is a memory decision, not a style one: every test in this file mints
     // a fresh app, a fresh config directory and a fresh module graph
     // (`vi.resetModules()`), and twenty more of those took the worker past the
@@ -323,30 +327,6 @@ describe('PATCH /api/config', () => {
         protective: false,
         agentWants: true,
         patch: { runtimes: { claudeCode: { persistentSession: true } } },
-      },
-      {
-        path: 'agentContext.relayTools',
-        protective: false,
-        agentWants: true,
-        patch: { agentContext: { relayTools: true } },
-      },
-      {
-        path: 'agentContext.meshTools',
-        protective: false,
-        agentWants: true,
-        patch: { agentContext: { meshTools: true } },
-      },
-      {
-        path: 'agentContext.adapterTools',
-        protective: false,
-        agentWants: true,
-        patch: { agentContext: { adapterTools: true } },
-      },
-      {
-        path: 'agentContext.tasksTools',
-        protective: false,
-        agentWants: true,
-        patch: { agentContext: { tasksTools: true } },
       },
       {
         path: 'harness.autoSync',
@@ -404,7 +384,7 @@ describe('PATCH /api/config', () => {
 
     it('lets the PERSON write every one of them through the same door', async () => {
       // The other half, and the one that decides whether the fix is usable.
-      // Every surface that owns one of these ten writes through THIS route: the
+      // Every surface that owns one of these writes through THIS route: the
       // Control Center's 'Warm agents' switch and its 'Scheduled runs at once'
       // stepper, Settings → Tools for the four tool switches and the same
       // concurrency stepper, and `dorkos config set` for `uploads.*` and
@@ -452,36 +432,19 @@ describe('PATCH /api/config', () => {
       // value's reversal in behind a legitimate change and have the legitimate
       // half land as cover.
       const { configManager } = await import('../../services/core/config-manager.js');
-      configManager.setDot('agentContext.relayTools', false);
+      configManager.setDot('harness.autoSync', false);
 
       agentHeader = 'agent-token';
       signedInUser = undefined;
 
       const refused = await request(server)
         .patch('/api/config')
-        .send({ ui: { theme: 'dark' }, agentContext: { relayTools: true } })
+        .send({ ui: { theme: 'dark' }, harness: { autoSync: true } })
         .expect(403);
 
-      expect(refused.body.paths).toEqual(['agentContext.relayTools']);
-      expect(configManager.getDot('agentContext.relayTools')).toBe(false);
+      expect(refused.body.paths).toEqual(['harness.autoSync']);
+      expect(configManager.getDot('harness.autoSync')).toBe(false);
       expect(configManager.getDot('ui.theme')).not.toBe('dark');
-    });
-
-    it('tells the agent what a tool-group switch is, and nothing more', async () => {
-      // The refusal text lands in a model's context, so it has to be true. These
-      // switches feed the tool-documentation blocks: nothing is loaded, nothing
-      // is attached, nobody gets in, and access is still the tier gate's call
-      // (DOR-1044).
-      agentHeader = 'agent-token';
-      signedInUser = undefined;
-
-      const refused = await request(server)
-        .patch('/api/config')
-        .send({ agentContext: { relayTools: true } })
-        .expect(403);
-
-      expect(refused.body.message).toContain('Which DorkOS tool groups your agents are told about');
-      expect(refused.body.message).not.toMatch(/who can reach this instance/i);
     });
   });
 
@@ -576,7 +539,9 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({
           runtimes: {
-            claudeCode: { accounts: [{ id: 'acct-1', path: '/tmp/theirs', label: null }] },
+            claudeCode: {
+              accounts: [{ id: 'acct-1', path: '/tmp/theirs', label: null, color: null }],
+            },
           },
         })
         .expect(403);
@@ -597,12 +562,14 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({
           runtimes: {
-            claudeCode: { accounts: [{ id: 'me', path: '/Users/me/.claude', label: 'Me' }] },
+            claudeCode: {
+              accounts: [{ id: 'me', path: '/Users/me/.claude', label: 'Me', color: null }],
+            },
           },
         })
         .expect(200);
       expect(accounts.body.config.runtimes.claudeCode.accounts).toEqual([
-        { id: 'me', path: '/Users/me/.claude', label: 'Me' },
+        { id: 'me', path: '/Users/me/.claude', label: 'Me', color: null },
       ]);
 
       const servers = await request(server)
@@ -633,14 +600,16 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({
           runtimes: {
-            claudeCode: { accounts: [{ id: 'acct-2', path: '/Users/me/.claude', label: null }] },
+            claudeCode: {
+              accounts: [{ id: 'acct-2', path: '/Users/me/.claude', label: null, color: null }],
+            },
           },
         })
         .expect(200);
 
       const emptied = await request(server)
         .patch('/api/config')
-        .send({ runtimes: { claudeCode: { accounts: [] } } })
+        .send({ runtimes: { claudeCode: { accounts: [], accountsSeen: ['acct-2'] } } })
         .expect(200);
       expect(emptied.body.config.runtimes.claudeCode.accounts).toEqual([]);
     });
@@ -659,6 +628,117 @@ describe('PATCH /api/config', () => {
     });
   });
 
+  describe('the default account color (runtimes.claudeCode.defaultAccountColor, DOR-2492)', () => {
+    async function stored(): Promise<unknown> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      return configManager.getDot('runtimes.claudeCode.defaultAccountColor');
+    }
+
+    it('stores a color the person chooses, and clears it again with null', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } })
+        .expect(200);
+      expect(await stored()).toBe('#0d9488');
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccountColor: null } } })
+        .expect(200);
+      expect(await stored()).toBeNull();
+    });
+
+    it('refuses a color that is not lowercase #rrggbb with a 400, and stores nothing', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      for (const bad of ['#ABCDEF', 'teal', '#abc', 42]) {
+        const refused = await request(server)
+          .patch('/api/config')
+          .send({ runtimes: { claudeCode: { defaultAccountColor: bad } } })
+          .expect(400);
+        expect(JSON.stringify(refused.body)).toContain('defaultAccountColor');
+      }
+      expect(await stored()).toBeNull();
+    });
+
+    it('refuses an agent changing it', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } })
+        .expect(403);
+      expect(refused.body.paths).toContain('runtimes.claudeCode.defaultAccountColor');
+      expect(await stored()).toBeNull();
+    });
+
+    it('survives a Settings save of the accounts, which never names it', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } })
+        .expect(200);
+      // Exactly what `ClaudeAccountsSection.tsx` `write()` sends.
+      await request(server)
+        .patch('/api/config')
+        .send({
+          runtimes: {
+            claudeCode: {
+              accounts: [{ id: 'me', path: '/Users/me/.claude2', label: 'Me', color: null }],
+              accountsSeen: [],
+            },
+          },
+        })
+        .expect(200);
+      expect(await stored()).toBe('#0d9488');
+    });
+
+    it('is served on GET /api/config for the Settings row', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('runtimes', {
+        ...configManager.get('runtimes'),
+        claudeCode: { ...configManager.get('runtimes').claudeCode, defaultAccountColor: '#d6336c' },
+      });
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.claudeCode.defaultAccountColor).toBe('#d6336c');
+    });
+  });
+
+  describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {
+    async function stored(): Promise<unknown> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      return configManager.getDot('runtimes.claudeCode.defaultAccount');
+    }
+
+    beforeEach(() => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+    });
+
+    it('stores ~/.claude2 as the absolute folder, never the literal ~', async () => {
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccount: '~/.claude2' } } })
+        .expect(200);
+      expect(await stored()).toBe(path.join(os.homedir(), '.claude2'));
+    });
+
+    it('stores an absolute folder unchanged, and null as null', async () => {
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccount: '/Users/me/.claude2' } } })
+        .expect(200);
+      expect(await stored()).toBe('/Users/me/.claude2');
+      await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { defaultAccount: null } } })
+        .expect(200);
+      expect(await stored()).toBeNull();
+    });
+  });
+
   it('refuses an agent turning login OFF, the setting approvals depend on', async () => {
     agentHeader = 'agent-token';
     signedInUser = undefined;
@@ -667,121 +747,6 @@ describe('PATCH /api/config', () => {
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(403);
-  });
-
-  describe('approvals.* — the settings that additionally need login ON (DOR-501, DOR-505)', () => {
-    /** Turn local login on, which is what makes a cookie possible at all. */
-    async function enableLogin(): Promise<void> {
-      const { configManager } = await import('../../services/core/config-manager.js');
-      configManager.set('auth', { enabled: true });
-    }
-
-    it('refuses a header-stripping caller, which the agent bar alone lets through', async () => {
-      // This is step 1 of the reproduced chain. The agent bar (`trustedCaller`) is
-      // satisfied by a caller presenting neither an agent header nor an approval
-      // token, so on its own it would let this through.
-      //
-      // What refuses it is the COOKIE bar, and since DOR-505 that bar covers every
-      // operator-only path rather than just this subtree — so this case is no
-      // longer special, it is simply the first place the general rule was proven.
-      // What remains specific to `approvals.*` is the LOGIN bar, exercised by
-      // "refuses everyone while login is off" below.
-      await enableLogin();
-      agentHeader = undefined;
-      signedInUser = undefined;
-
-      const refused = await request(server)
-        .patch('/api/config')
-        .send({ approvals: { standingGrants: true } })
-        .expect(403);
-      expect(refused.body.code).toBe('operator_cookie_required');
-      expect(refused.body.paths).toEqual(['approvals.standingGrants']);
-
-      const { configManager } = await import('../../services/core/config-manager.js');
-      expect(configManager.getDot('approvals.standingGrants')).toBe(false);
-    });
-
-    it('refuses a caller holding a per-user API key rather than a session', async () => {
-      // Login being ON is not enough. A key satisfies `sessionGate` exactly as a
-      // browser session does, so a program handed one would otherwise qualify.
-      await enableLogin();
-      signedInUser = { userId: 'user_program', credential: 'api-key' };
-
-      const refused = await request(server)
-        .patch('/api/config')
-        .send({ approvals: { standingGrants: true } })
-        .expect(403);
-      expect(refused.body.code).toBe('operator_cookie_required');
-    });
-
-    it('refuses everyone while login is off, and says why', async () => {
-      const { configManager } = await import('../../services/core/config-manager.js');
-      configManager.set('auth', { enabled: false });
-      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
-
-      const refused = await request(server)
-        .patch('/api/config')
-        .send({ approvals: { standingGrants: true } })
-        .expect(403);
-      expect(refused.body.code).toBe('standing_grants_require_login');
-      expect(refused.body.message).toMatch(/Require login/);
-    });
-
-    it('catches a patch that stops short of the leaf', async () => {
-      await enableLogin();
-      signedInUser = undefined;
-
-      const refused = await request(server)
-        .patch('/api/config')
-        .send({ approvals: {} })
-        .expect(403);
-      expect(refused.body.code).toBe('operator_cookie_required');
-    });
-
-    it('lets a person signed in to the cockpit change them', async () => {
-      await enableLogin();
-      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
-
-      const ok = await request(server)
-        .patch('/api/config')
-        .send({ approvals: { standingGrants: true, trustWindowMinutes: 120 } })
-        .expect(200);
-      expect(ok.body.config.approvals).toEqual({
-        standingGrants: true,
-        trustWindowMinutes: 120,
-        // Untouched by a widening write: switching the feature ON voids nothing
-        // (DOR-520).
-        standingGrantsVoidBefore: null,
-      });
-    });
-
-    it('refuses an array-shaped body, which the path matcher deliberately ignores', async () => {
-      // `findLoginRequiredPaths` walks objects and returns nothing for an array,
-      // so the login bar never sees this body. It is safe only because the config
-      // schema is an object and `applyConfigPatch` rejects the shape outright.
-      // Pinned so that stays true: if config ever accepted an array anywhere, this
-      // goes red instead of quietly becoming a way around the bar.
-      await enableLogin();
-      signedInUser = undefined;
-
-      await request(server)
-        .patch('/api/config')
-        .send([{ approvals: { standingGrants: true } }])
-        .expect(400);
-
-      const { configManager } = await import('../../services/core/config-manager.js');
-      expect(configManager.getDot('approvals.standingGrants')).toBe(false);
-    });
-
-    it('refuses a window longer than a day, so "forever" stays unrepresentable', async () => {
-      await enableLogin();
-      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
-
-      await request(server)
-        .patch('/api/config')
-        .send({ approvals: { trustWindowMinutes: 10080 } })
-        .expect(400);
-    });
   });
 
   describe('every operator-only setting, with login on (DOR-505)', () => {
@@ -1304,6 +1269,7 @@ describe('GET /api/config', () => {
       'maxAgentDepth',
       'maxAutomaticTurnsPerRoomPerHour',
       'maxAutomaticTurnsTotalPerHour',
+      'maxConcurrentTurnsPerAgent',
       'maxTurnsPerAgentPerCascade',
       'turnLimitsEnabled',
     ];
@@ -1315,6 +1281,7 @@ describe('GET /api/config', () => {
         engagedWindowMinutes: 10,
         engagedWindowPosts: 5,
         ...ROOM_TURN_LIMIT_DEFAULTS,
+        maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       });
     });
 
@@ -1339,7 +1306,8 @@ describe('GET /api/config', () => {
     });
 
     it('carries the ceilings and the limits, and nothing else out of the rooms block', async () => {
-      // Settings offers the five limits, so they ride (DOR-1430) — but the rest
+      // Settings offers the five limits, so they ride (DOR-1430), and how many
+      // conversations one agent may work in at once (DOR-2104) — but the rest
       // of `rooms` is reply waits and collect timings, real settings the cockpit
       // never states out loud. Widening this to the whole block would put
       // settings on a wire that has no reader for them.
@@ -1738,6 +1706,11 @@ describe('GET /api/config', () => {
         resolvedAccount: '/tmp/inherited-claude',
         inherited: true,
         accounts: [],
+        defaultAccountColor: null,
+        defaultAccountResolvedColor: DEFAULT_ACCOUNT_COLORS[0],
+        // Nobody registered the inherited folder and Main never follows the
+        // env (contract rev 6d), so no row is named; the override says where.
+        launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/tmp/inherited-claude' },
         // Warm agents default on, exposed here for the Control Center switch.
         persistentSession: true,
       });
@@ -1754,9 +1727,11 @@ describe('GET /api/config', () => {
         claudeCode: {
           defaultAccount: real,
           accounts: [
-            { id: 'acme-corp', path: real, label: 'Acme Corp' },
-            { id: 'gone', path: missing, label: null },
+            { id: 'acme-corp', path: real, label: 'Acme Corp', color: '#12ab9f' },
+            { id: 'gone', path: missing, label: null, color: null },
           ],
+          defaultAccountColor: null,
+          dismissedFolders: [],
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
@@ -1771,9 +1746,29 @@ describe('GET /api/config', () => {
       expect(res.body.claudeCode).toEqual({
         resolvedAccount: real,
         inherited: false,
+        defaultAccountColor: null,
+        // `default` names the acme-corp folder, so it is that row's color.
+        defaultAccountResolvedColor: '#12ab9f',
+        // The row Settings marks "in use", named by the server.
+        resolvedAccountId: 'acme-corp',
         accounts: [
-          { id: 'acme-corp', path: real, label: 'Acme Corp', isAccountRoot: true },
-          { id: 'gone', path: missing, label: null, isAccountRoot: false },
+          {
+            id: 'acme-corp',
+            path: real,
+            label: 'Acme Corp',
+            color: '#12ab9f',
+            colorIsDefault: false,
+            isAccountRoot: true,
+          },
+          {
+            id: 'gone',
+            path: missing,
+            label: null,
+            // No stored color: the default for its position, the second one.
+            color: DEFAULT_ACCOUNT_COLORS[1],
+            colorIsDefault: true,
+            isAccountRoot: false,
+          },
         ],
         // The warm-agents value flows through from config to the Control Center.
         persistentSession: false,
@@ -1784,6 +1779,19 @@ describe('GET /api/config', () => {
       const res = await request(server).get('/api/config').expect(200);
 
       expect(res.body.runtimes).toEqual(['claude-code', 'codex', 'opencode']);
+    });
+
+    it('drops a runtime the person turned off from the runtimes list', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const prior = configManager.getDot('runtimes.codex.enabled');
+      configManager.setDot('runtimes.codex.enabled', false);
+      try {
+        const res = await request(server).get('/api/config').expect(200);
+
+        expect(res.body.runtimes).toEqual(['claude-code', 'opencode']);
+      } finally {
+        configManager.setDot('runtimes.codex.enabled', prior);
+      }
     });
   });
 

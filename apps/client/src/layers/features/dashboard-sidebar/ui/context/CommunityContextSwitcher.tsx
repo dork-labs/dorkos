@@ -1,28 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { ChevronDown, HardDrive, UsersRound } from 'lucide-react';
-import { toast } from 'sonner';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
   COMMUNITY_HOST_ADMIN_PATH,
   communitySettingsPath,
   type CommunitySettingsSection,
 } from '@dorkos/shared/community-wire';
-import { CommunityInstallationDestinationSchema } from '@dorkos/shared/config-schema';
 import {
   communityRefFromRouteDestination,
   getCommunityRouteEpoch,
   useIsMobile,
-  useOpenConnections,
-  useTransport,
 } from '@/layers/shared/model';
-import {
-  cn,
-  formatRelativeTime,
-  getCommunityAuthority,
-  isCommunityAuthorityCurrent,
-  openExternalLink,
-} from '@/layers/shared/lib';
+import { cn, formatRelativeTime, openExternalLink } from '@/layers/shared/lib';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
@@ -31,7 +21,6 @@ import {
   ResponsiveDropdownMenuRadioItem,
   ResponsiveDropdownMenuSeparator,
   ResponsiveDropdownMenuTrigger,
-  focusPageHeading,
   Input,
   SidebarMenuNodes,
   Skeleton,
@@ -56,7 +45,9 @@ import {
   COMMUNITY_DEPLOY_GUIDE_URL,
 } from './community-context-actions';
 import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
+import { ConnectCommunityDialog, type ConnectCommunityRequest } from './ConnectCommunityDialog';
 import { SheetActionsMenu } from './SheetActionsMenu';
+import { useContextSelection } from './use-context-selection';
 import { useSwitchContextShortcut } from '../../model/use-switch-context-shortcut';
 
 /** Props for the route-owned Community context trigger. */
@@ -68,35 +59,6 @@ export interface CommunityContextSwitcherProps {
    * in the trigger's accessible name and in the menu it opens.
    */
   compact?: boolean;
-}
-
-/**
- * Notice whether the person presses or types anywhere until stopped.
- *
- * A phone switch to a remote Community can take seconds. Focus moving in that
- * time is not enough to say the person moved it — a composer takes focus on
- * mount by itself — so what counts is their own hand on a key or the screen.
- *
- * **Any key counts, on purpose** — Shift, Tab and arrows included, not only
- * keys that type. A person pressing Tab is steering focus themselves, and one
- * holding Shift is mid-way to doing something; either way the switcher yanking
- * focus to the heading would fight them. Missing a heading announcement is the
- * cheaper mistake.
- */
-function watchPersonInput(): { acted: () => boolean; stop: () => void } {
-  let acted = false;
-  const mark = () => {
-    acted = true;
-  };
-  document.addEventListener('pointerdown', mark, true);
-  document.addEventListener('keydown', mark, true);
-  return {
-    acted: () => acted,
-    stop: () => {
-      document.removeEventListener('pointerdown', mark, true);
-      document.removeEventListener('keydown', mark, true);
-    },
-  };
 }
 
 function orderedConnections(
@@ -161,17 +123,11 @@ export function CommunityContextSwitcher({
   triggerClassName,
   compact = false,
 }: CommunityContextSwitcherProps) {
-  const transport = useTransport();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
-  const openConnections = useOpenConnections();
-  const location = useRouterState({ select: (state) => state.location }) as {
-    pathname: string;
-    community?: string;
-    search: { community?: string; id?: string; thread?: string };
-  };
-  const search = location.search;
-  const selectedRef = search.community;
+  const selectedRef = useRouterState({
+    select: (state) => (state.location.search as { community?: string }).community,
+  });
   const navigation = useCommunityNavigation();
   const moveNavigation = useMoveCommunityNavigation();
   const connections = useCommunityConnections();
@@ -181,19 +137,20 @@ export function CommunityContextSwitcher({
   );
   const selected = destinations.find((connection) => connection.ref === selectedRef) ?? null;
   const selectedItem = useRef<HTMLDivElement>(null);
-  const pendingSelection = useRef(false);
   const returnFocus = useRef<HTMLElement | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  /**
-   * A phone choice is in flight, so the sheet must not hand focus back to the
-   * trigger as it closes: where focus goes is decided when the switch settles
-   * ({@link settlePhoneFocus}), and the sheet can close before or after that.
-   */
-  const holdCloseFocus = useRef(false);
-  const [pendingRef, setPendingRef] = useState<string | null>(null);
+  const {
+    pendingRef,
+    isSelecting,
+    holdCloseFocus,
+    takeCloseFocusHold,
+    selectCommunity,
+    selectInstallation,
+  } = useContextSelection({ trigger, selectedRef });
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
+  const [connectRequest, setConnectRequest] = useState<ConnectCommunityRequest | null>(null);
   const [disconnecting, setDisconnecting] = useState<CommunityConnectionDescriptor | null>(null);
   // Hosted communities: `null` while this DorkOS is not linked to an account,
   // and then no row is drawn and nothing is asked of the account.
@@ -233,7 +190,7 @@ export function CommunityContextSwitcher({
     onOpenSettings: () => selected && openOnCommunity(selected),
     onLeave: () => selected && openOnCommunity(selected, 'account'),
     onDisconnect: () => setDisconnecting(selected),
-    onConnect: () => openConnections('messaging'),
+    onConnect: () => setConnectRequest({ ref: null }),
     onJoin: () => setJoinOpen(true),
     creationOrigins: communityCreationOrigins(destinations),
     // The pinned origin again: the only host these connections talked to.
@@ -268,154 +225,8 @@ export function CommunityContextSwitcher({
     setOpen(true);
   });
 
-  /**
-   * Put focus where a finished phone choice leaves the person.
-   *
-   * "Selecting closes the sheet, commits navigation, and moves focus to the
-   * new page heading" (spec, Phone and narrow widths). Only a switch that
-   * landed moves it there. One that failed or was overtaken lets go of the
-   * close hold instead, and if focus has already dropped to the page body
-   * with nowhere to be, it goes back to the trigger — what the sheet would
-   * have done — but never away from anything the person has since focused.
-   * Desktop keeps the popover's own focus return, so this is phone-only.
-   *
-   * A remote Community can take seconds to answer. If the person has
-   * pressed or typed somewhere in that time — the message box, a link — their
-   * focus stays where they put it. Focus the app moved by itself (a composer
-   * taking it on mount) is not theirs, and the heading still wins over it.
-   */
-  function settlePhoneFocus(landed: boolean, personActed: boolean) {
-    if (!isMobile) return;
-    if (!landed) holdCloseFocus.current = false;
-    if (personActed) return;
-    if (landed) {
-      // The heading may still be waiting for its full name; the person can act
-      // during that wait too, and wins if they do.
-      const late = watchPersonInput();
-      void focusPageHeading({ cancelled: late.acted }).finally(late.stop);
-      return;
-    }
-    const active = document.activeElement;
-    if (active === null || active === document.body) trigger.current?.focus();
-  }
-
-  async function selectCommunity(connection: CommunityConnectionDescriptor) {
-    if (connection.ref === selectedRef || pendingSelection.current) return;
-    if (connection.status !== 'connected') {
-      openConnections('messaging');
-      return;
-    }
-    const owner = getCommunityAuthority();
-    if (owner.ownerKey === null) return;
-    const capturedOwner = { epoch: owner.epoch, ownerKey: owner.ownerKey };
-    const previousLocation = { pathname: location.pathname, search: location.search };
-    // Set before the first await, so it is in place by the time the sheet,
-    // closing on this same press, asks where focus should go.
-    holdCloseFocus.current = isMobile;
-    const person = watchPersonInput();
-    pendingSelection.current = true;
-    setPendingRef(connection.ref);
-    let targetCommitted = false;
-    let capturedRoute: ReturnType<typeof getCommunityRouteEpoch> | null = null;
-    try {
-      await navigate({ to: '/channels', search: { community: connection.ref } });
-      targetCommitted = true;
-      capturedRoute = getCommunityRouteEpoch();
-      const remembered = await transport.resolveCommunityNavigation(connection.ref);
-      const fallback = remembered
-        ? null
-        : ((await transport.listRemoteCommunityRooms(connection.ref)).rooms.find(
-            (room) => room.readable && !room.archived
-          ) ?? null);
-      const roomId = remembered?.roomId ?? fallback?.roomId;
-      if (!isCommunityAuthorityCurrent(capturedOwner) || !capturedRoute.isCurrent()) {
-        settlePhoneFocus(false, person.acted());
-        return;
-      }
-      if (roomId)
-        await navigate({
-          to: '/channels',
-          search: {
-            community: connection.ref,
-            ...(roomId ? { id: roomId } : {}),
-            ...(remembered?.threadId ? { thread: remembered.threadId } : {}),
-          },
-        });
-      settlePhoneFocus(true, person.acted());
-    } catch {
-      settlePhoneFocus(false, person.acted());
-      // A target may render its labelled skeleton before its remote destination
-      // resolves, but a failed read cannot leave it selected. Restore only while
-      // this exact route and owner remain current; a newer choice always wins.
-      const restore =
-        targetCommitted &&
-        capturedRoute?.isCurrent() === true &&
-        isCommunityAuthorityCurrent(capturedOwner);
-      if (restore) {
-        const restored = await navigate({
-          to: previousLocation.pathname,
-          search: previousLocation.search,
-          replace: true,
-        } as never).then(
-          () => true,
-          () => false
-        );
-        // Say so (spec: "announce the failure"): the label snapping back is
-        // easy to miss, and a screen reader hears nothing at all. Only once
-        // the way back has actually landed, because the message promises it;
-        // silent when the person has already chosen somewhere else.
-        if (restored)
-          toast.error(`Couldn’t open ${connection.label}.`, {
-            description: 'You’re still where you were. Try again in a moment.',
-          });
-      }
-    } finally {
-      person.stop();
-      pendingSelection.current = false;
-      setPendingRef(null);
-    }
-  }
-
-  async function selectInstallation() {
-    if (selectedRef === undefined || pendingSelection.current) return;
-    const owner = getCommunityAuthority();
-    if (owner.ownerKey === null) return;
-    const capturedOwner = { epoch: owner.epoch, ownerKey: owner.ownerKey };
-    const capturedRoute = getCommunityRouteEpoch();
-    holdCloseFocus.current = isMobile;
-    const person = watchPersonInput();
-    pendingSelection.current = true;
-    try {
-      const state = await transport.getCommunityNavigation();
-      if (
-        state.ownerKey !== capturedOwner.ownerKey ||
-        !isCommunityAuthorityCurrent(capturedOwner) ||
-        !capturedRoute.isCurrent()
-      ) {
-        settlePhoneFocus(false, person.acted());
-        return;
-      }
-      const destination = CommunityInstallationDestinationSchema.safeParse(
-        state.installationDestination
-      );
-      await navigate(
-        destination.success
-          ? ({ to: destination.data.path, search: destination.data.search } as never)
-          : { to: '/' }
-      );
-      settlePhoneFocus(true, person.acted());
-    } catch {
-      const fallback = isCommunityAuthorityCurrent(capturedOwner) && capturedRoute.isCurrent();
-      if (fallback) await navigate({ to: '/' });
-      settlePhoneFocus(fallback, person.acted());
-    } finally {
-      person.stop();
-      pendingSelection.current = false;
-    }
-  }
-
   function selectDestination(value: string) {
-    if (pendingSelection.current) return;
+    if (isSelecting()) return;
     // A choice moves you somewhere new; the old focus has nothing to return to.
     returnFocus.current = null;
     if (value === 'installation') {
@@ -423,7 +234,16 @@ export function CommunityContextSwitcher({
       return;
     }
     const connection = destinations.find((item) => `community:${item.ref}` === value);
-    if (connection) void selectCommunity(connection);
+    if (!connection) return;
+    if (connection.status === 'connected') {
+      void selectCommunity(connection);
+      return;
+    }
+    // Still waiting for approval, or needing to be connected again: both are
+    // finished in the connect dialog, which takes focus as the menu closes,
+    // so the menu must not hand it back to the trigger.
+    holdCloseFocus();
+    setConnectRequest({ ref: connection.ref });
   }
 
   function handleOpenChange(next: boolean) {
@@ -433,8 +253,7 @@ export function CommunityContextSwitcher({
 
   function handleCloseAutoFocus(event: Event) {
     guarded.onCloseAutoFocus(event);
-    if (holdCloseFocus.current) {
-      holdCloseFocus.current = false;
+    if (takeCloseFocusHold()) {
       event.preventDefault();
       return;
     }
@@ -615,6 +434,14 @@ export function CommunityContextSwitcher({
           )}
         </ResponsiveDropdownMenuContent>
       </ResponsiveDropdownMenu>
+      <ConnectCommunityDialog
+        request={connectRequest}
+        onOpenChange={(next) => {
+          if (!next) setConnectRequest(null);
+        }}
+        installName={installationLabelPending ? 'My DorkOS' : installationLabel}
+        onConnected={(ref) => void selectConnected(ref)}
+      />
       <JoinCommunityDialog open={joinOpen} onOpenChange={setJoinOpen} />
       <CommunityHostingDialogs
         entry={hosting}

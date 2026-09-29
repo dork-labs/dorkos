@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
  * Guards the invariants `playwright.config.ts` cannot state in code — distinct
@@ -167,5 +167,53 @@ describe('the production leg serves the app the way it ships', () => {
     // sign this leg had quietly grown a proxy — and a proxied shell is the shell
     // with no policy on it, which is the exact blindness this leg removes.
     expect(command).not.toContain('VITE_PORT=');
+  });
+});
+
+/**
+ * The site leg boots on one shard of a sharded run, and its specs go with it
+ * (DOR-2360). The config reads its flags at module scope, so each case stubs the
+ * environment and imports a fresh copy.
+ */
+describe('a sharded CI run boots the site leg on one shard only', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function shard(index: string) {
+    vi.resetModules();
+    vi.stubEnv('CI', '1');
+    vi.stubEnv('E2E_SITE', '1');
+    vi.stubEnv('E2E_SHARD_TOTAL', '6');
+    vi.stubEnv('E2E_SHARD_INDEX', index);
+    const { default: config } = await import('../playwright.config.js');
+    const legs = (Array.isArray(config.webServer) ? config.webServer : []).map((l) => l.name);
+    const chromium = config.projects?.find((p) => p.name === 'chromium');
+    const balanced = (config.reporter as unknown as [string, { pin?: unknown }?][]).find(([name]) =>
+      name.includes('balanced-shard-reporter')
+    );
+    return { legs, ignore: chromium?.testIgnore, pin: balanced?.[1]?.pin };
+  }
+
+  it('boots it on shard 1 and tells the reporter it is up', async () => {
+    const one = await shard('1');
+    expect(one.legs).toContain('Marketing Site');
+    expect(one.pin).toEqual({
+      shard: 1,
+      keys: ['chromium|features.spec.ts', 'chromium|marketplace.spec.ts'],
+      booted: true,
+    });
+  });
+
+  it('skips it on every other shard, while still collecting the site specs there', async () => {
+    // Collecting them everywhere keeps the balanced cut identical on every
+    // shard; the pin is what keeps them off the shards without the leg.
+    const two = await shard('2');
+    expect(two.legs).not.toContain('Marketing Site');
+    expect(two.legs).toHaveLength(5);
+    expect(two.ignore).not.toContain('**/features.spec.ts');
+    expect(two.ignore).not.toContain('**/marketplace.spec.ts');
+    expect(two.pin).toMatchObject({ shard: 1, booted: false });
   });
 });

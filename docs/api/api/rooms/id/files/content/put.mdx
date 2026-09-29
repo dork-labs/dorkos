@@ -26,12 +26,19 @@ _openapi:
           a reload / keep-mine choice is drawn from; sending the conflict's own
           commit back as `baseCommit` is how a person overwrites deliberately.
           Saving text that is byte-for-byte what the file already held commits
-          nothing and answers `committed: false`. Refused otherwise with:
+          nothing and answers `committed: false`. A save that commits posts one
+          quiet entry in the room (`body.fileChange`, `kind: 'edit'` or `'add'`)
+          that addresses nobody and wakes no agent. With login on, the commit is
+          authored as the signed-in person (`person-<authorId>@dorkos.local`);
+          with login off, as the operator. Refused otherwise with:
           `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or
           that names the room's own git directory in any of its spellings),
           `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a
-          save never writes through a link), `ROOM_FILE_NOT_FOUND` (a folder the
-          room does not have; saving does not make new folders),
+          save never writes through a link — or a name that differs only in
+          capital letters from a file or folder the room already has, which is
+          the same name on macOS and Windows; the message names the real one),
+          **missing folders above the file are created**, and a folder in the
+          path that is really a file is `ROOM_FILE_PATH_INVALID`,
           `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file
           unreadable through the read route), `FILE_TOO_LARGE` and
           `REPO_CAP_EXCEEDED` against the room's own frozen caps,

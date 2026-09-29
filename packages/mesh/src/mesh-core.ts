@@ -76,6 +76,13 @@ export interface MeshOptions {
    * but skips the agents home dir.
    */
   agentsHomeDir?: string;
+  /**
+   * A room's files (`${dorkHome}/rooms`). No folder under it is ever an agent's
+   * home: a room repo, its checkout or a worktree of it may carry a committed
+   * `.dork/agent.json`, and registering it would hand that file an identity
+   * (spec `agent-home-desk` §3.3). Optional: absent, nothing is refused.
+   */
+  roomFilesDir?: string;
   /** Optional SignalEmitter for lifecycle event broadcasting (graceful no-op when absent). */
   signalEmitter?: SignalEmitter;
   /** Optional logger for structured output (defaults to console). */
@@ -163,6 +170,7 @@ export class MeshCore {
       // Namespace derivation for managed agents is anchored here, so creation
       // and the reconciler five minutes later give one answer (DOR-1342).
       agentsHomeDir: options.agentsHomeDir,
+      roomFilesDir: options.roomFilesDir,
       logger,
       generateUlid: monotonicFactory(),
       // Per-callback try/catch, so one broken reaction never costs the others
@@ -326,17 +334,11 @@ export class MeshCore {
    * agent's IDENTITY — registered, renamed, re-iconed, moved, removed — by
    * every path that goes through the registry: the HTTP routes, the in-session
    * and external `mesh_register` / `mesh_unregister` tools, `create_agent`, a
-   * marketplace install, an agent editing itself, `syncFromDisk`, and the
-   * five-minute reconciler adopting a `.dork/agent.json`. `AgentRegistry` is
-   * the seam every one of them passes through, which is why the observer lives
-   * there rather than on each route (the eighth route would forget).
-   *
-   * **One known path does NOT go through the registry**, so it is honest to
-   * name it rather than let "any path" quietly cover it: a marketplace agent
-   * UNINSTALL deletes `.dork/agent.json` directly, with no mesh call
-   * (`services/marketplace/flows/uninstall.ts`), so nothing fires until the
-   * reconciler's next sweep notices the manifest is gone. That is a gap in the
-   * uninstall flow rather than in this seam, and it has its own follow-up.
+   * marketplace install or uninstall, an agent editing itself, `syncFromDisk`,
+   * and the five-minute reconciler adopting a `.dork/agent.json`.
+   * `AgentRegistry` is the seam every one of them passes through, which is why
+   * the observer lives there rather than on each route (the eighth route would
+   * forget).
    *
    * The DorkOS server wires this to the `/api/events` fan-out as
    * `agents_changed`, so a sidebar in every open window follows a registration

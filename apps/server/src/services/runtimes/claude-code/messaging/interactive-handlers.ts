@@ -7,7 +7,10 @@ import type {
 import type { QuestionItem } from '@dorkos/shared/types';
 import { QuestionItemSchema, UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
-import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
+import {
+  createInSessionContextResolver,
+  resolveAgentHome,
+} from '../../../core/agent-identity/index.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
@@ -20,6 +23,7 @@ import {
   clearInteractionTimer,
   elicitationParkedNotice,
   elicitationTimeoutNotice,
+  nobodyToAsk,
   notifyInteractionCancelled,
   questionParkedNotice,
   questionTimeoutNotice,
@@ -74,15 +78,17 @@ const READ_ONLY_TOOLS = new Set([
  *
  * ## Why this is a hand-written list and not derived (DOR-499)
  *
- * This is the fourth place DorkOS names a subset of its MCP tools, and the most
+ * This is one of the places DorkOS names a subset of its MCP tools, and the most
  * consequential: everything here is auto-allowed in `canUseTool` without ever
- * asking a person. DOR-499 collapsed three OTHER such lists into
- * `@dorkos/shared/mcp-tool-groups` and deliberately left this one alone, for the
- * same reason the tokenless read-only carve-out in
- * `core/external-mcp/tool-security.ts` was left alone.
+ * asking a person. DOR-499 collapsed three OTHER such lists into one per-tool
+ * table (`core/mcp-tool-tiers.ts`, which now carries each tool's permission area
+ * as well) and deliberately left this one alone, for the same reason the
+ * tokenless read-only carve-out in `core/external-mcp/tool-security.ts` was left
+ * alone.
  *
- * It is not the same predicate as any group or tier. A group answers "which toggle
- * takes this away". A tier answers "does this need approval in general". This list
+ * It is not the same predicate as any area or tier. An area answers "which
+ * permission switch takes this away". A tier answers "does this need approval in
+ * general". This list
  * answers the narrower question above: does this tool carry its own authorization,
  * so that a card would add friction without adding safety? That is a hand-picked
  * judgment, not a property of the tier. `relay_register_endpoint` and
@@ -145,14 +151,22 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // is narrowed further still — a document whose tree this reader could not
     // already read comes back as its name and nothing more.
     'read_canvas',
-    // The five that ARRANGE rooms (DOR-1611). They carry everything above them
-    // plus one bound none of the others has: the `roomsManage` grant, which is
-    // off until a person turns it on for THIS agent. See IDENTITY_SCOPED_TOOLS.
+    // The verbs that ARRANGE rooms (DOR-1611; `archive_room` from spec
+    // `agent-permissions` D12). They carry everything above them plus one bound
+    // none of the others has: the Rooms permission, resolved for THIS agent at
+    // the capability gate on every call. See IDENTITY_SCOPED_TOOLS.
     'create_room',
     'add_room_members',
     'remove_room_members',
     'update_room',
     'leave_room',
+    'archive_room',
+    // Asking past a Blocked permission (spec `agent-permissions` D8). Its whole
+    // effect is to put a DorkOS card in front of a person, rate-limited per
+    // agent before anything is minted; a runtime card asking "may it ask?"
+    // first would be a second card for one question. Identity-scoped: without
+    // an agent the tool refuses itself.
+    'request_permission',
     'relay_notify_user',
     'relay_send',
     'relay_inbox',
@@ -189,7 +203,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * (and by default does) set that scope.
  *
  * What the auto-allow gives up is stated once, here, because it is the same
- * thing for all fifteen: **the per-call card an operator watching a DIRECT session
+ * thing for all sixteen: **the per-call card an operator watching a DIRECT session
  * could have denied.** Not the setup consent, which is untouched — a room the
  * agent is not a member of, and a binding nobody switched initiating on for, are
  * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT
@@ -241,24 +255,28 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * rooms rather than every room on the machine, and that is still an ordinary
  * coding session reading somebody's private conversations without being asked.
  *
- * **The five that ARRANGE rooms carry one bound more than any verb above them**
- * (DOR-1611). `create_room`, `add_room_members`, `remove_room_members`,
- * `update_room` and `leave_room` are the only entries in this whole set that a
- * person has to switch ON before they run at all: `registry.invoke` reads the
- * `roomsManage` grant off the agent's manifest, fresh, on every call, and
- * refuses without it — and the agent-reachable write path refuses to set it for
- * itself (ADR `260828-123331`). So the auto-allow here is strictly narrower than
- * the eight above: those need only an identity, these need an identity AND a
- * deliberate act by the person, naming this agent.
+ * **The verbs that ARRANGE rooms carry one bound more than any verb above
+ * them** (DOR-1611, spec `agent-permissions`). `create_room`,
+ * `add_room_members`, `remove_room_members`, `update_room`, `leave_room` and
+ * `archive_room` sit in the Rooms permission area: `registry.invoke` resolves it
+ * for this agent, fresh, on every call — Blocked refuses, Ask raises the gate's
+ * own card inside the call, Allowed runs — and no agent can write its own
+ * permissions through DorkOS. (One with file tools can edit its manifest; that
+ * is honoured and recorded as a change made outside DorkOS, see
+ * `services/core/permissions/permission-observer.ts`.) So the auto-allow here is strictly narrower than the eight
+ * above: those need only an identity, these need an identity AND a Rooms
+ * permission a person set or chose a preset for.
  *
- * They must not raise a card for the domain's standing reason, and it is
+ * They must not raise a SESSION card for the domain's standing reason, and it is
  * sharper for these than for the reads. An agent opens a channel or pulls a
  * colleague in DURING a room turn — that is the moment the work needs it — and
  * DOR-1229 measured what a card costs there: eleven minutes, then an auto-deny.
- * A card would also be asking the person a question she has already answered, in
- * the one place built for it. Without an identity the grant refuses the call
- * anyway; the gate still asks rather than inferring harmlessness from another
- * layer's refusal, which is the same posture `memory_write` takes below.
+ * A card would also be asking the person a question she has already answered, on
+ * the Permissions page built for it; where she chose Ask, the capability gate
+ * raises its own card and holds the call. Without an identity the call resolves
+ * against the install's defaults only; this gate still asks rather than
+ * inferring harmlessness from another layer, which is the same posture
+ * `memory_write` takes below.
  *
  * ## Why `relay_notify_user` is here too (DOR-1265)
  *
@@ -337,7 +355,8 @@ export const DORKOS_AGENT_TOOLS = new Set(
  *
  * ## Where identity comes from
  *
- * One KEY — the session's working directory — resolved here by
+ * One KEY — the session's identity anchor (its working directory, or the agent
+ * a room working copy was handed to, DOR-2091) — resolved here by
  * {@link createInSessionContextResolver}, the same function, with the same
  * argument, that `mcp-tools/index.ts` builds the capability resolver from. For
  * the rooms verbs that is also the same STORE, so this gate and the caller they
@@ -354,9 +373,10 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * a different failure from the one this fix was about. Both directions are pinned
  * in `core/__tests__/mcp-relay-notify-tools.test.ts`.
  *
- * A room turn is handed the addressed agent's own directory
- * (`room-turn-runner.ts`), and an agent a room dispatched to is in the mesh by
- * construction, so the two agree wherever this was meant to work: the verbs are
+ * A room turn is handed the addressed agent's own directory, or — in a room
+ * with files — its worktree, which anchors back to that agent (DOR-2091). An
+ * agent a room dispatched to is in the mesh by construction, so the two agree
+ * wherever this was meant to work: the verbs are
  * frictionless there. An ordinary cockpit session in a plain project directory
  * resolves neither, and keeps today's card.
  *
@@ -392,6 +412,8 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'remove_room_members',
     'update_room',
     'leave_room',
+    'archive_room',
+    'request_permission',
     'relay_notify_user',
     'memory_write',
   ].map(inSessionToolName)
@@ -681,7 +703,7 @@ export function handleAskUserQuestion(
     });
   }
   const questions = parsed.success ? parsed.data : (input.questions as QuestionItem[]);
-  if (session.unattended === true) {
+  if (nobodyToAsk(session)) {
     refuseWithNobodyToAsk(session, {
       interactionId: toolUseId,
       kind: 'question',
@@ -778,7 +800,7 @@ export function handleElicitation(
   signal: AbortSignal
 ): Promise<ElicitationResult> {
   const interactionId = request.elicitationId ?? randomUUID();
-  if (session.unattended === true) {
+  if (nobodyToAsk(session)) {
     // The MCP server is named where a tool name would go: it is what the person
     // reading the run has to recognise, and this record's whole job is to say
     // WHAT could not be answered.
@@ -955,7 +977,15 @@ async function hasAgentIdentity(
   log: ToolGateLogger
 ): Promise<boolean> {
   try {
-    return (await resolveIdentity()) !== undefined;
+    // An `identity`, not merely an answer: a session standing in a working copy
+    // nobody can vouch for answers `agentIdentityPresented` with no identity
+    // (DOR-2091), and that is a machine this gate cannot name — so it asks.
+    const context = await resolveIdentity();
+    return (
+      typeof context === 'object' &&
+      context !== null &&
+      (context as { identity?: unknown }).identity !== undefined
+    );
   } catch (err) {
     log.info('[canUseTool] could not resolve this session identity; asking instead', {
       error: err instanceof Error ? err.message : String(err),
@@ -986,9 +1016,10 @@ async function hasAgentIdentity(
  *   snapshot is guaranteed captured before the SDK applies the edit; a rejection
  *   is swallowed by the caller's wiring so capture never blocks a tool.
  * @param resolveIdentity - Answers "whose identity does this session call as?",
- *   for {@link IDENTITY_SCOPED_TOOLS}. Defaults to a resolver over the session's
- *   own `cwd` — the SAME call `mcp-tools/index.ts` builds the capability
- *   resolver from, so the gate and the caller the tool runs as cannot disagree.
+ *   for {@link IDENTITY_SCOPED_TOOLS}. A launch hands in the resolver over the
+ *   SAME identity anchor it hands `mcp-tools/index.ts`, so the gate and the
+ *   caller the tool runs as cannot disagree; the default anchors the session's
+ *   own `cwd`, for a caller with nothing better.
  *   Injectable so a test can state the identity instead of staging an agent on
  *   disk.
  */
@@ -996,7 +1027,9 @@ export function createCanUseTool(
   session: InteractiveSession & { permissionMode: PermissionModeId },
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
-  resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(session.cwd)
+  resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(
+    resolveAgentHome(session.cwd)
+  )
 ): (
   toolName: string,
   input: Record<string, unknown>,
@@ -1090,7 +1123,7 @@ export function handleToolApproval(
   input: Record<string, unknown>,
   context: ToolApprovalContext
 ): Promise<PermissionResult> {
-  if (session.unattended === true) {
+  if (nobodyToAsk(session)) {
     refuseWithNobodyToAsk(session, { interactionId: toolUseId, kind: 'approval', toolName });
     return Promise.resolve({ behavior: 'deny', message: NO_APPROVAL_SURFACE_DENIAL });
   }

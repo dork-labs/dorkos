@@ -25,6 +25,31 @@ describe('EditBaselineStore', () => {
     expect(store.get('s1', file)?.capturedFrom).toBe('pre-tool');
   });
 
+  it('forget drops only the named files, so the next capture takes the bytes as they are now', async () => {
+    // The room's turn-start refresh moved `a.ts` under the agent (spec
+    // `agent-home-desk` §6.1): the old baseline would report other people's
+    // work as this session's edits.
+    const moved = path.join(dir, 'a.ts');
+    const kept = path.join(dir, 'b.ts');
+    await fs.writeFile(moved, 'before refresh\n');
+    await fs.writeFile(kept, 'mine\n');
+    await store.captureFromDisk('s1', moved);
+    await store.captureFromDisk('s1', kept);
+    await store.captureFromDisk('s2', moved);
+
+    await fs.writeFile(moved, 'after refresh\n');
+    store.forget('s1', [moved, path.join(dir, 'never-captured.ts')]);
+
+    expect(store.has('s1', moved)).toBe(false);
+    expect(store.get('s1', kept)?.bytes.toString('utf8')).toBe('mine\n');
+    // Another session's baseline is its own business.
+    expect(store.has('s2', moved)).toBe(true);
+    await store.captureFromDisk('s1', moved);
+    expect(store.get('s1', moved)?.bytes.toString('utf8')).toBe('after refresh\n');
+    // Forgetting in a session with nothing captured is a no-op.
+    expect(() => store.forget('nobody', [moved])).not.toThrow();
+  });
+
   it('is first-touch-wins — a second capture after the file changed is a no-op', async () => {
     const file = path.join(dir, 'a.ts');
     await fs.writeFile(file, 'v1\n');

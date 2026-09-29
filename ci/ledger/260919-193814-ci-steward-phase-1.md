@@ -11,7 +11,6 @@ gates:
   - lefthook.pre-commit.db-migrations
   - lefthook.pre-commit.dir-size
   - lefthook.pre-commit.lint
-  - lefthook.pre-commit.typecheck
   - lefthook.pre-push.formatting
 prs: []
 ratchet-release: []
@@ -19,6 +18,7 @@ field-changes: []
 ---
 
 <!-- Amended 2026-09-20 (DOR-2160): `lefthook.pre-push.tests` removed from `gates:` because the command no longer exists (ci/ledger/260919-175505-*). Nothing about phase 1 changed; the time-wrap still opens every command this file lists. -->
+<!-- Amended 2026-09-24: `lefthook.pre-commit.typecheck` removed from `gates:` because the command no longer exists (ci/ledger/260919-175506-*). Nothing about phase 1 changed. -->
 
 Phase 1 ("Observe") of plans/ci-steward-plan.md (DOR-2149). Hygiene, because it measures the
 pipeline rather than changing what any gate checks. Its own cost is the check: the plan's §8 says

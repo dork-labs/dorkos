@@ -105,7 +105,7 @@ async function listDecisions(dorkHome: string): Promise<number> {
     return 0;
   }
 
-  const { hookApprovalEntry, hookEntryPackageName } =
+  const { hookApprovalEntry, hookEntryPackageName, isGlobalActivationEntry } =
     await import('../server/services/harness/hook-consent.js');
   const { scanHookRequests } = await import('../server/services/harness/project-with-consent.js');
 
@@ -126,9 +126,13 @@ async function listDecisions(dorkHome: string): Promise<number> {
     console.log('');
     console.log(`${heading}:`);
     for (const entry of entries) {
-      const where = here.has(entry)
-        ? 'matches the hooks installed in this project'
-        : 'from another project, or from before this package changed its hooks';
+      // A global package's decision is about its programs loading into every
+      // session, not about a project's hook files (DOR-2306).
+      const where = isGlobalActivationEntry(entry)
+        ? 'for the globally installed package, in every session'
+        : here.has(entry)
+          ? 'matches the hooks installed in this project'
+          : 'from another project, or from before this package changed its hooks';
       console.log(`  ${hookEntryPackageName(entry)} — ${where}`);
     }
   }

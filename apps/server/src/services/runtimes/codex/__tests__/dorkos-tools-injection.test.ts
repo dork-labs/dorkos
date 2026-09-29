@@ -34,6 +34,15 @@ import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import type { ConnectorTurnLeaseSupervisorFactory } from '../../connectors/connector-turn-lease-supervisor.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../check-dependencies.js', () => ({ checkCodexDependencies: vi.fn(() => []) }));
 vi.mock('../enumerate-mcp-servers.js', () => ({
@@ -362,9 +371,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       revision = 'different-operation-same-count';
       await drain(runtime.sendMessage('s-awareness', 'what changed?', { cwd: agentDir }));
       expect(sdkMocks.prompts.at(-1)).toContain('Access changed');
-      expect(sdkMocks.prompts.at(-1)).toContain(
-        'Currently granted accounts for this agent session: 1'
-      );
+      expect(sdkMocks.prompts.at(-1)).toContain('Accounts this agent session can use right now: 1');
       expect(JSON.stringify(sdkMocks.constructorOptions.at(-1))).toContain('dorkos_connections');
       expect(sdkMocks.prompts.at(-1)).not.toContain(revision);
     });
@@ -706,7 +713,7 @@ describe('the dorkos tool server on a Codex turn', () => {
 
     it('answers FALSE for a directory hosting no registered agent — the mute this closes', async () => {
       // **The divergence, and it was a silent mute rather than an untidy room.**
-      // `sendMessage` gates the injection on `meshAgent ? cwd : undefined`, so a
+      // `sendMessage` gates the injection on `meshAgent ? agentPath : undefined`, so a
       // `getByPath` miss withholds the entry. `carriesRoomTools` was handing the
       // posture a bare `cwd` string, which made the `'no-agent'` answer
       // structurally unreachable from that caller — so it said `true` for a
@@ -760,6 +767,68 @@ describe('the dorkos tool server on a Codex turn', () => {
         asserted += 1;
       }
       expect(asserted).toBe(3);
+    });
+  });
+
+  describe('a room turn (DOR-2091, spec `agent-home-desk` §5.1)', () => {
+    // A room turn stands in its agent's HOME and names that agent. It gets the
+    // agent's `dorkos` server and token; a turn naming ANOTHER agent gets
+    // nothing, wherever it stands. Seeded: dropping the room-turn cross-check
+    // reddens the second case.
+    /** A room turn for `agentPath`, standing in `cwd`. */
+    function roomTurn(cwd: string, agentPath: string) {
+      return {
+        cwd,
+        roomTurn: { roomId: '01ROOM', authorId: 'author-1', turnId: 'turn-1', cwd, agentPath },
+      };
+    }
+
+    it("gives the agent its dorkos server and token, bound to the AGENT's identity", async () => {
+      const principals = connectorPort();
+      const runtime = makeRuntime({ runtimeTools: principals });
+
+      await drain(runtime.sendMessage('s1', 'hello', roomTurn(agentDir, agentDir)));
+
+      expect(lastMcpServers()['dorkos']?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
+      const env = (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env;
+      expect(env?.['DORKOS_AGENT_TOKEN']).toEqual(expect.any(String));
+      expect(principals.openTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ agentPath: agentDir, canonicalCwd: agentDir }),
+        expect.anything()
+      );
+      expect(await runtime.carriesRoomTools({ cwd: agentDir, agentPath: agentDir })).toBe(true);
+    });
+
+    it("gives a turn for ANOTHER agent nothing in this agent's home", async () => {
+      const principals = connectorPort();
+      const runtime = makeRuntime({ runtimeTools: principals });
+      const someoneElse = path.join(agentDir, '..', 'someone-else');
+
+      await drain(runtime.sendMessage('s1', 'hello', roomTurn(agentDir, someoneElse)));
+
+      expect(lastMcpServers()['dorkos']).toBeUndefined();
+      const env = (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env;
+      expect(env?.['DORKOS_AGENT_TOKEN']).toBeUndefined();
+      expect(principals.openTurn).not.toHaveBeenCalled();
+      expect(await runtime.carriesRoomTools({ cwd: agentDir, agentPath: someoneElse })).toBe(false);
+    });
+
+    it("gives a refused turn none of the folder's own managed servers", async () => {
+      // A turn for another agent standing in THIS agent's own folder anchors to
+      // nobody; the managed servers it would get by falling back to the
+      // directory are this agent's, so it gets none. Seeded: falling back to
+      // `agentPath ?? cwd` reddens it.
+      const managed: ManagedMcpServerResolver = {
+        injectableServersForCwd: (dir: string) =>
+          dir === agentDir ? { private_db: { transport: 'stdio', command: '/bin/db' } } : {},
+      } as unknown as ManagedMcpServerResolver;
+      const runtime = makeRuntime({ managed });
+
+      await drain(
+        runtime.sendMessage('s1', 'hello', roomTurn(agentDir, path.join(agentDir, '..', 'ben')))
+      );
+
+      expect(lastMcpServers()['private_db']).toBeUndefined();
     });
   });
 });

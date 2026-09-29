@@ -1,7 +1,7 @@
 import { X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/layers/shared/ui';
-import { formatMicro } from '../lib/micro';
+import { formatCreditsWithMoney, formatMoney } from '@dork-labs/cloud-api/display';
 import { useCloudNudge } from '../model/use-cloud-plan';
 
 /**
@@ -21,6 +21,12 @@ import { useCloudNudge } from '../model/use-cloud-plan';
  * 4. **It never stands between the person and a top-up.** It is a strip ABOVE
  *    the surface, with no action of its own and nothing to click through — the
  *    one thing a nudge must not do is make paying harder than not paying.
+ *
+ * Its figures are rendered by `@dork-labs/cloud-api/display` in the unit the
+ * nudge served: the last 30 days are a charge in credits with their money value
+ * beside them, and the plan price and the difference are money, so the
+ * sentence's subtraction reads in one unit. A nudge that names no unit renders
+ * nothing — a comparison without its figures is not a comparison.
  */
 export function UpgradeNudge() {
   const { data } = useCloudNudge();
@@ -29,16 +35,14 @@ export function UpgradeNudge() {
   if (dismissed || !data?.available) return null;
 
   const { nudge } = data;
-  const saving = formatMicro(nudge.savingMicro);
-  const spent = formatMicro(nudge.trailing30Micro);
-  const price = formatMicro(nudge.suggestedPlanPriceMicro);
+  const unit = nudge.denomination;
+  const spent = formatCreditsWithMoney(nudge.trailing30Micro, unit, 'charge');
+  const price = formatMoney(nudge.suggestedPlanPriceMicro, unit);
+  const saving = formatMoney(nudge.savingMicro, unit);
   if (saving === null || spent === null || price === null) return null;
 
   return (
     <div className="bg-muted/50 flex items-start justify-between gap-3 rounded-md border px-3 py-2">
-      {/* Figures carry no currency symbol because the wire carries no currency
-          code, so each one is named rather than dropped into a sentence where a
-          bare number reads as an unfinished string. */}
       <p className="text-sm">
         Your last 30 days: {spent}. {nudge.suggestedPlanDisplayName}: {price}. Difference: {saving}.
       </p>

@@ -27,6 +27,16 @@ describe('Banner', () => {
     }
   );
 
+  it('takes a role override, so a critical banner can be read politely', () => {
+    render(
+      <Banner variant="critical" role="status">
+        Already announced elsewhere
+      </Banner>
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveAttribute('data-variant', 'critical');
+  });
+
   it('defaults to the neutral variant', () => {
     render(<Banner>Announcement</Banner>);
     expect(screen.getByRole('status')).toHaveAttribute('data-variant', 'neutral');

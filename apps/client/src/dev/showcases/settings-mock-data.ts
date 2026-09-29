@@ -32,7 +32,10 @@ import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { ExecutionException } from '@/layers/entities/agent';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { buildRuntimeCardSummary, type RuntimeCardViewProps } from '@/layers/features/settings';
+import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import { PLAYGROUND_CAPABILITIES } from '../playground-transport';
+
+export { MOCK_ACCOUNT_USAGE } from './account-mock-data';
 
 /**
  * Realistic mock `ServerConfig` consumed by the `ServerTab`, `ToolsTab`,
@@ -75,6 +78,7 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     resolvedAccount: '/Users/dev/.claude',
     inherited: true,
     accounts: [],
+    resolvedAccountId: 'default',
   },
   tunnel: {
     enabled: false,
@@ -136,12 +140,6 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     completedAt: null,
     runtimeDefaultSetAt: null,
   },
-  agentContext: {
-    relayTools: true,
-    meshTools: true,
-    adapterTools: true,
-    tasksTools: true,
-  },
   agents: {
     defaultDirectory: '/Users/dev/dorkos/agents',
     defaultAgent: 'dorkbot',
@@ -195,17 +193,65 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
   claudeCode: {
     resolvedAccount: '/Users/dev/.claude2',
     inherited: false,
+    resolvedAccountId: 'acme-corp',
     accounts: [
-      { id: 'personal', path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
-      { id: 'acme-corp', path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
-      { id: 'claude3', path: '/Users/dev/.claude3', label: null, isAccountRoot: true },
+      {
+        id: 'personal',
+        path: '/Users/dev/.claude',
+        label: 'Personal',
+        color: DEFAULT_ACCOUNT_COLORS[0]!,
+        colorIsDefault: true,
+        isAccountRoot: true,
+      },
+      {
+        id: 'acme-corp',
+        path: '/Users/dev/.claude2',
+        label: 'Acme Corp',
+        color: DEFAULT_ACCOUNT_COLORS[1]!,
+        colorIsDefault: true,
+        isAccountRoot: true,
+      },
+      {
+        id: 'claude3',
+        path: '/Users/dev/.claude3',
+        label: null,
+        color: DEFAULT_ACCOUNT_COLORS[2]!,
+        colorIsDefault: true,
+        isAccountRoot: true,
+      },
       {
         id: 'just-signed-up',
         path: '/Users/dev/.claude-new',
         label: 'Just signed up',
+        color: DEFAULT_ACCOUNT_COLORS[3]!,
+        colorIsDefault: true,
         isAccountRoot: false,
       },
     ],
+  },
+};
+
+/**
+ * Server config with two registered accounts and this computer's own sign-in
+ * (`~/.claude`) left unregistered, so Claude Code's default stands alone and
+ * Settings lists it as Main's own row (spec `claude-account-ui` §6.5). No
+ * color stored for it; the server resolves the default for its position,
+ * after the registered rows.
+ */
+export const MOCK_SERVER_CONFIG_STANDALONE_DEFAULT: ServerConfig = {
+  ...MOCK_SERVER_CONFIG,
+  claudeCode: {
+    resolvedAccount: '/Users/dev/.claude',
+    inherited: true,
+    accounts: MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode!.accounts.slice(1, 3).map(
+      (account, i) => ({
+        ...account,
+        color: DEFAULT_ACCOUNT_COLORS[i]!,
+      })
+    ),
+    defaultAccountColor: null,
+    defaultAccountResolvedColor: DEFAULT_ACCOUNT_COLORS[2]!,
+    resolvedAccountId: 'default',
   },
 };
 
@@ -237,7 +283,6 @@ const MOCK_AGENT_MANIFEST: AgentManifest = {
   color: '#3b82f6',
   icon: '🤖',
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
 };
 
@@ -594,7 +639,6 @@ export const MOCK_MESH_AGENTS: { agents: AgentManifest[] } = {
       registeredBy: 'system',
       personaEnabled: true,
       isSystem: true,
-      enabledToolGroups: {},
       mcpServers: [],
     },
     MOCK_AGENT_MANIFEST,

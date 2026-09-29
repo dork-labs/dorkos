@@ -106,16 +106,11 @@ export default defineConfig({
     projects: [
       'apps/client',
       'apps/community',
+      'apps/design-system',
       'apps/desktop',
       // Only the capture pipeline's unit tests; the Playwright browser suite is
       // a separate task (`pnpm test:browser`) and no vitest project.
       'apps/e2e',
-      // One suite, and it asserts on the plugin's BUILD OUTPUT — so its own
-      // `test` script builds first (`vite build && vitest run`). Reached from
-      // here without that build, it fails with a message naming the script
-      // rather than skipping: a stylesheet guard that passes when there is no
-      // stylesheet is the failure mode it exists to prevent.
-      'apps/obsidian-plugin',
       'apps/server',
       'apps/site',
       'packages/a2a-gateway',
@@ -135,6 +130,7 @@ export default defineConfig({
       'packages/shared',
       'packages/skills',
       'packages/test-utils',
+      'packages/ui',
       // Repo-root scripts are outside the pnpm workspaces; `pnpm test:scripts`
       // runs this project, and `pnpm verify` runs that.
       'scripts',

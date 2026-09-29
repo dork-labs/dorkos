@@ -12,7 +12,7 @@
 export { connectorKeys } from './api/query-keys';
 
 // --- Query hooks ---
-export { useConnectorProviders } from './model/use-connector-providers';
+export { useConnectorProviders, useConnectorAppConnections } from './model/use-connector-providers';
 export {
   useConfigureConnectionEventSource,
   useConnectionEventDefinitions,
@@ -25,9 +25,12 @@ export {
   useConnectorCatalog,
   useConnectorConnections,
   useConnectorConnection,
+  useConnectorAppActions,
   useConnectorDisconnectImpact,
   useAgentConnectorConnections,
+  useEveryAgentConnectorGrants,
   useSessionConnectorConnections,
+  useSetSessionConnectorAccess,
   useConnectorUsage,
   useStartConnectorAuthentication,
   useConnectorAuthentication,
@@ -37,6 +40,7 @@ export {
   useResumeConnectorConnection,
   useDisconnectConnectorConnection,
   useRemoveConnectorConnection,
+  useRecheckConnectorWays,
 } from './model/use-connector-resources';
 
 // --- Mutation hooks ---
@@ -49,6 +53,7 @@ export {
   useConnectorManagementReviews,
   useConnectorManagementReview,
   useConnectorAgentRequests,
+  useSessionConnectorAgentRequests,
   useConnectorAgentRequest,
   useConnectorAgentRequestAuthentication,
   useResolveConnectorAgentRequest,
@@ -56,8 +61,10 @@ export {
   useResolveConnectorManagementReview,
   usePreviewConnectorReconciliation,
   useApplyConnectorReconciliation,
+  useStopSharingWithEveryAgent,
   useConnectorReviewAuthentication,
 } from './model/use-connector-management';
+export { useConnectorAgentRequestsSync } from './model/use-connector-agent-requests-sync';
 
 // --- Shared DTO types, re-exported for feature layers ---
 export type {
@@ -83,9 +90,21 @@ export type {
   ConnectorConnectionDetail,
   ConnectorConnectionSummary,
   ConnectorDisconnectImpact,
+  ConnectorEveryAgentAccess,
+  ConnectorEveryAgentGrant,
+  ConnectorEveryAgentGrants,
   ConnectorSessionConnections,
   ConnectorSessionEffectiveAccess,
 } from '@dorkos/shared/connector-resource-schemas';
 
+export { accessLevelWords, serviceName } from './lib/access-copy';
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
-export { EmbeddedConnectionsNotice } from './ui/EmbeddedConnectionsNotice';
+export { ServiceMark } from './ui/ServiceMark';
+export { serviceLogo, type ServiceLogo } from './lib/service-logo';
+export { EveryAgentAccessNotice } from './ui/EveryAgentAccessNotice';
+export type { EveryAgentAccessNoticeProps } from './ui/EveryAgentAccessNotice';
+
+// --- What removing a way to reach apps would stop (shared by every confirm) ---
+export { appCount, dorkosAccountApps, splitByImpact, toImpactApp } from './lib/connection-impact';
+export type { ImpactApp } from './lib/connection-impact';
+export { ConnectionImpactList } from './ui/ConnectionImpactList';

@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HarnessStatusResponseSchema } from '@dorkos/shared/harness-schemas';
 
 import { createHarnessMethods } from '../harness-methods';
-import { harnessStubs } from '../../embedded-mode-stubs';
 
 const originalFetch = globalThis.fetch;
 
@@ -105,36 +103,5 @@ describe('createHarnessMethods().adoptHarness', () => {
     await expect(
       createHarnessMethods('/api').adoptHarness('/repo', 'release-notes')
     ).rejects.toThrow();
-  });
-});
-
-describe('the embedded (Obsidian) harness stub', () => {
-  it('answers `unavailable` with the app sentence, never an empty list of skills', async () => {
-    // Purpose: Decision 26. An empty list would tell an Obsidian reader they
-    // have no skills, which is the same lie this whole change is fixing.
-    const status = await harnessStubs.getHarnessStatus('/vault/project');
-
-    expect(status.state).toBe('unavailable');
-    expect(status.detail).toBe('Agent file sharing runs in the DorkOS app.');
-    expect(status.projectPath).toBe('/vault/project');
-  });
-
-  it('throws a sentence naming the surface when something asks it to move a skill', async () => {
-    // The file's own convention for a write half: a descriptive error, never a
-    // quiet no-op. Nothing in a vault calls this — the page answers
-    // `unavailable` and lists nothing to move — so reaching it means somebody
-    // wired a new surface to it, and the error is what tells them.
-    await expect(harnessStubs.adoptHarness()).rejects.toThrow(
-      'Moving a skill into .agents/skills is not supported in embedded mode'
-    );
-  });
-
-  it('resolves a FULL response the response schema accepts, so it cannot drift', async () => {
-    // Purpose: the stub is hand-written and the schema is the contract. Parsing
-    // it here is what makes a field added to `HarnessStatusResponseSchema` red
-    // in this file rather than `undefined` in an Obsidian vault.
-    const status = await harnessStubs.getHarnessStatus('/vault/project');
-
-    expect(() => HarnessStatusResponseSchema.parse(status)).not.toThrow();
   });
 });

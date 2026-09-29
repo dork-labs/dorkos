@@ -11,6 +11,7 @@
  * @module features/profile/ui/pages/registry
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+
 import type { ProfilePageId } from '../../model/profile-stack';
 import type { ProfilePageContentProps } from './types';
 
@@ -70,8 +71,14 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     title: 'Skills',
     component: lazy(() => import('./SkillsPage').then((m) => ({ default: m.SkillsPage }))),
   },
+  permissions: {
+    title: 'Permissions',
+    component: lazy(() =>
+      import('./PermissionsPage').then((m) => ({ default: m.PermissionsPage }))
+    ),
+  },
   tools: {
-    title: 'Tools & MCP',
+    title: 'MCP servers',
     component: lazy(() => import('./ToolsPage').then((m) => ({ default: m.ToolsPage }))),
   },
   connections: {
@@ -97,7 +104,8 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
 };
 
 /**
- * The page behind an id, or `null` when this build does not have it.
+ * The page behind an id, or `null` when this build (or this platform) does
+ * not have it.
  *
  * @param id - The page a row wants to push.
  */
@@ -111,5 +119,5 @@ export function profilePage(id: ProfilePageId): ProfilePageDefinition | null {
  * @param id - The page a row wants to push.
  */
 export function isProfilePageAvailable(id: ProfilePageId): boolean {
-  return PROFILE_PAGES[id] !== undefined;
+  return profilePage(id) !== null;
 }

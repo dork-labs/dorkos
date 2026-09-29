@@ -41,17 +41,33 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { ulid } from 'ulidx';
-import { and, asc, eq, isNotNull, isNull, lt, approvals, type Db } from '@dorkos/db';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  approvals,
+  type Db,
+} from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
+  APPROVAL_REQUEST_REASON_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
+  ApprovalServiceActionSchema,
   type ApprovalOrigin,
   type ApprovalOutcome,
+  type ApprovalServiceAction,
   type ApprovalSubject,
   type PendingApproval,
 } from '@dorkos/shared/approval-schemas';
+import { isFloorArea, type PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 import {
   raiseCapabilityApproval,
@@ -163,10 +179,22 @@ export interface ApprovalRequestInput {
    *
    * Recorded alongside `requestedBy` rather than instead of it, because the two
    * are different things: `requestedBy` is a display label built from a name and
-   * swept for secrets, and a label is not a key. A standing permission keys on
-   * the agent path, so the card has to carry the real one. Never rendered.
+   * swept for secrets, and a label is not a key. "Always allow" writes onto the
+   * agent this path names and the blocked-request rate limits key on it, so the
+   * card has to carry the real one. Never rendered.
    */
   requestedByPath?: string;
+  /**
+   * The permission area of the requested action, or absent/`null` for an action
+   * with no area (spec `agent-permissions` D2). Decides, with the agent path,
+   * whether the card may offer "Always allow".
+   */
+  area?: PermissionAreaId | null;
+  /**
+   * Set when the agent asked past a Blocked permission with `request_permission`
+   * (spec `agent-permissions` D8): the reason it gave, which the card quotes.
+   */
+  blockedRequest?: { reason: string };
   /**
    * The thing this would act on, already named by its own registry (DOR-1929).
    *
@@ -180,6 +208,12 @@ export interface ApprovalRequestInput {
    * `subject`, and only when any remain. See the wire schema's `otherArguments`.
    */
   otherArguments?: string;
+  /**
+   * What a connected-app action would do, in words (DOR-2504). Built by the
+   * connector preflight from stored records; see the wire schema's
+   * `serviceAction`.
+   */
+  serviceAction?: ApprovalServiceAction;
   /**
    * Which surface an UNATTRIBUTED request arrived over.
    *
@@ -280,6 +314,24 @@ export interface ApprovalServiceOptions {
    * the most cautious tier.
    */
   describeCapability?: CapabilityDescriptorLookup;
+  /**
+   * The room a session answers for, when it is a room turn's session (spec
+   * `agent-permissions` D7), so a room can show a request its own turn raised.
+   * Resolved when a card is READ rather than stored: a room turn's session id
+   * can move mid-turn, and the binding follows the move where a stored copy
+   * would not. Omitted in tests and in boots without rooms.
+   */
+  roomForSession?: (sessionId: string) => string | undefined;
+  /**
+   * Whether a card for this agent and action should suggest Always allow (spec
+   * `agent-permissions`, the gentle suggestion). Asked only of a card that
+   * offers Always allow, when it is read. Omitted in tests and in boots without
+   * the Activity log, where no card suggests it.
+   */
+  suggestAlways?: (request: {
+    agentPath: string;
+    capabilityId: string;
+  }) => { allowedThisWeek: number } | null;
 }
 
 /** What a requester gets back: an id to watch, and a token to retry with. */
@@ -411,6 +463,17 @@ function storableDetail(detail: string): string {
 }
 
 /**
+ * Make a blocked request's reason safe to store: the agent's own words, swept
+ * for secrets and capped at the bound the card's schema parses.
+ *
+ * @param reason - The reason the agent gave.
+ * @returns The swept, capped value to store.
+ */
+function storableReason(reason: string): string {
+  return clampForStorage(redactSecretsInText(reason), APPROVAL_REQUEST_REASON_MAX_LENGTH);
+}
+
+/**
  * Shorten a value to what its column's schema will parse, marking the cut.
  *
  * @param value - The already-swept string.
@@ -422,11 +485,123 @@ function clampForStorage(value: string, max: number): string {
   return `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
+/**
+ * Make a connected-app action safe to store: every string swept for secrets
+ * again, then checked against the wire schema.
+ *
+ * The builder already sweeps and caps, but `ApprovalRequestInput` is public API
+ * and this JSON is broadcast and agent-readable exactly like the summary, so
+ * the store does not take a producer's word for it. A value that does not
+ * parse is not stored, and the card falls back to the summary sentence.
+ *
+ * @param action - The described action.
+ * @returns The JSON to store, or null.
+ */
+function storableServiceAction(action: ApprovalServiceAction): string | null {
+  const swept = {
+    ...action,
+    serviceName: redactSecretsInText(action.serviceName),
+    accountLabel: redactSecretsInText(action.accountLabel),
+    actionName: redactSecretsInText(action.actionName),
+    details: action.details.map((detail) => ({
+      label: redactSecretsInText(detail.label),
+      value: redactSecretsInText(detail.value),
+    })),
+    ...(action.everything
+      ? {
+          everything: action.everything.map((line) => ({
+            ...line,
+            label: redactSecretsInText(line.label),
+            value: redactSecretsInText(line.value),
+          })),
+        }
+      : {}),
+  };
+  const parsed = ApprovalServiceActionSchema.safeParse(swept);
+  return parsed.success ? JSON.stringify(parsed.data) : null;
+}
+
+/**
+ * Read a stored connected-app action back, or nothing when the row has none or
+ * it no longer parses — a card without it still has its summary.
+ *
+ * @param stored - The column's JSON.
+ */
+function storedServiceAction(stored: string | null): ApprovalServiceAction | undefined {
+  if (stored === null) return undefined;
+  try {
+    const parsed = ApprovalServiceActionSchema.safeParse(JSON.parse(stored));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A stored approval row, as Drizzle infers it. */
 type ApprovalRow = typeof approvals.$inferSelect;
 
-/** Project a stored row into the cockpit-facing shape. Never includes the hash. */
-function toPendingApproval(row: ApprovalRow): PendingApproval {
+/**
+ * Whether a card may offer "Always allow" (spec `agent-permissions` D7): DorkOS
+ * knows which agent asked, the action has an area, that area is not a floor
+ * area, and the approval is not bound to a connector's live authority. The
+ * grant route refuses `answer: 'always'` by the same rules, from the same row,
+ * so what a card offers and what the route accepts cannot drift.
+ *
+ * The last rule does not rest on connector actions having no area today. A
+ * connector approval is bound to one connection, one operation revision and
+ * one session (`connectorAuthority`); a standing yes would outlive every one of
+ * them, which is what the old standing grants refused for connector preflight
+ * too. So a card carrying that binding never offers it, whatever area a future
+ * connector action is given.
+ *
+ * A card that shows a change to read, old → new (`describeApprovalChange`,
+ * DOR-2328) or a text in full (`approvalDetailField`), never offers it either:
+ * the promise of those cards is that a person sees every such change before it
+ * happens, and a standing yes would let the next change through unseen.
+ *
+ * @param row - The stored approval.
+ */
+export function isAlwaysOffered(row: {
+  requestedByPath: string | null;
+  area: string | null;
+  authorityBindingDigest: string | null;
+  detail?: string | null;
+}): boolean {
+  return (
+    row.requestedByPath !== null &&
+    row.area !== null &&
+    !isFloorArea(row.area) &&
+    row.authorityBindingDigest === null &&
+    (row.detail ?? null) === null
+  );
+}
+
+/** The stored connected-app action as a spreadable field, or nothing. */
+function withServiceAction(stored: string | null): { serviceAction?: ApprovalServiceAction } {
+  const serviceAction = storedServiceAction(stored);
+  return serviceAction ? { serviceAction } : {};
+}
+
+/** The recorded area, read defensively: a hand-edited row never breaks a card. */
+function recordedArea(area: string | null): PermissionAreaId | null {
+  return area === null ? null : (area as PermissionAreaId);
+}
+
+/**
+ * Project a stored row into the cockpit-facing shape. Never includes the hash.
+ *
+ * @param row - The stored approval.
+ * @param roomId - The room whose turn raised it, when there is one.
+ * @param suggestAlways - Whether the card should suggest Always allow; asked
+ *   only of a card that offers it.
+ */
+function toPendingApproval(
+  row: ApprovalRow,
+  roomId?: string,
+  suggestAlways?: (row: ApprovalRow) => { allowedThisWeek: number } | null
+): PendingApproval {
+  const alwaysOffered = isAlwaysOffered(row);
+  const suggestion = alwaysOffered ? (suggestAlways?.(row) ?? null) : null;
   return {
     approvalId: row.id,
     capabilityId: row.capabilityId,
@@ -445,13 +620,65 @@ function toPendingApproval(row: ApprovalRow): PendingApproval {
     // for this when it has a subject block to swap it for, so a remainder
     // without one would be a clause nothing renders.
     ...(row.otherArguments && row.subjectLabel ? { otherArguments: row.otherArguments } : {}),
+    ...withServiceAction(row.serviceAction),
     // The raw path stays off the wire (see `requestedByPath`'s own comment); what
     // goes out is the one bit a surface needs, which is whether there is one.
     hasAgentPath: row.requestedByPath !== null,
+    area: recordedArea(row.area),
+    alwaysOffered,
+    ...(suggestion
+      ? { suggestAlways: true as const, allowedThisWeek: suggestion.allowedThisWeek }
+      : {}),
+    ...(row.blockedRequest ? { blockedRequest: true as const } : {}),
+    ...(row.blockedRequest && row.requestReason ? { requestReason: row.requestReason } : {}),
+    ...(roomId ? { roomId } : {}),
     requestedAt: row.createdAt,
     expiresAt: row.expiresAt,
   };
 }
+
+/**
+ * What the grant route needs to answer one approval: the action, the agent that
+ * asked, and what the gate recorded about it. Never includes token material.
+ */
+export interface ApprovalAnswerScope {
+  /** The capability id or hand-registered tool name. */
+  capabilityId: string;
+  /** The agent's path, or `null` for an unidentified request. */
+  agentPath: string | null;
+  /** The recorded area, or `null` for an action with no area. */
+  area: PermissionAreaId | null;
+  /** Whether "Always allow" may be answered (see {@link isAlwaysOffered}). */
+  alwaysOffered: boolean;
+  /** Whether the agent asked past a Blocked permission. */
+  blockedRequest: boolean;
+  /** Where the request stands right now. */
+  state: 'pending' | 'granted' | 'denied';
+  /** Whether it is spent, written off, or past its window. */
+  closed: boolean;
+}
+
+/**
+ * Why a blocked request (spec `agent-permissions` D8) may not raise a card,
+ * decided from the approvals store so a restart cannot reset it.
+ *
+ * - `pending` — this agent already has a blocked request waiting in this area.
+ * - `recently_denied` — a person denied this agent this action in the last day.
+ * - `hourly_limit` — this agent made five blocked requests in the last hour.
+ */
+export type BlockedRequestLimit =
+  | { limit: 'pending'; approvalId: string }
+  | { limit: 'recently_denied'; approvalId: string }
+  | { limit: 'hourly_limit' };
+
+/** At most five blocked requests per agent per hour, across every area. */
+const BLOCKED_REQUEST_HOURLY_CAP = 5;
+
+/** A Deny holds for a day before the same agent may ask for the same action. */
+export const BLOCKED_REQUEST_DENY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+/** The window the hourly cap counts over. */
+const BLOCKED_REQUEST_HOUR_MS = 60 * 60 * 1000;
 
 /**
  * Ask for, decide, and spend approvals. See the module TSDoc for the token
@@ -529,9 +756,12 @@ export class ApprovalService {
       detail: input.detail === undefined ? null : storableDetail(input.detail),
       // Caller-supplied, so capped and swept for secrets exactly like the summary.
       requestedBy: input.requestedBy ? renderRequesterLabel(input.requestedBy) : null,
-      // Stored raw and never rendered: this is the key a standing permission is
-      // built on, so sweeping or shortening it would break the match.
+      // Stored raw and never rendered: an Always allow writes onto the agent this
+      // names, so sweeping or shortening it would break the match.
       requestedByPath: input.requestedByPath ?? null,
+      area: input.area ?? null,
+      blockedRequest: input.blockedRequest !== undefined,
+      requestReason: input.blockedRequest ? storableReason(input.blockedRequest.reason) : null,
       // Capped HERE as well as in the resolver, for the reason `storableSummary`
       // gives two lines up: `ApprovalRequestInput` is public API, not private to
       // `resolveApprovalSubject`, and the wire schema caps these at 60 — so a
@@ -541,6 +771,7 @@ export class ApprovalService {
       subjectId: input.subject ? renderRequesterLabel(input.subject.id) : null,
       subjectLabel: input.subject ? renderRequesterLabel(input.subject.label) : null,
       otherArguments: input.otherArguments ? storableSummary(input.otherArguments) : null,
+      serviceAction: input.serviceAction ? storableServiceAction(input.serviceAction) : null,
       // Withheld the moment a caller IS named, so the two can never contradict
       // each other on a card.
       origin: input.requestedBy ? null : (input.origin ?? null),
@@ -558,7 +789,7 @@ export class ApprovalService {
     };
     this.db.insert(approvals).values(row).run();
 
-    const pending = toPendingApproval(row);
+    const pending = this.toCard(row);
     broadcastApprovalPending(pending);
     // The escalation clock starts HERE, at the write that creates the condition
     // — the same place a parked schedule arms one, and for the same reason: an
@@ -952,7 +1183,7 @@ export class ApprovalService {
       .where(and(eq(approvals.state, 'pending'), isNull(approvals.consumedAt)))
       .orderBy(asc(approvals.createdAt))
       .all();
-    return rows.filter((row) => !this.isExpired(row)).map(toPendingApproval);
+    return rows.filter((row) => !this.isExpired(row)).map((row) => this.toCard(row));
   }
 
   /**
@@ -969,33 +1200,143 @@ export class ApprovalService {
    */
   getPending(approvalId: string): PendingApproval | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
-    return row ? toPendingApproval(row) : undefined;
+    return row ? this.toCard(row) : undefined;
+  }
+
+  /** One stored row as the card a surface draws. */
+  private toCard(row: ApprovalRow): PendingApproval {
+    return toPendingApproval(row, this.roomFor(row.requestingSessionId), (r) =>
+      this.suggestsAlways(r)
+    );
   }
 
   /**
-   * What a standing permission created from this approval would cover.
+   * Whether this card suggests Always allow, and after how many one-time
+   * Allows. A lookup that throws reads as "no":
+   * a suggestion is a nicety, and a card must still be a card without it.
+   */
+  private suggestsAlways(row: ApprovalRow): { allowedThisWeek: number } | null {
+    if (!this.options.suggestAlways || row.requestedByPath === null) return null;
+    try {
+      return this.options.suggestAlways({
+        agentPath: row.requestedByPath,
+        capabilityId: row.capabilityId,
+      });
+    } catch (err) {
+      logger.warn('[approvals] could not tell whether to suggest Always allow', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * The room a requesting session answers for, when it is a room turn's.
    *
-   * The card shows a display LABEL for who asked, which is not a key — two agents
-   * can share a display name, and a label is caller-supplied text. A permission has
-   * to key on the agent path the gate recorded, so this reads that instead.
+   * A lookup that throws reads as "no room": the card still reaches the inbox
+   * and home, which is where it always went.
+   */
+  private roomFor(sessionId: string | null): string | undefined {
+    if (!sessionId || !this.options.roomForSession) return undefined;
+    try {
+      return this.options.roomForSession(sessionId);
+    } catch (err) {
+      logger.warn('[approvals] could not tell which room a request came from', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
+  }
+
+  /**
+   * What the grant route needs to answer this approval: which action, which
+   * agent, and whether "Always allow" is on offer.
    *
-   * `agentPath` is null for a request nobody identified themselves for, and the
-   * caller must treat that as "this approval cannot become a permission" rather
-   * than as an empty key. Distinguishing it from an unknown approval (`undefined`)
-   * is the whole reason this returns a shape rather than a string: the two produce
-   * different answers for a person, and collapsing them would report "no such
-   * approval" for a card sitting in front of them.
+   * The card shows a display LABEL for who asked, which is not a key — two
+   * agents can share a display name, and a label is caller-supplied text. An
+   * Always allow writes onto the agent path the gate recorded, so this reads
+   * that instead.
    *
    * @param approvalId - ULID of the approval.
-   * @returns The action and the agent that asked, or `undefined` when there is no
-   *   such approval.
+   * @returns The scope, or `undefined` when there is no such approval.
    */
-  standingPermissionScope(
-    approvalId: string
-  ): { capabilityId: string; agentPath: string | null } | undefined {
+  answerScope(approvalId: string): ApprovalAnswerScope | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     if (!row) return undefined;
-    return { capabilityId: row.capabilityId, agentPath: row.requestedByPath };
+    return {
+      capabilityId: row.capabilityId,
+      agentPath: row.requestedByPath,
+      area: recordedArea(row.area),
+      alwaysOffered: isAlwaysOffered(row),
+      blockedRequest: row.blockedRequest,
+      state: row.state,
+      closed: row.consumedAt !== null || this.isExpired(row),
+    };
+  }
+
+  /**
+   * Whether one agent may raise another blocked request (spec
+   * `agent-permissions` D8), read from the approvals store so a restart cannot
+   * reset the count. Three rules, checked in this order:
+   *
+   * 1. at most one blocked request waiting per agent per area;
+   * 2. after a Deny, the same agent asking for the same action within a day is
+   *    refused;
+   * 3. at most five blocked requests per agent per hour, across all areas.
+   *
+   * @param request - The agent's path, the action's area and its id.
+   * @returns Why a card may not be raised, or `undefined` when it may.
+   */
+  blockedRequestLimit(request: {
+    agentPath: string;
+    area: PermissionAreaId;
+    capabilityId: string;
+  }): BlockedRequestLimit | undefined {
+    const now = Date.now();
+    const mine = and(
+      eq(approvals.requestedByPath, request.agentPath),
+      eq(approvals.blockedRequest, true)
+    );
+    const waiting = this.db
+      .select()
+      .from(approvals)
+      .where(
+        and(
+          mine,
+          eq(approvals.area, request.area),
+          eq(approvals.state, 'pending'),
+          isNull(approvals.consumedAt)
+        )
+      )
+      .orderBy(asc(approvals.createdAt))
+      .all()
+      .find((row) => !this.isExpired(row));
+    if (waiting) return { limit: 'pending', approvalId: waiting.id };
+
+    const denied = this.db
+      .select({ id: approvals.id })
+      .from(approvals)
+      .where(
+        and(
+          mine,
+          eq(approvals.capabilityId, request.capabilityId),
+          eq(approvals.state, 'denied'),
+          gte(approvals.decidedAt, new Date(now - BLOCKED_REQUEST_DENY_COOLDOWN_MS).toISOString())
+        )
+      )
+      .orderBy(desc(approvals.decidedAt))
+      .get();
+    if (denied) return { limit: 'recently_denied', approvalId: denied.id };
+
+    const [recent] = this.db
+      .select({ n: count() })
+      .from(approvals)
+      .where(
+        and(mine, gte(approvals.createdAt, new Date(now - BLOCKED_REQUEST_HOUR_MS).toISOString()))
+      )
+      .all();
+    if ((recent?.n ?? 0) >= BLOCKED_REQUEST_HOURLY_CAP) return { limit: 'hourly_limit' };
+    return undefined;
   }
 
   /**

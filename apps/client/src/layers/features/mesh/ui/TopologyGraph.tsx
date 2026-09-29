@@ -392,7 +392,7 @@ function TopologyGraphInner({
       {/* Contextual hints for adapter/binding onboarding */}
       {relayEnabled && hasAgents && !hasAdapters && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
-          Add a platform in Messaging, then connect it to an agent
+          Add a chat app in Connections, then connect it to an agent
         </div>
       )}
       {hasAdapters && hasAgents && !hasBindings && (

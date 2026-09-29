@@ -87,6 +87,50 @@ export async function resolveRoomBoundSession(
 }
 
 /**
+ * What a room said about one member's session: bound to one, bound to none, or
+ * the question could not be asked. The last two are kept apart because a caller
+ * holding an older answer does different things with them — "none" means the
+ * room let the session go, "failed" means nothing new was learned.
+ */
+export type RoomSessionLookup =
+  { kind: 'bound'; sessionId: string } | { kind: 'none' } | { kind: 'failed' };
+
+/**
+ * Ask which session a room has bound for one of its own members, by the author
+ * id the room knows them by.
+ *
+ * The same question {@link resolveRoomBoundSession} answers for a caller holding
+ * an agent's DIRECTORY, for a caller that already holds the room's own id for it
+ * — a notice's `subjectAuthorId` (DOR-2077). So there is no roster join, and the
+ * bindings are read fresh for the reason given there: they move after every
+ * turn, and a cached pair names a session the transcript is no longer under.
+ *
+ * A failed read is reported, not shown, and answers `failed`.
+ *
+ * @param deps - Query client to read and fill, transport to ask over.
+ * @param roomId - The room the member belongs to.
+ * @param authorId - That member's author id in this room.
+ */
+export async function resolveRoomSessionForAuthor(
+  deps: ResolveRoomSessionDeps,
+  roomId: string,
+  authorId: string
+): Promise<RoomSessionLookup> {
+  try {
+    const sessions = await deps.queryClient.fetchQuery<RoomSessionsResponse>({
+      queryKey: roomKeys.sessions(roomId),
+      queryFn: () => deps.transport.listRoomSessions(roomId),
+      staleTime: 0,
+    });
+    const sessionId = sessions.bindings.find((binding) => binding.authorId === authorId)?.sessionId;
+    return sessionId === undefined ? { kind: 'none' } : { kind: 'bound', sessionId };
+  } catch (error) {
+    reportClientError(deps.transport, error);
+    return { kind: 'failed' };
+  }
+}
+
+/**
  * Resolve an agent's session for the room the page is showing.
  *
  * Hand it a project directory and it answers the session that room has bound for

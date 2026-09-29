@@ -145,7 +145,6 @@ async function seedNewbornAgent(sandbox: EvalSandbox): Promise<void> {
     registeredBy: 'dorkos-evals',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
   };
   await writeManifest(sandbox.projectCwd, manifest);

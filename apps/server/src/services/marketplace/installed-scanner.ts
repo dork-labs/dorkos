@@ -19,8 +19,9 @@
  *
  * @module services/marketplace/installed-scanner
  */
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { readDeclaredVersion, validatePackage } from '@dorkos/marketplace/package-validator';
@@ -84,6 +85,12 @@ export interface InstalledPackage {
    * but incomplete, and name the command that finishes the job.
    */
   dependencyWarnings?: string[];
+  /**
+   * The install folder is a symbolic link to a developer's working copy
+   * ({@link InstallationRecord.linked}). Present, and `true`, only then, so a
+   * listing can say why such an install is never updated in place.
+   */
+  linked?: true;
 }
 
 /** A registered agent whose project directory the cross-scope scan should walk. */
@@ -102,10 +109,11 @@ export interface AgentScopeRef {
  * `skill-pack`, and `adapter`). Agents are excluded because they run as
  * DorkOS-managed subprocesses, not as CC plugins.
  *
- * This is the data source for `plugin-activation.ts` — the returned list
- * of package names is passed to `buildClaudeAgentSdkPluginsArray` which
- * translates each name into a `{ type: 'local', path }` entry for the
- * SDK's `options.plugins` array.
+ * These are the CANDIDATES for activation. `global-plugin-consent.ts`
+ * partitions them, and only the ones that run nothing on their own, or that a
+ * person approved exactly, reach `buildClaudeAgentSdkPluginsArray`, which
+ * translates each name into a `{ type: 'local', path }` entry for the SDK's
+ * `options.plugins` array (DOR-2306).
  *
  * DorkOS does not currently model plugin enable/disable state; every
  * installed plugin is treated as enabled. If that changes, add the
@@ -444,6 +452,7 @@ async function readInstallationRecord(
         metadata.dependencyWarnings.length > 0 && {
           dependencyWarnings: metadata.dependencyWarnings,
         }),
+      ...(linked && { linked: true as const }),
     },
   };
 }
@@ -500,7 +509,7 @@ async function readManifestSummary(
   const manifestPath = join(packagePath, PACKAGE_MANIFEST_PATH);
   let raw: string;
   try {
-    raw = await readFile(manifestPath, 'utf-8');
+    raw = await readTextFileWithin(manifestPath, PACKAGE_TEXT_MAX_BYTES, 'The manifest');
   } catch {
     // No .dork/manifest.json — a CC-native package installed verbatim. The
     // canonical validator synthesizes identity from .claude-plugin/plugin.json,
@@ -567,7 +576,9 @@ async function validatedSummary(
 ): Promise<Omit<InstalledPackage, 'installedFrom' | 'installedAt'> | null> {
   let validated;
   try {
-    validated = await validatePackage(packagePath);
+    // An installed root holds the installer's records and the person's data by
+    // design, so the reserved-path check (and its whole-tree walk) is skipped.
+    validated = await validatePackage(packagePath, { tree: 'installed' });
   } catch (err) {
     logger.debug(`[InstalledScanner] Could not validate ${packagePath}`, err);
     return null;

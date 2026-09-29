@@ -19,12 +19,27 @@ export type { ReadOnlyModeHint } from './model/use-read-only-mode-hint';
 export { PlanModeItem } from './ui/PlanModeItem';
 export type { PlanModeItemProps } from './ui/PlanModeItem';
 export { RuntimeItem } from './ui/RuntimeItem';
+export { AccountItem, AccountTrigger, AccountMenuRow } from './ui/AccountItem';
+export type { AccountItemProps, AccountTriggerProps, AccountMenuRowProps } from './ui/AccountItem';
+export { AccountPopover } from './ui/AccountPopover';
+export type { AccountPopoverProps } from './ui/AccountPopover';
+export { AccountBadge, AccountBadgeView } from './ui/AccountBadge';
+export type { AccountBadgeProps, AccountBadgeViewProps } from './ui/AccountBadge';
+export { useSessionAccount, accountChipPromotion } from './model/use-session-account';
+export { useStatusUsage } from './model/use-status-usage';
+export type { StatusUsage } from './model/use-status-usage';
+export type { SessionAccount, SessionTrackerItem } from './model/use-session-account';
+// The two account rules other surfaces must agree with: the chip's tone and
+// when moving to another account is on offer (the banner).
+export { canOfferContinue, chipToneFor, type AccountChipTone } from './lib/account-chip';
 export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
 export { AutonomyConfirmDialog } from './ui/AutonomyConfirmDialog';
 export { ModelConfigPopover } from './ui/ModelConfigPopover';
 export { ContextItem } from './ui/ContextItem';
 export type { ContextCompactAction } from './ui/ContextItem';
-export { UsageStatusItem, hasRenderableUsage } from './ui/UsageStatusItem';
+export { UsageStatusItem } from './ui/UsageStatusItem';
+export { hasRenderableUsage, showsStaleMark } from './lib/account-usage-status';
+export type { UsageSource } from './lib/account-usage-status';
 export { UsageRevealPopover } from './ui/UsageRevealPopover';
 export { ConnectionItem } from './ui/ConnectionItem';
 export { SubagentsItem } from './ui/SubagentsItem';
@@ -41,8 +56,12 @@ export { partitionSubagents } from './lib/fold-active-subagents';
 // it is the slice's own presentation rule, consumed only by the items in this
 // folder. Publishing it would invite a caller outside the line to bound a value
 // that has nothing to do with the line's width.
-export { gitPromotionState, useStatusBarPins } from './model/status-bar-registry';
-export type { StatusBarItemKey, StatusPromotionContext } from './model/status-bar-registry';
+export { gitPromotionState, isUsageAbsorbed, useStatusBarPins } from './model/status-bar-registry';
+export type {
+  AccountPromotionState,
+  StatusBarItemKey,
+  StatusPromotionContext,
+} from './model/status-bar-registry';
 export { selectPromotedItems } from './model/promoted-items';
 export { applyStatusBudget, resolveStatusBudget } from './model/status-budget';
 export type { StatusDensity, StatusBudget } from './model/status-budget';
@@ -51,3 +70,4 @@ export { SessionInspector, SessionReadout } from './ui/SessionInspector';
 export { useSessionDiagnostics } from './model/use-session-diagnostics';
 export { formatDiagnostics } from './model/session-diagnostics';
 export type { SessionDiagnostics, ActiveSubagent } from './model/session-diagnostics';
+export { formatCost } from './lib/format-tokens';

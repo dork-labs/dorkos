@@ -145,7 +145,44 @@ export const ConnectionEventDefinitionPageSchema = z
     nextCursor: z.string().min(1).max(512).optional(),
   })
   .strict();
-/** Payload-free owner projection of one exact receive subscription. */
+/**
+ * Why the newest event did not reach its destination, in the few kinds an
+ * owner can tell apart: the destination couldn't be reached, it refused, the
+ * notification changed while the event waited, a chat turn was cancelled before
+ * the agent saw it, the event aged out, or DorkOS can't tell whether it arrived.
+ */
+export const ConnectionEventDeliveryProblemSchema = z.enum([
+  'unreachable',
+  'refused',
+  'changed',
+  'cancelled',
+  'expired',
+  'unknown_outcome',
+]);
+/** Owner-facing reason one event was not delivered. */
+export type ConnectionEventDeliveryProblem = z.infer<typeof ConnectionEventDeliveryProblemSchema>;
+
+/**
+ * What happened to the newest event a notification received. `retrying` means
+ * DorkOS is waiting to try again on its own; `failed` means it has stopped.
+ */
+export const ConnectionEventLastDeliverySchema = z
+  .object({
+    outcome: z.enum(['delivered', 'sending', 'retrying', 'failed']),
+    receivedAt: z.string().datetime(),
+    problem: ConnectionEventDeliveryProblemSchema.nullable(),
+  })
+  .strict();
+/** The newest event's delivery outcome. */
+export type ConnectionEventLastDelivery = z.infer<typeof ConnectionEventLastDeliverySchema>;
+
+/**
+ * Payload-free owner projection of one exact receive subscription.
+ *
+ * `revoked` covers every way a notification ends for good (removed, the app
+ * replaced this kind of activity, a new key); `unavailable` is only the account
+ * being unusable right now.
+ */
 export const ConnectionEventSubscriptionSchema = z
   .object({
     id: z.string().min(1).max(256),
@@ -160,6 +197,10 @@ export const ConnectionEventSubscriptionSchema = z
     filter: z.record(z.string(), z.unknown()),
     scopeVersion: z.number().int().positive(),
     state: z.enum(['active', 'pending', 'revoked', 'unavailable']),
+    /** The newest event's outcome; null before the first event arrives. */
+    lastDelivery: ConnectionEventLastDeliverySchema.nullable(),
+    /** The one chat an agent-bound notification posts into; null until its first event. */
+    chatSessionId: z.string().min(1).max(256).nullable(),
   })
   .strict();
 /** Explicit owner receive intent. The server namespaces this idempotency key beneath the owner. */
@@ -217,11 +258,16 @@ export const ConnectorAgentEventSubscriptionQuerySchema = z
   .strict();
 
 /** Read-only receive-grant projection with the account aliases already visible to that agent. */
-export const ConnectorAgentEventSubscriptionSchema = ConnectionEventSubscriptionSchema.extend({
-  toolkit: z.string().min(1).max(128),
-  label: z.string().max(512),
-  state: z.enum(['active', 'unavailable']),
-}).strict();
+export const ConnectorAgentEventSubscriptionSchema = ConnectionEventSubscriptionSchema.omit({
+  lastDelivery: true,
+  chatSessionId: true,
+})
+  .extend({
+    toolkit: z.string().min(1).max(128),
+    label: z.string().max(512),
+    state: z.enum(['active', 'unavailable']),
+  })
+  .strict();
 
 /** Bounded subscription visibility for exactly one canonical agent. */
 export const ConnectorAgentEventSubscriptionPageSchema = z

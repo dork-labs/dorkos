@@ -369,3 +369,65 @@ describe('tracked.time-to-detect: what the main canary buys', () => {
     expect(v.verdict).toBe('inconclusive');
   });
 });
+
+describe('tracked.repeat-ejections: queue builds spent re-learning a failure', () => {
+  const entry: LedgerEntry = {
+    id: '260901-000001',
+    title: 'merge-tail stops re-arming a repeat',
+    kind: 'incident-fix',
+    status: 'active',
+    actor: 'agent',
+    gates: [],
+    prs: [901],
+    hypothesis: { metric: 'tracked.repeat-ejections', baseline: 11.5, target: 6, after_days: 7 },
+    'ratchet-release': [],
+    'floor-release': [],
+    'field-changes': [],
+  };
+
+  /** Eight days from 2026-09-01; `repeats(i)` is day i's count, undefined for a day never measured. */
+  function days(repeats: (i: number) => number | undefined): Snapshot[] {
+    return Array.from({ length: 8 }, (_, i) => {
+      const date = addDays('2026-09-01', i);
+      const s = emptySnapshot(date, `${date}T23:00:00Z`, 700);
+      s.complete = true;
+      s.healthy = true;
+      s.counts.ejections_failed_checks = 4;
+      const r = repeats(i);
+      if (r !== undefined) s.counts.repeat_ejections = r;
+      return s;
+    });
+  }
+
+  const verdictOn = (snapshots: Snapshot[]) =>
+    computeVerdict({
+      entry,
+      mergedAt: new Map([[901, '2026-09-01T00:00:00Z']]),
+      ledger: [entry],
+      files: files!,
+      series: seriesFrom(
+        (d) => snapshots.filter((s) => d.includes(s.date)),
+        () => []
+      ),
+      now: new Date('2026-09-20T05:00:00Z'),
+    })!;
+
+  it('reads repeats per 7 days over the ejections of the measured days', () => {
+    const v = verdictOn(days(() => 1));
+    expect(v.after).toMatchObject({ n: 28, value: 7 });
+    expect(v.verdict).toBe('partial');
+  });
+
+  it('leaves out a day that was never measured instead of reading it as none', () => {
+    // Days 0-6 are the after-window. Two of them have no count: the rate is
+    // over the five that do, not diluted to 5/7 of it.
+    const v = verdictOn(days((i) => (i === 1 || i === 2 ? undefined : 1)));
+    expect(v.after).toMatchObject({ n: 20, value: 7 });
+  });
+
+  it('has no value at all when no day in the window was measured', () => {
+    const v = verdictOn(days(() => undefined));
+    expect(v.after.value).toBeNull();
+    expect(v.verdict).toBe('inconclusive');
+  });
+});

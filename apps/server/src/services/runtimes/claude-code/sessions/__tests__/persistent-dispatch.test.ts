@@ -49,9 +49,6 @@ vi.mock('../../messaging/context-builder.js', () => ({
     .mockResolvedValue({ text: '<env>test</env>', stable: '<env>test</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
-vi.mock('../../tooling/tool-filter.js', () => ({
-  resolveToolConfig: vi.fn().mockReturnValue({ tasks: true, relay: true, mesh: true }),
-}));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 vi.mock('../../../../relay/relay-state.js', () => ({ isRelayEnabled: () => false }));
 vi.mock('../../../../tasks/task-state.js', () => ({ isTasksEnabled: () => false }));
@@ -93,16 +90,25 @@ vi.mock('../../../../marketplace/installed-scanner.js', () => ({
 vi.mock('../../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: vi.fn().mockResolvedValue([]),
 }));
+// The global packages a person approved (DOR-2306); the warm-process withdrawal
+// case moves this between refreshes.
+const approvedGlobals = vi.hoisted(() => ({ names: [] as string[] }));
+vi.mock('../../../../marketplace/global-plugin-consent.js', () => ({
+  listConsentedPluginNames: vi.fn(async () => [...approvedGlobals.names]),
+}));
 vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
 }));
-vi.mock('../../../../core/agent-identity/index.js', () => ({
+vi.mock('../../../../core/agent-identity/index.js', async () => ({
   resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
   AGENT_TOKEN_ENV_VAR: 'DORKOS_AGENT_TOKEN',
   // `interactive-handlers.ts` builds the rooms auto-allow gate from this at
   // launch (DOR-1229). Nothing here calls a rooms verb, so the resolver only has
   // to exist — but it must, or every launch on this path throws on the mock.
   createInSessionContextResolver: () => () => Promise.resolve(undefined),
+  // The launch anchors identity through these (DOR-2091); the pure rule is
+  // wanted as-is, so it comes straight from its own module.
+  ...(await import('../../../../core/agent-identity/agent-home.js')),
 }));
 // One warm process at a time, so warming a second session reclaims the first's
 // pump through the registry WITHOUT telling PersistentDispatch — the stale-bundle
@@ -114,6 +120,7 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 });
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
@@ -904,6 +911,79 @@ describe('what a warm process must be re-checked for', () => {
     // torn the warm process down on its way to saying no.
     expect(cli.launches).toBe(1);
     expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+  });
+});
+
+describe('a global plugin withdrawn from a warm process (DOR-2306, I-2)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+    vi.mocked(buildClaudeAgentSdkPluginsArray).mockImplementation(async ({ enabledPluginNames }) =>
+      enabledPluginNames.map((name) => ({ type: 'local' as const, path: `/h/plugins/${name}` }))
+    );
+  });
+
+  afterEach(() => {
+    approvedGlobals.names = [];
+    vi.mocked(buildClaudeAgentSdkPluginsArray).mockResolvedValue([]);
+  });
+
+  it('relaunches before the next turn when a plugin the process loaded is withdrawn', async () => {
+    approvedGlobals.names = ['kept', 'withdrawn'];
+    await runtime.refreshActivatedPlugins();
+    const sessionId = nextSession();
+    await turn(sessionId);
+    expect(cli.launches).toBe(1);
+    expect(cli.processes[0]!.options.plugins).toHaveLength(2);
+
+    // No longer approved: `reloadPlugins` re-reads the launched paths and
+    // cannot unload it, so riding the warm process would keep running it.
+    approvedGlobals.names = ['kept'];
+    await runtime.refreshActivatedPlugins();
+    await turn(sessionId, 'after the withdrawal');
+
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(cli.processes[1]!.options.plugins).toEqual([{ type: 'local', path: '/h/plugins/kept' }]);
+  });
+
+  it('keeps the warm process when a plugin is only added', async () => {
+    approvedGlobals.names = ['kept'];
+    await runtime.refreshActivatedPlugins();
+    const sessionId = nextSession();
+    await turn(sessionId);
+
+    approvedGlobals.names = ['kept', 'added'];
+    await runtime.refreshActivatedPlugins();
+    await turn(sessionId, 'after the addition');
+
+    expect(cli.launches).toBe(1);
+    expect(cli.processes[0]!.liveSets).toContain('reloadPlugins');
+  });
+
+  it('never holds the reload that follows a withdrawal for the cache', async () => {
+    approvedGlobals.names = ['kept', 'withdrawn'];
+    await runtime.refreshActivatedPlugins();
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    const asked: unknown[] = [];
+    process.reloadPlugins = (opts?: unknown) => {
+      asked.push(opts);
+      return Promise.resolve({
+        commands: [],
+        held: (opts as { holdOnCacheImpact?: boolean })?.holdOnCacheImpact === true,
+      });
+    };
+
+    approvedGlobals.names = ['kept'];
+    await runtime.refreshActivatedPlugins();
+
+    expect(asked.length).toBeGreaterThan(0);
+    expect(
+      asked.every(
+        (opts) => (opts as { holdOnCacheImpact?: boolean } | undefined)?.holdOnCacheImpact !== true
+      )
+    ).toBe(true);
   });
 });
 
@@ -1962,7 +2042,7 @@ describe('what a drained runtime window is reported as (DOR-1314)', () => {
 
     // The CLI speaks between turns and then names a message nobody sent. Those
     // words open a runtime turn, and with NOTHING SUBSCRIBED to project it —
-    // which is this suite, and an embedded host — the fallback drains it. That
+    // which is this suite — the fallback drains it. That
     // drop is what gets reported, because dropping words a person might have
     // been owed is not a debug-level event. In production the composition root
     // subscribes, the turn is projected, and this path is never taken (spec

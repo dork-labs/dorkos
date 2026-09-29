@@ -314,12 +314,6 @@ export const HARNESS_STATUS_UNREADABLE: HarnessStatusResponse = emptyStatus(
   '.agents/harness.manifest.json is not valid JSON.'
 );
 
-/** What an Obsidian vault is told. */
-export const HARNESS_STATUS_UNAVAILABLE: HarnessStatusResponse = emptyStatus(
-  'unavailable',
-  'Agent file sharing runs in the DorkOS app.'
-);
-
 /**
  * The same project, plus a package installed for every project.
  *

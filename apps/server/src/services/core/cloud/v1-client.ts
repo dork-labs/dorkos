@@ -16,7 +16,7 @@
  *
  * @module services/core/cloud/v1-client
  */
-import { createHash } from 'node:crypto';
+import { SessionSchema, V1_ROUTES } from '@dork-labs/cloud-api';
 import {
   createCloudApiClient,
   CloudApiProblemError,
@@ -25,6 +25,28 @@ import {
 import type { Problem } from '@dork-labs/cloud-api';
 import { configManager } from '../config-manager.js';
 import { resolveCloudBaseUrl } from '../auth/cloud-link-client.js';
+import { getCloudLinkGeneration } from '../auth/cloud-link.js';
+
+let observedToken: string | null = null;
+let tokenEpoch = 0;
+let observedManager: typeof configManager | undefined;
+let stopObserving: (() => void) | undefined;
+
+/** One process-wide listener records intermediate token changes, including A → unlink → A. */
+function observeTokenChanges(): void {
+  if (observedManager === configManager) return;
+  stopObserving?.();
+  observedManager = configManager;
+  observedToken = readCloudInstanceToken();
+  tokenEpoch += 1;
+  stopObserving = configManager.onChange((change) => {
+    if (!change.paths.some((path) => path === 'cloud' || path === 'cloud.instanceToken')) return;
+    const current = readCloudInstanceToken();
+    if (current === observedToken) return;
+    observedToken = current;
+    tokenEpoch += 1;
+  });
+}
 
 /**
  * This instance's linked credential, or `null` when it has never been linked
@@ -55,24 +77,41 @@ export function createCloudV1Client(): CloudApiClient | null {
 }
 
 /**
- * A stable, opaque reference for this instance, or `null` when unlinked.
- *
- * `POST /v1/inference/tokens` takes an `instanceId`, and no route
- * `@dork-labs/cloud-api@0.75.1` types hands the app the identifier the service
- * assigned it — the link and heartbeat responses carry an account label, not an
- * instance id. So the app derives one the same way the managed-connector path
- * already derives its material digest: a SHA-256 over the linked credential,
- * which is stable for the life of a link, changes when the link changes, and
- * discloses nothing. It is deliberately NOT the anonymous telemetry install id,
- * which is withheld from the service unless the operator opted in and must not
- * arrive here by a side door.
- *
- * Carrying the service's own instance id instead is a listed follow-up.
+ * A client and currency check captured under one linked credential and origin.
+ * The credential stays inside the client; neither it nor the origin leaves this
+ * server-only context. The generation catches same-token local relinking.
  */
-export function cloudInstanceRef(): string | null {
+export interface CloudV1Context {
+  client: CloudApiClient;
+  isCurrent(): boolean;
+}
+
+/** Capture the current link for a bounded sequence of Cloud requests. */
+export function captureCloudV1Context(): CloudV1Context | null {
+  observeTokenChanges();
   const token = readCloudInstanceToken();
-  if (token === null) return null;
-  return createHash('sha256').update(`dorkos:cloud-instance:${token}`).digest('hex');
+  if (token === null || token.trim() === '') return null;
+  const baseUrl = resolveCloudBaseUrl();
+  const epoch = tokenEpoch;
+  const manager = configManager;
+  const generation = getCloudLinkGeneration();
+  return {
+    client: createCloudApiClient({ baseUrl, token }),
+    isCurrent: () =>
+      epoch === tokenEpoch &&
+      manager === configManager &&
+      token === readCloudInstanceToken() &&
+      baseUrl === resolveCloudBaseUrl() &&
+      generation === getCloudLinkGeneration(),
+  };
+}
+
+/** Resolve only a service-issued instance ID under the captured credential. */
+export async function resolveCloudInstanceId(context: CloudV1Context): Promise<string | null> {
+  const session = await context.client.get(V1_ROUTES.session, SessionSchema);
+  if (!context.isCurrent() || !session.authenticated) return null;
+  const id = session.instanceId;
+  return id && id.trim() !== '' ? id : null;
 }
 
 /**

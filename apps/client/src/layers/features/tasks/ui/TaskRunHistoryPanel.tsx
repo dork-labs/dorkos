@@ -73,7 +73,7 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
     case 'completed':
       return (
         <span title="Completed" aria-label="Completed">
-          <CheckCircle2 className="size-3.5 text-green-500" />
+          <CheckCircle2 className="text-status-success size-3.5" />
         </span>
       );
     case 'failed':

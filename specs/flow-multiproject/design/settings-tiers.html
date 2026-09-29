@@ -1,0 +1,238 @@
+<h2>6 of 6 · Flow settings: who does a change affect?</h2>
+<p class="subtitle">
+  Three kinds of settings. <b>This computer</b> (accounts, the reserve) stays in Settings, where it
+  is today. <b>This project, shared</b> saves a file in the repo, so teammates get it.
+  <b>This project, just me</b> stays on your computer, including which accounts this project may
+  use. The question: where do the project settings live?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-page {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: #18181b;
+  }
+  .ax-h {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 2px;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 11px;
+  }
+  .ax-sec {
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-top: 10px;
+  }
+  .ax-sh {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .ax-who {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid #e4e4e7;
+    color: #3f3f46;
+    font-weight: 400;
+  }
+  .ax-f {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-v {
+    color: #3f3f46;
+  }
+  .ax-note {
+    font-size: 11px;
+    color: #52525b;
+    background: #fafafa;
+    border-radius: 6px;
+    padding: 4px 6px;
+    margin-top: 6px;
+    font-family: ui-monospace, monospace;
+  }
+  .ax-acc {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 0;
+  }
+  .ax-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .ax-box {
+    width: 12px;
+    height: 12px;
+    border: 1px solid #a1a1aa;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+  }
+  .ax-side {
+    display: flex;
+    gap: 10px;
+  }
+  .ax-nav {
+    width: 110px;
+    font-size: 11px;
+    color: #52525b;
+    border-right: 1px solid #f4f4f5;
+  }
+  .ax-nav div {
+    padding: 3px 6px;
+    border-radius: 5px;
+  }
+  .ax-nav .on {
+    background: #f4f4f5;
+    color: #18181b;
+    font-weight: 600;
+  }
+  .ax-pick {
+    display: inline-block;
+    border: 1px solid #d4d4d8;
+    border-radius: 6px;
+    padding: 1px 8px;
+    font-size: 11px;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Each project has its own settings page (my pick)</h3>
+      <p>
+        Opened from the ⚙ in the project's Flow view, or from Flow home. The page is one project,
+        two labelled boxes.
+      </p>
+      <div class="ax">
+        <div class="ax-page">
+          <div class="ax-h">dorkos · Flow settings</div>
+          <div class="ax-muted">~/Keep/dork-os/dorkos</div>
+          <div class="ax-sec">
+            <div class="ax-sh">
+              <span>Shared with the repo</span><span class="ax-who">everyone on this repo</span>
+            </div>
+            <div class="ax-f"><span>Tracker</span><span class="ax-v">Linear · team DOR</span></div>
+            <div class="ax-f"><span>Review before merge</span><span class="ax-v">Always</span></div>
+            <div class="ax-f">
+              <span>Schedules</span><span class="ax-v">Triage daily · Groom weekly</span>
+            </div>
+            <div class="ax-note">Saving changes .dork/flow/config.json in this repo.</div>
+          </div>
+          <div class="ax-sec">
+            <div class="ax-sh">
+              <span>Just me</span><span class="ax-who">only this computer</span>
+            </div>
+            <div class="ax-f">
+              <span>How much it does on its own</span
+              ><span class="ax-v">Opens PRs, asks before merge</span>
+            </div>
+            <div class="ax-f"><span>At most at once</span><span class="ax-v">3</span></div>
+            <div style="margin-top: 6px; font-weight: 600">Accounts this project may use</div>
+            <div class="ax-acc">
+              <span class="ax-box">✓</span
+              ><span class="ax-dot" style="background: #2563eb"></span>Main (this computer's
+              sign-in)
+            </div>
+            <div class="ax-acc">
+              <span class="ax-box">✓</span
+              ><span class="ax-dot" style="background: #16a34a"></span>Acct 2
+            </div>
+            <div class="ax-acc">
+              <span class="ax-box"></span
+              ><span class="ax-dot" style="background: #9333ea"></span>Work
+              <span class="ax-muted">· only for client-app</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>One Settings → Flow page, with a project picker</h3>
+      <p>
+        Everything in one place, next to the accounts. You pick the project at the top. Easy to
+        change the wrong project by mistake.
+      </p>
+      <div class="ax">
+        <div class="ax-page">
+          <div class="ax-side">
+            <div class="ax-nav">
+              <div>General</div>
+              <div>Runtimes</div>
+              <div>Extensions</div>
+              <div class="on">Flow</div>
+            </div>
+            <div style="flex: 1">
+              <div class="ax-h">Flow</div>
+              <div>Project: <span class="ax-pick">dorkos ▾</span></div>
+              <div class="ax-sec">
+                <div class="ax-sh">
+                  <span>Shared with the repo</span><span class="ax-who">everyone on this repo</span>
+                </div>
+                <div class="ax-f">
+                  <span>Tracker</span><span class="ax-v">Linear · team DOR</span>
+                </div>
+                <div class="ax-note">Saving changes .dork/flow/config.json in this repo.</div>
+              </div>
+              <div class="ax-sec">
+                <div class="ax-sh">
+                  <span>Just me</span><span class="ax-who">only this computer</span>
+                </div>
+                <div class="ax-f"><span>At most at once</span><span class="ax-v">3</span></div>
+                <div style="margin-top: 6px; font-weight: 600">Accounts this project may use</div>
+                <div class="ax-acc">
+                  <span class="ax-box">✓</span
+                  ><span class="ax-dot" style="background: #2563eb"></span>Main
+                </div>
+                <div class="ax-acc">
+                  <span class="ax-box"></span
+                  ><span class="ax-dot" style="background: #9333ea"></span>Work
+                  <span class="ax-muted">· only for client-app</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Same for both</h3>
+  <ul>
+    <li>
+      "Accounts this project may use" is enforced by DorkOS itself. No chat, schedule or handoff in
+      this project can use an unchecked account.
+    </li>
+    <li>
+      An account limited to other projects shows why ("only for client-app"), and checking it asks
+      first.
+    </li>
+    <li>Settings → Runtimes shows the same rule on the account's row: "Only for client-app".</li>
+  </ul>
+</div>

@@ -205,7 +205,7 @@ describe('connections real HTTP seam', () => {
           JSON.stringify({
             status: 'approval_required',
             capabilityId: 'connectors.execute_destructive',
-            capabilityTitle: 'Execute a destructive account operation',
+            capabilityTitle: "Make a change that can't be undone in a connected app",
             tier: 'destructive',
             approvalId: 'approval-1',
             approvalToken: "token ' $(not-run)",

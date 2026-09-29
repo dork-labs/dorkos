@@ -4,8 +4,8 @@ import { useSessionId } from '../navigation/use-session-id';
 // Same-slice import via the sibling module (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../../api/query-keys';
-import { sessionListQueryOptions, sessionListWarningsKey } from '../../api/session-list-query';
-import type { Session, SessionListWarning, SessionOrigin } from '@dorkos/shared/types';
+import { sessionListQueryOptions } from '../../api/session-list-query';
+import type { Session, SessionOrigin } from '@dorkos/shared/types';
 
 /**
  * Insert an optimistic session into the query cache.
@@ -56,26 +56,6 @@ export function useSessions() {
     activeSessionId,
     setActiveSession,
   };
-}
-
-/**
- * Per-runtime session-list degradations for the current working directory
- * (ADR-0310): a runtime whose listing failed or timed out contributes one
- * warning and zero sessions instead of failing the whole list.
- *
- * The entries are written by the {@link useSessions} query function — this
- * hook is a subscribe-only observer (`enabled: false`), so it never fetches
- * on its own. Empty until the first session-list load completes.
- */
-export function useSessionListWarnings(): SessionListWarning[] {
-  const { selectedCwd } = useAppStore();
-  const { data } = useQuery<SessionListWarning[]>({
-    queryKey: sessionListWarningsKey(selectedCwd),
-    // Never invoked (enabled: false) — the sessions queryFn owns the writes.
-    queryFn: () => [],
-    enabled: false,
-  });
-  return data ?? [];
 }
 
 /** Result of {@link useSessionOrigin}: both fields absent for a user-origin session. */

@@ -70,11 +70,23 @@ export const STATUS_TONE_DOT: Record<StatusTone, string> = {
  * The `-fg` tokens, which are tuned per theme — so a call site writes one class
  * instead of the `text-red-600 dark:text-red-400` pair it used to hand-write,
  * and a retune moves both themes at once.
+ *
+ * **`error` is the one exception: it wears `text-destructive`.** This map is
+ * BARE text, painted straight on a grey surface rather than on its own tint,
+ * and the dark `--status-error-fg` is tuned for its `-bg` wash: bare on a
+ * selected sidebar row it measured 4.08:1, under the 4.5:1 AA bar (DOR-2493).
+ * `--destructive` is the red tuned as text, and clears AA on the grounds this
+ * map's red actually sits on: the sidebar, a hovered or selected session row,
+ * the red tint of an out-of-usage session row, the background, card, popover
+ * and a hovered relay row, pinned in both themes by
+ * `__tests__/destructive-contrast.test.ts`. It does NOT clear AA on
+ * `bg-sidebar-accent` (4.11:1 light, 4.25:1 dark). The tinted pairing keeps the `-fg`
+ * token — see {@link STATUS_TONE_SURFACE}.
  */
 export const STATUS_TONE_TEXT: Record<StatusTone, string> = {
   success: 'text-status-success-fg',
   warning: 'text-status-warning-fg',
-  error: 'text-status-error-fg',
+  error: 'text-destructive',
   info: 'text-status-info-fg',
   neutral: 'text-muted-foreground',
 };

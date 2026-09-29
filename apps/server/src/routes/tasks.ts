@@ -27,7 +27,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
-import type { Task } from '@dorkos/shared/schemas';
+import type { PermissionMode, Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../services/tasks/task-scheduler-service.js';
@@ -36,20 +36,25 @@ import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
+import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
-import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
-import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import { clearsTheAgentBar, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
-import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
+import {
+  clampSchedulePermissionMode,
+  taskWorkOf,
+} from '../services/tasks/schedule-permission-clamp.js';
+import { changesApprovedWork } from '../services/tasks/task-file-update.js';
+import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -60,62 +65,6 @@ import {
   OPERATOR_ONLY_TRIGGER_REFUSAL,
   refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
-
-/**
- * Whether this caller is trusted to arm a scheduled task itself — that is, to
- * skip the approval gate, un-clamp its power, and write the operator-only fields.
- * It composes the SAME two bars the approval, config, and extension-approval
- * routes do, and for the same reason: trust here must be POSITIVE, never the mere
- * ABSENCE of an agent marker.
- *
- * ## Two bars, checked together (DOR-1569)
- *
- * - **The cookie bar, under login-on only** ({@link requireOperatorCookieUnderLogin}).
- *   When login is on, `sessionGate` accepts a per-user API key as the same
- *   identity a browser cookie proves (DOR-474). An agent with shell access can
- *   read the operator's key off `~/.dork` and present it while dropping its
- *   `X-DorkOS-Agent` header, so an API key is NOT proof of a person. Only a
- *   session cookie is. This bar refuses every credential but a cookie while login
- *   is on, and — being the `...UnderLogin` half, not the full
- *   `requireOperatorCookie` — it ALLOWS with login off, so the shipped default
- *   posture is unchanged and the residual there stays the documented DOR-505 one.
- * - **The agent bar, in every posture** ({@link resolveDecisionAuthority}). A
- *   caller that names itself an agent, or holds an approval token, is refused.
- *
- * ## Why this replaced trust-by-absence, and what it costs
- *
- * It used to read `resolveDecisionAuthority(...).allowed` alone. Under login-on
- * that clears any valid credential, so an agent that read the operator's API key
- * off disk and dropped its header was trusted to un-clamp `bypassPermissions` and
- * arm a live cron with no approval — the DOR-1569 exploit, observed on a live
- * server. The one signal a header-stripping caller on loopback cannot fake is a
- * session cookie, so under login-on the cookie is now required, exactly as it is
- * to DECIDE an approval (whoever may decide may act without one).
- *
- * The cost is borne by the operator's own login-on CLI: `dorkos task create`
- * presents an API key and no cookie, so under login-on it now PROPOSES a task
- * (parked at `pending_approval`, clamped) for the operator to approve in the
- * cockpit, rather than arming it directly, and `dorkos task update` can no longer
- * set an operator-only field. That is the deliberate, conservative trade of a
- * security fix — an occasional extra approval, never a live full-power cron
- * nobody looked at. This is the DOR-553 question ("should an agent holding the
- * operator's key schedule unattended work?"), answered for tasks: no.
- *
- * @param req - The incoming request.
- * @param res - The response, for `sessionGate`'s resolved user.
- * @returns True only when a person is positively established — a session cookie
- *   under login-on, or the operator on the login-off local machine — with neither
- *   an agent identity nor an approval token presented.
- */
-function clearsTheAgentBar(req: Request, res: Response): boolean {
-  // The cookie bar first, mirroring `routes/config.ts`. Under login-off this is a
-  // no-op (undefined); under login-on it refuses everything but a session cookie,
-  // so a stolen API key never reaches the agent bar as "trusted".
-  if (requireOperatorCookieUnderLogin(res, 'how a scheduled task runs') !== undefined) {
-    return false;
-  }
-  return resolveDecisionAuthority(readCallerAuthority(req, res)).allowed;
-}
 
 /**
  * Refuse a task write that reaches for a field only a person may set (DOR-504),
@@ -347,6 +296,7 @@ export function createTasksRouter(
       return res.status(outcome.status).json({
         error: outcome.error,
         ...(outcome.code !== undefined && { code: outcome.code }),
+        ...(outcome.ownedBy !== undefined && { ownedBy: outcome.ownedBy }),
         ...(outcome.details !== undefined && { details: outcome.details }),
       });
     }
@@ -392,6 +342,16 @@ export function createTasksRouter(
     if (!existing) {
       return res.status(404).json({ error: 'Scheduled task not found' });
     }
+
+    // A new timing and the package's own timing are two different answers to
+    // one question; the request has to pick (DOR-2302).
+    const timingConflict = conflictingTimingRequest(data);
+    if (timingConflict) return res.status(400).json({ error: timingConflict });
+
+    // A sticky schedule's conversation cannot move to another account once it
+    // has started (DOR-2384). Refused before the file is touched.
+    const accountLocked = refuseStickyAccountChange(store, existing, data);
+    if (accountLocked) return res.status(400).json(accountLocked);
 
     // The MERGED schedule is what gets registered, so the merged schedule is
     // what has to read: a new cron runs in the task's existing timezone unless
@@ -439,16 +399,16 @@ export function createTasksRouter(
     // A trusted caller — the person editing their own task in the cockpit — is left
     // untouched: their approval is what the write-order protects, and it still
     // round-trips through disk exactly as before.
-    const promptChangesApprovedWork = data.prompt !== undefined && data.prompt !== existing.prompt;
-    const cronChangesApprovedWork =
-      data.cron !== undefined && (data.cron ?? '') !== (existing.cron ?? '');
-    const nameChangesApprovedWork = data.name !== undefined && data.name !== existing.name;
-    if (
-      !trusted &&
-      (promptChangesApprovedWork || cronChangesApprovedWork || nameChangesApprovedWork)
-    ) {
+    // Handed to the file step rather than set on `data`, which lands it on the
+    // file and — `clampApplied` — the row. A package's row-only timing change
+    // leaves it out: that change is parked for a person anyway, and the package's
+    // permission level is not DorkOS's to write (DOR-2302).
+    // Every field of the approved work counts: the prompt, the timing (the
+    // timezone since DOR-2307), and the settings (DOR-2323).
+    let clampTo: PermissionMode | undefined;
+    if (!trusted && changesApprovedWork(data, existing)) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
-      if (clamp.clamped) data.permissionMode = clamp.mode;
+      if (clamp.clamped) clampTo = clamp.mode;
     }
 
     // The SKILL.md first, then the row — through `applyTaskFileUpdate`, because
@@ -459,17 +419,23 @@ export function createTasksRouter(
     // anything is written, so a refusal here leaves the row untouched too.
     const fileOutcome = await applyTaskFileUpdate(
       { dorkHome, ...(meshCore && { meshCore }) },
-      { existing, data }
+      { existing, data, clampTo }
     );
     if (!fileOutcome.ok) {
       return res.status(fileOutcome.status).json({
         error: fileOutcome.error,
         ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
+        ...(fileOutcome.ownedBy !== undefined && { ownedBy: fileOutcome.ownedBy }),
       });
     }
-    const { changesFile } = fileOutcome;
+    const { changesFile, timingLandsOn } = fileOutcome;
+    // What would run before this write, as it RUNS, and the status it had: what
+    // `settleApprovedWorkChange` below compares against.
+    const before = { ...taskWorkOf(existing), status: existing.status };
 
-    let updated = store.updateTask(req.params.id, data);
+    const rowData =
+      fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
+    let updated = store.updateTask(req.params.id, rowData, { timingLandsOn });
     if (!updated) {
       return res.status(404).json({ error: 'Scheduled task not found' });
     }
@@ -482,16 +448,20 @@ export function createTasksRouter(
     // edited parked with nothing anywhere saying why (DOR-1485 review, I2).
     //
     // `updateTask` cannot fix this on its own: it only lifts `paused`, because
-    // `pending_approval` is deliberately a person's gate to clear. Here we know
-    // a person IS the caller and exactly what they asked for, so re-stating it
-    // is not overriding the gate — it is finishing the write that opened it.
+    // `pending_approval` is deliberately a person's gate to clear. So this runs
+    // for a TRUSTED caller only — a person, and exactly what they asked for —
+    // where re-stating it is not overriding the gate but finishing the write
+    // that opened it. For an agent the park the sync just made is the right
+    // answer, and re-stating `active` would re-arm it with a fresh approval
+    // (`updateTask` records one on `active`) for content nobody has read.
     // The status the caller is entitled to end up at: the one they asked for,
     // or — when they only edited fields and the schedule was already live — the
     // one it already had. The second half is the case a first pass missed: the
     // cockpit's edit form sends a prompt and no `status`, so a lost race
     // disarmed a running schedule with nothing anywhere saying why.
-    const intendedStatus =
-      data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined);
+    const intendedStatus = trusted
+      ? (data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined))
+      : undefined;
     if (intendedStatus !== undefined && updated.status !== intendedStatus) {
       updated = store.updateTask(req.params.id, { status: intendedStatus }) ?? updated;
     }
@@ -513,7 +483,20 @@ export function createTasksRouter(
     // So the grant is re-issued only for a caller that cleared the agent bar. An
     // agent's edit still re-parks, and a person still has to look at it.
     if (trusted && changesFile && existing.status === 'active' && updated.status === 'active') {
-      store.recordApproval(updated.id);
+      store.approvals.recordApproval(updated.id);
+      updated = store.getTask(updated.id) ?? updated;
+    }
+
+    // **A change to approved work is settled here, not by the sync.** An
+    // agent's parks the schedule at once, whether or not a file was written
+    // (`settleApprovedWorkChange`, DOR-2313): the watcher's park is a moment
+    // away and the sweep's up to five minutes, and until then the agent's work
+    // would run approved. A person's change that wrote no file (a package's
+    // row-only timing, DOR-2302) re-approves in the same act; a person's
+    // file-backed edit was re-approved just above. The park is then picked up by
+    // the "entered `pending_approval`" edge below like any other.
+    if (!trusted || !changesFile) {
+      store.approvals.settleApprovedWorkChange(updated.id, before, { trusted });
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -625,7 +608,10 @@ export function createTasksRouter(
     // with that park is still kept, so the field means the same thing on every
     // door it can arrive through.
     if (existing.status !== 'pending_approval' && updated.status === 'pending_approval') {
-      const parkReason = data.reason?.trim();
+      // Only an operator's OWN park carries their words. A schedule parked
+      // because an agent changed its timing already holds DorkOS's sentence
+      // saying so, and an agent's `reason` must not be written over it.
+      const parkReason = data.status === 'pending_approval' ? data.reason?.trim() : undefined;
       if (parkReason) {
         updated = store.recordProposal(req.params.id, { reason: parkReason }) ?? updated;
       }

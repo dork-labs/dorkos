@@ -128,8 +128,8 @@
  * projected in its turn instead of never.
  *
  * The drain survives as the NO-SUBSCRIBER fallback only. Nothing forces a host
- * to call `subscribeRuntimeTurns` — the embedded composition does not, nor does
- * a test that builds a runtime by hand — and an unread channel is a buffer
+ * to call `subscribeRuntimeTurns` — a test that builds a runtime by hand may
+ * not — and an unread channel is a buffer
  * nobody empties. The production path never takes it.
  *
  * What gets drained is CENSUSED, and the two outcomes are reported differently
@@ -178,6 +178,7 @@ import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
+import { recordSessionUsage } from '../accounts/account-usage-feed.js';
 
 /** One session's pump, its windower, and its crash policy, wired together. */
 interface SessionBundle {
@@ -486,6 +487,9 @@ export class PersistentDispatch {
     // phantom detector (DOR-1087).
     session.contextBreakdown = undefined;
     session.interruptRequestedAt = undefined;
+    // A usage limit is reported once per turn (spec claude-account-fleet D4).
+    session.limitReportedThisTurn = false;
+    session.rejectedLimitThisTurn = undefined;
     // And a Stop belongs to the turn it was pressed during, which the stop
     // RECORD only gets right if this path says so (DOR-1320). On the resume
     // path one query is one turn, so `stoppedQueries` is per-turn by
@@ -1159,9 +1163,8 @@ export class PersistentDispatch {
         session.lastActivity = Date.now();
         const listener = this.runtimeTurnListener;
         if (listener === undefined) {
-          // Nothing is projecting these — an embedded host, or a test that
-          // never subscribed. The channel still has to be emptied, or it
-          // buffers a whole turn nobody reads.
+          // Nothing is projecting these, as in a test that never subscribed.
+          // Empty the channel so it does not buffer a turn nobody reads.
           void drainUnprojected(key, window);
           return;
         }
@@ -1186,6 +1189,12 @@ export class PersistentDispatch {
         // `undefined` keeps the last known value: the item must never flicker
         // back to cost-only between turns.
         if (usage.subscription) session.lastSubscriptionUsage = usage.subscription;
+        // The same answer, account-wide, into the account's usage ledger.
+        if (usage.accountUsage) {
+          recordSessionUsage(session, usage.accountUsage.observations, {
+            subscriptionType: usage.accountUsage.subscriptionType,
+          });
+        }
       },
     });
 

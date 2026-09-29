@@ -53,14 +53,18 @@
  * in `tasks/task-write-policy.ts` (DOR-504). Both tools stay `act`. If you find
  * another argument of this shape, that is the pattern to copy.
  *
- * Only `destructive` changes runtime behavior. `observe` returns allowed before any
- * other check runs, and `act` passes the gate. Labeling all 47 anyway is the point:
- * the gate refuses to register a tool that has no entry here, so the NEXT tool
- * somebody adds cannot quietly arrive untiered.
+ * On its own, only `destructive` stops for a person: `observe` reads, and `act`
+ * runs. The `area` beside each tier is what a person switches (spec
+ * `agent-permissions` D2): an area set to Ask makes an `act` tool ask too, and one
+ * set to Blocked hides the tool and refuses it, reads included. Labeling every
+ * tool is the point: the gate refuses to register a tool that has no entry here,
+ * so the NEXT tool somebody adds cannot quietly arrive untiered or without an area.
  *
  * ## Adding a tool
  *
- * Add its entry here, or the MCP server will not build. Sort by tier the way the
+ * Add its entry here, or the MCP server will not build. Give it an `area` (or
+ * `null` with an `areaNote` saying why nothing switches it), and card fields if it
+ * can raise a card. Sort by tier the way the
  * rest of the codebase sorts by blast radius: does the person lose something they
  * would have to rebuild from scratch (`destructive`), does the call change
  * something they can put back (`act`), or does it only read (`observe`)? Prefer the
@@ -70,9 +74,15 @@
  * @module services/core/mcp-tool-tiers
  */
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
-import type { McpToolGroupName } from '@dorkos/shared/mcp-tool-groups';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import type { ApprovalSubjectDeclaration } from './approvals/index.js';
 import type { GatedAction } from './capabilities/tier-enforcement.js';
+
+/**
+ * The `areaNote` of a hand-registered tool that never takes a permission area:
+ * it only reads what DorkOS itself is, so there is nothing to switch off.
+ */
+const ALWAYS_ON = 'always on';
 
 /** One tool's tier declaration. */
 export interface McpToolTier {
@@ -82,6 +92,14 @@ export interface McpToolTier {
    */
   tier: CapabilityTier;
   /**
+   * The permission area this tool belongs to, or `null` when its tier alone
+   * decides (spec `agent-permissions` D2). Required, so a tool cannot be added
+   * without somebody deciding it.
+   */
+  area: PermissionAreaId | null;
+  /** Why a tool with `area: null` has no switch. Required whenever `area` is `null`. */
+  areaNote?: string;
+  /**
    * Human-facing title, written for the person reading an approval card or a
    * refusal in their Activity feed — not for the model, which reads the tool's own
    * description. Say what happens to them, not what the code does.
@@ -90,10 +108,12 @@ export interface McpToolTier {
   /**
    * The argument names the approval card may show, most consequential first.
    *
-   * Required on `destructive` (a card with no arguments asks a person to approve
-   * an irreversible action without telling them which one), and pointless on the
-   * other two tiers, which never build a card. Pinned in both directions by
-   * `__tests__/mcp-tool-gate.test.ts`.
+   * Required on every tool that can build a card: a `destructive` one, and an
+   * `act` one with an area, which asks whenever a person sets that area to Ask
+   * (spec `agent-permissions` D6). A card with no arguments asks a person to
+   * approve an action without telling them which one. Empty only for a tool that
+   * takes no arguments at all. Pointless on a tool that never builds a card.
+   * Pinned in both directions by `__tests__/mcp-tool-gate.test.ts`.
    */
   approvalDisplayFields?: readonly string[];
   /**
@@ -106,10 +126,11 @@ export interface McpToolTier {
    * `agentId: "01KXQ3P7ADJY9DSXMZW1XGWCV4"` on the card into `agent: "Lab Scout"`,
    * with the id kept beside it as the part nothing can rename.
    *
-   * Expected on a `destructive` tool whose target is an opaque id, and pinned in
-   * both directions by `__tests__/mcp-tool-gate.test.ts` — a card that cannot
-   * say WHICH thing it is about to destroy is the defect this closes, and it is
-   * cheaper to fail the test than to ship the card.
+   * Expected on a tool that can build a card and whose target is an opaque id
+   * held by a registry that can name it (an agent or a task), and pinned by
+   * `__tests__/mcp-tool-gate.test.ts` — a card that cannot say WHICH thing it is
+   * about to change is the defect this closes, and it is cheaper to fail the test
+   * than to ship the card.
    */
   approvalSubject?: ApprovalSubjectDeclaration;
 }
@@ -124,51 +145,155 @@ export interface McpToolTier {
  */
 export const MCP_TOOL_TIERS = {
   // ── Core ────────────────────────────────────────────────────────────────
-  ping: { tier: 'observe', title: 'Check that DorkOS is answering' },
-  get_server_info: { tier: 'observe', title: 'Read server information' },
-  get_session_count: { tier: 'observe', title: "Count an agent's sessions" },
-  get_agent: { tier: 'observe', title: "Read an agent's setup file" },
+  ping: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Check that DorkOS is answering',
+  },
+  get_server_info: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Read server information',
+  },
+  get_session_count: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: "Count an agent's sessions",
+  },
+  get_agent: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: "Read an agent's setup file",
+  },
+
+  // ── Accounts ────────────────────────────────────────────────────────────
+  accounts_usage: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Read how much of each Claude account is used',
+  },
+  // Starts Claude Code on an idle prompt and asks it for the account's usage: no
+  // turn, no spend, no transcript, and at most once a minute per account. It
+  // changes nothing a person owns, so no area switches it off.
+  accounts_probe: {
+    tier: 'act',
+    area: null,
+    areaNote: 'reads usage only: no turn runs, nothing is spent, nothing a person owns changes',
+    title: "Check a Claude account's usage without running a turn",
+  },
+
+  // ── Sessions ────────────────────────────────────────────────────────────
+  // Starts work that runs on its own and can spend an account, so it is an
+  // agent action a person can switch to Ask or Blocked. Nothing is lost if it
+  // goes wrong (the session can be stopped), so `act`, not `destructive`.
+  session_start: {
+    tier: 'act',
+    area: 'agents',
+    // What the card grants: where, on whose bill, with what power (clamped by
+    // the input schema before the gate sees it), as whom, and to do what.
+    approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
+    title: 'Start a new agent session',
+  },
 
   // ── Tasks ───────────────────────────────────────────────────────────────
-  tasks_list: { tier: 'observe', title: 'List scheduled tasks' },
+  tasks_list: {
+    tier: 'observe',
+    area: 'tasks',
+    title: 'List scheduled tasks',
+  },
   // Creates the schedule already parked at `pending_approval`, so a person has to
   // approve it before it ever runs. A second card here would ask the same question
   // twice.
-  tasks_create: { tier: 'act', title: 'Create a scheduled task' },
+  tasks_create: {
+    tier: 'act',
+    area: 'tasks',
+    approvalDisplayFields: ['name', 'cron', 'target'],
+    title: 'Create a scheduled task',
+  },
   // Can overwrite a schedule's prompt and cron with no history, which is real. The
   // answer to "no history" is an audit trail, not a card on every edit.
-  tasks_update: { tier: 'act', title: 'Change a scheduled task' },
+  tasks_update: {
+    tier: 'act',
+    area: 'tasks',
+    approvalDisplayFields: ['id', 'name', 'cron', 'enabled'],
+    approvalSubject: { field: 'id', kind: 'task' },
+    title: 'Change a scheduled task',
+  },
   // `deleteTask` is a bare DELETE with no trash and no undo (`tasks/task-store.ts`).
   // The person rebuilds the prompt, the schedule, and the timezone from memory.
   tasks_delete: {
     tier: 'destructive',
+    area: 'tasks',
     title: 'Delete a scheduled task',
     approvalDisplayFields: ['id'],
     // Without this the card said `id: "01K…"`, which names nothing a person
     // recognizes — the same defect `mesh_unregister` was reported for.
     approvalSubject: { field: 'id', kind: 'task' },
   },
-  tasks_get_run_history: { tier: 'observe', title: "Read a scheduled task's run history" },
+  tasks_get_run_history: {
+    tier: 'observe',
+    area: 'tasks',
+    title: "Read a scheduled task's run history",
+  },
 
   // ── Relay: messaging ────────────────────────────────────────────────────
-  relay_send: { tier: 'act', title: 'Send a message to another agent' },
+  relay_send: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['subject'],
+    title: 'Send a message to another agent',
+  },
   // Not `observe`: `ack: true` DESTROYS each acknowledged message. It unlinks the
   // payload file from the maildir (`packages/relay/src/maildir-store.ts`), leaving
   // only the index row, so later reads come back with `payload: null`. It stays
   // `act` for the same reason `relay_unregister_endpoint` does — this is the
   // ordinary way a caller drains its own inbox, and a card on every drain is the
   // fastest way to teach someone to stop reading cards.
-  relay_inbox: { tier: 'act', title: 'Read and clear the message inbox' },
-  relay_list_endpoints: { tier: 'observe', title: 'List message endpoints' },
-  relay_register_endpoint: { tier: 'act', title: 'Create a message endpoint' },
-  relay_send_and_wait: { tier: 'act', title: 'Send a message and wait for the reply' },
-  relay_send_async: { tier: 'act', title: 'Send a message without waiting' },
+  relay_inbox: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['endpoint_subject', 'ack'],
+    title: 'Read and clear the message inbox',
+  },
+  relay_list_endpoints: {
+    tier: 'observe',
+    area: 'messages',
+    title: 'List message endpoints',
+  },
+  relay_register_endpoint: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['subject'],
+    title: 'Create a message endpoint',
+  },
+  relay_send_and_wait: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['to_subject'],
+    title: 'Send a message and wait for the reply',
+  },
+  relay_send_async: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['to_subject'],
+    title: 'Send a message without waiting',
+  },
   // This one deletes a maildir, undelivered messages and all. It is still `act`,
   // and deliberately: it is the documented last step of every async send, so the
   // tool's own description tells the agent to call it on each `done: true`. A card
   // in front of routine cleanup is the fastest way to teach someone to stop reading
   // cards.
-  relay_unregister_endpoint: { tier: 'act', title: 'Remove a message endpoint' },
+  relay_unregister_endpoint: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['subject'],
+    title: 'Remove a message endpoint',
+  },
   // In-session only, and the two destinations it can reach are gated
   // differently — which is why this comment says what is true rather than "it
   // is consent-gated".
@@ -183,33 +308,103 @@ export const MCP_TOOL_TIERS = {
   // deliveries (`specs/proactive-agent-dms` G1); until it ships, `act` is the
   // right tier for the same reason it is on every other send tool, not because
   // something upstream already asked.
-  relay_notify_user: { tier: 'act', title: 'Send the person a message' },
+  relay_notify_user: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['channel', 'message'],
+    title: 'Send the person a message',
+  },
 
   // ── Relay: chat connections ─────────────────────────────────────────────
-  relay_list_adapters: { tier: 'observe', title: 'List chat connections' },
-  relay_enable_adapter: { tier: 'act', title: 'Turn a chat connection on' },
-  relay_disable_adapter: { tier: 'act', title: 'Turn a chat connection off' },
-  relay_reload_adapters: { tier: 'act', title: 'Reload chat connections' },
+  relay_list_adapters: {
+    tier: 'observe',
+    area: 'connections',
+    title: 'List chat connections',
+  },
+  relay_enable_adapter: {
+    tier: 'act',
+    area: 'connections',
+    approvalDisplayFields: ['id'],
+    title: 'Turn a chat connection on',
+  },
+  relay_disable_adapter: {
+    tier: 'act',
+    area: 'connections',
+    approvalDisplayFields: ['id'],
+    title: 'Turn a chat connection off',
+  },
+  relay_reload_adapters: {
+    tier: 'act',
+    area: 'connections',
+    approvalDisplayFields: [],
+    title: 'Reload chat connections',
+  },
 
   // ── Relay: traces and counters ──────────────────────────────────────────
-  relay_get_trace: { tier: 'observe', title: 'Read a message trace' },
-  relay_get_metrics: { tier: 'observe', title: 'Read messaging counters' },
+  relay_get_trace: {
+    tier: 'observe',
+    area: 'messages',
+    title: 'Read a message trace',
+  },
+  relay_get_metrics: {
+    tier: 'observe',
+    area: 'messages',
+    title: 'Read messaging counters',
+  },
 
   // ── Chat routes ─────────────────────────────────────────────────────────
-  binding_list: { tier: 'observe', title: 'List chat routes' },
-  binding_create: { tier: 'act', title: 'Create a chat route' },
+  binding_list: {
+    tier: 'observe',
+    area: 'connections',
+    title: 'List chat routes',
+  },
+  binding_create: {
+    tier: 'act',
+    area: 'connections',
+    approvalDisplayFields: ['adapterId', 'agentId', 'chatId'],
+    approvalSubject: { field: 'agentId', kind: 'agent' },
+    title: 'Create a chat route',
+  },
   // Settings, not content: five fields the cockpit can put back in under a minute,
   // and no messages are lost with it.
-  binding_delete: { tier: 'act', title: 'Remove a chat route' },
+  binding_delete: {
+    tier: 'act',
+    area: 'connections',
+    approvalDisplayFields: ['id'],
+    title: 'Remove a chat route',
+  },
   // In-session only.
-  binding_list_sessions: { tier: 'observe', title: 'List active chat sessions' },
+  binding_list_sessions: {
+    tier: 'observe',
+    area: 'connections',
+    title: 'List active chat sessions',
+  },
 
   // ── Mesh ────────────────────────────────────────────────────────────────
   // Not `observe`: the scan auto-imports every agent file it walks past.
-  mesh_discover: { tier: 'act', title: 'Scan for agents' },
-  mesh_register: { tier: 'act', title: 'Register an agent' },
-  mesh_list: { tier: 'observe', title: 'List registered agents' },
-  mesh_deny: { tier: 'act', title: 'Block a path from future scans' },
+  mesh_discover: {
+    tier: 'act',
+    area: 'agents',
+    approvalDisplayFields: ['roots', 'includeRegistered'],
+    title: 'Scan for agents',
+  },
+  mesh_register: {
+    tier: 'act',
+    area: 'agents',
+    approvalDisplayFields: ['path', 'name'],
+    title: 'Register an agent',
+  },
+  mesh_list: {
+    tier: 'observe',
+    area: 'agents',
+    title: 'List registered agents',
+  },
+  mesh_deny: {
+    tier: 'act',
+    area: 'agents',
+    approvalDisplayFields: ['path', 'reason'],
+    title: 'Block a path from future scans',
+  },
   // Worse than its name: it deletes the agent's `.dork/agent.json` from disk, tears
   // down its Relay endpoint (which removes that endpoint's maildir), and cascades
   // into disabling the agent's scheduled tasks. One call, three kinds of the
@@ -217,6 +412,7 @@ export const MCP_TOOL_TIERS = {
   // saying out loud that it knew.
   mesh_unregister: {
     tier: 'destructive',
+    area: 'agents',
     // The title is the sentence a person reads before clicking Allow, so it says
     // "turns off" rather than "deletes": the task cascade sets `enabled: false,
     // status: 'paused'`, it does not remove the schedules. Overstating the loss on
@@ -228,22 +424,64 @@ export const MCP_TOOL_TIERS = {
     // four irreversible deletions they had no way to tell apart.
     approvalSubject: { field: 'agentId', kind: 'agent' },
   },
-  mesh_status: { tier: 'observe', title: 'Read mesh health' },
-  mesh_inspect: { tier: 'observe', title: 'Inspect one agent' },
-  mesh_query_topology: { tier: 'observe', title: 'Read the agent network layout' },
+  mesh_status: {
+    tier: 'observe',
+    area: 'agents',
+    title: 'Read mesh health',
+  },
+  mesh_inspect: {
+    tier: 'observe',
+    area: 'agents',
+    title: 'Inspect one agent',
+  },
+  mesh_query_topology: {
+    tier: 'observe',
+    area: 'agents',
+    title: 'Read the agent network layout',
+  },
 
   // ── Agents ──────────────────────────────────────────────────────────────
-  create_agent: { tier: 'act', title: 'Create a new agent workspace' },
+  create_agent: {
+    tier: 'act',
+    area: 'agents',
+    approvalDisplayFields: ['name', 'directory'],
+    title: 'Create a new agent workspace',
+  },
 
   // ── Extensions ──────────────────────────────────────────────────────────
-  get_extension_api: { tier: 'observe', title: 'Read the extension API reference' },
-  list_extensions: { tier: 'observe', title: 'List extensions' },
-  get_extension_errors: { tier: 'observe', title: 'Read extension errors' },
+  get_extension_api: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Read the extension API reference',
+  },
+  list_extensions: { tier: 'observe', area: null, areaNote: ALWAYS_ON, title: 'List extensions' },
+  get_extension_errors: {
+    tier: 'observe',
+    area: null,
+    areaNote: ALWAYS_ON,
+    title: 'Read extension errors',
+  },
   // Cannot clobber: the scaffolder throws when the directory already exists, so
   // this only ever writes into a fresh one.
-  create_extension: { tier: 'act', title: 'Scaffold a new extension' },
-  reload_extensions: { tier: 'act', title: 'Reload extensions' },
-  test_extension: { tier: 'act', title: 'Compile and test an extension' },
+  create_extension: {
+    tier: 'act',
+    area: 'packages',
+    approvalDisplayFields: ['name', 'scope'],
+    title: 'Scaffold a new extension',
+  },
+  reload_extensions: {
+    tier: 'act',
+    area: 'packages',
+    approvalDisplayFields: ['id'],
+    title: 'Reload extensions',
+  },
+  test_extension: {
+    tier: 'act',
+    area: 'packages',
+    approvalDisplayFields: ['id'],
+    title: 'Compile and test an extension',
+  },
 
   // ── The app and its preview ─────────────────────────────────────────────
   // Nothing here any more. `control_ui`, `get_ui_state` and every `browser_*`
@@ -259,41 +497,6 @@ export const MCP_TOOL_TIERS = {
 
 /** The name of a hand-registered MCP tool that carries a tier. */
 export type McpToolName = keyof typeof MCP_TOOL_TIERS;
-
-/**
- * Compile-time proof that this table and the shared tool-GROUP table describe the
- * same set of tools (DOR-499).
- *
- * The two answer different questions about the same set of tools — this one "does
- * calling it need a person's approval", the other "which toggle takes it away" —
- * and both are keyed by tool name. Nothing but a check makes them stay the same
- * length. Before this, seven tools had a tier and no group, which is how the
- * cockpit came to show a tool set the server did not build.
- *
- * These live in production source rather than beside the tests, though the reason
- * has narrowed. It used to be that `apps/server/tsconfig.json` excluded
- * `src/**\/__tests__/**` wholesale, so a type assertion written in any test file was
- * decoration that could never fail. DOR-508 put the test files in the tsc program,
- * so that is no longer true in general. It is still true for the file these would
- * most naturally sit in, `__tests__/mcp-tool-gate.test.ts`, which remains
- * quarantined in that tsconfig's `exclude` while its own type errors are worked off.
- *
- * They also resolve through the shared package's `types` condition, which points at
- * its SOURCE, so an unbuilt or stale `dist` cannot make them pass by accident. That
- * is not theoretical: the same table is read at RUNTIME by tests that resolve
- * `default` to `dist`, which is why `apps/server/vitest.config.ts` aliases this
- * module to source as well.
- *
- * Each resolves to `true` while the key sets agree and to `never` the moment they
- * do not, at which point the assignment stops compiling and `tsc` names the line
- * and the offending tool.
- */
-const _everyTieredToolHasAGroup: [Exclude<McpToolName, McpToolGroupName>] extends [never]
-  ? true
-  : never = true;
-const _everyGroupedToolHasATier: [Exclude<McpToolGroupName, McpToolName>] extends [never]
-  ? true
-  : never = true;
 
 /**
  * The {@link GatedAction} for a hand-registered MCP tool, ready to hand to the
@@ -329,6 +532,7 @@ export function gatedActionForMcpTool(toolName: string): GatedAction {
     id: toolName,
     title: declared.title,
     tier: declared.tier,
+    area: declared.area,
     ...(declared.approvalDisplayFields
       ? { approvalDisplayFields: declared.approvalDisplayFields }
       : {}),

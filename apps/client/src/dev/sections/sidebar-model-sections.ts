@@ -130,4 +130,25 @@ export const SIDEBAR_MODEL_SECTIONS: PlaygroundSection[] = [
     category: 'Sidebar',
     keywords: ['sidebar', 'unread', 'badge', 'bold', 'mention', 'dm', 'directed', 'activity'],
   },
+  // AccountMarkShowcases (spec claude-account-ui §13)
+  {
+    id: 'accountmark',
+    title: 'AccountMark',
+    page: 'sidebar-model',
+    category: 'Sidebar',
+    keywords: [
+      'account',
+      'dot',
+      'claude',
+      'palette',
+      'color',
+      'session row',
+      'out of usage',
+      'limit',
+      'handing off',
+      'waiting for reset',
+      'needs you',
+      'moved',
+    ],
+  },
 ];

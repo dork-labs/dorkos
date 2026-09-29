@@ -36,7 +36,7 @@ describe('parseUninstallArgs', () => {
 
   it('throws on unknown option', () => {
     expect(() => parseUninstallArgs(['demo-pkg', '--nope'])).toThrow(
-      /Unknown option for 'uninstall': --nope/
+      /Unknown option for 'marketplace uninstall': --nope/
     );
   });
 });
@@ -78,8 +78,34 @@ describe('runUninstall', () => {
 
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allLogs).toContain('Uninstalled demo-pkg (12 entries removed)');
-    expect(allLogs).toContain('Preserved:');
+    expect(allLogs).toContain('Kept the files you and your agents added or changed:');
     expect(allLogs).toContain('/home/user/.dork/plugins/demo-pkg/.dork/data');
+  });
+
+  // Purpose (DOR-2322): when some kept files could not be proven the
+  // person's, the heading does not claim they added them all, and the
+  // sentence saying why is printed. Fails if the old heading stays.
+  it('does not call unproven files yours, and says why they were kept', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(200, {
+          ok: true,
+          packageName: 'demo-pkg',
+          removedFiles: 2,
+          preservedData: ['/home/user/.dork/plugins/demo-pkg/a.md'],
+          unproven: ['/home/user/.dork/plugins/demo-pkg/a.md'],
+          warnings: ["DorkOS couldn't download the version of demo-pkg you had… It kept it: a.md."],
+        })
+      )
+    );
+
+    expect(await runUninstall({ name: 'demo-pkg' })).toBe(0);
+
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).not.toContain('Kept the files you and your agents added or changed:');
+    expect(allLogs).toContain('Kept these files:');
+    expect(allLogs).toContain("DorkOS couldn't download the version of demo-pkg you had");
   });
 
   it('--purge sends `purge: true` and skips the preserved-data block', async () => {
@@ -100,7 +126,30 @@ describe('runUninstall', () => {
     expect(JSON.parse(init.body)).toEqual({ purge: true });
 
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).not.toContain('Preserved:');
+    expect(allLogs).not.toContain('Kept the files');
+  });
+
+  // Purpose (DOR-2245): uninstalling an agent package says it left the team,
+  // what that took away, and that a reinstall does not restore it.
+  it('says what removing an agent took away', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(200, {
+          ok: true,
+          packageName: 'bot',
+          removedFiles: 3,
+          preservedData: [],
+          agentRemoved: { id: '01A', directoryDenied: true, removed: ['rooms', 'mcp-sign-ins'] },
+        })
+      )
+    );
+    await runUninstall({ name: 'bot' });
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).toContain(
+      'Removed the agent from your team. That also took away its rooms, its sign-ins; reinstalling does not bring them back.'
+    );
+    expect(allLogs).toContain('git tracks its settings file');
   });
 
   it('--project forwards projectPath in the body', async () => {
@@ -131,5 +180,29 @@ describe('runUninstall', () => {
     expect(code).toBe(1);
     const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allErr).toContain('Package not installed: demo-pkg');
+  });
+
+  it('prints the canonical retry command and exits 1 when a person must approve', async () => {
+    // Purpose: nothing was removed, so a script must not read success, and the
+    // retry line must name the canonical `dorkos marketplace uninstall`.
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      mockResponse(200, {
+        status: 'approval_required',
+        approvalId: 'appr_1',
+        approvalToken: 'appr_tok_1',
+        message: 'Removing demo-pkg needs your approval.',
+        retry: { instructions: 'Approve it in DorkOS, then retry.' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const code = await runUninstall({ name: 'demo-pkg' });
+
+    expect(code).toBe(1);
+    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allErr).toContain(
+      'Retry with: dorkos marketplace uninstall demo-pkg --approval appr_tok_1'
+    );
+    expect(logSpy).not.toHaveBeenCalled();
   });
 });

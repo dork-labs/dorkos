@@ -22,6 +22,13 @@ export const connectorAuthenticationFlows = sqliteTable(
     label: text('label'),
     /** Stable local connection being reauthenticated, when this is reconnect. */
     reconnectConnectionId: text('reconnect_connection_id').references(() => connections.id),
+    /**
+     * True when the owner had paused the reconnected account before this
+     * sign-in started, so completing it keeps the pause the owner chose.
+     */
+    reconnectWasPaused: integer('reconnect_was_paused', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     /** Private acknowledged cleanup generations captured at owner flow creation. */
     cleanupSnapshotJson: text('cleanup_snapshot_json'),
     /** Owner-only provider consent URL; cleared on every terminal transition. */
@@ -64,9 +71,12 @@ export const connectorManagedAuthorityScopes = sqliteTable(
   {
     managedConnectionId: text('managed_connection_id').notNull(),
     scopeKind: text('scope_kind', {
-      enum: ['agent_grants', 'connection_lifecycle', 'event_subscription'],
+      enum: ['agent_grants', 'every_agent_grants', 'connection_lifecycle', 'event_subscription'],
     }).notNull(),
-    /** Agent id for grants, subscription id for events, or fixed `connection` for lifecycle. */
+    /**
+     * Agent id for named-agent grants, fixed `every_agent` for every-agent
+     * grants, subscription id for events, or fixed `connection` for lifecycle.
+     */
     subjectId: text('subject_id').notNull(),
     scopeVersion: integer('scope_version').notNull(),
     lastCommandId: text('last_command_id').notNull(),
@@ -98,7 +108,7 @@ export const connectorManagedAuthorityOutbox = sqliteTable(
     ownerId: text('owner_id').notNull(),
     managedConnectionId: text('managed_connection_id').notNull(),
     scopeKind: text('scope_kind', {
-      enum: ['agent_grants', 'connection_lifecycle', 'event_subscription'],
+      enum: ['agent_grants', 'every_agent_grants', 'connection_lifecycle', 'event_subscription'],
     }).notNull(),
     subjectId: text('subject_id').notNull(),
     scopeVersion: integer('scope_version').notNull(),

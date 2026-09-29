@@ -75,6 +75,20 @@ describe('SessionConnectorAttachmentStore', () => {
     expect(store.listForSession('session-1')).toHaveLength(1);
   });
 
+  it('clearState drops only that session’s override for that account', () => {
+    const gmail = 'gmail:personal' as ConnectionId;
+    const slack = 'slack:team' as ConnectionId;
+    store.setState('session-1', gmail, 'detached');
+    store.setState('session-1', slack, 'detached');
+    store.setState('session-2', gmail, 'detached');
+
+    store.clearState('session-1', gmail);
+    store.clearState('session-1', gmail);
+
+    expect(store.listForSession('session-1')).toMatchObject([{ connectionId: slack }]);
+    expect(store.listForSession('session-2')).toMatchObject([{ connectionId: gmail }]);
+  });
+
   describe('rekey()', () => {
     it('moves every override row to the new session id', () => {
       const gmail = 'gmail:personal' as ConnectionId;

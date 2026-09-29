@@ -178,10 +178,6 @@ describe('SessionPage', () => {
   });
 
   it('hands the transcript the row a search hit named', () => {
-    // `?message=` is the conversation's half of DOR-687 (DOR-1579). The page
-    // owns it because a route param belongs to the route — the transcript is
-    // also what the router-less Obsidian embed renders. The row id, not the
-    // bare message id: the timeline matches `ConversationRow.id`.
     mockUseSessionSearch.mockReturnValue({ message: 'uuid-9' });
     render(<SessionPage />);
     expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-land-on-row', 'msg-uuid-9');

@@ -1,6 +1,11 @@
 import type { Transport } from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+import {
+  MOCK_ACCOUNT_USAGE,
+  MOCK_CONTINUE_OPTIONS,
+  MOCK_LIMIT_HISTORY,
+} from './showcases/account-mock-data';
 
 /**
  * The one room `getRoom` answers for — everything the `AppTabStrip` showcase
@@ -53,6 +58,7 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsManagedMcpServers: true,
     supportsQuestionPrompt: true,
     supportsPlugins: true,
+    supportsAccounts: true,
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
@@ -125,6 +131,7 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsManagedMcpServers: true,
     supportsQuestionPrompt: false,
     supportsPlugins: false,
+    supportsAccounts: false,
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
@@ -180,6 +187,7 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsManagedMcpServers: false,
     supportsQuestionPrompt: false,
     supportsPlugins: false,
+    supportsAccounts: false,
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
@@ -288,6 +296,10 @@ export function createPlaygroundTransport(): Transport {
         prop === 'readRoomFileContent' ||
         prop === 'readRoomRepoStatus' ||
         prop === 'saveRoomFile' ||
+        prop === 'uploadRoomFiles' ||
+        prop === 'moveRoomFile' ||
+        prop === 'deleteRoomFile' ||
+        prop === 'saveAttachmentToRoomFiles' ||
         prop === 'repairRoomMain' ||
         prop === 'mergeRoomMain' ||
         prop === 'readRoomCanvasDiff' ||
@@ -300,6 +312,29 @@ export function createPlaygroundTransport(): Transport {
           });
         };
       }
+      // Account usage and the carry-over routes (spec `claude-account-ui` §13):
+      // the reads answer from fixtures so account surfaces show real states,
+      // and the writes succeed without effect.
+      if (prop === 'getAccountUsage') {
+        return async (runtime: string) => ({
+          accounts: MOCK_ACCOUNT_USAGE.filter((usage) => usage.runtime === runtime),
+        });
+      }
+      if (prop === 'getContinueOptions') return async () => MOCK_CONTINUE_OPTIONS;
+      if (prop === 'getLimitHistory') {
+        return async (sessionId: string) => ({
+          entries: MOCK_LIMIT_HISTORY.filter((entry) => entry.sessionId === sessionId),
+        });
+      }
+      if (prop === 'continueSession') return async () => ({});
+      if (prop === 'waitForReset' || prop === 'cancelAutoContinue') {
+        return async () => undefined;
+      }
+      // Found account folders (spec `claude-account-ui` §6.9): none, so the
+      // accounts showcases keep their own states; the FoundAccountsGroup
+      // showcase injects its folders directly.
+      if (prop === 'getFoundClaudeFolders') return async () => ({ folders: [] });
+      if (prop === 'dismissFoundClaudeFolder') return async () => undefined;
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;
     },

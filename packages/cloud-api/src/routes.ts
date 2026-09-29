@@ -30,9 +30,16 @@ export const V1_ROUTES = {
   usage: '/v1/usage',
   priceList: '/v1/price-list',
   nudge: '/v1/nudge',
+  /** Everything the service will sell the caller, answered with `OffersResponseSchema`. */
+  offers: '/v1/offers',
   checkout: '/v1/checkout',
   topup: '/v1/topup',
   portal: '/v1/portal',
+  /**
+   * @deprecated Withdrawn. DorkOS Cloud does not offer refunds through this
+   * API, and the service answers `not_found` here. Kept so `/v1` code that
+   * names it still compiles; removed in `/v2`.
+   */
   refunds: '/v1/refunds',
   statement: '/v1/statement',
   inferenceTokens: '/v1/inference/tokens',
@@ -50,7 +57,13 @@ export const V1_ROUTES = {
   remoteCredentialsConfirm: '/v1/remote/credentials/confirm',
   remoteCommands: '/v1/remote/commands',
   remoteCommandsAck: '/v1/remote/commands/ack',
+  /**
+   * Batched activity from an instance. Every request names its batch in the
+   * `REMOTE_EVENTS_IDEMPOTENCY_HEADER` header.
+   */
   remoteEvents: '/v1/remote/events',
+  /** Where the caller's account stands against the remote limits, answered with `RemoteUsageResponseSchema`. */
+  remoteUsage: '/v1/remote/usage',
   communities: '/v1/communities',
   communitiesNameCheck: '/v1/communities/name-check',
   communitiesMoves: '/v1/communities/moves',
@@ -180,7 +193,9 @@ export const v1Path = {
    */
   orgAgents: (orgId: string) => `/v1/orgs/${enc(orgId)}/agents`,
   /**
-   * The remote-designation route for one organization.
+   * The remote-designation route for one organization. `POST` designates an
+   * instance (`RemoteDesignationRequestSchema` → `RemoteDesignationSchema`);
+   * `GET` reads the current one (`RemoteDesignationStatusSchema`).
    *
    * @param orgId - The organization's opaque identifier.
    */

@@ -21,7 +21,7 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -36,6 +36,15 @@ import type { DeliveryMetrics } from '@dorkos/shared/relay-schemas';
 import { createExternalMcpServer } from '../mcp-server.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { NotifyBudget } from '../../relay/notify-budget.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const NOW = new Date().toISOString();
 
@@ -52,7 +61,6 @@ const MANIFEST: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
 };
 
@@ -97,6 +105,11 @@ const TASK: Task = {
   prompt: 'Run the verification suite',
   cron: '0 2 * * *',
   timezone: null,
+  defaultCron: '0 2 * * *',
+  defaultTimezone: null,
+  timingOverridden: false,
+  packageOwned: null,
+  approvalChanges: [],
   agentId: null,
   enabled: true,
   maxRuntime: null,
@@ -104,6 +117,7 @@ const TASK: Task = {
   runtime: null,
   model: null,
   effort: null,
+  account: null,
   status: 'active',
   filePath: '',
   createdAt: NOW,

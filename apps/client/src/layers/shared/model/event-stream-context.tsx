@@ -7,12 +7,6 @@
  * connection as the session-list events, dispatched through the manager's
  * `subscribeEvent` API.
  *
- * This provider therefore only (1) ensures the list stream is connected,
- * (2) mirrors its connection state into React state, and (3) installs the
- * refetch-on-reconnect cache invalidation. In embedded mode (Obsidian) the
- * manager's transport source yields no generic events, so subscriptions are
- * inert no-ops there — by design (no HTTP broadcast stream exists in-process).
- *
  * @module shared/model/event-stream-context
  */
 import {

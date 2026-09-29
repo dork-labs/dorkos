@@ -1,11 +1,18 @@
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import type { Pool } from 'pg';
+import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
+import { accountErasureRunning } from './erasure/guards.js';
+import { communityOidc } from './oidc.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
 
 /** Create one independent Better Auth instance for a community deployment. */
-export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
+export function createCommunityAuth(
+  pool: Pool,
+  config: CommunityConfig,
+  options: { now?: () => Date } = {}
+) {
   const checkAdmission = async (cookieHeader: string | null) => {
     const grant = verifyValue(readCookie(cookieHeader, 'community_bootstrap'), config.authSecret);
     if (grant) {
@@ -48,12 +55,27 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
     secret: config.authSecret,
     baseURL: config.publicUrl,
     trustedOrigins: [config.publicUrl],
-    emailAndPassword: { enabled: true },
+    emailAndPassword: { enabled: true, minPasswordLength: COMMUNITY_PASSWORD_MIN_LENGTH },
+    // The first three hand a provider's stored access, refresh and ID tokens to any signed-in
+    // session. An ID token replayed to sign-in would mint a fresh session without the provider,
+    // defeating every "signed in within five minutes" rule, and nothing here needs them.
+    // `/change-password` checks the current password outside the per-account guess budget every
+    // other password check shares (password-confirmation.ts), so a stolen session could keep
+    // guessing there; nothing here offers a password change, so it is off. `/delete-user` stays
+    // off by Better Auth's own default and answers 404 before it looks at any password.
+    disabledPaths: ['/get-access-token', '/refresh-token', '/account-info', '/change-password'],
     socialProviders: {
-      ...(config.oauth.google ? { google: config.oauth.google } : {}),
+      // Sign-in only through the provider's own redirect, never a bare ID token (see hooks).
+      ...(config.oauth.google
+        ? { google: { ...config.oauth.google, disableIdTokenSignIn: true } }
+        : {}),
       ...(config.oauth.github ? { github: config.oauth.github } : {}),
     },
+    // An OIDC or social identity whose email matches an existing account is refused, never
+    // silently attached; a person links one from their account page after signing in.
     account: { accountLinking: { disableImplicitLinking: true } },
+    // The host's optional OpenID Connect sign-in. Unset, nothing is registered or fetched.
+    plugins: config.oidc ? [communityOidc(config.oidc, { now: options.now })] : [],
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
     advanced: {
       useSecureCookies: config.publicUrl.startsWith('https:'),
@@ -65,6 +87,17 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        // A bare ID token proves only that someone once held one, not that the person is at
+        // the keyboard now. Every provider signs in and links through its redirect instead.
+        if (
+          (ctx.path === '/sign-in/social' || ctx.path === '/link-social') &&
+          (ctx.body as { idToken?: unknown } | undefined)?.idToken !== undefined
+        ) {
+          throw new APIError('BAD_REQUEST', {
+            code: 'id_token_sign_in_disabled',
+            message: 'Sign in through the provider instead.',
+          });
+        }
         if (ctx.path.startsWith('/sign-up/')) {
           if (!(await checkAdmission(ctx.headers?.get('cookie') ?? null))) {
             throw new APIError('FORBIDDEN', {
@@ -79,11 +112,27 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
         create: {
           before: async (user, ctx) => {
             if (!(await checkAdmission(ctx?.headers?.get('cookie') ?? null))) {
+              // The code lets an OAuth or OIDC callback redirect with `?error=invitation_required`.
               throw new APIError('FORBIDDEN', {
+                code: 'invitation_required',
                 message: 'An invitation or owner grant is required.',
               });
             }
             return { data: user };
+          },
+        },
+      },
+      session: {
+        create: {
+          // Every sign-in method ends here, including an OAuth callback whose account a
+          // request hook cannot see, so a running account erasure refuses them all at once.
+          before: async (session) => {
+            if (await accountErasureRunning(pool, session.userId)) {
+              throw new APIError('FORBIDDEN', {
+                message: 'This account is being deleted.',
+              });
+            }
+            return { data: session };
           },
         },
       },

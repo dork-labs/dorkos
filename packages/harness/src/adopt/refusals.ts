@@ -18,14 +18,14 @@ import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import type { SkillRoot } from '../inventory/types.js';
 
 /**
- * The skill names DorkOS seeds into every room worktree, derived from the pack
- * rather than listed here.
+ * The skill names DorkOS seeded into room worktrees before room turns moved to
+ * the agent's home (spec `agent-home-desk`), derived from the pack rather than
+ * listed here.
  *
- * `SEEDED_PACK_EXCLUDES` in `room-worktree-manager.ts` derives its own list the
- * same way and says why: the pack has grown before, and a list extended by hand
- * is a list that will be one behind. A name in here is reserved inside a room
- * folder — `.agents/skills/<name>` is hidden from git there and is deleted when
- * the folder is cleaned up — so adopting onto one would quietly lose the
+ * A worktree an older release made still hides `.agents/skills/<name>` from git
+ * through its `info/exclude` block until `retireLegacyPlumbing` in
+ * `room-worktree-manager.ts` clears it, and a hidden file goes when the folder
+ * is cleaned up — so adopting onto one of these names would quietly lose the
  * person's skill.
  */
 export const ROOM_SEEDED_SKILL_NAMES: ReadonlySet<string> = new Set(
@@ -127,7 +127,7 @@ export const ADOPT_SENTENCES = {
   /** B1 — `harness.autoAdopt` is on somewhere DorkOS does not own. */
   S8: (): string =>
     `harness.autoAdopt is on, and it does nothing here: DorkOS only moves skills on its own ` +
-    `inside the agent folders and room folders it owns. Run dorkos harness adopt <name> to ` +
+    `inside the agent folders it owns. Run dorkos harness adopt <name> to ` +
     `move one yourself.`,
 
   /** R8 — `--claude-only` on a candidate that does not live in Claude Code's folder. */

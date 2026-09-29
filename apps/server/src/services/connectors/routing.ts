@@ -62,8 +62,14 @@ export interface RelayAdapterCatalog {
    * @param type - The adapter type / service slug, e.g. `'slack'`.
    */
   getManifest(type: string): { displayName?: string } | undefined;
-  /** Enumerate native adapter manifests independently of connector providers. */
-  getCatalog?(): Array<{ manifest: { type: string; displayName?: string } }>;
+  /**
+   * Enumerate native adapter manifests independently of connector providers.
+   * `category: 'internal'` and `deprecated` manifests are plumbing or retired,
+   * and the Connections catalog leaves them out.
+   */
+  getCatalog?(): Array<{
+    manifest: { type: string; displayName?: string; category?: string; deprecated?: boolean };
+  }>;
 }
 
 /** Collaborators `recommendConnector` reads. */

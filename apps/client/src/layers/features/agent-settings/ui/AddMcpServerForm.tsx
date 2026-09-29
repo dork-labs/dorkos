@@ -254,7 +254,7 @@ export function AddMcpServerForm({
       <FieldCard>
         <FieldCardContent className="space-y-3">
           <div className="flex items-start gap-2">
-            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
+            <ShieldAlert className="text-status-warning-dot mt-0.5 size-4 shrink-0" />
             <div className="space-y-1">
               <p className="text-sm font-medium">Confirm this server for {agentLabel}</p>
               <p className="text-muted-foreground text-xs">

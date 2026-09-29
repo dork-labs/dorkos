@@ -10,10 +10,14 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { AGENT_NAME_REGEX } from './validation.js';
-import { CAPABILITY_TIERS, type CapabilityTier } from './capabilities.js';
 import { EFFORT_LEVELS } from './constants.js';
 import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
 import { WorkspaceProviderTypeSchema } from './workspace.js';
+import {
+  AgentPermissionsSchema,
+  PERMISSION_AREA_IDS,
+  type PermissionAreaId,
+} from './permissions/permission-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -107,90 +111,6 @@ export const AgentBehaviorSchema = z
   .openapi('AgentBehavior');
 
 export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
-
-// === Agent Tool Groups ===
-
-/**
- * Per-agent tool group settings.
- *
- * **This object now holds two kinds of key, and they do different things.** Read
- * which kind you are looking at before reasoning about what a value means.
- *
- * ## The four documentation keys — `tasks`, `relay`, `mesh`, `adapter`
- *
- * `undefined` means "inherit global default". Explicit `true`/`false` overrides
- * the global setting.
- *
- * Turning one of these off leaves its tool block out of the agent's context, so
- * the agent is never told those tools exist. It does not remove them: the tools
- * stay registered on the session and an agent that names one anyway still gets
- * the normal approval prompt. This steers an agent rather than restricting it
- * (DOR-519).
- *
- * Implicit grouping rules:
- * - `adapter: false` also turns off the chat-route tools
- * - `relay: false` also turns off the trace tools
- * - The core tools are never gated
- *
- * Which tools each of those covers is declared in `mcp-tool-groups.ts` and read
- * from there by both the server and the cockpit. It is deliberately not listed
- * again here: the copies of it that used to live in three other files all drifted
- * (DOR-499). Call `toolNamesForDomain` for the current answer.
- *
- * Steering an agent is still the PERSON's call, so all four are operator-only on
- * the agent-reachable write path (`agent-write-policy.ts`): a per-agent value
- * beats the global `agentContext.*` switch, so an agent that could write one
- * could undo a narrowing the person had made to its own context (DOR-1506). The
- * operator's `PATCH /api/mesh/agents/:id` is the one way in, for these and for
- * the grant below.
- *
- * ## The grant key — `roomsManage`
- *
- * A different mechanism wearing the same object. It is a per-agent grant the
- * server's capability choke point reads on every call: a capability that declares
- * this group is REFUSED unless the calling agent holds it, and the agent is told
- * to ask the person who runs the install.
- *
- * Two consequences follow, and both differ from the four keys above:
- *
- * - `undefined` means OFF, never "inherit". There is no global twin, on purpose —
- *   a second, weaker path to the same grant would be a way around the first.
- * - Writing it is refused for a HARDER reason than the four above: those protect
- *   a person's narrowing, this one is the grant the choke point enforces, so an
- *   agent that could set it could turn its own filter off and the filter would be
- *   theatre.
- *
- * A new key here belongs with the four unless a capability declares it as a
- * `toolGroup`; see the server's `capability-definition.ts` before adding one.
- */
-export const EnabledToolGroupsSchema = z
-  .object({
-    tasks: z.boolean().optional(),
-    relay: z.boolean().optional(),
-    mesh: z.boolean().optional(),
-    adapter: z.boolean().optional(),
-    /**
-     * Whether this agent may manage rooms — create them, change who is in them,
-     * rename them, leave them.
-     *
-     * The grant key, not a documentation key: absent means off, and the capability
-     * gate refuses the call rather than merely leaving it undescribed.
-     */
-    roomsManage: z.boolean().optional(),
-  })
-  .default({})
-  .openapi('EnabledToolGroups', {
-    description:
-      'Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are ' +
-      'documentation settings: undefined = inherit global default, and off means the agent ' +
-      'is not told about the group, not that the tools are blocked. ' +
-      'Binding tools follow adapter toggle. Trace tools follow relay toggle. ' +
-      'roomsManage is different: it is a per-agent grant the server enforces, and absent ' +
-      'means off with no global default. Only a person sets any of the five: the ' +
-      'agent-reachable write path refuses this object outright.',
-  });
-
-export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;
 
 // === Managed MCP Servers ===
 
@@ -555,24 +475,17 @@ export const AgentManifestSchema = z
         'Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.',
       example: 'acme-corp',
     }),
-    enabledToolGroups: EnabledToolGroupsSchema,
-    // The most this agent is ever allowed to do, carried onto every token minted
-    // for it and enforced at the capability gate (`tier-enforcement.ts`). Absent
-    // means `destructive` — no extra limit — which is what every manifest
-    // written before this field existed keeps meaning, so nothing already
-    // running loses capability (DOR-486).
+    // What this agent may do, where it differs from everyone else (spec
+    // `agent-permissions` D4). Absent = inherit every area from the defaults.
     //
-    // Deliberately NOT `.catch(undefined)`, unlike `model`/`effort`/`account`
-    // above and on the same reasoning as `mcpServers` below: this is a security
-    // control, and degrading an unreadable value to the schema default would
-    // silently RAISE the ceiling to unrestricted. A limit nobody can parse must
-    // be loud. It is also why the file — never the derived DB cache, which has
-    // no column for it — is the only place this answer is read from.
-    tierCeiling: z.enum(CAPABILITY_TIERS).optional().openapi({
-      description:
-        "The most this agent is ever allowed to do. 'observe' is read-only, 'act' can change things but never delete them, 'destructive' has no extra limit. Absent means no extra limit. Nobody can approve past it — an agent capped at 'act' is refused a destructive capability outright. An agent may lower its own ceiling; only a person can raise one.",
-      example: 'act',
-    }),
+    // Deliberately NOT `.catch(undefined)`, on the `mcpServers` reasoning
+    // below: an unparseable security control must be loud. Forward
+    // compatibility comes from its string keys instead: an area a newer build
+    // knows still parses here, and the resolver ignores it.
+    //
+    // Never writable through the generic agent PATCH: `UpdateAgentRequestSchema`
+    // does not pick it, and the permission routes are the one way in.
+    permissions: AgentPermissionsSchema.optional(),
     // DorkOS-managed MCP servers for this agent. Deliberately NOT `.catch([])`
     // (unlike `model`/`effort` above): a malformed entry must fail the manifest
     // parse loudly rather than silently degrade a security-relevant list to
@@ -610,6 +523,107 @@ export const AgentManifestSchema = z
 
 export type AgentManifest = z.infer<typeof AgentManifestSchema>;
 
+/** True for a plain JSON object (not an array, not null). */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The area each retired `enabledToolGroups` key folds into (spec
+ * `agent-permissions` D13): the Rooms grant, and the four switches that only
+ * ever left tool docs out of the agent's context.
+ */
+const LEGACY_GROUP_AREAS: Readonly<Record<string, PermissionAreaId>> = {
+  roomsManage: 'rooms',
+  tasks: 'tasks',
+  relay: 'messages',
+  mesh: 'agents',
+  adapter: 'connections',
+};
+
+/**
+ * Fold the retired per-agent permission fields of a raw manifest into its
+ * `permissions` object, then drop them. Permanent: marketplace packages and
+ * copied or restored `.dork/agent.json` files carry the old fields for as long
+ * as they exist, and a manifest read is the one seam every one of them passes
+ * (spec `agent-permissions` D13).
+ *
+ * Folds PER KEY, never gated on `permissions` being absent, and an area that is
+ * already set always wins. The order is the order of strength:
+ *
+ * 1. An explicit `permissions` value (a person set it through DorkOS).
+ * 2. `tierCeiling: 'observe'`: every state area Blocked. It was the one legacy
+ *    key that really limited what the agent could do, so it outranks the
+ *    switches below: a capped agent whose Messaging switch was on stays capped.
+ *    `'act'` folds to nothing (destructive actions ask by the permission
+ *    model's own rule), and `'destructive'` never limited anything.
+ * 3. `enabledToolGroups`: `true` becomes that area Allowed and `false` Blocked
+ *    (the agent Tools tab spread the whole object, so an explicit value is a
+ *    person's decision); absent leaves the area to inherit.
+ *
+ * A value of the wrong type was never valid and is dropped as absent.
+ *
+ * Known and accepted (spec Open Question 2): blocking every area does not stop
+ * the verbs that have no area, like posting and reacting in a conversation.
+ *
+ * @param raw - A manifest as parsed from JSON, before schema validation.
+ * @returns The same value with the legacy keys folded and removed; anything
+ *   that is not a manifest-shaped object is returned untouched for the schema
+ *   to reject.
+ */
+export function foldLegacyPermissionFields(raw: unknown): unknown {
+  if (!isJsonObject(raw)) return raw;
+  const hasGroups = Object.prototype.hasOwnProperty.call(raw, 'enabledToolGroups');
+  const hasCeiling = Object.prototype.hasOwnProperty.call(raw, 'tierCeiling');
+  if (!hasGroups && !hasCeiling) return raw;
+  const {
+    enabledToolGroups: groups,
+    tierCeiling: ceiling,
+    ...out
+  } = raw as Record<string, unknown>;
+
+  // A `permissions` value that is not an object is left for the schema to
+  // reject loudly rather than being replaced.
+  if (out.permissions !== undefined && !isJsonObject(out.permissions)) return out;
+  const permissions = (out.permissions as Record<string, unknown> | undefined) ?? {};
+  if (permissions.areas !== undefined && !isJsonObject(permissions.areas)) return out;
+  const areas: Record<string, unknown> = {
+    ...((permissions.areas as Record<string, unknown> | undefined) ?? {}),
+  };
+  const fill = (area: string, state: 'allowed' | 'blocked') => {
+    if (!Object.prototype.hasOwnProperty.call(areas, area)) areas[area] = state;
+  };
+
+  if (ceiling === 'observe') {
+    for (const area of PERMISSION_AREA_IDS) fill(area, 'blocked');
+  }
+  if (isJsonObject(groups)) {
+    for (const [key, area] of Object.entries(LEGACY_GROUP_AREAS)) {
+      const value = groups[key];
+      if (typeof value === 'boolean') fill(area, value ? 'allowed' : 'blocked');
+    }
+  }
+
+  if (Object.keys(areas).length === 0 && out.permissions === undefined) return out;
+  out.permissions = { ...permissions, areas };
+  return out;
+}
+
+/**
+ * {@link AgentManifestSchema} as it applies to a manifest read from a FILE: the
+ * retired permission fields are folded first ({@link foldLegacyPermissionFields}).
+ *
+ * A separate schema rather than a preprocess on `AgentManifestSchema` itself,
+ * because that schema is embedded in MCP tool schemas and extended, picked and
+ * made partial elsewhere: a preprocess has none of those methods, and JSON
+ * Schema generation cannot represent a transform (the `workspace` catch note
+ * above is the same hazard). Every file read goes through this one.
+ */
+export const AgentManifestFileSchema = z.preprocess(
+  foldLegacyPermissionFields,
+  AgentManifestSchema
+);
+
 /**
  * What a manifest PATCH may carry.
  *
@@ -629,7 +643,7 @@ export type AgentManifest = z.infer<typeof AgentManifestSchema>;
 // (ADR 260803-233420, guarantee 2).
 export type AgentManifestUpdate = Omit<
   Partial<AgentManifest>,
-  'model' | 'effort' | 'account' | 'mcpServers' | 'tierCeiling'
+  'model' | 'effort' | 'account' | 'mcpServers'
 > & {
   model?: string | null;
   effort?: (typeof EFFORT_LEVELS)[number] | null;
@@ -639,13 +653,6 @@ export type AgentManifestUpdate = Omit<
    * Writable only from the operator surface — see {@link UpdateAgentRequestSchema}.
    */
   account?: string | null;
-  /**
-   * The most this agent is ever allowed to do; `null` clears the limit, on the
-   * same convention as `model`/`effort`. Clearing WIDENS the ceiling, so the
-   * agent-reachable path refuses it — see
-   * `services/core/operator/agent-updater.ts`.
-   */
-  tierCeiling?: CapabilityTier | null;
 };
 
 // === Lightweight Path Entry ===
@@ -840,8 +847,9 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   model: true,
   effort: true,
   account: true,
-  enabledToolGroups: true,
-  tierCeiling: true,
+  // `permissions` is deliberately NOT picked: the generic agent PATCH can never
+  // write a permission. The permission routes are the one way in, and the
+  // retired `enabledToolGroups` and `tierCeiling` are refused by name.
 })
   .partial()
   .extend({
@@ -858,12 +866,6 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
     // billing is operator-only, so the agent-reachable self-edit path refuses
     // this key outright — see `services/core/operator/agent-updater.ts`.
     account: z.string().min(1).nullable().optional(),
-    // `null` clears the limit, on the same convention again. Both surfaces
-    // accept the key; the asymmetry is on the VALUE, not on the schema — an
-    // agent may lower its own ceiling and may not raise one, and clearing is a
-    // raise. That comparison needs the ceiling already on disk, so it lives in
-    // `agent-updater.ts` rather than here (DOR-486).
-    tierCeiling: z.enum(CAPABILITY_TIERS).nullable().optional(),
   })
   .openapi('UpdateAgentRequest');
 
@@ -1005,6 +1007,34 @@ export const CreateAgentOptionsSchema = z
   .openapi('CreateAgentOptions');
 
 export type CreateAgentOptions = z.infer<typeof CreateAgentOptionsSchema>;
+
+/**
+ * What `POST /api/agents/create` accepts on top of {@link CreateAgentOptions}
+ * (DOR-2325): the route reads these itself and never passes them to the
+ * creator.
+ *
+ * - `package`: create the agent a marketplace package brings, through the
+ *   marketplace installer, held to the disclosure and content hash the person
+ *   was shown (the preview's `disclosed` and `contentHash`). A person only.
+ * - `approvedTemplateHash`: the template content hash a person was shown on a
+ *   `template_needs_review` answer, to create from that template knowingly.
+ * - `confirmationToken`: an agent's retry after a person approved the card a
+ *   template raised.
+ *
+ * `skipTemplateDownload` is not part of it: the route drops it.
+ */
+export interface CreateAgentRequestBody extends Omit<CreateAgentOptions, 'skipTemplateDownload'> {
+  package?: {
+    name: string;
+    marketplace?: string;
+    /** The preview's `disclosed`, sent back untouched. */
+    approvedDisclosure: unknown;
+    /** The preview's `contentHash`, sent back untouched. */
+    approvedContentHash: string;
+  };
+  approvedTemplateHash?: string;
+  confirmationToken?: string;
+}
 
 /** Request body for POST /api/mesh/agents/create */
 export const CreateAgentRequestSchema = z

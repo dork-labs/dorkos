@@ -7,7 +7,17 @@ const CommunityIdSchema = z.uuid();
 
 /** Community lifecycle states that determine whether member traffic may run. */
 export type CommunityLifecycle =
-  'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+  'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
+
+/**
+ * Whether members may read but nothing may grow. An owner archives a community; a host holds
+ * one. Both read exactly the same way, so an installation is told `archived` for either.
+ */
+export function isReadOnlyLifecycle(
+  lifecycle: string | undefined
+): lifecycle is 'archived' | 'held' {
+  return lifecycle === 'archived' || lifecycle === 'held';
+}
 
 /** Immutable tenant selection resolved from a canonical path or singleton alias. */
 export interface CommunityContext {

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
 import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 import {
@@ -10,6 +11,7 @@ import { isSingleEmoji } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { CreationSeed } from '@/layers/shared/model';
 import { OfferScheduleRows } from './OfferScheduleRows';
+import { PreviewRefusedNotice } from '@/layers/entities/marketplace';
 
 /** Props for {@link ArrivalConfirm} — the M1 arrival confirm (one agent, no fork). */
 export interface ArrivalConfirmProps {
@@ -38,6 +40,12 @@ export interface ArrivalConfirmProps {
    */
   offerCheckFailed: boolean;
   /**
+   * The server's refusal of the offered package, when its package checks
+   * refused it (DOR-2314). Unlike a failed check this blocks: the server will
+   * not install the package, so no agent is created from it.
+   */
+  offerRefusal?: unknown;
+  /**
    * Where the agent will live once created (`defaultDirectory/slug`), using the
    * absolute directory the server reports. Empty until the config arrives — the
    * "Lives in" row shows a skeleton rather than a blank for that moment.
@@ -52,6 +60,10 @@ export interface ArrivalConfirmProps {
   canSubmit: boolean;
   /** True while the create request is in flight — disables the primary action. */
   isCreating: boolean;
+  /** What this agent inherits from apps shared with every agent, shown before Create. */
+  inheritance?: ReactNode;
+  /** True while that inheritance is still unknown; holds Create until it is. */
+  isCheckingInheritance?: boolean;
   /** Create the agent as offered, in one click. */
   onCreate: () => void;
   /** Open the naming step first, pre-filled from the offer. */
@@ -83,9 +95,12 @@ export function ArrivalConfirm({
   packageSchedules,
   isCheckingOffer,
   offerCheckFailed,
+  offerRefusal,
   resolvedDirectory,
   canSubmit,
   isCreating,
+  inheritance,
+  isCheckingInheritance = false,
   onCreate,
   onCustomize,
   onNotNow,
@@ -170,10 +185,15 @@ export function ArrivalConfirm({
         )}
       </dl>
 
+      {offerRefusal !== undefined && <PreviewRefusedNotice error={offerRefusal} />}
+
       {/* Actions */}
       <div className="flex flex-col gap-2">
         {!canSubmit && (
-          <p className="text-warning text-center text-xs" data-testid="arrival-needs-name">
+          <p
+            className="text-status-warning-fg text-center text-xs"
+            data-testid="arrival-needs-name"
+          >
             This agent still needs a name. Choose “Customize first” to give it one.
           </p>
         )}
@@ -186,10 +206,17 @@ export function ArrivalConfirm({
             can take a moment.
           </p>
         )}
+        {inheritance}
         <Button
           size="lg"
           onClick={onCreate}
-          disabled={isCreating || !canSubmit || isCheckingOffer}
+          disabled={
+            isCreating ||
+            !canSubmit ||
+            isCheckingOffer ||
+            isCheckingInheritance ||
+            offerRefusal !== undefined
+          }
           data-testid="arrival-create"
         >
           {isCreating ? 'Creating…' : `Create ${displayName}`}

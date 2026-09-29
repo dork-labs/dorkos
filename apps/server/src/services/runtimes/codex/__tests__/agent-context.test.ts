@@ -31,6 +31,15 @@ import {
 import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../check-dependencies.js', () => ({ checkCodexDependencies: vi.fn(() => []) }));
 vi.mock('../enumerate-mcp-servers.js', () => ({
@@ -268,11 +277,10 @@ describe('what a Codex turn carries', () => {
     const identity = await initAgentIdentityService(db).resolve(env[AGENT_TOKEN_ENV_VAR]!);
 
     // This is what `createCapabilityAttributionObserver` needs to emit
-    // `actorType: 'agent'` with a real actorId, and what `enforceCapabilityTier`
-    // reads the ceiling from.
+    // `actorType: 'agent'` with a real actorId, and what the permission gate
+    // reads the agent's own settings by.
     expect(identity?.agentPath).toBe(agentDir);
     expect(identity?.displayName).toBe('Researcher');
-    expect(identity?.tierCeiling).toBe('destructive');
   });
 
   it('mints under the name a person reads, never the agent addressing slug', async () => {

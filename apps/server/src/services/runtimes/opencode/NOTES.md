@@ -208,6 +208,44 @@ Because config is per-sidecar (env at spawn) and DorkOS wants **per-session** mo
    - `default` → forward to DorkOS approval UI; respond with the user's `once`/`reject`.
    - `acceptEdits` → auto-respond `once` when `permission === 'edit'`; forward everything else.
    - `bypassPermissions` → auto-respond `once` to everything.
+3. A turn's **folder grants** answer first, in every mode — see "Folder grants" below.
+
+### Folder grants: answered at the ask, not written as session rules (agent-home-desk §4.4)
+
+A turn's `MessageOpts.additionalDirectories` reach the sidecar through the ask handler
+(`messaging/directory-grants.ts`, consulted by `enforceApprovals` before the mode): an
+`external_directory` ask whose folders all sit inside a grant is answered `once`, and an `edit` ask for
+a file inside a `read` grant is answered `reject`, under `bypassPermissions` too. Anything the grants
+say nothing about goes to the mode exactly as before. The decision reads only the grants the CURRENT
+turn carries, so a grant an earlier turn had is never consulted again (I5) and nothing is left in the
+sidecar's store.
+
+**Which mechanism won, and why.** The spec's first choice was a per-session `PermissionRuleset` via
+`PATCH /session/:id { permission }`. Run against a live 1.18.31 sidecar with `ollama/gemma4:latest` on
+2026-09-26 (DOR-2408), each case with a control:
+
+| Case                                                               | Result                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read a file outside the session folder, no rule (control)          | `external_directory` asked, pattern `<dir>/*`, `metadata.filepath` absolute                                                                                                                                                            |
+| Same read, session rule `external_directory` `allow` on the folder | no ask; the read completed. Session rules DO beat the sidecar default                                                                                                                                                                  |
+| `edit` in a folder with session rule `edit` `deny` on `<abs>/**`   | the edit still ASKED: the edit tools ask with a path relative to the project's worktree (`private/var/tmp/.../r.txt`), so an absolute rule never matches. `metadata.filepath` is absolute (`apply_patch`: `metadata.files[].filePath`) |
+| `PATCH` with a new set, with `[]`, with `null`                     | every earlier rule stayed: the update APPENDS. Revoking needs a counter-rule appended after it (`ask`, last match wins — also run), the list only grows, and a server restart forgets what it wrote                                    |
+
+So session rules could grant but not refuse, and could only revoke by piling up counter-rules. The ask
+handler needs neither. It judges an `external_directory` reach by where the path RESOLVES, so a
+symlink committed inside a granted folder cannot stretch the grant; a refusal matches either spelling.
+A subagent's asks pass through the same handler, so its reach is bounded by the same grants. The two
+live-captured ask payloads are pinned in `__tests__/directory-grants.test.ts`.
+
+**A `reject` can end the turn.** A refused write into a `read` grant is not only a failed tool call:
+in the live runs above, every turn whose tool call was rejected ended there, with no further model
+text after the refusal. So an agent that tries to edit the room's main copy may stop rather than
+retry somewhere else in the same turn; its next turn starts fresh. A person's Deny has always had the
+same effect on this runtime.
+
+**Not run live:** a whole DorkOS turn through `OpenCodeRuntime` with grants against a real sidecar. The
+handler's input shape is the live-captured one, and its answer path is the same `respondPermission`
+every mode already uses.
 
 ### The descriptor array for `OpenCodeRuntime.getCapabilities()`
 

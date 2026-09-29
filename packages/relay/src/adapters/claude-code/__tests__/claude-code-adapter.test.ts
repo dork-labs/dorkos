@@ -76,7 +76,7 @@ function createTestEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope {
   return {
     id: 'msg-001',
     subject: 'relay.agent.session-abc',
-    from: 'user:console',
+    from: 'relay.human.console',
     replyTo: 'relay.human.console.client-1',
     budget: {
       hopCount: 1,
@@ -95,7 +95,7 @@ function createTasksEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope 
   return {
     id: 'msg-002',
     subject: 'relay.system.tasks.budget-monitor',
-    from: 'system:tasks',
+    from: 'relay.system.tasks.scheduler',
     replyTo: 'relay.human.console.client-1',
     budget: {
       hopCount: 0,
@@ -204,7 +204,7 @@ describe('ClaudeCodeAdapter', () => {
     // Dual-ID lines: stable Mesh ULID (Agent-ID) and SDK session UUID (Session-ID)
     expect(prompt).toContain('Agent-ID: session-abc');
     expect(prompt).toContain('Session-ID: session-abc');
-    expect(prompt).toContain('From: user:console');
+    expect(prompt).toContain('From: relay.human.console');
     expect(prompt).toContain('Message-ID: msg-001');
     expect(prompt).toContain('Hops: 1 of 5 used');
     expect(prompt).toContain('Reply to: relay.human.console.client-1');
@@ -224,7 +224,7 @@ describe('ClaudeCodeAdapter', () => {
       '<relay_context>',
       'Agent-ID: session-abc',
       'Session-ID: session-abc',
-      'From: user:console',
+      'From: relay.human.console',
       'Message-ID: msg-001',
       'Subject: relay.agent.session-abc',
       `Sent: ${envelope.createdAt}`,
@@ -251,7 +251,7 @@ describe('ClaudeCodeAdapter', () => {
 
     const prompt = vi.mocked(agentManager.sendMessage).mock.calls[0][1];
     const lines = prompt.split('\n');
-    const fromIdx = lines.indexOf('From: user:console');
+    const fromIdx = lines.indexOf('From: relay.human.console');
     expect(lines[fromIdx + 1]).toBe('Sender: Dorian');
     expect(lines[fromIdx + 2]).toBe('Chat: #ops');
     expect(lines[fromIdx + 3]).toBe('Message-ID: msg-001');
@@ -267,7 +267,7 @@ describe('ClaudeCodeAdapter', () => {
 
     const prompt = vi.mocked(agentManager.sendMessage).mock.calls[0][1];
     const lines = prompt.split('\n');
-    const fromIdx = lines.indexOf('From: user:console');
+    const fromIdx = lines.indexOf('From: relay.human.console');
     expect(lines[fromIdx + 1]).toBe('Sender: Priya');
     expect(lines[fromIdx + 2]).toBe('Message-ID: msg-001');
     expect(prompt).not.toContain('Chat:');
@@ -822,7 +822,9 @@ describe('ClaudeCodeAdapter', () => {
     expect(ensureCall[1]).not.toHaveProperty('cwd');
 
     const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
-    expect(sendCall[2]).toEqual({ permissionMode: 'default' });
+    // A relay-delivered turn never holds for an approval card: nobody is
+    // watching it in the app (spec `agent-permissions` D6).
+    expect(sendCall[2]).toEqual({ permissionMode: 'default', unattendedApprovals: true });
     expect(sendCall[2]).not.toHaveProperty('cwd');
   });
 

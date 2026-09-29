@@ -56,8 +56,15 @@ vi.mock('../../services/core/config-manager.js', () => ({
     // reason `rooms-cascade.test.ts` gives: the window's LENGTH is measured in
     // `room-collect.test.ts`, and waiting it out here would only prove a timer
     // works.
+    //
+    // And one conversation at a time per agent, because the state under test
+    // is a HOLD, and at the shipped three a second room would simply start
+    // beside the first (DOR-2104). Read through the real wiring, so this is
+    // also the proof the setting reaches the dispatcher from config.
     get: vi.fn((key: string) =>
-      key === 'rooms' ? { ...USER_CONFIG_DEFAULTS.rooms, collectDebounceMs: 0 } : null
+      key === 'rooms'
+        ? { ...USER_CONFIG_DEFAULTS.rooms, collectDebounceMs: 0, maxConcurrentTurnsPerAgent: 1 }
+        : null
     ),
     set: vi.fn(),
   },
@@ -212,7 +219,11 @@ describe('two rooms, one agent, over HTTP', () => {
     expect(waiting?.authorId).toBe(ana);
     // The id of the room in the way, and nothing else about it — no title, no
     // topic, no text. The reader resolves the name themselves.
-    expect(waiting?.heldBehind).toEqual({ roomId: a, othersWaiting: false });
+    expect(waiting?.heldBehind).toEqual({
+      roomId: a,
+      othersWaiting: false,
+      severalInTheWay: false,
+    });
 
     // **And nothing durable was written.** This is the whole regression: the
     // old behaviour answered 202 and then put a line in this room asking the

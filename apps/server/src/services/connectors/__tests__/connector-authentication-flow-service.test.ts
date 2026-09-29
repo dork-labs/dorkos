@@ -547,6 +547,41 @@ describe('ConnectorAuthenticationFlowService', () => {
     );
   });
 
+  it('keeps a pause the owner chose when signing in again completes', async () => {
+    const existing = insertActiveConnection(db);
+    const enabled = () =>
+      db.select().from(connections).where(eq(connections.id, existing)).get()?.enabled;
+    db.update(connections).set({ enabled: false }).where(eq(connections.id, existing)).run();
+
+    const started = await service.reconnect(OWNER, existing, 'paused-reconnect');
+    await expect(service.poll(OWNER, started.flowId)).resolves.toMatchObject({
+      state: 'connected',
+      connectionId: existing,
+    });
+    // Still paused: signing in again never undoes the owner's choice.
+    expect(enabled()).toBe(false);
+  });
+
+  it('unpauses after a sign-in again that an earlier unfinished one had paused', async () => {
+    const existing = insertActiveConnection(db);
+    const enabled = () =>
+      db.select().from(connections).where(eq(connections.id, existing)).get()?.enabled;
+    // An earlier sign-in again paused the account and then ran out of time.
+    const abandoned = await service.reconnect(OWNER, existing, 'abandoned-reconnect');
+    db.update(connectorAuthenticationFlows)
+      .set({ state: 'expired', completedAt: new Date().toISOString() })
+      .where(eq(connectorAuthenticationFlows.id, abandoned.flowId))
+      .run();
+    expect(enabled()).toBe(false);
+
+    const again = await service.reconnect(OWNER, existing, 'second-reconnect');
+    await expect(service.poll(OWNER, again.flowId)).resolves.toMatchObject({
+      state: 'connected',
+    });
+    // That pause was the abandoned sign-in's, not the owner's.
+    expect(enabled()).toBe(true);
+  });
+
   it('refuses a conflicting reconnect key before pausing the connection', async () => {
     const existing = insertActiveConnection(db);
     await service.start(OWNER, {

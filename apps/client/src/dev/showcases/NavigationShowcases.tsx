@@ -24,6 +24,7 @@ import {
   NavigationLayoutPanel,
   NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
+import { sessionHref } from '@/layers/shared/lib';
 
 /** NavigationLayout showcases: sidebar navigation with desktop/mobile variants. */
 export function NavigationShowcases() {
@@ -80,8 +81,8 @@ export function NavigationShowcases() {
  */
 const TAB_SAMPLES: AppTab[] = [
   { id: 'tab-home', href: '/' },
-  { id: 'tab-api', href: '/session?session=s-api&dir=%2FUsers%2Fkai%2Fcode%2Fapi' },
-  { id: 'tab-web', href: '/session?session=s-web&dir=%2FUsers%2Fkai%2Fcode%2Fweb-cockpit' },
+  { id: 'tab-api', href: sessionHref({ session: 's-api', dir: '/Users/kai/code/api' }) },
+  { id: 'tab-web', href: sessionHref({ session: 's-web', dir: '/Users/kai/code/web-app' }) },
   { id: 'tab-general', href: '/channels?id=room-general' },
   { id: 'tab-agents', href: '/team?view=topology' },
   { id: 'tab-activity', href: '/activity' },

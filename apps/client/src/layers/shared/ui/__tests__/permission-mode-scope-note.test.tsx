@@ -29,7 +29,7 @@ const CLIENT_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * blanking the descriptor on the two runtime-neutral dials and watching 1299
  * tests pass. Each of the last three sites therefore carries its own RTL
  * assertion (note present at autonomy, absent at a stop that still asks) beside
- * its own component: `ControlCenterDial.test.tsx`, `GlobalTrustRow.test.tsx`,
+ * its own component: `PresetPicker.test.tsx`, `GlobalTrustRow.test.tsx`,
  * `TrustRow.test.tsx`. This guard is what notices a NEW picker; those are what
  * notice a broken one.
  *
@@ -40,6 +40,11 @@ const CLIENT_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * acknowledgement never opens the dialog again, so Settings and the Control
  * Center could move somebody to Full autonomy having said nothing at all about
  * DorkOS's own cards.
+ *
+ * The Control Center's dial became the permission preset picker (spec
+ * `agent-permissions`, task 3.8), which moves the Files & commands stop with
+ * the preset, so the note now travels with the picker and with the Files &
+ * commands rows on the Permissions pages.
  *
  * DOR-2100 added the last, and it is a different shape from all six: the
  * SCHEDULE approval card, where approving a schedule an agent proposed can
@@ -53,7 +58,8 @@ const MODE_PICKERS = [
   'layers/features/tasks/ui/TaskFormInner.tsx',
   'layers/features/settings/ui/runtimes/rows/TrustRow.tsx',
   'layers/features/settings/ui/runtimes/GlobalTrustRow.tsx',
-  'layers/widgets/control-center/ui/ControlCenterDial.tsx',
+  'layers/features/permissions/ui/PresetPicker.tsx',
+  'layers/features/permissions/ui/FilesAndCommandsRow.tsx',
   'layers/features/schedule-approval/ui/ScheduleApprovalCard.tsx',
 ];
 
@@ -70,8 +76,8 @@ describe('PermissionModeScopeNote', () => {
       screen.getByText(
         'This covers what an agent does in a session: editing files, running commands, and working ' +
           'outside this project. DorkOS’s own risky actions still stop for you, like deleting a ' +
-          'schedule or removing an agent. The setting for that is Standing permissions, in ' +
-          'Settings under Access.'
+          'schedule or removing an agent. To stop being asked about one, choose Always allow on ' +
+          'its card, or change it in Settings under Permissions.'
       )
     ).toBeInTheDocument();
   });
@@ -86,46 +92,16 @@ describe('PermissionModeScopeNote', () => {
     expect(screen.getByText(/deleting a schedule or removing an agent/)).toBeInTheDocument();
   });
 
-  it('points at a tab that exists', () => {
-    // DOR-1758 merged Security into Access, so "Settings, under Security" sent a
-    // person looking for a tab the dialog no longer has.
+  it('names both places that stop the asking, and not a tab that is gone', () => {
+    // Standing permissions were retired for per-agent, per-action Always allow
+    // (spec `agent-permissions` D7): the card answers it, and Settings under
+    // Permissions changes it. DOR-1758 merged Security into Access, so "under
+    // Security" named a tab the dialog no longer has.
     render(<PermissionModeScopeNote mode="bypassPermissions" />);
-    expect(screen.getByText(/Standing permissions, in Settings under Access/)).toBeInTheDocument();
+    expect(screen.getByText(/choose Always allow on its card/)).toBeInTheDocument();
+    expect(screen.getByText(/in Settings under Permissions/)).toBeInTheDocument();
     expect(screen.queryByText(/under Security/)).not.toBeInTheDocument();
-  });
-
-  it('names the place and does not order anybody about', () => {
-    // An imperative would be wrong three ways this component cannot rule out:
-    // the setting may already be on, on a login-less install the switch is
-    // disabled and Require login is the real first step, and on the Control
-    // Center the reader is standing in front of the switch already. It lives in
-    // `shared` and reads no config, so it names the place and stops
-    // (DOR-2102 review).
-    render(<PermissionModeScopeNote mode="bypassPermissions" />);
-    expect(screen.getByText(/The setting for that is Standing permissions/)).toBeInTheDocument();
-    expect(screen.queryByText(/turn on Standing permissions/i)).not.toBeInTheDocument();
-  });
-
-  it('names the switch on the same panel when the surface renders one', () => {
-    // The Control Center's dial sits directly above its own Standing
-    // permissions switch. Sending that person to Settings walks them past it.
-    render(<PermissionModeScopeNote mode="bypassPermissions" standingPermissionsAt="below" />);
-    expect(
-      screen.getByText(/The setting for that is the Standing permissions switch below/)
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/in Settings under Access/)).not.toBeInTheDocument();
-  });
-
-  it('still says the first two facts whichever way it points', () => {
-    // The location varies; what the stop covers and what it does not never does.
-    for (const at of ['settings', 'below'] as const) {
-      const { unmount } = render(
-        <PermissionModeScopeNote mode="bypassPermissions" standingPermissionsAt={at} />
-      );
-      expect(screen.getByText(/This covers what an agent does in a session/)).toBeInTheDocument();
-      expect(screen.getByText(/DorkOS’s own risky actions still stop for you/)).toBeInTheDocument();
-      unmount();
-    }
+    expect(screen.queryByText(/Standing permissions/)).not.toBeInTheDocument();
   });
 
   it('appears for the other spelling of the same thing', () => {

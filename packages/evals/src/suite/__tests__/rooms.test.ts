@@ -20,6 +20,7 @@ import { evaluateRunGate } from '../../report/summary.js';
 import { selectSuite } from '../index.js';
 import { roomsStructuralCases } from '../rooms.js';
 import { roomsCredentialedCases } from '../rooms-recall.js';
+import { roomsFilesCases } from '../rooms-files.js';
 import { DM_ANSWER_RATE_SEEDS, roomsJudgmentCases } from '../rooms-judgment.js';
 
 // The local-sign-in probe shells out to the real `claude` binary. Left real, the
@@ -129,7 +130,10 @@ describe('the credentialed tier', () => {
     // own enumeration below. Summing them here would make one list drift-proof
     // by making it about nothing.
     const judgment = new Set(roomsJudgmentCases.map((c) => c.id));
-    const ids = roomsCredentialedCases.map((c) => c.id).filter((id) => !judgment.has(id));
+    const files = new Set(roomsFilesCases.map((c) => c.id));
+    const ids = roomsCredentialedCases
+      .map((c) => c.id)
+      .filter((id) => !judgment.has(id) && !files.has(id));
     // X-01 … X-06, plus restraint (M-04 / A-02), react-not-reply (A-06,
     // DOR-1234), the injection eval (A-15), and the comprehension half of RP8's
     // gathering (DOR-1231) — the last of which is not an X-row, and is here
@@ -149,6 +153,18 @@ describe('the credentialed tier', () => {
     // X-07 (bridged) and X-08 (post-compaction) are documented gaps, not cases.
     // If either ever lands, this list changes deliberately rather than by drift.
     expect(ids).toHaveLength(10);
+  });
+
+  it('REGISTERS the room-files case in the policed tier, reachable by suite and by id', () => {
+    // Spec `agent-home-desk` §13: a room turn at home must edit a room file by
+    // its full path. The case is credentialed, so it lives in the array the
+    // tier test above iterates — and is asserted reachable, not just about.
+    expect(roomsFilesCases.map((c) => c.id)).toEqual(['rooms-files-edit-by-path']);
+    for (const evalCase of roomsFilesCases) {
+      expect(roomsCredentialedCases.map((c) => c.id)).toContain(evalCase.id);
+      expect(selectSuite('rooms').map((c) => c.id)).toContain(evalCase.id);
+      expect(selectSuite(evalCase.id).map((c) => c.id)).toEqual([evalCase.id]);
+    }
   });
 
   it('REGISTERS every judgment case, so `--suite rooms` can actually reach one', () => {

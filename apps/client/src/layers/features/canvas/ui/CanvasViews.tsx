@@ -9,12 +9,6 @@
  * to which tab is `canvasViewForContent` either way: `url` and `browser` are the
  * Browser view, the other twelve are the Canvas view.
  *
- * **Which room, from the store rather than the route.** `roomCanvasLiveRoomId`
- * is written by the room stream, which is opened for exactly the room on screen;
- * resolving the route here instead would need the transport (Home's `#team` is
- * found by a lookup, not by a path), and these two components also render in the
- * Obsidian shell and in tests that have neither router nor transport.
- *
  * @module features/canvas/ui/CanvasViews
  */
 import { useAppStore, documentsInView } from '@/layers/shared/model';
@@ -128,15 +122,7 @@ export function CanvasContent() {
   );
 }
 
-/**
- * The Browser tab's body — the same surface over the documents the embedded
- * browser renders (`url` and `browser`), with its own active document, and on a
- * room route over that room's shared table rather than this session's canvas.
- *
- * Registered only under a transport that can serve or proxy a page, so the
- * Obsidian shell drops the tab rather than showing one that could only error
- * (ADR 260911-200304).
- */
+/** Render browser documents for the active session or room. */
 export function BrowserContent() {
   const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
   return (

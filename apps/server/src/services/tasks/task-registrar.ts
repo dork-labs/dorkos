@@ -115,7 +115,7 @@ export class TaskRegistrar {
    * @param filePath - Absolute path to the task's SKILL.md.
    */
   syncTaskByFilePath(filePath: string): void {
-    const task = this.deps.store.getByFilePath(filePath);
+    const task = this.deps.store.fileSync.getByFilePath(filePath);
     if (task) this.syncTask(task.id);
   }
 }

@@ -32,6 +32,7 @@ const SRC = fileURLToPath(new URL('../../../..', import.meta.url));
  */
 const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // A person posted a message and is holding the session's event stream open.
+  // It binds through the launch service, which forwards what it is told.
   'routes/sessions.ts': ['interactive'],
   // A room turn, carrying the one fact that decides its power.
   'services/rooms/room-turn-runner.ts': ['room'],
@@ -43,6 +44,15 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/relay/binding-subsystem.ts': ['relay-binding'],
   // A connector event woke an agent up.
   'services/connectors/events/session-target.ts': ['connector-event'],
+  // An agent started a session through the `session_start` tool.
+  'services/runtimes/claude-code/mcp-tools/session-tools.ts': ['agent-launch'],
+  // A limited session's work carried over to a new session on another account.
+  'services/session/fleet/carry-over.ts': ['account-handoff'],
+  // A person chose another model for their limited session and continued it:
+  // their own message, in their own session.
+  'services/session/fleet/continue-service.ts': ['interactive'],
+  // A limited session's account reset and core resumed the same session.
+  'services/session/fleet/resume-service.ts': ['account-resume'],
   // The in-process end-to-end harness, behind `DORKOS_TEST_RUNTIME`.
   'index.ts': ['test-harness'],
 };
@@ -56,6 +66,19 @@ const DECLARATIONS = new Set([
   'services/core/runtime-registry.ts',
   'services/connectors/events/session-target.ts',
 ]);
+
+/**
+ * The launch service (`dispatchSessionMessage`) binds a session on behalf of
+ * whoever calls it, so the origin it passes is a variable, not a literal. That
+ * makes it a doorway rather than a surface: its CALLERS are the call sites, and
+ * each one is read off the text after `dispatchSessionMessage(` exactly as a
+ * direct `persistSessionRuntime(` call is. The case at the bottom pins that the
+ * doorway forwards its caller's origin and never names one of its own.
+ */
+const PASS_THROUGH = 'services/session/launch/launch-session.ts';
+
+/** The calls that bind a session and name an origin at the call. */
+const BINDING_CALL = /(?:persistSessionRuntime|dispatchSessionMessage)\(/g;
 
 /** Every `.ts` file under `apps/server/src` that is not a test. */
 function sourceFiles(dir: string): string[] {
@@ -75,7 +98,7 @@ function sourceFiles(dir: string): string[] {
  */
 function originsPassedIn(source: string, isDeclaration: boolean): string[] {
   const kinds: string[] = [];
-  for (const match of source.matchAll(/persistSessionRuntime\(/g)) {
+  for (const match of source.matchAll(BINDING_CALL)) {
     const window = source.slice(match.index, match.index + 400);
     const kind = /\bkind: '([a-z-]+)'/.exec(window);
     // A declaration file's own signature has no `kind:` after it, which is
@@ -90,8 +113,10 @@ describe('every session-binding call site declares what it is', () => {
   const found: Record<string, string[]> = {};
   for (const file of sourceFiles(SRC)) {
     const source = readFileSync(file, 'utf8');
-    if (!source.includes('persistSessionRuntime(')) continue;
+    if (!source.includes('persistSessionRuntime(') && !source.includes('dispatchSessionMessage('))
+      continue;
     const rel = relative(SRC, file);
+    if (rel === PASS_THROUGH) continue;
     const kinds = originsPassedIn(source, DECLARATIONS.has(rel));
     if (kinds.length > 0) found[rel] = [...new Set(kinds)].sort();
   }
@@ -105,5 +130,14 @@ describe('every session-binding call site declares what it is', () => {
 
   it.each(Object.entries(EXPECTED))('%s passes %o', (file, kinds) => {
     expect(found[file]).toEqual([...kinds].sort());
+  });
+
+  it("the launch service forwards its caller's origin and names none of its own", () => {
+    const source = readFileSync(join(SRC, PASS_THROUGH), 'utf8');
+    const call = source.indexOf('persistSessionRuntime(');
+    expect(call).toBeGreaterThan(-1);
+    const window = source.slice(call, call + 200);
+    expect(window).toMatch(/runtimeType,\s*origin,/);
+    expect(source).not.toMatch(/\bkind: '[a-z-]+'/);
   });
 });

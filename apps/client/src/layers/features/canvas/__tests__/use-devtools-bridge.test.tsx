@@ -55,13 +55,6 @@ function claimCalls(): [string, DevtoolsIngest][] {
 
 /**
  * The routed cockpit's `?session=`.
- *
- * The REAL `useSessionId` runs in these tests, and `useSafeSearch` is the one
- * thing stubbed for it — the platform flag and the app store are the genuine
- * articles. That split is deliberate: the bug this file now guards (DOR-1305)
- * was the bridge reading the store field, which only the Obsidian embed ever
- * writes, so a test that stubbed the session hook itself would have agreed with
- * the broken code.
  */
 let searchSession: string | undefined;
 
@@ -115,23 +108,12 @@ vi.mock('../lib/encode-recording', () => ({
   encodeGif: () => encodeGif(),
 }));
 
-import { setPlatformAdapter } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 
 /** Attach a session the way the browser and desktop app do: in the URL. */
 function attachInUrl(id: string): void {
   searchSession = id;
-}
-
-/**
- * Attach a session the way the Obsidian embed does: in the store, with no URL
- * to read. Flips the platform for the rest of the test; `beforeEach` puts it
- * back.
- */
-function attachInStore(id: string): void {
-  setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-  useAppStore.getState().setSessionId(id);
 }
 
 /** No conversation open at all — neither address carries one. */
@@ -191,9 +173,6 @@ const networkEntry = {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  // The default surface is the standalone browser app, where the conversation
-  // lives in the URL. The embed is the exception each of its tests declares.
-  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
   useAppStore.getState().setSessionId(null);
   attachInUrl('session-1');
   ingestDevtoolsCapture.mockClear();
@@ -469,9 +448,6 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
   }
 
   it('relays in the browser app, where the conversation lives in the URL', () => {
-    // The regression: the bridge used to read `app-store.sessionId`, which the
-    // routed cockpit never writes, so this count was zero on every surface but
-    // Obsidian and an agent's `browser_read_console` came back empty.
     attachInUrl('session-from-url');
     useAppStore.getState().setSessionId(null); // the store is empty here, as it really is
     mount();
@@ -493,16 +469,6 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
 
     expect(captureCalls()).toHaveLength(1);
     expect(captureCalls()[0][0]).toBe('session-from-url');
-  });
-
-  it('still relays in the Obsidian embed, where it lives in the store', () => {
-    searchSession = undefined; // no URL to read in the embed
-    attachInStore('session-from-store');
-    mount();
-    sendOneBatch();
-
-    expect(captureCalls()).toHaveLength(1);
-    expect(captureCalls()[0][0]).toBe('session-from-store');
   });
 
   /**
@@ -571,17 +537,6 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     const [secondSid, secondBatch] = captureCalls()[1];
     expect(secondSid).toBe('session-b');
     expect(secondBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-b']);
-  });
-
-  it('never relays to a session the embed left behind in the store', () => {
-    // Standalone reads the URL and nothing else: a store id left over from an
-    // earlier surface must not decide where a browser preview's captures go.
-    detachSession();
-    useAppStore.getState().setSessionId('stale-store-session');
-    mount();
-    sendOneBatch();
-
-    expect(captureCalls()).toHaveLength(0);
   });
 });
 

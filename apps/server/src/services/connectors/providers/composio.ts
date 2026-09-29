@@ -30,17 +30,19 @@ import type {
   ConnectorKeyKind,
   ConnectorProvider,
   ConnectorProviderInstanceId,
+  ConnectorSignInEndedCode,
   ConnectorToolkit,
   ConnectPoll,
   ConnectStart,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
-import type {
-  ConnectorCatalogPageRequest,
-  ConnectorOperationPageRequest,
-  ConnectorProviderExecuteCommand,
-  ConnectorProviderExecuteResult,
-  ConnectorUnsupportedResult,
+import {
+  CONNECTION_READINESS_COPY,
+  type ConnectorCatalogPageRequest,
+  type ConnectorOperationPageRequest,
+  type ConnectorProviderExecuteCommand,
+  type ConnectorProviderExecuteResult,
+  type ConnectorUnsupportedResult,
 } from '@dorkos/shared/connector-schemas';
 import {
   ComposioSdkClient,
@@ -139,9 +141,25 @@ function toPortStatus(status: ComposioAccountStatus): ProviderConnectedAccount['
     case 'INITIATED':
       return 'pending';
     case 'INACTIVE':
-    case 'FAILED':
       return 'revoked';
+    case 'FAILED':
+      // A sign-in attempt that never finished, not one that ended: no fact
+      // about the account's sign-in (the execute check reads it the same way).
+      return 'unknown';
   }
+}
+
+/**
+ * The sign-in-ended code for a Composio account status that says an account
+ * which was signed in no longer is: `EXPIRED` (its sign-in could not be
+ * renewed) or `INACTIVE` (turned off at Composio). `FAILED` is left out on
+ * purpose: it describes a sign-in attempt that never finished, not one that
+ * ended, so it stays a plain "not active" answer.
+ */
+function signInEndedCode(status: ComposioAccountStatus): ConnectorSignInEndedCode | undefined {
+  if (status === 'EXPIRED') return 'ACCOUNT_SIGN_IN_EXPIRED';
+  if (status === 'INACTIVE') return 'ACCOUNT_SIGN_IN_REVOKED';
+  return undefined;
 }
 
 /** Construction options for {@link ComposioConnectorProvider}. */
@@ -195,11 +213,11 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   private readonly _client: ComposioHttpClient;
   /**
    * One upstream listing per catalog read. Composio has no server-side paging
-   * that matches ours, so each page is a slice of the whole list. A caller
-   * pages one read under one signal; keying on it fetches the list once for
-   * that read (instead of once per page, which cost ~81 calls for ~850
-   * services) and lets the entry go with the signal. It is never a cache
-   * across reads.
+   * that matches ours, so each page is a slice of the whole list. The kept app
+   * list (`resources/catalog-cache.ts`) pages one refresh under one signal; keying on it
+   * fetches the list once for that refresh (instead of once per page, which
+   * cost ~81 calls for ~850 services) and lets the entry go with the signal.
+   * Keeping the list between reads is the kept app list's job, not this one's.
    */
   private readonly _toolkitsByRead = new WeakMap<AbortSignal, Promise<ConnectorToolkit[]>>();
   private readonly _operationClient: ComposioOperationClient | null;
@@ -265,9 +283,7 @@ export class ComposioConnectorProvider implements ConnectorProvider {
 
   async listToolkitPage(request: ConnectorCatalogPageRequest) {
     request.signal.throwIfAborted();
-    const all = (await this._toolkitsForRead(request.signal)).filter((toolkit) =>
-      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
-    );
+    const all = await this._toolkitsForRead(request.signal);
     const offset = request.cursor ? Number(request.cursor) : 0;
     const toolkits = all.slice(offset, offset + request.limit);
     const next = offset + toolkits.length;
@@ -325,6 +341,11 @@ export class ComposioConnectorProvider implements ConnectorProvider {
         toComposioAccountId(command.externalAccountRef)
       );
       if (state.status === 'ACTIVE' && state.account) account = this._toPortAccount(state.account);
+      // Composio's own word that this account's sign-in ended: the one precise
+      // signal DorkOS records as a signed-out account. A rate limit, an outage
+      // or a refused operation never reaches here.
+      const ended = signInEndedCode(state.status);
+      if (ended) return this._executionError(ended, CONNECTION_READINESS_COPY.signed_out.agent);
     } catch (error) {
       if (error instanceof ComposioApiError && error.status === 404) {
         return this._executionError(
@@ -384,6 +405,8 @@ export class ComposioConnectorProvider implements ConnectorProvider {
       slug: tk.slug,
       displayName: tk.name,
       authKind: toAuthKind(tk.authScheme),
+      ...(tk.logoUrl && { logoUrl: tk.logoUrl }),
+      ...(tk.description && { description: tk.description }),
     }));
   }
 

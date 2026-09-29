@@ -9,9 +9,12 @@ import {
   ConnectorProgramReviewStatusSchema,
   ConnectorProgramExecutionRequestSchema,
   ConnectorProviderExecuteResultSchema,
+  ConnectorReconciliationApplyRequestSchema,
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReviewActionSchema,
   ConnectorUsageItemSchema,
+  actionNameFromSlug,
+  serviceNameFromToolkit,
   decodeConnectorReviewAction,
   encodeConnectorReviewAction,
 } from '../connector-schemas.js';
@@ -50,6 +53,46 @@ describe('connector reconciliation apply contracts', () => {
     { ...base, authoritySync: { status: 'unknown' } },
   ])('rejects an incomplete or unknown authority sync result', (candidate) => {
     expect(ConnectorReconciliationApplyResponseSchema.safeParse(candidate).success).toBe(false);
+  });
+});
+
+describe('every-agent grant contracts (ADR 260926-192625)', () => {
+  it('replaces the every-agent set only when the owner names one', () => {
+    expect(
+      ConnectorReconciliationApplyRequestSchema.parse({ previewId: 'preview-a', grants: [] })
+    ).not.toHaveProperty('everyAgent');
+    expect(
+      ConnectorReconciliationApplyRequestSchema.parse({
+        previewId: 'preview-a',
+        grants: [],
+        everyAgent: { operationRevisionIds: [] },
+      }).everyAgent
+    ).toEqual({ operationRevisionIds: [] });
+  });
+
+  it.each([
+    { everyAgent: { operationRevisionIds: ['revision-a'], agentIds: ['agent-a'] } },
+    { everyAgent: { operationRevisionIds: [''] } },
+    { everyAgent: true },
+  ])('rejects any every-agent selection beyond an exact revision list', (extra) => {
+    expect(
+      ConnectorReconciliationApplyRequestSchema.safeParse({
+        previewId: 'preview-a',
+        grants: [],
+        ...extra,
+      }).success
+    ).toBe(false);
+  });
+
+  it('has no management review action that could create one', () => {
+    expect(
+      ConnectorReviewActionSchema.safeParse({
+        version: 1,
+        kind: 'set_every_agent_access',
+        connectionId: 'connection-a',
+        operationRevisionIds: ['revision-a'],
+      }).success
+    ).toBe(false);
   });
 });
 
@@ -454,5 +497,33 @@ describe('agent event review bounds', () => {
         ],
       }).success
     ).toBe(false);
+  });
+});
+
+describe('actionNameFromSlug', () => {
+  it('turns an action id into plain words, dropping the app’s own prefix', () => {
+    expect(actionNameFromSlug('GMAIL_SEND_EMAIL', 'gmail')).toBe('Send email');
+    expect(actionNameFromSlug('gmail.messages.list', 'gmail')).toBe('List');
+    expect(actionNameFromSlug('LINEAR_CREATE_ISSUE', 'linear')).toBe('Create issue');
+    expect(actionNameFromSlug('GOOGLECALENDAR_DELETE_EVENT', 'googlecalendar')).toBe(
+      'Delete event'
+    );
+  });
+
+  it('treats the service id as plain text, never as a pattern', () => {
+    expect(actionNameFromSlug('XX_DELETE_ROW', '.*')).toBe('Xx delete row');
+  });
+
+  it('falls back to the id when nothing readable is left', () => {
+    expect(actionNameFromSlug('GMAIL_', 'gmail')).toBe('GMAIL_');
+  });
+});
+
+describe('serviceNameFromToolkit', () => {
+  it('names an app the same way everywhere', () => {
+    expect(serviceNameFromToolkit('gmail')).toBe('Gmail');
+    expect(serviceNameFromToolkit('google_calendar')).toBe('Google Calendar');
+    expect(serviceNameFromToolkit('microsoft-teams')).toBe('Microsoft Teams');
+    expect(serviceNameFromToolkit('slack.bot')).toBe('Slack Bot');
   });
 });

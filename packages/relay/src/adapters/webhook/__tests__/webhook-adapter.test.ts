@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockRelay } from '../../../__tests__/fixtures.js';
+import { WEBHOOK_SERVER_SUBJECT_REFUSAL } from '@dorkos/shared/relay-schemas';
 import { WebhookAdapter, verifySignature } from '../webhook-adapter.js';
 import { runAdapterComplianceSuite } from '../../../testing/index.js';
 import type { RelayPublisher } from '../../../types.js';
@@ -132,6 +133,48 @@ describe('WebhookAdapter', () => {
   });
 
   // --- inbound HMAC verification ---
+
+  // DOR-2432: the config schema now refuses a DorkOS inbound subject, but a
+  // config written before that rule still loads. The adapter refuses it itself.
+  describe('a config aimed at a DorkOS address, written before the rule', () => {
+    const legacy = () => makeAdapter({ inboundSubject: 'relay.system.tasks.task-1' });
+
+    it('refuses to start, naming the rule', async () => {
+      const refused = legacy();
+      await expect(refused.start(relay)).rejects.toThrow(WEBHOOK_SERVER_SUBJECT_REFUSAL);
+      expect(refused.getStatus().state).not.toBe('connected');
+    });
+
+    it('refuses a signed inbound request without publishing', async () => {
+      const refused = legacy();
+      const body = '{"type":"task_dispatch"}';
+      const result = await refused.handleInbound(Buffer.from(body), buildHeaders(body, SECRET));
+      expect(result).toEqual({ ok: false, error: WEBHOOK_SERVER_SUBJECT_REFUSAL, status: 403 });
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+
+    it('refuses to forward the server traffic it matches to the outbound URL', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      vi.stubGlobal('fetch', fetchMock);
+      const result = await legacy().deliver('relay.system.tasks.task-1', {
+        id: 'env-01',
+        subject: 'relay.system.tasks.task-1',
+        from: 'relay.system.tasks.scheduler',
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 3600000,
+          callBudgetRemaining: 10,
+        },
+        createdAt: new Date().toISOString(),
+        payload: { prompt: 'secret schedule prompt' },
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(WEBHOOK_SERVER_SUBJECT_REFUSAL);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 
   describe('handleInbound()', () => {
     beforeEach(async () => {

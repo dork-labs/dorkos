@@ -26,6 +26,8 @@ import {
   installStagedNpmDependencies,
   npmInstallCommand,
   readNpmDependencies,
+  spawnNpmInstall,
+  NPM_OUTPUT_MAX_CHARS,
   type NpmInstallRunner,
 } from '../npm-dependencies.js';
 
@@ -434,4 +436,27 @@ describe.skipIf(process.platform === 'win32')('containment, against real npm', (
     expect(warnings[0]).toContain('outside the package');
     expect(warnings[0]).toContain('peek');
   }, 120_000);
+});
+
+describe('spawnNpmInstall output (DOR-2319)', () => {
+  // Purpose: a package's install scripts control what npm prints. The runner
+  // keeps only the start of each stream, which holds the line the warning
+  // shows, so a script that floods stderr cannot fill memory.
+  it('keeps the first part of a flood of output, not all of it', async () => {
+    const script =
+      "process.stderr.write('first line says what broke\\n');" +
+      "const chunk = 'x'.repeat(1024 * 1024);" +
+      'for (let i = 0; i < 20; i++) process.stderr.write(chunk);' +
+      'process.exitCode = 1;';
+    const outcome = await spawnNpmInstall({
+      command: process.execPath,
+      args: ['-e', script],
+      cwd: process.cwd(),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.detail.startsWith('first line says what broke')).toBe(true);
+      expect(outcome.detail.length).toBeLessThanOrEqual(NPM_OUTPUT_MAX_CHARS);
+    }
+  }, 30_000);
 });

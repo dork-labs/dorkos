@@ -451,17 +451,6 @@ export function PromoShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="Promo card — agent-sidebar"
-        description="The same card in the Obsidian embed's placement, which is the only candidate that slot has."
-      >
-        <ShowcaseDemo>
-          <div className="max-w-xs">
-            <LiveSlotPreview placement="agent-sidebar" />
-          </div>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
         title="Override Controls"
         description="Reset dismissals and toggle the global promo setting to test slot filtering. Dismissals persist to your config; the global toggle is per-browser."
       >

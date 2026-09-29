@@ -35,6 +35,7 @@ import type {
   RoomEvent,
   RoomKind,
   RoomMember,
+  RoomFileChangeEvent,
   RoomMergeEvent,
   RoomMoment,
   RoomPresencePayload,
@@ -47,9 +48,12 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
+import { nameForAgents } from './room-context.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
 import type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
+import type { ChannelSeat } from './manage/departed-seat-store.js';
+import type { DepartedAgentsDrop } from './manage/room-departures.js';
 import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
 import type { RoomCanvasService } from './canvas/room-canvas-service.js';
@@ -141,6 +145,18 @@ export class RoomService {
   /** The author registry, for callers that need to resolve their own identity. */
   get authorRegistry(): AuthorRegistry {
     return this.parts.core.authors;
+  }
+
+  /**
+   * The name an AGENT is told for an author: the stored label, except the
+   * install's owner, who is named by their profile name or "the operator" —
+   * never the registry's `'You'`, which an agent reads as itself (DOR-2458).
+   * `null` when no author row carries the id.
+   *
+   * @param authorId - The author to name.
+   */
+  nameForAgents(authorId: string): string | null {
+    return nameForAgents(this.parts.core, authorId);
   }
   /**
    * The room's shared canvas — the table, and the single writer that changes it.
@@ -299,6 +315,10 @@ export class RoomService {
   ): RoomWithRoster {
     return this.parts.updates.updateRoomFromTool(roomId, callerAuthorId, patch);
   }
+  /** Put a channel away as an agent. See {@link RoomUpdates.archiveRoomFromTool}. */
+  archiveRoomFromTool(roomId: string, callerAuthorId: string): RoomWithRoster {
+    return this.parts.updates.archiveRoomFromTool(roomId, callerAuthorId);
+  }
   /** Add a member, operator-only. See {@link RoomMembership.addMember}. */
   addMember(roomId: string, viewerAuthorId: string, input: AddMemberInput): RoomRosterEntry {
     return this.parts.membership.addMember(roomId, viewerAuthorId, input);
@@ -324,6 +344,52 @@ export class RoomService {
   removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
     this.parts.membership.removeMember(roomId, viewerAuthorId, authorId);
   }
+
+  /**
+   * The unregister cascade (DOR-2095): take whatever agent lived at this
+   * directory out of every channel, in one transaction that records each seat
+   * for a possible return. Wired to `MeshCore.onUnregister`, which fires after
+   * the registry row is gone — so the author rows found here fail the liveness
+   * check and are dropped, while any row a registered agent still answers for
+   * keeps its seats. See `RoomDepartures.drop`.
+   *
+   * @param agentPath - The unregistered agent's project directory.
+   * @param manifestId - The unregistered agent's manifest id.
+   */
+  dropDepartedAgentAt(agentPath: string, manifestId: string): DepartedAgentsDrop {
+    return this.parts.departures.drop(
+      this.authorRegistry.agentRowsAt(agentPath).map((author) => author.id),
+      manifestId
+    );
+  }
+
+  /**
+   * Give back the channel seats of whatever agent returned to this directory,
+   * if it is the agent that left them. See `RoomDepartures.restore`.
+   *
+   * @param agentPath - The directory an agent was just registered at.
+   */
+  restoreReturningAgentAt(agentPath: string): ChannelSeat[] {
+    return this.parts.departures.restore(
+      this.authorRegistry.agentRowsAt(agentPath).map((author) => author.id)
+    );
+  }
+
+  /** Give back every waiting seat whose agent is live again. See `RoomDepartures.restore`. */
+  restoreAllReturningAgents(): ChannelSeat[] {
+    return this.parts.departures.restore(this.parts.departures.listWaitingAuthorIds());
+  }
+
+  /** Drop named departed agents from every channel. See `RoomDepartures.drop`. */
+  dropDepartedAgents(authorIds: readonly string[]): DepartedAgentsDrop {
+    return this.parts.departures.drop(authorIds);
+  }
+
+  /** Agents on a channel roster that nobody answers for. See `RoomDepartures.listDepartedChannelAgents`. */
+  listDepartedChannelAgents(): AuthorRecord[] {
+    return this.parts.departures.listDepartedChannelAgents();
+  }
+
   /** Remove a member because an agent asked. See {@link RoomMembership.removeMemberFromTool}. */
   removeMemberFromTool(roomId: string, viewerAuthorId: string, authorId: string): void {
     this.parts.membership.removeMemberFromTool(roomId, viewerAuthorId, authorId);
@@ -480,6 +546,13 @@ export class RoomService {
     input: { text: string; merge: RoomMergeEvent; subjectAuthorId: string }
   ): RoomEntry {
     return this.parts.systemPosts.postMergeEvent(roomId, input);
+  }
+  /** Announce a person's change to the room's files. See {@link RoomSystemPosts.postFileChangeEvent}. */
+  postFileChangeEvent(
+    roomId: string,
+    input: { text: string; fileChange: RoomFileChangeEvent; subjectAuthorId: string }
+  ): RoomEntry {
+    return this.parts.systemPosts.postFileChangeEvent(roomId, input);
   }
   /** Write a service notice with its private source receipt in the same transaction; no agent dispatch. */
   postServiceNotification(

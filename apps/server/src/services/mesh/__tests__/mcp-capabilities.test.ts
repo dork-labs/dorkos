@@ -38,7 +38,6 @@ import type { AgentIdentity } from '../../core/agent-identity/index.js';
 const AGENT: AgentIdentity = {
   agentPath: '/projects/prober',
   displayName: 'Prober',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 
@@ -79,7 +78,6 @@ function baseManifest(): AgentManifest {
     registeredBy: 'test-suite',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
   };
 }

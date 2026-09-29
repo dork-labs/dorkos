@@ -7,9 +7,22 @@ import {
   partition,
   unitKey,
   weighUnits,
+  type ShardPin,
   type ShardTimings,
   type ShardUnit,
 } from './balanced-shard';
+
+/**
+ * A {@link ShardPin} plus whether this run booted the webServer leg the pinned
+ * units need. The config decides the leg per shard from `E2E_SHARD_INDEX`; this
+ * reporter decides the cut from `--shard`. `booted` is how the two are checked
+ * against each other: the shard that owns the pinned units refuses to run them
+ * against a leg that is not there, instead of timing out spec by spec on a
+ * closed port.
+ */
+export interface PinnedLeg extends ShardPin {
+  booted: boolean;
+}
 
 /** The committed timings this reporter weighs units with. */
 export const SHARD_TIMINGS_PATH = path.join(
@@ -32,15 +45,19 @@ export const SHARD_TIMINGS_PATH = path.join(
  */
 export default class BalancedShardReporter implements Reporter {
   private readonly timingsPath: string;
+  private readonly pin: PinnedLeg | undefined;
 
   /**
    * Reads its timings from the committed file unless told otherwise.
    *
    * @param options - reporter options from the config tuple
    * @param options.timings - timings file to read; defaults to {@link SHARD_TIMINGS_PATH}
+   * @param options.pin - units that must run on one shard, and whether that
+   *   shard's run booted what they need (see {@link PinnedLeg})
    */
-  constructor(options: { timings?: string } = {}) {
+  constructor(options: { timings?: string; pin?: PinnedLeg } = {}) {
     this.timingsPath = options.timings ?? SHARD_TIMINGS_PATH;
+    this.pin = options.pin;
   }
 
   /** Keeps only this shard's units. */
@@ -79,7 +96,15 @@ export default class BalancedShardReporter implements Reporter {
       );
     }
 
-    const shards = partition(weighUnits(units, timings), shard.total);
+    const pinnedHere = this.pin?.keys.some((key) => fileSuites.has(key)) ?? false;
+    if (this.pin && pinnedHere && shard.current === this.pin.shard && !this.pin.booted) {
+      throw new Error(
+        `shard ${shard.current}/${shard.total} owns the pinned units (${this.pin.keys.join(', ')}) ` +
+          `but this run did not boot the leg they need. The shard index the config was told ` +
+          `(E2E_SHARD_INDEX) and the --shard flag must come from the same matrix value.`
+      );
+    }
+    const shards = partition(weighUnits(units, timings), shard.total, this.pin);
     testRun.skipSharding();
     const mine = new Set(shards[shard.current - 1].map((u) => u.key));
     for (const [key, fileSuite] of fileSuites) if (!mine.has(key)) testRun.exclude(fileSuite);

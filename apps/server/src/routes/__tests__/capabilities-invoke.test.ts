@@ -20,7 +20,7 @@ import {
   CapabilityToolError,
   type CapabilityDomain,
 } from '../../services/core/capabilities/index.js';
-import { ApprovalGrantService, ApprovalService } from '../../services/core/approvals/index.js';
+import { ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/index.js';
 import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
@@ -39,6 +39,7 @@ const testDomain: CapabilityDomain = {
       title: 'Echo',
       description: 'Echo the message back.',
       tier: 'observe',
+      area: null,
       input: z.object({ msg: z.string() }),
       output: z.object({ echoed: z.string() }),
       surfaces: { mcp: { toolName: 'echo', servers: ['external'] } },
@@ -49,6 +50,7 @@ const testDomain: CapabilityDomain = {
       title: 'Fail',
       description: 'Always returns an error result.',
       tier: 'act',
+      area: null,
       input: z.object({}),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'fail', servers: ['external'] } },
@@ -133,7 +135,6 @@ describe('POST /api/capabilities/:id/invoke', () => {
 describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
   let destroyed: string[];
   let approvals: ApprovalService;
-  let grants: ApprovalGrantService;
 
   /** A destructive capability that records what it destroyed, so a bypass shows. */
   function gateDomain(): CapabilityDomain {
@@ -145,6 +146,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
           title: 'Destroy the thing',
           description: 'Deletes the named thing. Cannot be undone.',
           tier: 'destructive',
+          area: null,
           input: z.object({ name: z.string() }),
           output: z.object({ destroyed: z.string() }),
           surfaces: { mcp: { toolName: 'gated_destroy', servers: ['external'] } },
@@ -173,7 +175,6 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
   const AGENT: AgentIdentity = {
     agentPath: '/projects/prober',
     displayName: 'Prober',
-    tierCeiling: 'destructive',
     createdAt: new Date().toISOString(),
   };
 
@@ -181,7 +182,6 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
     destroyed = [];
     const db = createTestDb();
     approvals = new ApprovalService(db);
-    grants = new ApprovalGrantService(db);
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     initCapabilityTierGate({ approvals });
   });
@@ -238,8 +238,8 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
     expect(destroyed).toEqual([]);
   });
 
-  it('403s an agent whose ceiling forbids the tier, with no approval to chase', async () => {
-    const res = await request(fixtureTarget.mount(buildGatedApp({ ...AGENT, tierCeiling: 'act' })))
+  it('403s an agent whose access was turned off, with no approval to chase', async () => {
+    const res = await request(fixtureTarget.mount(buildGatedApp({ ...AGENT, inactive: 'revoked' })))
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'production' });
 
@@ -294,10 +294,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
         next();
       });
       app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      app.use(
-        '/api/approvals',
-        createApprovalsRouter(approvals, grants, { isLoginEnabled: () => false })
-      );
+      app.use('/api/approvals', createApprovalsRouter(approvals, { isLoginEnabled: () => false }));
       return app;
     }
 

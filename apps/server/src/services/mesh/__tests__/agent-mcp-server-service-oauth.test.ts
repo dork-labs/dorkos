@@ -63,7 +63,6 @@ async function setupWorkspace(
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: REMOTE,
@@ -102,7 +101,6 @@ async function setupWorkspaceWith(connection: McpServerTransport): Promise<strin
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: REMOTE,

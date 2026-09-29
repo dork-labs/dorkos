@@ -37,6 +37,8 @@ export function RuntimeMark({ type, model, size = 12, className }: RuntimeMarkPr
     <Tooltip>
       <TooltipTrigger asChild>
         <span
+          // A labelled glyph: `img` is the role that may carry a name.
+          role="img"
           aria-label={`Runtime: ${text}`}
           className={cn('inline-flex shrink-0 items-center', className)}
         >

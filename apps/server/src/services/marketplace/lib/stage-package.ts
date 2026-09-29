@@ -31,12 +31,31 @@
  * reaches disk. The USER's own `~/.npmrc` is untouched; that is where
  * private-registry auth lives.
  *
+ * Every `.git`, at any depth, is dropped too (DOR-2326). A package is content,
+ * never a repository: a `.git` folder carries a `config` and `hooks/` that git
+ * obeys when anyone, an agent included, runs git inside the installed folder,
+ * and a `.git` file points git at another folder's. A local agent that is its
+ * author's own repository installs as its files alone.
+ *
+ * And one family of paths (DOR-2245): the ones DorkOS keeps for the person or
+ * the installer (`isReservedPackagePath`): the package's data directory, its
+ * secrets file, the installer's records, and `.dork-old` / `.dork-new` copies.
+ * Validation refuses a package that ships one; stripping here is the defence
+ * that also covers the legacy-record rebuild, which stages an old tree that
+ * was never validated against that rule. A reserved directory is dropped as
+ * one subtree.
+ *
  * @module services/marketplace/lib/stage-package
  */
 import { cp, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { isReservedPackagePath } from '@dorkos/marketplace';
+import { measurePackageTree } from '@dorkos/marketplace/package-size';
 import { PACKAGE_NPMRC } from './npm-dependencies.js';
+
+/** The name git gives a repository's own folder, or a file pointing at one. */
+const GIT_DIR_NAME = '.git';
 
 /**
  * Recursively copy a package's contents from `source` into `dest`, stripping
@@ -54,15 +73,22 @@ import { PACKAGE_NPMRC } from './npm-dependencies.js';
  * config when it runs in this directory. A copy nested inside the package is
  * inert content and is left alone, exactly as any other file would be.
  *
+ * The tree is measured first and refused past the package size limits
+ * (DOR-2321), so an oversized package is never copied. Validation checks the
+ * same limits; this is the backstop for the paths that stage without it (the
+ * legacy-record rebuild, a Shape fork).
+ *
  * @param source - Absolute path to the validated package source directory.
  * @param dest - Absolute path to the staging directory to populate.
  * @param logger - Logger used to warn about each stripped entry.
+ * @throws {PackageTooLargeError} When the package passes a size limit.
  */
 export async function stagePackageContents(
   source: string,
   dest: string,
   logger: Logger
 ): Promise<void> {
+  await measurePackageTree(source);
   const rootNpmrc = path.join(source, PACKAGE_NPMRC);
   await cp(source, dest, {
     recursive: true,
@@ -70,6 +96,20 @@ export async function stagePackageContents(
       if (src === rootNpmrc) {
         logger.warn(
           `[marketplace/stage] Stripped the package's own ${PACKAGE_NPMRC}: it can redirect or escape an npm install, and nothing a package needs at runtime lives in it.`
+        );
+        return false;
+      }
+      const rel = path.relative(source, src).split(path.sep).join('/');
+      // Case-insensitive: `.GIT` is the same folder on macOS and Windows.
+      if (path.basename(src).toLowerCase() === GIT_DIR_NAME && rel !== '') {
+        logger.warn(
+          `[marketplace/stage] Stripped ${rel} from the package: git would obey the settings and hooks in it, and a package is its files, not a repository.`
+        );
+        return false;
+      }
+      if (rel !== '' && isReservedPackagePath(rel)) {
+        logger.warn(
+          `[marketplace/stage] Stripped reserved path from package: ${rel} (DorkOS keeps it for the person or the installer)`
         );
         return false;
       }

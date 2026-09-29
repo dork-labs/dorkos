@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
 import { resolveSenderIdentity } from '../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { registerCoreTools } from './external-mcp/core-tools.js';
+import { registerAccountTools } from './external-mcp/account-tools.js';
+import { registerSessionTools } from './external-mcp/session-tools.js';
 import { registerTaskTools } from './external-mcp/task-tools.js';
 import { registerRelayTools } from './external-mcp/relay-tools.js';
 import { registerBindingTools } from './external-mcp/binding-tools.js';
@@ -73,6 +75,9 @@ import { gatedToolRegistrar } from './mcp-tool-gate.js';
  *   machine is calling — see `CapabilityInvocationContext.agentIdentityPresented`
  *   (DOR-1361). A revoked or expired token is no longer such a case: it fills
  *   `identity` with an `inactive` mark instead (DOR-486).
+ * @param hiddenToolNames - Tools this caller is not shown because their
+ *   permission resolves to Blocked (spec `agent-permissions` D15): the calling
+ *   agent's own settings when it identified itself, the defaults otherwise.
  */
 export function createExternalMcpServer(
   deps: McpToolDeps,
@@ -80,7 +85,8 @@ export function createExternalMcpServer(
   registry?: CapabilityRegistry,
   identity?: AgentIdentity,
   userId?: string,
-  agentIdentityPresented?: boolean
+  agentIdentityPresented?: boolean,
+  hiddenToolNames?: ReadonlySet<string>
 ): McpServer {
   const server = new McpServer({
     name: 'dorkos',
@@ -97,8 +103,12 @@ export function createExternalMcpServer(
   // `server` directly: that is what puts the permission tier in front of each one
   // (DOR-468). The per-domain functions take a `ToolRegistrar`, so a new domain
   // file has nothing ungated to register against.
-  const registrar = gatedToolRegistrar(server, identity);
+  // A tool Blocked for this caller is gated and built but not listed (spec
+  // `agent-permissions` D15); the request tool reaches it through the reach.
+  const registrar = gatedToolRegistrar(server, identity, hiddenToolNames);
   registerCoreTools(registrar, deps);
+  registerAccountTools(registrar, deps);
+  registerSessionTools(registrar, deps, identity);
   registerTaskTools(registrar, deps);
   registerRelayTools(registrar, deps, relayIdentity);
   registerBindingTools(registrar, deps);
@@ -118,20 +128,21 @@ export function createExternalMcpServer(
   // asking, and reads its absence as "this surface could name nobody" rather
   // than as "the owner" (see `CapabilityInvocationContext.userId`).
   //
-  // `agentIdentityPresented` is in the guard as well as in the object, and that
-  // is the whole of DOR-1361 on this surface: a revoked agent presents a token
-  // that resolves to nothing and signs in as nobody, so it produced neither of
-  // the other two facts and the context collapsed to `undefined` — leaving
-  // `callerAuthor` to answer with the install owner.
-  const caller =
-    identity || userId || agentIdentityPresented
-      ? {
-          ...(identity ? { identity } : {}),
-          ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
-          ...(userId ? { userId } : {}),
-        }
-      : undefined;
-  registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external', caller);
+  // `agentIdentityPresented` rides on its own, and that is the whole of DOR-1361
+  // on this surface: an agent whose token resolves to nothing signs in as nobody,
+  // so it produces neither of the other two facts, and without this one
+  // `callerAuthor` would answer with the install owner.
+  //
+  // The hand-registered tools this server built ride along too, for the request
+  // tool alone (the registry forwards them only to a `forwardsApproval`
+  // capability), so an agent can ask past a Blocked one.
+  const caller = {
+    ...(identity ? { identity } : {}),
+    ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
+    ...(userId ? { userId } : {}),
+    handTools: registrar.reach,
+  };
+  registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external', caller, hiddenToolNames);
 
   // ── Read-only resources ──────────────────────────────────────────────────
   // Same call the in-session server makes. This surface has no per-request `cwd`

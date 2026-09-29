@@ -680,9 +680,7 @@ function manifestFailureDetail(err: unknown): string {
  * `state` answers for the project as a whole: `ready` when the manifest parsed,
  * `not-set-up` when there is no manifest, and `unreadable` when there is one and
  * it will not parse (with `detail` saying why). On anything but `ready` every
- * list is empty and every count is zero. The fourth value, `unavailable`, is
- * never returned here — it belongs to a build with no harness service at all,
- * which is the Obsidian transport's answer rather than this function's.
+ * list is empty and every count is zero.
  *
  * **A `projectPath` that does not exist reads `not-set-up`**, because the
  * manifest read fails with `ENOENT` either way and this function cannot tell an

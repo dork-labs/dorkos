@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { applyCurrentManagedMigrations } from './managed-database-fixture';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,7 +57,17 @@ const definition = {
   toolkit: 'gmail',
   toolkitVersion: '20260901_00',
   definitionHash: `sha256:${'a'.repeat(64)}`,
-  filterSchema: { type: 'object', additionalProperties: false },
+  // Shaped like Composio's trigger config: optional fields carry a `default`
+  // and nothing says `additionalProperties`. A filter check that fills
+  // defaults in refuses every filter that leaves one out, `{}` included.
+  filterSchema: {
+    type: 'object',
+    title: 'NewGmailMessageConfig',
+    properties: {
+      labelIds: { type: 'string', title: 'Label Ids', default: 'INBOX' },
+      userId: { type: 'string', title: 'User Id', default: 'me' },
+    },
+  },
   payloadSchema: {},
   deliveryMode: 'webhook' as const,
   expectedCadenceSeconds: null,
@@ -114,6 +125,7 @@ async function provisionBase(client: PGlite, recovery = true): Promise<void> {
     if (!name) throw new Error('Event migration missing.');
     await client.exec(readFileSync(join(MIGRATIONS_DIR, name), 'utf8'));
   }
+  await applyCurrentManagedMigrations(client);
 }
 
 // Booting PGlite and replaying the managed-connector migrations costs seconds,
@@ -1062,6 +1074,22 @@ describe('managed signed event persistence and handoff', () => {
       .where(eq(schema.managedConnectorEventSubscription.id, p.command.subscriptionId));
     expect(subscription).toMatchObject({ enabled: false, scopeVersion: 2 });
     expect(p.events.reconcileTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a filter naming a field the event does not have before provider dispatch', async () => {
+    const f = await seed();
+    const p = eventProvider(f);
+    const refused = await applyManagedAuthorityCommand(
+      db,
+      f.principal,
+      { ...p.command, filter: { labelId: 'INBOX' } },
+      p.provider
+    );
+    expect(refused.status).toMatchObject({
+      state: 'rejected',
+      rejectionCode: 'invalid_event_filter',
+    });
+    expect(p.events.reconcileTrigger).not.toHaveBeenCalled();
   });
 
   it('refuses changed command contents and unavailable exact definitions before provider dispatch', async () => {

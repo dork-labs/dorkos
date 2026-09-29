@@ -107,6 +107,8 @@ function status(overrides: Partial<SessionStatus> = {}): SessionStatus {
     runningSubagentCount: 0,
     lifecycle: 'idle',
     lastError: null,
+    limit: null,
+    accountUsage: null,
     ...overrides,
   };
 }

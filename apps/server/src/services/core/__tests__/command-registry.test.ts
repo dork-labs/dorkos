@@ -1,8 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import type { Dirent } from 'fs';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 
 vi.mock('fs/promises');
+// The registry reads through the bounded reader (DOR-2321). Route it to the
+// mocked readFile so these tests keep describing files by their contents; the
+// bound itself is asserted below.
+vi.mock('@dorkos/shared/bounded-read', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/bounded-read')>()),
+  readTextFileWithin: vi.fn(async (filePath: string) =>
+    (await import('fs/promises')).default.readFile(filePath, 'utf-8')
+  ),
+}));
 
 describe('CommandRegistryService', () => {
   let CommandRegistryService: typeof import('../../runtimes/claude-code/tooling/command-registry.js').CommandRegistryService;
@@ -242,5 +252,42 @@ describe('CommandRegistryService', () => {
     const result = await registry.getCommands();
 
     expect(result.commands[0].allowedTools).toEqual(['Read', 'Write', 'Bash']);
+  });
+
+  it('skips a command whose frontmatter is written as code, without running it', async () => {
+    // Purpose (DOR-2308): a `---js` block used to go to gray-matter's eval
+    // engine. It must be refused, never salvaged by the key:value fallback,
+    // and the code in it must not run.
+    const sentinel = '__dorkosCommandPwned';
+    vi.mocked(fs.readdir).mockResolvedValueOnce([
+      makeDirent('evil.md', false),
+      makeDirent('fine.md', false),
+    ] as never);
+    vi.mocked(fs.readFile)
+      .mockResolvedValueOnce(
+        `---js\n{ description: (globalThis.${sentinel} = 1, 'evil') }\n---\n# Evil\n`
+      )
+      .mockResolvedValueOnce('---\ndescription: Fine\n---\n# Fine\n');
+
+    const registry = new CommandRegistryService('/vault');
+    const result = await registry.getCommands();
+
+    expect(result.commands.map((c) => c.fullCommand)).toEqual(['/fine']);
+    expect((globalThis as Record<string, unknown>)[sentinel]).toBeUndefined();
+  });
+
+  it('reads each command within the package-file size limit (DOR-2321)', async () => {
+    // Purpose: a command file an installed package ships is read through the
+    // bounded reader, never whole.
+    vi.mocked(fs.readdir).mockResolvedValueOnce([makeDirent('plan.md', false)] as never);
+    vi.mocked(fs.readFile).mockResolvedValueOnce('---\ndescription: Plan\n---\n');
+
+    await new CommandRegistryService('/vault').getCommands();
+
+    expect(readTextFileWithin).toHaveBeenCalledWith(
+      expect.stringContaining('plan.md'),
+      PACKAGE_TEXT_MAX_BYTES,
+      'The command'
+    );
   });
 });

@@ -222,9 +222,6 @@ describe('PermissionPrimer', () => {
   });
 
   it('goes away even when the write cannot persist', async () => {
-    // `updateConfig` is a no-op on the Obsidian transport, and any transport can
-    // answer 200 without the value coming back. A card that reappeared the
-    // moment it was answered reads as a broken button.
     const user = userEvent.setup();
     renderPrimer({}, { updateConfig: vi.fn().mockRejectedValue(new Error('nope')) });
     act(() => armPermissionPrimer());

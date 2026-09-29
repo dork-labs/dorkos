@@ -61,8 +61,6 @@ describe('usePendingRead', () => {
   });
 
   it('is the query’s own answer wherever there is no persister', () => {
-    // The Obsidian embed and every test harness without one. Nothing is paused,
-    // so nothing is added.
     const loading = renderHook(() => usePendingRead(true));
     expect(loading.result.current).toBe(true);
 

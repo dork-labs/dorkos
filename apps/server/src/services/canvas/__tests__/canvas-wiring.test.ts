@@ -1,17 +1,12 @@
 /**
- * How the canvas domain is WIRED into a process — the two seams that decide
- * whether an agent's canvas write can reach this machine's database at all
- * (spec `canvas-agent-seat` §1.2, §1.6; DOR-2006 review findings 3 and 4).
+ * How the canvas domain is wired into the server process (spec
+ * `canvas-agent-seat` §1.2, §1.6; DOR-2006 review findings 3 and 4).
  *
  * Both are properties of the composition root rather than of any one method, so
  * neither is visible to the writer's own suite:
  *
- * - **Who registers the writer.** A read-only subsystem is a process pointed at
- *   somebody ELSE's live database (the Obsidian embed, ADR `260825-194924`).
- *   Registering a writer there gave `control_ui` something to call, and calling
- *   it threw `SqliteError: attempt to write a readonly database` straight
- *   through the tool. The handle is still returned, because the READ half is
- *   exactly what the embed needs.
+ * - **Who registers the writer.** The room subsystem registers the canvas
+ *   service it hands back, so server routes and tools share one writer.
  * - **What a rekey listener may do to the rename.** The projector fans rekeys
  *   out with no guard of its own, so a throw here aborts every listener after
  *   it — the connector attach set, the room bindings — and propagates into the
@@ -56,37 +51,12 @@ function serviceOver(db: Db): CanvasService {
   });
 }
 
-describe('which processes register a canvas writer', () => {
+describe('canvas writer registration', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('a READ-ONLY subsystem registers none, so no agent path can write through it', () => {
-    const before = peekCanvasService();
-
-    const subsystem = createRoomSubsystem({ db: freshDb(), readOnly: true });
-
-    // Nothing was registered: whatever this process had, it still has.
-    expect(peekCanvasService()).toBe(before);
-    expect(peekCanvasService()).not.toBe(subsystem.canvas);
-  });
-
-  it('but it still HANDS BACK the writer, which is the embed’s read seam', () => {
-    const db = freshDb();
-    const subsystem = createRoomSubsystem({ db, readOnly: true });
-    // Seeded the way the embed's real database is seeded: by the DorkOS that
-    // owns it, through its own registered writer.
-    serviceOver(db).open(sessionScope('sess-1'), SESSION_OWNER_AUTHOR, {
-      type: 'file',
-      sourcePath: '/notes/a.md',
-    });
-
-    const documents = subsystem.canvas.list(sessionScope('sess-1'));
-
-    expect(documents.map((d) => d.content)).toEqual([{ type: 'file', sourcePath: '/notes/a.md' }]);
-  });
-
-  it('a normal subsystem registers the same instance it returns', () => {
+  it('registers the same instance it returns', () => {
     const subsystem = createRoomSubsystem({ db: freshDb() });
 
     expect(peekCanvasService()).toBe(subsystem.canvas);

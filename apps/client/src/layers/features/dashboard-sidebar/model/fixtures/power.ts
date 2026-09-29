@@ -20,6 +20,7 @@ import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import type { AgentRosterEntry, SidebarAttentionSignal, SidebarState } from '../sidebar-state';
 import { agent, emptyState, hoursAgo, person, prefs, room, session, thread } from './factories';
+import { sessionHref } from '@/layers/shared/lib/session-link';
 
 /** How many agents this operator runs. */
 const AGENT_COUNT = 32;
@@ -93,7 +94,7 @@ const attention: SidebarAttentionSignal[] = Array.from({ length: SIGNAL_COUNT },
   kind: (['permission-prompt', 'question', 'error', 'schedule-approval'] as const)[index % 4],
   primary: displayNames[agentPath(index)] ?? `agent-${index}`,
   since: hoursAgo(index * 0.1 + 0.1),
-  deepLink: `/session?sessionId=ses-${index}`,
+  deepLink: sessionHref({ session: `ses-${index}` }),
   agentPath: agentPath(index),
 }));
 

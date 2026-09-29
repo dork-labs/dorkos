@@ -82,6 +82,7 @@ vi.mock('@/layers/shared/lib/transport', async (importOriginal) => ({
     releaseSession: vi.fn(),
     getAttachedSessionId: vi.fn().mockReturnValue(null),
     subscribeListConnectionState: vi.fn().mockReturnValue(() => {}),
+    subscribeEvent: vi.fn().mockReturnValue(() => {}),
   },
 }));
 

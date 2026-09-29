@@ -1,22 +1,23 @@
 flowchart TB
   accTitle: Community and optional Cloud hosting management
-  accDescr: The Community host implements tenant content and a separate host administration API. Cloud hosting orchestration, local start and move flows, and optional shared sign-in are planned paths at this snapshot. Cloud management does not access messages, files or the host database.
-  app["Local DorkOS app + server<br/>Agents execute here"]
-  cloud["Optional Cloud hosting management<br/>Public /v1/communities contract<br/>Orchestration and launch in progress"]
+  accDescr: The local app implements start and move requests to Cloud. Hosting control and ordinary Community participation have separate authority. Move archives go from the local server directly to the returned Community upload target. Contract support does not establish deployment availability.
+  app["Local DorkOS app + server<br/>Start / move UI + Cloud relay implemented<br/>Agents execute here"]
+  cloud["Optional Cloud hosting management<br/>Public /v1/communities contract<br/>Availability checked independently"]
   subgraph host["Community host · independently runnable"]
-    admin["Host administration API · implemented<br/>Scoped machine keys · owner claims<br/>Lifecycle · limits · usage counts"]
-    content["Tenant content API · implemented<br/>Membership · channels · posts · files"]
+    admin["Host administration API<br/>Scoped machine keys · owner claims<br/>Lifecycle · limits · usage · holds<br/>Notice-gated community deletion"]
+    content["Tenant content API<br/>Membership · channels · posts · files"]
+    upload["Community import target<br/>Move contract; destination must support import"]
     auth["Host-wide sign-in<br/>Separate community memberships"]
     data[("PostgreSQL + tenant-owned blobs<br/>Community is content authority")]
-    admin -->|"Manage containers; no content access"| data
+    admin -->|"Scoped host operations"| data
     content --> data
-    auth -->|"Authenticate; check tenant membership"| content
+    upload -.->|"Import contract"| data
+    auth -->|"Authenticate; check membership"| content
   end
   browser["Community browser"]
   browser <-->|"HTTP + SSE"| content
-  app <-->|"Approved connection<br/>Qualified HTTP + SSE"| content
-  app -.->|"Planned start / move<br/>Local server relays Cloud requests"| cloud
-  cloud -.->|"Planned host API client<br/>HTTPS + scoped host key"| admin
-  cloud -.->|"Later: optional OIDC sign-in<br/>Generic issuer; separate work"| auth
-  classDef planned fill:#fff5e4,stroke:#a87720,color:#49320c
-  class cloud planned
+  app <-->|"Approved participation<br/>Qualified HTTP + SSE"| content
+  app -->|"Start / poll / claim / move<br/>HTTPS via local authenticated routes"| cloud
+  app -->|"Stage archive; upload directly<br/>to returned target when available"| upload
+  cloud -.->|"Public hosting contract<br/>HTTPS + scoped host key"| admin
+  cloud -.->|"Later: optional OIDC sign-in<br/>Separate work"| auth

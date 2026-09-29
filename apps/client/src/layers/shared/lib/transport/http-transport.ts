@@ -29,6 +29,7 @@ import { createRemoteCommunityMethods } from './remote-community-methods';
 import { createTerminalMethods } from './terminal-methods';
 import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
+import { createPermissionMethods } from './permission-methods';
 import { createNotificationMethods } from './notification-methods';
 import { createPushMethods } from './push-methods';
 import { createConnectorMethods } from './connector-methods';
@@ -36,6 +37,7 @@ import { createMcpMethods } from './mcp-methods';
 import { createTeamMethods } from './team-methods';
 import { createProfileMethods } from './profile-methods';
 import { createSearchMethods } from './search-methods';
+import { createAccountMethods } from './account-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -68,13 +70,15 @@ export interface HttpTransport
     ReturnType<typeof createTerminalMethods>,
     ReturnType<typeof createFeedbackMethods>,
     ReturnType<typeof createApprovalMethods>,
+    ReturnType<typeof createPermissionMethods>,
     ReturnType<typeof createNotificationMethods>,
     ReturnType<typeof createPushMethods>,
     ReturnType<typeof createConnectorMethods>,
     ReturnType<typeof createMcpMethods>,
     ReturnType<typeof createTeamMethods>,
     ReturnType<typeof createProfileMethods>,
-    ReturnType<typeof createSearchMethods> {}
+    ReturnType<typeof createSearchMethods>,
+    ReturnType<typeof createAccountMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -110,13 +114,15 @@ export class HttpTransport implements Transport {
       createTerminalMethods(baseUrl),
       createFeedbackMethods(baseUrl),
       createApprovalMethods(baseUrl),
+      createPermissionMethods(baseUrl),
       createNotificationMethods(baseUrl),
       createPushMethods(baseUrl),
       createConnectorMethods(baseUrl),
       createMcpMethods(baseUrl),
       createTeamMethods(baseUrl),
       createProfileMethods(baseUrl),
-      createSearchMethods(baseUrl)
+      createSearchMethods(baseUrl),
+      createAccountMethods(baseUrl)
     );
   }
 }

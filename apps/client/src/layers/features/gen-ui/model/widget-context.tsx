@@ -185,15 +185,6 @@ export function WidgetActionProvider({
           // node that forgets to ask, a future caller). Off a session, only
           // local-UI-only commands run — see the module doc.
           if (!sessionId && !isLocalUiOnlyCommand(action.command)) return;
-          // The dispatcher is a pure side effect and reads the store itself.
-          // `supportsTerminal` keeps `open_terminal` degrading gracefully on a
-          // transport with no terminal (DirectTransport/Obsidian), matching the
-          // agent-stream dispatch path. `celebrationOrigin` makes a `celebrate`
-          // command erupt from the clicked control (origin-aware confetti).
-          // `sessionId` lets session-scoped commands (open_pip) target the
-          // widget's own session instead of degrading to the no-session toast.
-          // No `panelUrlSignal`: a widget-issued close/toggle of a deep-linked
-          // Settings or Tasks dialog is a known gap (DOR-908).
           const ctx: DispatcherContext = {
             getStore: useAppStore.getState,
             setTheme,

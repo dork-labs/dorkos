@@ -36,18 +36,6 @@ interface PipMiniBarProps {
  * it is up.) Same ambient semantics as the sheet: `role="complementary"`,
  * `z-40`, below every `z-50` modal surface, no modality machinery.
  *
- * **The bar never takes the bottom edge from the phone's tab bar** (DOR-1177).
- * A `fixed` bar at `bottom: 0` paints over the four destinations, which are
- * in-flow chrome with no z-index — measured at 390×844, `elementFromPoint` over
- * every one of the four glyphs resolved to this bar, so a docked PIP made the
- * whole cockpit unreachable. It docks directly ABOVE the bar instead (the
- * mini-player arrangement this pattern is named for), reading the height the
- * cockpit publishes as `--mobile-tab-dock` — absent on desktop and in the
- * Obsidian embed, where the fallback of `0px` keeps the bar on the edge it
- * always had. The tab bar keeps the bottom edge and with it
- * `env(safe-area-inset-bottom)`, so the home indicator stays one component's
- * business.
- *
  * @param props.content - The descriptor tucked away (supplies the title).
  * @param props.onRestore - Restore handler, wired to `restorePip`.
  * @param props.onClose - Close handler, wired to `closePip`.

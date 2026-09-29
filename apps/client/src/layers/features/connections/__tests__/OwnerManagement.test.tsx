@@ -11,8 +11,9 @@ import type {
 } from '@dorkos/shared/connector-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { ConnectionAccessDialog } from '../ui/ConnectionAccessDialog';
-import { ManagementReviews } from '../ui/ManagementReviews';
+import { ConnectionAccessDialog } from '../ui/access/ConnectionAccessDialog';
+import { ManagementReviewDialog } from '../ui/ManagementReviewDialog';
+import { NeedsYou } from '../ui/NeedsYou';
 
 afterEach(cleanup);
 
@@ -63,6 +64,7 @@ const PREVIEW: ConnectorReconciliationPreview = {
     { agentId: 'agent-b', displayName: 'Bo' },
   ],
   currentGrants: [{ agentId: 'agent-a', operationRevisionIds: ['read-v1'] }],
+  everyAgent: { available: false, operationRevisionIds: [] },
   catalogComplete: true,
   createdAt: '2026-09-06T00:00:00.000Z',
   expiresAt: '2099-09-06T01:00:00.000Z',
@@ -105,6 +107,34 @@ function renderWith(transport: Transport, ui: ReactNode) {
 }
 
 describe('ConnectionAccessDialog', () => {
+  it('says what every agent also has when the account is shared with every agent', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
+      ...PREVIEW,
+      everyAgent: { available: true, operationRevisionIds: ['read-v1', 'write-v2'] },
+    });
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+    const line = await screen.findByTestId('exact-editor-every-agent');
+    expect(line).toHaveTextContent(
+      'Every agent also has 2 actions here through “Every agent”, including agents you add later.'
+    );
+    expect(line).toHaveTextContent('stop sharing this account with every agent');
+  });
+
+  it('says nothing about every agent when it is not shared', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+    await screen.findByRole('group', { name: 'Access for Bo' });
+    expect(screen.queryByTestId('exact-editor-every-agent')).not.toBeInTheDocument();
+  });
+
   it('submits only the changed named agent and keeps sensitive actions out of quick access', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
@@ -146,6 +176,7 @@ describe('ConnectionAccessDialog', () => {
     });
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
+        readiness: { state: 'ready', reason: 'usable' },
         connectionId: PREVIEW.connection.connectionId,
         reconciliationStatus: 'ready',
         authoritySync: { status: 'ready' },
@@ -192,6 +223,7 @@ describe('ConnectionAccessDialog', () => {
     });
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
+        readiness: { state: 'ready', reason: 'usable' },
         connectionId: PREVIEW.connection.connectionId,
         reconciliationStatus: 'ready',
         authoritySync: { status: 'ready' },
@@ -335,30 +367,7 @@ describe('ConnectionAccessDialog', () => {
   });
 });
 
-describe('ManagementReviews', () => {
-  it('shows a retry when recent decisions cannot be loaded', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.getConnectorManagementReviews).mockImplementation(async (state) => {
-      if (state === 'resolved') throw new Error('history unavailable');
-      return [];
-    });
-    renderWith(
-      transport,
-      <ManagementReviews selectedReviewId={null} onSelectReview={vi.fn()} onCloseReview={vi.fn()} />
-    );
-
-    expect(await screen.findByText('Couldn’t load recent decisions')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() =>
-      expect(
-        vi
-          .mocked(transport.getConnectorManagementReviews)
-          .mock.calls.filter(([state]) => state === 'resolved')
-      ).toHaveLength(2)
-    );
-  });
-
+describe('ManagementReviewDialog', () => {
   it('shows the frozen provider, custody, and affected-agent impact before disconnect', async () => {
     const disconnect: ConnectorManagementReviewItem = {
       reviewRequestId: 'review-disconnect',
@@ -368,6 +377,7 @@ describe('ManagementReviews', () => {
         kind: 'disconnect',
         connection: CONNECTION_CONTEXT,
         affectedAgentCount: 1,
+        everyAgent: false,
         affectedOperations: [],
       },
       targetStatus: 'available',
@@ -382,16 +392,89 @@ describe('ManagementReviews', () => {
     vi.mocked(transport.getConnectorManagementReview).mockResolvedValue(disconnect);
     renderWith(
       transport,
-      <ManagementReviews
-        selectedReviewId="review-disconnect"
-        onSelectReview={vi.fn()}
-        onCloseReview={vi.fn()}
-      />
+      <ManagementReviewDialog reviewRequestId="review-disconnect" open onOpenChange={vi.fn()} />
     );
 
     expect(await screen.findByText('Composio keeps this sign-in')).toBeInTheDocument();
-    expect(screen.getByText('1 affected agent')).toBeInTheDocument();
     expect(screen.getByText('This will remove this account from 1 agent.')).toBeInTheDocument();
+  });
+
+  it('says plainly when an agent keeps access through every agent, and when every agent loses it', async () => {
+    const removal: ConnectorManagementReviewItem = {
+      reviewRequestId: 'review-remove',
+      requesterKind: 'program',
+      action: {
+        version: 1,
+        kind: 'remove_agent_access',
+        connectionId: 'connection-1' as never,
+        agentId: 'agent-a',
+      },
+      context: {
+        kind: 'remove_agent_access',
+        connection: CONNECTION_CONTEXT,
+        agent: { agentId: 'agent-a', displayName: 'Research Bot' },
+        affectedOperations: [],
+        keptThroughEveryAgent: [
+          {
+            operationRevisionId: 'read-v1',
+            operationSlug: 'gmail.read',
+            toolkitVersion: 'v1',
+            capabilityClassification: 'read',
+          },
+        ],
+      },
+      targetStatus: 'available',
+      state: 'pending',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2099-09-06T01:00:00.000Z',
+    };
+    const disconnect: ConnectorManagementReviewItem = {
+      ...removal,
+      reviewRequestId: 'review-disconnect-all',
+      action: { version: 1, kind: 'disconnect', connectionId: 'connection-1' as never },
+      context: {
+        kind: 'disconnect',
+        connection: CONNECTION_CONTEXT,
+        affectedAgentCount: 0,
+        everyAgent: true,
+        affectedOperations: [],
+      },
+    };
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorManagementReviews).mockImplementation(async (state) =>
+      state === 'pending' ? [removal, disconnect] : []
+    );
+    vi.mocked(transport.getConnectorManagementReview).mockImplementation(async (id) =>
+      id === 'review-remove' ? removal : disconnect
+    );
+    const view = renderWith(
+      transport,
+      <ManagementReviewDialog reviewRequestId="review-remove" open onOpenChange={vi.fn()} />
+    );
+
+    expect(await screen.findByTestId('connector-review-every-agent-kept')).toHaveTextContent(
+      'Research Bot keeps 1 action on'
+    );
+    expect(screen.getByTestId('connector-review-every-agent-kept')).toHaveTextContent(
+      'stop sharing'
+    );
+    view.unmount();
+
+    // The "Needs you" strip summarises both before either is opened.
+    const strip = renderWith(
+      transport,
+      <NeedsYou services={new Map()} onOpenRequest={vi.fn()} onOpenReview={vi.fn()} />
+    );
+    expect(await screen.findByText(/still shared with every agent/)).toBeInTheDocument();
+    expect(screen.getByText('Every agent loses access.')).toBeInTheDocument();
+    strip.unmount();
+    renderWith(
+      transport,
+      <ManagementReviewDialog reviewRequestId="review-disconnect-all" open onOpenChange={vi.fn()} />
+    );
+    expect(await screen.findByTestId('connector-review-impact')).toHaveTextContent(
+      'This will remove this account from every agent.'
+    );
   });
 
   it('offers deny only when the frozen target is unavailable', async () => {
@@ -404,11 +487,7 @@ describe('ManagementReviews', () => {
     vi.mocked(transport.getConnectorManagementReview).mockResolvedValue(unavailable);
     renderWith(
       transport,
-      <ManagementReviews
-        selectedReviewId="review-pause"
-        onSelectReview={vi.fn()}
-        onCloseReview={vi.fn()}
-      />
+      <ManagementReviewDialog reviewRequestId="review-pause" open onOpenChange={vi.fn()} />
     );
 
     expect(await screen.findByText('This request can’t be approved')).toBeInTheDocument();
@@ -429,10 +508,10 @@ describe('ManagementReviews', () => {
     vi.mocked(transport.getConnectorManagementReview).mockResolvedValue(resolving);
     renderWith(
       transport,
-      <ManagementReviews
-        selectedReviewId={resolving.reviewRequestId}
-        onSelectReview={vi.fn()}
-        onCloseReview={vi.fn()}
+      <ManagementReviewDialog
+        reviewRequestId={resolving.reviewRequestId}
+        open
+        onOpenChange={vi.fn()}
       />
     );
 
@@ -454,11 +533,7 @@ describe('ManagementReviews', () => {
     );
     renderWith(
       transport,
-      <ManagementReviews
-        selectedReviewId="review-pause"
-        onSelectReview={vi.fn()}
-        onCloseReview={vi.fn()}
-      />
+      <ManagementReviewDialog reviewRequestId="review-pause" open onOpenChange={vi.fn()} />
     );
 
     await user.click(await screen.findByRole('button', { name: 'Deny' }));
@@ -538,11 +613,7 @@ describe('ManagementReviews', () => {
     });
     renderWith(
       transport,
-      <ManagementReviews
-        selectedReviewId="review-connect"
-        onSelectReview={vi.fn()}
-        onCloseReview={vi.fn()}
-      />
+      <ManagementReviewDialog reviewRequestId="review-connect" open onOpenChange={vi.fn()} />
     );
 
     await user.click(await screen.findByRole('button', { name: 'Approve and continue' }));
@@ -570,10 +641,10 @@ describe('ManagementReviews', () => {
     vi.mocked(transport.getConnectorManagementReview).mockResolvedValue(unknown);
     renderWith(
       transport,
-      <ManagementReviews
-        selectedReviewId={unknown.reviewRequestId}
-        onSelectReview={vi.fn()}
-        onCloseReview={vi.fn()}
+      <ManagementReviewDialog
+        reviewRequestId={unknown.reviewRequestId}
+        open
+        onOpenChange={vi.fn()}
       />
     );
 
@@ -675,10 +746,10 @@ describe('ManagementReviews', () => {
     vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(poll);
     renderWith(
       transport,
-      <ManagementReviews
-        selectedReviewId="review-connect-terminal"
-        onSelectReview={vi.fn()}
-        onCloseReview={vi.fn()}
+      <ManagementReviewDialog
+        reviewRequestId="review-connect-terminal"
+        open
+        onOpenChange={vi.fn()}
       />
     );
 
@@ -695,10 +766,10 @@ describe('ManagementReviews', () => {
     }
     renderWith(
       transport,
-      <ManagementReviews
-        selectedReviewId="review-connect-terminal"
-        onSelectReview={vi.fn()}
-        onCloseReview={vi.fn()}
+      <ManagementReviewDialog
+        reviewRequestId="review-connect-terminal"
+        open
+        onOpenChange={vi.fn()}
       />
     );
     expect(await screen.findByText(heading)).toBeInTheDocument();

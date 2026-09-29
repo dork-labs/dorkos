@@ -115,6 +115,8 @@ export function getWorkspaceRoot(): string {
 }
 
 export { WorkspaceService } from './workspace-service.js';
+export { UnsafeWorkspaceSourceError } from './providers/git.js';
 export { WorkspaceStore } from './workspace-store.js';
 export { WorkspaceReconciler } from './workspace-reconciler.js';
+export { WorkspaceReconcilerLifecycle } from './workspace-reconciler-lifecycle.js';
 export { scanWorktrees } from './worktree-scan.js';

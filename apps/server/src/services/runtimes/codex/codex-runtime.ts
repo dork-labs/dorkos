@@ -75,9 +75,16 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
-import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
+import {
+  homeOf,
+  resolveAgentTokenEnv,
+  resolveAgentHome,
+  turnAgentOf,
+  type AgentHome,
+} from '../../core/agent-identity/index.js';
 import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
+import { readCodexTurnContextUsage } from './turn-context-usage.js';
 import { captureCodexMedia } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { CodexSessionRegistry } from './session-registry.js';
@@ -97,6 +104,10 @@ import {
 import { buildCodexOptions } from './codex-options.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
+import {
+  renderBlockedAreaLines,
+  resolveToolVisibilityFor,
+} from '../shared/permission-tool-filter.js';
 import { resolveManagedMcpServers, type CodexManagedMcpServers } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
@@ -124,6 +135,13 @@ import {
  * synchronous.
  */
 const MCP_STATUS_TTL_MS = 60_000;
+
+/**
+ * Deadline for reading a rollout's last context reading when a session is
+ * opened. Wider than a live turn's (that one waits on nothing but a file just
+ * written); still bounded, so a slow disk only costs the gauge.
+ */
+const CONTEXT_USAGE_AT_REST_TIMEOUT_MS = 500;
 
 /** This runtime's own mode descriptors — the only meaning any mode id has. */
 const CODEX_MODES = CODEX_CAPABILITIES.permissionModes.values ?? [];
@@ -570,9 +588,15 @@ export class CodexRuntime implements AgentRuntime {
     // carries the first turn's metadata with the row instead.
     this.persistSessionMetadata(sessionId);
 
-    // Does this working directory host a registered agent? Everything below
-    // that mints, injects or names a tool is gated on the answer.
-    const meshAgent = this.meshCore?.getByPath(cwd);
+    // Which registered agent does this turn act as? Everything below that
+    // mints, injects or names a tool is gated on the answer, and the agent's
+    // context is read from it. Resolved to a home rather than read off `cwd`
+    // (DOR-2091, DOR-2355): a turn may stand in a room worktree, a worktree of
+    // the agent's own repo or a managed checkout, none of which is the home —
+    // and it is nobody when the turn names a different agent. `cwd` stays where
+    // the thread runs; `agentPath` is whose identity it has.
+    const agentPath = this.identityPathFor(cwd, turnAgentOf(opts));
+    const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
 
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);
@@ -582,12 +606,12 @@ export class CodexRuntime implements AgentRuntime {
     let connectorRuntimeFailed = false;
     try {
       let connectorTools: ConnectorRuntimeMcpInjection | null = null;
-      if (this.connectorRuntimeTools && meshAgent) {
+      if (this.connectorRuntimeTools && meshAgent && agentPath) {
         connectorBinding = await this.connectorRuntimeTools.principals.openTurn(
           {
             runtime: this.type,
             canonicalSessionId: sessionId,
-            agentPath: cwd,
+            agentPath,
             canonicalCwd: cwd,
             signal: controller.signal,
           },
@@ -627,7 +651,7 @@ export class CodexRuntime implements AgentRuntime {
       // is replayed onto the agent's author row by every room tool it calls, so
       // the slug there renames a live agent mid-conversation (DOR-1264).
       const agentTokenEnv = await resolveAgentTokenEnv(
-        meshAgent ? cwd : undefined,
+        meshAgent ? agentPath : undefined,
         meshAgent?.displayName ?? meshAgent?.name
       );
 
@@ -643,21 +667,21 @@ export class CodexRuntime implements AgentRuntime {
       // Resolved BEFORE the managed servers because it decides whether the name
       // `dorkos` is reserved against them this turn — see below.
       const dorkosTools = await resolveDorkosMcpInjection(
-        meshAgent ? cwd : undefined,
+        meshAgent ? agentPath : undefined,
         connectorTools
       );
 
-      // The agent's ENABLED managed MCP servers for this cwd, injected inline via
-      // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
-      // at turn time because the resolver keys on the session cwd; a non-agent
-      // session has no manifest and contributes none.
-      const managedMcpServers = resolveManagedMcpServers(
-        this.managedMcpServers,
-        cwd,
-        dorkosTools !== null
-      );
+      // The agent's ENABLED managed MCP servers, injected inline via
+      // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Keyed
+      // on the agent the turn acts as — its own folder even when it stands in a
+      // room worktree (DOR-2091) — and a non-agent session contributes none.
+      // No anchored agent — including a refused turn standing in another
+      // agent's folder — means no managed servers, never the directory's.
+      const managedMcpServers = agentPath
+        ? resolveManagedMcpServers(this.managedMcpServers, agentPath, dorkosTools !== null)
+        : { servers: {}, env: {} };
 
-      const threadOptions = projectThreadOptions(settings, cwd);
+      const threadOptions = projectThreadOptions(settings, cwd, opts?.additionalDirectories);
       const client = await this.clientForTurn(
         agentTokenEnv,
         managedMcpServers,
@@ -684,7 +708,7 @@ export class CodexRuntime implements AgentRuntime {
       // outside the gate because it changes while the thread runs.
       const neutralContextSelection = this.contextGate.select(
         sessionId,
-        await buildAgentContextAppend(cwd)
+        await buildAgentContextAppend(agentPath, cwd)
       );
 
       // The room verbs, and ONLY when this turn actually carries them — gated on
@@ -696,8 +720,18 @@ export class CodexRuntime implements AgentRuntime {
       // Outside the context gate, and deliberately: whether this session HAS the
       // room tools is answered per turn, so a menu written in the wrong tense must
       // never survive into a turn where it is false.
+      //
+      // Beside it, one line per Blocked permission area (spec `agent-permissions`
+      // D15), resolved per turn like the menu: the runtime listener hides the
+      // same area's tools from this turn's list.
       const agentContext = dorkosTools
-        ? [neutralContextSelection.text, buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX)]
+        ? [
+            neutralContextSelection.text,
+            buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
+            // The agent's own Blocked areas, read where its manifest lives —
+            // the listener hides the same areas keyed on the same anchor.
+            renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath)).blockedAreas),
+          ]
             .filter(Boolean)
             .join('\n\n')
         : neutralContextSelection.text;
@@ -1132,7 +1166,7 @@ export class CodexRuntime implements AgentRuntime {
    *
    * **It asks the question the exact way the injection site asks it**, and the
    * `meshCore` hop is the part that has to match rather than merely resemble.
-   * `sendMessage` gates on `meshAgent ? cwd : undefined`, so a directory that
+   * `sendMessage` gates on `meshAgent ? agentPath : undefined`, so a directory that
    * hosts no registered agent — an absent registry, or a `getByPath` miss —
    * withholds the entry. Handing this a bare `cwd` string instead made the
    * `'no-agent'` answer structurally unreachable from here: the posture said
@@ -1153,13 +1187,30 @@ export class CodexRuntime implements AgentRuntime {
    * than a claim that they are harmless.
    *
    * @param session.cwd - The session's working directory.
+   * @param session.agentPath - The agent a room turn is for, when a room asks;
+   *   the same cross-check `sendMessage` applies (DOR-2091).
    * @returns Whether the `dorkos` entry is configured for it.
    */
-  async carriesRoomTools(session: { cwd: string }): Promise<boolean> {
+  async carriesRoomTools(session: { cwd: string; agentPath?: string }): Promise<boolean> {
+    const agentPath = this.identityPathFor(session.cwd, session.agentPath);
     return dorkosToolsPosture(
-      this.meshCore?.getByPath(session.cwd) ? session.cwd : undefined,
+      agentPath && this.meshCore?.getByPath(agentPath) ? agentPath : undefined,
       this.connectorRuntimeTools !== undefined
     ).wired;
+  }
+
+  /**
+   * The directory whose identity a turn standing in `cwd` carries, or
+   * `undefined` when it carries none (DOR-2091).
+   *
+   * One helper for {@link sendMessage} and {@link carriesRoomTools}, so the
+   * posture this reports and the injection the turn makes read one answer.
+   *
+   * @param cwd - Where the turn stands.
+   * @param forAgent - The agent a room turn is for, when a room dispatched it.
+   */
+  private identityPathFor(cwd: string, forAgent: string | undefined): AgentHome | undefined {
+    return homeOf(resolveAgentHome(cwd, forAgent));
   }
 
   /**
@@ -1212,6 +1263,22 @@ export class CodexRuntime implements AgentRuntime {
    */
   getInternalSessionId(_sessionId: string): string | undefined {
     return undefined;
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The rollout's last `token_count` record, found through the session's bound
+   * thread id with the same bounded tail read a finished turn uses. `null` for
+   * a session that never started a thread.
+   */
+  async readContextUsage(
+    sessionId: string,
+    _cwd: string | undefined
+  ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
+    const threadId = this.threadMap.get(sessionId)?.threadId;
+    if (!threadId) return null;
+    return readCodexTurnContextUsage({ threadId, timeoutMs: CONTEXT_USAGE_AT_REST_TIMEOUT_MS });
   }
 
   // --- Dependency injection ---

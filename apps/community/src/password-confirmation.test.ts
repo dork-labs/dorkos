@@ -4,13 +4,14 @@ import { fileURLToPath } from 'node:url';
 import type { Context } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { CommunityAuth } from './auth.js';
-import { ApiError } from './http.js';
+import { ApiError, RateLimited } from './http.js';
 import { createPasswordConfirmation } from './password-confirmation.js';
 
 // The Postgres fixture proves the limit end to end. These cases control timing, which real HTTP
 // cannot: a burst held open inside verifyPassword shows the check and the spend are one step.
 
 const RIGHT = 'right-password';
+const NO_PASSWORD = 'oidc-only-account';
 
 function harness(ceiling = 2) {
   const spent = new Map<string, number>();
@@ -32,10 +33,11 @@ function harness(ceiling = 2) {
     ceiling,
     // The same contract as the app's limitAttempts: check and spend synchronously.
     spend: (key, limit) => {
-      if ((spent.get(key) ?? 0) >= limit) throw new ApiError(429, 'RATE_LIMITED', 'limited');
+      if ((spent.get(key) ?? 0) >= limit) throw new RateLimited('limited', 42);
       spent.set(key, (spent.get(key) ?? 0) + 1);
     },
     refund: (key) => spent.set(key, (spent.get(key) ?? 1) - 1),
+    hasPassword: async (account) => account !== NO_PASSWORD,
   });
   const context = { req: { raw: { headers: new Headers() } } } as unknown as Context;
   return {
@@ -64,6 +66,18 @@ async function outcome(attempt: Promise<void>) {
 }
 
 describe('createPasswordConfirmation', () => {
+  it('tells an account without a password to set one, without checking or spending', async () => {
+    // Purpose: fails if an OIDC-only account hears "that password is not right" for a password
+    // it never had, or if that refusal spends the per-account guess budget.
+    const { confirm, checked } = harness(1);
+    for (let attempt = 0; attempt < 3; attempt += 1)
+      expect(await outcome(confirm(NO_PASSWORD, RIGHT))).toBe('403 PASSWORD_REQUIRED');
+    expect(checked).toEqual([]);
+    await expect(confirm(NO_PASSWORD, RIGHT)).rejects.toThrow(
+      'Set a password in your account to do this.'
+    );
+  });
+
   it('refunds a correct password, so the right one never spends the budget', async () => {
     const { confirm } = harness();
     for (let attempt = 0; attempt < 5; attempt++)
@@ -75,6 +89,11 @@ describe('createPasswordConfirmation', () => {
     expect(await outcome(confirm('account-1', 'x'))).toBe('403 REAUTH_FAILED');
     expect(await outcome(confirm('account-1', 'y'))).toBe('403 REAUTH_FAILED');
     expect(await outcome(confirm('account-1', RIGHT))).toBe('429 RATE_LIMITED');
+    // The refusal keeps the limiter's wait, so the response can say when to try again.
+    await expect(confirm('account-1', RIGHT)).rejects.toMatchObject({
+      retryAfterSeconds: 42,
+      message: 'Too many wrong passwords. Wait a minute, then try again.',
+    });
     expect(checked).toEqual(['x', 'y']);
     // Another account (from the same address, which the budget no longer looks at) is untouched.
     expect(await outcome(confirm('account-2', RIGHT))).toBe('accepted');
@@ -112,7 +131,10 @@ describe('every server-side password check', () => {
     expect(readFileSync(join(root, 'password-confirmation.ts'), 'utf8')).toMatch(/verifyPassword/u);
     const offenders = sources
       .filter((file) => file !== 'password-confirmation.ts')
-      .filter((file) => /\bverifyPassword\b/u.test(readFileSync(join(root, file), 'utf8')))
+      // Better Auth's `verifyPassword` endpoint, or the raw hash check its other routes use.
+      .filter((file) =>
+        /\bverifyPassword\b|\bpassword\.verify\(/u.test(readFileSync(join(root, file), 'utf8'))
+      )
       .map((file) => relative(root, join(root, file)));
     expect(offenders).toEqual([]);
   });

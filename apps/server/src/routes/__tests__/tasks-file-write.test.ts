@@ -68,7 +68,7 @@ import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskReconciler } from '../../services/tasks/task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity.js';
 import { skillsRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
-import { TaskStore } from '../../services/tasks/task-store.js';
+import { TaskStore, type UpdateTaskOptions } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
 const fixtureTarget = swappableServer();
@@ -538,9 +538,21 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const before = await fs.readFile(filePath, 'utf-8');
     const id = seedParked('owned', filePath, '0 9 * * *');
 
-    const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    // What it DOES is the package's to say, so a prompt edit is refused...
+    const refused = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .send({ prompt: 'Do another thing.' });
+    expect(refused.status).toBe(409);
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
 
-    expect(res.status).toBe(409);
+    // ...and WHEN it runs is the person's (DOR-2302): the new timing lands on
+    // the row, and the package's file is still left exactly as it shipped.
+    const retimed = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .send({ cron: '0 21 * * *' });
+    expect(retimed.status).toBe(200);
+    expect(retimed.body.cron).toBe('0 21 * * *');
+    expect(retimed.body.defaultCron).toBe('0 9 * * *');
     expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
   });
 
@@ -556,13 +568,15 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     // Stand in for the watcher firing between the two writes.
     const realUpdate = store.updateTask.bind(store);
     let raced = false;
-    vi.spyOn(store, 'updateTask').mockImplementation((taskId, data) => {
-      if (!raced) {
-        raced = true;
-        realUpdate(taskId, { status: 'pending_approval' });
+    vi.spyOn(store, 'updateTask').mockImplementation(
+      (taskId, data, options?: UpdateTaskOptions) => {
+        if (!raced) {
+          raced = true;
+          realUpdate(taskId, { status: 'pending_approval' });
+        }
+        return realUpdate(taskId, data, options ?? { timingLandsOn: 'file' });
       }
-      return realUpdate(taskId, data);
-    });
+    );
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
@@ -571,6 +585,65 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
 
     vi.restoreAllMocks();
     expect(store.getTask(id)!.status).toBe('active');
+  });
+
+  it('keeps a person’s live schedule live when the sync parks it mid-edit', async () => {
+    // Purpose: the second half of the re-assert — the edit form sends fields
+    // and no `status`, so a lost race must not disarm a schedule the person
+    // was only editing. Pinned beside the agent case below so gating on the
+    // caller cannot quietly drop the person's half.
+    const filePath = await writeBlockSkill('racy-edit', "  cron: '0 9 * * *'");
+    const id = seedParked('racy-edit', filePath, '0 9 * * *');
+    store.updateTask(id, { status: 'active' });
+
+    const realUpdate = store.updateTask.bind(store);
+    let raced = false;
+    vi.spyOn(store, 'updateTask').mockImplementation(
+      (taskId, data, options?: UpdateTaskOptions) => {
+        if (!raced) {
+          raced = true;
+          realUpdate(taskId, { status: 'pending_approval' });
+        }
+        return realUpdate(taskId, data, options ?? { timingLandsOn: 'file' });
+      }
+    );
+
+    const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    vi.restoreAllMocks();
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+
+  it('leaves the park standing when the caller is an agent (DOR-2307 review)', async () => {
+    // Purpose: re-asserting `active` after the race is the person finishing
+    // their own write. For an agent it would re-arm a schedule the sync just
+    // parked over the agent's own edit — and `updateTask` with `status:
+    // 'active'` records a fresh approval for content nobody has read.
+    const filePath = await writeBlockSkill('racy-agent', "  cron: '0 9 * * *'");
+    const id = seedParked('racy-agent', filePath, '0 9 * * *');
+    store.updateTask(id, { status: 'active' });
+
+    const realUpdate = store.updateTask.bind(store);
+    let raced = false;
+    vi.spyOn(store, 'updateTask').mockImplementation(
+      (taskId, data, options?: UpdateTaskOptions) => {
+        if (!raced) {
+          raced = true;
+          realUpdate(taskId, { status: 'pending_approval' });
+        }
+        return realUpdate(taskId, data, options ?? { timingLandsOn: 'file' });
+      }
+    );
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ cron: '0 21 * * *' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    vi.restoreAllMocks();
+    expect(store.getTask(id)!.status).toBe('pending_approval');
   });
 });
 
@@ -670,11 +743,14 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
       .send({ prompt: 'sweep the backlog and then delete everything' });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
+    // Parked in the request itself (DOR-2313), and still parked, in the same
+    // words, after the sweep.
+    expect(res.body.status).toBe('pending_approval');
     await reconciler.reconcile();
 
     const after = store.getTask(id)!;
     expect(after.status).toBe('pending_approval');
-    expect(after.reason).toMatch(/changed since/i);
+    expect(after.reason).toMatch(/An agent changed what this schedule does/);
   });
 
   it('does not re-approve a schedule that was already waiting', async () => {

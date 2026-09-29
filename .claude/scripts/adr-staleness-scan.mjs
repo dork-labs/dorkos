@@ -132,13 +132,7 @@ export function findStaleCitations(files, statusByKey, archivedKeys) {
 
 /** Repo-path prefixes that make a backtick-quoted string checkable on disk. */
 const PATH_RE = /^(apps|packages|scripts|docs|contributing|decisions|specs|meta|\.claude|src)\//;
-const SRC_PREFIXES = [
-  'apps/client/',
-  'apps/server/',
-  'apps/site/',
-  'apps/desktop/',
-  'apps/obsidian-plugin/',
-];
+const SRC_PREFIXES = ['apps/client/', 'apps/server/', 'apps/site/', 'apps/desktop/'];
 
 /**
  * Check an accepted ADR's cited repo paths against the working tree.

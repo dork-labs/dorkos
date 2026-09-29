@@ -232,6 +232,103 @@ describe('ConnectorReconciliationService', () => {
     expect(JSON.stringify(third)).not.toContain('10000000-0000-4000-8000-000000000003');
   });
 
+  // DOR-2466: Composio's send/create actions move from `destructive` to
+  // `write`, and reads it tagged with category labels from `destructive` to
+  // `read`, on the next discovery. Nobody's access may grow on its own.
+  it.each(['write', 'read'] as const)(
+    'never widens an existing grant when an action is reclassified from destructive to %s',
+    async (reclassified) => {
+      let classifyAsWrite = false;
+      const originalDiscovery = provider.listOperationSchemas.bind(provider);
+      vi.spyOn(provider, 'listOperationSchemas').mockImplementation(async (request) => {
+        const result = await originalDiscovery(request);
+        if (result.status === 'ok')
+          result.page.operations = result.page.operations.map((operation) =>
+            operation.operationSlug === 'gmail.write'
+              ? {
+                  ...operation,
+                  capabilityClassification: classifyAsWrite ? reclassified : 'destructive',
+                }
+              : operation
+          );
+        return result;
+      });
+      const preview = () =>
+        service.preview(OWNER, { connectionId: CONNECTION_ID }, new AbortController().signal);
+      const current = (
+        candidates: Awaited<ReturnType<typeof preview>>['candidates'],
+        slug: string
+      ) =>
+        candidates.find(
+          (candidate) =>
+            candidate.operationSlug === slug &&
+            candidate.toolkitVersion === 'current-v2' &&
+            candidate.supported
+        )!;
+
+      // Before: "Read" for agent-a; agent-b also picked the send action exactly.
+      const before = await preview();
+      const read = current(before.candidates, 'gmail.read');
+      const oldSend = current(before.candidates, 'gmail.write');
+      expect(oldSend.capabilityClassification).toBe('destructive');
+      await service.apply(OWNER, {
+        previewId: before.previewId,
+        grants: [
+          { agentId: 'agent-a', operationRevisionIds: [read.operationRevisionId] },
+          {
+            agentId: 'agent-b',
+            operationRevisionIds: [read.operationRevisionId, oldSend.operationRevisionId],
+          },
+        ],
+      });
+      const grantsBefore = db
+        .select()
+        .from(connectionOperationGrants)
+        .where(isNull(connectionOperationGrants.revokedAt))
+        .all();
+
+      classifyAsWrite = true;
+      const after = await preview();
+      const newSend = after.candidates.find(
+        (candidate) =>
+          candidate.operationSlug === 'gmail.write' &&
+          candidate.supported &&
+          candidate.operationRevisionId !== oldSend.operationRevisionId
+      )!;
+      expect(newSend.capabilityClassification).toBe(reclassified);
+      expect(newSend.operationRevisionId).not.toBe(oldSend.operationRevisionId);
+      // The Read agent still holds exactly the read action, never the new write one.
+      expect(after.currentGrants).toEqual([
+        { agentId: 'agent-a', operationRevisionIds: [read.operationRevisionId] },
+        {
+          agentId: 'agent-b',
+          operationRevisionIds: [read.operationRevisionId, oldSend.operationRevisionId].sort(),
+        },
+      ]);
+      // The exact destructive pick is kept as it was reviewed, and is shown as
+      // needing a fresh choice rather than silently re-pointed at the new revision.
+      expect(
+        after.candidates.find(
+          (candidate) => candidate.operationRevisionId === oldSend.operationRevisionId
+        )
+      ).toMatchObject({ capabilityClassification: 'destructive', supported: false });
+      expect(
+        db
+          .select()
+          .from(connectionOperationGrants)
+          .where(isNull(connectionOperationGrants.revokedAt))
+          .all()
+      ).toEqual(grantsBefore);
+      expect(
+        db
+          .select()
+          .from(connectionOperationGrants)
+          .where(eq(connectionOperationGrants.operationRevisionId, newSend.operationRevisionId))
+          .all()
+      ).toEqual([]);
+    }
+  );
+
   it('keeps managed additions inactive until the current hosted acknowledgement', async () => {
     const readRef = '10000000-0000-4000-8000-000000000001';
     const writeRef = '10000000-0000-4000-8000-000000000002';

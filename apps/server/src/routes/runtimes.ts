@@ -49,8 +49,34 @@ import {
   assessOllamaModels,
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/providers/ollama-catalog.js';
+import {
+  DismissFoundFolderRequestSchema,
+  LEDGER_RUNTIMES,
+  type LedgerRuntime,
+} from '@dorkos/shared/account-usage';
+import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
+import {
+  AccountUsageUnavailableError,
+  probeAccount,
+  UnknownAccountError,
+} from '../services/runtimes/claude-code/accounts/account-probe.js';
+import {
+  findUnregisteredClaudeFolders,
+  planDismissFoundFolder,
+} from '../services/runtimes/claude-code/accounts/found-claude-folders.js';
+import { configManager } from '../services/core/config-manager.js';
+import {
+  OPERATOR_ONLY_CONFIG_CODE,
+  OPERATOR_ONLY_CONFIG_ERROR,
+} from '../services/core/operator/config-write-policy.js';
+import { logConfigWrite } from '../services/core/operator/config-write.js';
 import { logger } from '../lib/logger.js';
-import { isLocalCaller } from '../lib/caller-authority.js';
+import {
+  isLocalCaller,
+  readCallerAuthority,
+  requireOperatorCookieUnderLogin,
+} from '../lib/caller-authority.js';
+import { trustedCaller } from '../services/core/capabilities/index.js';
 
 const router = Router();
 
@@ -465,6 +491,137 @@ router.post('/opencode/provider/credential', async (req, res) => {
 });
 
 // --- Generic per-runtime connect (Claude, Codex) ---------------------------
+
+/**
+ * GET /api/runtimes/:runtime/accounts/usage — how much of each of this
+ * runtime's accounts is used, from the usage store's memory (spec
+ * `claude-account-fleet` D2). Registered accounts in registry order, the
+ * machine-wide `default` when it stands alone, then folders that are neither.
+ * Any runtime slug that keeps a ledger; anything else is a 400.
+ */
+router.get('/:runtime/accounts/usage', (req, res) => {
+  const runtime = req.params.runtime;
+  if (!(LEDGER_RUNTIMES as readonly string[]).includes(runtime)) {
+    return res.status(400).json({ error: `Unknown runtime "${runtime}".` });
+  }
+  const store = getAccountUsageStore();
+  if (!store) return res.status(503).json({ error: 'Account usage is not available yet.' });
+  res.json({ accounts: store.list(runtime as LedgerRuntime) });
+});
+
+/**
+ * POST /api/runtimes/claude-code/accounts/:id/probe — read an idle Claude
+ * account's usage without running a turn (spec `claude-account-fleet` D3). The
+ * id is a registry id or `default`. Always 200 once the account is known: a
+ * probe that could not read anything says so in `probe` and records nothing.
+ *
+ * It starts the Claude binary in that account's folder, so it holds a person's
+ * bar: with login on, a signed-in person; and never a caller that names itself
+ * an agent. Agents check an account through the `accounts_probe` MCP tool,
+ * which runs through the tool gate like every other `act` tool.
+ */
+router.post('/claude-code/accounts/:id/probe', async (req, res) => {
+  const cookieRefusal = requireOperatorCookieUnderLogin(res, "an account's usage check");
+  if (cookieRefusal) {
+    return res
+      .status(cookieRefusal.status)
+      .json({ error: cookieRefusal.error, code: cookieRefusal.code });
+  }
+  if (!trustedCaller(readCallerAuthority(req, res))) {
+    return res.status(403).json({
+      error: 'Only a person can start an account check here. Agents use the accounts_probe tool.',
+      code: 'PERSON_ONLY',
+    });
+  }
+  try {
+    res.json(await probeAccount(req.params.id));
+  } catch (err) {
+    if (err instanceof UnknownAccountError) {
+      return res.status(404).json({ error: err.message, code: err.code });
+    }
+    if (err instanceof AccountUsageUnavailableError) {
+      return res.status(503).json({ error: err.message });
+    }
+    throw err;
+  }
+});
+
+/**
+ * GET /api/runtimes/claude-code/accounts/found — the Claude account folders on
+ * this computer that are not registered, not the machine default and not
+ * dismissed (spec `claude-account-ui` §7.4). Read-only: it stats folders and
+ * never opens a file.
+ *
+ * Readable by any caller the API already lets in, with no operator bar: the
+ * answer is folder paths under the home folder, the same class of fact
+ * `GET /api/config` and the agent-facing config snapshot already disclose
+ * (`runtimes.claudeCode.accounts[].path`, `dismissedFolders`).
+ */
+router.get('/claude-code/accounts/found', (_req, res) => {
+  try {
+    const folders = findUnregisteredClaudeFolders({ runtimes: configManager.get('runtimes') });
+    res.json({ folders });
+  } catch (err) {
+    logger.error('[Runtimes] Could not look for Claude account folders', { err: String(err) });
+    res.status(500).json({ error: 'Could not look for Claude account folders.' });
+  }
+});
+
+/**
+ * POST /api/runtimes/claude-code/accounts/found/dismiss — stop offering one
+ * found folder, across restarts (spec `claude-account-ui` §7.4). Appends the
+ * folder, in comparable form, to `runtimes.claudeCode.dismissedFolders` in one
+ * synchronous read-modify-write, so two dismissals in a row both stick. A
+ * folder that is already registered or dismissed answers 204 too (another tab
+ * got there first); any other folder the list does not offer is a 400.
+ *
+ * `dismissedFolders` is operator-only, and this route is its only writer, so
+ * it holds the same two bars `PATCH /api/config` holds for such a leaf: with
+ * login on, a signed-in person; and never a caller that names itself an agent.
+ *
+ * The write is `configManager.setDot` on purpose, not `applyConfigPatch`: this
+ * is a purpose-built writer in `config-write.ts`'s sense, moving one fixed leaf
+ * as part of its own job, so it keeps its own gate (the two bars above) and
+ * leaves a `logConfigWrite` line instead of re-running the path policy.
+ */
+router.post('/claude-code/accounts/found/dismiss', (req, res) => {
+  const cookieRefusal = requireOperatorCookieUnderLogin(res, 'which account folders are hidden');
+  if (cookieRefusal) {
+    return res
+      .status(cookieRefusal.status)
+      .json({ error: cookieRefusal.error, code: cookieRefusal.code });
+  }
+  if (!trustedCaller(readCallerAuthority(req, res))) {
+    return res.status(403).json({
+      error: OPERATOR_ONLY_CONFIG_ERROR,
+      code: OPERATOR_ONLY_CONFIG_CODE,
+      message: 'Only a person can hide an account folder.',
+    });
+  }
+  const parsed = DismissFoundFolderRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Send the folder to hide as `path`.' });
+  }
+  try {
+    const plan = planDismissFoundFolder(parsed.data.path, {
+      runtimes: configManager.get('runtimes'),
+    });
+    if (plan.outcome === 'not-a-candidate') {
+      return res
+        .status(400)
+        .json({ error: 'That folder is not one of the account folders found on this computer.' });
+    }
+    if (plan.outcome === 'save') {
+      const before = configManager.get('runtimes');
+      configManager.setDot('runtimes.claudeCode.dismissedFolders', plan.dismissed);
+      logConfigWrite('the found-folders route', 'runtimes', before, configManager.get('runtimes'));
+    }
+    return res.status(204).end();
+  } catch (err) {
+    logger.error('[Runtimes] Could not hide a Claude account folder', { err: String(err) });
+    return res.status(500).json({ error: 'Could not hide that folder. Try again.' });
+  }
+});
 
 /**
  * GET /api/runtimes/:type/credential — whether this runtime's own key is already

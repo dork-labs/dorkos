@@ -18,6 +18,7 @@ import {
   useInstallPackage,
   useUninstallPackage,
   useInstalledPackages,
+  useRefreshMarketplaceSource,
 } from '../index';
 
 const mockPackage: AggregatedPackage = {
@@ -313,5 +314,58 @@ describe('useUninstallPackage', () => {
     });
 
     expect(result.current.error).toBeInstanceOf(Error);
+  });
+});
+
+describe('useRefreshMarketplaceSource (DOR-2304)', () => {
+  it('refreshes the named source and invalidates the browse list', async () => {
+    const transport = createMockTransport({
+      refreshMarketplaceSource: vi.fn().mockResolvedValue({
+        marketplace: { plugins: [] },
+        fetchedAt: '2026-09-24T10:00:00.000Z',
+      }),
+    });
+    const { queryClient, wrapper } = createWrapperWithClient(transport);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useRefreshMarketplaceSource(), { wrapper });
+
+    result.current.mutate('my-team');
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.refreshMarketplaceSource).toHaveBeenCalledWith('my-team');
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['marketplace', 'packages'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['marketplace', 'sources'] });
+  });
+
+  it('redraws the sources list after a failed refresh too (DOR-2324)', async () => {
+    // Purpose: the server records the failure, and the row shows it from there.
+    const transport = createMockTransport({
+      refreshMarketplaceSource: vi.fn().mockRejectedValue(new Error('down')),
+    });
+    const { queryClient, wrapper } = createWrapperWithClient(transport);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useRefreshMarketplaceSource(), { wrapper });
+
+    result.current.mutate('my-team');
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['marketplace', 'sources'] });
+  });
+
+  it('leaves a failure to the row rather than the app-wide error toast', async () => {
+    // Purpose: the sources page shows why a refresh failed on the source's own
+    // row; a second, generic "That didn't work" toast would say it twice.
+    const transport = createMockTransport({
+      refreshMarketplaceSource: vi.fn().mockRejectedValue(new Error('nope')),
+    });
+    const { queryClient, wrapper } = createWrapperWithClient(transport);
+    const { result } = renderHook(() => useRefreshMarketplaceSource(), { wrapper });
+
+    result.current.mutate('my-team');
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(queryClient.getMutationCache().getAll()[0]?.options.meta).toEqual({
+      suppressErrorToast: true,
+    });
   });
 });

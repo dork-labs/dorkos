@@ -1,17 +1,19 @@
 /**
  * The `ConnectorRegistry` — the server-side seam that holds the registered
  * {@link ConnectorProvider} backends, routes an opaque `ConnectionId` to
- * its owning provider, and aggregates accounts across every backend with
- * per-provider degradation.
+ * its owning provider, and refreshes every kept account's sign-in status from
+ * its service with per-provider degradation.
  *
  * It is the connector analogue of `runtimeRegistry`: stable connection ids
- * resolve through private instance/account bindings, and cross-provider `listAccounts` aggregation
- * degrades one unreachable provider to a `warnings[]` entry rather than failing
- * the whole call (ADR-0310), exactly as session listing degrades per runtime.
+ * resolve through private instance/account bindings, and the cross-provider
+ * sign-in refresh degrades one unreachable provider to a `failures[]` entry
+ * rather than failing the whole call (ADR-0310), exactly as session listing
+ * degrades per runtime.
  *
  * The canonical `connections` table owns DorkOS identity and private provider
- * routing. The registry reconciles it after provider reads and tombstones it on
- * disconnect; provider vaults remain the source of truth for tokens.
+ * routing. The registry records a sign-in when it completes, refreshes its
+ * status from provider listings, and tombstones it on disconnect; provider
+ * vaults remain the source of truth for tokens.
  *
  * @module services/connectors/registry
  */
@@ -25,9 +27,12 @@ import type {
 } from '@dorkos/shared/connector-provider';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { connectorExecutionConfigDigest } from './execution/execution-config.js';
+import { ConnectorCatalogCache, type KeptCatalogRead } from './resources/catalog-cache.js';
 import {
   ConnectionStore,
+  type ClosedConnection,
   type ConnectorProviderDeploymentMode,
+  type SignInStatusChange,
   type StableConnectionBinding,
 } from './connection-store.js';
 import type {
@@ -38,6 +43,13 @@ import type {
 /** Default per-provider deadline for an aggregation call, in milliseconds. */
 const DEFAULT_PROVIDER_TIMEOUT_MS = 5_000;
 
+/**
+ * Default per-way deadline for the background sign-in refresh. Longer than an
+ * aggregation read: nobody waits on it, and an account listing may follow
+ * several pages, so a 5-second budget would fail a large way on every run.
+ */
+export const DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS = 20_000;
+
 /** One provider's degradation notice — a backend that failed or timed out. */
 export interface ConnectorWarning {
   /** The backend type that degraded, e.g. `'composio'`. */
@@ -46,12 +58,22 @@ export interface ConnectorWarning {
   message: string;
 }
 
-/** The result of a cross-provider `listAccounts` aggregation. */
-export interface AggregatedAccounts {
-  /** Every account returned by a reachable provider, merged. */
-  accounts: ConnectedAccount[];
-  /** One entry per provider that failed or timed out (never a hard failure). */
-  warnings: ConnectorWarning[];
+/** One registered instance whose account listing failed or timed out during a refresh. */
+export interface SignInRefreshFailure {
+  /** The instance whose listing failed. */
+  providerInstanceId: ConnectorProviderInstanceId;
+  /** Its backend type, e.g. `'composio'`. */
+  provider: string;
+  /** What went wrong, from the service or the timeout; never a secret. */
+  message: string;
+}
+
+/** The result of refreshing every registered instance's sign-in status. */
+export interface SignInRefreshResult {
+  /** Every kept account whose recorded sign-in status changed. */
+  changes: SignInStatusChange[];
+  /** One entry per instance whose listing failed; its accounts were left as they were. */
+  failures: SignInRefreshFailure[];
 }
 
 /** The result of a cross-provider `listToolkits` aggregation. */
@@ -68,6 +90,8 @@ export interface ConnectorRegistryOpts {
   db: Db;
   /** Override the per-provider aggregation timeout (default 5s). */
   providerTimeoutMs?: number;
+  /** Override the per-way sign-in refresh deadline (default 20s). */
+  signInRefreshTimeoutMs?: number;
   /** Already-resolved application migration input. Production P1 supplies no operation set. */
   migration?: LegacyConnectionMigrationInput;
   /** Inject an authoritative store in focused tests. */
@@ -77,6 +101,8 @@ export interface ConnectorRegistryOpts {
     readonly ownerKind: 'user' | 'local_install';
     readonly ownerId: string;
   };
+  /** Each provider's kept app list. Default: kept in memory only. */
+  catalogCache?: ConnectorCatalogCache;
 }
 
 /**
@@ -108,9 +134,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  */
 export class ConnectorRegistry {
   private readonly _providerTimeoutMs: number;
+  private readonly _signInRefreshTimeoutMs: number;
   private readonly _connections: ConnectionStore;
   private readonly _providers = new Map<string, ConnectorProvider>();
   private readonly _defaultInstanceByType = new Map<string, ConnectorProviderInstanceId>();
+  private readonly _catalog: ConnectorCatalogCache;
+  /** Setup fingerprint each live instance registered with; binds its kept app list. */
+  private readonly _configDigests = new Map<ConnectorProviderInstanceId, string>();
+  private readonly _removalListeners = new Set<(instanceId: ConnectorProviderInstanceId) => void>();
 
   /**
    * Construct the registry over the canonical connector database.
@@ -119,6 +150,12 @@ export class ConnectorRegistry {
    */
   constructor(opts: ConnectorRegistryOpts) {
     this._providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+    this._signInRefreshTimeoutMs =
+      opts.signInRefreshTimeoutMs ?? DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS;
+    this._catalog = opts.catalogCache ?? new ConnectorCatalogCache();
+    // The kept app list is dropped through the same notice as every other
+    // copy kept for a way, so there is one invalidation path.
+    this.onProviderInstanceRemoved((instanceId) => this._catalog.drop(instanceId));
     this._connections =
       opts.connectionStore ??
       new ConnectionStore({
@@ -167,21 +204,49 @@ export class ConnectorRegistry {
     executionConfigDigest?: string,
     mode: ConnectorProviderDeploymentMode = 'byo'
   ): void {
+    const digest =
+      executionConfigDigest ??
+      connectorExecutionConfigDigest({
+        source: 'direct-registration',
+        instanceId: provider.instanceId,
+        type: provider.type,
+        capabilities: provider.getCapabilities(),
+      });
     if (this._connections.health().status === 'ready') {
-      this._connections.registerProvider(
-        provider,
-        executionConfigDigest ??
-          connectorExecutionConfigDigest({
-            source: 'direct-registration',
-            instanceId: provider.instanceId,
-            type: provider.type,
-            capabilities: provider.getCapabilities(),
-          }),
-        mode
-      );
+      this._connections.registerProvider(provider, digest, mode);
     }
+    // Registering over a live registration, even with the same object, is a
+    // setup change too: everything kept for the way is dropped.
+    const wasLive = this._providers.has(provider.instanceId);
     this._providers.set(provider.instanceId, provider);
+    this._configDigests.set(provider.instanceId, digest);
     this._defaultInstanceByType.set(provider.type, provider.instanceId);
+    if (wasLive) this.notifyRemoved(provider.instanceId);
+  }
+
+  /**
+   * Be told whenever a configured instance is removed or registered again
+   * over a live registration, so anything kept for it (its app list, an app's
+   * action list) is dropped.
+   *
+   * @param listener - Called with the instance id after it leaves the registry.
+   * @returns A function that stops the notifications.
+   */
+  onProviderInstanceRemoved(
+    listener: (instanceId: ConnectorProviderInstanceId) => void
+  ): () => void {
+    this._removalListeners.add(listener);
+    return () => this._removalListeners.delete(listener);
+  }
+
+  private notifyRemoved(instanceId: ConnectorProviderInstanceId): void {
+    for (const listener of this._removalListeners) {
+      try {
+        listener(instanceId);
+      } catch {
+        // A listener's failure never blocks a registry change.
+      }
+    }
   }
 
   /**
@@ -200,12 +265,23 @@ export class ConnectorRegistry {
    * If it was the type's compatibility default, choose the lexically first
    * remaining instance so legacy type selectors continue deterministically.
    *
+   * The instance's kept row is marked unavailable even when nothing is live
+   * here: at boot, a way that worked last run and fails its check this run
+   * was never registered, and its row must not keep saying it is available.
+   *
    * @param instanceId - Exact configured provider instance to disable.
    */
   unregisterProviderInstance(instanceId: ConnectorProviderInstanceId): void {
     const provider = this._providers.get(instanceId);
+    if (this._connections.health().status === 'ready') {
+      this._connections.unregisterProvider(instanceId);
+    }
     if (!provider) return;
     this._providers.delete(instanceId);
+    // Every key change, setup change and removal passes through here, so the
+    // kept app list goes with the registration it was listed under.
+    this._configDigests.delete(instanceId);
+    this.notifyRemoved(instanceId);
     if (this._defaultInstanceByType.get(provider.type) === instanceId) {
       const fallback = [...this._providers.values()]
         .filter((candidate) => candidate.type === provider.type)
@@ -213,8 +289,24 @@ export class ConnectorRegistry {
       if (fallback) this._defaultInstanceByType.set(provider.type, fallback.instanceId);
       else this._defaultInstanceByType.delete(provider.type);
     }
+  }
+
+  /**
+   * Tombstone one `test-connector` provider instance's own connections — see
+   * {@link ConnectionStore.purgeTestConnectorConnections}, which does the
+   * actual tombstoning (never a hard delete — a DB trigger refuses that) and
+   * refuses (throws) an instance whose persisted type isn't `test-connector`.
+   * For an ephemeral, scripted provider only; never reachable for a real
+   * (`composio`/`nango`) instance, whose history is meant to survive a
+   * credential rotation, and never called for one — the guard is what makes
+   * that a refusal rather than a policy this method merely doesn't exercise.
+   *
+   * @param instanceId - The ephemeral `test-connector` instance to purge.
+   * @throws {Error} If a persisted provider instance exists at `instanceId` and its type isn't `test-connector`.
+   */
+  purgeTestConnectorConnections(instanceId: ConnectorProviderInstanceId): void {
     if (this._connections.health().status === 'ready') {
-      this._connections.unregisterProvider(instanceId);
+      this._connections.purgeTestConnectorConnections(instanceId);
     }
   }
 
@@ -256,6 +348,50 @@ export class ConnectorRegistry {
   }
 
   /**
+   * The execution-material fingerprint last stored for one instance, which
+   * outlives unregistering and restarts. `undefined` while the connection
+   * store is unavailable or the instance was never registered.
+   *
+   * @param instanceId - The configured instance.
+   */
+  storedExecutionConfigDigest(instanceId: ConnectorProviderInstanceId): string | undefined {
+    if (this._connections.health().status !== 'ready') return undefined;
+    return this._connections.storedExecutionConfigDigest(instanceId);
+  }
+
+  /**
+   * Whether accounts connected through one provider instance are still kept,
+   * registered or not. `false` while the connection store is unavailable.
+   *
+   * @param instanceId - The instance the accounts were connected through.
+   */
+  hasLiveConnections(instanceId: ConnectorProviderInstanceId): boolean {
+    if (this._connections.health().status !== 'ready') return false;
+    return this._connections.hasLiveConnections(instanceId);
+  }
+
+  /**
+   * Close the kept accounts of one registered instance that its complete,
+   * successful account listing no longer contains (see
+   * {@link ConnectionStore.closeUnlistedConnections}). A no-op while the
+   * connection store is unavailable.
+   *
+   * @param provider - The registered instance the listing came from.
+   * @param listed - Every account that listing returned.
+   * @returns The accounts closed.
+   */
+  closeUnlistedConnections(
+    provider: ConnectorProvider,
+    listed: readonly ProviderConnectedAccount[]
+  ): ClosedConnection[] {
+    if (this._connections.health().status !== 'ready') return [];
+    return this._connections.closeUnlistedConnections(
+      provider.instanceId,
+      new Set(listed.map((account) => account.externalAccountRef))
+    );
+  }
+
+  /**
    * Route an active account id to the provider that owns it, via the canonical
    * private binding. Returns `undefined` when the id is unknown, locally paused
    * or disconnected, provider-expired, or its exact provider is unavailable.
@@ -288,6 +424,18 @@ export class ConnectorRegistry {
     label?: string
   ): ConnectionId | undefined {
     return this._connections.disconnectedConnectionFor(provider.instanceId, toolkit, label);
+  }
+
+  /**
+   * Move a provider's saved accounts from service ids it renamed to the ids it
+   * now lists them under. A no-op while the connection store is unavailable.
+   *
+   * @param provider - The provider that renamed them.
+   * @param renames - Old service id → new service id.
+   */
+  renameServices(provider: ConnectorProvider, renames: ReadonlyMap<string, string>): void {
+    if (this._connections.health().status !== 'ready') return;
+    this._connections.renameServices(provider.instanceId, renames);
   }
 
   /**
@@ -339,38 +487,111 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Aggregate accounts across every registered provider in parallel, degrading
-   * per provider: one backend that throws or times out becomes a `warnings[]`
-   * entry while the others still return (ADR-0310).
-   *
-   * @param opts - Optional filter; `toolkit` narrows to one service slug.
+   * Refresh the sign-in status of every kept account from its service: list
+   * the accounts of every registered instance that lists accounts, in
+   * parallel, and record what each successful listing reports (see
+   * {@link ConnectionStore.refreshSignInStatus}). Degrades per instance: a
+   * listing that throws or times out becomes a `failures[]` entry and its
+   * accounts keep the status they had, so an outage never reads as a sign-in
+   * that ended (ADR-0310). Only the sign-in status and when it was checked
+   * change; no account is added, closed or removed here.
    */
-  async listAccounts(opts?: { toolkit?: string }): Promise<AggregatedAccounts> {
+  async refreshSignIns(): Promise<SignInRefreshResult> {
     this._connections.assertAvailable();
-    const providers = this.listProviders();
+    const providers = this.listProviders().filter(
+      (provider) => provider.getCapabilities().capabilities.accounts.status === 'available'
+    );
+    const startedAt = new Date().toISOString();
     const settled = await Promise.allSettled(
       providers.map((provider) =>
-        withTimeout(provider.listAccounts(opts), this._providerTimeoutMs, provider.type)
+        withTimeout(provider.listAccounts(), this._signInRefreshTimeoutMs, provider.type)
       )
     );
-    const accounts: ConnectedAccount[] = [];
-    const warnings: ConnectorWarning[] = [];
+    const changes: SignInStatusChange[] = [];
+    const failures: SignInRefreshFailure[] = [];
     settled.forEach((result, index) => {
       const provider = providers[index]!;
       if (result.status === 'fulfilled') {
-        accounts.push(
-          ...result.value
-            .map((account) => this._connections.reconcile(provider, account))
-            .filter((account) => !this._connections.isRemoved(account.id))
-        );
+        changes.push(...this.recordSignInStatus(provider, result.value, startedAt));
       } else {
-        warnings.push({
+        failures.push({
+          providerInstanceId: provider.instanceId,
           provider: provider.type,
           message: result.reason instanceof Error ? result.reason.message : String(result.reason),
         });
       }
     });
-    return { accounts, warnings };
+    return { changes, failures };
+  }
+
+  /**
+   * Record the sign-in status one successful account listing from a
+   * registered instance reports (see {@link ConnectionStore.refreshSignInStatus}).
+   * A no-op while the connection store is unavailable, or once the instance
+   * has been replaced or removed since the listing began.
+   *
+   * @param provider - The registered instance the listing came from.
+   * @param listed - Every account that listing returned.
+   * @param listingStartedAt - When the listing was requested (ISO-8601).
+   * @returns The kept accounts whose recorded status changed.
+   */
+  recordSignInStatus(
+    provider: ConnectorProvider,
+    listed: readonly ProviderConnectedAccount[],
+    listingStartedAt: string
+  ): SignInStatusChange[] {
+    if (this._connections.health().status !== 'ready') return [];
+    if (this._providers.get(provider.instanceId) !== provider) return [];
+    return this._connections.refreshSignInStatus(provider.instanceId, listed, listingStartedAt);
+  }
+
+  /**
+   * Record that the service refused an action because an account's sign-in
+   * ended (see {@link ConnectionStore.markSignInEnded}). A no-op while the
+   * connection store is unavailable.
+   *
+   * @param connectionId - The account the action used.
+   * @param status - What the service reported.
+   * @returns Whether the recorded status changed.
+   */
+  markSignInEnded(connectionId: ConnectionId, status: 'expired' | 'revoked'): boolean {
+    if (this._connections.health().status !== 'ready') return false;
+    return this._connections.markSignInEnded(connectionId, status);
+  }
+
+  /**
+   * One registered provider's whole app list, read through its kept copy when
+   * its service type keeps one (see `resources/catalog-cache.ts`).
+   *
+   * @param provider - A provider this registry currently holds.
+   * @param signal - The reader's deadline; it stops this read waiting, never the shared listing.
+   * @throws When the provider is no longer registered, or it has no kept list and listing fails.
+   */
+  readCatalog(provider: ConnectorProvider, signal: AbortSignal): Promise<KeptCatalogRead> {
+    const digest = this._configDigests.get(provider.instanceId);
+    if (digest === undefined || this._providers.get(provider.instanceId) !== provider) {
+      return Promise.reject(new Error(`${provider.type} is no longer set up.`));
+    }
+    return this._catalog.read(provider, digest, signal);
+  }
+
+  /**
+   * The logo address one app's kept app list recorded, looking only in kept
+   * copies (never listing a service upstream), in registration order. The logo
+   * route's source: a URL the server's own list recorded, never one a request
+   * names, and a logo miss costs no catalog read.
+   *
+   * @param serviceSlug - The catalog's service id.
+   */
+  async keptLogoUrl(serviceSlug: string): Promise<string | undefined> {
+    for (const provider of this.listProviders()) {
+      const digest = this._configDigests.get(provider.instanceId);
+      if (digest === undefined) continue;
+      const toolkits = await this._catalog.peek(provider, digest);
+      const logoUrl = toolkits?.find((toolkit) => toolkit.slug === serviceSlug)?.logoUrl;
+      if (logoUrl) return logoUrl;
+    }
+    return undefined;
   }
 
   /**
@@ -388,9 +609,9 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Find every registered provider that lists `toolkitSlug`, with the same
-   * per-provider timeout + degradation as the aggregation paths: a provider
-   * that throws or hangs on `listToolkits` becomes a `warnings[]` entry rather
+   * Find every registered provider whose kept app list includes `toolkitSlug`,
+   * with the same per-provider timeout + degradation as the aggregation paths:
+   * a provider that throws or hangs listing its apps becomes a `warnings[]` entry rather
    * than blocking the caller. Used by the provider-neutral recommendation
    * capability so discovery degrades on a slow provider instead of hanging.
    *
@@ -403,7 +624,14 @@ export class ConnectorRegistry {
     const providers = this.listProviders();
     const settled = await Promise.allSettled(
       providers.map((provider) =>
-        withTimeout(provider.listToolkits(), this._providerTimeoutMs, provider.type)
+        withTimeout(
+          // The kept app list, so a recommendation never re-lists a whole catalog.
+          this.readCatalog(provider, new AbortController().signal).then((read) =>
+            read.status === 'ok' ? read.toolkits : Promise.reject(new Error(read.reason))
+          ),
+          this._providerTimeoutMs,
+          provider.type
+        )
       )
     );
 

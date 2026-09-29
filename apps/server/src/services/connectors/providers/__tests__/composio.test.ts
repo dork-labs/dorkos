@@ -1,6 +1,7 @@
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import { describe, expect, it, vi } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
-import type { ConnectorExternalAccountRef } from '@dorkos/shared/connector-provider';
+import { type ConnectorExternalAccountRef } from '@dorkos/shared/connector-provider';
 import type {
   CredentialProvider,
   CredentialResolution,
@@ -369,6 +370,72 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
     expect(operationClient.executions).toEqual([]);
   });
 
+  it.each([
+    ['EXPIRED', 'ACCOUNT_SIGN_IN_EXPIRED'],
+    ['INACTIVE', 'ACCOUNT_SIGN_IN_REVOKED'],
+  ] as const)(
+    'says the sign-in ended when Composio reports the account %s, and sends nothing',
+    async (composioStatus, code) => {
+      const managementClient = new FakeComposioClient();
+      const operationClient = new FakeComposioOperationClient();
+      const provider = providerWith(managementClient, operationClient);
+      const { flowId } = await provider.startConnect('gmail', { label: 'work' });
+      const { account } = await provider.pollConnect(flowId);
+      if (!account) throw new Error('Expected a connected account.');
+      managementClient.setStatus(toComposioAccountId(account.externalAccountRef), composioStatus);
+
+      await expect(
+        provider.execute({
+          externalAccountRef: account.externalAccountRef,
+          authorizeDispatch: () => true,
+          operation: {
+            id: 'revision-gmail-read',
+            providerInstanceId: provider.instanceId,
+            toolkit: 'gmail',
+            operationSlug: 'gmail.read',
+            toolkitVersion: '2026-09-02',
+            schemaHash: 'sha256:gmail.read',
+            capabilityClassification: 'read',
+            retryPolicy: 'never',
+            inputSchema: { type: 'object' },
+            discoveredAt: '2026-09-02T00:00:00.000Z',
+          },
+          arguments: {},
+          logicalOperationId: 'logical-signed-out',
+          attemptId: 'attempt-signed-out',
+          signal: new AbortController().signal,
+        })
+      ).resolves.toEqual({
+        status: 'error',
+        code,
+        message: CONNECTION_READINESS_COPY.signed_out.agent,
+        retryable: false,
+      });
+      expect(operationClient.executions).toEqual([]);
+    }
+  );
+
+  it('lists each account with the sign-in status Composio reports, and FAILED as no fact', async () => {
+    const client = new FakeComposioClient();
+    const provider = providerWith(client, new FakeComposioOperationClient());
+    const statuses = ['ACTIVE', 'EXPIRED', 'INACTIVE', 'FAILED', 'INITIATED'] as const;
+    for (const status of statuses) {
+      const { flowId } = await provider.startConnect('gmail', { label: status });
+      const { account } = await provider.pollConnect(flowId);
+      client.setStatus(toComposioAccountId(account!.externalAccountRef), status);
+    }
+
+    const listed = await provider.listAccounts();
+
+    expect(listed.map((account) => [account.label, account.status])).toEqual([
+      ['ACTIVE', 'active'],
+      ['EXPIRED', 'expired'],
+      ['INACTIVE', 'revoked'],
+      ['FAILED', 'unknown'],
+      ['INITIATED', 'pending'],
+    ]);
+  });
+
   it('rejects an unknown account, another instance, and retryable metadata before SDK dispatch', async () => {
     const operationClient = new FakeComposioOperationClient();
     const provider = providerWith(new FakeComposioClient(), operationClient);
@@ -465,6 +532,37 @@ describe('ComposioConnectorProvider — degrade contract on transport failure', 
       expect(poll.error).toBeTruthy();
     });
   }
+
+  it('carries the app’s logo URL and description into the toolkit', async () => {
+    const client: ComposioHttpClient = {
+      listToolkits: () =>
+        Promise.resolve([
+          {
+            slug: 'notion',
+            name: 'Notion',
+            authScheme: 'OAUTH2',
+            logoUrl: 'https://logos.composio.dev/api/notion',
+            description: 'Notion is a workspace for notes and docs.',
+          },
+          { slug: 'bare', name: 'Bare', authScheme: 'API_KEY' },
+        ]),
+      initiateConnection: () => Promise.resolve({ connectionRequestId: 'cr_1', redirectUrl: '' }),
+      getConnectionState: () => Promise.resolve({ status: 'INITIATED' }),
+      listConnectedAccounts: () => Promise.resolve([]),
+      deleteConnectedAccount: () => Promise.resolve(),
+    };
+
+    await expect(providerWith(client).listToolkits()).resolves.toEqual([
+      {
+        slug: 'notion',
+        displayName: 'Notion',
+        authKind: 'oauth2',
+        logoUrl: 'https://logos.composio.dev/api/notion',
+        description: 'Notion is a workspace for notes and docs.',
+      },
+      { slug: 'bare', displayName: 'Bare', authKind: 'api-key' },
+    ]);
+  });
 
   it('startConnect throws a typed error when Composio returns no authorize URL', async () => {
     // A NullUrlClient returns a connection request with an empty redirectUrl —

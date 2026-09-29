@@ -10,7 +10,6 @@
 export * from './a2a.js';
 export * from './activity.js';
 export * from './approvals.js';
-export * from './approval-grants.js';
 export * from './agent-identity.js';
 export * from './tasks.js';
 export * from './relay.js';
@@ -20,6 +19,9 @@ export * from './codex.js';
 export * from './opencode.js';
 export * from './session-events.js';
 export * from './session/message-acceptance.js';
+export * from './session/session-limits.js';
+export * from './session/session-limit-history.js';
+export * from './session/session-context.js';
 export * from './workspace.js';
 export * from './auth.js';
 export * from './unclaimed-chats.js';

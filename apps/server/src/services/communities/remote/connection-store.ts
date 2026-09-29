@@ -206,6 +206,20 @@ export class RemoteConnectionStore {
     return (await this.read()).filter((record) => record.ownerKey === ownerKey).map(this.project);
   }
 
+  /**
+   * Every owner's connected Community whose last verified access was read-only (`archived`,
+   * which is also how a host hold reads). Nothing else re-checks one with no enrolled agent,
+   * so this is how a release, or a restore, is noticed without a person opening its status.
+   */
+  async readOnlyConnections(): Promise<{ communityRef: CommunityRef; ownerAuthorId: string }[]> {
+    return (await this.read())
+      .filter(
+        (record) =>
+          record.status === 'connected' && record.access?.lastKnown?.lifecycle === 'archived'
+      )
+      .map((record) => ({ communityRef: record.ref, ownerAuthorId: record.ownerKey }));
+  }
+
   /** Remove expired pending proof before list/status can display it after restart. */
   async sweepExpired(ownerKey: string, busy: ReadonlySet<CommunityRef> = new Set()): Promise<void> {
     await this.exclusive(async () => {

@@ -9,12 +9,12 @@ import {
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { serve } from '@hono/node-server';
-import { unzipSync, strFromU8 } from 'fflate';
 import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { createBlobStore } from '../storage/index.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
+import { drainExports, openArchive } from './export-test-helpers.js';
 
 const pgUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 const endpoint = process.env.COMMUNITY_TEST_S3_ENDPOINT;
@@ -49,6 +49,7 @@ const config = parseConfig({
   COMMUNITY_S3_ACCESS_KEY_ID: accessKeyId,
   COMMUNITY_S3_SECRET_ACCESS_KEY: secretAccessKey,
 });
+const s3Store = createBlobStore(config);
 let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
@@ -68,7 +69,7 @@ beforeAll(async () => {
   await migrate(dbUrl.toString());
   pool = new Pool({ connectionString: dbUrl.toString() });
   server = serve({
-    fetch: createCommunityApp({ config, pool, blobStore: createBlobStore(config) }).fetch,
+    fetch: createCommunityApp({ config, pool, blobStore: s3Store }).fetch,
     port: 0,
   });
   await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -126,14 +127,22 @@ it('uploads, binds, downloads and exports through real MinIO HTTP storage', asyn
   expect(download.status).toBe(200);
   expect(await download.text()).toBe('hello minio');
   const archive = await post('/api/v1/me/export', {}, cookie);
-  expect(archive.status).toBe(201);
-  const archiveId = (await archive.json()).archiveId;
-  const zipDownload = await request(`/api/v1/exports/${archiveId}`, { headers: { cookie } });
+  expect(archive.status).toBe(202);
+  const exportId = (await archive.json()).export.id;
+  // Segments land in the bucket; the download maps ranged reads onto them.
+  await drainExports(pool, s3Store, { settings: { segmentBytes: 1, ttlHours: 24, maxHours: 24 } });
+  const zipDownload = await request(`/api/v1/exports/${exportId}/archive`, { headers: { cookie } });
   expect(zipDownload.status).toBe(200);
-  const zip = unzipSync(new Uint8Array(await zipDownload.arrayBuffer()));
-  const manifest = JSON.parse(strFromU8(zip['manifest.json']));
-  expect(manifest.attachments[0].id).toBe(file.id);
-  expect(strFromU8(zip[`attachments/${file.id}`])).toBe('hello minio');
+  const whole = Buffer.from(await zipDownload.arrayBuffer());
+  const opened = await openArchive(whole);
+  const rows = opened.rows<{ id: string; archivePath: string }>('attachments');
+  expect(rows[0].id).toBe(file.id);
+  expect(opened.files.get(rows[0].archivePath)?.toString()).toBe('hello minio');
+  const tail = await request(`/api/v1/exports/${exportId}/archive`, {
+    headers: { cookie, range: 'bytes=-64' },
+  });
+  expect(tail.status).toBe(206);
+  expect(Buffer.from(await tail.arrayBuffer())).toEqual(whole.subarray(whole.length - 64));
 });
 
 it('refuses an upload past the storage limit before any bytes reach the bucket', async () => {

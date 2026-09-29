@@ -340,7 +340,7 @@ describe('RemoteMirrorStore', () => {
       enrollments,
       (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
     );
-    mirrors.revoke(REF_A);
+    mirrors.revoke(REF_A, harness.human);
     bridge.importSnapshot(room, [
       {
         ...nativeEntry(REF_A, 'revoked-general', 1),
@@ -748,7 +748,7 @@ describe('RemoteMirrorStore', () => {
     const { harness, mirrors } = wired();
     const room = mirrors.ensureRoom(roomInput(REF_A, 'general', harness.human));
     mirrors.importEntries(REF_A, 'general', [nativeEntry(REF_A, 'general', 1)]);
-    mirrors.revoke(REF_A);
+    mirrors.revoke(REF_A, harness.human);
 
     expect(harness.service.listRooms(harness.human).map((item) => item.id)).not.toContain(room.id);
     expect(harness.service.listMemberRooms(harness.human).map((item) => item.roomId)).not.toContain(
@@ -798,7 +798,7 @@ describe('RemoteMirrorStore', () => {
       ...roomInput(REF_A, 'general', harness.human),
       accessors: [{ authorId: agent.id, responseMode: 'always' }],
     });
-    mirrors.revoke(REF_A);
+    mirrors.revoke(REF_A, harness.human);
     expect(harness.service.listRooms(agent.id).map((item) => item.id)).not.toContain(room.id);
   });
 

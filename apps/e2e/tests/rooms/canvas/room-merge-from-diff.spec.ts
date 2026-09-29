@@ -16,8 +16,9 @@ import { BasePage } from '../../../pages/BasePage';
  * turn started by it.
  *
  * **Why the test-mode leg.** The diff document has to be opened from INSIDE a
- * turn, because that is the only path that labels a document with the tree the
- * turn was standing in. On the cockpit leg that turn would be a billable
+ * turn, because that is the only path that labels a document with the agent's
+ * copy: the turn stands in the agent's home and names the file inside the copy
+ * it was granted, by full path (spec `agent-home-desk` §5.6). On the cockpit leg that turn would be a billable
  * claude-code turn on whatever `claude` sign-in the machine has, so
  * {@link requireTestModeLeg} makes the leg a check rather than a hope.
  *
@@ -32,9 +33,6 @@ const OPENS_DIFF = 'rooms-open-diff';
 
 /**
  * The file the scenario reviews. Must match `ROOM_DIFF_PATH` in the scenario.
- *
- * At the root of the repo rather than in a folder, because a person's save into
- * a room's files refuses to create one: "saving does not make new folders".
  */
 const DIFF_PATH = 'app.txt';
 
@@ -155,8 +153,8 @@ test.describe('Reviewing an agent’s work from the room’s canvas', () => {
     });
     expect(committed.ok(), await committed.text()).toBe(true);
 
-    // Now the turn that puts the review on the table. It runs in that same copy,
-    // which is what labels the document with it.
+    // Now the turn that puts the review on the table. It names the file inside
+    // that same copy by its full path, which is what labels the document with it.
     await useScenario(request, OPENS_DIFF);
     await roomsApi.postEntries(room.id, [`take a look ${tag}`]);
     await roomsApi.waitForEntry(

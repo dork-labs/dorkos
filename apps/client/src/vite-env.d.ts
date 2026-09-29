@@ -80,11 +80,6 @@ declare global {
      *
      * A success usually ends with this window being reloaded onto the restarted
      * server, so the resolved value is mostly read on the way to a failure.
-     *
-     * **Optional on purpose.** Absent in the browser cockpit, in the Obsidian
-     * embed, and in any desktop build predating this — see
-     * `shared/lib/desktop-admin.ts`, which is where the choice between this and
-     * the HTTP route is made.
      */
     restartServer?(): Promise<DesktopAdminResult>;
     /**
@@ -102,10 +97,6 @@ declare global {
      * calling: the picture is of the window as it stands, so the dialog would
      * otherwise photograph itself. `shared/lib/app-capture.ts` is the one place
      * that is done, and is where the browser fallback lives.
-     *
-     * **Optional on purpose.** Absent in the browser app, in the Obsidian
-     * embed, and in any desktop build predating this — all of which capture
-     * through the DOM instead.
      */
     captureAppView?(): Promise<DesktopCaptureResult>;
     /**
@@ -116,12 +107,6 @@ declare global {
      * server-side. This one cannot be: `main.log` belongs to the Electron main
      * process, which the server child cannot see. The server child's forwarded
      * output is filtered out of it, so the two do not duplicate each other.
-     *
-     * Resolves `undefined` when there is no readable log — never a rejection,
-     * and never a reason to lose the report. **Optional on purpose:** absent in
-     * the browser app, in the Obsidian embed, and in any desktop build predating
-     * this, so every caller must guard on it —
-     * `shared/lib/desktop-shell-log.ts` is the one place that is done.
      */
     getShellLogExcerpt?(): Promise<string | undefined>;
     /** The current platform (darwin, win32, linux). */
@@ -170,10 +155,6 @@ declare global {
      * process's backstop timeout, also closes the window — so the handler must
      * do its work **synchronously**.
      *
-     * **Optional on purpose.** It is absent in the browser cockpit, in the
-     * Obsidian embed, and in any desktop build predating the menu item, so
-     * every caller must guard on it.
-     *
      * @returns An unsubscribe function that removes the listener.
      */
     onCloseTab?(cb: () => boolean | void): () => void;
@@ -206,18 +187,12 @@ declare global {
      * `index.html` — so the shell and the sentinel cannot end up with two
      * different definitions of "the app is up". Nothing else in the client
      * should call it.
-     *
-     * **Optional on purpose.** Absent in the browser cockpit, in the Obsidian
-     * embed, and in any desktop build predating the supervisor.
      */
     reportAlive?(): void;
     /**
      * Subscribe to this window's fullscreen state (DOR-563). macOS retracts
      * the traffic lights into the auto-hiding menu bar while fullscreen
      * holds, so the renderer drops the space it otherwise reserves for them.
-     *
-     * **Optional on purpose.** Absent in the browser cockpit, in the
-     * Obsidian embed, and in any desktop build predating this.
      *
      * @returns An unsubscribe function that removes the listener.
      */
@@ -232,12 +207,9 @@ declare global {
     /**
      * Subscribe to this window's OS-level focus state (DOR-254). Deliberately
      * the window's own `focus`/`blur`, not the document's: clicking into an
-     * `<iframe>` the cockpit hosts (an MCP app frame, an embedded browser)
+     * `<iframe>` the app hosts (an MCP app frame, an embedded browser)
      * fires the document's own DOM `blur` with no OS focus change at all, so
      * only the main process can answer this correctly.
-     *
-     * **Optional on purpose.** Absent in the browser cockpit, in the
-     * Obsidian embed, and in any desktop build predating this.
      *
      * @returns An unsubscribe function that removes the listener.
      */
@@ -252,12 +224,7 @@ declare global {
 
   interface Window {
     electronAPI?: ElectronAPI;
-    /**
-     * The boot sentinel installed by the inline script in `index.html`
-     * (DOR-1451). Absent wherever that document is not the host page — the
-     * Obsidian embed, and any test that mounts the app directly — so every
-     * caller must guard on it.
-     */
+
     __dorkosBoot?: {
       /**
        * Boot succeeded: cancel the watchdog and stop buffering early errors.

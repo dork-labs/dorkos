@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { CONNECTION_READINESS_COPY, ConnectionReadinessSchema } from '../connector-schemas.js';
 import {
+  ConnectorAuthoritySyncStateSchema,
   ConnectorAuthenticationFlowStateSchema,
+  ConnectorCatalogLogoPathSchema,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
+  connectorCatalogLogoPath,
   ConnectorLifecycleResultSchema,
   ConnectorSessionConnectionsSchema,
 } from '../connector-resource-schemas.js';
@@ -124,9 +128,15 @@ describe('connector resource schemas', () => {
       custody: 'managed',
       payer: 'operator_byo',
       agentCount: 1,
+      everyAgent: null,
       subscriptionCount: 0,
       usage: { status: 'available', logicalOperationCount: 2, attemptCount: 3 },
-      warnings: [],
+      readiness: {
+        state: 'needs_you',
+        reason: 'signed_out',
+        fix: { action: 'sign_in_again', fixableBy: 'person' },
+        copy: { owner: 'Signed out.', agent: 'Ask the person to sign in again.' },
+      },
     } as const;
     const detail = {
       connection: summary,
@@ -165,7 +175,7 @@ describe('connector resource schemas', () => {
     ).toBe(false);
   });
 
-  it('expresses session-only access as a local narrowing state', () => {
+  it('carries each chat’s source and readiness, never a separate access verdict', () => {
     expect(
       ConnectorSessionConnectionsSchema.parse({
         sessionId: 'session-1',
@@ -175,12 +185,89 @@ describe('connector resource schemas', () => {
             connectionId: 'connection-1',
             toolkit: 'gmail',
             label: 'Work Gmail',
-            access: 'disabled',
+            source: 'agent',
             operationRevisionIds: [],
-            dominatingReason: 'connection_paused',
+            readiness: {
+              state: 'paused',
+              reason: 'paused',
+              fix: { action: 'resume', fixableBy: 'person' },
+              copy: CONNECTION_READINESS_COPY.paused,
+            },
           },
         ],
       })
     ).toMatchObject({ sessionId: 'session-1' });
+  });
+
+  it('carries a pending reason only together with its retry time', () => {
+    const retryAt = '2026-09-27T12:48:00.000Z';
+    expect(ConnectorAuthoritySyncStateSchema.safeParse({ status: 'pending' }).success).toBe(true);
+    expect(
+      ConnectorAuthoritySyncStateSchema.safeParse({
+        status: 'pending',
+        reason: 'DorkOS’s servers had a problem.',
+        retryAt,
+      }).success
+    ).toBe(true);
+    expect(
+      ConnectorAuthoritySyncStateSchema.safeParse({
+        status: 'pending',
+        reason: 'DorkOS’s servers had a problem.',
+      }).success
+    ).toBe(false);
+    expect(
+      ConnectorAuthoritySyncStateSchema.safeParse({ status: 'pending', retryAt }).success
+    ).toBe(false);
+  });
+});
+
+describe('connectorCatalogLogoPath', () => {
+  it('names the server’s own logo route for a safe id, and nothing for any other', () => {
+    expect(connectorCatalogLogoPath('googlecalendar')).toBe(
+      '/api/connectors/catalog/logos/googlecalendar'
+    );
+    expect(connectorCatalogLogoPath('google-mail_2')).toBe(
+      '/api/connectors/catalog/logos/google-mail_2'
+    );
+    for (const unsafe of ['Odd.Slug', 'a/b', '../x', '', 'x'.repeat(101)]) {
+      expect(connectorCatalogLogoPath(unsafe), unsafe).toBeUndefined();
+    }
+  });
+
+  it('only ever produces a path the wire schema accepts', () => {
+    const path = connectorCatalogLogoPath('x'.repeat(100))!;
+    expect(ConnectorCatalogLogoPathSchema.safeParse(path).success).toBe(true);
+    expect(
+      ConnectorCatalogLogoPathSchema.safeParse('https://logos.composio.dev/api/gmail').success
+    ).toBe(false);
+  });
+
+  it('keeps readiness honest: only a usable account is ready, with nothing to fix, and waiting is DorkOS’s job', () => {
+    const copy = { owner: 'Line.', agent: 'Agent line.' };
+    expect(
+      ConnectionReadinessSchema.safeParse({ state: 'ready', reason: 'usable', copy }).success
+    ).toBe(true);
+    expect(
+      ConnectionReadinessSchema.safeParse({ state: 'ready', reason: 'paused', copy }).success
+    ).toBe(false);
+    expect(
+      ConnectionReadinessSchema.safeParse({
+        state: 'ready',
+        reason: 'usable',
+        fix: { action: 'retry', fixableBy: 'dorkos' },
+        copy,
+      }).success
+    ).toBe(false);
+    expect(
+      ConnectionReadinessSchema.safeParse({
+        state: 'finishing',
+        reason: 'access_updating',
+        fix: { action: 'wait', fixableBy: 'person' },
+        copy,
+      }).success
+    ).toBe(false);
+    expect(
+      ConnectionReadinessSchema.safeParse({ state: 'gone', reason: 'made_up', copy }).success
+    ).toBe(false);
   });
 });

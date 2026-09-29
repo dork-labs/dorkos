@@ -1,7 +1,11 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useEffect, useRef, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, Crown, KeyRound, ShieldCheck } from 'lucide-react';
-import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
+import {
+  COMMUNITY_PASSWORD_MIN_LENGTH,
+  type CommunityWireMembershipSummary,
+} from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError, request } from '../api.js';
 import { rememberCommunity } from '../remembered-community.js';
 import {
@@ -13,6 +17,8 @@ import {
   readPendingOwnerClaim,
   rememberPendingOwnerClaim,
 } from '../owner-claim.js';
+import { HostPolicyLinks } from './HostLinks.js';
+import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
 
 type Stage =
   'loading' | 'enter' | 'found' | 'account' | 'confirm' | 'claimed' | 'unavailable' | 'taken';
@@ -60,16 +66,14 @@ export function OwnerClaim() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [providers, setProviders] = useState({ google: false, github: false });
+  // A provider round trip that failed returns here with `?error=`; say why once.
+  const [error, setError] = useState(() => takeSignInError() ?? '');
+  const providers = useSignInOptions();
   const heading = useRef<HTMLHeadingElement>(null);
   const focusedStage = useRef(stage);
   const resumeOnMount = useRef(stage === 'loading');
 
   useEffect(() => {
-    void request<{ google: boolean; github: boolean }>('/api/v1/auth-options')
-      .then(setProviders)
-      .catch(() => {});
     // The secret must never outlive this page, even if the person navigates away mid-claim.
     return () => clearOwnerClaimFragment();
   }, []);
@@ -232,13 +236,15 @@ export function OwnerClaim() {
     setBusy(false);
   }
 
-  async function social(provider: 'google' | 'github') {
+  async function social(provider: 'google' | 'github' | 'oidc') {
     setBusy(true);
     setError('');
     try {
+      const here = window.location.origin + OWNER_CLAIM_PATH;
       const result = await authClient.signIn.social({
         provider,
-        callbackURL: window.location.origin + OWNER_CLAIM_PATH,
+        callbackURL: here,
+        errorCallbackURL: here,
       });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
     } catch (cause) {
@@ -293,9 +299,9 @@ export function OwnerClaim() {
         </h1>
         <p className="muted mb-7">{intro}</p>
         {error && (
-          <div role="alert" className="notice error mb-4">
+          <Notice role="alert" tone="error" className="mb-4">
             {error}
-          </div>
+          </Notice>
         )}
         {stage === 'loading' && (
           <div role="status" className="panel">
@@ -311,8 +317,8 @@ export function OwnerClaim() {
               </div>
             ) : (
               <div className="field">
-                <label htmlFor="owner-claim-input">Owner claim link</label>
-                <input
+                <Label htmlFor="owner-claim-input">Owner claim link</Label>
+                <Input
                   id="owner-claim-input"
                   type="text"
                   autoComplete="off"
@@ -327,37 +333,37 @@ export function OwnerClaim() {
                 </span>
               </div>
             )}
-            <button className="button primary w-full" type="submit" disabled={busy}>
+            <Button variant="default" className="w-full" type="submit" disabled={busy}>
               {busy ? 'Checking…' : 'Continue'}
               <ArrowRight size={17} aria-hidden="true" />
-            </button>
+            </Button>
           </form>
         )}
         {stage === 'account' && (
           <>
             <form className="panel" onSubmit={(event) => void submitAccount(event)}>
               <div className="row mb-5" role="group" aria-label="Account">
-                <button
+                <Button
                   type="button"
                   aria-pressed={mode === 'signup'}
-                  className={`button ${mode === 'signup' ? 'primary' : ''}`}
+                  variant={mode === 'signup' ? 'default' : 'outline'}
                   onClick={() => setMode('signup')}
                 >
                   Create account
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   aria-pressed={mode === 'signin'}
-                  className={`button ${mode === 'signin' ? 'primary' : ''}`}
+                  variant={mode === 'signin' ? 'default' : 'outline'}
                   onClick={() => setMode('signin')}
                 >
                   Sign in
-                </button>
+                </Button>
               </div>
               {mode === 'signup' && (
                 <div className="field">
-                  <label htmlFor="owner-claim-name">Your name</label>
-                  <input
+                  <Label htmlFor="owner-claim-name">Your name</Label>
+                  <Input
                     id="owner-claim-name"
                     autoComplete="name"
                     value={name}
@@ -367,8 +373,8 @@ export function OwnerClaim() {
                 </div>
               )}
               <div className="field">
-                <label htmlFor="owner-claim-email">Email</label>
-                <input
+                <Label htmlFor="owner-claim-email">Email</Label>
+                <Input
                   id="owner-claim-email"
                   type="email"
                   autoComplete="email"
@@ -378,52 +384,65 @@ export function OwnerClaim() {
                 />
               </div>
               <div className="field">
-                <label htmlFor="owner-claim-password">Password</label>
-                <input
+                <Label htmlFor="owner-claim-password">Password</Label>
+                <Input
                   id="owner-claim-password"
                   type="password"
                   autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                  minLength={8}
+                  // Only a new password must meet today's length; an older one still signs in.
+                  minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required
                 />
-                {mode === 'signin' && (
+                {mode === 'signin' ? (
                   <span className="hint">
                     Forgot your password? Ask the person running this host for help.
                   </span>
+                ) : (
+                  <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
                 )}
               </div>
-              <button className="button primary w-full" disabled={busy}>
+              <Button type="submit" variant="default" className="w-full" disabled={busy}>
                 {busy
                   ? 'Working…'
                   : mode === 'signup'
                     ? 'Create account and claim'
                     : 'Sign in and claim'}
                 <KeyRound size={16} aria-hidden="true" />
-              </button>
+              </Button>
             </form>
-            {(providers.google || providers.github) && (
+            {(providers.google || providers.github || providers.oidc) && (
               <div className="row mt-4">
                 {providers.google && (
-                  <button
-                    className="button"
+                  <Button
+                    variant="outline"
                     type="button"
                     disabled={busy}
                     onClick={() => void social('google')}
                   >
                     Continue with Google
-                  </button>
+                  </Button>
                 )}
                 {providers.github && (
-                  <button
-                    className="button"
+                  <Button
+                    variant="outline"
                     type="button"
                     disabled={busy}
                     onClick={() => void social('github')}
                   >
                     Continue with GitHub
-                  </button>
+                  </Button>
+                )}
+                {providers.oidc && (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void social('oidc')}
+                  >
+                    Continue with {providers.oidc.label}
+                  </Button>
                 )}
               </div>
             )}
@@ -442,53 +461,56 @@ export function OwnerClaim() {
                 <span>You are signed in to this host.</span>
               )}
             </div>
-            <button
-              className="button primary w-full"
+            <Button
+              variant="default"
+              className="w-full"
               type="button"
               disabled={busy}
               onClick={() => void confirm()}
             >
               {busy ? 'Claiming…' : 'Claim community'}
               <ArrowRight size={17} aria-hidden="true" />
-            </button>
-            <button
-              className="button ghost mt-3 w-full"
+            </Button>
+            <Button
+              variant="ghost"
+              className="mt-3 w-full"
               type="button"
               disabled={busy}
               onClick={() => void switchAccount()}
             >
               Use a different account
-            </button>
+            </Button>
           </div>
         )}
         {stage === 'claimed' && claimed && (
           <>
-            <button
-              className="button primary"
+            <Button
+              variant="default"
               type="button"
               onClick={() => window.location.assign(`/c/${claimed.id}`)}
             >
               Open community
-            </button>
-            <div className="notice mt-4">
+            </Button>
+            <Notice tone="info" className="mt-4">
               <strong>Connect this DorkOS installation</strong>
               <p className="small muted mb-0">
                 In the DorkOS app, open Connections, then Messaging, then Communities. Each
                 installation needs its own approval.
               </p>
-            </div>
+            </Notice>
           </>
         )}
         {(stage === 'unavailable' || stage === 'taken') && (
           <div className="row flex-wrap gap-2">
-            <button className="button primary" type="button" onClick={restart}>
+            <Button variant="default" type="button" onClick={restart}>
               Use a different claim link
-            </button>
-            <a className="button" href="/">
-              Go to your communities
-            </a>
+            </Button>
+            <Button asChild variant="outline">
+              <a href="/">Go to your communities</a>
+            </Button>
           </div>
         )}
+        <HostPolicyLinks />
       </main>
     </div>
   );

@@ -7,7 +7,7 @@ COPY . .
 # The clean source context has no .git, so there are no hooks to install.
 # Build the native dependencies explicitly; normal Git gates run on the source branch.
 RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm rebuild -r esbuild better-sqlite3 node-pty
-RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/community build && pnpm --filter dorkos build
+RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/community build && pnpm --filter dorkos build
 RUN mkdir /packed && pnpm --dir packages/cli pack --pack-destination /packed && npm install --prefix /packaged-cli /packed/dorkos-*.tgz
 RUN pnpm --filter @dorkos/community deploy --prod --legacy --ignore-scripts /packaged-community && cp -R apps/community/dist apps/community/dist-server apps/community/migrations /packaged-community/
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright

@@ -18,6 +18,8 @@ const BLOCKED_STATUS: SessionStatus = {
   runningSubagentCount: 0,
   lifecycle: 'blocked',
   lastError: null,
+  limit: null,
+  accountUsage: null,
 };
 
 const QUESTIONS: QuestionItem[] = [

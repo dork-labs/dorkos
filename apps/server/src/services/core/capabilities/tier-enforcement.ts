@@ -31,13 +31,12 @@
  *   gets a structured {@link ApprovalRequiredPayload} carrying a fresh pending
  *   approval and instructions for retrying.
  *
- * An identity's `tierCeiling` caps all of it. A ceiling of `act` makes every
- * destructive capability permanently unreachable for that agent — not
- * approvable, refused, with a distinct payload saying so. An unidentified caller
- * is capped too, at {@link DEFAULT_ANONYMOUS_TIER_CEILING} — see "the ceiling is
- * not an escape hatch" below.
+ * What an agent may do beyond its tier is its PERMISSION (below), not a limit
+ * carried on its identity: the per-agent tier ceiling was retired in spec
+ * `agent-permissions` (phase 3), and an agent that used to be capped at
+ * `observe` now has every permission area Blocked instead.
  *
- * ## The TIER decides whether to gate. Identity only supplies the ceiling.
+ * ## The TIER decides whether to gate. Identity only names the caller.
  *
  * A caller that presents no {@link AgentIdentity} is still gated. This is the
  * load-bearing asymmetry in the whole module, so it is worth stating why:
@@ -56,87 +55,43 @@
  * straight through. Only `destructive` stops — and spec §Security is explicit
  * that a modified client or skill must not be able to bypass enforcement.
  *
- * So identity, when present, does exactly two things: it narrows what the caller
- * may reach (`tierCeiling`) and it names them on the approval card. Its absence
- * costs the caller nothing except a name — the approval is still required, and
- * the card says an unidentified caller asked.
+ * So identity, when present, does exactly two things: it selects the agent's own
+ * permission settings (an unidentified caller is decided on the install's
+ * defaults, spec `agent-permissions` D11), and it names the caller on the
+ * approval card. Its absence costs the caller nothing except a name — the
+ * approval is still required, and the card says an unidentified caller asked.
+ * The residual that leaves (an agent set stricter than the defaults that strips
+ * its own token) is stated in `permission-enforcement.ts`.
  *
- * ## The ceiling is not an escape hatch either
+ * ## A revoked identity reaches nothing above reading
  *
- * The first implementation compared a capability's tier against a ceiling ONLY
- * when an identity was present, which quietly rebuilt the same bypass one level
- * up: an agent capped at `act` was refused outright (`tier_ceiling`, not
- * approvable), and the SAME agent after `unset DORKOS_AGENT_TOKEN` got the
- * approvable path instead. Presenting a credential strictly cost privilege.
+ * Revocation means "this agent no longer acts as itself". Every permission area
+ * resolves Blocked for a turned-off identity (`permission-enforcement.ts`), and a
+ * REVOKED one is also refused every `act` and `destructive` action that has no
+ * area, not approvable: it keeps reading, which every caller may, and nothing
+ * more. An expired token keeps the tier behaviour of an action with no area, as
+ * it did before (it is a session that ran long, not an off switch).
+
+ * ## Permissions decide whether a call asks (spec `agent-permissions` D6)
  *
- * Every caller now has a ceiling. An unidentified one is capped at
- * {@link DEFAULT_ANONYMOUS_TIER_CEILING}, overridable at boot via
- * {@link CapabilityTierGateOptions.anonymousTierCeiling}. The default is
- * `destructive`, so today's behavior is unchanged — but the two paths are
- * comparable, and lowering the anonymous ceiling can only ever tighten things.
+ * An action that declares a permission area is also decided by the permission
+ * the caller resolves to, read fresh on every call (`permission-enforcement.ts`):
+ * Allowed runs, Ask raises the approval card (for `act` as well as
+ * `destructive`), and Blocked refuses. "Always allow" on a card is an
+ * action-level Allowed written onto the agent's own settings by the grant route,
+ * so the gate needs no second lookup to honor it: the next call simply resolves
+ * Allowed.
  *
- * ## Per-agent ceilings are REAL now, and that changed what `undefined` costs
+ * ## Asking past Blocked (spec `agent-permissions` D8)
  *
- * This module was written while nothing set a ceiling below `destructive`, and
- * said so. That is no longer true (DOR-486): `.dork/agent.json` carries a
- * `tierCeiling`, the agent Tools tab and `dorkos agent update --ceiling` write
- * it, and `resolveAgentTokenEnv` stamps it onto every token a spawn mints. Two
- * consequences the old wording let sit as theory:
- *
- * - **A missing identity is no longer harmless.** It reads as
- *   {@link DEFAULT_ANONYMOUS_TIER_CEILING}, the widest rung, so anything that
- *   turned a capped agent into an unidentified one WIDENED it. Revocation did
- *   exactly that. Hence {@link effectiveCeiling} and `AgentIdentity.inactive`:
- *   "known and shut off" and "never identified" are now different answers.
- * - **The escape hatch is the anonymous path itself**, not the ceiling
- *   comparison. Read the residual on {@link DEFAULT_ANONYMOUS_TIER_CEILING}
- *   before describing a ceiling as containment anywhere a user will read it.
- *
- * ## Standing permissions: the one supported way to stop being asked
- *
- * An operator can say "stop asking about this agent doing this thing" for a
- * bounded window (spec `agent-approval-settings`). That answer is looked up HERE,
- * and its position in this function is the whole of its safety:
- *
- * - AFTER the ceiling check, so a permission can never lift a ceiling. A ceiling
- *   refusal is already `approvable: false` — no human decision can unlock it — and
- *   a standing permission must not be able to either.
- * - BEFORE the `act` early-return, so a permission also reaches the marketplace's
- *   own, older confirmation step. `marketplace.install` is tier `act`, so this gate
- *   never stopped it, but that second mechanism does. Threading the permission onto
- *   the invocation context is what lets one lookup satisfy both, instead of "stop
- *   asking" quietly meaning "stop asking at one of the two places that ask".
- *
- * Only an IDENTIFIED caller can match one, because permissions key on agent path.
- * Dropping a credential can get a caller the gate; it can never buy trust. That is
- * the mirror of the ceiling reasoning above.
- *
- * ## The `act` half is FORWARD-LOOKING and cannot fire yet. Say so, do not imply it.
- *
- * The ordering above is stated as load-bearing safety, and for `destructive` it is.
- * For `act` it describes behavior no running DorkOS exhibits, and a reader who
- * tests it will find nothing — so the reason is written down rather than left to be
- * rediscovered, the same way `REQUIRES_LOGIN_CONFIG_PATHS` explains itself in
- * `services/core/operator/config-write-policy.ts`.
- *
- * A permission is keyed on the `requestedByPath` an approval recorded, and that
- * column has exactly one writer: `ask()`, below. `ask()` is only reachable on the
- * `destructive` branch — `observe` and `act` return allowed long before it. So
- * **every permission row that can exist today carries a destructive id**, and no
- * `act`-tier action of any kind can be granted one. Not just the two marketplace
- * ones: any of them. The `act` branch below is therefore correct and inert.
- *
- * What would make it fire is a second thing recording `requestedByPath` on the
- * approvals the marketplace's own confirmation flow creates
- * (`services/marketplace-mcp/confirmation-provider.ts`, which records a display
- * label and no path). That is deliberately NOT done here: one writer for that
- * column is the property that makes "the gate recorded who asked" checkable in one
- * place, and a second writer would have to be argued for on its own.
- *
- * Keeping the ordering anyway is the cheap half. Reordering it later, once
- * something does mint `act` permissions, is the expensive half — and it would be a
- * silent bug, because nothing about an `act` call looks wrong when its permission
- * is ignored.
+ * A direct call to a Blocked action is refused and mints nothing: its message
+ * names the `request_permission` tool. That tool re-invokes the action with
+ * {@link TierEnforcementRequest.blockedRequest} set, and only then does a Blocked
+ * permission mint an approval, bound like every other approval to this exact
+ * action and this exact input, and rate-limited from the approvals store
+ * (`ApprovalService.blockedRequestLimit`) before anything is minted. A granted
+ * token is honored for a Blocked action only on that same path, so an agent
+ * cannot spend one by calling the hidden action directly.
  *
  * ## Fail closed
  *
@@ -146,22 +101,26 @@
  * service there is nobody to ask, and silently running the operation would turn a
  * wiring mistake into an unreviewed destructive action.
  *
- * The standing-permission lookup fails closed in the other direction, which is the
- * same principle: with nothing wired, no permission is ever found, so every
- * destructive call takes the approval path exactly as it did before the feature
- * existed.
- *
  * @module services/core/capabilities/tier-enforcement
  */
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type {
+  ApprovalOrigin,
+  ApprovalServiceAction,
+  ApprovalSubject,
+} from '@dorkos/shared/approval-schemas';
 import {
-  CAPABILITY_CEILING_PHRASE,
-  CAPABILITY_TIER_RANK,
-  WIDEST_CAPABILITY_TIER,
-  type CapabilityTier,
-} from '@dorkos/shared/capabilities';
-import type { ApprovalOrigin, ApprovalSubject } from '@dorkos/shared/approval-schemas';
+  getPermissionArea,
+  type PermissionAreaId,
+  type PermissionSource,
+} from '@dorkos/shared/permissions';
 
 import { isTrustedCaller } from './trusted-caller.js';
+import {
+  blockedPermissionMessage,
+  resolveCallPermission,
+  type CallPermission,
+} from './permission-enforcement.js';
 // Type-only, so the value-level dependency stays one-directional: `registry.ts`
 // imports the gate, never the reverse.
 import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
@@ -178,6 +137,7 @@ import {
   type ApprovalRequestingSession,
   type ApprovalService,
   type ApprovalTicket,
+  type BlockedRequestLimit,
   describeRemainingArguments,
   type ApprovalSubjectDeclaration,
 } from '../approvals/index.js';
@@ -216,8 +176,24 @@ export interface GatedAction {
   title: string;
   /** Permission tier. This, and nothing about the caller, decides whether to gate. */
   tier: CapabilityTier;
+  /**
+   * The permission area the action belongs to, or `null` when its tier alone
+   * decides (spec `agent-permissions` D2). Required, so an action cannot reach
+   * the gate without somebody having decided it.
+   */
+  area: PermissionAreaId | null;
+  /**
+   * The other areas this call reaches, decided from its input. See
+   * `CapabilityDefinition.areasForInput`; `permission-enforcement.ts` applies it.
+   */
+  areasForInput?: (input: unknown) => readonly PermissionAreaId[];
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
+  /**
+   * A display-only view of the input the card's fields are read from. See
+   * `CapabilityDefinition.approvalView`.
+   */
+  approvalView?: (input: unknown) => Record<string, unknown>;
   /**
    * The one input field whose FULL value the card carries, when the action
    * declares one (DOR-1698). Read here rather than by a surface, so every
@@ -349,25 +325,30 @@ export interface ApprovalRequiredPayload {
 /**
  * Why a call was refused outright rather than queued for approval.
  *
- * - `tier_ceiling` — the caller's ceiling forbids this tier. No approval can
- *   unlock it; only changing that ceiling can.
  * - `operator_denied` — a person said no to this exact action.
  * - `enforcement_unavailable` — the gate was never wired to an approval service,
  *   so there is nobody to ask. Refused rather than allowed (see the module TSDoc).
  * - `input_not_bindable` — the input cannot be canonicalized without losing
  *   information, so no approval could honestly cover it. Refused, because an
  *   approval bound to a hash that ignores part of the action is worse than none.
- * - `tool_group_disabled` — the capability declares a per-agent tool group and
- *   this caller does not hold it (`tool-group-enforcement.ts`). Not a tier answer
- *   at all; it shares this union so every surface that already renders a refusal
+ * - `permission_blocked` — the action's permission area (or the action itself)
+ *   resolved to Blocked for this caller (spec `agent-permissions` D3). Not a tier
+ *   answer; it shares this union so every surface that already renders a refusal
  *   renders this one too, with no second shape to teach anybody.
+ * - `request_pending` — the agent asked past Blocked with `request_permission`
+ *   while an earlier request in the same area is still waiting on a person
+ *   (spec `agent-permissions` D8). No second card.
+ * - `recently_denied` — a person denied this agent this action in the last day.
+ * - `request_limit` — the agent made five blocked requests in the last hour.
  */
 export type TierDeniedReason =
-  | 'tier_ceiling'
   | 'operator_denied'
   | 'enforcement_unavailable'
   | 'input_not_bindable'
-  | 'tool_group_disabled';
+  | 'permission_blocked'
+  | 'request_pending'
+  | 'recently_denied'
+  | 'request_limit';
 
 /** The result a refused caller receives instead of the capability's output. */
 export interface TierDeniedPayload {
@@ -382,8 +363,9 @@ export interface TierDeniedPayload {
   /** Why it was refused. */
   reason: TierDeniedReason;
   /**
-   * Whether asking a person could ever change this answer. `false` for a ceiling
-   * refusal, so an agent does not loop on a request that can never be granted.
+   * Whether asking a person could ever change this answer. `false` for a refusal
+   * nobody can approve past, so an agent does not loop on a request that can
+   * never be granted.
    */
   approvable: boolean;
   /** One plain sentence a model can act on. */
@@ -399,39 +381,18 @@ export interface TierDeniedPayload {
  *
  * A discriminated union rather than one shape, because the two answers are not the
  * same event and the audit trail must not pretend they are: one is a person
- * deciding this call, the other is a permission they opened earlier and can end at
- * any time. A handler that only needs "somebody said yes" can keep testing for
- * presence and ignore the tag.
+ * deciding this call, the other is a permission setting a person made earlier and
+ * can change at any time. A handler that only needs "somebody said yes" can keep
+ * testing for presence and ignore the tag.
  */
 export type GrantedApproval =
   /** A person decided THIS call, and the approval was spent to allow it. */
   | { via: 'approval'; approvalId: string; authorityBindingDigest?: string }
-  /** A standing permission the operator opened earlier allowed it, with no card. */
-  | { via: 'standing-grant'; grantId: string };
-
-/**
- * What the gate needs to honor a standing permission: whether the operator
- * switched the feature on at all, and the live permission covering one pair.
- *
- * An interface rather than the store itself, because both halves have to be read
- * FRESH on every gated call. The switch lives in user config, which a person can
- * turn off between two invocations, and a permission runs out on a clock — so a
- * value captured at boot would be a stale answer to a question that has to be
- * current. This is what makes "the master switch going off stops the very next
- * call" a property of the code rather than a promise.
- */
-export interface StandingGrantLookup {
-  /** Whether standing permissions may exist at all (`approvals.standingGrants`). */
-  enabled: () => boolean;
   /**
-   * The live permission covering this agent doing this thing, or `undefined`.
-   *
-   * Expiry and revocation are applied by the implementation, on read, so a
-   * permission whose window closed is invisible here the instant it closes rather
-   * than whenever a sweep next runs.
+   * The action's permission resolved to Allowed, so it ran without a card. The
+   * source says which layer allowed it (spec `agent-permissions` D6).
    */
-  findLive: (agentPath: string, capabilityId: string) => { id: string } | undefined;
-}
+  | { via: 'permission'; source: PermissionSource };
 
 /**
  * What the gate decided, discriminated by `outcome`.
@@ -445,7 +406,8 @@ export type TierEnforcementDecision =
   | { outcome: 'denied'; payload: TierDeniedPayload };
 
 /**
- * A destructive call a standing permission allowed without asking anyone.
+ * A destructive call an action-level Allowed permission allowed without asking
+ * anyone.
  *
  * The one `allowed` decision that reaches the audit hook. Every other allowed call
  * is recorded by the registry's attribution observer instead, so reporting them
@@ -456,8 +418,8 @@ export type TierEnforcementDecision =
 export interface AutoApprovedAttempt {
   /** Discriminator. Always `allowed`. */
   outcome: 'allowed';
-  /** The permission that allowed it. */
-  approval: Extract<GrantedApproval, { via: 'standing-grant' }>;
+  /** What allowed it. */
+  approval: Extract<GrantedApproval, { via: 'permission' }>;
 }
 
 /** One gated attempt, for the audit trail. */
@@ -469,8 +431,9 @@ export interface TierEnforcementAttempt {
    * caller — which is still audited, because an anonymous attempt at something
    * irreversible is exactly the event an operator most wants a record of.
    *
-   * Always present on an {@link AutoApprovedAttempt}: permissions key on agent
-   * path, so an anonymous caller can never match one.
+   * Usually present on an {@link AutoApprovedAttempt}: only an agent's own
+   * settings can hold an action-level Allowed on a destructive action, unless a
+   * person set one as the default.
    */
   identity?: AgentIdentity;
   /**
@@ -480,6 +443,11 @@ export interface TierEnforcementAttempt {
   decision:
     | Extract<TierEnforcementDecision, { outcome: 'approval_required' | 'denied' }>
     | AutoApprovedAttempt;
+  /**
+   * The permission the gate resolved for this call, when the action has an area.
+   * Recorded on the audit line so "why was this refused" names the layer.
+   */
+  permission?: { state: CallPermission['state']; source: PermissionSource };
 }
 
 /** Everything the gate needs to decide one invocation. */
@@ -495,6 +463,14 @@ export interface TierEnforcementRequest {
   input: unknown;
   /** The calling agent, when the surface resolved one. */
   identity?: AgentIdentity;
+  /**
+   * The permission that applies to this call, from {@link resolveCallPermission},
+   * or `null` when the action has no area and its tier alone decides.
+   *
+   * REQUIRED, so each of the three callers resolves it (fresh, per call) before
+   * reaching the gate: a caller that forgets does not compile.
+   */
+  permission: CallPermission | null;
   /** The approval token the caller presented, when it presented one. */
   approvalToken?: string;
   /** Which channel a retry should carry its token on, for the instructions. */
@@ -513,8 +489,22 @@ export interface TierEnforcementRequest {
   interactive?: boolean;
   /** Authenticated connector scope bound to any approval request or retry. */
   connectorAuthority?: ApprovalConnectorAuthority;
-  /** Whether the path-only standing permission lookup may run. Defaults true. */
-  standingGrantEligible?: boolean;
+  /**
+   * What this call would change, described from the state it would change
+   * (`CapabilityDefinition.describeApprovalChange`, DOR-2328). Shown as the
+   * card's detail, and bound into the approval with the input, so a grant for
+   * one description does not fit a retry whose description differs.
+   */
+  change?: string;
+  /**
+   * Set only by `permissions.request_access` (`request_permission`): the agent is
+   * deliberately asking past a Blocked permission, and this is the reason it
+   * gave (spec `agent-permissions` D8). With it, a Blocked permission mints a
+   * rate-limited approval bound to this exact call instead of refusing, and a
+   * granted token for that approval is honored. Never read off the wire: only
+   * the request tool's handler sets it, on its own re-invocation.
+   */
+  blockedRequest?: { reason: string };
   /**
    * The thing this call would act on, already named (DOR-1929).
    *
@@ -524,10 +514,18 @@ export interface TierEnforcementRequest {
    */
   subject?: ApprovalSubject;
   /**
+   * What a connected-app action would do — its app, account, action and
+   * arguments in words (DOR-2504). Built by the connector preflight from the
+   * stored records it checked, so nothing in it is the caller's to choose
+   * except the argument values. With it, the card and the summary name the
+   * action instead of two ids.
+   */
+  serviceAction?: ApprovalServiceAction;
+  /**
    * Which surface this request arrived over, recorded only so an UNATTRIBUTED
    * card can say the true thing DorkOS knows about it.
    *
-   * Never consulted by any decision here. It changes no ceiling, no binding and
+   * Never consulted by any decision here. It changes no permission, no binding and
    * no outcome — a request's origin is not evidence of anything, and treating it
    * as evidence is exactly how "it came from a session" would become a
    * privilege a caller could claim by choosing a surface.
@@ -557,59 +555,7 @@ export interface CapabilityTierGateOptions {
    * gate swallows anything it does.
    */
   onAttempt?: (attempt: TierEnforcementAttempt) => void;
-  /**
-   * The ceiling applied to a caller that presented no identity. Defaults to
-   * {@link DEFAULT_ANONYMOUS_TIER_CEILING} (`destructive`, i.e. no extra
-   * restriction), so wiring this is how an operator makes anonymous callers
-   * strictly LESS privileged than named ones. It can only ever tighten: an
-   * anonymous destructive call still needs an approval at `destructive`.
-   */
-  anonymousTierCeiling?: CapabilityTier;
-  /**
-   * How the gate resolves a standing permission, when boot wired one.
-   *
-   * Optional, and its absence fails closed: with nothing wired no permission is
-   * ever found, so every destructive call takes the approval path exactly as it
-   * did before standing permissions existed.
-   */
-  standingGrants?: StandingGrantLookup;
 }
-
-/**
- * The ceiling an unidentified caller is capped at when boot does not say
- * otherwise.
- *
- * `destructive` means "no extra restriction", which keeps today's behavior
- * byte-identical — the point of naming it is that anonymous and identified
- * callers travel the SAME comparison, so dropping a credential can never widen
- * what a caller may reach *once it is identified*.
- *
- * ## The residual this default leaves, stated because a ceiling invites the
- * wrong reading (DOR-486)
- *
- * A per-agent ceiling caps the caller that PRESENTS ITS TOKEN. An agent with a
- * shell can run `env -u DORKOS_AGENT_TOKEN dorkos call …`, or a bare `curl`, and
- * arrive here anonymous — capped at this value, which restricts nothing. It is
- * still gated (a destructive call needs a person's approval either way, and the
- * card says an unidentified caller asked), and it is still audited; what it is
- * not is *capped*.
- *
- * That is the same `local-trust` residual `enabledToolGroups.roomsManage` and
- * `account` carry — an agent with a shell can reach the operator's own HTTP
- * routes too — and it has the same remedy: turn login on, which makes every
- * `/api/*` path demand a credential the agent has no way to mint. See
- * `contributing/agent-operator-surface.md`. **A ceiling is protection against a
- * confused or prompt-injected agent following the sanctioned path, not a
- * sandbox**, and no user-facing copy may promise otherwise.
- *
- * Boot does not currently set {@link CapabilityTierGateOptions.anonymousTierCeiling}
- * and there is no config field for it: lowering it would cap the person's own
- * `dorkos call` and the external MCP clients that never send the header, which is
- * a posture decision with its own design, not a default to slip in behind a
- * ticket about per-agent limits. The seam is wired and typed so that decision has
- * somewhere to land.
- */
-export const DEFAULT_ANONYMOUS_TIER_CEILING: CapabilityTier = WIDEST_CAPABILITY_TIER;
 
 /** Boot-wired gate state. See the module TSDoc on failing closed. */
 let gate: CapabilityTierGateOptions | undefined;
@@ -640,60 +586,6 @@ export function initCapabilityTierGate(options: CapabilityTierGateOptions): void
  */
 export function resetCapabilityTierGate(): void {
   gate = undefined;
-}
-
-/**
- * Tier ordering, so a ceiling can be compared against a capability's tier.
- *
- * Shared with the guard that decides whether a change to a per-agent ceiling
- * widens it (`operator/agent-updater.ts`), because two tables that disagree
- * would mean an agent could set a fence this module then reads differently.
- */
-const TIER_RANK = CAPABILITY_TIER_RANK;
-
-/** How a capability's own tier reads in a message written for a model or a person. */
-const TIER_PHRASE: Record<CapabilityTier, string> = {
-  observe: 'only reads',
-  act: 'changes things',
-  destructive: 'cannot be undone',
-};
-
-/** How a tier reads as a LIMIT on an agent, which is a different sentence. */
-const CEILING_PHRASE = CAPABILITY_CEILING_PHRASE;
-
-/**
- * What a REVOKED agent may still reach: nothing above reading.
- *
- * Revocation means "this agent no longer acts as itself", and until DOR-486 it
- * did not survive contact with this gate: `describeAgent`/`resolve` answered
- * `undefined` for a revoked agent, `undefined` reads as "unidentified" here, and
- * an unidentified caller is capped at {@link DEFAULT_ANONYMOUS_TIER_CEILING} —
- * the WIDEST rung. So revoking a capped agent's tokens mid-session WIDENED what
- * it could reach. Both resolvers now say `inactive: 'revoked'` instead, and this
- * is the ceiling that answer buys.
- *
- * `observe` rather than "refuse everything" because the tier gate lets reads
- * through before any ceiling is consulted, for every caller including anonymous
- * ones — a revoked agent that could not read would be the one principal on the
- * system less privileged than a stranger, which is not what an off switch means.
- */
-const REVOKED_TIER_CEILING: CapabilityTier = 'observe';
-
-/**
- * The ceiling this caller is actually held to.
- *
- * Three cases, and the ORDER between them is the whole point: a caller that
- * identified itself must never be able to reach more by presenting less. See
- * {@link AgentIdentity.inactive} for why an expired identity keeps its recorded
- * ceiling while a revoked one is clamped.
- *
- * @param identity - The calling agent, when a surface resolved one.
- * @returns The tier this caller may not exceed.
- */
-function effectiveCeiling(identity: AgentIdentity | undefined): CapabilityTier {
-  if (!identity) return gate?.anonymousTierCeiling ?? DEFAULT_ANONYMOUS_TIER_CEILING;
-  if (identity.inactive === 'revoked') return REVOKED_TIER_CEILING;
-  return identity.tierCeiling;
 }
 
 /**
@@ -744,24 +636,43 @@ function effectiveCeiling(identity: AgentIdentity | undefined): CapabilityTier {
  * always did. That is the whole fail-closed story — a card can lose the name,
  * never the argument.
  *
+ * ## A connected-app action is described by what it does
+ *
+ * With a {@link ApprovalServiceAction}, the sentence names the action, the app
+ * and the account instead of the two ids the action's input carries, and lists
+ * the argument lines the card shows. Every value is quoted, and every label was
+ * reduced to letters and digits where it was built, so a value still cannot
+ * forge a second field.
+ *
  * @param action - The capability or tool being requested.
  * @param input - The parsed input the approval is bound to.
  * @param identity - The agent asking, when it identified itself.
  * @param subject - The named target, when the caller could resolve one.
+ * @param serviceAction - The connected-app action in words, when this is one.
  * @returns The card summary.
  */
 export function describeGatedAttempt(
   action: GatedAction,
   input: unknown,
   identity?: AgentIdentity,
-  subject?: ApprovalSubject
+  subject?: ApprovalSubject,
+  serviceAction?: ApprovalServiceAction
 ): string {
   const who = identity
     ? `${JSON.stringify(renderRequesterLabel(identity.displayName || identity.agentPath))} `
     : 'An unidentified caller ';
+  if (serviceAction) {
+    const lines = serviceAction.details
+      .map(({ label, value }) => `${label}: ${JSON.stringify(value)}`)
+      .join(', ');
+    return redactSecretsInText(
+      `${who}wants to run "${serviceAction.actionName}" in ${serviceAction.serviceName} on ` +
+        `${JSON.stringify(serviceAction.accountLabel)}${lines ? ` with ${lines}` : ''}`
+    );
+  }
   const clause = joinSummaryFields(
     summaryFieldsNamingSubject(
-      input,
+      action.approvalView ? action.approvalView(input) : input,
       action.approvalDisplayFields,
       subject,
       action.approvalSubject?.field
@@ -863,11 +774,31 @@ function retryGuidance(
   };
 }
 
-/** The plain sentence explaining why a destructive call is waiting. */
-function approvalMessage(reason: ApprovalRequiredReason, title: string): string {
+/**
+ * Why a call needs a person, by tier: a destructive call because it cannot be
+ * undone, an `act` call because its permission is set to Ask.
+ *
+ * @param tier - The action's tier.
+ */
+function needsApprovalClause(tier: CapabilityTier): string {
+  return tier === 'destructive' ? 'cannot be undone' : 'is set to ask a person first';
+}
+
+/** The plain sentence explaining why a gated call is waiting. */
+function approvalMessage(
+  reason: ApprovalRequiredReason,
+  title: string,
+  tier: CapabilityTier,
+  blocked = false
+): string {
   switch (reason) {
     case 'no_approval':
-      return `"${title}" cannot be undone, so a person has to approve it first. DorkOS has asked them.`;
+      if (blocked) {
+        return `"${title}" is blocked for this agent, so DorkOS has asked the person whether to allow it this time.`;
+      }
+      return tier === 'destructive'
+        ? `"${title}" cannot be undone, so a person has to approve it first. DorkOS has asked them.`
+        : `"${title}" is set to ask a person first. DorkOS has asked them.`;
     case 'awaiting_decision':
       return `"${title}" is still waiting on a person. Present the same token again once they have answered.`;
     case 'expired':
@@ -881,51 +812,49 @@ function approvalMessage(reason: ApprovalRequiredReason, title: string): string 
   }
 }
 
+/** The name an area goes by in a sentence, e.g. "Rooms". */
+function areaLabel(area: PermissionAreaId): string {
+  return getPermissionArea(area)?.label ?? area;
+}
+
 /**
- * The live standing permission covering this caller doing this thing, if there is
- * one.
- *
- * Three conditions, all of which have to hold, and none of which is inferred from
- * another: the caller presented an identity, the operator switched the feature on,
- * and a live permission exists for the exact pair. An anonymous caller returns
- * early here — permissions key on agent path, so shedding a credential can never
- * match one.
- *
- * A lookup that throws (a database that has gone away) is treated as "no
- * permission", so the call falls back to asking a person rather than failing open
- * on a broken store.
- *
- * @param action - The action about to run.
- * @param identity - The calling agent, when it identified itself.
- * @returns The permission to thread onto the invocation, or `undefined`.
+ * What an agent that asked past Blocked is told when the rate limit stops it
+ * (spec `agent-permissions` D8). Each refusal is final for now, so none of them
+ * invites another try.
  */
-function resolveStandingGrant(
-  action: GatedAction,
-  identity?: AgentIdentity
-): Extract<GrantedApproval, { via: 'standing-grant' }> | undefined {
-  const lookup = gate?.standingGrants;
-  // `identity.inactive` found by the DOR-486 sweep, not by the review that
-  // prompted it. A standing permission is keyed on `agentPath`, and a revoked or
-  // expired token used to arrive here as `undefined` — no identity, no grant. It
-  // now arrives NAMED, so without this an aged-out or switched-off token could
-  // spend a permission a person granted to the LIVE agent and skip the approval
-  // card entirely. A revoked identity is capped at `observe` and would be refused
-  // above this line anyway; an expired one keeps its recorded ceiling and would
-  // not, which is exactly why the test is on `inactive` rather than on `revoked`.
-  if (!lookup || !identity || identity.inactive) return undefined;
-  try {
-    if (!lookup.enabled()) return undefined;
-    const grant = lookup.findLive(identity.agentPath, action.id);
-    return grant ? { via: 'standing-grant', grantId: grant.id } : undefined;
-  } catch (err) {
-    logger.error('[capabilities] standing permission could not be read; asking a person instead', {
-      capabilityId: action.id,
-      agentPath: identity.agentPath,
-      err: err instanceof Error ? err.message : String(err),
-    });
-    return undefined;
+function blockedLimitMessage(limit: BlockedRequestLimit, area: PermissionAreaId): string {
+  switch (limit.limit) {
+    case 'pending':
+      // Not the first request's `awaiting_decision` payload, which spec D8
+      // describes: tokens are stored hashed, so the first token cannot be sent
+      // again. The approval id names the request instead, and the message says
+      // how the answer arrives (see the spec's D8 note of 2026-09-24).
+      return (
+        `You already asked the person about ${areaLabel(area)} (request ${limit.approvalId}) ` +
+        'and they have not answered yet. Do not ask again: wait for their answer. In a DorkOS ' +
+        'session, DorkOS tells you here when they decide. If they say yes, call ' +
+        '`request_permission` again with the same action and arguments, plus the approvalToken ' +
+        'your first request returned, and the action runs.'
+      );
+    case 'recently_denied':
+      return (
+        'The person said no to this in the last day. Do not ask again; tell them what you ' +
+        'could not do and why.'
+      );
+    case 'hourly_limit':
+      return (
+        'You have asked past blocked permissions too many times in the last hour. Stop asking; ' +
+        'tell the person what you need instead.'
+      );
   }
 }
+
+/** The refusal reason each rate limit maps to. */
+const BLOCKED_LIMIT_REASON: Record<BlockedRequestLimit['limit'], TierDeniedReason> = {
+  pending: 'request_pending',
+  recently_denied: 'recently_denied',
+  hourly_limit: 'request_limit',
+};
 
 /** Report a gated attempt to the audit hook without ever failing the call. */
 function audit(attempt: TierEnforcementAttempt): void {
@@ -978,10 +907,13 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     retryChannel,
     interactive = false,
     connectorAuthority,
-    standingGrantEligible = true,
+    change,
+    blockedRequest,
     subject,
+    serviceAction,
     origin,
     requestingSession,
+    permission,
   } = request;
 
   // The TIER decides whether to gate — never whether the caller identified
@@ -989,76 +921,83 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // dropping its own token (see the module TSDoc).
   const tier = action.tier;
 
-  /** Attribution for the audit trail, omitted rather than nulled when anonymous. */
-  const attributed = identity ? { identity } : {};
+  /**
+   * Attribution for the audit trail, omitted rather than nulled when anonymous,
+   * plus the permission the call resolved to when the action has an area.
+   */
+  const attributed = {
+    ...(identity ? { identity } : {}),
+    ...(permission ? { permission: { state: permission.state, source: permission.source } } : {}),
+  };
 
-  // Reading is free, and a ceiling never blocks reading.
-  if (tier === 'observe') return { outcome: 'allowed' };
+  // A person can be asked about a Blocked action only when the agent asked on
+  // purpose, through `request_permission` (spec `agent-permissions` D8), and only
+  // by an agent DorkOS can name: the rate limits and any later Always allow key
+  // on its path. A revoked or expired identity, or settings nobody could read,
+  // are never approvable, so they get no card whichever way they arrive.
+  const askable =
+    permission?.state === 'blocked' && !permission.unreadable && permission.source !== 'inactive';
+  const blockedAsk =
+    askable && blockedRequest !== undefined && identity !== undefined && !identity.inactive;
 
-  // EVERY caller has a ceiling. An unidentified one gets the anonymous default,
-  // so dropping a credential cannot move a caller onto a more permissive path
-  // (see "the ceiling is not an escape hatch either" in the module TSDoc).
-  const ceiling = effectiveCeiling(identity);
-  if (TIER_RANK[tier] > TIER_RANK[ceiling]) {
-    const limitedParty = identity
-      ? identity.inactive === 'revoked'
-        ? "this agent's access was turned off, so it is limited to"
-        : 'this agent is limited to'
-      : 'callers that do not identify themselves are limited to';
-    const changeWhat = identity
-      ? identity.inactive === 'revoked'
-        ? 'somebody has to give this agent its access back first'
-        : "the agent's own limit has to change first"
-      : "DorkOS's limit for unidentified callers has to change first";
+  // Blocked refuses every tier, reads included: a person turned the area (or the
+  // action) off for this caller. A direct call mints nothing, whatever it
+  // presents, even a token: its message names the request tool instead.
+  // Checked before the read early-return below for exactly that reason.
+  if (permission?.state === 'blocked' && !blockedAsk) {
+    const payload = denied(action, 'permission_blocked', blockedPermissionMessage(permission), {
+      approvable: askable,
+    });
+    audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
+    return { outcome: 'denied', payload };
+  }
+
+  // Reading is free, and Ask lets reads through too: only a call that changes
+  // something raises a card. A blocked read the agent asked for goes on to the
+  // card like anything else it asked for.
+  if (tier === 'observe' && !blockedAsk) return { outcome: 'allowed' };
+
+  // A revoked identity reaches nothing above reading. Its permission areas are
+  // already Blocked (the permission resolved above says so); this covers the
+  // actions with no area, which no permission governs. Not approvable: a person
+  // gives the agent its access back, nobody approves past a revocation.
+  if (permission === null && identity?.inactive === 'revoked') {
     const payload = denied(
       action,
-      'tier_ceiling',
-      `"${action.title}" ${TIER_PHRASE[tier]}, and ${limitedParty} ` +
-        `${CEILING_PHRASE[ceiling]}. Nobody can approve this; ${changeWhat}.`,
+      'permission_blocked',
+      "This agent's access was turned off, so it cannot do this. Ask the person.",
       { approvable: false }
     );
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
     return { outcome: 'denied', payload };
   }
 
-  // A standing permission, resolved here and nowhere else. AFTER the ceiling
-  // above, so it can never lift one; BEFORE the `act` early-return below, so the
-  // marketplace's own confirmation step honors the same answer (see the module
-  // TSDoc).
-  const standingGrant = standingGrantEligible ? resolveStandingGrant(action, identity) : undefined;
-
-  // `act` is allowed and audited — by the attribution observer on invoke, so
-  // exactly one Activity record describes the call. A permission changes nothing
-  // about WHETHER it runs; it only rides along so a handler that would have asked
-  // its own question does not.
-  //
-  // `standingGrant` is always undefined here TODAY: permissions key on the
-  // `requestedByPath` only `ask()` writes, and `ask()` is destructive-only, so no
-  // `act` action can have one minted. Forward-looking on purpose — see "The `act`
-  // half is FORWARD-LOOKING" in the module TSDoc for why it is kept and what would
-  // make it fire.
-  //
-  // Deliberately NOT audited as auto-approved: at this tier the gate allowed the
-  // call regardless, so a line saying a permission let it through would credit a
-  // permission for a decision it did not make. The attribution observer records the
-  // invocation and names the permission in its metadata, which is the honest shape.
-  if (tier === 'act') {
-    return { outcome: 'allowed', ...(standingGrant ? { approval: standingGrant } : {}) };
+  // Allowed runs. An `act` call is audited by the attribution observer on
+  // invoke, like any other allowed call. A `destructive` call can only resolve
+  // Allowed from an ACTION-level setting (the resolver turns an area-level
+  // Allowed on a destructive action into Ask), and it gets one Activity line
+  // saying no card was shown: a stretch in which DorkOS goes quiet must not also
+  // be one in which it goes blind.
+  if (permission?.state === 'allowed') {
+    const approval: GrantedApproval = { via: 'permission', source: permission.source };
+    if (tier === 'destructive') {
+      audit({ action, ...attributed, decision: { outcome: 'allowed', approval } });
+    }
+    return { outcome: 'allowed', approval };
   }
 
-  // `destructive` with a live permission: this is the call the operator said to
-  // stop asking about. No card, and one Activity line saying so, because a window
-  // in which DorkOS goes quiet must not also be a window in which it goes blind.
-  if (standingGrant) {
-    audit({ action, ...attributed, decision: { outcome: 'allowed', approval: standingGrant } });
-    return { outcome: 'allowed', approval: standingGrant };
-  }
+  // Ask on an `act` call raises a card, like a destructive one always does.
+  // `act` with no area, or with an area that is not Ask, is allowed and audited —
+  // by the attribution observer on invoke, so exactly one Activity record
+  // describes the call.
+  const askingForAct = tier === 'act' && permission?.state === 'ask';
+  if (tier === 'act' && !askingForAct && !blockedAsk) return { outcome: 'allowed' };
 
   if (!gate) {
     const payload = denied(
       action,
       'enforcement_unavailable',
-      `"${action.title}" cannot be undone and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
+      `"${action.title}" ${needsApprovalClause(tier)} and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
       { approvable: false }
     );
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
@@ -1086,7 +1025,9 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   try {
     binding = {
       capabilityId: action.id,
-      inputHash: hashApprovalInput(input),
+      // A described change is part of what is approved: the same input against
+      // different state is a different change, and must not spend this token.
+      inputHash: hashApprovalInput(change === undefined ? input : { input, change }),
       ...(connectorAuthority ? { authorityBindingDigest: connectorAuthority.digest } : {}),
     };
   } catch (err) {
@@ -1096,7 +1037,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     });
     return refuse(
       'input_not_bindable',
-      `"${action.title}" cannot be undone, and DorkOS cannot describe this exact call well enough ` +
+      `"${action.title}" ${needsApprovalClause(tier)}, and DorkOS cannot describe this exact call well enough ` +
         `to ask anyone about it, so it was refused.`
     );
   }
@@ -1115,7 +1056,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     const payload = denied(
       action,
       'enforcement_unavailable',
-      `"${action.title}" cannot be undone and DorkOS could not record an approval request for it, so it was refused.`,
+      `"${action.title}" ${needsApprovalClause(tier)} and DorkOS could not record an approval request for it, so it was refused.`,
       { approvable: false }
     );
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
@@ -1130,26 +1071,57 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
    * and is built inline below, so the compiler now keeps the two apart.
    */
   const ask = (reason: FreshAskReason): TierEnforcementDecision => {
+    // A request past Blocked is rate-limited from the approvals store BEFORE
+    // anything is minted, so a looping agent gets one card, never a stack of
+    // them, and a restart cannot reset the count (spec `agent-permissions` D8).
+    if (blockedAsk && permission) {
+      let limit: BlockedRequestLimit | undefined;
+      try {
+        limit = gate!.approvals.blockedRequestLimit({
+          agentPath: identity!.agentPath,
+          area: permission.area,
+          capabilityId: action.id,
+        });
+      } catch (err) {
+        auditStoreFailure();
+        throw err;
+      }
+      if (limit) {
+        const payload = denied(
+          action,
+          BLOCKED_LIMIT_REASON[limit.limit],
+          blockedLimitMessage(limit, permission.area),
+          { approvable: false, ...('approvalId' in limit ? { approvalId: limit.approvalId } : {}) }
+        );
+        audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
+        return { outcome: 'denied', payload };
+      }
+    }
     let ticket: ApprovalTicket;
     try {
-      const detail = detailFor(action, input);
+      const detail = change ?? detailFor(action, input);
       const remaining = subject ? describeRemainingArguments(action, input) : undefined;
       ticket = gate!.approvals.request({
         ...binding,
-        summary: describeGatedAttempt(action, input, identity, subject),
+        summary: describeGatedAttempt(action, input, identity, subject, serviceAction),
         ...(detail !== undefined ? { detail } : {}),
         ...(requestedBy ? { requestedBy } : {}),
         ...(subject ? { subject } : {}),
         ...(remaining !== undefined ? { otherArguments: remaining } : {}),
+        ...(serviceAction ? { serviceAction } : {}),
         // Recorded only when nothing named the caller, because that is the only
         // case it says anything a person does not already have.
         ...(!requestedBy && origin ? { origin } : {}),
         ...(connectorAuthority ? { connectorAuthority } : {}),
-        // The raw path alongside the display label, because a standing
-        // permission keys on the agent and a label is not a key. An anonymous
-        // caller records none, which is what makes its approval ineligible to be
-        // made standing.
-        ...(identity && standingGrantEligible ? { requestedByPath: identity.agentPath } : {}),
+        // The raw path alongside the display label, because an Always allow
+        // writes onto the agent and the blocked-request limits count per agent,
+        // and a label is not a key. An anonymous caller records none, which is
+        // what keeps Always allow off its card.
+        ...(identity ? { requestedByPath: identity.agentPath } : {}),
+        // The area the gate decided on, so the card and the grant route read
+        // the same answer to "may this be allowed always?".
+        area: permission?.area ?? null,
+        ...(blockedAsk && blockedRequest ? { blockedRequest } : {}),
         // Where to tell the answer, when the surface had a session at all. Not
         // read by any decision here — see the field's own docblock.
         ...(requestingSession ? { requestingSession } : {}),
@@ -1167,7 +1139,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       approvalToken: ticket.token,
       expiresAt: ticket.expiresAt,
       reason,
-      message: approvalMessage(reason, action.title),
+      message: approvalMessage(reason, action.title, tier, blockedAsk),
       retry: retryGuidance(retryChannel, interactive),
     };
     audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
@@ -1208,7 +1180,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         approvalToken,
         expiresAt: result.expiresAt,
         reason: 'awaiting_decision',
-        message: approvalMessage('awaiting_decision', action.title),
+        message: approvalMessage('awaiting_decision', action.title, tier),
         retry: retryGuidance(retryChannel, interactive),
       };
       audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
@@ -1292,12 +1264,12 @@ export class CapabilityGateRefusal extends Error {
  * @throws If no capability is registered under `id`, or if `input` fails schema
  *   validation (a `ZodError`).
  */
-export function authorizeCapability(
+export async function authorizeCapability(
   registry: CapabilityRegistry,
   id: string,
   input: unknown,
   context: CapabilityInvocationContext
-): TierEnforcementDecision {
+): Promise<TierEnforcementDecision> {
   const capability = registry.get(id);
   if (!capability) {
     throw new Error(`Capability registry: no capability registered for id "${id}".`);
@@ -1326,9 +1298,16 @@ export function authorizeCapability(
     }
     return { outcome: 'allowed' };
   }
+  const parsed = capability.input.parse(input);
+  const permission = await resolveCallPermission({
+    action: capability,
+    input: parsed,
+    ...(context.identity ? { identity: context.identity } : {}),
+  });
   return enforceCapabilityTier({
     action: capability,
-    input: capability.input.parse(input),
+    input: parsed,
+    permission,
     ...(context.identity ? { identity: context.identity } : {}),
     ...(context.approvalToken ? { approvalToken: context.approvalToken } : {}),
     retryChannel: context.retryChannel ?? 'http-header',

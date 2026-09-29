@@ -29,7 +29,7 @@ vi.mock('@/layers/entities/marketplace', () => ({
 const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', async (importActual) => {
   const actual = await importActual<typeof import('@tanstack/react-router')>();
-  return { ...actual, useNavigate: () => mockNavigate };
+  return { ...actual, useRouter: () => ({}), useNavigate: () => mockNavigate };
 });
 
 const mockLoading = vi.fn(() => 'toast-id-abc');
@@ -275,7 +275,7 @@ describe('useInstallWithToast', () => {
   });
 
   describe('adapter install → Connections deep-link', () => {
-    it('deep-links a messaging adapter to the Messaging region', () => {
+    it('links a messaging adapter to the Connections page', () => {
       const { result } = renderHook(() => useInstallWithToast());
 
       act(() => {
@@ -295,20 +295,20 @@ describe('useInstallWithToast', () => {
       const opts = mockSuccess.mock.calls[0][1] as {
         action?: { label: string; onClick: () => void };
       };
-      expect(opts.action?.label).toBe('Open Messaging');
+      expect(opts.action?.label).toBe('Open Connections');
 
-      // Clicking navigates to the Connections page, Messaging region.
+      // Clicking navigates to the Connections page, where every app is one list.
       expect(mockNavigate).not.toHaveBeenCalled();
       act(() => {
         opts.action?.onClick();
       });
       expect(mockNavigate).toHaveBeenCalledWith({
         to: '/connections',
-        search: { region: 'messaging' },
+        search: {},
       });
     });
 
-    it('deep-links a connector-refinement adapter to the Accounts region', () => {
+    it('links a connector-refinement adapter to the Connections page', () => {
       const { result } = renderHook(() => useInstallWithToast());
 
       act(() => {
@@ -328,16 +328,16 @@ describe('useInstallWithToast', () => {
       const opts = mockSuccess.mock.calls[0][1] as {
         action?: { label: string; onClick: () => void };
       };
-      expect(opts.action?.label).toBe('Open Accounts');
+      expect(opts.action?.label).toBe('Open Connections');
 
-      // Clicking navigates to the Connections page, Accounts region.
+      // Clicking navigates to the Connections page, where every app is one list.
       expect(mockNavigate).not.toHaveBeenCalled();
       act(() => {
         opts.action?.onClick();
       });
       expect(mockNavigate).toHaveBeenCalledWith({
         to: '/connections',
-        search: { region: 'accounts' },
+        search: {},
       });
     });
   });

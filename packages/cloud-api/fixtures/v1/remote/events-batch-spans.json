@@ -1,0 +1,15 @@
+{
+  "instanceId": "inst_0001",
+  "activity": [{ "at": "2026-09-15T12:05:00.000Z", "requests": 42 }],
+  "closeReports": [
+    {
+      "at": "2026-09-15T12:35:00.000Z",
+      "reason": "idle",
+      "wakeId": "wake_0001",
+      "openedAt": "2026-09-15T12:00:00.000Z",
+      "requests": 57,
+      "bytesIn": "18446744073709551617",
+      "bytesOut": "904213"
+    }
+  ]
+}

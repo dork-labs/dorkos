@@ -17,6 +17,7 @@ import {
 } from '../services/rooms/index.js';
 import { readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
 import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { ROOM_CALLER_LOCAL } from './room-caller-local.js';
 
 /**
  * Who this request is.
@@ -107,6 +108,18 @@ import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/ag
  *   agent token this machine could not verify.
  */
 export function resolveCaller(
+  req: Pick<Request, 'headers'>,
+  res: Pick<Response, 'locals'>
+): AuthorRecord {
+  const caller = resolveCallerRecord(req, res);
+  // Kept for `sendRoomError`, which words one refusal differently for the
+  // operator than for anybody else (DOR-2457) and is handed only `res`.
+  res.locals[ROOM_CALLER_LOCAL] = caller;
+  return caller;
+}
+
+/** {@link resolveCaller}'s three branches and its refusal, without the bookkeeping. */
+function resolveCallerRecord(
   req: Pick<Request, 'headers'>,
   res: Pick<Response, 'locals'>
 ): AuthorRecord {

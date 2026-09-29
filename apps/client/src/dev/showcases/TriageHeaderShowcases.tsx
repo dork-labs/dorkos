@@ -6,6 +6,7 @@ import { PinnedTriageHeaderView } from '@/layers/widgets/home';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { sessionHref } from '@/layers/shared/lib';
 
 /**
  * Frozen at module load, not read per render: `Date.now()` during render is
@@ -29,6 +30,8 @@ const APPROVALS: PendingApproval[] = [
       'DorkBot wants to run "Uninstall a marketplace package" with name: sentry-monitor, purge: yes',
     requestedBy: '/Users/dev/agents/dorkbot',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: minutesFromLoad(-3),
     expiresAt: minutesFromLoad(105),
   },
@@ -40,6 +43,8 @@ const APPROVALS: PendingApproval[] = [
     summary: 'tangerines wants to run "Delete a workspace" with path: /tmp/scratch-4',
     requestedBy: '/Users/dev/agents/tangerines',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: minutesFromLoad(-11),
     expiresAt: minutesFromLoad(42),
   },
@@ -55,6 +60,11 @@ const SCHEDULES: Task[] = [
     prompt: 'Summarise what the fleet did overnight.',
     cron: '0 9 * * 1-5',
     timezone: 'America/Chicago',
+    defaultCron: '0 9 * * 1-5',
+    defaultTimezone: 'America/Chicago',
+    timingOverridden: false,
+    packageOwned: null,
+    approvalChanges: [],
     agentId: '/Users/dev/agents/dorkbot',
     enabled: false,
     sticky: false,
@@ -63,6 +73,7 @@ const SCHEDULES: Task[] = [
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: '/Users/dev/agents/dorkbot/.dork/tasks/morning-standup/SKILL.md',
     createdAt: minutesFromLoad(-26),
@@ -85,7 +96,7 @@ const ERRORS: AttentionSignal[] = [
     primary: 'tangerines',
     secondary: 'Stopped with an error',
     since: minutesFromLoad(-8),
-    deepLink: '/session?session=ses-9',
+    deepLink: sessionHref({ session: 'ses-9' }),
     agentPath: '/Users/dev/agents/tangerines',
   },
 ];

@@ -2,8 +2,9 @@ import { cn } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { ShowcaseLabel } from '../ShowcaseLabel';
+import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import {
-  Button,
+  AccountDot,
   STATUS_TONE_BORDER_LEFT,
   STATUS_TONE_DOT,
   STATUS_TONE_SURFACE,
@@ -18,23 +19,6 @@ interface ColorToken {
   bg: string;
   border?: boolean;
 }
-
-const SEMANTIC_COLORS: ColorToken[] = [
-  { name: 'background', bg: 'bg-background', border: true },
-  { name: 'foreground', bg: 'bg-foreground' },
-  { name: 'card', bg: 'bg-card', border: true },
-  { name: 'popover', bg: 'bg-popover', border: true },
-  { name: 'primary', bg: 'bg-primary' },
-  { name: 'secondary', bg: 'bg-secondary', border: true },
-  { name: 'muted', bg: 'bg-muted', border: true },
-  { name: 'accent', bg: 'bg-accent', border: true },
-  { name: 'destructive', bg: 'bg-destructive' },
-  { name: 'border', bg: 'bg-border' },
-  { name: 'input', bg: 'bg-input' },
-  { name: 'ring', bg: 'bg-ring' },
-  { name: 'brand', bg: 'bg-brand' },
-  { name: 'surface', bg: 'bg-surface', border: true },
-];
 
 const SIDEBAR_COLORS: ColorToken[] = [
   { name: 'sidebar', bg: 'bg-sidebar', border: true },
@@ -92,6 +76,33 @@ const STATUS_ROWS = [
  */
 const STATUS_TONES: StatusTone[] = ['success', 'warning', 'error', 'info', 'neutral'];
 
+/**
+ * The account palette's names and each color's minimum contrast over the six
+ * surfaces below, by position. The hex values come from
+ * `DEFAULT_ACCOUNT_COLORS` itself, and `account-palette.test.ts` in
+ * `@dorkos/shared` pins these ratios, so neither can drift from the palette.
+ */
+const ACCOUNT_PALETTE_META = [
+  { name: 'blue', minContrast: '3.41' },
+  { name: 'green', minContrast: '3.45' },
+  { name: 'amber', minContrast: '3.25' },
+  { name: 'purple', minContrast: '3.35' },
+  { name: 'pink', minContrast: '3.28' },
+  { name: 'teal', minContrast: '3.06' },
+  { name: 'indigo', minContrast: '3.39' },
+  { name: 'stone', minContrast: '3.15' },
+] as const;
+
+/** Every surface an account dot sits on: light, then dark. */
+const ACCOUNT_SURFACES = [
+  { hex: '#ffffff', label: 'light background' },
+  { hex: '#fafafa', label: 'light background, muted' },
+  { hex: '#e8e8e8', label: 'light sidebar' },
+  { hex: '#0a0a0a', label: 'dark background' },
+  { hex: '#1a1a1a', label: 'dark sidebar' },
+  { hex: '#262626', label: 'dark hover and muted' },
+] as const;
+
 const TYPE_SCALE = [
   { cls: 'text-3xs', label: 'text-3xs', px: '10px' },
   { cls: 'text-2xs', label: 'text-2xs', px: '11px' },
@@ -127,23 +138,37 @@ const SHADOWS = [
   { cls: 'shadow-xl', label: 'shadow-xl' },
 ] as const;
 
-/** Design tokens reference page — colors, typography, spacing, radii, shadows. */
+/** Client-local token reference; portable colors are shown in the shared UI catalog. */
 export function TokensPage() {
   return (
     <PlaygroundPageLayout
-      title="Design Tokens"
-      description="Visual reference for the design system's color, type, spacing, and shape tokens."
+      title="Client Tokens"
+      description="App-local status, sidebar, type, spacing, and shape tokens. Portable colors live in the shared UI catalog."
       sections={TOKENS_SECTIONS}
     >
-      <SemanticColorsSection />
+      <ClientColorsSection />
       <StatusColorsSection />
       <SidebarColorsSection />
+      <AccountPaletteSection />
       <TypographySection />
       <SpacingSection />
       <RadiiSection />
       <ShadowsSection />
       <SizesSection />
     </PlaygroundPageLayout>
+  );
+}
+
+function ClientColorsSection() {
+  return (
+    <PlaygroundSection
+      title="Client Surface Color"
+      description="The app's local surface token; portable colors live in the shared UI catalog."
+    >
+      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-5">
+        <ColorSwatch name="surface" bg="bg-surface" border />
+      </div>
+    </PlaygroundSection>
   );
 }
 
@@ -154,21 +179,6 @@ function ColorSwatch({ name, bg, border }: { name: string; bg: string; border?: 
       <p className="text-foreground text-xs font-medium">{name}</p>
       <p className="text-muted-foreground text-3xs font-mono">--{name}</p>
     </div>
-  );
-}
-
-function SemanticColorsSection() {
-  return (
-    <PlaygroundSection
-      title="Semantic Colors"
-      description="Core palette tokens used throughout the UI."
-    >
-      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-5">
-        {SEMANTIC_COLORS.map((c) => (
-          <ColorSwatch key={c.name} name={c.name} bg={c.bg} border={c.border} />
-        ))}
-      </div>
-    </PlaygroundSection>
   );
 }
 
@@ -248,6 +258,46 @@ function SidebarColorsSection() {
         {SIDEBAR_COLORS.map((c) => (
           <ColorSwatch key={c.name} name={c.name} bg={c.bg} border={c.border} />
         ))}
+      </div>
+    </PlaygroundSection>
+  );
+}
+
+function AccountPaletteSection() {
+  return (
+    <PlaygroundSection
+      title="Account palette"
+      description="The default account colors, by position. Each is at least 3:1 against every light and dark surface an account dot sits on, so one color works in both themes."
+    >
+      <div className="space-y-3">
+        {DEFAULT_ACCOUNT_COLORS.map((hex, i) => {
+          const meta = ACCOUNT_PALETTE_META[i];
+          const name = meta?.name ?? hex;
+          return (
+            <div key={hex} className="flex flex-wrap items-center gap-3">
+              <AccountDot color={hex} name={name} size="md" />
+              <span className="text-foreground w-14 text-xs font-medium">{name}</span>
+              <span className="text-muted-foreground w-16 font-mono text-xs">{hex}</span>
+              <span className="text-muted-foreground w-20 text-xs tabular-nums">
+                min {meta?.minContrast ?? '?'}:1
+              </span>
+              <div className="flex gap-1">
+                {ACCOUNT_SURFACES.map((surface) => (
+                  <span
+                    key={surface.hex}
+                    title={`${name} on ${surface.label} (${surface.hex})`}
+                    className="border-border flex size-8 items-center justify-center rounded-md border"
+                    // Literal surfaces on purpose: the swatch must show the same
+                    // background in either theme to prove the ratio above.
+                    style={{ backgroundColor: surface.hex }}
+                  >
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: hex }} />
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </PlaygroundSection>
   );
@@ -351,8 +401,8 @@ function ShadowsSection() {
 function SizesSection() {
   return (
     <PlaygroundSection
-      title="Icon & Button Sizes"
-      description="Standard size tokens for icons and interactive elements."
+      title="Client Icon Sizes"
+      description="Client icon sizes follow its mobile scale setting."
     >
       <ShowcaseLabel>Icon Sizes</ShowcaseLabel>
       <div className="flex items-end gap-6">
@@ -366,22 +416,6 @@ function SizesSection() {
             <p className="text-muted-foreground text-3xs font-mono">{icon.label}</p>
           </div>
         ))}
-      </div>
-
-      <ShowcaseLabel>Button Heights</ShowcaseLabel>
-      <div className="flex items-end gap-4">
-        <div className="space-y-1.5 text-center">
-          <Button size="sm">Small</Button>
-          <p className="text-muted-foreground text-3xs font-mono">btn-sm</p>
-        </div>
-        <div className="space-y-1.5 text-center">
-          <Button size="md">Medium</Button>
-          <p className="text-muted-foreground text-3xs font-mono">btn-md</p>
-        </div>
-        <div className="space-y-1.5 text-center">
-          <Button size="lg">Large</Button>
-          <p className="text-muted-foreground text-3xs font-mono">btn-lg</p>
-        </div>
       </div>
     </PlaygroundSection>
   );

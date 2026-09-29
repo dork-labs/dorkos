@@ -1,7 +1,10 @@
 import { useRef, useState } from 'react';
-import { Bell, Trash2 } from 'lucide-react';
-import { stableStringify } from '@dorkos/shared/capabilities';
-import type { ConnectionEventSubscription } from '@dorkos/shared/connector-event-schemas';
+import { Bell, MessageSquare, Trash2 } from 'lucide-react';
+import type {
+  ConnectionEventDefinitionPage,
+  ConnectionEventSubscription,
+} from '@dorkos/shared/connector-event-schemas';
+import type { TeamMember } from '@dorkos/shared/team-schemas';
 import {
   useConnectionEventDefinitions,
   useConnectionEventSource,
@@ -11,7 +14,11 @@ import {
 } from '@/layers/entities/connectors';
 import { useBindings } from '@/layers/entities/binding';
 import { useMemberRooms, useTeamRoster } from '@/layers/entities/team';
-import { Badge, Button, Checkbox, QueryErrorState, Skeleton } from '@/layers/shared/ui';
+import { useSafeNavigate } from '@/layers/shared/model';
+import { cn, toSession } from '@/layers/shared/lib';
+import { Button, Checkbox, QueryErrorState, Skeleton, Spinner } from '@/layers/shared/ui';
+import { readEventFilterFields } from '../lib/event-filter-fields';
+import { describeEventFilter, notificationStatus } from '../lib/notification-copy';
 import {
   buildConnectionEventScope,
   connectionEventCadenceLabel,
@@ -24,82 +31,126 @@ import {
   isConnectionEventSourceReady,
 } from './ConnectionEventSourceSetup';
 
-function subscriptionStateVariant(
-  state: ConnectionEventSubscription['state']
-): 'secondary' | 'outline' | 'destructive' {
-  if (state === 'active') return 'secondary';
-  if (state === 'unavailable') return 'destructive';
-  return 'outline';
+type ConnectionEventDefinition = ConnectionEventDefinitionPage['definitions'][number];
+/** A roster member whose `kind` is `agent`. */
+type AgentChoice = TeamMember;
+
+/**
+ * An agent's name, with its handle only when another agent shares the name, so
+ * two rows never read the same while no id ever reaches the screen.
+ */
+function agentName(agents: AgentChoice[], agentId: string): string {
+  const agent = agents.find((item) => item.id === agentId);
+  if (!agent) return 'an agent that’s no longer here';
+  const shared = agents.some(
+    (other) => other.id !== agent.id && other.displayName === agent.displayName
+  );
+  return shared && agent.handle ? `${agent.displayName} (@${agent.handle})` : agent.displayName;
 }
 
-function filterLabel(filter: Record<string, unknown>): string {
-  if (Object.keys(filter).length === 0) return 'No filter';
-  return `Filter ${stableStringify(filter)}`;
-}
-
-function destinationKindLabel(kind: ConnectionEventSubscription['destination']['kind']): string {
-  if (kind === 'channel') return 'Messaging channel';
-  return kind === 'room' ? 'Room' : 'Agent';
-}
-
-function namedIdentity(label: string | undefined, id: string): string {
-  return label && label !== id ? `${label} (${id})` : id;
+/** Why a notification could not be set up, in words that point at the fix. */
+function createErrorCopy(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  const status = (error as { status?: number } | null)?.status;
+  if (code === 'invalid_filter') return 'Check the filter values, then try again.';
+  if (code === 'destination_unavailable')
+    return 'This agent can’t get notifications there any more. Pick another place.';
+  if (status === 409)
+    return 'Something about this choice changed while you were picking it, or that place can’t take notifications any more. Check your choices, then try again.';
+  return 'Couldn’t finish setting this up. Try again.';
 }
 
 function ConnectionNotificationRow({
   subscription,
-  agentLabel,
-  destinationAgentLabel,
+  agents,
+  definition,
   channelLabel,
   removing,
   onRemove,
 }: {
   subscription: ConnectionEventSubscription;
-  agentLabel: string;
-  destinationAgentLabel?: string;
+  agents: AgentChoice[];
+  definition?: ConnectionEventDefinition;
   channelLabel?: string;
   removing: boolean;
   onRemove: () => void;
 }) {
+  const navigate = useSafeNavigate();
   const rooms = useMemberRooms(subscription.agentId, {
     enabled: subscription.destination.kind === 'room',
   });
+  const agent = agentName(agents, subscription.agentId);
   const room = rooms.data?.rooms.find((item) => item.id === subscription.destination.id);
-  const destinationLabel =
-    subscription.destination.kind === 'agent'
-      ? (destinationAgentLabel ?? subscription.destination.id)
-      : subscription.destination.kind === 'room'
-        ? room
-          ? namedIdentity(room.slug ? `#${room.slug}` : room.name, subscription.destination.id)
-          : subscription.destination.id
-        : (channelLabel ?? subscription.destination.id);
-  const scopeLabel = `For ${agentLabel} · ${destinationKindLabel(subscription.destination.kind)} ${destinationLabel} · ${filterLabel(subscription.filter)}`;
+  let destination = agent;
+  let where = `Goes to ${agent}, all in one chat`;
+  if (subscription.destination.kind === 'room') {
+    destination = room ? (room.slug ? `#${room.slug}` : room.name) : 'a room this agent left';
+    where = `Goes to ${destination}, for ${agent}`;
+  } else if (subscription.destination.kind === 'channel') {
+    destination = channelLabel ?? 'a chat app conversation that’s no longer set up';
+    where = `Goes to ${destination}, for ${agent}`;
+  }
+  const filter = describeEventFilter(
+    subscription.filter,
+    definition ? readEventFilterFields(definition.filterSchema) : null
+  );
+  const status = notificationStatus(
+    subscription,
+    destination,
+    connectionEventCadenceLabel(subscription)
+  );
+  const agentPath = agents.find((item) => item.id === subscription.agentId)?.agent?.projectPath;
+  const chatSessionId = subscription.chatSessionId;
+  const scopeLabel = filter ? `${where}. ${filter}` : where;
 
   return (
-    <li className="bg-muted/40 flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{subscription.displayName}</p>
-        <p className="text-muted-foreground truncate text-xs">
-          {connectionEventCadenceLabel(subscription)}
+    <li
+      className="bg-muted/40 flex min-h-11 items-start justify-between gap-2 rounded-lg px-3 py-2"
+      data-state={subscription.state}
+    >
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-sm font-medium break-words">{subscription.displayName}</p>
+        <p className="text-muted-foreground text-xs break-words">{where}</p>
+        {filter && <p className="text-muted-foreground text-xs break-words">{filter}</p>}
+        <p
+          className={cn(
+            'text-xs break-words',
+            status.tone === 'problem' ? 'text-destructive' : 'text-muted-foreground'
+          )}
+          data-testid="notification-status"
+        >
+          {status.text}
         </p>
-        <p className="text-muted-foreground text-xs break-words">{scopeLabel}</p>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Badge size="xs" variant={subscriptionStateVariant(subscription.state)}>
-          {subscription.state}
-        </Badge>
-        {(subscription.state === 'active' || subscription.state === 'pending') && (
+      <div className="flex shrink-0 items-center gap-1">
+        {chatSessionId && navigate && (
           <Button
             type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label={`Remove ${subscription.displayName}: ${scopeLabel}`}
-            disabled={removing}
-            onClick={onRemove}
+            size="sm"
+            variant={status.checkInChat ? 'secondary' : 'ghost'}
+            className="gap-1.5"
+            aria-label={`Open the chat for ${subscription.displayName}: ${scopeLabel}`}
+            onClick={() =>
+              void navigate(
+                toSession({ session: chatSessionId, ...(agentPath && { dir: agentPath }) })
+              )
+            }
           >
-            <Trash2 className="size-4" />
+            <MessageSquare className="size-3.5" aria-hidden />
+            <span className="max-sm:sr-only">Open chat</span>
           </Button>
         )}
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={`Remove ${subscription.displayName}: ${scopeLabel}`}
+          aria-busy={removing}
+          disabled={removing}
+          onClick={onRemove}
+        >
+          {removing ? <Spinner size="sm" /> : <Trash2 className="size-4" />}
+        </Button>
       </div>
     </li>
   );
@@ -115,9 +166,13 @@ export function ConnectionNotifications({ connectionId }: ConnectionNotification
 }
 
 function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificationsProps) {
-  const definitions = useConnectionEventDefinitions(connectionId);
-  const subscriptions = useConnectionEventSubscriptions(connectionId);
   const source = useConnectionEventSource(connectionId, true);
+  // Nothing is offered on a route that cannot deliver notifications: asking
+  // for its activity would only fail a second time underneath the one line
+  // that already says so.
+  const offered = source.data !== undefined && source.data.setupMode !== 'unavailable';
+  const definitions = useConnectionEventDefinitions(connectionId, offered);
+  const subscriptions = useConnectionEventSubscriptions(connectionId);
   const roster = useTeamRoster();
   const bindings = useBindings();
   const createSubscription = useCreateConnectionEventSubscription();
@@ -126,6 +181,22 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
     emptyConnectionEventScopeDraft()
   );
   const [manageExistingTrigger, setManageExistingTrigger] = useState(false);
+  // Per row: removing one notification leaves every other row's Remove usable.
+  const [removingIds, setRemovingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const remove = (subscriptionId: string) => {
+    setRemovingIds((ids) => new Set(ids).add(subscriptionId));
+    deleteSubscription.mutate(
+      { connectionId, subscriptionId },
+      {
+        onSettled: () =>
+          setRemovingIds((ids) => {
+            const next = new Set(ids);
+            next.delete(subscriptionId);
+            return next;
+          }),
+      }
+    );
+  };
   const decisionRef = useRef<{ signature: string; requestId: string } | null>(null);
 
   const definitionItems = definitions.data?.pages.flatMap((page) => page.definitions) ?? [];
@@ -175,10 +246,10 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
       <div className="space-y-1">
         <h3 id="connection-notifications" className="flex items-center gap-2 text-sm font-semibold">
           <Bell className="size-4" aria-hidden="true" />
-          Notifications
+          Tell an agent
         </h3>
         <p className="text-muted-foreground text-xs">
-          Send selected account activity to an agent or a place they can reach.
+          Send new activity from this account to an agent, one of its rooms, or a chat app.
         </p>
       </div>
 
@@ -186,8 +257,8 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
         <Skeleton className="h-20 rounded-lg" aria-label="Loading delivery setup" />
       ) : source.isError ? (
         <QueryErrorState
-          title="Couldn’t load delivery setup"
-          description="Try again before adding a notification."
+          title="Couldn’t check whether this account can send notifications"
+          description="Try again before adding one."
           onRetry={() => void source.refetch()}
           isRetrying={source.isFetching}
         />
@@ -205,18 +276,11 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
           isRetrying={subscriptions.isFetching}
         />
       ) : subscriptionItems.length === 0 ? (
-        <p className="bg-muted/40 rounded-lg p-3 text-sm">No notifications set up.</p>
+        offered && <p className="bg-muted/40 rounded-lg p-3 text-sm">No notifications set up.</p>
       ) : (
         <div className="space-y-2" data-testid="connection-notification-list">
           <ul className="space-y-1.5">
             {subscriptionItems.map((subscription) => {
-              const agentLabel = namedIdentity(
-                agentChoices.find((agent) => agent.id === subscription.agentId)?.displayName,
-                subscription.agentId
-              );
-              const destinationAgent = agentChoices.find(
-                (agent) => agent.id === subscription.destination.id
-              );
               const channel = bindings.data?.find(
                 (binding) => binding.id === subscription.destination.id
               );
@@ -224,19 +288,11 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
                 <ConnectionNotificationRow
                   key={subscription.id}
                   subscription={subscription}
-                  agentLabel={agentLabel}
-                  destinationAgentLabel={namedIdentity(
-                    destinationAgent?.displayName,
-                    subscription.destination.id
-                  )}
-                  channelLabel={namedIdentity(
-                    channel?.label || channel?.chatId || undefined,
-                    subscription.destination.id
-                  )}
-                  removing={deleteSubscription.isPending}
-                  onRemove={() =>
-                    deleteSubscription.mutate({ connectionId, subscriptionId: subscription.id })
-                  }
+                  agents={agentChoices}
+                  definition={definitionItems.find((item) => item.id === subscription.definitionId)}
+                  channelLabel={channel ? channel.label || 'a chat app conversation' : undefined}
+                  removing={removingIds.has(subscription.id)}
+                  onRemove={() => remove(subscription.id)}
                 />
               );
             })}
@@ -257,10 +313,9 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
       {createSubscription.data &&
         !subscriptionItems.some((item) => item.id === createSubscription.data.id) && (
           <p className="bg-muted/40 rounded-lg p-3 text-sm" role="status">
-            {createSubscription.data.displayName}{' '}
             {createSubscription.data.state === 'pending'
-              ? 'setup is pending.'
-              : `is ${createSubscription.data.state}.`}
+              ? `${createSubscription.data.displayName} is being set up. DorkOS keeps trying on its own.`
+              : `${createSubscription.data.displayName} is on.`}
           </p>
         )}
       {deleteSubscription.isError && (
@@ -268,90 +323,101 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
           role="alert"
           className="border-destructive/30 bg-destructive/10 text-foreground rounded-md border p-3 text-sm"
         >
-          We couldn’t confirm whether that notification was removed. Check its current status before
-          trying again.
+          Couldn’t confirm that notification was removed. Check the list.
         </p>
       )}
 
-      <div className="space-y-3 rounded-lg border p-3" data-testid="notification-setup">
-        <p className="text-sm font-medium">Add a notification</p>
-        {definitions.isPending ? (
-          <Skeleton className="h-20 rounded-md" aria-label="Loading available notifications" />
-        ) : definitions.isError ? (
-          <QueryErrorState
-            title="Couldn’t load available notifications"
-            description="Try again before choosing account activity."
-            onRetry={() => void definitions.refetch()}
-            isRetrying={definitions.isFetching}
-          />
-        ) : definitionItems.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            This service does not report any account activity yet.
-          </p>
-        ) : roster.isPending ? (
-          <Skeleton className="h-20 rounded-md" aria-label="Loading agents" />
-        ) : roster.isError ? (
-          <QueryErrorState
-            title="Couldn’t load agents"
-            description="Try again before choosing who should receive this activity."
-            onRetry={() => void roster.refetch()}
-            isRetrying={roster.isFetching}
-          />
-        ) : agentChoices.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            Register an agent before setting up a notification.
-          </p>
-        ) : (
-          <>
-            <ConnectionEventScopeFields
-              idPrefix="notification"
-              definitions={definitionItems}
-              draft={draft}
-              onChange={updateDraft}
-              agents={agentChoices}
-              sourceStatus={source.data}
-            />
-            <div className="flex min-h-11 items-center gap-2">
-              <Checkbox
-                id="notification-manage-existing"
-                checked={manageExistingTrigger}
-                onCheckedChange={(checked) => {
-                  setManageExistingTrigger(checked === true);
-                  resetDecision();
-                }}
-              />
-              <label htmlFor="notification-manage-existing" className="text-sm">
-                Replace an existing service notification if needed
-              </label>
-            </div>
-            {createSubscription.isError && (
-              <p role="alert" className="text-destructive text-sm">
-                We couldn’t confirm this notification. Check its current state, then retry the same
-                decision.
+      {offered && (
+        <div className="space-y-3 rounded-lg border p-3" data-testid="notification-setup">
+          <p className="text-sm font-medium">Add a notification</p>
+          {definitions.isPending ? (
+            <Skeleton className="h-20 rounded-md" aria-label="Loading available notifications" />
+          ) : definitions.isError ? (
+            <div className="flex flex-wrap items-center gap-x-2 text-sm">
+              <p className="text-muted-foreground">
+                Notifications aren’t available for this account right now.
               </p>
-            )}
+              <Button
+                type="button"
+                variant="link"
+                size="xs"
+                className="h-auto p-0"
+                disabled={definitions.isFetching}
+                onClick={() => void definitions.refetch()}
+              >
+                {definitions.isFetching ? 'Checking…' : 'Check again'}
+              </Button>
+            </div>
+          ) : definitionItems.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              This app doesn’t offer any notifications yet.
+            </p>
+          ) : roster.isPending ? (
+            <Skeleton className="h-20 rounded-md" aria-label="Loading agents" />
+          ) : roster.isError ? (
+            <QueryErrorState
+              title="Couldn’t load agents"
+              description="Try again before choosing who should receive this activity."
+              onRetry={() => void roster.refetch()}
+              isRetrying={roster.isFetching}
+            />
+          ) : agentChoices.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              Add an agent first. Notifications go to an agent.
+            </p>
+          ) : (
+            <>
+              <ConnectionEventScopeFields
+                idPrefix="notification"
+                definitions={definitionItems}
+                draft={draft}
+                onChange={updateDraft}
+                agents={agentChoices}
+                sourceStatus={source.data}
+              />
+              {source.data?.setupMode === 'byo_webhook' && (
+                <div className="flex min-h-11 items-center gap-2">
+                  <Checkbox
+                    id="notification-manage-existing"
+                    checked={manageExistingTrigger}
+                    onCheckedChange={(checked) => {
+                      setManageExistingTrigger(checked === true);
+                      resetDecision();
+                    }}
+                  />
+                  <label htmlFor="notification-manage-existing" className="text-sm">
+                    If Composio already has a matching one, let DorkOS take it over
+                  </label>
+                </div>
+              )}
+              {createSubscription.isError && (
+                <p role="alert" className="text-destructive text-sm">
+                  {createErrorCopy(createSubscription.error)}
+                </p>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                disabled={!canCreate || createSubscription.isPending}
+                onClick={submit}
+              >
+                {createSubscription.isPending ? 'Saving…' : 'Set up notification'}
+              </Button>
+            </>
+          )}
+          {definitions.hasNextPage && (
             <Button
               type="button"
               size="sm"
-              disabled={!canCreate || createSubscription.isPending}
-              onClick={submit}
+              variant="ghost"
+              disabled={definitions.isFetchingNextPage}
+              onClick={() => void definitions.fetchNextPage()}
             >
-              {createSubscription.isPending ? 'Saving…' : 'Set up notification'}
+              {definitions.isFetchingNextPage ? 'Loading…' : 'Load more activity'}
             </Button>
-          </>
-        )}
-        {definitions.hasNextPage && (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={definitions.isFetchingNextPage}
-            onClick={() => void definitions.fetchNextPage()}
-          >
-            {definitions.isFetchingNextPage ? 'Loading…' : 'Load more activity'}
-          </Button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

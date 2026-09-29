@@ -38,6 +38,7 @@ import type {
   SessionContextUsage,
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
+import { withAccountSubscription, type AccountUsage } from '@dorkos/shared/account-usage';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import {
   isAbsolvingTerminalReason,
@@ -92,6 +93,32 @@ export interface SessionStreamState {
   inProgressTurn: SessionEvent[];
   /** Server-held status projection, or `null` before the first hydration. */
   status: SessionStatus | null;
+  /**
+   * `Date.now()` when a LIVE frame last set `status.usage`, or `null` when the
+   * usage held came from a snapshot (spec `claude-account-ui` §6.8).
+   *
+   * A snapshot's usage carries no time of its own, so after a reopen it may be
+   * hours old. The status bar reads this stamp to decide whether the turn's own
+   * usage is newer than its account's reading: only a frame that arrived while
+   * this window watched can be, and a snapshot never is.
+   */
+  usageArrivedAt: number | null;
+  /**
+   * Whether a usage frame arriving now can be trusted to be new, so
+   * {@link usageArrivedAt} may be stamped with `Date.now()`.
+   *
+   * Events carry no time of their own, and a `Last-Event-ID` reconnect replays
+   * the gap with nothing to mark where the replay ends. After a laptop sleeps,
+   * those replayed frames are old, and stamping them "now" would let hours-old
+   * usage beat a newer account reading. So the simplest rule that is never
+   * wrong in the harmful direction: losing the connection stops the clock, and
+   * replayed frames keep the previous stamp. It restarts on a snapshot (what
+   * follows one is the short gap after its cursor) or on the turn that carries
+   * this window's own message (every frame of that turn is after the reconnect). A frame
+   * it declines to stamp only ranks below the account's reading, which is the
+   * safe direction.
+   */
+  usageClockLive: boolean;
   /** Pending interactions awaiting the operator (ADR-0264), keyed by `id`. */
   pendingInteractions: PendingInteractionDTO[];
   /** Highest `seq` applied so far; the idempotency/gap-free watermark. */
@@ -229,6 +256,8 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   queueOutcomes: {},
   inProgressTurn: [],
   status: null,
+  usageArrivedAt: null,
+  usageClockLive: true,
   pendingInteractions: [],
   lastAppliedSeq: 0,
   lastEventAt: null,
@@ -278,6 +307,17 @@ const ZERO_CONTEXT_USAGE: SessionContextUsage = {
 };
 
 /**
+ * Whether two usage records are the same account: the same runtime and registry
+ * id, or, for a folder no account names (`accountId: null`), the same folder.
+ * The server matches by the same rule.
+ */
+function isSameAccount(held: AccountUsage, next: AccountUsage): boolean {
+  if (held.runtime !== next.runtime) return false;
+  if (held.accountId !== null || next.accountId !== null) return held.accountId === next.accountId;
+  return held.path === next.path;
+}
+
+/**
  * The status a session holds when nothing about it is known yet — every field
  * at its documented before-the-first-turn value.
  *
@@ -302,6 +342,8 @@ const UNHYDRATED_SESSION_STATUS: SessionStatus = {
   runningSubagentCount: 0,
   lifecycle: 'idle',
   lastError: null,
+  limit: null,
+  accountUsage: null,
 };
 
 /**
@@ -632,6 +674,14 @@ interface SessionStreamActions {
   setConnectionState: (sessionId: string, state: ConnectionState) => void;
   /** Remove a session's state entirely. */
   removeSession: (sessionId: string) => void;
+  /**
+   * Apply one account's new usage (the global `account_usage` event) to every
+   * held session whose `status.accountUsage` names that account (spec
+   * `claude-account-fleet` §6 U), and to a Claude Code subscription session's
+   * `usage` too. Account usage never rides a session's own stream, so this is
+   * how an open session follows its account.
+   */
+  applyAccountUsage: (usage: AccountUsage) => void;
   /** Ensure a default entry exists for an unknown id (returns nothing). */
   ensureSession: (sessionId: string) => void;
   /** Read a session's state, or {@link DEFAULT_SESSION_STREAM_STATE} for unknown ids. */
@@ -884,6 +934,23 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
         session.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface (server-projector parity).
         session.status.lastError = null;
+        // …and the usage limit the last turn hit, as the projector does.
+        session.status.limit = null;
+      }
+      // A turn this window triggered is after any reconnect, so its usage
+      // frames are new again (see `usageClockLive`). `triggerPending` alone is
+      // not enough: a person can send while a reconnect is still replaying, and
+      // a REPLAYED turn_start from another client's turn would then match it.
+      // So the turn must also carry this window's own message. A turn whose text
+      // the server reshaped fails the match and stays unstamped, which only
+      // ranks its usage below the account's reading (the safe direction).
+      if (
+        session.triggerPending &&
+        event.origin !== 'runtime' &&
+        session.optimisticUserMessage !== null &&
+        event.userMessage === session.optimisticUserMessage.content
+      ) {
+        session.usageClockLive = true;
       }
       // The triggered turn materialized — the trigger window is over.
       session.triggerPending = false;
@@ -933,6 +1000,11 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       break;
     case 'status_change':
       session.status = mergeStatus(session.status, event.status);
+      // A live usage frame: stamp its arrival, so it can outrank the account's
+      // reading only when it is actually newer (spec `claude-account-ui` §6.8).
+      if (event.status.usage !== undefined && session.usageClockLive) {
+        session.usageArrivedAt = Date.now();
+      }
       break;
     case 'approval_required':
     case 'question_prompt':
@@ -1038,6 +1110,10 @@ export const useSessionStreamStore: SessionStreamStore = create<
             const session = touchAndGet(state, sessionId);
             session.messages = snapshot.messages;
             session.status = snapshot.status;
+            // The snapshot's usage has no time, so it never counts as live;
+            // what follows a snapshot is the short gap after its cursor.
+            session.usageArrivedAt = null;
+            session.usageClockLive = true;
             session.pendingInteractions = snapshot.pendingInteractions;
             session.inProgressTurn = snapshot.inProgressTurn ?? [];
             // Hydration replaces the queue wholesale — that is what makes it
@@ -1197,6 +1273,8 @@ export const useSessionStreamStore: SessionStreamStore = create<
           (state) => {
             const session = touchAndGet(state, sessionId);
             session.connectionState = connectionState;
+            // A lost connection means a replay is coming (see `usageClockLive`).
+            if (connectionState !== 'connected') session.usageClockLive = false;
           },
           false,
           'session-stream/setConnectionState'
@@ -1210,6 +1288,31 @@ export const useSessionStreamStore: SessionStreamStore = create<
           },
           false,
           'session-stream/removeSession'
+        ),
+
+      applyAccountUsage: (usage) =>
+        set(
+          (state) => {
+            for (const session of Object.values(state.sessions)) {
+              const held = session.status?.accountUsage;
+              if (session.status && held && isSameAccount(held, usage)) {
+                session.status.accountUsage = usage;
+                // A Claude Code session on the subscription shows its account's
+                // binding window, by the rule the server uses, so every session
+                // on the account moves together. A session billed per token
+                // (pay-as-you-go) keeps its own cost, and other runtimes' usage
+                // is their own.
+                if (
+                  usage.runtime === 'claude-code' &&
+                  session.status.usage?.kind === 'subscription'
+                ) {
+                  session.status.usage = withAccountSubscription(session.status.usage, usage);
+                }
+              }
+            }
+          },
+          false,
+          'session-stream/applyAccountUsage'
         ),
 
       ensureSession: (sessionId) =>
@@ -1240,6 +1343,17 @@ export const useSessionStreamStore: SessionStreamStore = create<
 export function useSessionStreamState(sessionId: string): SessionStreamState {
   return useSessionStreamStore(
     useCallback((s) => s.sessions[sessionId] ?? DEFAULT_SESSION_STREAM_STATE, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: when a live frame last set this session's usage
+ * (`Date.now()`), or `null` when the usage held came from a snapshot. See
+ * {@link SessionStreamState.usageArrivedAt}.
+ */
+export function useSessionUsageArrivedAt(sessionId: string): number | null {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.usageArrivedAt ?? null, [sessionId])
   );
 }
 

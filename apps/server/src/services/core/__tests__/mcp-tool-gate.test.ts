@@ -75,16 +75,20 @@ vi.mock('../../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD
 vi.mock('../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
+// The rest of the module stays real: the permission gate reads an agent's own
+// settings file by the manifest path constants.
+vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/manifest')>()),
+  readManifest: vi.fn().mockResolvedValue(null),
+}));
 
 import { createExternalMcpServer } from '../mcp-server.js';
 import {
   createDorkOsToolServer,
   handRegisteredInSessionTools,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
-import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS, gatedActionForMcpTool, type McpToolTier } from '../mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
-import { SESSION_CORE_TOOL_NAMES } from '@dorkos/shared/mcp-tool-groups';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import {
   DORKOS_AGENT_TOOLS,
@@ -108,7 +112,6 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js'
 const AGENT: AgentIdentity = {
   agentPath: '/projects/prober',
   displayName: 'Prober',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 
@@ -331,9 +334,17 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // leave, the external count does not move (none of them was ever there),
       // and what is left is the hand-registered surface that really is still
       // hand-registered.
-      expect(registeredByServer['in-session']).toHaveLength(42);
-      expect(registeredByServer.external).toHaveLength(40);
-      expect(declaredNames).toHaveLength(42);
+      //
+      // 42 -> 43 (and 40 -> 41 external) for `accounts_usage` (spec
+      // `claude-account-fleet` D2), registered on both servers.
+      //
+      // 43 -> 44 (and 41 -> 42 external) for `accounts_probe` (spec
+      // `claude-account-fleet` D3), registered on both servers.
+      // 44 -> 45 (and 42 -> 43 external) for `session_start` (spec
+      // `claude-account-fleet` D5), registered on both servers.
+      expect(registeredByServer['in-session']).toHaveLength(45);
+      expect(registeredByServer.external).toHaveLength(43);
+      expect(declaredNames).toHaveLength(45);
     });
 
     it('names exactly two tools destructive', () => {
@@ -395,12 +406,37 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       expect(gatedActionForMcpTool('mesh_list').approvalSubject).toBeUndefined();
     });
 
-    it('declares card fields only where a card can appear', () => {
+    it('declares card fields exactly where a card can appear', () => {
+      // A card appears for a destructive tool, and for an `act` tool with an
+      // area once a person sets that area to Ask (spec `agent-permissions` D6).
+      const canAsk = (name: (typeof declaredNames)[number]) => {
+        const declared: McpToolTier = MCP_TOOL_TIERS[name];
+        return (
+          declared.tier === 'destructive' || (declared.tier === 'act' && declared.area !== null)
+        );
+      };
       const strays = declaredNames.filter(
-        (name) =>
-          MCP_TOOL_TIERS[name].tier !== 'destructive' && MCP_TOOL_TIERS[name].approvalDisplayFields
+        (name) => !canAsk(name) && MCP_TOOL_TIERS[name].approvalDisplayFields
       );
-      expect(strays, 'card fields on a tier that never builds a card').toEqual([]);
+      expect(strays, 'card fields on a tool that never builds a card').toEqual([]);
+      const missing = declaredNames.filter(
+        (name) => canAsk(name) && !MCP_TOOL_TIERS[name].approvalDisplayFields
+      );
+      expect(missing, 'a tool that can ask, with no card fields').toEqual([]);
+    });
+
+    it('names only real arguments on a card, and none only for a tool that takes none', () => {
+      for (const server of ['in-session', 'external'] as const) {
+        const tools = server === 'in-session' ? inSessionTools() : externalTools();
+        for (const name of declaredNames) {
+          const fields = (MCP_TOOL_TIERS[name] as McpToolTier).approvalDisplayFields;
+          const tool = tools.get(name);
+          if (!fields || !tool) continue;
+          const args = Object.keys(tool.inputSchema).filter((k) => k !== 'approvalToken');
+          for (const field of fields) expect(args, `${name} on ${server}`).toContain(field);
+          if (fields.length === 0) expect(args, `${name} takes arguments`).toEqual([]);
+        }
+      }
     });
 
     it('refuses to hand out an action for a tool nobody tiered', () => {
@@ -444,28 +480,14 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       ).toEqual([]);
     });
 
-    it('never lets a destructive tool into the always-on session set', () => {
-      // `SESSION_CORE_TOOL_NAMES` is the set no toggle gates, so it applies to every
-      // agent regardless of the person's toggles, and the cockpit presents it as
-      // always enabled. A destructive tool landing in one of those groups is not a
-      // cosmetic miscategorization: it is an irreversible action nobody can turn off.
-      //
-      // This assertion used to guard something sharper. Until DOR-519 the same set was
-      // handed to the SDK's `allowedTools`, an approval bypass rather than an
-      // availability filter, so a destructive tool in here stopped asking for approval
-      // for every agent, permanently. Nothing feeds `allowedTools` now, so the stakes
-      // are lower, but the pin stays: this is still the set a person cannot opt out of.
-      //
-      // Pinned by NAME rather than left to the count assertions in
-      // `tool-filter.test.ts`, which caught this only incidentally and said nothing
-      // about why it matters. Review demonstrated the gap: moving `tasks_delete`
-      // from `tasks` to `core` passed `tsc` (the type-level guards compare key
-      // SETS, and the keys do not change) and passed the whole targeted suite
-      // against a stale `dist`, which is why `vitest.config.ts` now aliases this
-      // module to source.
+    it('puts every destructive tool in an area a person can switch off', () => {
+      // A destructive tool with no area is one no permission can Block: it would
+      // ask on every call and nothing could take it away. This used to be pinned
+      // against the always-on tool-group set, which the permission areas replaced
+      // (spec `agent-permissions` D2).
       expect(
-        DESTRUCTIVE.filter((name) => (SESSION_CORE_TOOL_NAMES as readonly string[]).includes(name)),
-        'a destructive tool is always-on and therefore cannot be turned off'
+        DESTRUCTIVE.filter((name) => (MCP_TOOL_TIERS[name] as McpToolTier).area === null),
+        'a destructive tool has no area, so nothing can turn it off'
       ).toEqual([]);
     });
 
@@ -549,15 +571,19 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         read_canvas:
           "ONLY under a resolved agent identity (DOR-1999), and on this list DESPITE being `observe` for `read_room_history`'s reason: a canvas document is something another member put in front of the room, so what comes back is third-party content rather than machine state. With an identity the bounds are the ones every other room read has plus one this read alone needs. Membership is resolved first and a room the caller is not in answers exactly as a room that does not exist. It writes nothing, takes no turn, notifies nobody and moves the room in no ordering. And a FILE document is narrowed further: the row records the directory its path was resolved against, and the §8.1 reader rule is evaluated on the READER at read time — so a document naming a tree this caller could not already open comes back as its name, its type and who put it there, with its contents replaced by a sentence saying to ask them. A canvas document can therefore never be a way to read a tree, which is the whole reason a card here would be answering a question the rule has already answered. Without an identity the caller resolves to the install owner, whose membership spans every room on the machine and whose cwd would satisfy the reader rule for trees the asking session has no business in; the gate raises the ordinary card there. It must not raise one WITH an identity for the domain's standing reason: the turn that needs to see what somebody just put on the table is a room turn, where nobody is positioned to answer a card — DOR-1229 measured eleven minutes and then an auto-deny.",
         create_room:
-          "ONLY under a resolved agent identity AND the `roomsManage` grant (DOR-1611), which is the bound no other entry in this table has: a person switched this on, for this agent, in its own Tools settings, and `registry.invoke` re-reads it off the manifest on every call. A card would ask her a question she has already answered, in the one place built for asking it. What it can build is bounded by the room rules rather than by anyone watching: the caller is always in the room it opens, a DM that already exists is RETURNED rather than duplicated, and `requireSeedingAllowed` refuses any roster holding two agents without her. Without an identity the grant refuses the call anyway; the gate still asks rather than inferring harmlessness from another layer's refusal.",
+          "ONLY under a resolved agent identity AND the Rooms permission (DOR-1611, spec `agent-permissions`), which is the bound no other entry in this table has: the person set it, for this agent or for everyone, and `registry.invoke` re-resolves it off the manifest and the config on every call — Blocked refuses, Ask raises the gate's own card inside the call. A session card would ask her a question she has already answered, on the page built for asking it. What it can build is bounded by the room rules rather than by anyone watching: the caller is always in the room it opens, a DM that already exists is RETURNED rather than duplicated, and `requireSeedingAllowed` refuses any roster holding two agents without her. Without an identity the call resolves against the install's defaults only; the gate still asks rather than inferring harmlessness from another layer.",
         add_room_members:
-          'ONLY under a resolved agent identity AND the `roomsManage` grant (DOR-1611). It edits the roster of a room the agent is ALREADY IN — `requireVisibleRoom` runs first and a room it is not in answers exactly as a room that does not exist — and it cannot produce the one shape that matters: `requireOwnerWitnessesAgents` refuses any result holding two agents without the person. It must not raise a card because bringing a colleague in happens DURING a room turn, where DOR-1229 measured eleven minutes to answer one question and then an auto-deny.',
+          'ONLY under a resolved agent identity AND the Rooms permission (DOR-1611, spec `agent-permissions`). It edits the roster of a room the agent is ALREADY IN — `requireVisibleRoom` runs first and a room it is not in answers exactly as a room that does not exist — and it cannot produce the one shape that matters: `requireOwnerWitnessesAgents` refuses any result holding two agents without the person. It must not raise a card because bringing a colleague in happens DURING a room turn, where DOR-1229 measured eleven minutes to answer one question and then an auto-deny.',
         remove_room_members:
-          'ONLY under a resolved agent identity AND the `roomsManage` grant (DOR-1611), and it is the sharpest of the five, so its bound is the sharpest too: **an agent may never take the PERSON out of a room, in any roster shape** — a refusal that exists only for this caller and sits ahead of the three-way rule, which is weaker. Beyond that it is a roster edit in a room the agent belongs to, non-atomic and legible: each member comes back applied or refused with the reason, so a partial application is never something the model has to infer.',
+          'ONLY under a resolved agent identity AND the Rooms permission (DOR-1611, spec `agent-permissions`), and it is the sharpest of the room-arranging verbs, so its bound is the sharpest too: **an agent may never take the PERSON out of a room, in any roster shape** — a refusal that exists only for this caller and sits ahead of the three-way rule, which is weaker. Beyond that it is a roster edit in a room the agent belongs to, non-atomic and legible: each member comes back applied or refused with the reason, so a partial application is never something the model has to infer.',
         update_room:
-          'ONLY under a resolved agent identity AND the `roomsManage` grant (DOR-1611). Two fields, title and topic, on a room the agent is in — `archived`, `deliverNotices` and every turn-limit field are absent from its input schema, so they cannot be sent at all, and the home channel takes a topic from an agent but refuses a rename (`requireSystemRoomWritable`). Nothing it can change spends anything or reaches off this machine.',
+          'ONLY under a resolved agent identity AND the Rooms permission (DOR-1611, spec `agent-permissions`). Two fields, title and topic, on a room the agent is in — `archived`, `deliverNotices` and every turn-limit field are absent from its input schema, so they cannot be sent at all, and the home channel takes a topic from an agent but refuses a rename (`requireSystemRoomWritable`). Nothing it can change spends anything or reaches off this machine.',
         leave_room:
-          'ONLY under a resolved agent identity AND the `roomsManage` grant (DOR-1611). The narrowest of the five: the agent takes ITSELF out, of a channel, and of nothing else — a direct message is refused because it cannot be re-entered, and the home channel is refused outright. It is also the one whose card would be strangest to raise, since the answer to "may this agent stop being in this channel" is one the person can undo by adding it back.',
+          'ONLY under a resolved agent identity AND the Rooms permission (DOR-1611, spec `agent-permissions`). The narrowest of the room-arranging verbs: the agent takes ITSELF out, of a channel, and of nothing else — a direct message is refused because it cannot be re-entered, and the home channel is refused outright. It is also the one whose card would be strangest to raise, since the answer to "may this agent stop being in this channel" is one the person can undo by adding it back.',
+        archive_room:
+          'ONLY under a resolved agent identity AND the Rooms permission (spec `agent-permissions` D12). It puts away a CHANNEL the agent is on the roster of, and nothing else: a direct message is refused, the home channel is refused, and a channel connected to an outside chat is refused because its archive is the disconnect the person makes. It deletes nothing — archiving is a flag, the room and everything said in it are kept, the room posts one notice naming who put it away, and the person brings it back from the room settings. A card here would ask a question the person answers by un-archiving.',
+        request_permission:
+          'ONLY under a resolved agent identity (spec `agent-permissions` D8). It does nothing on its own authority: it re-invokes the action the agent named through the SAME registry gate a direct call meets, so an action that is not Blocked is gated exactly as it would be anyway, and a Blocked one mints a DorkOS approval bound to that action and those exact arguments. Its only new effect is putting a card in front of a person, and that is rate-limited per agent from the approvals store before anything is minted: one waiting request per area, none for a day after a no, five an hour. A runtime card asking "may this agent ask?" first would be a second card for one question, and in a room turn a card nobody is positioned to answer. Without an identity the handler refuses itself (there is no agent to scope the request to); the gate still asks rather than inferring harmlessness from that refusal.',
         relay_notify_user:
           'ONLY under a resolved agent identity (DOR-1265). A note lands only inside a scope the OPERATOR configured: their own DorkOS DM, or a binding they switched "Agent can start conversations" on for — `canInitiate` is per binding and defaults FALSE. Do not read that as "only the operator": the binding may name a group or somebody else\'s chat, and one with an empty chat filter (the cockpit default) covers every chat that has messaged that adapter, claimed or not — which `initiate-consent.ts` states as the scope the person chose by leaving the filter empty. The `channel` argument only selects among those bindings; it cannot create one, widen one, or get past `canInitiate`. So the card this used to raise asked "may it use a channel you already switched on, this once" — answerable in a session somebody is watching, unanswerable in a room turn: measured 2026-08-16, the turn parked on `awaiting_approval` and delivered nothing. What the auto-allow gives up is that per-call card, never the setup consent; what bounds frequency instead is `NotifyBudget`, ten notes per agent per rolling hour, charged only for a delivery that was attempted and (on the DM path) only for one that landed. Without an identity the handler answers NOT_AN_AGENT anyway; the gate still asks rather than inferring harmlessness from another layer\'s refusal.',
         relay_send:
@@ -639,7 +665,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       ).options;
       const actions = options.map((option) => option.shape.action.value).sort();
 
-      expect(actions.length, 'the union stopped introspecting; this check went vacuous').toBe(22);
+      expect(actions.length, 'the union stopped introspecting; this check went vacuous').toBe(21);
       expect(
         Object.keys(UI_COMMAND_REACH).sort(),
         'a control_ui action carries no reach verdict, so the no-prompt gate has no rule for it'
@@ -672,17 +698,22 @@ describe('hand-registered MCP tools carry a permission tier', () => {
 
   describe('the retry argument is advertised', () => {
     for (const server of ['in-session', 'external'] as const) {
-      it(`${server}: destructive tools take approvalToken, and nothing else does`, () => {
+      it(`${server}: tools that can ask take approvalToken, and nothing else does`, () => {
+        // A destructive tool always asks; an `act` tool with an area asks when a
+        // person sets that area to Ask (spec `agent-permissions` D6). A read
+        // never asks, and neither does a tool with no area.
         const tools = server === 'in-session' ? inSessionTools() : externalTools();
         for (const tool of tools.values()) {
           const advertises = Object.keys(tool.inputSchema).includes('approvalToken');
-          const shouldAdvertise = MCP_TOOL_TIERS[tool.name].tier === 'destructive';
+          const declared = MCP_TOOL_TIERS[tool.name];
+          const shouldAdvertise =
+            declared.tier === 'destructive' || (declared.tier === 'act' && declared.area !== null);
           expect(
             advertises,
             shouldAdvertise
-              ? `${tool.name} is destructive but does not advertise approvalToken, so a retry ` +
+              ? `${tool.name} can ask but does not advertise approvalToken, so a retry ` +
                   `has nowhere to put the approval and the gate loops forever`
-              : `${tool.name} is not destructive but advertises approvalToken`
+              : `${tool.name} can never ask but advertises approvalToken`
           ).toBe(shouldAdvertise);
         }
       });
@@ -752,8 +783,8 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           expect(payloadOf(result).status).not.toBe('approval_required');
         });
 
-        it(`${server} ${name}: refuses an agent whose ceiling forbids the tier`, async () => {
-          const result = await toolsFor({ ...AGENT, tierCeiling: 'act' })
+        it(`${server} ${name}: refuses an agent whose access was turned off`, async () => {
+          const result = await toolsFor({ ...AGENT, inactive: 'revoked' })
             .get(name)!
             .call(DESTRUCTIVE_INPUT[name]);
           expect(sideEffects()).toEqual([]);

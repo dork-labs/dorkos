@@ -356,7 +356,7 @@ export interface RuntimeReadiness {
  * Per-runtime requirements entry: the raw checks plus the derived Ready/Connect
  * projection. `state`/`connect` are optional on the type only for backward-compat
  * during the T0 client rollout (setup fixtures predate the projection); the
- * server and DirectTransport always populate `state`.
+ * server always populates `state`.
  */
 export interface RuntimeRequirements extends Partial<RuntimeReadiness> {
   /** Raw dependency results — consumed by the client's Advanced disclosure. */
@@ -456,8 +456,7 @@ export function runtimeSupportsLogin(type: string): boolean {
  * - satisfied binary + missing auth → `login` (or, for OpenCode's
  *   provider-agnostic auth, `provider-picker`)
  *
- * Pure and runtime-agnostic so the HTTP route and the in-process
- * DirectTransport project identically.
+ * Pure and runtime-agnostic so the HTTP route projects consistently.
  *
  * @param type - Runtime type identifier (drives the label and the OpenCode
  *   provider-picker special case).
@@ -582,6 +581,19 @@ export interface RuntimeCapabilities {
    * `ClaudePluginTransport` shaping on the client transport.
    */
   supportsPlugins: boolean;
+
+  /**
+   * Whether this runtime can run sessions on more than one registered billing
+   * account (spec `claude-account-fleet` §6 R). Required, so a new runtime has
+   * to decide rather than inherit an answer.
+   *
+   * The UI shows the account chip, dots and badge only for a session whose
+   * runtime declares this AND has two or more registered accounts. Usage bars
+   * and the out-of-usage banner do not depend on it: every runtime records
+   * usage for its one ambient `default` account. Only Claude Code has an
+   * account registry today, so it is the only runtime that declares `true`.
+   */
+  supportsAccounts: boolean;
 
   /**
    * Structured permission-mode capability. `supported: false, values: []`
@@ -775,10 +787,32 @@ export interface SessionOpts extends SessionSettings {
   unattended?: boolean;
 }
 
+/**
+ * A folder a turn may reach without standing in it (spec `agent-home-desk` §4).
+ * Validated by `@dorkos/shared/directory-grants`.
+ */
+export interface DirectoryGrant {
+  /** Absolute, `realpath`-resolved. Never the turn's own cwd, never inside it. */
+  path: string;
+  /** `write` lets file tools create and change files there; `read` asks the backend to refuse them. */
+  access: 'read' | 'write';
+}
+
 /** Options for sending a message to a session. */
 export interface MessageOpts extends SessionSettings {
   cwd?: string;
   systemPromptAppend?: string;
+  /**
+   * Folders this turn may reach beyond its cwd, recomputed by the dispatcher for
+   * every turn. A runtime hands exactly this set to its backend on this turn — a
+   * grant absent here is absent from the turn, even if an earlier turn of the
+   * same session carried it. Absent means none.
+   *
+   * File tools only: a shell command reaches whatever its permission mode
+   * allows on every runtime, grant or not. The shared runtime conformance suite
+   * pins that each runtime hands the set per turn (`agent-home-desk` §4.6).
+   */
+  additionalDirectories?: readonly DirectoryGrant[];
   /**
    * Neutral additional-context bag for this turn (git_status, ui_state,
    * queue_note, env, relay_context). Delivered OUT-OF-BAND relative to
@@ -813,10 +847,28 @@ export interface MessageOpts extends SessionSettings {
     /** The room turn's dispatch id. The per-turn canvas ceiling is counted against it. */
     turnId: string;
     /**
-     * Where the turn is standing, so a canvas document that names a FILE records
-     * the tree its path was resolved against.
+     * Where the turn is standing — always the agent's home for a room turn
+     * (spec `agent-home-desk` §5.1) — so a canvas document that names a file by
+     * a RELATIVE path records the folder that path was resolved against.
      */
     cwd?: string;
+    /**
+     * This agent's own copy of the room's files, when the room has files of its
+     * own. The turn does not stand in it; it reaches it through a folder grant
+     * ({@link MessageOpts.additionalDirectories}). Carried so a canvas document
+     * that names a file by an ABSOLUTE path inside it is labelled as this
+     * agent's copy without a rooms lookup (spec `agent-home-desk` §5.6).
+     */
+    worktree?: string;
+    /**
+     * The directory of the agent this turn is FOR — its home.
+     *
+     * Runtimes resolve the turn's identity against it (DOR-2091): a folder that
+     * resolves to another agent's home is refused, so a turn for one agent can
+     * never be minted another's identity. Server-derived, like every field
+     * here, and generalised by {@link MessageOpts.forAgent}.
+     */
+    agentPath?: string;
     /**
      * Commits this agent's working copy has that the room's `main` does not, as
      * the dispatcher measured them for THIS turn.
@@ -828,6 +880,17 @@ export interface MessageOpts extends SessionSettings {
      */
     aheadOfMain?: number | null;
   };
+  /**
+   * The home of the agent this turn is dispatched AS, when a server path names
+   * one (a room, a relay binding, a scheduled task). Server-derived, never from
+   * a client.
+   *
+   * Runtimes resolve the turn's identity against it (spec `agent-home-desk`
+   * §3.1): a folder that resolves to a different agent's home is refused, and
+   * a folder that resolves to no home carries this agent's identity. It
+   * generalises `roomTurn.agentPath`, which runtimes read when this is absent.
+   */
+  forAgent?: string;
   /**
    * Title to assign the session on its first turn, skipping auto-generation.
    * Useful for sessions with a known purpose (e.g. Tasks- or relay-initiated runs).
@@ -862,6 +925,32 @@ export interface MessageOpts extends SessionSettings {
    * root and cannot be moved (ADR 260801-204127).
    */
   accountHint?: string;
+  /**
+   * True when nobody can answer a DorkOS approval card inside THIS turn: a
+   * scheduled run the timer fired, a turn a chat binding or another agent's
+   * message started, a connector event (spec `agent-permissions` D6). A
+   * capability call that needs a person then returns `approval_required` at
+   * once instead of holding the turn open for ten minutes nobody is watching;
+   * the card still reaches the inbox, and the verdict wakes the session when
+   * somebody answers.
+   *
+   * Per TURN, and a runtime that honours it assigns it on every send, so a
+   * warm session a person later talks to holds again. Advisory: a runtime with
+   * no in-session hold simply ignores it.
+   */
+  unattendedApprovals?: boolean;
+  /**
+   * True when nobody can answer an ask raised in THIS turn: a question, a tool
+   * approval or an MCP elicitation is refused the moment it is raised, as in a
+   * session created with `SessionOpts.unattended` (an automatic carry-over to
+   * another account sends it on its first turn).
+   *
+   * Per TURN, unlike `SessionOpts.unattended`: a runtime that honours it
+   * assigns it on every send, so a person's next message in the same session
+   * asks and waits as usual. Advisory: a runtime with no approval channel of
+   * its own ignores it.
+   */
+  unattended?: boolean;
 }
 
 /**
@@ -1623,6 +1712,26 @@ export interface AgentRuntime {
   getSessionAccount?(sessionId: string): string | undefined;
 
   /**
+   * How full this session's context window was at its last recorded turn, read
+   * from the runtime's OWN record (ADR-0310), for a session opened with no
+   * stored reading (spec `claude-account-fleet` §6 U). DorkOS stores what this
+   * returns, so it is asked at most once per session.
+   *
+   * Optional: a runtime that cannot answer without a turn (OpenCode) omits it.
+   * `null` means no reading. Must be bounded (a tail read, never a whole
+   * transcript) and must never throw.
+   *
+   * @param sessionId - Session to read; either id a caller might hold
+   * @param cwd - The session's working directory, when known
+   * @returns Tokens in the window and the model's window size (`0` when the
+   *   record does not say), or `null`
+   */
+  readContextUsage?(
+    sessionId: string,
+    cwd: string | undefined
+  ): Promise<{ contextTokens: number; contextMaxTokens: number } | null>;
+
+  /**
    * Read new content from a session transcript starting at a byte offset.
    *
    * @param projectDir - Project directory for transcript lookup
@@ -1817,15 +1926,24 @@ export interface AgentRuntime {
    * question is not asserting anything. Since the answer only steers a log line,
    * a wrong one now costs a diagnostic rather than an answer.
    *
-   * @param session.cwd - The session's working directory, which is the agent's
-   *   directory for every agent-bound session. The two production runtimes that
-   *   answer this key on it, because MCP configuration is per directory.
+   * @param session.cwd - The session's working directory: the agent's own
+   *   directory, or — in a room with files — its worktree there. The two
+   *   production runtimes that answer this key on it, because MCP configuration
+   *   is per directory.
    * @param session.sessionId - The session about to take the turn, for a runtime
    *   whose answer is per session rather than per directory.
+   * @param session.agentPath - The agent the room turn is for, when a room asks.
+   *   A runtime that resolves identity from it (DOR-2091) must apply the SAME
+   *   cross-check here that its turn applies, or the answer describes a
+   *   different turn.
    * @returns `true` only when the tools are known to be reachable from a turn on
    *   that session right now.
    */
-  carriesRoomTools?(session: { cwd: string; sessionId: string }): Promise<boolean>;
+  carriesRoomTools?(session: {
+    cwd: string;
+    sessionId: string;
+    agentPath?: string;
+  }): Promise<boolean>;
 
   // --- Dependency injection (optional) ---
 

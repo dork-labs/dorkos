@@ -233,24 +233,14 @@ entries:
     reason: Observability for the CI Steward collector (flaky-test-runs); an artifact-service 403 must cost one sample, never a queue build. Phase 2's ratchet will read these in the fan-in and fail closed there instead.
   - workflow: test.yml
     job: community-packaged
-    step: Packaged proof runs on the merge queue
-    kind: step-if
-    reason: An echo on pull requests that names where the packaged proof runs; it checks nothing.
-  - workflow: test.yml
-    job: community-packaged
-    step: actions/checkout
-    kind: step-if
-    reason: The packaged community proof runs on the merge queue's combined tree and on the main canary's `main` HEAD; on a PR this job is a named pass-through.
-  - workflow: test.yml
-    job: community-packaged
     step: Build and test without public network access
     kind: step-if
-    reason: The packaged community proof itself, off the PR leg by design (too slow for every push); the fan-in fails the queue build when it fails.
+    reason: The packaged community proof itself, gated on the job's own scope step (DOR-2220). It always runs on merge_group and the canary; on a PR it runs when scripts/community-packaged-scope.sh matches the diff, and the scope step fails open to running it. The fan-in fails the build when it fails.
   - workflow: test.yml
     job: community-packaged
     step: Preserve packaged community reports
     kind: step-if
-    reason: Uploads evidence from the packaged proof; asserts nothing.
+    reason: Uploads evidence from the packaged proof whenever the proof ran; asserts nothing.
   - workflow: browser-test.yml
     job: browser-shard
     step: Upload this shard's JSON report

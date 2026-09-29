@@ -2,12 +2,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Conf, { type Schema } from 'conf';
 import { z } from 'zod';
 import * as semver from 'semver';
-import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  UserConfigSchema,
+  USER_CONFIG_DEFAULTS,
+  readClaudeAccountSettings,
+} from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
   initConfigManager,
   backfillExtensionsDisabled,
   backfillExtensionsApprovedToRun,
+  seedExtensionsApprovedSources,
   backfillHarnessApprovedHooks,
   backfillHarnessDefaults,
   backfillSidebarDefaults,
@@ -58,10 +63,12 @@ import {
   seedRoomRepoDefaults,
   dropRetiredDorkosTools,
   seedDisplayNameSourceDefault,
+  seedIdentityPromptDismissedDefault,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
   seedRoomCanvasOps,
+  seedMaxConcurrentTurnsPerAgent,
   retireToolOnlyReplies,
   seedCommunityNavigationPrefs,
 } from '../config-manager.js';
@@ -88,6 +95,8 @@ const RUNTIMES_DEFAULTS = {
   claudeCode: {
     defaultAccount: null,
     accounts: [],
+    defaultAccountColor: null,
+    dismissedFolders: [],
     defaultModel: null,
     defaultEffort: null,
     defaultTrustStop: null,
@@ -446,6 +455,7 @@ describe('ConfigManager', () => {
       enabled: [],
       disabled: [],
       approvedToRun: [],
+      approvedSources: {},
     });
   });
 
@@ -502,6 +512,7 @@ describe('ConfigManager', () => {
       instanceToken: null,
       instanceName: null,
       linkedAccountLabel: null,
+      previousLinkProof: null,
     });
   });
 
@@ -555,6 +566,7 @@ describe('ConfigManager', () => {
       displayName: null,
       displayNameSource: null,
       rolePromptDismissedAt: null,
+      identityPromptDismissedAt: null,
     });
     // Existing user data survives the upgrade untouched.
     expect(configManager.getDot('server.port')).toBe(5000);
@@ -571,6 +583,7 @@ describe('ConfigManager', () => {
       // would be worse than none.
       displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
       rolePromptDismissedAt: '2026-07-29T00:00:00.000Z',
+      identityPromptDismissedAt: '2026-09-25T00:00:00.000Z',
     };
     fs.mkdirSync(testDir, { recursive: true });
     fs.writeFileSync(
@@ -1240,6 +1253,182 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
       // The upgrade adds one leaf; it changes nothing the person had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedMaxConcurrentTurnsPerAgent migration (DOR-2104)', () => {
+  it('reserves the leaf on a `rooms` block that predates the setting', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `rooms` block never inherits the new leaf
+    // on its own. Drop the body and it reads `undefined`.
+    const store = createMockStore({ rooms: { maxAgentDepth: 12, maxCanvasOpsPerTurn: 1 } });
+    seedMaxConcurrentTurnsPerAgent(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 12,
+      maxCanvasOpsPerTurn: 1,
+      maxConcurrentTurnsPerAgent: 3,
+    });
+  });
+
+  it('never overwrites a limit somebody chose (idempotent)', () => {
+    // The stored value differs from the seeded one, so a body that wrote
+    // unconditionally is caught here rather than passing on a coincidence.
+    const store = createMockStore({ rooms: { maxConcurrentTurnsPerAgent: 1 } });
+    seedMaxConcurrentTurnsPerAgent(store);
+    expect(store.data.rooms).toEqual({ maxConcurrentTurnsPerAgent: 1 });
+  });
+
+  it('does nothing when there is no `rooms` block to extend', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedMaxConcurrentTurnsPerAgent(store);
+    expect(store.data.rooms).toBeUndefined();
+  });
+
+  it('a real pre-0.84.0 config file gains the leaf on disk (full conf path)', () => {
+    // Reads the FILE: conf's `store` getter hands back a copy Ajv has already
+    // filled the default into, so a `getDot` assertion passes with the body
+    // deleted (DOR-1496). `projectVersion` is explicit because `SERVER_VERSION`
+    // is `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-turns-per-agent-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1, maxCanvasOpsPerTurn: 2 },
+          __internal__: { migrations: { version: '0.83.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.84.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        rooms: Record<string, unknown>;
+      };
+      expect(onDisk.rooms.maxConcurrentTurnsPerAgent).toBe(3);
+      // The upgrade adds one leaf; it changes nothing the person had set.
+      expect(onDisk.rooms.maxAgentDepth).toBe(12);
+      expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
+      expect(onDisk.rooms.maxCanvasOpsPerTurn).toBe(2);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a fresh install gets the same value from both default declarations', () => {
+    // The per-field default feeds a stored `rooms` block missing the leaf; the
+    // section literal feeds an install with no `rooms` block at all. They must
+    // agree, or which value a person gets depends on their config's history.
+    expect(USER_CONFIG_DEFAULTS.rooms.maxConcurrentTurnsPerAgent).toBe(3);
+    expect(UserConfigSchema.parse({ version: 1, rooms: {} }).rooms.maxConcurrentTurnsPerAgent).toBe(
+      3
+    );
+  });
+});
+
+describe('seedIdentityPromptDismissedDefault migration (DOR-677)', () => {
+  it('reserves the leaf on a `profile` block that predates it', () => {
+    // conf's pre-migration merge is shallow, so a stored `profile` never gains
+    // a new member on its own. Drop the body and this reads `undefined`.
+    const store = createMockStore({ profile: { roles: ['Engineer'], displayName: 'Dorian' } });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toEqual({
+      roles: ['Engineer'],
+      displayName: 'Dorian',
+      identityPromptDismissedAt: null,
+    });
+  });
+
+  it('seeds "never asked" even beside a stored name, never a dismissal nobody made', () => {
+    // Every surface that asks also checks what is missing, so a person who
+    // already has a name and a handle is never shown the question; recording a
+    // dismissal here would claim an answer the person never gave.
+    const store = createMockStore({ profile: { displayName: 'Dorian' } });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toEqual({ displayName: 'Dorian', identityPromptDismissedAt: null });
+  });
+
+  it('never overwrites a dismissal already on file (idempotent)', () => {
+    const store = createMockStore({
+      profile: { identityPromptDismissedAt: '2026-09-25T00:00:00.000Z' },
+    });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toEqual({ identityPromptDismissedAt: '2026-09-25T00:00:00.000Z' });
+  });
+
+  it('leaves a stored `null` alone rather than rewriting it', () => {
+    // By identity: the body spreads into a fresh object, so only `toBe` can
+    // tell a skipped write from a rewrite. Swap `in` for `== null` and this
+    // goes red.
+    const profile = { identityPromptDismissedAt: null };
+    const store = createMockStore({ profile });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toBe(profile);
+  });
+
+  it('does nothing when there is no `profile` block to extend', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toBeUndefined();
+  });
+
+  it('a real pre-0.85.0 config file gains the leaf on disk (full conf path)', () => {
+    // Read from the FILE: Ajv's `useDefaults` answers `null` from a discarded
+    // copy, so a `getDot` assertion would pass with the body deleted (DOR-1496).
+    const dir = path.join(os.tmpdir(), 'test-dork-identity-prompt-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          profile: {
+            roles: ['Engineer'],
+            tools: [],
+            displayName: 'Dorian',
+            displayNameSource: null,
+            rolePromptDismissedAt: '2026-08-01T00:00:00.000Z',
+          },
+          __internal__: { migrations: { version: '0.84.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.85.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        profile: Record<string, unknown>;
+      };
+      expect(onDisk.profile).toHaveProperty('identityPromptDismissedAt', null);
+      // The upgrade adds one leaf; everything the person had set is untouched.
+      expect(onDisk.profile.displayName).toBe('Dorian');
+      expect(onDisk.profile.rolePromptDismissedAt).toBe('2026-08-01T00:00:00.000Z');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -2712,6 +2901,8 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
           { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
           { id: 'claude3', path: '/Users/me/.claude3', label: null },
         ],
+        defaultAccountColor: null,
+        dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -3721,7 +3912,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(29);
+    expect(Object.keys(bodies)).toHaveLength(36);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -3871,6 +4062,60 @@ describe('backfillExtensionsApprovedToRun migration (DOR-516)', () => {
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: [],
+      approvedSources: {},
+    });
+  });
+});
+
+describe('seedExtensionsApprovedSources migration (DOR-2383)', () => {
+  it('seeds an EMPTY map and binds no existing approval to any copy', () => {
+    // Which copy an id-only approval was for is a question about the disk, and a
+    // migration runs before anything looked at it. The first discovery binds each
+    // one to its direct install (`ExtensionManager.reload`); guessing here could
+    // bind it to a copy the person never saw.
+    const store = createMockStore({
+      extensions: { enabled: ['flow'], disabled: [], approvedToRun: ['flow'] },
+    });
+    seedExtensionsApprovedSources(store);
+    expect(store.data.extensions).toEqual({
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: {},
+    });
+  });
+
+  it('is idempotent — leaves recorded copies untouched', () => {
+    const extensions = {
+      enabled: [],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: {
+        flow: { path: '/h/.dork/plugins/flow/.dork/extensions/flow', plugin: 'flow' },
+      },
+    };
+    const store = createMockStore({ extensions });
+    seedExtensionsApprovedSources(store);
+    seedExtensionsApprovedSources(store);
+    expect(store.data.extensions).toEqual(extensions);
+  });
+
+  it('skips when the extensions key is absent (no throw, no write)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => seedExtensionsApprovedSources(store)).not.toThrow();
+    expect(store.data.extensions).toBeUndefined();
+  });
+
+  it('repairs a non-object approvedSources rather than trusting it', () => {
+    const store = createMockStore({
+      extensions: { enabled: [], disabled: [], approvedToRun: [], approvedSources: ['oops'] },
+    });
+    seedExtensionsApprovedSources(store);
+    expect(store.data.extensions).toEqual({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [],
+      approvedSources: {},
     });
   });
 });
@@ -4396,19 +4641,11 @@ describe('scrubRetiredOnboardingSteps migration (shorter first-run flow)', () =>
   });
 });
 
-describe('approvals section — standing permissions (DOR-501)', () => {
-  it('fresh install: the schema default has standing permissions switched OFF', () => {
-    // A safety feature does not arrive switched on. Nothing changes for anyone
-    // until they ask for it.
-    expect(USER_CONFIG_DEFAULTS.approvals).toEqual({
-      standingGrants: false,
-      trustWindowMinutes: 480,
-      // Nothing has been voided yet, which is the only honest starting point: an
-      // upgrade must not retroactively end permissions (DOR-520).
-      standingGrantsVoidBefore: null,
-    });
-  });
-
+describe('approvals section — the shipped 0.57.0 seed, frozen history (DOR-501)', () => {
+  // Standing permissions are retired (spec `agent-permissions` phase 2), and
+  // `'0.83.0'` deletes the section. The shipped `'0.57.0'` body still seeds it
+  // for an install upgrading from before it, and a shipped body may not change,
+  // so its behaviour stays pinned here.
   it('upgraded install: seeds the section OFF and leaves other settings alone', () => {
     const store = createMockStore({ auth: { enabled: true }, server: { port: 5000 } });
     backfillApprovalsDefaults(store);
@@ -4444,13 +4681,9 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // projectVersion is stated explicitly because SERVER_VERSION lags the
     // unreleased key this migration is filed under.
     //
-    // What this does NOT prove is that `backfillApprovalsDefaults` ran: suppress
-    // that body and every assertion here still passes (measured, DOR-1496).
-    // `approvals` is a whole TOP-LEVEL section, and conf merges `defaults` under
-    // the parsed file and WRITES the result before its first migration key, so
-    // the section reaches disk either way — unlike a nested seed such as
-    // `ui.promos`, where the body is the only writer. The body is pinned by the
-    // mock-store cases above; this one is about the upgrade boot surviving.
+    // The schema no longer declares `approvals`, so conf's pre-migration defaults
+    // merge no longer writes it: the `'0.57.0'` body is now the only writer, and
+    // `projectVersion` stops before `'0.83.0'` deletes it again.
     const dir = path.join(os.tmpdir(), 'test-dork-approvals-backfill-' + Date.now());
     const cfgPath = path.join(dir, 'config.json');
     fs.mkdirSync(dir, { recursive: true });
@@ -4500,233 +4733,6 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // thing this line is here to detect.
     expect(onDisk.ui.statusBar).toEqual({ pins: [] });
     fs.rmSync(dir, { recursive: true, force: true });
-  });
-});
-
-describe('the standing-permission posture floor (DOR-520)', () => {
-  // `ConfigManager` is the one seam every writer of these settings travels,
-  // including `dorkos config set` in a process with no database and no routes. It
-  // records the moment the settings stopped licensing standing permissions so the
-  // store can refuse the ones that moment invalidated. This describes the WRITE
-  // half; the read half is
-  // `services/core/approvals/__tests__/approval-grant-service.test.ts`.
-  let dir: string;
-
-  /** Both halves of the posture on, which is the only state a floor can move from. */
-  function licensed() {
-    const manager = initConfigManager(dir);
-    manager.setDot('auth.enabled', true);
-    manager.setDot('approvals.standingGrants', true);
-    return manager;
-  }
-
-  /** The stored floor, or `null` when nothing has narrowed. */
-  function floor(manager: ReturnType<typeof initConfigManager>): string | null {
-    return manager.get('approvals').standingGrantsVoidBefore;
-  }
-
-  beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-void-floor-'));
-  });
-
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('starts with no floor, because nothing has been voided', () => {
-    expect(floor(licensed())).toBeNull();
-  });
-
-  it('stamps the floor when the master switch is switched off', () => {
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('stamps the floor when login is switched off, which takes the same license away', () => {
-    const manager = licensed();
-    manager.setDot('auth.enabled', false);
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('stamps the floor on a whole-section write, which is how `PATCH /api/config` lands', () => {
-    const manager = licensed();
-    manager.set('approvals', {
-      standingGrants: false,
-      trustWindowMinutes: 480,
-      standingGrantsVoidBefore: null,
-    });
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('stamps the floor on `dorkos config reset`', () => {
-    const manager = licensed();
-    manager.reset();
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('stamps the floor on a reset of the approvals section alone', () => {
-    const manager = licensed();
-    manager.reset('approvals');
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('moves nothing when an unrelated setting is written', () => {
-    // A floor that crept forward on every write would end standing permissions
-    // whenever anyone changed the log level — the same bug wearing better clothes.
-    const manager = licensed();
-    manager.setDot('logging.level', 'debug');
-    manager.set('ui', { ...manager.get('ui'), theme: 'dark' });
-    expect(floor(manager)).toBeNull();
-  });
-
-  it('moves nothing when a setting is switched ON', () => {
-    // Turning something on grants nothing and voids nothing. A permission is
-    // always a fresh human decision.
-    const manager = initConfigManager(dir);
-    manager.setDot('auth.enabled', true);
-    manager.setDot('approvals.standingGrants', true);
-    expect(floor(manager)).toBeNull();
-  });
-
-  it('leaves an existing floor alone when the settings are switched back on', () => {
-    // The stamp is what a later switch-on must NOT erase: erasing it is exactly
-    // how the permissions it voided would come back.
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    const stamped = floor(manager);
-    manager.setDot('approvals.standingGrants', true);
-    expect(floor(manager)).toBe(stamped);
-  });
-
-  it('records the narrowing a SECOND manager performs, which is what the CLI is', () => {
-    // The whole point of putting the marker in the config file: `dorkos config
-    // set` holds its own manager in its own process, so a marker anywhere the
-    // server owns would never be written at all.
-    const server = licensed();
-    const cli = new ConfigManager(dir);
-    cli.setDot('approvals.standingGrants', false);
-    cli.setDot('approvals.standingGrants', true);
-
-    expect(floor(server)).toEqual(expect.any(String));
-  });
-});
-
-describe('the posture floor is monotonic (DOR-520 review)', () => {
-  // The floor is only worth anything if it can never go backwards. The first
-  // version stamped on the licensed -> unlicensed TRANSITION, which meant any
-  // write performed while ALREADY narrowed could put the leaf back to its default
-  // and silently delete the marker. Review reproduced a live resurrection through
-  // `dorkos config reset` using only verbs this feature claims to cover.
-  let dir: string;
-
-  /** Both halves of the posture on. */
-  function licensed() {
-    const manager = initConfigManager(dir);
-    manager.setDot('auth.enabled', true);
-    manager.setDot('approvals.standingGrants', true);
-    return manager;
-  }
-
-  /** The stored floor, or `null` when nothing has narrowed. */
-  function floor(manager: ReturnType<typeof initConfigManager>): string | null {
-    return manager.get('approvals').standingGrantsVoidBefore;
-  }
-
-  beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-floor-monotonic-'));
-  });
-
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('survives `dorkos config reset` performed while the switch is ALREADY off', () => {
-    // The reproduction. Every step is a verb this feature claims to cover.
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    const stamped = floor(manager);
-    expect(stamped).toEqual(expect.any(String));
-
-    manager.reset();
-
-    expect(floor(manager)).toBe(stamped);
-  });
-
-  it('survives `dorkos config reset approvals` performed while login is ALREADY off', () => {
-    // The same hole reached through the other half of the posture.
-    const manager = licensed();
-    manager.setDot('auth.enabled', false);
-    const stamped = floor(manager);
-    expect(stamped).toEqual(expect.any(String));
-
-    manager.reset('approvals');
-
-    expect(floor(manager)).toBe(stamped);
-  });
-
-  it('survives a whole-section write that carries a stale null, while already narrowed', () => {
-    // What a batched `PATCH /api/config` does: `applyConfigPatch` computes the
-    // merged value ONCE from the pre-write snapshot, then writes each top-level
-    // section in turn. A section written after `auth` narrowed carries the
-    // snapshot's `standingGrantsVoidBefore: null` and used to erase the stamp.
-    const manager = licensed();
-    manager.setDot('auth.enabled', false);
-    const stamped = floor(manager);
-
-    manager.set('approvals', {
-      standingGrants: true,
-      trustWindowMinutes: 60,
-      standingGrantsVoidBefore: null,
-    });
-
-    expect(floor(manager)).toBe(stamped);
-  });
-
-  it('advances the floor on a SECOND narrowing rather than leaving the first one', () => {
-    // Defense in depth: the routes refuse to create a permission while the switch
-    // is off, so nothing can be granted between the two narrowings today. A floor
-    // that silently stopped moving would be a trap for whoever changes that.
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-26T10:00:00.000Z'));
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    const first = floor(manager)!;
-
-    manager.setDot('approvals.standingGrants', true);
-    vi.setSystemTime(new Date('2026-07-26T11:00:00.000Z'));
-    manager.setDot('approvals.standingGrants', false);
-    const second = floor(manager)!;
-    vi.useRealTimers();
-
-    expect(first).toBe('2026-07-26T10:00:00.000Z');
-    expect(second).toBe('2026-07-26T11:00:00.000Z');
-  });
-
-  it('keeps the later floor when the clock goes backwards', () => {
-    // A floor that follows a backwards clock is a floor an NTP correction can
-    // lower. `max` is what makes the marker monotonic rather than merely current.
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    const first = floor(manager)!;
-
-    manager.setDot('approvals.standingGrants', true);
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(Date.parse(first) - 60_000));
-    manager.setDot('approvals.standingGrants', false);
-    vi.useRealTimers();
-
-    expect(floor(manager)).toBe(first);
-  });
-
-  it('still writes nothing at all when the posture never narrowed', () => {
-    // The churn guard. A rule stated as "stamp whenever the posture is not
-    // licensed after the write" would move the floor on EVERY config write for the
-    // vast majority of installs, which never switch this feature on.
-    const manager = initConfigManager(dir);
-    manager.setDot('logging.level', 'debug');
-    manager.setDot('server.port', 4300);
-    expect(floor(manager)).toBeNull();
   });
 });
 
@@ -5003,9 +5009,11 @@ describe('a Claude account registry written before ids, through the real conf lo
     expect(manager.get('telemetry').install).toBe(false);
   });
 
-  it('still refuses an id of the WRONG TYPE — tolerance is about absence only', () => {
-    // Dropping `id` from `required` must not become "stop validating ids". A
-    // number where a slug belongs is damage, not skew.
+  it('reads an id of the WRONG TYPE instead of condemning the file (DOR-2379)', () => {
+    // The registry is shared with flow and hand-editable, and its read rules
+    // skip or re-mint a bad row rather than refuse the file (contract
+    // `flow-cli-core` §1.1a). A number where a slug belongs is re-minted on
+    // read; resetting every setting over one account row is the worse answer.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-bad-account-id-'));
     dirs.push(dir);
     fs.writeFileSync(
@@ -5022,8 +5030,11 @@ describe('a Claude account registry written before ids, through the real conf lo
         __internal__: { migrations: { version: '0.64.0' } },
       })
     );
-    new ConfigManager(dir);
-    expect(wasBackedUp(dir)).toBe(true);
+    const manager = new ConfigManager(dir);
+    expect(wasBackedUp(dir)).toBe(false);
+    expect(
+      readClaudeAccountSettings(manager.get('runtimes').claudeCode).accounts.map((a) => a.id)
+    ).toEqual(['claude2']);
   });
 
   it('still accepts a settings write while the migration has not run', () => {

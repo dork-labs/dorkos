@@ -8,6 +8,7 @@ import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import {
   RemoteCommunityEntrySchema,
   RemoteCommunityRoomSchema,
+  type RemoteCommunityEntry,
   type RemoteCommunityEvent,
 } from '@dorkos/shared/community-views';
 import { TransportProvider } from '@/layers/shared/model';
@@ -62,7 +63,11 @@ const ownerEntry = RemoteCommunityEntrySchema.parse({
   cursor: 'cursor-1',
   createdAt: '2026-09-16T10:00:00Z',
 });
-function mount(connectionAccess: CommunityConnectionAccess = access) {
+function mount(
+  connectionAccess: CommunityConnectionAccess = access,
+  history: RemoteCommunityEntry[] = [],
+  threadId?: string
+) {
   const transport = createMockTransport();
   vi.mocked(transport.listCommunityConnections).mockResolvedValue([
     {
@@ -85,9 +90,9 @@ function mount(connectionAccess: CommunityConnectionAccess = access) {
   vi.mocked(transport.listRemoteCommunityEntries).mockResolvedValue({
     community: room.community,
     roomId: room.roomId,
-    entries: [],
+    entries: history,
     nextCursor: null,
-    lastRemoteSeq: 0,
+    lastRemoteSeq: history.at(-1)?.remoteSeq ?? 0,
     stale: false,
   });
   vi.mocked(transport.listRemoteCommunityMembers).mockResolvedValue({
@@ -121,7 +126,12 @@ function mount(connectionAccess: CommunityConnectionAccess = access) {
     <QueryClientProvider client={queries}>
       <TransportProvider transport={transport}>
         <TooltipProvider>
-          <RemoteCommunitySurface community="a" roomId="same" onThread={onThread} />
+          <RemoteCommunitySurface
+            community="a"
+            roomId="same"
+            threadId={threadId}
+            onThread={onThread}
+          />
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
@@ -390,5 +400,68 @@ describe('remote community surface', () => {
         value: originalScrollTo,
       });
     }
+  });
+
+  describe('reply line under a thread root (DOR-2229)', () => {
+    /** A root as history returns it, with the server's count and the newest reply it counted. */
+    const root = RemoteCommunityEntrySchema.parse({
+      ...ownerEntry,
+      id: 'root',
+      text: 'Who can look at the build?',
+      thread: { replyCount: 3, lastReplyAt: '2026-09-16T10:05:00Z' },
+      threadLastReplySeq: 5,
+    });
+    /** A reply to `root` at channel sequence `seq`. */
+    function reply(seq: number) {
+      return RemoteCommunityEntrySchema.parse({
+        ...ownerEntry,
+        id: `reply-${seq}`,
+        text: `reply ${seq}`,
+        parentEntryId: 'root',
+        threadRootEntryId: 'root',
+        depth: 1,
+        remoteSeq: seq,
+        cursor: `cursor-${seq}`,
+        createdAt: `2026-09-16T10:${String(seq).padStart(2, '0')}:00Z`,
+      });
+    }
+
+    it('says how many replies the server counted, and opens the thread', async () => {
+      const view = mount(access, [root]);
+
+      const line = await screen.findByRole('button', { name: /^3 replies · last / });
+      fireEvent.click(line);
+
+      expect(view.onThread).toHaveBeenCalledWith('root');
+    });
+
+    it('counts a reply that streams in, but never one the server already counted', async () => {
+      const view = mount(access, [root]);
+      await screen.findByRole('button', { name: /^3 replies/ });
+
+      act(() => view.emit({ type: 'entry', entry: reply(8) }));
+      expect(await screen.findByRole('button', { name: /^4 replies/ })).toBeInTheDocument();
+
+      // Reply 5 is the newest the count included: it reaching this client later
+      // (a reconnect's snapshot, say) must not move the number.
+      act(() => view.emit({ type: 'entry', entry: reply(5) }));
+      expect(screen.getByRole('button', { name: /^4 replies/ })).toBeInTheDocument();
+    });
+
+    it('counts the replies it holds when the server sent no count', async () => {
+      const view = mount(access, [{ ...root, thread: undefined, threadLastReplySeq: undefined }]);
+      await screen.findByText(root.text);
+      expect(screen.queryByRole('button', { name: /repl(y|ies) · last/ })).not.toBeInTheDocument();
+
+      act(() => view.emit({ type: 'entry', entry: reply(8) }));
+
+      expect(await screen.findByRole('button', { name: /^1 reply · last / })).toBeInTheDocument();
+    });
+
+    it('draws no reply line inside the thread itself', async () => {
+      mount(access, [root, reply(4), reply(5)], 'root');
+      await screen.findByText('reply 5');
+      expect(screen.queryByRole('button', { name: /repl(y|ies) · last/ })).not.toBeInTheDocument();
+    });
   });
 });

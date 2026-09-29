@@ -111,9 +111,10 @@ import {
   toSidebarItemRef,
 } from '@dorkos/shared/config-schema';
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
-import { latestInstant, restoreProtectedState } from './safe-defaults/protected-state.js';
+import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 import {
@@ -808,6 +809,38 @@ export function backfillExtensionsApprovedToRun(store: {
   ) {
     store.set('extensions', { ...(ext as Record<string, unknown>), approvedToRun: [] });
   }
+}
+
+/**
+ * Migration body: seed `extensions.approvedSources: {}` for configs persisted
+ * before an extension approval recorded WHICH copy of the extension it was for
+ * (DOR-2383).
+ *
+ * Seeds the map EMPTY and binds nothing, on purpose. Which copy an existing
+ * id-only approval was about is a question about the disk, and this runs before
+ * anything has looked at the disk. `ExtensionManager.reload` answers it on the
+ * first discovery instead, binding each such approval to the extension installed
+ * directly under `{dorkHome}/extensions/<id>` — the only copy an id-only approval
+ * ever let run. An approved id found only inside a plugin stays unbound, which
+ * counts as not approved, so a plugin that carries an old approved id is asked
+ * about first rather than inheriting the decision.
+ *
+ * Additive and idempotent: writes only when `approvedSources` is not already an
+ * object, and never touches the other `extensions` members. A config with no
+ * `extensions` key is skipped (the schema default supplies the object on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedExtensionsApprovedSources(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (!ext || typeof ext !== 'object' || Array.isArray(ext)) return;
+  const sources = (ext as { approvedSources?: unknown }).approvedSources;
+  if (sources && typeof sources === 'object' && !Array.isArray(sources)) return;
+  store.set('extensions', { ...(ext as Record<string, unknown>), approvedSources: {} });
 }
 
 /**
@@ -2682,6 +2715,132 @@ export function migrateClaudeAccountRegistry(store: {
 }
 
 /**
+ * Migration body: rename a Claude account row whose id is `default` to the
+ * next free `default-N` (spec `claude-account-fleet` D1, contract
+ * `flow-cli-core` §1.1a revision 6d).
+ *
+ * `default` now names the runtime's default account everywhere, so a
+ * REGISTERED row called `default` would be a second account answering to it.
+ * Before this rule an account labelled "Default", or kept in a folder called
+ * `default`, minted exactly that id. `claudeAccountId` no longer can, and this
+ * is what moves a row an earlier build already minted.
+ *
+ * **Not additive, and deliberately so.** An id is a reference, so a rename has
+ * followers: an agent manifest's `account`, a schedule's `account` and its
+ * approval key, and a schedule `SKILL.md` saying `account: default`. None of
+ * those live in this file, and a migration runs before the agent registry and
+ * the task store exist, so this body cannot move them. It leaves a marker
+ * instead: the renamed row carries `renamedFrom: 'default'`, a field rows keep
+ * across every write (a registry row is a loose object), so the account
+ * reconcile can move each reference to the new id and then drop the marker.
+ * Until that runs, a reference that still says `default` resolves to the
+ * default account, which is what the contract says `default` means.
+ *
+ * Idempotent: a second run finds no row called `default`. Every id already
+ * present is reserved before any is chosen, so a rename never collides with a
+ * row that already owns `default-2`.
+ *
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function renameReservedClaudeAccountIds(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  const accounts = (block as Record<string, unknown>).accounts;
+  if (!Array.isArray(accounts)) return;
+
+  const taken = new Set<string>();
+  for (const entry of accounts) {
+    const id = (entry as { id?: unknown } | null)?.id;
+    if (typeof id === 'string') taken.add(id);
+  }
+  let changed = false;
+  const next = accounts.map((entry) => {
+    if (!entry || typeof entry !== 'object' || (entry as { id?: unknown }).id !== 'default') {
+      return entry;
+    }
+    let n = 2;
+    while (taken.has(`default-${n}`)) n++;
+    const id = `default-${n}`;
+    taken.add(id);
+    changed = true;
+    return { ...(entry as Record<string, unknown>), id, renamedFrom: 'default' };
+  });
+  if (!changed) return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { ...(block as Record<string, unknown>), accounts: next },
+  });
+}
+
+/**
+ * Migration body: seed `runtimes.claudeCode.defaultAccountColor: null` for
+ * configs persisted before the standalone default Claude account could be
+ * given a color (DOR-2492).
+ *
+ * `null` is "the default for its position", which is exactly the color that
+ * account was drawn in before the field existed, so nothing anyone sees
+ * changes. A nested leaf under a block every stored config already has, so
+ * conf's defaults merge never writes it and this body is the only thing that
+ * does.
+ *
+ * Additive and idempotent: writes only when the key is absent, and keeps every
+ * other `runtimes.claudeCode` member. A config with no `runtimes.claudeCode`
+ * object is skipped (the schema default supplies the block on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedDefaultAccountColor(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  if ('defaultAccountColor' in block) return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { ...(block as Record<string, unknown>), defaultAccountColor: null },
+  });
+}
+
+/**
+ * Migration body: seed `runtimes.claudeCode.dismissedFolders` as an empty list
+ * (spec `claude-account-ui` §7.4): the account folders a person dismissed from
+ * Settings' "Found on this computer" list.
+ *
+ * A nested leaf inside a section every stored config already has, so conf's
+ * shallow defaults-merge never adds it and this body is what writes it.
+ * Empty on purpose: nothing was dismissed before the list existed.
+ *
+ * Additive and idempotent: writes only when the leaf is not already an array,
+ * and keeps every other `claudeCode` member. A config with no `runtimes` or no
+ * `claudeCode` block is skipped (the schema default supplies it on read).
+ *
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedClaudeDismissedFolders(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  if (Array.isArray((block as Record<string, unknown>).dismissedFolders)) return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { ...(block as Record<string, unknown>), dismissedFolders: [] },
+  });
+}
+
+/**
  * Migration body: reserve both halves of the power-door answer on an existing
  * `ui` block (spec `full-power-defaults`, D2).
  *
@@ -3033,6 +3192,41 @@ export function seedDisplayNameSourceDefault(store: {
 }
 
 /**
+ * Seed `profile.identityPromptDismissedAt` — whether the one-time "what should
+ * we call you?" question has been put (DOR-677).
+ *
+ * **The mechanism, not an anchor**, for the reason
+ * {@link seedDisplayNameSourceDefault} gives: a nested leaf inside a section
+ * every stored config already carries, and conf's pre-migration merge is
+ * shallow, so nothing else writes it to disk for an upgraded install.
+ *
+ * **It seeds `null` — "never asked" — for everyone, including an install whose
+ * operator already has a name and a handle.** That is honest (nobody was asked)
+ * and harmless: every surface that asks also checks what is missing, so a
+ * person with both never sees the question. Seeding a timestamp instead would
+ * record a dismissal nobody made.
+ *
+ * Absence is tested with `in`, because the default is `null` and a `== null`
+ * guard would rewrite a stored `null` on every corrupt-recovery re-run.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedIdentityPromptDismissedDefault(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const profile = store.get('profile');
+  if (profile == null || typeof profile !== 'object') return;
+  const current = profile as Record<string, unknown>;
+  if ('identityPromptDismissedAt' in current) return;
+  store.set('profile', {
+    ...current,
+    identityPromptDismissedAt: USER_CONFIG_DEFAULTS.profile.identityPromptDismissedAt,
+  });
+}
+
+/**
  * Migration body: reserve `harness.refusedHooks: []` on a `harness` block that
  * predates durable refusals (DOR-1849).
  *
@@ -3118,8 +3312,7 @@ export function seedHarnessGlobal(store: {
  * Seeds it OFF, which is the whole posture: an upgrade must never start moving
  * a person's own skill folders because they upgraded. Turning it on is a
  * decision somebody makes with `dorkos config set harness.autoAdopt true`, and
- * even then DorkOS acts on it only inside the agent folders and room folders it
- * owns.
+ * even then DorkOS acts on it only inside the agent folders it owns.
  *
  * Additive and idempotent — it writes only when `autoAdopt` is not already a
  * boolean, so a corrupt-recovery re-run cannot switch off something somebody
@@ -3171,6 +3364,42 @@ export function seedRoomCanvasOps(store: {
   store.set('rooms', {
     ...current,
     maxCanvasOpsPerTurn: USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn,
+  });
+}
+
+/**
+ * Migration body: seed `rooms.maxConcurrentTurnsPerAgent` on a `rooms` block
+ * that predates the setting (DOR-2104).
+ *
+ * Load-bearing for the same reason as {@link seedRoomCanvasOps}: `rooms` is a
+ * section every stored config already carries, and conf's pre-write merge is
+ * SHALLOW, so a stored `rooms` object never gains a member without this body.
+ *
+ * **Not safety-neutral, and deliberately so.** Before this setting existed the
+ * ceiling was a hard-coded one turn per agent folder; seeding `3` lets an
+ * upgraded install run up to three at once, which is the default the issue
+ * chose for everybody (DOR-500's damage curve was measured at six writers on
+ * one tree). Anyone who wants the old behaviour sets it to `1` in Settings.
+ * There is no earlier value a person could have chosen, so there is nothing
+ * here to overwrite.
+ *
+ * Additive and idempotent — it writes only when the leaf is absent, so a
+ * corrupt-recovery re-run leaves a number somebody chose exactly where it is.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedMaxConcurrentTurnsPerAgent(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const rooms = store.get('rooms');
+  if (rooms == null || typeof rooms !== 'object') return;
+  const current = rooms as Record<string, unknown>;
+  if (current.maxConcurrentTurnsPerAgent != null) return;
+  store.set('rooms', {
+    ...current,
+    maxConcurrentTurnsPerAgent: USER_CONFIG_DEFAULTS.rooms.maxConcurrentTurnsPerAgent,
   });
 }
 
@@ -3308,6 +3537,167 @@ export function seedCommunityNavigationPrefs(store: {
     ...(ui as Record<string, unknown>),
     communityNavigation: { version: 1, owners: [] },
   });
+}
+
+/**
+ * Carry the first-run power choice into the permission preset (spec
+ * `agent-permissions` D13, phase 1): `ui.fullPowerChoice: 'full'` becomes
+ * `permissions.preset: 'full'`, `'supervised'` becomes `'careful'`, and an
+ * unanswered door leaves the preset `null` (Unchanged, today's behaviour).
+ *
+ * `permissions` is a new TOP-LEVEL section, so conf's shallow pre-migration
+ * defaults merge has already written it by the time this runs: there is no
+ * absence case to guard. It never replaces a preset that is already set, so a
+ * re-run, or a door answered through the permission routes first, is left
+ * alone. It does not touch any trust stop; that coupling is later work.
+ *
+ * Runs before the Activity service exists, so it records nothing; the boot-time
+ * permission upgrade sweep writes the audit event for its effect.
+ *
+ * @param store - The conf migration store.
+ */
+export function seedPermissionPresetFromDoor(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object' || Array.isArray(ui)) return;
+  const choice = (ui as Record<string, unknown>).fullPowerChoice;
+  const preset = choice === 'full' ? 'full' : choice === 'supervised' ? 'careful' : null;
+  if (preset === null) return;
+  const stored = store.get('permissions');
+  const section =
+    stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Record<string, unknown>)
+      : { preset: null, defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null };
+  if (section.preset !== null && section.preset !== undefined) return;
+  store.set('permissions', { ...section, preset });
+}
+
+/**
+ * Retire the standing-permission settings (spec `agent-permissions` D13, phase
+ * 2): delete `approvals.standingGrants`, `approvals.trustWindowMinutes` and
+ * `approvals.standingGrantsVoidBefore`, and the `approvals` section itself once
+ * nothing else is in it. "Always allow" on a request card replaced standing
+ * permissions; the grants themselves were ended at upgrade, not converted (see
+ * `permissions/ended-standing-grants.ts`).
+ *
+ * A top-level section this build no longer declares, so nothing else ever
+ * writes it again: this body is the whole removal. Anything else a newer build
+ * put under `approvals` is kept, on the version-skew rule.
+ *
+ * Deliberately NOT a config migration. A migration runs whenever the config
+ * store opens, and the CLI opens it before the server has migrated the
+ * database, so a migration would erase the settings the capture of live
+ * standing permissions needs (the master switch and the void floor) before it
+ * ran. The server calls this once the capture is done, through
+ * {@link ConfigManager.retireStandingGrantSettings}; until then the section is an
+ * unknown key, carried across writes like any other.
+ *
+ * @param store - The config store.
+ */
+export function retireStandingGrantSettings(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+  delete: (key: string) => void;
+}): void {
+  const stored = store.get('approvals');
+  if (stored === undefined) return;
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) {
+    store.delete('approvals');
+    return;
+  }
+  const {
+    standingGrants: _standingGrants,
+    trustWindowMinutes: _trustWindowMinutes,
+    standingGrantsVoidBefore: _standingGrantsVoidBefore,
+    ...rest
+  } = stored as Record<string, unknown>;
+  if (Object.keys(rest).length === 0) store.delete('approvals');
+  else store.set('approvals', rest);
+}
+
+/**
+ * Which permission area each retired `agentContext` switch folds into.
+ */
+const AGENT_CONTEXT_AREAS = {
+  tasksTools: 'tasks',
+  relayTools: 'messages',
+  meshTools: 'agents',
+  adapterTools: 'connections',
+} as const satisfies Record<string, PermissionAreaId>;
+
+/**
+ * Retire the four `agentContext.*Tools` switches (spec `agent-permissions` D13,
+ * phase 3). Each switch a person turned OFF becomes its area Blocked in
+ * `permissions.defaults.areas` for everyone, unless that area is already set
+ * there (an area a person set through DorkOS wins); then the section is deleted.
+ *
+ * The switches only ever left tool docs out of Claude Code's context, and the
+ * tools stayed callable (ADR 260726-171347, superseded). A Blocked area hides
+ * AND refuses them on every runtime, so the fold is faithful to what a person
+ * who turned one off meant, and slightly stronger than what they got.
+ *
+ * Deliberately NOT a `CONFIG_MIGRATIONS` body, on the precedent of
+ * {@link retireStandingGrantSettings}: a migration runs once per version, so an
+ * install that already ran this version's key under an earlier build (a
+ * dogfood install always has) would never be folded, and a migration runs
+ * before the Activity log exists, so it could not record the change it made.
+ * This runs at every boot, from the permission upgrade, acts only while the
+ * section is on disk, and returns what it Blocked so the caller can record it.
+ * Running it twice is a no-op: the first run removed the section.
+ *
+ * `agentContext` is a top-level section this build no longer declares, so
+ * nothing else ever writes it again; until this runs it is an unknown key,
+ * carried across writes like any other.
+ *
+ * @param store - The config store.
+ * @returns The areas it set to Blocked, in a stable order, or `null` when there
+ *   was no `agentContext` section to retire.
+ */
+export function retireAgentContextSettings(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+  delete: (key: string) => void;
+}): PermissionAreaId[] | null {
+  const stored = store.get('agentContext');
+  if (stored === undefined) return null;
+  const section =
+    stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Record<string, unknown>)
+      : {};
+  const off = (Object.keys(AGENT_CONTEXT_AREAS) as (keyof typeof AGENT_CONTEXT_AREAS)[])
+    .filter((key) => section[key] === false)
+    .map((key) => AGENT_CONTEXT_AREAS[key]);
+
+  const blocked: PermissionAreaId[] = [];
+  if (off.length > 0) {
+    const permissions = store.get('permissions');
+    const current =
+      permissions && typeof permissions === 'object' && !Array.isArray(permissions)
+        ? (permissions as Record<string, unknown>)
+        : { preset: null, defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null };
+    const defaults =
+      current.defaults && typeof current.defaults === 'object' && !Array.isArray(current.defaults)
+        ? (current.defaults as Record<string, unknown>)
+        : { areas: {}, actions: {} };
+    const areas: Record<string, unknown> = {
+      ...((defaults.areas as Record<string, unknown> | undefined) ?? {}),
+    };
+    for (const area of off) {
+      if (Object.hasOwn(areas, area)) continue;
+      areas[area] = 'blocked';
+      blocked.push(area);
+    }
+    if (blocked.length > 0) {
+      store.set('permissions', {
+        ...current,
+        defaults: { actions: {}, ...defaults, areas },
+      });
+    }
+  }
+  store.delete('agentContext');
+  return blocked;
 }
 
 export const CONFIG_MIGRATIONS = {
@@ -4049,6 +4439,113 @@ export const CONFIG_MIGRATIONS = {
   }) => {
     seedCommunityNavigationPrefs(store);
   },
+  // 0.82.0 has merged, so 0.83.0 is the next key. Disjoint from every other key
+  // here: it writes one leaf of the new top-level `permissions` section, which
+  // nothing above touches, and only READS `ui.fullPowerChoice`, which `'0.67.0'`
+  // seeded.
+  '0.83.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    seedPermissionPresetFromDoor(store);
+  },
+  // 0.83.0 is the newest tag, so 0.84.0 is the next key. Frozen from merge, not
+  // from the release bump, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.85.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under `rooms`
+  // that nothing above names. `'0.66.0'`, `'0.70.0'`, `'0.79.0'` and `'0.81.0'`
+  // also touch `rooms`, and this body preserves every member they write.
+  '0.84.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `rooms.maxConcurrentTurnsPerAgent` — how many conversations one agent may
+    // work in at once. A nested leaf, so this body is the only thing that writes
+    // it; see `seedMaxConcurrentTurnsPerAgent`.
+    seedMaxConcurrentTurnsPerAgent(store);
+  },
+  // 0.84.0 has merged (the per-agent concurrency limit), so 0.85.0 is the next
+  // key. Frozen from merge, not from the release bump, for the reason `'0.60.0'`
+  // above states; anything further opens `'0.86.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under `profile`,
+  // a section `'0.45.0'` seeds whole and `'0.73.0'` extends with a different
+  // leaf; both are preserved.
+  '0.85.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `profile.identityPromptDismissedAt` — whether the name-and-handle
+    // question was put (DOR-677). See `seedIdentityPromptDismissedDefault`.
+    seedIdentityPromptDismissedDefault(store);
+  },
+  // 0.85.0 has merged (the name-and-handle question), so 0.86.0 is the next key.
+  // Frozen from merge, not from the release bump, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.87.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `extensions`, beside `disabled` and `approvedToRun`, which the keys that
+  // backfilled those write and this body preserves.
+  '0.86.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `extensions.approvedSources` — which copy each extension approval is for
+    // (DOR-2383). See `seedExtensionsApprovedSources`.
+    seedExtensionsApprovedSources(store);
+  },
+  // 0.86.0 has merged (DOR-2383, which extension copy an approval is for), so
+  // 0.87.0 is the next key. Frozen from merge, not from the release bump, for
+  // the reason `'0.60.0'` above states; anything further opens `'0.88.0'`.
+  //
+  // Disjoint from every other key here except `'0.65.0'`, which mints the ids
+  // this renames and always runs first: it only rewrites the `id` of a
+  // `runtimes.claudeCode.accounts[]` row that is exactly `default`, and keeps
+  // every other field and row.
+  '0.87.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `default` names the default account now (contract `flow-cli-core`
+    // §1.1a, revision 6d), so a registered row may not keep it. See
+    // `renameReservedClaudeAccountIds`.
+    renameReservedClaudeAccountIds(store);
+  },
+  // 0.90.0 was the next free key when this merged (0.88.0 was the newest tag).
+  // `'0.89.0'` is intentionally unused: the branch that had reserved it moved to
+  // `'0.91.0'` once this merged first, because a key below one an install has
+  // already run would never run there. Frozen from merge, not from the release
+  // bump, for the reason `'0.60.0'` above states.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `runtimes.claudeCode` that nothing above names, and keeps every member
+  // `'0.65.0'` and `'0.87.0'` write there.
+  '0.90.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.claudeCode.defaultAccountColor` — the color the standalone
+    // default account is drawn in (DOR-2492). See `seedDefaultAccountColor`.
+    seedDefaultAccountColor(store);
+  },
+  // 0.90.0 has merged (the standalone default account's color, DOR-2492) and
+  // v0.88.0 is the newest tag, so 0.91.0 is the next key: keys must rise in
+  // merge order, because an install that already ran 0.90.0 would never run a
+  // lower key added after it. Frozen from merge, not from the release bump, for
+  // the reason `'0.60.0'` above states; anything further opens `'0.92.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `runtimes.claudeCode`, beside `accounts`, which `'0.65.0'` and `'0.87.0'`
+  // write and this body preserves.
+  '0.91.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.claudeCode.dismissedFolders` — the found account folders a
+    // person dismissed in Settings. See `seedClaudeDismissedFolders`.
+    seedClaudeDismissedFolders(store);
+  },
 } as const;
 
 /**
@@ -4172,10 +4669,15 @@ function tolerateRetiredSidebarKeys(ctx: {
  *
  * ## Removing it
  *
- * Back-compat for one release, exactly like its sibling: delete this once the
- * `'0.65.0'` migration has shipped in a tagged release that every supported
- * install has passed through. The tests in `'a Claude account registry written
- * before ids'` fail if it is removed early.
+ * The `activeAccount` declaration is back-compat for one release, exactly like
+ * its sibling: delete it once the `'0.65.0'` migration has shipped in a tagged
+ * release that every supported install has passed through. The tests in `'a
+ * Claude account registry written before ids'` fail if it is removed early.
+ *
+ * The row tolerance is NOT back-compat and stays (spec `claude-account-fleet`
+ * D1): the registry is a contract flow writes too, and its read rules skip a
+ * bad row rather than refuse the file, so Ajv accepts any value as an account
+ * row.
  *
  * @param ctx - The `z.toJSONSchema` override context for one schema node.
  */
@@ -4202,13 +4704,30 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
     // Deliberately no `default`: conf builds Ajv with `useDefaults`, so a
     // declared default would WRITE this retired key into every config on earth.
     properties.activeAccount = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+    // The standalone default's color (DOR-2492) follows a row's `color`: a bad
+    // hand edit reads as "no choice" (`.catch(null)` in the Zod schema, and
+    // `isAccountColor` in every reader) rather than condemning the file, so Ajv
+    // takes any string here. Its `default` stays, as the generated node had it.
+    properties.defaultAccountColor = {
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+      default: null,
+    };
     return;
   }
   if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;
-  const required = ctx.jsonSchema.required;
-  if (Array.isArray(required)) {
-    ctx.jsonSchema.required = required.filter((key) => key !== 'id');
-  }
+  // The registry is shared with flow and hand-editable (marketplace
+  // `specs/flow-cli-core` §1.1a), and its readers SKIP a bad row with a warning
+  // rather than fail: a row that is not an object, has no absolute path, an
+  // empty or non-string id, a non-string label, or a color that is not
+  // lowercase `#rrggbb`. Ajv refusing any of those would condemn the whole file
+  // instead, so an account row accepts ANY value here: no type, no required
+  // list, no per-field shape. `readClaudeAccountSettings` applies the read
+  // rules; the write path (`applyConfigPatch`) carries such a row across
+  // untouched. Emptied in place because the override is handed the node to
+  // edit. No `default` survives either: conf builds Ajv with `useDefaults`,
+  // so a declared default would write `color: null` into every row it
+  // validates, including rows this build never listed.
+  for (const key of Object.keys(ctx.jsonSchema)) delete ctx.jsonSchema[key];
 }
 
 /**
@@ -4676,8 +5195,7 @@ export class ConfigManager {
    *
    * Falling back to a default is the right behaviour and the wrong secret. The
    * relaxed set includes leaves that decide things: `auth.enabled`,
-   * `mcp.enabled`, `approvals.standingGrants`, `approvals.trustWindowMinutes`,
-   * `telemetry.usage`. Before this feature a file holding a value one of those
+   * `mcp.enabled`, `telemetry.usage`. Before this feature a file holding a value one of those
    * could not take was condemned LOUDLY — "could not be used", a rotated backup,
    * a line the operator saw. Tolerating it quietly would turn that into a login
    * gate silently off, or a bound somebody tightened silently back at its
@@ -4756,10 +5274,7 @@ export class ConfigManager {
 
   /** Set a top-level config section */
   set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void {
-    const licensedBefore = this.standingGrantsLicensed();
-    const floorBefore = this.standingGrantVoidFloor();
     this.write(key, value);
-    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     this.emitChange([key as string], [key as string]);
   }
 
@@ -4863,10 +5378,7 @@ export class ConfigManager {
     if (SENSITIVE_CONFIG_KEYS.includes(key as (typeof SENSITIVE_CONFIG_KEYS)[number])) {
       result.warning = `'${key}' contains sensitive data. Consider using environment variables instead.`;
     }
-    const licensedBefore = this.standingGrantsLicensed();
-    const floorBefore = this.standingGrantVoidFloor();
     this.write(key, value);
-    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     // Subscribers speak in top-level sections, so a dot-path reports the section
     // it wrote into: `runtimes.default` and `runtimes` are the same news.
     this.emitChange([key.split('.')[0]!], [key]);
@@ -4909,8 +5421,6 @@ export class ConfigManager {
    * @param key - The top-level section to reset, or omitted for all of them.
    */
   reset(key?: string): void {
-    const licensedBefore = this.standingGrantsLicensed();
-    const floorBefore = this.standingGrantVoidFloor();
     if (key) {
       this.store.reset(key as keyof UserConfig);
     } else {
@@ -4919,7 +5429,6 @@ export class ConfigManager {
       this.store.set(USER_CONFIG_DEFAULTS);
       restoreProtectedState(this.store, stored, 'Reset your config');
     }
-    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     // A whole-config reset is news about every section, so subscribers that
     // applied something once get to apply it again.
     const sections = key ? [key] : Object.keys(this.store.store);
@@ -4927,92 +5436,25 @@ export class ConfigManager {
   }
 
   /**
-   * Whether the two settings, as stored RIGHT NOW, license a standing permission
-   * to exist: local login is on (a cookie is the only thing that tells the person
-   * in the cockpit from an agent on the same machine) and the master switch is on.
-   *
-   * Reads the store rather than taking a posture argument, because the callers are
-   * the write methods and the answer has to reflect the file on both sides of the
-   * write. Mirrors `readStandingGrantPosture` in
-   * `services/core/approvals/standing-grant-settings.ts`, which cannot be reused
-   * here: it reads the module singleton, and this may be any manager — including
-   * the one the CLI holds in another process, which is the whole point.
+   * Remove the retired standing-permission settings, once boot has captured the
+   * grants they licensed. See {@link retireStandingGrantSettings}.
    */
-  private standingGrantsLicensed(): boolean {
-    return (
-      this.store.get('auth')?.enabled === true &&
-      this.store.get('approvals')?.standingGrants === true
+  retireStandingGrantSettings(): void {
+    retireStandingGrantSettings(
+      this.store as unknown as Parameters<typeof retireStandingGrantSettings>[0]
     );
   }
 
-  /** The posture floor as stored right now, or `null` when nothing has narrowed. */
-  private standingGrantVoidFloor(): string | null {
-    return this.store.get('approvals')?.standingGrantsVoidBefore ?? null;
-  }
-
   /**
-   * Hold the posture floor at or above where it was before this write, and move
-   * it to now when this write is what took the license away (DOR-520).
+   * Fold the retired `agentContext` switches into the permission defaults and
+   * remove them. See {@link retireAgentContextSettings}.
    *
-   * ## Why the marker lives in the config file, written here
-   *
-   * `revokeStandingGrantsIfPostureNarrowed` ends live permissions, but it only
-   * fires on a write the SERVER performs. `dorkos config set
-   * approvals.standingGrants false` and `dorkos config reset` are a different
-   * process holding its own manager, with no database and no route — so they end
-   * nothing, and switching the setting back on used to wake every surviving
-   * permission. This method is on the one seam BOTH processes travel: every write
-   * to `~/.dork/config.json` in DorkOS goes through a `ConfigManager`.
-   *
-   * The floor is durable, which the alternatives are not. It survives the server
-   * being down for the whole round trip — the case a config-file watcher cannot
-   * see at all, and the case the boot sweep misses too, because by the time the
-   * server starts the settings look fine again.
-   *
-   * ## The floor is MONOTONIC, and that is the whole guarantee
-   *
-   * The first version stamped on the licensed → unlicensed TRANSITION and nothing
-   * else. Review broke it in one line: any write performed while the posture was
-   * ALREADY narrowed is not a transition, so it did not stamp — while
-   * `dorkos config reset` had meanwhile rewritten the whole file from defaults and
-   * put the leaf back to `null`. Switch off, reset, switch on, and the permission
-   * was live again, through nothing but the verbs this feature claims to cover.
-   *
-   * The same shape reached `PATCH /api/config`: `applyConfigPatch` computes the
-   * merged value ONCE from the pre-write snapshot and then writes each top-level
-   * section in turn, so a batch carrying `auth` before `approvals` stamped the
-   * floor and then wrote the snapshot's stale `null` straight back over it.
-   *
-   * So the rule is stated as an invariant on the STORED value rather than as a
-   * reaction to a transition: after any write, the floor is `floorBefore`, except
-   * on a narrowing where it becomes `max(floorBefore, now)`. Never lower, on any
-   * path, whatever the write happened to contain.
-   *
-   * `max` rather than `now` is what makes it monotonic rather than merely current:
-   * a backwards clock (an NTP correction, a container with a bad RTC) would
-   * otherwise lower a floor that had already voided permissions.
-   *
-   * ## It still writes nothing when nothing narrowed
-   *
-   * Stating the rule as "stamp whenever the posture is unlicensed after the write"
-   * would also close the hole, and would move the floor on EVERY config write for
-   * the vast majority of installs, which never switch this feature on — doubling
-   * config write I/O to maintain a marker with nothing to void. Comparing against
-   * the stored value first keeps the common path free.
-   *
-   * @param licensedBefore - Whether the posture licensed a permission before the
-   *   write that just happened.
-   * @param floorBefore - The floor as it stood before the write, which this write
-   *   may raise but must never lower.
+   * @returns The areas it set to Blocked, or `null` when nothing was left to retire.
    */
-  private stampStandingGrantVoidFloor(licensedBefore: boolean, floorBefore: string | null): void {
-    const narrowed = licensedBefore && !this.standingGrantsLicensed();
-    const required = narrowed ? latestInstant(floorBefore, new Date().toISOString()) : floorBefore;
-    if (required === null) return;
-
-    const approvals = this.store.get('approvals');
-    if (approvals?.standingGrantsVoidBefore === required) return;
-    this.store.set('approvals', { ...approvals, standingGrantsVoidBefore: required });
+  retireAgentContext(): PermissionAreaId[] | null {
+    return retireAgentContextSettings(
+      this.store as unknown as Parameters<typeof retireAgentContextSettings>[0]
+    );
   }
 
   /**

@@ -23,6 +23,15 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/index.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;

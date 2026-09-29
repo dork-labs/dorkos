@@ -119,19 +119,10 @@ export class FakeConnectorProvider implements ConnectorProvider {
     };
   }
 
-  async listToolkitPage(request: {
-    cursor?: string;
-    query?: string;
-    limit: number;
-    signal: AbortSignal;
-  }) {
+  async listToolkitPage(request: { cursor?: string; limit: number; signal: AbortSignal }) {
     request.signal.throwIfAborted();
     const offset = request.cursor ? Number(request.cursor) : 0;
-    const matching = request.query
-      ? this._toolkits.filter((toolkit) =>
-          toolkit.displayName.toLowerCase().includes(request.query!.toLowerCase())
-        )
-      : this._toolkits;
+    const matching = this._toolkits;
     const toolkits = matching.slice(offset, offset + request.limit);
     const next = offset + toolkits.length;
     return Promise.resolve({

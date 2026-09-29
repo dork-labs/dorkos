@@ -21,10 +21,12 @@ describe('the room files source', () => {
   it('declares what a commit can and cannot do', () => {
     const { source } = build();
     expect(source.scopeKey).toBe('room:room-1');
-    // No directory on disk to write into, so nothing is writable and nothing
-    // reveals — and the pane asks these rather than inferring them.
+    // No directory on disk, so nothing reveals and the files API is never the
+    // door — the tree is changed through the room's own, which says how many
+    // files one upload may carry. The pane asks these rather than inferring them.
     expect(source.cwd).toBeNull();
-    expect(source.writable).toBe(false);
+    expect(source.writable).toBe(true);
+    expect(source.changes?.maxUploadFiles).toBe(20);
     // The two the session source cannot claim, and the reason this exists.
     expect(source.provenance).toBe(true);
     expect(source.filtersHidden).toBe(false);
@@ -218,12 +220,11 @@ describe('the room files source, watching the room', () => {
 });
 
 describe('saving through the room files source', () => {
-  it('declares that the FILES are editable even though the tree is not', () => {
+  it('declares its files editable as well as its tree', () => {
     const { source } = build();
-    // The opposite pair from a session's, and both halves are true at once:
-    // merging is what adds and removes entries here, while a person's own edit
-    // goes through §3.10's door.
-    expect(source.writable).toBe(false);
+    // A person's own edit goes through §3.10's door, and a new file, an upload,
+    // a rename and a delete through `changes` (spec `agent-home-desk` §7.3).
+    expect(source.writable).toBe(true);
     expect(source.editable).toBe(true);
     expect(source.save).toBeTypeOf('function');
   });
@@ -300,6 +301,34 @@ describe('saving through the room files source', () => {
     await expect(source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' })).rejects.toThrow(
       'boom'
     );
+  });
+
+  it('shows the room’s own sentence when its git settings name a program', async () => {
+    const { transport, source } = build();
+    // The server's sentence names each setting and where to find the command
+    // that removes them: nothing generic could say it.
+    const said =
+      'This room’s shared git settings contain entries that can make git run programs: ' +
+      'filter.x.smudge. The room’s Files section shows the command that removes them.';
+    const refusal = () =>
+      Object.assign(new Error(said), { code: 'ROOM_REPO_CONFIG_UNSAFE', status: 409 });
+    transport.saveRoomFile = vi.fn().mockRejectedValue(refusal());
+    await expect(
+      source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' })
+    ).resolves.toMatchObject({
+      status: 'refused',
+      reason: expect.stringContaining(
+        'filter.x.smudge. The room’s Files section shows the command'
+      ),
+    });
+
+    transport.deleteRoomFile = vi.fn().mockRejectedValue(refusal());
+    await expect(
+      source.changes!.remove({ path: 'ROOM.md', baseCommit: 'aaa1111' })
+    ).resolves.toMatchObject({
+      status: 'refused',
+      reason: expect.stringContaining('filter.x.smudge'),
+    });
   });
 
   it('re-asks the room where it stands when a save says the room is stuck', async () => {

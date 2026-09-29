@@ -8,6 +8,15 @@ test.describe('Settings — URL Deep Links @smoke', () => {
     await expect(page.getByRole('tab', { name: 'Tools' })).toHaveAttribute('aria-selected', 'true');
   });
 
+  test('navigating to ?settings=permissions opens Settings to Permissions', async ({ page }) => {
+    await page.goto('/?settings=permissions');
+    await page.waitForSelector('[data-testid="settings-dialog"]');
+    await expect(page.getByRole('tab', { name: 'Permissions' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+  });
+
   test('navigating to ?settings=tools&settingsSection=external-mcp scrolls into view', async ({
     page,
   }) => {

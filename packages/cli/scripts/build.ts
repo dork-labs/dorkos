@@ -280,7 +280,6 @@ async function buildCLI() {
       'express',
       'cors',
       'dotenv',
-      'gray-matter',
       'uuid',
       'zod',
       'conf',
@@ -368,11 +367,6 @@ async function buildCLI() {
       // redirect plugin) that transitively reaches services/terminal/ resolves
       // it at runtime from the CLI's node_modules, mirroring better-sqlite3.
       'node-pty',
-      // gray-matter uses CommonJS `require('fs')` which esbuild's ESM output
-      // cannot inline — keep it external so it resolves at runtime via the
-      // CLI's node_modules. Pulled in transitively by `@dorkos/skills/parser`
-      // → `@dorkos/marketplace/package-validator` → `dorkos package validate`.
-      'gray-matter',
     ],
     plugins: [dorkosSourcePlugin(), serverServicesRedirectPlugin()],
     define: {

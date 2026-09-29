@@ -17,6 +17,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { APP_LOGO_MAP } from '@dorkos/icons/app-logos';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import {
@@ -24,6 +25,7 @@ import {
   discardSettlingApprovals,
   holdDecidedApproval,
 } from '../model/settling-approvals';
+import { discardDismissedSuggestions } from '../model/use-dismiss-suggestion';
 import { ApprovalCard } from '../ui/ApprovalCard';
 
 /** Build a pending approval, overriding only what a test cares about. */
@@ -36,6 +38,8 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     summary: 'Uninstall "sentry-monitor"',
     requestedBy: '/Users/dev/agents/dorkbot',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
     ...overrides,
@@ -82,6 +86,7 @@ afterEach(() => {
   // survive the hold. A suite that answered something would otherwise carry it
   // into the next case twice over.
   discardSettlingApprovals();
+  discardDismissedSuggestions();
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -102,7 +107,7 @@ describe('ApprovalCard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
 
     expect(grantApproval).toHaveBeenCalledWith('01JZ0000000000000000000001', undefined);
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
     settle();
   });
@@ -112,7 +117,7 @@ describe('ApprovalCard', () => {
       denyApproval: vi.fn().mockResolvedValue({ ok: true, outcome: 'denied' }),
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Don’t allow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
 
     expect(await screen.findByText('Not allowed')).toBeInTheDocument();
   });
@@ -139,13 +144,13 @@ describe('ApprovalCard', () => {
     });
 
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
 
     refuse();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument());
-    expect(screen.queryByText('Allowed')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
+    expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
   });
 
   it('draws the receipt on a card that did not itself answer', async () => {
@@ -158,7 +163,7 @@ describe('ApprovalCard', () => {
 
     act(() => holdDecidedApproval(buildApproval(), 'granted'));
 
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
   });
 
@@ -166,12 +171,11 @@ describe('ApprovalCard', () => {
     // The bug this design closes (DOR-1411 review). The hold is a 0.6s window
     // on the LIST; a card can outlive it — the transcript's copy is drawn from
     // the message part, so the refetch never unmounts it. When the answer
-    // expired with the hold, that card flashed "Allowed" and then went back to
-    // offering Allow, Don't allow and a standing grant on a request that was
-    // already decided. The event that would have corrected it
+    // expired with the hold, that card flashed its receipt and then went back
+    // to offering its answers on a request that was already decided. The event that would have corrected it
     // (`capability_approval_resolved`) is documented as droppable, so the
     // revert could be permanent.
-    renderCard(buildApproval());
+    renderCard(buildApproval({ area: 'rooms', alwaysOffered: true }));
 
     // Fake time is installed BEFORE the hold, not after: `setTimeout` is
     // captured at call time, so a hold armed under real timers is a real timer
@@ -190,12 +194,148 @@ describe('ApprovalCard', () => {
 
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Don’t allow' })).not.toBeInTheDocument();
-    // The standing-grant offer is the loudest of the three and the easiest to
-    // leave behind: it is gated on `!decision`, not on the buttons above it.
-    expect(
-      screen.queryByRole('button', { name: /stop asking about this/i })
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Deny' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
+  });
+
+  describe('the three answers (spec agent-permissions D7)', () => {
+    /** A Rooms request DorkBot made, on which Always allow is offered. */
+    const ROOMS = buildApproval({
+      capabilityId: 'rooms.create',
+      capabilityTitle: 'Open a room',
+      tier: 'act',
+      requestedBy: 'DorkBot',
+      area: 'rooms',
+      alwaysOffered: true,
+    });
+
+    it('offers Allow, Always allow and Deny, in that order', () => {
+      renderCard(ROOMS);
+      const names = screen.getAllByRole('button').map((b) => b.textContent);
+      expect(names).toEqual(['Allow', 'Always allow', 'Deny']);
+    });
+
+    it('sends each answer as what it is', async () => {
+      const grantApproval = vi.fn().mockResolvedValue({ ok: true, outcome: 'granted' });
+      const denyApproval = vi.fn().mockResolvedValue({ ok: true, outcome: 'denied' });
+
+      renderCard(ROOMS, { grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Always allow' }));
+      expect(grantApproval).toHaveBeenCalledWith(ROOMS.approvalId, { answer: 'always' });
+      expect(await screen.findByText('Always allowed for DorkBot: Open a room')).toBeVisible();
+      cleanup();
+      discardSettlingApprovals();
+
+      renderCard(ROOMS, { grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      expect(grantApproval).toHaveBeenLastCalledWith(ROOMS.approvalId, undefined);
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+      cleanup();
+      discardSettlingApprovals();
+
+      renderCard(ROOMS, { denyApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
+      expect(denyApproval).toHaveBeenCalledWith(ROOMS.approvalId, undefined);
+      expect(await screen.findByText('Not allowed')).toBeVisible();
+    });
+
+    it('hides Always allow when the server does not offer it', () => {
+      renderCard(buildApproval({ area: 'rooms', alwaysOffered: false, hasAgentPath: false }));
+      expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
+      // No setting would help here, so nothing explains a missing button.
+      expect(screen.queryByText(/Always allow isn.t offered/)).not.toBeInTheDocument();
+    });
+
+    it('says why on a floor area, and shows only Allow and Deny', () => {
+      renderCard(buildApproval({ area: 'reach', alwaysOffered: false }));
+      expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Allow', 'Deny']);
+      expect(
+        screen.getByText(
+          "Always allow isn't offered here. Changing this needs your yes every time."
+        )
+      ).toBeInTheDocument();
+    });
+
+    it('says a request past Blocked is one, and quotes the reason the agent gave', () => {
+      renderCard({
+        ...ROOMS,
+        blockedRequest: true,
+        requestReason: 'You asked me to set up the lunar room.',
+      });
+      const line = document.querySelector('[data-slot="approval-blocked-request"]');
+      expect(line).toHaveTextContent(
+        'DorkBot is blocked from Rooms and is asking to be allowed. It says: You asked me to set up the lunar room.'
+      );
+      // Quoted, never presented as DorkOS's own claim.
+      expect(line?.querySelector('q')).toHaveTextContent('You asked me to set up the lunar room.');
+    });
+
+    it('draws no blocked line on an ordinary request', () => {
+      renderCard(ROOMS);
+      expect(document.querySelector('[data-slot="approval-blocked-request"]')).toBeNull();
+    });
+  });
+
+  describe('the gentle suggestion (spec agent-permissions, task 4.4)', () => {
+    const SUGGESTED = buildApproval({
+      capabilityId: 'rooms.create',
+      capabilityTitle: 'Open a room',
+      tier: 'act',
+      requestedBy: 'DorkBot',
+      area: 'rooms',
+      alwaysOffered: true,
+      suggestAlways: true,
+      allowedThisWeek: 3,
+    });
+
+    it('highlights Always allow with the true count, keeping Allow first', () => {
+      const { container } = renderCard(SUGGESTED);
+      expect(screen.getByText(/You've allowed this 3 times this week\./)).toBeVisible();
+      expect(
+        container.querySelector('[data-slot="approval-always"]')?.getAttribute('data-suggested')
+      ).toBe('true');
+      // Never a reordering: the one-time yes stays the first, filled answer.
+      const names = screen
+        .getAllByRole('button')
+        .filter((b) => b.dataset.slot?.startsWith('approval-'))
+        .map((b) => b.textContent);
+      expect(names).toEqual(['Allow', 'Always allow', 'Deny']);
+    });
+
+    it('"Not now" asks the server to stop suggesting it, and the highlight goes at once', async () => {
+      const dismissAlwaysSuggestion = vi.fn().mockResolvedValue({ ok: true });
+      const { container } = renderCard(SUGGESTED, { dismissAlwaysSuggestion });
+
+      await userEvent.click(
+        screen.getByRole('button', {
+          name: 'Not now: stop suggesting Always allow for Open a room',
+        })
+      );
+
+      expect(dismissAlwaysSuggestion).toHaveBeenCalledWith(SUGGESTED.approvalId);
+      expect(screen.queryByText(/You've allowed this/)).not.toBeInTheDocument();
+      expect(
+        container.querySelector('[data-slot="approval-always"]')?.hasAttribute('data-suggested')
+      ).toBe(false);
+      // Always allow is still there to answer with; only the nudge went.
+      expect(screen.getByRole('button', { name: 'Always allow' })).toBeVisible();
+    });
+
+    it('puts the highlight back when "Not now" did not save', async () => {
+      const dismissAlwaysSuggestion = vi.fn().mockRejectedValue(new Error('no'));
+      renderCard(SUGGESTED, { dismissAlwaysSuggestion });
+      await userEvent.click(screen.getByRole('button', { name: /^Not now/ }));
+      expect(await screen.findByText(/You've allowed this 3 times/)).toBeVisible();
+    });
+
+    it('says nothing when the server does not suggest it, or does not offer Always allow', () => {
+      renderCard({ ...SUGGESTED, suggestAlways: undefined, allowedThisWeek: undefined });
+      expect(screen.queryByText(/You've allowed this/)).not.toBeInTheDocument();
+      cleanup();
+      renderCard({ ...SUGGESTED, alwaysOffered: false, area: 'reach' });
+      expect(screen.queryByText(/You've allowed this/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Not now/ })).not.toBeInTheDocument();
+    });
   });
 
   describe('the argument a person has to read in full (DOR-1698)', () => {
@@ -308,5 +448,151 @@ describe('naming what would be destroyed (DOR-1929)', () => {
 
     expect(screen.getByText('Asked from a session on this computer')).toBeInTheDocument();
     expect(screen.queryByText(/doesn’t know who asked/)).toBeNull();
+  });
+});
+
+describe('a connected-app action says what it does (DOR-2504)', () => {
+  const GMAIL_DELETE = {
+    serviceId: 'gmail',
+    serviceName: 'Gmail',
+    accountLabel: 'Work (work@acme.com)',
+    actionName: 'Delete message',
+    details: [
+      { label: 'Message ID', value: '18c2f0a9d1' },
+      { label: 'Access token', value: '(hidden)' },
+    ],
+  };
+  const connectorApproval = (serviceAction: PendingApproval['serviceAction']) =>
+    buildApproval({
+      capabilityId: 'connectors.execute_destructive',
+      capabilityTitle: "Make a change that can't be undone in a connected app",
+      summary:
+        '"DorkBot" wants to run "Delete message" in Gmail on "Work (work@acme.com)" with Message ID: "18c2f0a9d1"',
+      serviceAction,
+    });
+
+  it('names the action, the app with its logo, the account and each argument', () => {
+    const { container } = renderCard(connectorApproval(GMAIL_DELETE));
+
+    expect(screen.getByText('Delete message')).toBeInTheDocument();
+    expect(screen.getByText('Gmail')).toBeInTheDocument();
+    expect(screen.getByText('Work (work@acme.com)')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="service-logo"] img')).toHaveAttribute(
+      'src',
+      APP_LOGO_MAP.gmail
+    );
+    const details = container.querySelector('[data-slot="approval-service-details"]')!;
+    expect(details.querySelectorAll('dt')).toHaveLength(2);
+    expect(details).toHaveTextContent('Message ID18c2f0a9d1');
+    expect(details).toHaveTextContent('Access token(hidden)');
+  });
+
+  it('says plainly that it cannot be undone', () => {
+    renderCard(connectorApproval(GMAIL_DELETE));
+    expect(screen.getByText("Once this runs, it can't be undone in Gmail.")).toBeInTheDocument();
+  });
+
+  it('never shows the jargon title, the ids, or the summary sentence on top of it', () => {
+    const { container } = renderCard(connectorApproval(GMAIL_DELETE));
+    const text = container.textContent ?? '';
+    expect(text).not.toContain('connected app');
+    expect(text).not.toContain('wants to run');
+    expect(text).not.toMatch(/[{}"]/u);
+  });
+
+  it('counts the arguments the server left off the card', () => {
+    renderCard(connectorApproval({ ...GMAIL_DELETE, moreDetails: 3 }));
+    expect(screen.getByText('3 more details')).toBeInTheDocument();
+  });
+
+  it('keeps a long value inside the card instead of widening it', () => {
+    const long = 'x'.repeat(119) + '…';
+    const { container } = renderCard(
+      connectorApproval({ ...GMAIL_DELETE, details: [{ label: 'Subject', value: long }] })
+    );
+    const value = container.querySelector('[data-slot="approval-service-details"] dd')!;
+    expect(value).toHaveTextContent(long);
+    expect(value).toHaveClass('break-words', 'min-w-0');
+  });
+
+  it('does not claim a change is permanent when the tier says otherwise', () => {
+    renderCard({ ...connectorApproval(GMAIL_DELETE), tier: 'act' });
+    expect(screen.queryByText(/can't be undone in Gmail/u)).not.toBeInTheDocument();
+    expect(screen.getByText('Changes things')).toBeInTheDocument();
+  });
+
+  it('says it cannot be undone exactly once, and has no dangling separator', () => {
+    const { container } = renderCard(connectorApproval(GMAIL_DELETE));
+    const text = container.textContent ?? '';
+    expect(text.match(/undone/giu)).toHaveLength(1);
+    expect(screen.queryByText('Cannot be undone')).not.toBeInTheDocument();
+    expect(text).not.toContain('·');
+  });
+
+  it('offers no disclosure when the glance already shows everything', () => {
+    renderCard(connectorApproval(GMAIL_DELETE));
+    expect(screen.queryByRole('button', { name: 'Show everything' })).not.toBeInTheDocument();
+  });
+
+  describe('Show everything', () => {
+    const padded = `${'pad '.repeat(30)}the decisive part`;
+    const attendees = Array.from({ length: 12 }, (_, i) => `person${i + 1}@acme.com`);
+    const full = {
+      ...GMAIL_DELETE,
+      details: [
+        { label: 'Message ID', value: `${padded.slice(0, 119)}…` },
+        { label: 'Attendees', value: '12 items' },
+      ],
+      everything: [
+        { label: 'Message ID', value: padded, depth: 0 },
+        { label: 'Attendees', value: '12 items', depth: 0 },
+        ...attendees.flatMap((email, i) => [
+          { label: String(i + 1), value: '1 field', depth: 1 },
+          { label: 'Email', value: email, depth: 2 },
+        ]),
+      ],
+    };
+
+    it('reads every attendee and the whole padded value after expanding, on the card', async () => {
+      const user = userEvent.setup();
+      const { container } = renderCard(connectorApproval(full));
+      expect(screen.queryByText('person12@acme.com')).not.toBeInTheDocument();
+      expect(screen.queryByText(padded)).not.toBeInTheDocument();
+
+      const toggle = screen.getByRole('button', { name: 'Show everything' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await user.click(toggle);
+
+      const list = container.querySelector('[data-slot="approval-service-everything"]')!;
+      for (const email of attendees) expect(list).toHaveTextContent(email);
+      expect(screen.getByText(padded)).toBeInTheDocument();
+      expect(list.textContent).not.toMatch(/[{}[\]"]/u);
+      // Nested lines are indented under their parent.
+      expect(screen.getAllByText('Email')[0]).toHaveClass('pl-6');
+      const less = screen.getByRole('button', { name: 'Show less' });
+      expect(less).toHaveAttribute('aria-expanded', 'true');
+      expect(less).toHaveAttribute('aria-controls', list.id);
+
+      await user.click(less);
+      expect(screen.queryByText(padded)).not.toBeInTheDocument();
+    });
+
+    it('says plainly when some values were too long to include', async () => {
+      const user = userEvent.setup();
+      renderCard(connectorApproval({ ...full, everythingCut: 2 }));
+      await user.click(screen.getByRole('button', { name: 'Show everything' }));
+      expect(
+        screen.getByText(
+          "2 values are too long to show here. If you're not sure what this sends, deny it."
+        )
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('renders exactly as before for an approval with no connected-app action', () => {
+    const { container } = renderCard(buildApproval());
+    expect(screen.getByText('Uninstall a marketplace package')).toBeInTheDocument();
+    expect(screen.getByText('Uninstall "sentry-monitor"')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="approval-service-action"]')).toBeNull();
   });
 });

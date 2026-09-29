@@ -48,15 +48,15 @@ Use \`list_capabilities\` to discover instance capabilities, narrowing by \`doma
 The generic catalog is not the inventory of accounts granted to this agent.
 Use the supplied current CLI invocation for CLI examples below, never a PATH lookup.
 
-## Connections: Accounts and Messaging
+## Connections: one list of apps
 
-Accounts let you act on services; Messaging connects Slack/Telegram conversations.
+One list of apps you act on (Gmail) and chat apps people reach you in (Slack, Telegram).
 Use injected tools ending in \`connectors.list_granted_connections\` (OpenCode:
 \`connectors_list_granted_connections\`) to discover your current account access.
 Then call \`list_granted_operations\` with its returned \`connectionId\`; choose the
 exact operation, immutable revision, input schema, and execution classification.
 A profile lookup cannot list messages. Do not invent filters or describe errors as results.
-Access can change between turns: consult the fresh Accounts context and re-list before use.
+Access can change between turns: consult the fresh account context and re-list before use.
 If access is missing, \`request_connection\` asks the owner for what the task needs;
 \`get_connection_request\` checks your request. These never expose other accounts.
 Do not inspect shell configuration, credentials, or generic MCP registries to infer access.
@@ -64,22 +64,20 @@ Do not inspect shell configuration, credentials, or generic MCP registries to in
 Some tools (agent, task, relay, mesh, binding, extension and UI) are outside the
 capability catalog. Use the injected tools; do not assume CLI parity or invent commands.
 
-## Permission tiers
+## Permission tiers and settings
 
-Every capability in the catalog carries a tier. Read it before you act:
+Every capability carries a tier; the person's permission settings can tighten it:
 
-- \`observe\` only reads. It always runs.
-- \`act\` changes something recoverable. It runs, and DorkOS records it in the
-  activity feed under your name.
-- \`destructive\` cannot be undone. It does NOT run until a person approves it.
-  \`marketplace.uninstall\` is the destructive capability in the catalog;
-  \`tasks_delete\` and \`mesh_unregister\` are the destructive tools outside it. A
-  destructive tool advertises an \`approvalToken\` argument, which is how you spot
-  one from its own schema.
+- \`observe\` only reads, and runs. \`act\` changes something recoverable and runs,
+  recorded under your name, unless it is set to Ask: then it waits for a person.
+- \`destructive\` cannot be undone and never runs until a person approves it
+  (\`marketplace.uninstall\`, \`tasks_delete\`, \`mesh_unregister\`). A call that may
+  wait for a person advertises an \`approvalToken\` argument.
+- Blocked refuses any tier. The tool ending in \`list_my_permissions\` shows yours.
 
 ## When a call comes back \`approval_required\`
 
-A \`destructive\` call returns this payload instead of doing the work:
+A call that needs a person (\`destructive\`, or \`act\` set to Ask) returns this instead:
 
     { "status": "approval_required", "capabilityId": "...", "capabilityTitle": "...",
       "tier": "destructive", "approvalId": "...", "approvalToken": "...",
@@ -104,11 +102,15 @@ DorkOS already asked again for you, so use the token in THIS payload from now on
 A refusal is a different payload, and \`approvable\` says whether asking again can
 ever help:
 
-    { "status": "denied", "reason": "tier_ceiling", "approvable": false, "message": "..." }
+    { "status": "denied", "reason": "permission_blocked", "approvable": true, "message": "..." }
 
-- \`approvable: false\` (\`tier_ceiling\`, \`enforcement_unavailable\`): no approval can
-  unlock this. Stop and report it; do not look for a workaround.
+- \`approvable: false\` (your access was turned off, \`enforcement_unavailable\`): no
+  approval can unlock this. Stop and report it; do not look for a workaround.
 - \`operator_denied\`: a person said no. Do not try again unless they ask you to.
+- \`permission_blocked\` with \`approvable: true\`: ask ONCE with \`request_permission\`
+  (\`action\` = the tool name, the exact \`arguments\`, a one-sentence \`reason\`), then wait.
+- \`request_pending\`, \`recently_denied\`, \`request_limit\`: your ask was held back.
+  Do not ask again; wait for the answer, or tell the person what you could not do.
 
 \`retry.instructions\` in the payload always spells out the exact retry for the
 surface you called from; follow it over anything you remember. Two marketplace
@@ -120,20 +122,21 @@ using-the-marketplace.
 
 The operator verbs hit the running server over its local HTTP API:
 
-- \`dorkos capabilities [--json]\` and \`dorkos call <id>\` (above) reach any
-  capability by id, and nothing else.
+- \`dorkos capabilities [--json]\` and \`dorkos call <id>\` (above) reach any capability by id.
 - \`dorkos agent list|show <path-or-id>|create|update\` manage agents.
 - \`dorkos task list|create|trigger <id>|runs\` manage tasks. No update, no delete.
 - \`dorkos activity [--actor <t>] [--category <c>] [--type <e>] [--limit <n>]\` reads the feed.
 - \`dorkos version --check\` shows the current server version and the latest release.
-- \`dorkos marketplace list|refresh|validate\` read sources. Only a person may \`add\` or \`remove\` one: see using-the-marketplace.
-- \`dorkos install <name>\` / \`dorkos uninstall <name>\` install/remove packages;
-  \`uninstall\` is gated and answers with the approval payload (using-the-marketplace).
+- \`dorkos marketplace install|update|uninstall|installed|outdated|held-back\` manage
+  packages (\`dorkos install|update|uninstall\` are shorthand); \`uninstall\` is gated
+  and answers with the approval payload. \`list|refresh|validate\` read sources, and
+  only a person may \`add\` or \`remove\` one. See using-the-marketplace.
 
-\`capabilities\`, \`call\`, \`agent\`, \`task\`, \`activity\`, and \`version\` take \`--json\`;
-\`marketplace\`, \`install\`, and \`uninstall\` do NOT, and passing it is an error, not a
-no-op. Exit code is \`0\` on success, non-zero when no server is reachable, the
-request fails, or a call is waiting on an approval.
+\`capabilities\`, \`call\`, \`agent\`, \`task\`, \`activity\`, \`version\`, and
+\`marketplace installed|outdated\` take \`--json\`; the other marketplace verbs do NOT,
+and passing it is an error, not a no-op. Exit code is \`0\` on success, non-zero
+when no server is reachable, the request fails, or a call is waiting on an approval
+(\`outdated\` also answers with it: see using-the-marketplace).
 
 ## Where live facts come from
 
@@ -165,8 +168,6 @@ one section, where a patch of \`ui.sidebar.groups\` rewrites every section at on
 
 ## Rules of engagement
 
-- **Read the tier before you act.** \`observe\` freely; say what you are doing on
-  \`act\`; on \`destructive\`, expect to ask a person and wait.
 - **Read before you write.** Fetch current state, act, then report what changed.
 - **System agents are protected.** DorkBot and other system agents reject renames,
   deletion, and identity edits. Do not fight the guard.

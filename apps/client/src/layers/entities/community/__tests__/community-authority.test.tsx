@@ -56,6 +56,33 @@ describe('Community access projection', () => {
     });
   });
 
+  it('keeps one generation across re-verifications that grant the same access (DOR-2268)', () => {
+    // The server stamps a fresh `verifiedAt` on every listing. Reading it into
+    // the fingerprint made every open channel rebuild itself every 30 seconds,
+    // dropping the receipt of a post in flight.
+    const earlier = communityAccessState(access);
+    const later = communityAccessState({
+      ...access,
+      lastKnown: { ...access.lastKnown, verifiedAt: '2026-09-21T00:00:30.000Z' },
+    });
+    expect(later.fingerprint).toBe(earlier.fingerprint);
+    // What the grant allows is still the fence: less access is a new generation.
+    const readOnly = communityAccessState({
+      ...access,
+      effective: { ...access.effective, post: false },
+      lastKnown: {
+        ...access.lastKnown,
+        capabilities: { ...access.lastKnown.capabilities, post: false },
+      },
+    });
+    expect(readOnly.fingerprint).not.toBe(earlier.fingerprint);
+    const archived = communityAccessState({
+      ...access,
+      lastKnown: { ...access.lastKnown, lifecycle: 'archived' },
+    });
+    expect(archived.fingerprint).not.toBe(earlier.fingerprint);
+  });
+
   it('moves reconnect-required access into a purge generation', () => {
     const reconnect = communityAccessState({
       ...access,

@@ -365,6 +365,7 @@ describe('the rows', () => {
       'notifications',
       'skills',
       'tools',
+      'permissions',
       'connections',
       'instructions',
       'boundaries',
@@ -402,6 +403,7 @@ describe('the rows', () => {
       'notifications',
       'skills',
       'tools',
+      'permissions',
     ]);
     const kind = (id: string) =>
       document.querySelector(`[data-profile-row="${id}"]`)!.getAttribute('data-row-kind');

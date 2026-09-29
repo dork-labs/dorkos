@@ -8,7 +8,7 @@
  * @module services/activity/activity-service
  */
 import { ulid } from 'ulidx';
-import { lt, gt, inArray } from 'drizzle-orm';
+import { lt, gt, inArray, ne } from 'drizzle-orm';
 import { desc, and, eq, activityEvents, type Db } from '@dorkos/db';
 import type {
   ActivityItem,
@@ -43,6 +43,25 @@ interface EmitEvent {
  * so an observer never reacts to something that failed to persist.
  */
 export type ActivityObserver = (event: ActivityItem) => void;
+
+/** One stored row, as the public shape: metadata parsed back into an object. */
+function toActivityItem(row: typeof activityEvents.$inferSelect): ActivityItem {
+  return {
+    id: row.id,
+    occurredAt: row.occurredAt,
+    actorType: row.actorType as ActorType,
+    actorId: row.actorId,
+    actorLabel: row.actorLabel,
+    category: row.category as ActivityCategory,
+    eventType: row.eventType,
+    resourceType: row.resourceType,
+    resourceId: row.resourceId,
+    resourceLabel: row.resourceLabel,
+    summary: row.summary,
+    linkPath: row.linkPath,
+    metadata: row.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : null,
+  };
+}
 
 /**
  * Manages the activity_events table — append-only event log with
@@ -135,7 +154,7 @@ export class ActivityService {
    * @param query - Pagination and filter parameters
    */
   async list(query: ListActivityQuery): Promise<ListActivityResponse> {
-    const { limit, before, categories, actorType, actorId, since } = query;
+    const { limit, before, categories, actorType, actorId, resourceId, since } = query;
     const conditions: SQL[] = [];
 
     if (before) {
@@ -150,6 +169,9 @@ export class ActivityService {
     }
     if (actorId) {
       conditions.push(eq(activityEvents.actorId, actorId));
+    }
+    if (resourceId) {
+      conditions.push(eq(activityEvents.resourceId, resourceId));
     }
     if (since) {
       conditions.push(gt(activityEvents.occurredAt, since));
@@ -166,31 +188,34 @@ export class ActivityService {
     const hasMore = rows.length > limit;
     const items = rows.slice(0, limit);
 
-    const mapped: ActivityItem[] = items.map((row) => ({
-      id: row.id,
-      occurredAt: row.occurredAt,
-      actorType: row.actorType as ActorType,
-      actorId: row.actorId,
-      actorLabel: row.actorLabel,
-      category: row.category as ActivityCategory,
-      eventType: row.eventType,
-      resourceType: row.resourceType,
-      resourceId: row.resourceId,
-      resourceLabel: row.resourceLabel,
-      summary: row.summary,
-      linkPath: row.linkPath,
-      metadata: row.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : null,
-    }));
-
     return {
-      items: mapped,
+      items: items.map(toActivityItem),
       nextCursor: hasMore && items.length > 0 ? items[items.length - 1].occurredAt : null,
     };
   }
 
   /**
+   * Read one event by its id, e.g. the permission change an Undo names.
+   *
+   * @param id - The event's ULID.
+   * @returns The event, or `undefined` when there is none (or it was pruned).
+   */
+  async get(id: string): Promise<ActivityItem | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(activityEvents)
+      .where(eq(activityEvents.id, id))
+      .limit(1);
+    return row ? toActivityItem(row) : undefined;
+  }
+
+  /**
    * Prune events older than the retention period.
    * Called at server startup and optionally by a Tasks schedule.
+   *
+   * The `permissions` category is exempt (spec `agent-permissions` D14): it is
+   * low volume, and a permission history that forgets cannot answer "who
+   * allowed this".
    *
    * @param retentionDays - Days to retain events (default 30)
    * @returns Number of deleted rows
@@ -201,7 +226,12 @@ export class ActivityService {
 
     const result = await this.db
       .delete(activityEvents)
-      .where(lt(activityEvents.occurredAt, cutoff.toISOString()));
+      .where(
+        and(
+          lt(activityEvents.occurredAt, cutoff.toISOString()),
+          ne(activityEvents.category, 'permissions')
+        )
+      );
 
     return result.changes;
   }

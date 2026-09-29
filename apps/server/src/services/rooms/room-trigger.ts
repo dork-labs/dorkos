@@ -138,14 +138,14 @@ import type {
   RoomWorkingClaim,
   SkippedTrigger,
 } from '@dorkos/shared/room-schemas';
-import type { RoomContextCanvas, RoomContextFiles } from '@dorkos/shared/additional-context';
+import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
-import { ACTIVITY_FANOUT_THROTTLE_MS } from '../session/index.js';
+import { ACTIVITY_FANOUT_THROTTLE_MS, isTurnInFlight } from '../session/index.js';
 import {
   selectTriggerTargets,
   standDownFallbackSeat,
@@ -194,14 +194,16 @@ import {
   type RoomCollection,
 } from './room-collect.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
-import { buildRoomContext } from './room-context.js';
-import { RoomWorktreeManager } from './repo/room-worktree-manager.js';
+import { agentFacingName, buildRoomContext, nameForAgents } from './room-context.js';
+import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import {
-  resolveSessionCwd,
-  sessionCwdDeps,
-  type ResolvedCwd,
-} from '../workspace/resolve-session-cwd.js';
-import { ensureRoomWorktreePath } from './repo/room-worktree-cwd.js';
+  resolveRoomTurnPlace,
+  roomTurnLaunchStep,
+  type RoomTurnLaunch,
+  type RoomTurnPlace,
+} from './repo/room-turn-place.js';
+import { editBaselineStore } from '../diff/index.js';
+import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   RoomNoticeLog,
   type CascadeStamp,
@@ -383,6 +385,10 @@ export interface RoomTriggerDeps {
   reactions: ReactionStore;
   authors: AuthorRegistry;
   agents: RoomAgentLookup;
+  /** Whether an author is the install's owner — see `RoomContextDeps.isOwnerAuthor`. */
+  isOwnerAuthor(authorId: string): boolean;
+  /** The operator's profile name — see `RoomContextDeps.operatorName`. */
+  operatorName?(): string | null;
   /**
    * What a room's turn is told about the chat it projects, or `null` when
    * unbridged. Read only by `buildRoomContext` — the dispatcher itself never
@@ -407,9 +413,10 @@ export interface RoomTriggerDeps {
   canvasFor(roomId: string, threadRootEntryId?: string): RoomContextCanvas | null;
   runner: RoomTurnRunner;
   /**
-   * The install's room-worktree manager, for placing a turn in a project room
-   * (spec §3.5). Optional: an install with no repo machinery runs every turn in
-   * the agent's own directory, which is what a room did before this existed.
+   * The install's room-worktree manager, for granting a turn in a project room
+   * its agent's copy of the room's files (spec `agent-home-desk` §5.1).
+   * Optional: an install with no repo machinery grants nothing, and every turn
+   * runs in the agent's own directory either way.
    */
   worktrees?: () => RoomWorktreeManager | null;
   writer: RoomTriggerWriter;
@@ -465,6 +472,16 @@ export interface RoomTriggerDeps {
    * Settings binds the very next sweep.
    */
   holdCeilingMs(): number;
+  /**
+   * How many turns one agent may run in its own directory at once —
+   * `rooms.maxConcurrentTurnsPerAgent`, the count behind the second claim
+   * ceiling (see `claimBusyWith`).
+   *
+   * Read at every claim decision rather than captured, so raising it in
+   * Settings lets the very next message start, and lowering it holds the very
+   * next one — without stopping any turn already running.
+   */
+  maxConcurrentTurnsPerAgent(): number;
   /**
    * Put one agent's working state on the room's stream — live only, never
    * logged.
@@ -717,7 +734,11 @@ export class RoomTriggerDispatcher {
 
   constructor(deps: RoomTriggerDeps) {
     this.deps = deps;
-    this.notices = new RoomNoticeLog({ writer: deps.writer, authors: deps.authors });
+    this.notices = new RoomNoticeLog({
+      writer: deps.writer,
+      authors: deps.authors,
+      nameForAgents: (authorId) => nameForAgents(deps, authorId, { sentenceStart: true }),
+    });
     this.collector = new RoomCollector({
       window: deps.collect,
       run: (batch) => this.runCollected(batch),
@@ -795,6 +816,14 @@ export class RoomTriggerDispatcher {
     candidate: TriggerCandidate,
     arrivedAt: number
   ): void {
+    // Older waits first. A raised `rooms.maxConcurrentTurnsPerAgent` frees a
+    // slot with no turn ending, and until the next republish beat nothing has
+    // re-armed the messages already waiting for this agent — so a message sent
+    // now would take the slot ahead of one that has waited minutes. Re-arming
+    // them here, before this message is decided, puts them in the sweep first:
+    // armed from THIS message's `arrivedAt`, they are due no later than it, so
+    // they share its sweep and the sweep takes the oldest.
+    this.resumeFreedHolds(candidate.agentPath, arrivedAt);
     const busyWith = this.busyWith(room.id, candidate.authorId, candidate.agentPath);
     const opened = this.collector.collect({
       room,
@@ -2150,27 +2179,25 @@ export class RoomTriggerDispatcher {
     // this frame at all, so its outcome is that method's to report.
     let outcome: ClaimOutcome = 'quiet';
     try {
-      // **Where this turn runs, decided before anything describes it.** The
-      // context below names attachment paths relative to this directory and the
-      // runner puts the files there, so it has to be settled first — see
-      // `resolveCwd` below. For a room with no files of its own the answer is
-      // `target.agentPath`, unchanged.
-      const { cwd, files } = await this.resolveTurnPlace(
-        room.id,
-        target.agentPath,
-        target.displayName
-      );
+      // **Where this turn runs, decided before anything describes it.** Always
+      // the agent's home (spec `agent-home-desk` §5.1), with the room's folders
+      // granted when it has files of its own — and the files section measured
+      // against the copy it is granted. The context below names attachment
+      // paths relative to `cwd` and the runner puts the files there.
+      const place = await this.placeTurn(room.id, target.agentPath, target.displayName);
+      const { cwd } = place;
+      const files = place.files ?? undefined;
       // Built before the request so the context and the projection plan it
       // implies are one value, resolved once.
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: target.authorId,
-        // What this room's files hold for this agent, measured against the tree
-        // the line above just chose. Absent for every room without files of its
+        // What this room's files hold for this agent, measured against the copy
+        // the line above granted. Absent for every room without files of its
         // own, which renders nothing (spec §3.7).
         files,
-        // The tree the turn below runs in, so a file the context names is named
-        // by a path that opens from where the agent actually stands (DOR-1266).
+        // The folder the turn below runs in, so a file the context names is
+        // named by a path that opens from where the agent stands (DOR-1266).
         // The same value reaches the runner as `cwd` a few lines down.
         cwd,
         entry,
@@ -2199,9 +2226,12 @@ export class RoomTriggerDispatcher {
         room,
         authorId: target.authorId,
         agentPath: target.agentPath,
-        // Identity above, files here — the same value the context was built
-        // against, never resolved a second time.
+        // The agent's home, the same value the context was built against —
+        // never resolved a second time — and the room's folders it may reach.
         cwd,
+        additionalDirectories: place.additionalDirectories,
+        worktree: place.worktree,
+        ...this.launchStepFor(room.id, target.authorId, target.agentPath, place),
         sessionId: target.sessionId,
         entry,
         // **Who wrote it, as a trust boundary** — see `RoomTurnRequest`. Read
@@ -2777,14 +2807,16 @@ export class RoomTriggerDispatcher {
       sessionId: input.sessionId,
     });
     try {
-      // An aside turn is a real turn in a real checkout, so it is placed the
-      // same way an ordinary one is — see `runOneInDispatch`.
-      const { cwd, files } = await this.resolveTurnPlace(room.id, input.agentPath, displayName);
+      // An aside turn is a real turn, so it is placed the same way an ordinary
+      // one is — see `runOneInDispatch`.
+      const place = await this.placeTurn(room.id, input.agentPath, displayName);
+      const { cwd } = place;
+      const files = place.files ?? undefined;
       const turnContext = buildRoomContext(this.deps, {
         room,
         agentAuthorId: authorId,
         cwd,
-        // An aside runs in the same tree an ordinary turn does, so it is told
+        // An aside is granted the same copy an ordinary turn is, so it is told
         // the same thing about the room's files.
         files,
         entry,
@@ -2814,6 +2846,9 @@ export class RoomTriggerDispatcher {
         authorId,
         agentPath: input.agentPath,
         cwd,
+        additionalDirectories: place.additionalDirectories,
+        worktree: place.worktree,
+        ...this.launchStepFor(room.id, authorId, input.agentPath, place),
         sessionId: input.sessionId,
         entry,
         // Never external: `entry` here is the greeter's own status post, written
@@ -2824,8 +2859,8 @@ export class RoomTriggerDispatcher {
         attachmentProjection: turnContext.projection,
         onWaiting: (waiting) =>
           this.notices.reportWaiting(room, entry, { authorId, displayName }, waiting),
-        // An aside turn holds a real claim in a real checkout, so it reports
-        // what it is doing like any other turn.
+        // An aside turn holds a real claim, so it reports what it is doing like
+        // any other turn.
         onActivity: (activity) => this.noteActivity(key, activity),
         onSessionBound: (id) => this.noteSessionBound(room.id, authorId, id),
       });
@@ -3467,9 +3502,11 @@ export class RoomTriggerDispatcher {
    * turn it is waiting for is about to start, and `holdClaim` resolves it then.
    *
    * @param agentPath - The working directory whose claim just released.
+   * @param from - The clock reading to arm from, passed through to
+   *   {@link RoomCollector.resumeAgent}. Omitted means now.
    */
-  private resumeElsewhere(agentPath: string): void {
-    this.collector.resumeAgent(agentPath);
+  private resumeElsewhere(agentPath: string, from?: number): void {
+    this.collector.resumeAgent(agentPath, from);
     for (const record of this.held.values()) {
       if (record.agentPath !== agentPath) continue;
       const busy = this.busyWith(record.roomId, record.authorId, record.agentPath);
@@ -3477,6 +3514,47 @@ export class RoomTriggerDispatcher {
       record.behindRoomId = busy.blocking.roomId;
       this.publishHold(record, 'held');
     }
+  }
+
+  /**
+   * Re-arm the waits whose agent has room for another turn without any turn
+   * having ended — which only a raised `rooms.maxConcurrentTurnsPerAgent` does.
+   *
+   * A held collection is otherwise re-armed by a claim RELEASING
+   * ({@link RoomTriggerDispatcher.resumeElsewhere}), which is the only event
+   * that frees a slot while the limit stands still. Raising the limit in
+   * Settings frees one too, and without this the message that had been waiting
+   * longest would sit parked behind a turn it no longer needs to wait for —
+   * while a message sent a second later started at once. Riding the republish
+   * tick bounds that to one beat; the tick is running, because a hold cannot
+   * exist without a claim.
+   *
+   * Nothing is decided here: re-arming routes each collection back through
+   * `claimCollected`, which asks the ceiling again and re-parks any that still
+   * do not fit.
+   *
+   * Also called by {@link RoomTriggerDispatcher.collectOne} for the one agent a
+   * fresh message is for, which is what keeps the order first-come: without it,
+   * a message sent inside that beat would take the freed slot ahead of one that
+   * had been waiting.
+   *
+   * @param onlyPath - Consider only this agent's waits. Omitted on the beat,
+   *   which considers every agent's.
+   * @param from - The clock reading to arm the waits from. `collectOne` passes
+   *   the fresh message's `arrivedAt`, so the re-armed waits are due no later
+   *   than it and share its sweep, oldest first; a later reading could put
+   *   them one millisecond behind and let the fresh message take the slot.
+   */
+  private resumeFreedHolds(onlyPath?: string, from?: number): void {
+    const freed = new Set<string>();
+    for (const record of this.held.values()) {
+      if (onlyPath !== undefined && record.agentPath !== onlyPath) continue;
+      if (freed.has(record.agentPath)) continue;
+      if (this.busyWith(record.roomId, record.authorId, record.agentPath) === null) {
+        freed.add(record.agentPath);
+      }
+    }
+    for (const agentPath of freed) this.resumeElsewhere(agentPath, from);
   }
 
   /**
@@ -3694,11 +3772,17 @@ export class RoomTriggerDispatcher {
   /**
    * What one hold is waiting behind, as the wire carries it.
    *
-   * An id and a boolean, and no more: the reader may not be a member of the room
-   * in the way, so the name is resolved on the client against the rooms it can
-   * already see. `othersWaiting` is a boolean rather than a count because it
+   * An id and two booleans, and no more: the reader may not be a member of the
+   * room in the way, so the name is resolved on the client against the rooms it
+   * can already see. `othersWaiting` is a boolean rather than a count because it
    * exists only to decide whether "Answer here first" would change anything —
    * a count would let a reader enumerate rooms it cannot see.
+   *
+   * `severalInTheWay` is the same shape for the same reason. Once an agent may
+   * work in more than one conversation at once (`rooms.maxConcurrentTurnsPerAgent`),
+   * the room named is only the turn that has run longest, and whichever of its
+   * turns finishes first can be the one that lets this message start — so the
+   * sentence must not promise the named one (DOR-2104).
    *
    * @param record - The hold being described.
    */
@@ -3709,7 +3793,11 @@ export class RoomTriggerDispatcher {
       othersWaiting = true;
       break;
     }
-    return { roomId: record.behindRoomId, othersWaiting };
+    let running = 0;
+    for (const claim of this.claimed.values()) {
+      if (claim.agentPath === record.agentPath) running += 1;
+    }
+    return { roomId: record.behindRoomId, othersWaiting, severalInTheWay: running > 1 };
   }
 
   /**
@@ -3746,6 +3834,7 @@ export class RoomTriggerDispatcher {
     // Before the re-state, so nothing that has outlived the room's patience is
     // announced one more time on its way out.
     this.expireHolds();
+    this.resumeFreedHolds();
     const rooms = new Set<string>();
     for (const claim of this.claimed.values()) {
       this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
@@ -3949,82 +4038,101 @@ export class RoomTriggerDispatcher {
    *   way, or `null` when it is doing nothing.
    */
   private busyWith(roomId: string, authorId: string, agentPath: string): ClaimBusy | null {
-    return claimBusyWith(this.claimed, roomId, authorId, agentPath);
+    return claimBusyWith(
+      this.claimed,
+      roomId,
+      authorId,
+      agentPath,
+      this.deps.maxConcurrentTurnsPerAgent()
+    );
   }
 
   /**
    * Where this turn runs, and what to tell it about the room's files.
    *
-   * **One call, because the two answers are one decision.** The directory is
-   * resolved first and the files section is measured against what came back, so
-   * the block can never describe a tree the turn is not standing in. Every turn
-   * boundary in this file goes through here rather than through
-   * {@link RoomTriggerDispatcher.resolveCwd} directly, so an ordinary turn and a
-   * welcome-back aside are placed and described identically.
+   * **One call, because the answers are one decision.** The turn stands in the
+   * agent's home; a room with files of its own also grants the agent's copy of
+   * them and describes that copy — measured against the folder actually
+   * granted, so the block can never describe a copy the turn cannot reach.
+   * Every turn boundary in this file goes through here, so an ordinary turn
+   * and a welcome-back aside are placed and described identically.
    *
-   * **The files half never fails a turn.** A room whose repo cannot be measured
-   * renders no files section, which is byte-identical to a room that has none —
-   * and a room with no files of its own does not resolve on the worktree rung at
-   * all, so it never asks.
+   * **`agentPath` is both identity and desk now** (spec `agent-home-desk` §5.1):
+   * the claim map, both busy ceilings and the runtime lookup key on it, and it
+   * is where the turn stands. An agent working in room A still blocks its own
+   * turn in room B.
+   *
+   * Never fails a turn: a room whose files cannot be opened is answered at home
+   * with no files section, byte-identical to a room that has none.
    *
    * @param roomId - The room being answered.
-   * @param agentPath - The agent's directory — its identity, and the floor.
-   * @param displayName - The label the room shows for this agent.
-   * @returns The directory the turn runs in, and the files section for it.
+   * @param agentPath - The agent's home.
+   * @param displayName - The label the room shows for this agent; the readable
+   *   half of its copy's folder name and nothing else.
    */
-  private async resolveTurnPlace(
+  private placeTurn(
     roomId: string,
     agentPath: string,
     displayName: string
-  ): Promise<{ cwd: string; files?: RoomContextFiles }> {
-    const resolved = await this.resolveCwd(roomId, agentPath, displayName);
-    // The rung IS the question "did this turn land in the room's files", already
-    // answered once by the resolver. Asking the manager again would be a second
-    // answer that can disagree with the directory the turn is about to use.
-    if (resolved.rung !== 'room-worktree') return { cwd: resolved.cwd };
-    const worktrees = this.deps.worktrees?.();
-    if (!worktrees) return { cwd: resolved.cwd };
-    const files = await worktrees.turnFilesContext(roomId, agentPath, displayName, resolved.cwd);
-    return { cwd: resolved.cwd, ...(files ? { files } : {}) };
+  ): Promise<RoomTurnPlace> {
+    return resolveRoomTurnPlace(this.deps.worktrees?.(), roomId, agentPath, displayName);
   }
 
   /**
-   * Where one agent's turn in this room runs — the `room-worktree` rung.
+   * The launch-time step for a turn granted a copy of the room's files, as the
+   * runner hands it to the dispatcher — or nothing for a room without files.
    *
-   * **The room's own turn boundary, and the one place this domain names the
-   * session-cwd resolver.** A room turn begins here, so this is where its
-   * directory is decided — once, through the same resolver every other turn
-   * boundary uses, so there is exactly one precedence chain and one `[cwd]
-   * resolved` log line on the install (`resolve-session-cwd.ts`, spec
-   * `project-rooms` §3.5). The room supplies the one collaborator only it can:
-   * how to make a worktree.
+   * Built here because this is where the room's session bindings and its
+   * worktree manager are: it must not touch the copy while another session
+   * bound to this (room, agent) has a turn in flight (`roomTurnLaunchStep`).
    *
-   * **`agentPath` is untouched by any of this.** It goes on carrying identity:
-   * the claim map, both busy ceilings and the runtime lookup all key on it, and
-   * spec §5 Q6 settles that none of them relaxes because a turn now runs
-   * somewhere else. An agent working in room A's worktree still blocks its own
-   * turn in room B.
-   *
-   * @param roomId - The room being answered.
-   * @param agentPath - That agent's directory — its identity, and the floor.
-   * @param displayName - The label the room already shows for this agent; the
-   *   readable half of its worktree directory name and nothing else. Identity is
-   *   the digest of `agentPath` ({@link RoomWorktreeManager.slugFor}), so a
-   *   rename costs a new working copy and never somebody else's.
-   * @returns The directory the turn runs in, and the rung that chose it.
+   * @param roomId - The room.
+   * @param authorId - The agent's author id in it.
+   * @param agentPath - The agent's home.
+   * @param place - Where the turn was placed.
    */
-  private resolveCwd(roomId: string, agentPath: string, displayName: string): Promise<ResolvedCwd> {
-    return resolveSessionCwd(
-      { agentPath, room: { roomId, agentName: displayName } },
-      sessionCwdDeps({
-        // The seam is shared with the app-resume path rather than written twice
-        // (`room-worktree-cwd.ts`, DOR-1624): the two ways one room conversation
-        // can take a turn have to translate "this room has no files" the same
-        // way, or the same session resolves two different directories.
-        ensureRoomWorktree: (id, dir, name) =>
-          ensureRoomWorktreePath(this.deps.worktrees?.(), id, dir, name),
-      })
-    );
+  private launchStepFor(
+    roomId: string,
+    authorId: string,
+    agentPath: string,
+    place: RoomTurnPlace
+  ): { prepareLaunch?: (sessionId: string) => Promise<RoomTurnLaunch> } {
+    const worktrees = this.deps.worktrees?.();
+    if (!worktrees || place.worktree === null) return {};
+    return {
+      prepareLaunch: roomTurnLaunchStep(
+        {
+          // The id the binding holds, and every retired id that still resolves
+          // to it: an app-resumed turn on an old id is granted the same copy.
+          boundSessionIds: () => {
+            const bound = this.deps.store.getRoomSession(roomId, authorId);
+            return bound ? [bound, ...this.deps.store.sessionLedger.retiredIdsFor(bound)] : [];
+          },
+          isTurnInFlight: async (sessionId) =>
+            isTurnInFlight(sessionId, await runtimeRegistry.resolveForSession(sessionId)),
+          worktrees,
+          // Named from the room log, never from git (spec `agent-home-desk` §6.2).
+          describeCommits: (shas) => {
+            const named = new Map<string, { kind: 'merge' | 'person'; who: string | null }>();
+            for (const [sha, note] of this.deps.store.commitAnnouncements(roomId, shas)) {
+              const subject = note.subjectAuthorId;
+              const stored = subject === null ? null : this.deps.authors.getById(subject);
+              // The owner by their own name, never the registry's 'You' (DOR-2458).
+              const who =
+                subject === null || !stored
+                  ? null
+                  : agentFacingName(this.deps, subject, stored.displayName);
+              named.set(sha, { kind: note.kind, who });
+            }
+            return named;
+          },
+          forgetBaselines: (sessionIds, absPaths) => {
+            for (const sessionId of sessionIds) editBaselineStore.forget(sessionId, absPaths);
+          },
+        },
+        { roomId, worktree: place.worktree, agentPath, files: place.files }
+      ),
+    };
   }
 
   /**

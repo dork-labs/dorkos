@@ -96,6 +96,24 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     title: 'While you were away: 2 turns finished',
     summary: '2 turns finished. 1 run finished.',
   },
+  'account.limited': {
+    sessionId: 'sess-1',
+    agentId: 'agent-1',
+    sessionLabel: 'dorkos',
+    accountId: 'work',
+    accountLabel: 'Work',
+    window: 'seven_day',
+    resetsAt: '2026-08-24T20:00:00.000Z',
+    since: '2026-08-20T03:12:00.000Z',
+  },
+  'account.reset': {
+    sessionId: 'sess-1',
+    accountId: 'work',
+    accountLabel: 'Work',
+    pausedCount: 3,
+    resetsAt: '2026-08-24T20:00:00.000Z',
+    resetConfirmedAt: '2026-08-24T20:01:00.000Z',
+  },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -114,6 +132,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'signin.required': 'blocking',
   'update.installed': 'quiet',
   'report.daily': 'quiet',
+  'account.limited': 'notable',
+  'account.reset': 'notable',
 };
 
 /**
@@ -186,6 +206,8 @@ describe('notification registry', () => {
     // `emitters/shift-report.ts` (DOR-1389) — and each carries a comment at
     // its entry saying so.
     expect([...WIRED_NOTIFICATION_KINDS].sort()).toEqual([
+      'account.limited',
+      'account.reset',
       'agent.note',
       'agent.unreachable',
       'approval.pending',

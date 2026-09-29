@@ -17,7 +17,7 @@ import { Slot } from 'radix-ui';
 import { cn } from '@/layers/shared/lib';
 import type { IdentityOrigin } from '@/layers/shared/lib';
 import type { MessageAuthor as MessageAuthorIdentity } from '@/layers/shared/model';
-import { OriginMark } from '@/layers/entities/room';
+import { OriginMark, RetiredMark } from '@/layers/entities/room';
 import { formatAbsoluteTime, formatTime } from '../../lib/format-entry-time';
 import { opensAuthorGroup, useMessageStyles } from './message-styles-context';
 
@@ -40,7 +40,10 @@ export interface MessageAuthorProps {
   className?: string;
 }
 
-/** The name, the origin mark, and the time — or nothing, on a continuation. */
+/**
+ * The name, the origin mark, the retired mark when the author is an agent no
+ * longer on the team (DOR-2095), and the time — or nothing, on a continuation.
+ */
 export function MessageAuthor({
   id,
   author,
@@ -60,6 +63,7 @@ export function MessageAuthor({
     <Comp id={id} data-slot="message-author" className={cn(slots.header(), className)}>
       <span className={slots.authorName()}>{author.displayName}</span>
       {origin !== undefined && <OriginMark origin={origin} />}
+      <RetiredMark retired={author.retired} />
       {time.length > 0 && (
         <time
           dateTime={at}

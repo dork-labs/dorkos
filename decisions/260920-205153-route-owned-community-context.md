@@ -1,7 +1,7 @@
 ---
 id: 260920-205153
 title: Route-owned Community context with keyed privacy boundaries
-status: draft
+status: accepted
 created: 2026-09-20
 spec: community-switcher-navigation
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: community-switcher-navigation)
+Accepted (extracted from spec: community-switcher-navigation)
 
 ## Context
 

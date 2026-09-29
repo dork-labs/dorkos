@@ -18,6 +18,14 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+    skippedLinks: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -204,6 +212,33 @@ describe('PermissionPreviewSection', () => {
     expect(screen.getByText('Runs before the agent uses a tool (Bash)')).toBeInTheDocument();
   });
 
+  it("keeps a multi-line skill command's lines apart, so two commands never read as one (DOR-2327)", () => {
+    // Purpose: a ```! block is a script; collapsing its newline into a space
+    // turned `git log -5` and `git status` into one misleading line.
+    const preview = makePreview({
+      skillCommands: [
+        {
+          source: 'skills/ctx/SKILL.md',
+          skill: 'ctx',
+          form: 'block',
+          command: 'git log --oneline -5\ngit status --short',
+          usesArguments: false,
+        },
+      ],
+    });
+
+    render(<PermissionPreviewSection preview={preview} />);
+
+    const code = screen.getByText(
+      (_, el) =>
+        el?.tagName === 'CODE' && el.textContent === 'git log --oneline -5\ngit status --short'
+    );
+    expect(code).toHaveClass('whitespace-pre-wrap');
+    expect(
+      screen.getByText('Runs when the skill "ctx" is used (skills/ctx/SKILL.md)')
+    ).toBeInTheDocument();
+  });
+
   it('says a hook declaration was unreadable rather than showing nothing', () => {
     const preview = makePreview({
       unreadableHooks: [{ path: 'hooks/hooks.json' }],
@@ -355,7 +390,7 @@ describe('PermissionPreviewSection', () => {
 
     const warning = screen.getByText('1 file lands outside /Users/kai/.dork.');
     expect(warning).toBeInTheDocument();
-    expect(warning.closest('li')?.className).toMatch(/amber/);
+    expect(warning.closest('li')?.className).toContain('text-status-warning-fg');
   });
 
   it('makes no containment claim when no install folder is given', () => {
@@ -431,7 +466,7 @@ describe('PermissionPreviewSection', () => {
     // The heading uses amber/warning colour — we assert on the className.
     const heading = screen.getByText('Conflicts');
     expect(heading).toBeInTheDocument();
-    expect(heading.className).toMatch(/amber/);
+    expect(heading.className).toContain('text-status-warning-fg');
     expect(screen.getByText(/a package with this name already exists/i)).toBeInTheDocument();
   });
 

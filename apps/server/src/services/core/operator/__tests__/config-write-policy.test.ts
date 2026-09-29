@@ -21,11 +21,25 @@ import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
   OPERATOR_ONLY_STAKES,
-  REQUIRES_LOGIN_CONFIG_PATHS,
-  findLoginRequiredPaths,
   findOperatorOnlyPaths,
   describeOperatorOnlyRefusal,
+  operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
+
+/**
+ * A patch that writes exactly one policy path, `[]` segments turned into a
+ * one-element list, so the guard sees it the way a real patch reaches it.
+ */
+function pathPatch(path: string): Record<string, unknown> {
+  const segments = path.split('.');
+  let value: unknown = 'x';
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    const segment = segments[i]!;
+    if (segment.endsWith('[]')) value = { [segment.slice(0, -2)]: [value] };
+    else value = { [segment]: value };
+  }
+  return value as Record<string, unknown>;
+}
 
 describe('CONFIG_WRITE_POLICY drift guard', () => {
   it('classifies every leaf of UserConfigSchema', () => {
@@ -53,26 +67,17 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // it publishes a card describing every agent here and opens an address
       // outside clients post work to (DOR-1304).
       'a2a.enabled',
-      // The four tool-group switches. Carried across a config wipe, so the
-      // wipe floor makes them operator-only: an agent could otherwise undo a
-      // narrowing the person made to its own tool groups (DOR-1497). They feed
-      // the context blocks rather than tool access — see the module doc.
-      'agentContext.adapterTools',
-      'agentContext.meshTools',
-      'agentContext.relayTools',
-      'agentContext.tasksTools',
       'agents.defaultDirectory',
-      'approvals.standingGrants',
-      'approvals.standingGrantsVoidBefore',
-      'approvals.trustWindowMinutes',
       'auth.enabled',
       'cloud.instanceName',
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
+      'cloud.previousLinkProof',
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].transport',
       'connectors.rawMcpServers[].url',
+      'extensions.approvedSources',
       'extensions.approvedToRun',
       'extensions.disabled',
       'extensions.enabled',
@@ -102,6 +107,12 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'notifications.sounds.allClear',
       'notifications.sounds.knock',
       'notifications.sounds.turnEnd',
+      // What agents may do. The generic writers refuse these outright; this is
+      // the second line (spec `agent-permissions` D10).
+      'permissions.defaults.actions',
+      'permissions.defaults.areas',
+      'permissions.preset',
+      'permissions.upgradeSweptVersion',
       // The record of WHO wrote the display name, not the name itself — which
       // stays agent-writable, because DorkBot saving "call me Dorian" is the
       // onboarding flow (DOR-1022). An agent able to write these could stamp its
@@ -120,6 +131,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
       'rooms.maxCanvasOpsPerTurn',
+      'rooms.maxConcurrentTurnsPerAgent',
       'rooms.maxPostsPerTurn',
       'rooms.maxTurnsPerAgentPerCascade',
       // A room's own files: whether they exist at all, and the bounds a merge
@@ -132,11 +144,16 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.repo.worktreeReapDays',
       'rooms.responseGate',
       'rooms.turnLimitsEnabled',
+      'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',
       'runtimes.claudeCode.defaultAccount',
+      'runtimes.claudeCode.defaultAccountColor',
       'runtimes.claudeCode.defaultTrustStop',
+      // Which found account folders Settings stops offering: it curates the
+      // roster, and its only writer is the dismiss route (claude-account-ui §7.4).
+      'runtimes.claudeCode.dismissedFolders',
       // Not for the reason its neighbours are here: warm sessions are
       // safety-neutral and cost memory. It is the wipe floor — a person who
       // turned it off wanted the gigabyte back, and the Control Center's 'Warm
@@ -211,6 +228,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'mcp.apiKey',
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
+      'cloud.previousLinkProof',
       'runtimes.codex.credentialRef',
       'providers',
     ];
@@ -268,72 +286,6 @@ describe('the wipe floor: the write policy is at least as protective as recovery
     for (const { path } of PROTECTIVE_CARRYOVERS) {
       expect(findOperatorOnlyPaths(patchForPath(path)), `unguarded: ${path}`).toContain(path);
     }
-  });
-});
-
-describe('REQUIRES_LOGIN_CONFIG_PATHS drift guard', () => {
-  it('covers every leaf of the approvals subtree', () => {
-    // A third `approvals.*` setting added later must not get the weaker bar just
-    // by existing. `operator-only` alone does not cover it: on `PATCH /api/config`
-    // that check allows any caller while login is off, which would leave the new
-    // setting pre-armable by an agent for the day the person turns login on.
-    const approvalsLeaves = configSchemaLeafPaths().filter(
-      (p) => p === 'approvals' || p.startsWith('approvals.')
-    );
-    expect(approvalsLeaves.length).toBeGreaterThan(0);
-    expect(approvalsLeaves.filter((p) => !REQUIRES_LOGIN_CONFIG_PATHS.includes(p))).toEqual([]);
-  });
-
-  it('lists nothing that is not a leaf of UserConfigSchema', () => {
-    const schemaLeaves = new Set(configSchemaLeafPaths());
-    expect(REQUIRES_LOGIN_CONFIG_PATHS.filter((p) => !schemaLeaves.has(p))).toEqual([]);
-  });
-
-  it('requires the stricter bar only on top of the operator-only one', () => {
-    // The login requirement is an ADDITION, never a substitution. A path that
-    // needed login but was agent-writable would be reachable from the capability
-    // surface with no bar at all.
-    for (const dotPath of REQUIRES_LOGIN_CONFIG_PATHS) {
-      expect(CONFIG_WRITE_POLICY[dotPath as keyof typeof CONFIG_WRITE_POLICY]).toBe(
-        'operator-only'
-      );
-    }
-  });
-});
-
-describe('findLoginRequiredPaths', () => {
-  it('catches the exact leaf', () => {
-    expect(findLoginRequiredPaths({ approvals: { standingGrants: true } })).toEqual([
-      'approvals.standingGrants',
-    ]);
-  });
-
-  it('catches a patch that stops SHORT of the guarded leaf', () => {
-    // `{ approvals: true }` never reaches a leaf as a dot-path, so a plain
-    // equality check would wave it through to the merge.
-    expect(findLoginRequiredPaths({ approvals: true })).toEqual([
-      'approvals.standingGrants',
-      'approvals.standingGrantsVoidBefore',
-      'approvals.trustWindowMinutes',
-    ]);
-    expect(findLoginRequiredPaths({ approvals: {} })).toEqual([
-      'approvals.standingGrants',
-      'approvals.standingGrantsVoidBefore',
-      'approvals.trustWindowMinutes',
-    ]);
-  });
-
-  it('catches the window as well as the switch', () => {
-    // Lengthening the window widens the same hole the switch opens.
-    expect(findLoginRequiredPaths({ approvals: { trustWindowMinutes: 1440 } })).toEqual([
-      'approvals.trustWindowMinutes',
-    ]);
-  });
-
-  it('leaves every other setting to the ordinary bar', () => {
-    expect(findLoginRequiredPaths({ auth: { enabled: false }, ui: { theme: 'dark' } })).toEqual([]);
-    expect(findLoginRequiredPaths(undefined)).toEqual([]);
-    expect(findLoginRequiredPaths([{ approvals: { standingGrants: true } }])).toEqual([]);
   });
 });
 
@@ -458,6 +410,16 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
     ).toEqual(['runtimes.claudeCode.accounts[].label', 'runtimes.claudeCode.accounts[].path']);
   });
 
+  it('keeps the whole account row operator-only, color included (DOR-2379)', () => {
+    // A color is cosmetic, but `accounts` is written as a whole array: a write
+    // that could set a color could also add or repoint an account.
+    expect(
+      findOperatorOnlyPaths({
+        runtimes: { claudeCode: { accounts: [{ id: 'a', color: '#000000' }] } },
+      })
+    ).toEqual(['runtimes.claudeCode.accounts[].color', 'runtimes.claudeCode.accounts[].id']);
+  });
+
   it('names only the element fields the patch actually writes', () => {
     expect(
       findOperatorOnlyPaths({ connectors: { rawMcpServers: [{ url: 'https://evil.test/mcp' }] } })
@@ -482,6 +444,7 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
       'connectors.rawMcpServers[].url',
     ]);
     expect(findOperatorOnlyPaths({ runtimes: { claudeCode: { accounts: [] } } })).toEqual([
+      'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].path',
@@ -659,19 +622,6 @@ describe('the array descent changes no other verdict (DOR-1113)', () => {
     }
   });
 
-  it('agrees with the pre-fix matcher on the login bar too', () => {
-    // `findLoginRequiredPaths` shares the matcher and guards no `[]` path, so it
-    // must come out of this change completely unmoved.
-    for (const dotPath of plainPaths) {
-      for (const patch of patchesFor(dotPath)) {
-        const legacy = legacyFindOperatorOnlyPaths(patch).filter((path) =>
-          REQUIRES_LOGIN_CONFIG_PATHS.includes(path)
-        );
-        expect(findLoginRequiredPaths(patch), `${dotPath}`).toEqual(legacy);
-      }
-    }
-  });
-
   it('is the ONLY thing that changed: the pre-fix matcher missed the list paths entirely', () => {
     // The bug, pinned as a fact about the old code rather than a story about it.
     for (const path of OPERATOR_ONLY_CONFIG_PATHS.filter((p) => p.includes('[]'))) {
@@ -820,23 +770,18 @@ describe('describeOperatorOnlyRefusal', () => {
     );
   });
 
-  it('describes a tool-group switch as what it is, and not as more', () => {
-    // Three ways to get this clause wrong, all guarded here. It is not `code`
-    // (nothing is loaded or attached) and not `reach` (nobody gets in) — and it
-    // must not promise ACCESS either, because `resolveToolConfig` feeds the
-    // context blocks and the tier gate is what decides what a tool may do.
-    const message = describeOperatorOnlyRefusal([
-      'agentContext.relayTools',
-      'agentContext.tasksTools',
-    ]);
-    expect(message).toContain(
-      'Which DorkOS tool groups your agents are told about: ' +
-        'agentContext.relayTools, agentContext.tasksTools.'
-    );
-    expect(message).not.toMatch(/who can reach this instance/i);
-    expect(message).not.toMatch(/which code this server runs/i);
-    // The overstatement this stake was split out to avoid.
-    expect(message).not.toMatch(/tools your agents (are given|may use)/i);
+  it('asks every operator-only setting in a floor area (spec agent-permissions D6)', () => {
+    // An agent's config patch touching one of these asks the person in that
+    // area on a card instead of bouncing off a flat refusal. A stake with no
+    // area would leave its settings decided in DorkOS settings, which is Ask on
+    // every preset but Allowed on an undecided install: never acceptable for a
+    // setting only a person may change.
+    for (const group of OPERATOR_ONLY_STAKES) {
+      expect(['safety', 'reach', 'permissions'], group.stake).toContain(group.area);
+    }
+    for (const path of OPERATOR_ONLY_CONFIG_PATHS) {
+      expect(operatorOnlyAreasForPatch(pathPatch(path)), path).toHaveLength(1);
+    }
   });
 
   it('describes a memory bound as a memory bound, not as a security control', () => {

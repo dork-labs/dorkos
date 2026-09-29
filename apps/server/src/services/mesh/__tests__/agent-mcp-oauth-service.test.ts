@@ -156,7 +156,6 @@ async function setupWorkspace(): Promise<string> {
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: SERVER,

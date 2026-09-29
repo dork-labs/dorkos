@@ -4,27 +4,26 @@ import { z } from 'zod';
 import {
   connectionOperationGrants,
   connections,
-  connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connectorProviderInstances,
-  sessionConnectionOverrides,
   and,
-  desc,
   eq,
   isNull,
   type Db,
 } from '@dorkos/db';
 import { stableStringify } from '@dorkos/shared/capabilities';
+import { checkConnectorArguments } from '@dorkos/shared/connector-arguments';
 import {
   ConnectorOperationRevisionSchema,
   type ConnectorExecutionTarget,
   type ConnectorOperationClassification,
   type ConnectorOperationRevision,
 } from '@dorkos/shared/connector-schemas';
-import type {
-  ConnectorExternalAccountRef,
-  ConnectorProvider,
+import {
+  type ConnectorExternalAccountRef,
+  type ConnectorProvider,
 } from '@dorkos/shared/connector-provider';
+import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import type { CapabilityPreflightResult } from '../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import type { ConnectorRegistry } from '../registry.js';
@@ -38,6 +37,15 @@ import {
   type ServerPrincipalProof,
 } from '../principal/server-principal.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
+import {
+  deriveConnectionReadiness,
+  registryWayHealth,
+  type ConnectionReadinessFacts,
+  type ConnectionWayHealthPort,
+} from '../readiness/connection-readiness.js';
+import { agentGrantScope, type AgentGrantDenial } from './agent-grant-scope.js';
+import { describeServiceAction } from './approval-service-action.js';
+import { managedAgentAccess } from './managed-agent-access.js';
 
 const CLASSIFICATION_BY_CAPABILITY = {
   'connectors.execute_read': 'read',
@@ -92,8 +100,18 @@ export interface AuthorizedConnectorExecution {
   readonly executionConfigGeneration: number;
   /** Usage payer derived from server-owned provider configuration. */
   readonly payer: 'operator_byo' | 'dorkos_managed';
-  /** Latest applied hosted agent-grant scope, present only for managed execution. */
+  /**
+   * The app, account, action and arguments in words, for an approval card.
+   * Read from the stored connection and action, never from the caller.
+   */
+  readonly serviceAction: ApprovalServiceAction;
+  /** Latest applied hosted grant scope, present only for managed execution. */
   readonly managedGrantScopeVersion?: number;
+  /**
+   * Which hosted grant scope `managedGrantScopeVersion` names: the agent's own,
+   * or the owner-wide every-agent scope (DOR-2439). Managed execution only.
+   */
+  readonly managedGrantSubject?: 'agent' | 'every_agent';
   /** Private hosted revision identity derived from the granted local immutable revision. */
   readonly managedHostedRevisionId?: string;
 }
@@ -102,6 +120,8 @@ interface ExecutionRow {
   connectionId: string;
   externalAccountRef: string;
   toolkit: string;
+  connectionLabel: string;
+  identityHint: string | null;
   connectionStatus: 'active' | 'expired' | 'revoked' | 'pending';
   lifecycleState: 'connected' | 'disconnected';
   enabled: boolean;
@@ -160,21 +180,67 @@ function authorityDigest(value: unknown): string {
   return createHash('sha256').update(stableStringify(value)).digest('hex');
 }
 
+/** What an agent reads when an account isn't ready but readiness can't name why. */
+const NOT_READY_FALLBACK =
+  'This account isn’t ready to use right now. Try again in a few minutes, and tell the person if it keeps happening.';
+
 /** SQLite-backed live connector authorization. */
 export class ConnectorExecutionAuthorizationService {
   private readonly preparedExecutions = new WeakSet<object>();
+  private readonly wayHealth: ConnectionWayHealthPort;
 
-  /** Construct the authorization service over canonical stores and live providers. */
+  /**
+   * Construct the authorization service over canonical stores and live providers.
+   *
+   * @param wayHealth - The live health of the way behind an account, for
+   *   refusals that say why it can't be used. Without it, only the registry is read.
+   */
   constructor(
     private readonly db: Db,
     private readonly registry: ConnectorRegistry,
-    private readonly agentOwnership: ConnectorAgentOwnershipPort
-  ) {}
+    private readonly agentOwnership: ConnectorAgentOwnershipPort,
+    wayHealth?: ConnectionWayHealthPort
+  ) {
+    this.wayHealth = wayHealth ?? registryWayHealth(registry);
+  }
+
+  /**
+   * Refuse a call on an account that isn't ready, with the readiness words for
+   * the agent: why, and what the person must do (DOR-2500).
+   */
+  private refuseNotReady(
+    code: string,
+    row: ExecutionRow,
+    extra: Partial<ConnectionReadinessFacts> = {}
+  ): never {
+    const readiness = deriveConnectionReadiness({
+      lifecycle:
+        row.lifecycleState === 'disconnected'
+          ? 'disconnected'
+          : row.enabled
+            ? 'connected'
+            : 'paused',
+      authenticationStatus: row.connectionStatus,
+      reconciliationStatus: row.reconciliationStatus,
+      mode: row.providerMode,
+      way: this.wayHealth(row.providerInstanceId),
+      ...extra,
+    });
+    if (readiness.state === 'ready') return refuse(code, NOT_READY_FALLBACK);
+    throw new CapabilityToolError({
+      error: readiness.copy.agent,
+      code,
+      reason: readiness.reason,
+    });
+  }
 
   /** Produce the authenticated preflight result consumed by the registry tier gate. */
   async preflight(input: PrepareConnectorExecutionInput): Promise<CapabilityPreflightResult> {
     const authorized = await this.prepare(input);
-    return { authorityBinding: authorized.authorityBinding };
+    return {
+      authorityBinding: authorized.authorityBinding,
+      approvalServiceAction: authorized.serviceAction,
+    };
   }
 
   /** Resolve the immutable capability id for a program target without accepting a caller override. */
@@ -287,6 +353,14 @@ export class ConnectorExecutionAuthorizationService {
       );
     }
     if (
+      row.lifecycleState === 'connected' &&
+      row.enabled &&
+      (row.connectionStatus === 'expired' || row.connectionStatus === 'revoked')
+    ) {
+      // The service said this sign-in ended; readiness names the one fix.
+      return this.refuseNotReady('CONNECTOR_SIGN_IN_ENDED', row);
+    }
+    if (
       row.lifecycleState !== 'connected' ||
       !row.enabled ||
       row.connectionStatus !== 'active' ||
@@ -295,10 +369,7 @@ export class ConnectorExecutionAuthorizationService {
       !row.executionConfigDigest ||
       row.executionConfigGeneration < 1
     ) {
-      return refuse(
-        'CONNECTOR_NOT_EXECUTABLE',
-        'The selected connection is not ready for execution.'
-      );
+      return this.refuseNotReady('CONNECTOR_NOT_EXECUTABLE', row);
     }
     const expectedClassification = CLASSIFICATION_BY_CAPABILITY[input.capabilityId];
     if (row.classification !== expectedClassification) {
@@ -313,7 +384,11 @@ export class ConnectorExecutionAuthorizationService {
         'The operation does not belong to this connection.'
       );
     }
-    if (!this.hasGrant(actor.agentId, actor.sessionId, input.target)) {
+    const granted = this.matchingGrants(actor.agentId, actor.sessionId, input.target);
+    if (granted.denied === 'detached') {
+      return this.refuseNotReady('CONNECTOR_GRANT_REQUIRED', row, { offForThisChat: true });
+    }
+    if (!granted.named && !granted.everyAgent) {
       return refuse(
         'CONNECTOR_GRANT_REQUIRED',
         'This agent is not granted the selected operation.'
@@ -323,16 +398,10 @@ export class ConnectorExecutionAuthorizationService {
       ConnectorOperationRevisionSchema.shape.providerInstanceId.parse(row.providerInstanceId)
     );
     if (!provider || provider.type !== row.providerType) {
-      return refuse(
-        'CONNECTOR_PROVIDER_UNAVAILABLE',
-        'The selected connection provider is unavailable.'
-      );
+      return this.refuseNotReady('CONNECTOR_PROVIDER_UNAVAILABLE', row);
     }
     if (provider.getCapabilities().capabilities.execution.status !== 'available') {
-      return refuse(
-        'CONNECTOR_EXECUTION_UNSUPPORTED',
-        'This provider does not support operation execution.'
-      );
+      return this.refuseNotReady('CONNECTOR_EXECUTION_UNSUPPORTED', row);
     }
     const managedHostedRevisionId =
       row.providerMode === 'managed'
@@ -345,15 +414,16 @@ export class ConnectorExecutionAuthorizationService {
       );
     }
     const argumentsValue = this.validateArguments(row.inputSchemaJson, input.target.arguments);
-    const managedGrantScopeVersion =
+    const managedAccess =
       row.providerMode === 'managed'
-        ? this.readAppliedManagedGrantScopeVersion(row.externalAccountRef, actor.agentId)
+        ? managedAgentAccess(this.db, row.externalAccountRef, actor.agentId, granted)
         : undefined;
-    if (row.providerMode === 'managed' && managedGrantScopeVersion === undefined) {
-      return refuse(
-        'CONNECTOR_MANAGED_AUTHORITY_PENDING',
-        'Managed connector access is still synchronizing.'
-      );
+    const managedGrantScopeVersion = managedAccess?.applied?.scopeVersion;
+    const managedGrantSubject = managedAccess?.applied?.subject;
+    if (managedAccess && managedGrantScopeVersion === undefined) {
+      return this.refuseNotReady('CONNECTOR_MANAGED_AUTHORITY_PENDING', row, {
+        authoritySync: managedAccess.sync,
+      });
     }
     const operation = ConnectorOperationRevisionSchema.parse({
       id: row.operationRevisionId,
@@ -375,6 +445,7 @@ export class ConnectorExecutionAuthorizationService {
       providerInstanceId: row.providerInstanceId,
       executionConfigGeneration: row.executionConfigGeneration,
       managedGrantScopeVersion,
+      managedGrantSubject,
       hostedRevisionId: managedHostedRevisionId?.success ? managedHostedRevisionId.data : undefined,
       operationRevisionId: row.operationRevisionId,
       arguments: argumentsValue,
@@ -399,35 +470,24 @@ export class ConnectorExecutionAuthorizationService {
         row.externalAccountRef as AuthorizedConnectorExecution['externalAccountRef'],
       operation,
       arguments: Object.freeze({ ...argumentsValue }),
+      serviceAction: describeServiceAction({
+        toolkit: row.toolkit,
+        connectionLabel: row.connectionLabel,
+        identityHint: row.identityHint,
+        operationSlug: row.operationSlug,
+        inputSchema: operation.inputSchema,
+        arguments: argumentsValue,
+      }),
       executionConfigGeneration: row.executionConfigGeneration,
       payer: row.providerMode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       ...(managedGrantScopeVersion === undefined ? {} : { managedGrantScopeVersion }),
+      ...(managedGrantSubject === undefined ? {} : { managedGrantSubject }),
       ...(managedHostedRevisionId?.success
         ? { managedHostedRevisionId: managedHostedRevisionId.data }
         : {}),
     });
     this.preparedExecutions.add(authorized);
     return authorized;
-  }
-
-  private readAppliedManagedGrantScopeVersion(
-    managedConnectionId: string,
-    agentId: string
-  ): number | undefined {
-    return this.db
-      .select({ scopeVersion: connectorManagedAuthorityOutbox.scopeVersion })
-      .from(connectorManagedAuthorityOutbox)
-      .where(
-        and(
-          eq(connectorManagedAuthorityOutbox.managedConnectionId, managedConnectionId),
-          eq(connectorManagedAuthorityOutbox.scopeKind, 'agent_grants'),
-          eq(connectorManagedAuthorityOutbox.subjectId, agentId),
-          eq(connectorManagedAuthorityOutbox.state, 'applied')
-        )
-      )
-      .orderBy(desc(connectorManagedAuthorityOutbox.scopeVersion))
-      .limit(1)
-      .get()?.scopeVersion;
   }
 
   private async resolveActor(
@@ -490,6 +550,8 @@ export class ConnectorExecutionAuthorizationService {
         connectionId: connections.id,
         externalAccountRef: connections.externalAccountRef,
         toolkit: connections.toolkit,
+        connectionLabel: connections.label,
+        identityHint: connections.identityHint,
         connectionStatus: connections.status,
         lifecycleState: connections.lifecycleState,
         enabled: connections.enabled,
@@ -536,62 +598,49 @@ export class ConnectorExecutionAuthorizationService {
     return row;
   }
 
-  private hasGrant(
+  /**
+   * Which live grants allow this agent this exact revision right now. Which
+   * grants count (a session override deciding alone, then the agent's own and
+   * "Every agent") is `agentGrantScope`, the one definition the agent request
+   * service shares. `named` covers the agent's own and its session's grants,
+   * `everyAgent` the owner-wide grant.
+   */
+  private matchingGrants(
     agentId: string,
     sessionId: string | undefined,
     target: ConnectorExecutionTarget
-  ): boolean {
-    let subjectScope = and(
-      eq(connectionOperationGrants.subjectType, 'agent'),
-      eq(connectionOperationGrants.subjectId, agentId)
-    );
-    if (sessionId) {
-      const override = this.db
-        .select({
-          state: sessionConnectionOverrides.state,
-          agentId: sessionConnectionOverrides.agentId,
-          needsReconciliation: sessionConnectionOverrides.needsReconciliation,
-        })
-        .from(sessionConnectionOverrides)
-        .where(
-          and(
-            eq(sessionConnectionOverrides.sessionId, sessionId),
-            eq(sessionConnectionOverrides.connectionId, target.connectionId)
-          )
+  ): { named: boolean; everyAgent: boolean; denied?: AgentGrantDenial } {
+    const scope = agentGrantScope(this.db, {
+      agentId,
+      sessionId,
+      connectionId: target.connectionId,
+    });
+    if (scope.kind === 'denied') return { named: false, everyAgent: false, denied: scope.reason };
+    const subjects = this.db
+      .select({ subjectType: connectionOperationGrants.subjectType })
+      .from(connectionOperationGrants)
+      .where(
+        and(
+          eq(connectionOperationGrants.connectionId, target.connectionId),
+          eq(connectionOperationGrants.operationRevisionId, target.operationRevisionId),
+          isNull(connectionOperationGrants.revokedAt),
+          scope.subject
         )
-        .get();
-      if (
-        override &&
-        (override.agentId !== agentId ||
-          override.needsReconciliation ||
-          override.state === 'detached')
-      ) {
-        return false;
-      }
-      if (override?.state === 'attached') {
-        subjectScope = and(
-          eq(connectionOperationGrants.subjectType, 'session'),
-          eq(connectionOperationGrants.subjectId, sessionId),
-          eq(connectionOperationGrants.agentId, agentId)
-        );
-      }
-    }
-    return Boolean(
-      this.db
-        .select({ id: connectionOperationGrants.id })
-        .from(connectionOperationGrants)
-        .where(
-          and(
-            eq(connectionOperationGrants.connectionId, target.connectionId),
-            eq(connectionOperationGrants.operationRevisionId, target.operationRevisionId),
-            isNull(connectionOperationGrants.revokedAt),
-            subjectScope
-          )
-        )
-        .get()
-    );
+      )
+      .all()
+      .map((row) => row.subjectType);
+    return {
+      named: subjects.some((subject) => subject !== 'every_agent'),
+      everyAgent: subjects.includes('every_agent'),
+    };
   }
 
+  /**
+   * The arguments exactly as the agent sent them, once they satisfy the
+   * operation's frozen input schema. Nothing is filled in, coerced or dropped:
+   * the digest binds, the audit records and the provider receives this very
+   * object, and the provider applies its own defaults (`checkConnectorArguments`).
+   */
   private validateArguments(
     inputSchemaJson: string,
     argumentsValue: Record<string, unknown>
@@ -599,28 +648,28 @@ export class ConnectorExecutionAuthorizationService {
     if (!isPlainJson(argumentsValue)) {
       return refuse('CONNECTOR_ARGUMENTS_INVALID', 'Connector arguments must be plain JSON data.');
     }
+    let inputSchema: unknown;
     try {
-      const schema = z.fromJSONSchema(JSON.parse(inputSchemaJson));
-      const parsed = schema.parse(argumentsValue);
-      if (
-        !isPlainJson(parsed) ||
-        typeof parsed !== 'object' ||
-        parsed === null ||
-        Array.isArray(parsed) ||
-        stableStringify(parsed) !== stableStringify(argumentsValue)
-      ) {
-        return refuse(
-          'CONNECTOR_ARGUMENTS_INVALID',
-          'Connector arguments must exactly match the immutable operation schema.'
-        );
-      }
-      return parsed as Record<string, unknown>;
-    } catch (error) {
-      if (error instanceof CapabilityToolError) throw error;
+      inputSchema = JSON.parse(inputSchemaJson);
+    } catch {
+      inputSchema = undefined;
+    }
+    const check =
+      inputSchema !== null && typeof inputSchema === 'object' && !Array.isArray(inputSchema)
+        ? checkConnectorArguments(inputSchema as Record<string, unknown>, argumentsValue)
+        : ({ ok: false, reason: 'schema_unreadable' } as const);
+    if (check.ok) return argumentsValue;
+    if (check.reason === 'schema_unreadable') {
       return refuse(
         'CONNECTOR_ARGUMENTS_INVALID',
-        'Connector arguments do not match the immutable operation schema.'
+        "This operation's input schema cannot be checked, so it cannot run."
       );
     }
+    return refuse(
+      'CONNECTOR_ARGUMENTS_INVALID',
+      check.problem
+        ? `Connector arguments do not match the operation's input schema: ${check.problem}.`
+        : "Connector arguments do not match the operation's input schema."
+    );
   }
 }

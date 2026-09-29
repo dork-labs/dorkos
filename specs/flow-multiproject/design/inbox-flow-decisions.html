@@ -1,0 +1,232 @@
+<h2>2 of 6 · Flow's items in the inbox, across projects</h2>
+<p class="subtitle">
+  Same row as the extension one you picked. Yes/no items get 👍 👎. Items that aren't yes/no get one
+  short word button instead. The question here: how do we show which project each item is for?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 13px/1.5 system-ui;
+  }
+  .ax-pop {
+    width: 380px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    color: #18181b;
+  }
+  .ax-pophead {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid #f4f4f5;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 12px;
+  }
+  .ax-cap {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    padding: 8px 14px 2px;
+  }
+  .ax-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px 8px 14px;
+  }
+  .ax-ico {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #f4f4f5;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #3f3f46;
+  }
+  .ax-t {
+    font-weight: 600;
+    font-size: 13px;
+    color: #18181b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ax-ib {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid #e4e4e7;
+    background: #fff;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #18181b;
+  }
+  .ax-wb {
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px solid #d4d4d8;
+    font-size: 12px;
+    background: #fff;
+    color: #18181b;
+    flex: none;
+  }
+  .ax-tag {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid #e4e4e7;
+    color: #3f3f46;
+    margin-right: 4px;
+  }
+  .ax-proj {
+    font-size: 11px;
+    font-weight: 600;
+    color: #3f3f46;
+    padding: 8px 14px 0;
+    display: flex;
+    justify-content: space-between;
+  }
+  .ax-hist {
+    opacity: 0.85;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A small project heading over its items (my pick)</h3>
+      <p>
+        Easy to scan when 3 projects need you at once. With only one project, the heading hides.
+      </p>
+      <div class="ax">
+        <div class="ax-pop">
+          <div class="ax-pophead">
+            <span>Activity</span><span class="ax-muted">3 need you</span>
+          </div>
+          <div class="ax-cap">Needs you</div>
+          <div class="ax-proj">
+            <span>dorkos</span><span class="ax-muted" style="font-weight: 400">Linear DOR</span>
+          </div>
+          <div class="ax-row">
+            <div class="ax-ico">✓</div>
+            <div style="flex: 1; min-width: 0">
+              <div class="ax-t">DOR-2387 is ready for your review</div>
+              <div class="ax-muted">PR #2303 · 12 min ago</div>
+            </div>
+            <span class="ax-ib">ⓘ</span><span class="ax-ib" title="Needs changes">👎</span
+            ><span class="ax-ib" title="Looks good">👍</span>
+          </div>
+          <div class="ax-row">
+            <div class="ax-ico">?</div>
+            <div style="flex: 1; min-width: 0">
+              <div class="ax-t">An agent asked: keep the old API?</div>
+              <div class="ax-muted">DOR-2401 · 40 min ago</div>
+            </div>
+            <span class="ax-wb">Answer</span>
+          </div>
+          <div class="ax-proj">
+            <span>blintz</span><span class="ax-muted" style="font-weight: 400">Linear BLZ</span>
+          </div>
+          <div class="ax-row">
+            <div class="ax-ico">⚠</div>
+            <div style="flex: 1; min-width: 0">
+              <div class="ax-t">Reconnect Linear for blintz</div>
+              <div class="ax-muted">Can't reach it since 09:14 · asked after 1h</div>
+            </div>
+            <span class="ax-wb">Reconnect</span>
+          </div>
+          <div class="ax-cap">Earlier</div>
+          <div class="ax-row ax-hist">
+            <div class="ax-ico">↺</div>
+            <div style="flex: 1; min-width: 0">
+              <div style="font-size: 12px">Linear came back for dorkos</div>
+              <div class="ax-muted">Resolved on its own at 11:02</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>A project tag on each row</h3>
+      <p>
+        No headings, newest first. Tighter, but with many projects your eye has to read every tag.
+      </p>
+      <div class="ax">
+        <div class="ax-pop">
+          <div class="ax-pophead">
+            <span>Activity</span><span class="ax-muted">3 need you</span>
+          </div>
+          <div class="ax-cap">Needs you</div>
+          <div class="ax-row">
+            <div class="ax-ico">✓</div>
+            <div style="flex: 1; min-width: 0">
+              <div class="ax-t">DOR-2387 is ready for your review</div>
+              <div class="ax-muted"><span class="ax-tag">dorkos</span>12 min ago</div>
+            </div>
+            <span class="ax-ib">ⓘ</span><span class="ax-ib">👎</span><span class="ax-ib">👍</span>
+          </div>
+          <div class="ax-row">
+            <div class="ax-ico">?</div>
+            <div style="flex: 1; min-width: 0">
+              <div class="ax-t">An agent asked: keep the old API?</div>
+              <div class="ax-muted"><span class="ax-tag">dorkos</span>40 min ago</div>
+            </div>
+            <span class="ax-wb">Answer</span>
+          </div>
+          <div class="ax-row">
+            <div class="ax-ico">⚠</div>
+            <div style="flex: 1; min-width: 0">
+              <div class="ax-t">Reconnect Linear for blintz</div>
+              <div class="ax-muted"><span class="ax-tag">blintz</span>asked after 1h</div>
+            </div>
+            <span class="ax-wb">Reconnect</span>
+          </div>
+          <div class="ax-cap">Earlier</div>
+          <div class="ax-row ax-hist">
+            <div class="ax-ico">↺</div>
+            <div style="flex: 1; min-width: 0">
+              <div style="font-size: 12px">Linear came back</div>
+              <div class="ax-muted">
+                <span class="ax-tag">dorkos</span>Resolved on its own at 11:02
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Same for both</h3>
+  <ul>
+    <li>
+      👎 on a review asks for a short note, then sends the work back. It never closes anything.
+    </li>
+    <li>
+      "Reconnect" shows up only after a problem lasts a while (here, 1 hour). It says so. If the
+      problem fixes itself, the row moves to Earlier as "Resolved on its own".
+    </li>
+    <li>One row per project and problem. A flaky connection never makes duplicates.</li>
+    <li>Items that aren't from flow (tool approvals, messages) look the same as today.</li>
+  </ul>
+</div>

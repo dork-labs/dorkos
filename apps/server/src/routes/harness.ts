@@ -26,11 +26,7 @@
  *
  * The response IS {@link buildHarnessStatus}'s status model, sent as-is — the
  * route reshapes nothing, so the page and the CLI can never describe one tree
- * two ways. Three of the model's four `state` values reach a caller here:
- * `ready`, `not-set-up` and `unreadable`. The fourth, `unavailable`, is never
- * produced by this route and never will be: it means a build with no harness
- * service at all, which is the Obsidian transport's answer rather than an HTTP
- * one, and `status.ts` says the same thing from the other side.
+ * two ways. Its three states are `ready`, `not-set-up` and `unreadable`.
  *
  * ## The one field the model does not compute
  *
@@ -41,8 +37,7 @@
  * can hand it, and putting the read inside would give the model a fact it could
  * not be tested against without a home directory. The server is where that root
  * is resolved, so the route asks for it and merges the answer in. `claudeOnly`
- * is therefore optional on the wire: the surfaces that cannot read a machine —
- * the Obsidian transport, which answers `state: 'unavailable'` — simply omit it.
+ * is therefore optional on the wire for callers that cannot read a machine.
  *
  * The read is TOTAL: an absent, unreadable or malformed settings file comes back
  * as the field's own `unreadable` record and never as a `500`. Losing a whole

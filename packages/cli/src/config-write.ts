@@ -28,6 +28,13 @@ import type { ConfigStore } from './config-commands.js';
  */
 export const AUTONOMY_ACK_REQUIRED_CODE = 'AUTONOMY_ACK_REQUIRED';
 
+/**
+ * The refusal code for a permissions key sent through `dorkos config set`, as a
+ * literal for the same reason as {@link AUTONOMY_ACK_REQUIRED_CODE}; pinned by
+ * value in `apps/server/src/services/core/operator/__tests__/config-write.test.ts`.
+ */
+export const USE_PERMISSIONS_API_CODE = 'USE_PERMISSIONS_API';
+
 /** The command that gives the terminal the acknowledgement the door asks for. */
 export const ACKNOWLEDGE_AUTONOMY_COMMAND = 'dorkos config acknowledge-autonomy';
 
@@ -189,8 +196,9 @@ const AUTONOMY_CONSENT_TEXT = [
   '',
   'This covers what an agent does in a session: editing files, running commands,',
   'and working outside this project. DorkOS’s own risky actions still stop for',
-  'you, like deleting a schedule or removing an agent. The setting for that is',
-  'Standing permissions, in Settings under Access.',
+  'you, like deleting a schedule or removing an agent. To stop being asked about',
+  'one, choose Always allow on its card, or change it in Settings under',
+  'Permissions.',
   '',
   'DorkOS records that you agreed, with today’s date, so it stops asking you this.',
   'You can take that back at any time in Settings, or with',

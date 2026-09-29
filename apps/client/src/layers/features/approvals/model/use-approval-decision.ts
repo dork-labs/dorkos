@@ -1,49 +1,50 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import type { ApprovalAnswer } from '@dorkos/shared/approval-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { PENDING_APPROVALS_QUERY_KEY } from '@/layers/entities/attention';
+import { permissionKeys } from '@/layers/entities/permissions';
 import { describeDecisionRefusal } from '@/layers/shared/lib';
-import { STANDING_PERMISSIONS_QUERY_KEY } from './use-standing-permissions';
 
 /**
- * Allow a pending approval, optionally opening a standing permission with it.
+ * Allow a pending approval: once, or always for this agent and this action
+ * (spec `agent-permissions` D7).
  *
  * The server broadcasts `approval_resolved`, which retires the card everywhere;
  * the local invalidation is the belt-and-braces path for a cockpit whose event
  * stream is momentarily down.
  *
- * `standing: true` is refused outright when it cannot be honored — the setting is
- * off, login is off, or the request carries no agent path — and the one-time yes
- * is refused with it. That refusal reaches the caller as a rejected mutation, so
- * nothing here has to guess which half happened.
+ * `answer: 'always'` is refused outright when the request does not offer it,
+ * and the one-time yes is refused with it. That refusal reaches the caller as a
+ * rejected mutation, so nothing here has to guess which half happened.
  *
  * ## Why this opts out of the app-wide error toast
  *
  * `query-client.ts` answers every failed mutation with "Action failed. Please try
- * again." For this one that is not a missed opportunity, it is wrong: the server
- * distinguishes between "nothing happened" and "the irreversible action ran but the
- * permission did not get recorded", and the second one arrives as a 500. Reporting
- * that as a failure invites somebody to do an irreversible thing twice. So the
- * generic toast is suppressed and {@link describeDecisionRefusal} decides both the
- * sentence and how loudly it reads.
+ * again." The server's own sentence is more useful ("This approval was already
+ * decided"), so the generic toast is suppressed and
+ * {@link describeDecisionRefusal} picks the sentence.
  */
 export function useGrantApproval() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (opts: { approvalId: string; standing?: boolean }) =>
-      transport.grantApproval(opts.approvalId, opts.standing ? { standing: true } : undefined),
+    mutationFn: (opts: { approvalId: string; answer?: ApprovalAnswer }) =>
+      transport.grantApproval(
+        opts.approvalId,
+        opts.answer === 'always' ? { answer: 'always' } : undefined
+      ),
     meta: { suppressErrorToast: true },
     onError: (error, variables) => {
-      const refusal = describeDecisionRefusal(error, variables.standing === true);
-      if (refusal.tone === 'warning') toast.warning(refusal.message);
-      else toast.error(refusal.message);
+      toast.error(describeDecisionRefusal(error, variables.answer === 'always').message);
     },
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
       void queryClient.invalidateQueries({ queryKey: PENDING_APPROVALS_QUERY_KEY });
-      // A standing answer adds a row to the list both discovery surfaces read, so
-      // it has to land there without waiting for the event to come back round.
-      void queryClient.invalidateQueries({ queryKey: STANDING_PERMISSIONS_QUERY_KEY });
+      // An Always allow changed the agent's permissions, which the permissions
+      // pages read.
+      if (variables.answer === 'always') {
+        void queryClient.invalidateQueries({ queryKey: permissionKeys.all });
+      }
     },
   });
 }

@@ -4,7 +4,13 @@
  * @module widgets/room-view/lib/room-timeline
  */
 import type { RoomMoment } from '@dorkos/shared/room-schemas';
-import type { AuthorOrigin, AuthorRef, RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
+import type {
+  AuthorOrigin,
+  AuthorRef,
+  RoomEntry,
+  RoomFormerAuthor,
+  RoomRosterEntry,
+} from '@/layers/entities/room';
 import { threadRootIdOf } from '@/layers/entities/room';
 import type { ConversationRow } from '@/layers/features/conversation';
 import { resolveIdentityFace, type IdentityFaceOverride } from '@/layers/shared/lib';
@@ -73,12 +79,28 @@ export type RosterAuthor = AuthorRef & { origin: AuthorOrigin };
  * comes from; the client never derives an author from the session, the
  * selected agent, or the message's own shape.
  *
+ * **Whoever left the roster is in it too** (DOR-2095). Their messages stay in
+ * the log, so the room hands their names back beside the roster
+ * (`RoomWithRoster.formerAuthors`) — an agent that was unregistered carries
+ * `retired`, and one that was only taken out of the room does not. Without them
+ * every message a departed member wrote read as "Unknown". The roster wins on a
+ * clash, because it is the live answer.
+ *
  * @param members - The room's roster.
+ * @param formerAuthors - Everybody who wrote here and is no longer on the roster.
  */
-export function authorsById(members: readonly RoomRosterEntry[]): Map<string, RosterAuthor> {
-  return new Map(
-    members.map((member) => [member.author.id, { ...member.author, origin: member.origin }])
-  );
+export function authorsById(
+  members: readonly RoomRosterEntry[],
+  formerAuthors: readonly RoomFormerAuthor[] = []
+): Map<string, RosterAuthor> {
+  return new Map([
+    ...formerAuthors.map(
+      (former) => [former.author.id, { ...former.author, origin: former.origin }] as const
+    ),
+    ...members.map(
+      (member) => [member.author.id, { ...member.author, origin: member.origin }] as const
+    ),
+  ]);
 }
 
 /**
@@ -169,6 +191,9 @@ export function toMessageAuthor(
     imageUrl: face.imageUrl,
     color: face.color,
     isExternal: typeof author?.origin === 'object' && author?.origin !== null,
+    // Only ever `true`: an author the room could not name at all is unknown,
+    // not retired, and saying so would be a claim this side cannot make.
+    ...(author?.retired === true ? { retired: true } : {}),
   };
 }
 

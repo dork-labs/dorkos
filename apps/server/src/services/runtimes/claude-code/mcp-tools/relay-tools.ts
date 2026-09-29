@@ -10,10 +10,12 @@ import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import {
   inferEndpointType,
+  payloadWithAccount,
   requireRelay,
   publishErrorContent,
   ownsEndpoint,
   isReservedSubject,
+  serverDestinationRefusal,
   endpointAccessDeniedContent,
   canonicalizeAgentSubject,
   resolveOutboundBudget,
@@ -40,6 +42,21 @@ import type { RelayBudget } from '@dorkos/shared/relay-schemas';
 export type InboundBudgetResolver = () => RelayBudget | undefined;
 
 /**
+ * The optional `account` argument of the three `relay_send*` tools (DOR-2384):
+ * the Claude account a new conversation launches on, written into the payload.
+ */
+const ACCOUNT_ARG = z
+  .string()
+  .min(1)
+  .optional()
+  .describe(
+    'Registry id of the Claude account the receiving agent should run on. Applies only when ' +
+      'this message starts a new conversation; an ongoing one keeps its account. Honored only ' +
+      'when the account policy allows the pick; otherwise the message is still delivered and ' +
+      'runs on the usual account.'
+  );
+
+/**
  * Send a message via Relay.
  *
  * @param deps - Tool dependencies
@@ -55,14 +72,19 @@ export function createRelaySendHandler(
     payload: unknown;
     replyTo?: string;
     budget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
+    account?: string;
   }) => {
     const err = requireRelay(deps);
     if (err) return err;
+    const withAccount = payloadWithAccount(args.payload, args.account);
+    if ('error' in withAccount) return withAccount.error;
     // A bare `relay.agent.<agentId>` becomes that agent's real address before
     // the ACL sees it; anything else is published exactly as written.
     const subject = canonicalizeAgentSubject(deps, args.subject);
+    const refusal = serverDestinationRefusal(subject, args.replyTo);
+    if (refusal) return refusal;
     try {
-      const result = await deps.relayCore!.publish(subject, args.payload, {
+      const result = await deps.relayCore!.publish(subject, withAccount.payload, {
         from: identity.subject,
         replyTo: args.replyTo,
         budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
@@ -249,13 +271,18 @@ export function createRelayQueryHandler(
     payload: unknown;
     timeout_ms?: number;
     budget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
+    account?: string;
   }) => {
     const err = requireRelay(deps);
     if (err) return err;
+    const withAccount = payloadWithAccount(args.payload, args.account);
+    if ('error' in withAccount) return withAccount.error;
 
     const relay = deps.relayCore!;
     // See `canonicalizeAgentSubject`: a bare agent id is routed, not refused.
     const toSubject = canonicalizeAgentSubject(deps, args.to_subject);
+    const refusal = serverDestinationRefusal(toSubject);
+    if (refusal) return refusal;
     const inboxSubject = `relay.inbox.query.${randomUUID()}`;
     let unsub: (() => void) | undefined;
 
@@ -291,7 +318,7 @@ export function createRelayQueryHandler(
 
       let sentMessageId: string;
       try {
-        const result = await relay.publish(toSubject, args.payload, {
+        const result = await relay.publish(toSubject, withAccount.payload, {
           from: identity.subject,
           replyTo: inboxSubject,
           budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
@@ -433,13 +460,18 @@ export function createRelayDispatchHandler(
     to_subject: string;
     payload: unknown;
     budget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
+    account?: string;
   }) => {
     const err = requireRelay(deps);
     if (err) return err;
+    const withAccount = payloadWithAccount(args.payload, args.account);
+    if ('error' in withAccount) return withAccount.error;
 
     const relay = deps.relayCore!;
     // See `canonicalizeAgentSubject`: a bare agent id is routed, not refused.
     const toSubject = canonicalizeAgentSubject(deps, args.to_subject);
+    const refusal = serverDestinationRefusal(toSubject);
+    if (refusal) return refusal;
     const inboxSubject = `relay.inbox.dispatch.${randomUUID()}`;
 
     try {
@@ -452,7 +484,7 @@ export function createRelayDispatchHandler(
     }
 
     try {
-      const result = await relay.publish(toSubject, args.payload, {
+      const result = await relay.publish(toSubject, withAccount.payload, {
         from: identity.subject,
         replyTo: inboxSubject,
         budget: resolveOutboundBudget(resolveInboundBudget?.(), args.budget),
@@ -590,6 +622,7 @@ export function getRelayTools(
           ),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
         replyTo: z.string().optional().describe('Subject to send replies to'),
+        account: ACCOUNT_ARG,
         budget: z
           .object({
             maxHops: z.number().int().min(1).optional().describe('Max hop count'),
@@ -686,6 +719,7 @@ export function getRelayTools(
               'hand may match no access rule and come back ACCESS_DENIED.'
           ),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
+        account: ACCOUNT_ARG,
         timeout_ms: z
           .number()
           .int()
@@ -734,6 +768,7 @@ export function getRelayTools(
               'hand may match no access rule and come back ACCESS_DENIED.'
           ),
         payload: z.unknown().describe('Message payload'),
+        account: ACCOUNT_ARG,
         budget: z
           .object({
             maxHops: z.number().int().min(1).optional().describe('Max hop count'),

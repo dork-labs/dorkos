@@ -66,7 +66,7 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
-import { initToolGroupGate, resetToolGroupGate } from '../../services/core/capabilities/index.js';
+import { initPermissionGate, resetPermissionGate } from '../../services/core/capabilities/index.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -119,9 +119,9 @@ describe('/api/rooms', () => {
 
   afterEach(() => {
     resetAgentIdentityService();
-    // One row here arms the real tool-group gate to prove the grant does NOT
+    // One row here allows Rooms for every agent to prove the permission does NOT
     // unlock these routes; cleared so it cannot leak into the rest of the file.
-    resetToolGroupGate();
+    resetPermissionGate();
   });
 
   describe('POST /', () => {
@@ -1501,8 +1501,8 @@ describe('/api/rooms', () => {
      * `removeMember` were unconditionally `requireOperator` until the
      * room-management verbs widened them to admit a member agent — which widened
      * these two routes with them, because a route resolves its caller from
-     * `X-DorkOS-Agent` and never goes near `registry.invoke`. The `roomsManage`
-     * grant lives at that choke point, so widening the service turned the grant
+     * `X-DorkOS-Agent` and never goes near `registry.invoke`. The Rooms
+     * permission lives at that choke point, so widening the service turned it
      * into something a direct `curl` could step around.
      *
      * The ruling is that an agent's roster surface is the capability verbs, full
@@ -1515,7 +1515,7 @@ describe('/api/rooms', () => {
      * to a room" above, which answers 404 — so it could never have detected this
      * and cannot detect a relapse.
      */
-    describe('the roster routes are operator-only, grant or no grant', () => {
+    describe('the roster routes are operator-only, whatever the Rooms permission says', () => {
       /** Ana, put on the room's roster by the person, holding a valid token. */
       async function memberAgent(roomId: string): Promise<{ token: string; authorId: string }> {
         const added = await request(testServer)
@@ -1562,14 +1562,17 @@ describe('/api/rooms', () => {
         expect(after.body.members).toHaveLength(2);
       });
 
-      it('refuses the same agent even when it HOLDS the roomsManage grant', async () => {
-        // The discriminating row. The real gate is armed and answering "granted"
-        // for every caller, which is the state the capability verbs run in when a
-        // person has switched this agent on — and these routes still refuse,
-        // because the grant unlocks the VERBS and not the HTTP surface. Without
-        // this row the two above would pass just as happily on a build where the
-        // grant did unlock the routes.
-        initToolGroupGate({ grants: { holds: () => Promise.resolve(true) } });
+      it('refuses the same agent even when its Rooms permission is Allowed', async () => {
+        // The discriminating row. The real gate is armed and answering Allowed
+        // for every caller, which is the state the capability verbs run in on a
+        // Full power install — and these routes still refuse, because the
+        // permission unlocks the VERBS and not the HTTP surface. Without this row
+        // the two above would pass just as happily on a build where it did
+        // unlock the routes.
+        initPermissionGate({
+          readConfig: () => ({ preset: 'full', defaults: { areas: {}, actions: {} } }),
+          readAgentPermissions: async () => ({ areas: { rooms: 'allowed' } }),
+        });
         const room = await createChannel();
         const { token, authorId } = await memberAgent(room.id);
 

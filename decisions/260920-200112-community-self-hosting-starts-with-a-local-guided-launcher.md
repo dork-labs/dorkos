@@ -1,7 +1,7 @@
 ---
 id: 260920-200112
 title: Community self-hosting starts with a local guided launcher
-status: draft
+status: accepted
 created: 2026-09-20
 spec: community-self-host-launcher
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from `community-self-host-launcher`)
+Accepted (extracted from `community-self-host-launcher`)
 
 ## Context
 

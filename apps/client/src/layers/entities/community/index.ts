@@ -11,6 +11,16 @@ export {
 } from './model/use-community-connections';
 export { useCommunityConnectionsSync } from './model/use-community-connections-sync';
 export {
+  communityOwnerAddress,
+  useCommunityApprovalCheck,
+  useCommunityApprovalStore,
+  useCommunityApprovalWatcher,
+  useShowCommunityApproval,
+  type CommunityApprovalCheck,
+  type CommunityApprovalEnding,
+  type CommunityApprovalOutcome,
+} from './model/community-approvals';
+export {
   communityNavigationKeys,
   useCommunityNavigation,
   useConfirmedCommunityAuthority,

@@ -15,7 +15,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
@@ -61,6 +61,23 @@ const START_CLAIM_URL = startFixture.claim.claimUrl;
 const FRESH_CLAIM_URL = 'https://community.example.invalid/claim/ct_opaque_fresh';
 const UPLOAD_TOKEN = moveStartFixture.upload.token;
 
+/**
+ * An instant `ms` after now.
+ *
+ * The fixtures' expiry times are fixed instants, only in the future on the
+ * day they were written, and the code under test compares them with the real
+ * clock. A test that needs an open window builds one here instead (the move
+ * fixture's upload window closed on 2026-09-24 and took six tests with it).
+ */
+function fromNow(ms: number): string {
+  return new Date(Date.now() + ms).toISOString();
+}
+
+/** A start answer whose held claim link is still valid. */
+function startAnswer() {
+  return { ...startFixture, claim: { ...startFixture.claim, expiresAt: fromNow(3_600_000) } };
+}
+
 /** One request the fake service or upload route received. */
 interface Received {
   method: string;
@@ -83,16 +100,20 @@ interface Script {
   /** When set, the move start waits for this before answering. */
   moveStartGate: Promise<void> | null;
   entitlements: unknown;
+  /** When set, the entitlements read waits for this before answering. */
+  entitlementsGate: Promise<void> | null;
 }
 
 let script: Script;
 const received: Received[] = [];
+/** Requests the fake has started on and not yet answered. */
+let inFlight = 0;
 
 function defaultScript(): Script {
   return {
     list: listFixture,
     startStatus: 200,
-    startBody: startFixture,
+    startBody: startAnswer(),
     moveStartStatus: 200,
     moveStartBody: null,
     moveBody: moveImportingFixture,
@@ -110,6 +131,7 @@ function defaultScript(): Script {
       },
       used: { ...entitlementsFixture.used, communities: 1 },
     },
+    entitlementsGate: null,
   };
 }
 
@@ -131,6 +153,8 @@ function send(res: ServerResponse, status: number, body: unknown) {
  * Routes by method and path the way the contract names them.
  */
 const fake = listeningServer(async (req, res) => {
+  inFlight++;
+  res.on('close', () => inFlight--);
   const url = new URL(req.url ?? '/', 'http://fake');
   const body = await readBody(req);
   received.push({
@@ -143,7 +167,10 @@ const fake = listeningServer(async (req, res) => {
   const route = `${req.method} ${url.pathname}`;
   if (route === 'GET /v1/communities') return send(res, 200, script.list);
   if (route === 'GET /v1/communities/moves') return send(res, 200, movesFixture);
-  if (route === 'GET /v1/entitlements') return send(res, 200, script.entitlements);
+  if (route === 'GET /v1/entitlements') {
+    if (script.entitlementsGate) await script.entitlementsGate;
+    return send(res, 200, script.entitlements);
+  }
   if (route === 'GET /v1/communities/name-check') {
     return send(res, 200, { ...nameFreeFixture, name: url.searchParams.get('name') });
   }
@@ -182,11 +209,15 @@ function fakeOrigin() {
   return `http://127.0.0.1:${(fake.address() as AddressInfo).port}`;
 }
 
-/** A move-start answer whose upload goes to the fake upload route. */
+/** A move-start answer whose upload goes to the fake upload route, with its window open. */
 function moveStartAnswer() {
   return {
     ...moveStartFixture,
-    upload: { ...moveStartFixture.upload, url: `${fakeOrigin()}/upload/imp_0001` },
+    upload: {
+      ...moveStartFixture.upload,
+      url: `${fakeOrigin()}/upload/imp_0001`,
+      expiresAt: fromNow(3_600_000),
+    },
   };
 }
 
@@ -214,6 +245,13 @@ beforeEach(() => {
   script = defaultScript();
   received.length = 0;
   uploads = new CommunityMoveUploads();
+});
+
+// Every request a test starts must be answered inside that test. One still
+// running would land in the next test's `received` and fail an assertion
+// that has nothing to do with it (DOR-2298).
+afterEach(async () => {
+  await vi.waitFor(() => expect(inFlight).toBe(0));
 });
 
 describe('unlinked', () => {
@@ -296,6 +334,32 @@ describe('GET /api/cloud/communities', () => {
     const res = await request(server).get('/api/cloud/communities').expect(502);
     expect(res.body).toEqual({ error: 'Couldn’t reach your DorkOS account. Try again.' });
   });
+
+  // Purpose: a failed list waits for the reads it started beside it. Fails if
+  // the route answers while the allowance read is still running, which is
+  // how that read once reached the service during a later test (DOR-2298).
+  it('does not answer a failed list while its other reads are still running', async () => {
+    let release!: () => void;
+    script.entitlementsGate = new Promise((resolve) => (release = resolve));
+    script.list = '<html>proxy error</html>';
+    let answered = false;
+    const pending = request(server)
+      .get('/api/cloud/communities')
+      .then((res) => {
+        answered = true;
+        return res;
+      });
+    try {
+      await vi.waitFor(() =>
+        expect(received.some((r) => r.path === '/v1/entitlements')).toBe(true)
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(answered).toBe(false);
+    } finally {
+      release();
+    }
+    expect((await pending).status).toBe(502);
+  });
 });
 
 describe('GET /api/cloud/communities/name-check', () => {
@@ -322,6 +386,8 @@ describe('starting a community and claiming it', () => {
   // Fails if the start relays the service body, or if the held link is never
   // used (a second, needless mint) or used twice.
   it('holds the first claim link back, hands it out once, then asks for a fresh one', async () => {
+    const answer = startAnswer();
+    script.startBody = answer;
     const start = await request(server)
       .post('/api/cloud/communities')
       .send({ idempotencyKey: 'key-1', name: 'Night shift', shortName: 'night-shift' })
@@ -341,7 +407,7 @@ describe('starting a community and claiming it', () => {
     expect(first.body).toEqual({
       ok: true,
       claimUrl: START_CLAIM_URL,
-      expiresAt: startFixture.claim.expiresAt,
+      expiresAt: answer.claim.expiresAt,
     });
     expect(serviceRequests().filter((r) => r.path.endsWith('/claim-link'))).toHaveLength(0);
 

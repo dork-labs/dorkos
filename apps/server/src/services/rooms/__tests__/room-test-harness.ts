@@ -94,16 +94,24 @@ export async function settleUntil(reached: () => boolean, described: string): Pr
 export interface RecordedTurn {
   roomId: string;
   authorId: string;
-  /** The agent's directory — its IDENTITY, whatever tree the turn runs in. */
+  /** The agent's home — its identity, and where the turn stands. */
   agentPath: string;
   /**
-   * The directory the turn actually runs in (spec `project-rooms` §3.5).
-   *
-   * Equal to {@link RecordedTurn.agentPath} for every room without files of its
-   * own, and recorded separately because the whole claim of the cwd rung is that
-   * the two can differ — a test that read one for the other could not see it.
+   * The directory the turn runs in: always {@link RecordedTurn.agentPath} for a
+   * room turn (spec `agent-home-desk` §5.1). Recorded separately so a test can
+   * pin that the two are one value.
    */
   cwd: string;
+  /**
+   * The folders the turn is granted, exactly as placement computed them.
+   * Optional only so a hand-written runner that records less still fits; both
+   * runners this module builds record it.
+   */
+  additionalDirectories?: RoomTurnRequest['additionalDirectories'];
+  /** The agent's copy of the room's files, or `null` for a room without files. */
+  worktree?: string | null;
+  /** The launch-time step the dispatcher runs, when the turn has a copy. */
+  prepareLaunch?: RoomTurnRequest['prepareLaunch'];
   sessionId: string | null;
   /**
    * The words the turn was asked with. Equal to the triggering entry's text for
@@ -285,6 +293,9 @@ export function outcomeRunner(
         authorId: request.authorId,
         agentPath: request.agentPath,
         cwd: request.cwd,
+        additionalDirectories: request.additionalDirectories,
+        worktree: request.worktree,
+        prepareLaunch: request.prepareLaunch,
         sessionId: request.sessionId,
         prompt: request.prompt,
         roomContext: request.roomContext,
@@ -455,6 +466,9 @@ export function gatedRunner({
         authorId: request.authorId,
         agentPath: request.agentPath,
         cwd: request.cwd,
+        additionalDirectories: request.additionalDirectories,
+        worktree: request.worktree,
+        prepareLaunch: request.prepareLaunch,
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,
@@ -702,6 +716,17 @@ export function createRoomHarness(opts: {
   responseGate?: ResponseGateMode;
   collect?: CollectWindow;
   holdCeilingMs?: number;
+  /**
+   * `rooms.maxConcurrentTurnsPerAgent` — how many turns one agent may run in
+   * its directory at once. A FUNCTION as well as a number, so a test can move it
+   * while turns are live, the way Settings does.
+   *
+   * **Defaults to 1, not the shipped 3, and deliberately.** Most suites that
+   * reach the second ceiling are about what a HOLD does — its indicator, its
+   * expiry, its promotion — and one busy room is the smallest setup that makes
+   * one. A test about the dial itself pins its own number.
+   */
+  maxConcurrentTurnsPerAgent?: number | (() => number);
   maxAttachmentsPerEntry?: number;
   /** How many messages one agent may post into a room inside one turn. */
   maxPostsPerTurn?: number;
@@ -729,6 +754,8 @@ export function createRoomHarness(opts: {
    */
   roomRepoPath?: (roomId: string) => string | null;
   ownerUserId?: string;
+  /** The operator's profile name, as `config.profile.displayName` supplies it. */
+  operatorName?: () => string | null;
   budgetNow?: () => number;
   /**
    * Which rooms the operator has muted, as a live predicate (spec
@@ -770,8 +797,13 @@ export function createRoomHarness(opts: {
   mirrorAccess?: RoomMirrorAccess;
   /** Trusted remote-mirror delivery policy, for real writer transaction tests. */
   mirrorWrites?: RoomMirrorWritePolicy;
+  /**
+   * A migrated database to run on, for the tests that read its file. Defaults to a fresh
+   * in-memory one.
+   */
+  db?: Db;
 }): RoomHarness {
-  const db = createTestDb();
+  const db = opts.db ?? createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
   const authors = new AuthorRegistry(db, agentLookup);
   const runner = opts.runner ?? scriptedRunner();
@@ -899,6 +931,11 @@ export function createRoomHarness(opts: {
     responseGate: () => responseGate,
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,
+    maxConcurrentTurnsPerAgent: () => {
+      const option = opts.maxConcurrentTurnsPerAgent;
+      if (typeof option === 'function') return option();
+      return option ?? 1;
+    },
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
     maxPostsPerTurn: () => opts.maxPostsPerTurn ?? 3,
     maxCanvasOpsPerTurn: () => {
@@ -912,6 +949,7 @@ export function createRoomHarness(opts: {
     roomRepoPath: opts.roomRepoPath ?? (() => null),
     ...(opts.canvasNow ? { canvasNow: opts.canvasNow } : {}),
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
+    ...(opts.operatorName ? { operatorName: opts.operatorName } : {}),
     isOwnerRecord: (record) => isOwnerRecord(record, ownerUserId),
     isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, ownerUserId),
     readCursors,

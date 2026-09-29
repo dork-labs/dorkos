@@ -27,7 +27,6 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     capabilities: ['code-review'],
     behavior: { responseMode: 'always' },
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',

@@ -29,17 +29,24 @@ import type { ChatMessage, ChatStatus, TransportErrorInfo } from '../chat-types'
  * the send path) or an inline error part rendered since the last user message
  * (the Claude Code history path).
  *
+ * A session whose account ran out of usage never shows it: the out-of-usage
+ * banner takes its place, so a limited turn has one notice, not two (spec
+ * `claude-account-ui` §6.7).
+ *
  * @param status - The rendered coarse chat status.
  * @param transportError - The transport-level error banner state.
  * @param messages - The rendered message list.
+ * @param hasLimit - Whether the session has a usage limit (its banner shows).
  */
 export function shouldShowTurnFailedNotice(
   status: ChatStatus,
   transportError: TransportErrorInfo | null,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  hasLimit = false
 ): boolean {
   if (status !== 'error') return false;
   if (transportError) return false;
+  if (hasLimit) return false;
 
   // Scan only the current (failed) turn: everything after the last user
   // message. Error parts from EARLIER turns must not suppress the notice.

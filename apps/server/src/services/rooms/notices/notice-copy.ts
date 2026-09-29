@@ -709,11 +709,12 @@ export function buildBridgeBlockedNotice(reason: BridgeBlockedReason): RoomEntry
   const text =
     reason === 'reply_off'
       ? 'This answer was not sent to the chat because replying is turned off for this connection. ' +
-        'Turn on "Reply" for it in Connections › Messaging to let answers through.'
+        'Turn on "Reply" for it on the Connections page, under the chat app\'s "Who answers", ' +
+        'to let answers through.'
       : reason === 'initiate_off'
         ? 'This message was not sent to the chat because starting a message there is turned off for ' +
-          'this connection. Turn on "Start conversations" for it in Connections › Messaging to let ' +
-          'the agent reach out first.'
+          'this connection. Turn on "Start conversations" for it on the Connections page, under the ' +
+          'chat app\'s "Who answers", to let the agent reach out first.'
         : // lost_provenance — the server restarted mid-turn (§6.6).
           'This answer lost its provenance (the server restarted mid-turn) and was treated as a ' +
           'new conversation. It stayed here.';
@@ -771,4 +772,24 @@ const QUOTE_LIMIT = 60;
 function excerpt(message: string): string {
   const flat = message.replace(/\s+/g, ' ').replace(/"/g, '').replace(MENTION_PATTERN, '$1').trim();
   return flat.length <= QUOTE_LIMIT ? flat : `${flat.slice(0, QUOTE_LIMIT).trimEnd()}…`;
+}
+
+/**
+ * The durable `notice` for a channel an agent put away with `archive_room`
+ * (spec `agent-permissions` D12).
+ *
+ * Written BEFORE the archive lands, because an archived room takes no new
+ * entries, so this is the last line the room ever gains. It names who did it
+ * and says the room can come back, because archiving is a flag and not a
+ * delete: the person un-archives it from the room's settings.
+ *
+ * @param agentName - Display name of the agent that archived the room.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ */
+export function buildRoomArchivedNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+  return {
+    text: `${agentName} put this channel away. It is archived, not deleted, so the person can bring it back.`,
+    notice: 'room_archived',
+    subjectAuthorId,
+  };
 }

@@ -201,6 +201,12 @@ export interface RoomServiceDeps {
    */
   holdCeilingMs(): number;
   /**
+   * The live `rooms.maxConcurrentTurnsPerAgent` — how many conversations one
+   * agent may work in at once. Injected for the same reason, and read at every
+   * claim decision so a change in Settings binds the very next message.
+   */
+  maxConcurrentTurnsPerAgent(): number;
+  /**
    * The live `uploads.maxFiles` — how many files one post may carry.
    *
    * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
@@ -255,6 +261,13 @@ export interface RoomServiceDeps {
    * whether an account exists, which is not a room's business to know.
    */
   isOwnerAuthor(authorId: string): boolean;
+  /**
+   * The operator's profile name (`config.profile.displayName`, sanitized), or
+   * `null` when they have not given one — read per call. What an agent's room
+   * context calls the owner instead of the registry's `'You'`; absent, the
+   * owner is "the operator" (DOR-2458).
+   */
+  operatorName?(): string | null;
   /**
    * The record-based twin of {@link RoomServiceDeps.isOwnerAuthor}, for a
    * caller that already holds the row — resolving an id `isOwnerAuthor`

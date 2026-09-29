@@ -1,0 +1,295 @@
+{
+  "contract": "fleet",
+  "about": "Reading one runtime's registered rows from <dorkHome>/config.json at runtimes.<claudeCode|codex|opencode>.accounts (spec flow-cli-core 1.1a). Call readIdentities(config, runtime). input.config is the parsed config.json, or null when the file is missing; input.runtime is claude-code, codex or opencode (config keys claudeCode, codex, opencode). Every runtime's rows follow the same rules. expected.accounts lists every account read, in file order, as { id, path, label, color, routable }; routable is false for a row whose id fails ^[a-z0-9]+(-[a-z0-9]+)*$ (it has no usage file and reads as kept-out). expected.warnings is a multiset of warning codes (compare sorted; order and message text are not part of the contract). Ids are minted over EVERY object row (a row with no id or an empty-string id), in array order, BEFORE any row is skipped for its path, exactly as DorkOS backfills them: first every non-empty string id already in the array is reserved (including ids on later rows and on rows later skipped), then each row missing an id gets mint(label if it is a string else null, path if it is a string else '', taken) and its id joins taken. Non-object rows get no id and take none. A path is absolute when it starts with '/', a drive letter and a separator (C:\\ or C:/), or '\\\\'. The id 'default' is reserved for the implicit account (1.1a): a row whose id is 'default' is listed with routable false and warning 'id-reserved', and minting never produces it.",
+  "cases": [
+    {
+      "name": "no config file means no accounts",
+      "input": {"runtime": "claude-code", "config": null},
+      "expected": {"accounts": [], "warnings": []}
+    },
+    {
+      "name": "a config with no accounts key means no accounts",
+      "input": {"runtime": "claude-code", "config": {"runtimes": {"claudeCode": {}}}},
+      "expected": {"accounts": [], "warnings": []}
+    },
+    {
+      "name": "accounts that is not an array reads as none, with a warning",
+      "input": {"runtime": "claude-code", "config": {"runtimes": {"claudeCode": {"accounts": {}}}}},
+      "expected": {"accounts": [], "warnings": ["accounts-invalid"]}
+    },
+    {
+      "name": "complete rows read as written, unknown fields ignored",
+      "input": {
+        "runtime": "claude-code",
+        "config": {
+          "__internal__": {"migrations": {}},
+          "runtimes": {
+            "claudeCode": {
+              "defaultAccount": "work",
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/Users/me/.claude-work",
+                  "label": "Work",
+                  "color": "#1f77b4",
+                  "extra": true
+                },
+                {"id": "claude3", "path": "/Users/me/.claude3", "label": null}
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "accounts": [
+          {
+            "id": "work",
+            "path": "/Users/me/.claude-work",
+            "label": "Work",
+            "color": "#1f77b4",
+            "routable": true
+          },
+          {"id": "claude3", "path": "/Users/me/.claude3", "label": null, "color": null, "routable": true}
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a file flow created (four keys per row, nothing else) is valid",
+      "input": {
+        "runtime": "claude-code",
+        "config": {
+          "runtimes": {
+            "claudeCode": {"accounts": [{"id": "personal", "path": "/home/me/.claude", "label": null, "color": null}]}
+          }
+        }
+      },
+      "expected": {
+        "accounts": [{"id": "personal", "path": "/home/me/.claude", "label": null, "color": null, "routable": true}],
+        "warnings": []
+      }
+    },
+    {
+      "name": "a missing id is minted, never taking an id a later row owns",
+      "input": {
+        "runtime": "claude-code",
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {"path": "/Users/me/.claude-work", "label": "Work"},
+                {"id": "work", "path": "/Users/me/.claude-old-work", "label": null},
+                {"id": "", "path": "/Users/me/.claude-spare", "label": null}
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "accounts": [
+          {"id": "work-2", "path": "/Users/me/.claude-work", "label": "Work", "color": null, "routable": true},
+          {"id": "work", "path": "/Users/me/.claude-old-work", "label": null, "color": null, "routable": true},
+          {
+            "id": "claude-spare",
+            "path": "/Users/me/.claude-spare",
+            "label": null,
+            "color": null,
+            "routable": true
+          }
+        ],
+        "warnings": ["id-minted", "id-minted"]
+      }
+    },
+    {
+      "name": "ids are minted before bad-path rows are skipped, so later ids match DorkOS",
+      "input": {
+        "runtime": "claude-code",
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {"path": "relative/claude"},
+                "not a row",
+                {"path": "/x/claude"},
+                {"id": "", "label": 7, "path": "/y/claude"},
+                {"label": "Spare"},
+                {"path": "/z/spare"}
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "accounts": [
+          {"id": "claude-2", "path": "/x/claude", "label": null, "color": null, "routable": true},
+          {"id": "claude-3", "path": "/y/claude", "label": null, "color": null, "routable": true},
+          {"id": "spare-2", "path": "/z/spare", "label": null, "color": null, "routable": true}
+        ],
+        "warnings": [
+          "path-invalid",
+          "row-invalid",
+          "id-minted",
+          "id-minted",
+          "label-invalid",
+          "path-invalid",
+          "id-minted"
+        ]
+      }
+    },
+    {
+      "name": "rows without an absolute path are skipped",
+      "input": {
+        "runtime": "claude-code",
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {"id": "a", "path": "relative/dir"},
+                {"id": "b"},
+                {"id": "c", "path": "~/.claude"},
+                {"id": "d", "path": 42},
+                {"id": "e", "path": "C:\\Users\\me\\.claude"},
+                {"id": "f", "path": "/ok"}
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "accounts": [
+          {"id": "e", "path": "C:\\Users\\me\\.claude", "label": null, "color": null, "routable": true},
+          {"id": "f", "path": "/ok", "label": null, "color": null, "routable": true}
+        ],
+        "warnings": ["path-invalid", "path-invalid", "path-invalid", "path-invalid"]
+      }
+    },
+    {
+      "name": "a duplicate id keeps the first row",
+      "input": {
+        "runtime": "claude-code",
+        "config": {"runtimes": {"claudeCode": {"accounts": [{"id": "x", "path": "/one"}, {"id": "x", "path": "/two"}]}}}
+      },
+      "expected": {
+        "accounts": [{"id": "x", "path": "/one", "label": null, "color": null, "routable": true}],
+        "warnings": ["id-duplicate"]
+      }
+    },
+    {
+      "name": "an id that fails the pattern is listed but not routable",
+      "input": {
+        "runtime": "claude-code",
+        "config": {"runtimes": {"claudeCode": {"accounts": [{"id": "Bad_ID", "path": "/p", "label": "Hand edit"}]}}}
+      },
+      "expected": {
+        "accounts": [{"id": "Bad_ID", "path": "/p", "label": "Hand edit", "color": null, "routable": false}],
+        "warnings": ["id-invalid"]
+      }
+    },
+    {
+      "name": "a color that fails ^#[0-9a-f]{6}$ reads as null",
+      "input": {
+        "runtime": "claude-code",
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {"id": "a", "path": "/a", "color": "#ABCDEF"},
+                {"id": "b", "path": "/b", "color": "red"},
+                {"id": "c", "path": "/c", "color": null}
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "accounts": [
+          {"id": "a", "path": "/a", "label": null, "color": null, "routable": true},
+          {"id": "b", "path": "/b", "label": null, "color": null, "routable": true},
+          {"id": "c", "path": "/c", "label": null, "color": null, "routable": true}
+        ],
+        "warnings": ["color-invalid", "color-invalid"]
+      }
+    },
+    {
+      "name": "a label that is not a string reads as null",
+      "input": {
+        "runtime": "claude-code",
+        "config": {"runtimes": {"claudeCode": {"accounts": [{"id": "a", "path": "/a", "label": 7}]}}}
+      },
+      "expected": {
+        "accounts": [{"id": "a", "path": "/a", "label": null, "color": null, "routable": true}],
+        "warnings": ["label-invalid"]
+      }
+    },
+    {
+      "name": "a row that is not an object is skipped",
+      "input": {
+        "runtime": "claude-code",
+        "config": {"runtimes": {"claudeCode": {"accounts": [42, {"id": "a", "path": "/a"}]}}}
+      },
+      "expected": {
+        "accounts": [{"id": "a", "path": "/a", "label": null, "color": null, "routable": true}],
+        "warnings": ["row-invalid"]
+      }
+    },
+    {
+      "name": "a Codex registry reads the same way, and only its own rows",
+      "input": {
+        "runtime": "codex",
+        "config": {
+          "runtimes": {
+            "claudeCode": {"accounts": [{"id": "work", "path": "/Users/me/.claude-work"}]},
+            "codex": {
+              "accounts": [{"path": "/Users/me/.codex-team", "label": "Team"}, {"id": "solo", "path": "/Users/me/.codex"}]
+            }
+          }
+        }
+      },
+      "expected": {
+        "accounts": [
+          {"id": "team", "path": "/Users/me/.codex-team", "label": "Team", "color": null, "routable": true},
+          {"id": "solo", "path": "/Users/me/.codex", "label": null, "color": null, "routable": true}
+        ],
+        "warnings": ["id-minted"]
+      }
+    },
+    {
+      "name": "a runtime with no registry section has no rows",
+      "input": {
+        "runtime": "opencode",
+        "config": {"runtimes": {"claudeCode": {"accounts": [{"id": "work", "path": "/w"}]}}}
+      },
+      "expected": {"accounts": [], "warnings": []}
+    },
+    {
+      "name": "a hand-written id default is listed but not routable",
+      "input": {
+        "runtime": "claude-code",
+        "config": {"runtimes": {"claudeCode": {"accounts": [{"id": "default", "path": "/Users/me/.claude-d"}]}}}
+      },
+      "expected": {
+        "accounts": [{"id": "default", "path": "/Users/me/.claude-d", "label": null, "color": null, "routable": false}],
+        "warnings": ["id-reserved"]
+      }
+    },
+    {
+      "name": "a row labelled Default is minted default-2",
+      "input": {
+        "runtime": "claude-code",
+        "config": {"runtimes": {"claudeCode": {"accounts": [{"path": "/Users/me/.claude-d", "label": "Default"}]}}}
+      },
+      "expected": {
+        "accounts": [
+          {
+            "id": "default-2",
+            "path": "/Users/me/.claude-d",
+            "label": "Default",
+            "color": null,
+            "routable": true
+          }
+        ],
+        "warnings": ["id-minted"]
+      }
+    }
+  ]
+}

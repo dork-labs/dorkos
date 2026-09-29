@@ -40,8 +40,9 @@ import type {
   RuntimeReadiness as RuntimeConnectState,
 } from '@dorkos/shared/agent-runtime';
 import { runtimeAuthConnectKind, runtimeDisplayName } from '@dorkos/shared/agent-runtime';
-import { claudeAccountName, cn } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { cn } from '@/layers/shared/lib';
+import { LEDGER_RUNTIMES } from '@dorkos/shared/account-usage';
+import { useAccountUsage, useClaudeAccounts, useTransport } from '@/layers/shared/model';
 import { Badge, Button, InlineCode, Spinner } from '@/layers/shared/ui';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
@@ -162,6 +163,13 @@ export function RuntimeCard({
   onMakeDefault,
 }: RuntimeCardProps) {
   const { data: config } = useConfig();
+  const { nameFor: accountName } = useClaudeAccounts();
+  // Fresh account usage while this tab is open, for the card's usage rows
+  // (spec `claude-account-ui` §6.5). Only a runtime that keeps a usage ledger
+  // has a route to ask; the rest read nothing.
+  useAccountUsage((LEDGER_RUNTIMES as readonly string[]).includes(type) ? type : null, {
+    fetch: true,
+  });
   const { data: capabilityMap } = useRuntimeCapabilities();
   const { data: requirements } = useRuntimeRequirements();
   const { registered } = useRuntimeReadiness(type);
@@ -271,7 +279,7 @@ export function RuntimeCard({
         ? // The inherited default is not a billing choice anybody made, so the
           // line stays quiet rather than naming a folder as if it were one.
           null
-        : claudeAccountName(claudeCode.resolvedAccount, claudeCode.accounts ?? []),
+        : accountName(claudeCode.resolvedAccount),
     'opencode-power-source': requirementsEntry?.provider
       ? describePowerSource(requirementsEntry.provider)
       : null,
@@ -375,7 +383,7 @@ export function RuntimeCard({
   const setupBadge = requirementsEntry ? (
     <Badge
       variant="secondary"
-      className={cn('text-xs', unsatisfiedDeps?.length ? 'text-amber-600 dark:text-amber-400' : '')}
+      className={cn('text-xs', unsatisfiedDeps?.length ? 'text-status-warning-fg' : '')}
     >
       {unsatisfiedDeps?.length
         ? `${unsatisfiedDeps.length} missing`
@@ -576,9 +584,9 @@ function SetupDependencyRow({ dep }: { dep: DependencyCheck }) {
           gap, written out as a number that silently broke if either moved. */}
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-2">
         {satisfied ? (
-          <Check className="size-3.5 shrink-0 text-emerald-500" />
+          <Check className="text-status-success size-3.5 shrink-0" />
         ) : (
-          <CircleAlert className="size-3.5 shrink-0 text-amber-500" />
+          <CircleAlert className="text-status-warning-dot size-3.5 shrink-0" />
         )}
         <span className="text-sm">{dep.name}</span>
         <p className="text-muted-foreground col-start-2 mt-1 text-xs">

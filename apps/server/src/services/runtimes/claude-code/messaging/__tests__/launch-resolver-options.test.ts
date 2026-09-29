@@ -7,11 +7,15 @@
  * real model would have stopped sending. Each case here pins one such setting
  * against the reason it exists.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import { configManager } from '../../../../core/config-manager.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
+import { creditsTurnEnv } from '../../../../core/cloud/credits-inference.js';
+import { resolveAgentTokenEnv } from '../../../../core/agent-identity/index.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -21,11 +25,6 @@ vi.mock('../context-builder.js', () => ({
     .fn()
     .mockResolvedValue({ text: '<env>mock</env>', stable: '<env>mock</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
-}));
-vi.mock('../../tooling/tool-filter.js', () => ({
-  resolveToolConfig: vi
-    .fn()
-    .mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true }),
 }));
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/project'),
@@ -50,6 +49,14 @@ vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock('../../../../core/cloud/credits-inference.js', () => ({
+  creditsTurnEnv: vi.fn().mockReturnValue({}),
+}));
+vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
+  resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
+}));
+
 /** A minimal cold session — enough for one launch to be planned. */
 function makeSession(): AgentSession {
   return {
@@ -68,21 +75,71 @@ function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts
 }
 
 /** Drive one turn and hand back the options the SDK was launched with. */
-async function captureSdkOptions(): Promise<Options> {
+async function captureSdkOptions(
+  messageOpts?: MessageOpts,
+  session: AgentSession = makeSession()
+): Promise<Options> {
   let capturedOptions: Options | undefined;
   vi.mocked(query).mockImplementation((args) => {
     capturedOptions = args.options;
     return { [Symbol.asyncIterator]: async function* () {} } as unknown as ReturnType<typeof query>;
   });
-  for await (const _event of executeSdkQuery('s1', 'hello', makeSession(), makeOpts())) {
+  for await (const _event of executeSdkQuery('s1', 'hello', session, makeOpts(), messageOpts)) {
     // Drained: the launch is what is under test, not the stream.
   }
   return capturedOptions!;
 }
 
+it('excludes retired Cloud credits when the link changes while agent identity resolves', async () => {
+  let release!: (value: Record<string, string>) => void;
+  let entered!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  vi.mocked(creditsTurnEnv).mockReturnValue({ ANTHROPIC_AUTH_TOKEN: 'retired-credits-token' });
+  vi.mocked(resolveAgentTokenEnv).mockImplementationOnce(() => {
+    entered();
+    return new Promise((resolve) => {
+      release = resolve;
+    });
+  });
+  try {
+    const launching = captureSdkOptions();
+    await waiting;
+    // The Cloud identity service returns no credentials after unlink/relink.
+    vi.mocked(creditsTurnEnv).mockReturnValue({});
+    release({});
+    const options = await launching;
+    expect(options.env?.ANTHROPIC_AUTH_TOKEN).not.toBe('retired-credits-token');
+  } finally {
+    release?.({});
+    vi.mocked(creditsTurnEnv).mockReturnValue({});
+  }
+});
+
 describe('the launch options every Claude Code turn is given', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('records a launch as per token when its final environment carries a key, whatever its source (spec claude-account-fleet §6 U)', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'inherited-from-the-server');
+    try {
+      const inherited = makeSession();
+      await captureSdkOptions(undefined, inherited);
+      expect(inherited.launchedPerToken).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.stubEnv('ANTHROPIC_AUTH_TOKEN', '');
+    try {
+      const signedIn = makeSession();
+      await captureSdkOptions(undefined, signedIn);
+      expect(signedIn.launchedPerToken).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('turns the task and todo tools on, which no newer model gets by default', async () => {
@@ -139,5 +196,68 @@ describe('the launch options every Claude Code turn is given', () => {
         'argv that list is an unbounded count of absolute paths — past Windows\u2019 command-line ' +
         'length limit the CLI simply stops starting'
     ).toBe('initialize');
+  });
+});
+
+describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
+  const CLAUDE_MD_VAR = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('never hands a turn the variable that loads a granted folder’s CLAUDE.md, even when the server has it and the owner chose to pass it on', async () => {
+    // The strongest way it could arrive: set in the server's environment AND
+    // named in the owner's inheritance list, which is the one route the
+    // environment projection lets a name through.
+    vi.stubEnv(CLAUDE_MD_VAR, '1');
+    vi.mocked(configManager.get).mockImplementation(((key: string) =>
+      key === 'runtimes'
+        ? { environment: { inherit: { claudeCode: [CLAUDE_MD_VAR], codex: [], opencode: [] } } }
+        : undefined) as typeof configManager.get);
+
+    const options = await captureSdkOptions({
+      additionalDirectories: [{ path: '/rooms/r1/worktrees/ana', access: 'write' }],
+    });
+
+    expect(Object.keys(options.env ?? {})).not.toContain(CLAUDE_MD_VAR);
+  });
+
+  it('merges the grants into the settings the launch already carries', async () => {
+    const options = await captureSdkOptions(
+      {
+        additionalDirectories: [
+          { path: '/rooms/r1/worktrees/ana', access: 'write' },
+          { path: '/rooms/r1/repo', access: 'read' },
+        ],
+      },
+      { ...makeSession(), fastMode: true }
+    );
+
+    expect(options.settings).toEqual({
+      fastMode: true,
+      permissions: {
+        additionalDirectories: ['/rooms/r1/worktrees/ana', '/rooms/r1/repo'],
+        deny: [
+          'Edit(//rooms/r1/repo/**)',
+          'Write(//rooms/r1/repo/**)',
+          'NotebookEdit(//rooms/r1/repo/**)',
+        ],
+      },
+    });
+    // The SDK option is `--add-dir`, which loads the folder's skills (I11).
+    expect(options.additionalDirectories).toBeUndefined();
+  });
+
+  it('refuses an invalid set before anything launches', async () => {
+    vi.mocked(query).mockClear();
+    await expect(
+      captureSdkOptions({ additionalDirectories: [{ path: 'relative/dir', access: 'read' }] })
+    ).rejects.toThrow(/not an absolute path/);
+    expect(query).not.toHaveBeenCalled();
   });
 });

@@ -153,15 +153,6 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // which is the cold-load state this deliberately does not have.
   useEffect(() => lowerMobilePanels, []);
 
-  // **Say how much of the bottom edge is spoken for, so nothing has to guess.**
-  // Anything that docks to the bottom of the screen has to clear the bar, and
-  // the things that do are `fixed` overlays in other layers — the PIP mini-bar
-  // is a `features/` component, which cannot import this widget's constant even
-  // though it must not paint over it (DOR-1177). So the number is published as
-  // a custom property while the bar is on screen and removed with it, the same
-  // shape `PipMiniBar` uses for `--pip-dock` in the other direction. Readers
-  // default to `0px`, which is the truth on desktop and in the Obsidian embed,
-  // where this cockpit is never mounted.
   useEffect(() => {
     document.documentElement.style.setProperty('--mobile-tab-dock', MOBILE_TAB_BAR_DOCK);
     return () => {

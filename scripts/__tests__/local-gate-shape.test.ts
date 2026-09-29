@@ -21,7 +21,7 @@
  * cheap, deterministic, and preempts a REQUIRED CI gate that seven PRs in one
  * week went red on. The merge queue is the test gate.
  *
- * TWO REGRESSIONS, both silent:
+ * THREE REGRESSIONS, all silent:
  *
  *   * A test command comes back to `pre-push`. Everything still passes, just
  *     slower, and the machine goes back to load 500. `ci/**` and `lefthook.yml`
@@ -29,7 +29,14 @@
  *     an entry that argues against the numbers above; this test is what makes
  *     that argument happen instead of being skipped.
  *
- *   * The heavy-run cap stops wrapping the commit gates. `bash lock.sh; turbo
+ *   * Typecheck comes back to `pre-commit`. It left on 2026-09-24
+ *     (ci/ledger/260919-175506-*): in the week before, 838 runs cost 12.9
+ *     hours, p90 139 s, re-checking the same change about eight times per PR,
+ *     while the required `typecheck` check already refuses every type error
+ *     on the PR and in the queue. Bringing it back needs an entry that argues
+ *     against those numbers, the same as the push gate.
+ *
+ *   * The heavy-run cap stops wrapping the commit gate. `bash lock.sh; turbo
  *     lint` looks almost exactly like `bash lock.sh turbo lint` and caps
  *     nothing at all, and nothing anywhere goes red for the difference.
  *
@@ -47,7 +54,7 @@ import path from 'node:path';
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const lefthookText = readFileSync(path.join(repoRoot, 'lefthook.yml'), 'utf8');
 
-/** The machine-wide cap the heavy commit gates run under. */
+/** The machine-wide cap the heavy commit gate runs under. */
 const LOCK_REL = 'scripts/heavy-run-lock.sh';
 
 /**
@@ -122,7 +129,22 @@ describe('a push runs a formatting check and nothing else', () => {
   });
 });
 
-describe('the heavy commit gates run under the machine-wide cap', () => {
+describe('a commit does not typecheck', () => {
+  it('runs no typecheck at commit time', () => {
+    // Read from the comment-stripped block: the header explains why typecheck
+    // left, and prose naming the command must not count as running it.
+    expect(
+      /\btypecheck\b/.test(preCommit),
+      "lefthook.yml's pre-commit hook runs typecheck again. It left on 2026-09-24: " +
+        '838 runs in a week cost 12.9 hours (p90 139 s) and re-checked the same change ' +
+        'about eight times per PR, while the required `typecheck` check refuses every ' +
+        'type error on the PR and in the queue. Restoring it needs a ledger entry that ' +
+        'argues against those numbers (ci/ledger/260919-175506-*).'
+    ).toBe(false);
+  });
+});
+
+describe('the heavy commit gate runs under the machine-wide cap', () => {
   it('names a lock script that is actually there', () => {
     // A path typo fails closed in the worst way: `bash` exits non-zero on a
     // missing script, so every commit would be refused with a message about
@@ -130,24 +152,21 @@ describe('the heavy commit gates run under the machine-wide cap', () => {
     expect(existsSync(path.join(repoRoot, LOCK_REL))).toBe(true);
   });
 
-  it.each(['lint', 'typecheck'])(
-    'wraps turbo %s rather than running it beside the lock',
-    (task) => {
-      // ONE REGEX OVER ONE CONTINUED COMMAND LINE, deliberately. Three separate
-      // `indexOf` comparisons would be satisfied by `bash lock.sh; turbo lint` —
-      // the lock running, exiting, and turbo running afterwards with no slot held
-      // at all — which is the precise mutation that caps nothing while looking
-      // right. `[^\n;&|]*` is what refuses it: turbo has to be reachable from the
-      // lock invocation without an intervening command separator.
-      const nested = new RegExp(`bash ${LOCK_REL}[^\\n;&|]*\\bturbo ${task}\\b`);
-      expect(
-        nested.test(preCommit),
-        `lefthook.yml's pre-commit \`${task}\` command no longer runs turbo AS AN ARGUMENT to ` +
-          `${LOCK_REL}. Several agents each running a full affected sweep on 14 cores is what ` +
-          'measured a load average of 500 with the kernel killing processes for memory.'
-      ).toBe(true);
-    }
-  );
+  it.each(['lint'])('wraps turbo %s rather than running it beside the lock', (task) => {
+    // ONE REGEX OVER ONE CONTINUED COMMAND LINE, deliberately. Three separate
+    // `indexOf` comparisons would be satisfied by `bash lock.sh; turbo lint` —
+    // the lock running, exiting, and turbo running afterwards with no slot held
+    // at all — which is the precise mutation that caps nothing while looking
+    // right. `[^\n;&|]*` is what refuses it: turbo has to be reachable from the
+    // lock invocation without an intervening command separator.
+    const nested = new RegExp(`bash ${LOCK_REL}[^\\n;&|]*\\bturbo ${task}\\b`);
+    expect(
+      nested.test(preCommit),
+      `lefthook.yml's pre-commit \`${task}\` command no longer runs turbo AS AN ARGUMENT to ` +
+        `${LOCK_REL}. Several agents each running a full affected sweep on 14 cores is what ` +
+        'measured a load average of 500 with the kernel killing processes for memory.'
+    ).toBe(true);
+  });
 
   it('rejects the un-nested command shapes it exists to catch', () => {
     // The assertion above is only worth its lines if it can fail. These are the

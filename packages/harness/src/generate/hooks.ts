@@ -216,7 +216,7 @@ export interface HookWarning {
  * (e.g. `${CLAUDE_PLUGIN_ROOT}` in a plugin's Stop hook) is broken in the target
  * harness, so the engine warns rather than projecting it as silently-correct.
  */
-const CLAUDE_ONLY_HOOK_TOKENS = ['${CLAUDE_PLUGIN_ROOT}'] as const;
+const CLAUDE_ONLY_HOOK_TOKENS = ['${CLAUDE_PLUGIN_ROOT}', '${CLAUDE_PLUGIN_DATA}'] as const;
 
 /**
  * Match any `${CLAUDE_*}` / `${CLAUDE_*_ROOT}`-style substitution: a literal

@@ -3,7 +3,6 @@ flowchart LR
   accDescr: Each row names a caller, its port, and implementations. A port is a code boundary, not necessarily a network boundary. The dashed Community edge is the unwired Buzz implementation.
   ui["React client"] --> transport{{"Transport"}}
   transport --> http["HttpTransport<br/>HTTP + WebSocket + Community SSE<br/>Express"]
-  transport --> direct["DirectTransport<br/>In-process subset · Obsidian preview"]
   dispatch["Session dispatcher"] --> agent{{"AgentRuntime"}}
   agent --> runtimes["Claude Code / Codex SDKs<br/>OpenCode HTTP + SSE sidecar"]
   accounts["Account actions"] --> connector{{"ConnectorProvider"}}

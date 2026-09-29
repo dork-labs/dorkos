@@ -6,36 +6,23 @@
  * The server writes careful, specific sentences for every way a decision can be
  * refused, and `fetchJSON` carries both the sentence and its code onto the thrown
  * error. The global mutation handler in `query-client.ts` then replaces all of it
- * with "Action failed. Please try again." That is merely unhelpful for most
- * refusals and actively wrong for one of them.
+ * with "Action failed. Please try again." That is unhelpful for a refusal whose
+ * reason the person can act on, like an answer that came too late or an Always
+ * allow the request does not offer.
  *
- * `STANDING_PERMISSION_NOT_RECORDED` is the case that forces the issue. It is a
- * 500, so it looks like a failure, and it is not one: **the destructive action was
- * allowed and will run.** Only the permission to stop asking was not recorded.
- * Telling a person "Action failed. Please try again." about an irreversible action
- * that succeeded invites them to do it twice, which is the worst thing this whole
- * feature could cause. Spec §3.5 is explicit that a caller who asked for two things
- * is told which one failed; this is the surface that was supposed to tell them.
+ * Every refusal here means nothing was allowed. The grant route checks every
+ * reason to refuse before it grants, and when an Always allow cannot be saved it
+ * allows nothing at all (spec `agent-permissions` D7), so no refusal ever has to
+ * say "it went ahead anyway".
  *
  * @module shared/lib/decision-refusal
  */
-
-/** How loudly a refusal should read. */
-export type RefusalTone = 'error' | 'warning';
 
 /** What a surface should say about a refused decision. */
 export interface DecisionRefusal {
   /** The sentence to show. The server's own wording when it sent one. */
   message: string;
-  /**
-   * `warning` when something DID happen and the person needs to know what.
-   * `error` when nothing happened.
-   */
-  tone: RefusalTone;
 }
-
-/** The one code where the action ran and only the permission failed. */
-const PARTIAL_SUCCESS_CODE = 'STANDING_PERMISSION_NOT_RECORDED';
 
 /**
  * Codes whose server sentence is already the right thing to show a person.
@@ -46,14 +33,12 @@ const PARTIAL_SUCCESS_CODE = 'STANDING_PERMISSION_NOT_RECORDED';
  * of our own rather than piping raw server text at somebody.
  */
 const SHOW_SERVER_MESSAGE = new Set([
-  // Asked for a standing permission with Require login off.
-  'standing_grants_require_login',
-  // Asked for one from something that is not a signed-in person.
+  // Answered by something that is not a signed-in person while login is on.
   'operator_cookie_required',
-  // Asked for one while the master switch is off.
-  'STANDING_GRANTS_DISABLED',
-  // Asked for one on a request DorkOS cannot attribute to an agent.
-  'APPROVAL_HAS_NO_AGENT',
+  // Always allow on a request that does not offer it.
+  'ALWAYS_NOT_OFFERED',
+  // Always allow could not be saved, so nothing was allowed.
+  'ALWAYS_ALLOW_NOT_RECORDED',
   // The request was already decided, or its window closed, while the card was up.
   'APPROVAL_NOT_PENDING',
   'APPROVAL_EXPIRED',
@@ -64,35 +49,20 @@ const SHOW_SERVER_MESSAGE = new Set([
  * Describe a refused decision.
  *
  * @param error - Whatever the mutation rejected with.
- * @param askedForStanding - Whether the person asked to stop being asked.
- * @returns The sentence to show and how loudly.
+ * @param askedForAlways - Whether the person answered Always allow.
+ * @returns The sentence to show.
  */
-export function describeDecisionRefusal(
-  error: unknown,
-  askedForStanding: boolean
-): DecisionRefusal {
+export function describeDecisionRefusal(error: unknown, askedForAlways: boolean): DecisionRefusal {
   const code = (error as { code?: string } | null)?.code;
   const serverMessage = error instanceof Error ? error.message : '';
 
-  if (code === PARTIAL_SUCCESS_CODE) {
-    return {
-      // A warning, never an error: the action went ahead. Saying "failed" here
-      // would invite somebody to repeat something that cannot be undone.
-      tone: 'warning',
-      message:
-        serverMessage ||
-        'DorkOS allowed this one action, but could not record the permission to stop asking. The agent will ask again next time.',
-    };
-  }
-
   if (code && SHOW_SERVER_MESSAGE.has(code) && serverMessage) {
-    return { tone: 'error', message: serverMessage };
+    return { message: serverMessage };
   }
 
   return {
-    tone: 'error',
-    message: askedForStanding
-      ? 'DorkOS could not answer that. Nothing was allowed and no permission was created.'
+    message: askedForAlways
+      ? 'DorkOS could not answer that. Nothing was allowed and nothing was changed.'
       : 'DorkOS could not record your answer. Nothing was allowed.',
   };
 }

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { SERVER_ROUND_TRIP_MS } from '../fixtures/rooms-api';
 
 /** Shared navigation and readiness helpers every page object builds on. */
@@ -10,7 +10,7 @@ export class BasePage {
   }
 
   /**
-   * Wait for the cockpit shell to mount.
+   * Wait for the app shell to mount.
    *
    * The ceiling is the suite's shared {@link SERVER_ROUND_TRIP_MS}, not the 10s
    * this used to hardcode. It is a **ceiling, not a delay** — the selector
@@ -27,13 +27,18 @@ export class BasePage {
     });
   }
 
-  /** Ensure the sidebar is expanded (click "Open sidebar" if collapsed). */
+  /** Expand the desktop sidebar; phones use persistent tabs and have no sidebar. */
   async ensureSidebarOpen() {
-    const openButton = this.page.getByRole('button', { name: /open sidebar/i });
-    if (await openButton.isVisible().catch(() => false)) {
-      await openButton.click();
-      // Wait for sidebar content to be interactable
-      await this.page.getByRole('button', { name: /new chat/i }).waitFor({ state: 'visible' });
+    await this.waitForAppReady();
+    const sidebar = this.page.locator('[data-slot="sidebar"]');
+    if ((await sidebar.count()) === 0) return;
+
+    if ((await sidebar.getAttribute('data-state')) === 'collapsed') {
+      await this.page.locator('[data-slot="sidebar-trigger"]').click();
     }
+    await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+    await expect(sidebar.locator('[data-slot="sidebar-inner"]')).toBeInViewport({
+      ratio: 1,
+    });
   }
 }

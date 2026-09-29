@@ -1657,7 +1657,7 @@ describe('SessionStateProjector', () => {
       roomTurn: { roomId: 'room-1', authorId: 'ana', turnId: 'turn-1' },
       uiState: {
         panels: { settings: false, tasks: true, relay: false, picker: false },
-        sidebar: { open: true, activeTab: null },
+        sidebar: { open: true },
         agent: { id: null, cwd: null },
       },
     });

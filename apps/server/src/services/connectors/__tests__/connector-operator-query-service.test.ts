@@ -9,10 +9,12 @@ import {
   connectorProviderInstances,
   createDb,
   eq,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
   runMigrations,
   sessionConnectionOverrides,
   type Db,
 } from '@dorkos/db';
+import type { ConnectorAppConnections } from '@dorkos/shared/connector-resource-schemas';
 import { ConnectorProviderInstanceIdSchema } from '@dorkos/shared/connector-schemas';
 import { ManagedConnectorCatalogRequestSchema } from '@dorkos/shared/connector-managed-discovery-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
@@ -25,6 +27,9 @@ import {
   ConnectorOperatorQueryError,
   ConnectorOperatorQueryService,
 } from '../resources/operator-query-service.js';
+import type { ConnectionWayHealth } from '../readiness/connection-readiness.js';
+import type { NangoHttpClient, NangoIntegration } from '../providers/nango-client.js';
+import { NangoConnectorProvider } from '../providers/nango.js';
 import { ConnectionStore } from '../connection-store.js';
 import { ConnectorRegistry } from '../registry.js';
 
@@ -152,12 +157,64 @@ describe('ConnectorOperatorQueryService', () => {
     expect(db.select().from(connectionOperationGrants).all()).toHaveLength(1);
   });
 
+  it('says on every account whether agents can use it, from its way’s live health', async () => {
+    const wayHealth = vi.fn((providerInstanceId: string): ConnectionWayHealth =>
+      providerInstanceId === PROVIDER_ID
+        ? { status: 'down', problem: 'dorkos_account_unlinked', anotherWayWorks: false }
+        : { status: 'up', canRunActions: true }
+    );
+    const withWays = new ConnectorOperatorQueryService({
+      db,
+      registry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+      wayHealth,
+    });
+
+    const [kept] = await withWays.listConnections(OWNER);
+    expect(kept).not.toHaveProperty('warnings');
+    expect(kept?.readiness).toMatchObject({
+      state: 'needs_you',
+      reason: 'dorkos_account_unlinked',
+      fix: { action: 'connect_new', fixableBy: 'person' },
+    });
+    expect(wayHealth).toHaveBeenCalledWith(PROVIDER_ID);
+    // The detail carries the same answer.
+    expect((await withWays.getConnection(OWNER, 'connection-a')).connection.readiness).toEqual(
+      kept?.readiness
+    );
+
+    // Disconnected with nothing owed: connect it again through a way that works.
+    db.update(connections)
+      .set({ lifecycleState: 'disconnected', externalCleanupState: 'complete' })
+      .where(eq(connections.id, 'connection-a'))
+      .run();
+    const [disconnected] = await withWays.listConnections(OWNER);
+    expect(disconnected?.readiness).toMatchObject({
+      state: 'gone',
+      reason: 'disconnected',
+      fix: { action: 'connect_new' },
+    });
+
+    // A way that works, read from the live registry by default.
+    db.update(connections)
+      .set({ lifecycleState: 'connected' })
+      .where(eq(connections.id, 'connection-a'))
+      .run();
+    const [working] = await service.listConnections(OWNER);
+    expect(working?.readiness).toMatchObject({ state: 'ready', reason: 'usable' });
+  });
+
   it('returns one account-free catalog with per-route authentication and message intents', async () => {
     const catalog = await service.catalog({ signal: new AbortController().signal });
 
-    expect(catalog.services).toEqual([
+    // The live Gmail route merges into the built-in Gmail row: one row, not two.
+    expect(catalog.services.filter((entry) => entry.serviceSlug === 'gmail')).toHaveLength(1);
+    expect(catalog.services.find((entry) => entry.serviceSlug === 'gmail')).toEqual(
       expect.objectContaining({
-        serviceSlug: 'gmail',
+        popular: true,
+        description: 'Read, search and send email.',
+        signInName: 'Google',
         intents: [
           expect.objectContaining({ kind: 'messages' }),
           expect.objectContaining({
@@ -167,9 +224,10 @@ describe('ConnectorOperatorQueryService', () => {
             ],
           }),
         ],
-      }),
+      })
+    );
+    expect(catalog.services.find((entry) => entry.serviceSlug === 'linear')).toEqual(
       expect.objectContaining({
-        serviceSlug: 'linear',
         intents: [
           expect.objectContaining({
             kind: 'account',
@@ -186,9 +244,292 @@ describe('ConnectorOperatorQueryService', () => {
             ],
           }),
         ],
+      })
+    );
+    expect(JSON.stringify(catalog)).not.toContain('private-account-a');
+  });
+
+  it('always lists the popular apps, each needing a way set up before it can connect', async () => {
+    const empty = new ConnectorOperatorQueryService({
+      db,
+      registry: new ConnectorRegistry({
+        db,
+        configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+      }),
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+      appConnections: async () => ({
+        ways: [],
+        newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+      }),
+    });
+
+    const gmail = await empty.catalog({ query: 'gmail', signal: new AbortController().signal });
+    expect(gmail).toEqual({
+      services: [
+        {
+          serviceSlug: 'gmail',
+          displayName: 'Gmail',
+          iconKey: 'gmail',
+          description: 'Read, search and send email.',
+          category: 'email',
+          popular: true,
+          signInName: 'Google',
+          intents: [{ kind: 'account', displayName: 'Use a Gmail account', routes: [] }],
+        },
+      ],
+      warnings: [],
+      appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
+    });
+
+    // A search for what an app does finds it by its one line.
+    const pages = await empty.catalog({ query: 'pages and', signal: new AbortController().signal });
+    expect(pages.services.map((entry) => entry.serviceSlug)).toEqual(['notion']);
+
+    // A search by shelf finds the apps on it.
+    const email = await empty.catalog({ query: 'email', signal: new AbortController().signal });
+    expect(email.services.map((entry) => entry.serviceSlug)).toEqual(['gmail', 'outlook']);
+    const outlook = email.services[1]?.intents[0];
+    expect(outlook?.displayName).toBe('Use an Outlook account');
+
+    // Chat apps are listed with nothing set up, and never as an account to sign in to.
+    const all = await empty.catalog({ limit: 100, signal: new AbortController().signal });
+    const telegram = all.services.find((entry) => entry.serviceSlug === 'telegram');
+    expect(telegram?.intents).toEqual([
+      {
+        kind: 'messages',
+        displayName: 'Messages through a Telegram bot',
+        relayAdapterType: 'telegram',
+      },
+    ]);
+    expect(all.services.find((entry) => entry.serviceSlug === 'webhook')?.category).toBe(
+      'developer'
+    );
+
+    // An agent can still ask for an app no way reaches yet (DOR-2494): the
+    // request's card runs the one-time step first. The reason travels with it.
+    const directory = await empty.serviceDirectory(new AbortController().signal);
+    expect(directory.services).toContainEqual({
+      serviceSlug: 'gmail',
+      displayName: 'Gmail',
+      requestable: true,
+      reached: false,
+    });
+    expect(directory.reachProblem).toBe('nothing_set_up');
+    // A chat app still has no account to ask for.
+    expect(directory.services).toContainEqual({
+      serviceSlug: 'telegram',
+      displayName: 'Telegram',
+      requestable: false,
+      unavailableBecause: 'messaging_only',
+    });
+  });
+
+  it('says why no way reaches an app: which way is down, or that the working one misses it', async () => {
+    const registry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    const signal = new AbortController().signal;
+    const directoryFor = (appConnections: ConnectorAppConnections) =>
+      new ConnectorOperatorQueryService({
+        db,
+        registry,
+        sessions: { resolveSessionAgent: () => undefined },
+        agentOwnership: { ownsAgent: () => false },
+        appConnections: async () => appConnections,
+      }).serviceDirectory(signal);
+
+    const unlinked = await directoryFor({
+      ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
+      newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
+    });
+    expect(unlinked.reachProblem).toBe('dorkos_account_unlinked');
+
+    const nango = {
+      kind: 'own_key' as const,
+      type: 'nango',
+      status: 'ready' as const,
+      providerInstanceId: ConnectorProviderInstanceIdSchema.parse('provider-nango'),
+    };
+    const misses = await directoryFor({ ways: [nango], newApps: { status: 'ready', way: nango } });
+    expect(misses.reachProblem).toBe('app_not_reached');
+  });
+
+  it('gives each app a same-origin logo path and one line, never the service’s logo URL', async () => {
+    const logoRegistry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    logoRegistry.register(
+      new FakeConnectorProvider({
+        instanceId: ConnectorProviderInstanceIdSchema.parse('provider-logos'),
+        type: 'fake',
+        custody: 'managed',
+        toolkits: [
+          {
+            slug: 'gmail',
+            displayName: 'Gmail',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/gmail',
+            description: 'Gmail is Google’s email service.',
+          },
+          {
+            slug: 'zendesk',
+            displayName: 'Zendesk',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/zendesk',
+            description: 'Zendesk runs customer support tickets.',
+          },
+          // Only another app's kept logo can give this one a mark.
+          { slug: 'freshdesk', displayName: 'Freshdesk', authKind: 'oauth2' },
+          { slug: 'bare', displayName: 'Bare', authKind: 'oauth2' },
+          // Not a safe path segment, so it can never get a logo path.
+          {
+            slug: 'Odd.Slug',
+            displayName: 'Odd',
+            authKind: 'oauth2',
+            logoUrl: 'https://logos.composio.dev/api/odd',
+          },
+        ],
+      }),
+      'material-logos'
+    );
+    const logos = new ConnectorOperatorQueryService({
+      db,
+      registry: logoRegistry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+      keptLogos: () => Promise.resolve(new Set(['freshdesk'])),
+    });
+    const signal = new AbortController().signal;
+
+    const page = await logos.catalog({ limit: 100, signal });
+    const bySlug = new Map(page.services.map((entry) => [entry.serviceSlug, entry]));
+
+    // Our own line wins for a built-in app; the logo is the server's own path.
+    expect(bySlug.get('gmail')).toMatchObject({
+      description: 'Read, search and send email.',
+      logo: '/api/connectors/catalog/logos/gmail',
+    });
+    expect(bySlug.get('zendesk')).toMatchObject({
+      description: 'Zendesk runs customer support tickets.',
+      logo: '/api/connectors/catalog/logos/zendesk',
+    });
+    expect(bySlug.get('freshdesk')?.logo).toBe('/api/connectors/catalog/logos/freshdesk');
+    expect(bySlug.get('bare')).not.toHaveProperty('logo');
+    expect(bySlug.get('bare')).not.toHaveProperty('description');
+    expect(bySlug.get('Odd.Slug')).not.toHaveProperty('logo');
+    // A built-in app nothing sends a logo for has none either.
+    expect(bySlug.get('notion')).not.toHaveProperty('logo');
+    expect(JSON.stringify(page)).not.toContain('logos.composio.dev');
+  });
+
+  it('lists a popular app a self-hosted Nango server reaches once, under the app (DOR-2436)', async () => {
+    const integrations: NangoIntegration[] = [
+      {
+        uniqueKey: 'google-mail',
+        provider: 'google-mail',
+        displayName: 'Gmail',
+        authMode: 'OAUTH2',
+        logoUrl: 'https://app.nango.dev/images/template-logos/google-mail.svg',
+      },
+      { uniqueKey: 'mail-work', provider: 'google-mail', displayName: 'Gmail' },
+      { uniqueKey: 'acme-crm', provider: 'acme', displayName: 'Acme' },
+    ];
+    const client: NangoHttpClient = {
+      listIntegrations: () => Promise.resolve(integrations),
+      initiateConnection: () => Promise.reject(new Error('not used')),
+      getConnectionState: () => Promise.reject(new Error('not used')),
+      listConnections: () => Promise.resolve([]),
+      deleteConnection: () => Promise.resolve(),
+    };
+    const nangoRegistry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    nangoRegistry.register(
+      new NangoConnectorProvider({
+        client,
+        instanceId: ConnectorProviderInstanceIdSchema.parse('provider-nango'),
+      }),
+      'material-nango'
+    );
+    const queries = new ConnectorOperatorQueryService({
+      db,
+      registry: nangoRegistry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+    });
+    const signal = new AbortController().signal;
+
+    const page = await queries.catalog({ limit: 100, signal });
+    const slugs = page.services.map((entry) => entry.serviceSlug);
+    expect(slugs).not.toContain('google-mail');
+    expect(slugs.filter((slug) => slug === 'gmail')).toHaveLength(1);
+    const gmail = page.services.find((entry) => entry.serviceSlug === 'gmail');
+    expect(gmail).toMatchObject({
+      displayName: 'Gmail',
+      description: 'Read, search and send email.',
+      logo: '/api/connectors/catalog/logos/gmail',
+      popular: true,
+      intents: [
+        {
+          kind: 'account',
+          routes: [
+            expect.objectContaining({ providerInstanceId: 'provider-nango', custody: 'self-host' }),
+          ],
+        },
+      ],
+    });
+    // A second Gmail setup stays reachable on its own row, named so it never
+    // reads as a copy of the popular one; an app DorkOS doesn't know keeps its key.
+    expect(page.services.find((entry) => entry.serviceSlug === 'mail-work')?.displayName).toBe(
+      'Gmail (mail-work)'
+    );
+    expect(slugs).toContain('acme-crm');
+
+    // Gmail is now reached, and the Nango key is not a service it can name.
+    const directory = await queries.serviceDirectory(signal);
+    expect(directory.services).toContainEqual({
+      serviceSlug: 'gmail',
+      displayName: 'Gmail',
+      requestable: true,
+      reached: true,
+    });
+    expect(directory.services.map((entry) => entry.serviceSlug)).not.toContain('google-mail');
+  });
+
+  it('names the service an app will ask about on every route that signs in through one', async () => {
+    const composio = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('provider-composio'),
+      type: 'composio',
+      toolkits: [{ slug: 'notion', displayName: 'Notion', authKind: 'oauth2' }],
+    });
+    const composioRegistry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    });
+    composioRegistry.register(composio, 'material-composio');
+    const queries = new ConnectorOperatorQueryService({
+      db,
+      registry: composioRegistry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+    });
+
+    const page = await queries.catalog({ query: 'notion', signal: new AbortController().signal });
+    expect(page.services).toHaveLength(1);
+    expect(page.services[0]?.intents).toEqual([
+      expect.objectContaining({
+        kind: 'account',
+        routes: [expect.objectContaining({ signInThrough: 'Composio' })],
       }),
     ]);
-    expect(JSON.stringify(catalog)).not.toContain('private-account-a');
+    // A route type that names no service (the test double here) carries no line.
+    const direct = await service.catalog({ query: 'gmail', signal: new AbortController().signal });
+    const account = direct.services[0]?.intents.find((intent) => intent.kind === 'account');
+    expect(account?.kind === 'account' && account.routes[0]).not.toHaveProperty('signInThrough');
   });
 
   it('refuses before managed recovery when canonical connector data is unavailable', async () => {
@@ -277,14 +618,102 @@ describe('ConnectorOperatorQueryService', () => {
       signal: new AbortController().signal,
     });
 
+    // The whole list is kept, so the search runs over it rather than upstream.
     expect(requests).toEqual([
-      { version: 1, query: 'mail', cursor: undefined, limit: 100 },
-      { version: 1, query: 'mail', cursor: 'page-2', limit: 100 },
+      { version: 1, cursor: undefined, limit: 100 },
+      { version: 1, cursor: 'page-2', limit: 100 },
     ]);
     expect(catalog.warnings).toEqual([]);
     expect(catalog.services).toHaveLength(100);
     expect(catalog.services).toContainEqual(
       expect.objectContaining({ serviceSlug: 'mail-000', displayName: 'Mail 000' })
+    );
+  });
+
+  it('answers every page, search and agent lookup from one upstream listing per service', async () => {
+    const listToolkitPage = vi.spyOn(provider, 'listToolkitPage');
+    const bulk = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('provider-bulk'),
+      type: 'bulk',
+      toolkits: Array.from({ length: 850 }, (_, index) => ({
+        slug: `bulk-${String(index).padStart(3, '0')}`,
+        displayName: `Bulk ${index}`,
+        authKind: 'oauth2' as const,
+      })),
+    });
+    const bulkPages = vi.spyOn(bulk, 'listToolkitPage');
+    registry.register(bulk, 'material-bulk');
+    const listings = (spy: typeof bulkPages) =>
+      spy.mock.calls.filter(([request]) => request.cursor === undefined).length;
+
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    for (let page = 0; page < 5; page += 1) {
+      const result = await service.catalog({
+        limit: 24,
+        ...(cursor !== undefined && { cursor }),
+        signal: new AbortController().signal,
+      });
+      for (const entry of result.services) seen.add(entry.serviceSlug);
+      cursor = result.nextCursor;
+    }
+    const search = await service.catalog({
+      query: 'bulk 84',
+      signal: new AbortController().signal,
+    });
+    await service.catalog({ query: 'gmail', signal: new AbortController().signal });
+    await service.catalog({
+      query: 'bulk',
+      includeAuthenticationSetup: true,
+      signal: new AbortController().signal,
+    });
+    const directory = await service.serviceDirectory(new AbortController().signal);
+
+    expect(seen.size).toBe(120);
+    // Search now also matches the service id, and runs over the kept list.
+    expect(search.services.map((entry) => entry.serviceSlug)).toEqual([
+      'bulk-084',
+      'bulk-840',
+      'bulk-841',
+      'bulk-842',
+      'bulk-843',
+      'bulk-844',
+      'bulk-845',
+      'bulk-846',
+      'bulk-847',
+      'bulk-848',
+      'bulk-849',
+    ]);
+    expect(directory.services.some((entry) => entry.serviceSlug === 'bulk-849')).toBe(true);
+    expect(listings(bulkPages)).toBe(1);
+    expect(listings(listToolkitPage)).toBe(1);
+    // 850 apps at 100 a page, once.
+    expect(bulkPages).toHaveBeenCalledTimes(9);
+  });
+
+  it('lists a service again as soon as its key or setup changes', async () => {
+    const listToolkitPage = vi.spyOn(provider, 'listToolkitPage');
+    await service.catalog({ signal: new AbortController().signal });
+    await service.catalog({ query: 'linear', signal: new AbortController().signal });
+    expect(listToolkitPage).toHaveBeenCalledTimes(1);
+
+    // A key save reloads the provider: unregister, then register what answered.
+    registry.unregisterProviderInstance(PROVIDER_ID);
+    const rekeyed = new FakeConnectorProvider({
+      instanceId: PROVIDER_ID,
+      type: 'fake',
+      toolkits: [{ slug: 'notion', displayName: 'Notion', authKind: 'oauth2' }],
+    });
+    registry.register(rekeyed, 'material-b');
+    const page = await service.catalog({ query: 'notion', signal: new AbortController().signal });
+
+    expect(page.services.find((entry) => entry.serviceSlug === 'notion')?.intents).toContainEqual(
+      expect.objectContaining({ kind: 'account', routes: [expect.anything()] })
+    );
+    const gmail = await service.catalog({ query: 'gmail', signal: new AbortController().signal });
+    // Gmail is a popular app, so it stays listed — but no longer reachable.
+    expect(gmail.services[0]?.intents).toContainEqual(
+      expect.objectContaining({ kind: 'account', routes: [] })
     );
   });
 
@@ -307,9 +736,11 @@ describe('ConnectorOperatorQueryService', () => {
         },
       ],
     });
+    const synthetic = (page: { services: Array<{ serviceSlug: string; intents: unknown }> }) =>
+      page.services.find((entry) => entry.serviceSlug === 'synthetic')?.intents;
     const legacy = await service.catalog({ signal: new AbortController().signal });
     expect(JSON.stringify(legacy)).not.toContain('authenticationSetup');
-    expect(legacy.services[0].intents).toEqual([
+    expect(synthetic(legacy)).toEqual([
       expect.objectContaining({
         kind: 'account',
         routes: [
@@ -326,7 +757,7 @@ describe('ConnectorOperatorQueryService', () => {
       includeAuthenticationSetup: true,
       signal: new AbortController().signal,
     });
-    expect(rich.services[0].intents).toEqual([
+    expect(synthetic(rich)).toEqual([
       expect.objectContaining({
         kind: 'account',
         routes: [
@@ -383,10 +814,16 @@ describe('ConnectorOperatorQueryService', () => {
       }),
       relay: {
         getManifest: (type) =>
-          type === 'slack' || type === 'telegram' ? { displayName: type } : undefined,
+          type === 'slack' || type === 'telegram' || type === 'discord'
+            ? { displayName: type }
+            : undefined,
         getCatalog: () => [
           { manifest: { type: 'telegram', displayName: 'Telegram' } },
           { manifest: { type: 'slack', displayName: 'Slack' } },
+          { manifest: { type: 'discord', displayName: 'Discord' } },
+          // Plumbing and retired chat apps are never something a person connects.
+          { manifest: { type: 'claude-code', displayName: 'Claude Code', category: 'internal' } },
+          { manifest: { type: 'old-chat', displayName: 'Old Chat', deprecated: true } },
         ],
       },
       sessions: { resolveSessionAgent: () => undefined },
@@ -394,18 +831,18 @@ describe('ConnectorOperatorQueryService', () => {
     });
 
     await expect(
-      nativeOnly.catalog({ query: 'gram', limit: 1, signal: new AbortController().signal })
+      nativeOnly.catalog({ query: 'disc', limit: 1, signal: new AbortController().signal })
     ).resolves.toEqual({
       services: [
         {
-          serviceSlug: 'telegram',
-          displayName: 'Telegram',
-          iconKey: 'telegram',
+          serviceSlug: 'discord',
+          displayName: 'Discord',
+          iconKey: 'discord',
           intents: [
             {
               kind: 'messages',
-              displayName: 'Messages through a Telegram bot',
-              relayAdapterType: 'telegram',
+              displayName: 'Messages through a Discord bot',
+              relayAdapterType: 'discord',
             },
           ],
         },
@@ -413,19 +850,24 @@ describe('ConnectorOperatorQueryService', () => {
       warnings: [],
     });
 
-    const first = await nativeOnly.catalog({
-      limit: 1,
-      signal: new AbortController().signal,
-    });
-    expect(first.services[0]?.serviceSlug).toBe('slack');
-    expect(first.nextCursor).toBeTruthy();
-    await expect(
-      nativeOnly.catalog({
-        cursor: first.nextCursor,
-        limit: 1,
+    // Popular apps lead, in name order; everything else follows them.
+    const slugs: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await nativeOnly.catalog({
+        limit: 7,
+        ...(cursor && { cursor }),
         signal: new AbortController().signal,
-      })
-    ).resolves.toMatchObject({ services: [{ serviceSlug: 'telegram' }] });
+      });
+      slugs.push(...page.services.map((entry) => entry.serviceSlug));
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(slugs).toHaveLength(19);
+    expect(slugs.slice(0, 3)).toEqual(['gmail', 'outlook', 'googlecalendar']);
+    expect(slugs.at(-1)).toBe('discord');
+    expect(slugs).not.toContain('claude-code');
+    expect(slugs).not.toContain('old-chat');
+    expect(new Set(slugs).size).toBe(slugs.length);
   });
 
   it('gives agent requests the catalog read itself: recovery first, every page, Messaging marked', async () => {
@@ -463,16 +905,19 @@ describe('ConnectorOperatorQueryService', () => {
     const directory = await queries.serviceDirectory(new AbortController().signal);
 
     expect(recoverManagedProvider).toHaveBeenCalledOnce();
-    expect(directory.services).toHaveLength(151);
+    // 150 live services plus the popular apps the live page did not already list.
+    expect(directory.services).toHaveLength(167);
     expect(directory.services).toContainEqual({
       serviceSlug: 'gmail',
       displayName: 'Gmail',
       requestable: true,
+      reached: true,
     });
     expect(directory.services).toContainEqual({
       serviceSlug: 'telegram',
       displayName: 'Telegram',
       requestable: false,
+      unavailableBecause: 'messaging_only',
     });
     expect(directory.warnings).toEqual([]);
     // Types only: a person's label for a route never hides a service word.
@@ -503,11 +948,10 @@ describe('ConnectorOperatorQueryService', () => {
       agentOwnership: { ownsAgent: () => false },
     });
 
-    await expect(
-      withFailure.catalog({ signal: new AbortController().signal })
-    ).resolves.toMatchObject({
-      services: [{ serviceSlug: 'slack', intents: [{ kind: 'messages' }] }],
-      warnings: [{ code: 'catalog_provider_unavailable' }],
+    const page = await withFailure.catalog({ signal: new AbortController().signal });
+    expect(page.warnings).toMatchObject([{ code: 'catalog_provider_unavailable' }]);
+    expect(page.services.find((entry) => entry.serviceSlug === 'slack')).toMatchObject({
+      intents: [{ kind: 'messages' }, { kind: 'account', routes: [] }],
     });
   });
 
@@ -532,7 +976,7 @@ describe('ConnectorOperatorQueryService', () => {
     });
   });
 
-  it('shows canonical session detach and connection pause as disabled effective access', async () => {
+  it('says per chat whether its agent can use each account, from one readiness', async () => {
     db.insert(sessionConnectionOverrides)
       .values({
         sessionId: 'session-a',
@@ -544,21 +988,135 @@ describe('ConnectorOperatorQueryService', () => {
       .run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
       connections: [
-        { connectionId: 'connection-a', access: 'disabled', dominatingReason: 'session_detached' },
+        {
+          connectionId: 'connection-a',
+          source: 'this_chat',
+          readiness: { state: 'unavailable', reason: 'off_for_this_chat' },
+          thisChat: 'off',
+        },
       ],
     });
 
+    // Turned on with nothing of its own: nothing to use here, so it reads as
+    // off, and the owner's switch (the agent holds it account-wide) is the fix.
     db.update(sessionConnectionOverrides)
       .set({ state: 'attached' })
       .where(eq(sessionConnectionOverrides.sessionId, 'session-a'))
       .run();
+    const empty = (await service.sessionConnections(OWNER, 'session-a')).connections[0];
+    expect(empty?.readiness).toMatchObject({
+      reason: 'off_for_this_chat',
+      fix: { action: 'turn_on_for_this_chat', fixableBy: 'person' },
+    });
+    expect(empty?.thisChat).toBe('off');
+
+    // With its own grant, the account's own state shows through.
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'session-grant-a',
+        subjectType: 'session',
+        subjectId: 'session-a',
+        agentId: 'agent-a',
+        connectionId: 'connection-a',
+        operationRevisionId: 'revision-a',
+        createdBy: 'operator',
+        createdAt: NOW,
+      })
+      .run();
     db.update(connections).set({ enabled: false }).where(eq(connections.id, 'connection-a')).run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
-      connections: [{ access: 'disabled', dominatingReason: 'connection_paused' }],
+      connections: [{ readiness: { state: 'paused', reason: 'paused' } }],
+    });
+
+    // Another agent's override: this chat was handed to someone else.
+    db.update(connections).set({ enabled: true }).where(eq(connections.id, 'connection-a')).run();
+    db.update(sessionConnectionOverrides)
+      .set({ agentId: 'agent-b' })
+      .where(eq(sessionConnectionOverrides.sessionId, 'session-a'))
+      .run();
+    await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
+      connections: [{ readiness: { reason: 'off_for_this_chat' } }],
+    });
+
+    // No override: the agent's own access, ready.
+    db.delete(sessionConnectionOverrides).run();
+    await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
+      connections: [
+        { source: 'agent', readiness: { state: 'ready', reason: 'usable' }, thisChat: 'on' },
+      ],
     });
   });
 
-  it('derives managed synchronization only from each scope current command', async () => {
+  it('offers the per-chat switch only on accounts the agent holds account-wide and still connected', async () => {
+    // An account this agent was never given, turned on for this chat alone:
+    // no switch, because turning it on could only ever add access.
+    db.insert(connections)
+      .values({
+        id: 'connection-b',
+        providerInstanceId: PROVIDER_ID,
+        externalAccountRef: 'private-account-b',
+        toolkit: 'gmail',
+        label: 'Home Gmail',
+        status: 'active',
+        lifecycleState: 'connected',
+        enabled: true,
+        grantReconciliationStatus: 'ready',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'session-a',
+        agentId: 'agent-a',
+        connectionId: 'connection-b',
+        state: 'detached',
+        updatedAt: NOW,
+      })
+      .run();
+    const view = await service.sessionConnections(OWNER, 'session-a');
+    const own = view.connections.find((row) => row.connectionId === 'connection-a');
+    const foreign = view.connections.find((row) => row.connectionId === 'connection-b');
+    expect(own?.thisChat).toBe('on');
+    expect(foreign).toMatchObject({ readiness: { reason: 'off_for_this_chat' } });
+    expect(foreign?.thisChat).toBeUndefined();
+    // Nothing to put back, so readiness offers no fix either.
+    expect(foreign?.readiness.fix).toBeUndefined();
+
+    // Given to every agent counts as account-wide.
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-every-b',
+        subjectType: 'every_agent',
+        subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+        agentId: null,
+        connectionId: 'connection-b',
+        operationRevisionId: 'revision-a',
+        createdBy: 'operator',
+        createdAt: NOW,
+      })
+      .run();
+    const inherited = (await service.sessionConnections(OWNER, 'session-a')).connections.find(
+      (row) => row.connectionId === 'connection-b'
+    );
+    expect(inherited?.thisChat).toBe('off');
+    expect(inherited?.readiness.fix).toEqual({
+      action: 'turn_on_for_this_chat',
+      fixableBy: 'person',
+    });
+
+    // A disconnected account has nothing to switch.
+    db.update(connections)
+      .set({ lifecycleState: 'disconnected' })
+      .where(eq(connections.id, 'connection-a'))
+      .run();
+    const gone = (await service.sessionConnections(OWNER, 'session-a')).connections.find(
+      (row) => row.connectionId === 'connection-a'
+    );
+    expect(gone?.thisChat).toBeUndefined();
+  });
+
+  it('derives managed synchronization only from each scope current command, and a chat from its agent’s own', async () => {
     db.update(connectorProviderInstances)
       .set({ mode: 'managed' })
       .where(eq(connectorProviderInstances.id, PROVIDER_ID))
@@ -622,8 +1180,30 @@ describe('ConnectorOperatorQueryService', () => {
       .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
       .run();
     expect((await service.listConnections(OWNER))[0]?.authoritySync).toEqual({ status: 'pending' });
+    // A stalled command says why it is waiting and when it tries again, on the
+    // exact detail the account panel reads.
+    const retryAt = '2026-09-06T18:05:00.000Z';
+    db.update(connectorManagedAuthorityOutbox)
+      .set({ safeReason: 'DorkOS’s servers had a problem.', nextAttemptAt: retryAt })
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
+      .run();
+    await expect(service.getConnection(OWNER, 'connection-a')).resolves.toMatchObject({
+      connection: {
+        authoritySync: { status: 'pending', reason: 'DorkOS’s servers had a problem.', retryAt },
+      },
+    });
+    // The generic text an earlier version stored says nothing; it is no reason.
+    db.update(connectorManagedAuthorityOutbox)
+      .set({ safeReason: 'Managed connection synchronization is pending.' })
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
+      .run();
+    expect((await service.getConnection(OWNER, 'connection-a')).connection.authoritySync).toEqual({
+      status: 'pending',
+    });
+    // A chat's readiness reads this agent's own hosted access, never the
+    // account-wide lifecycle: nothing applied for it yet reads as updating.
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
-      connections: [{ access: 'disabled', dominatingReason: 'authority_sync_required' }],
+      connections: [{ source: 'agent', readiness: { reason: 'access_updating' } }],
     });
     db.insert(sessionConnectionOverrides)
       .values({
@@ -646,16 +1226,52 @@ describe('ConnectorOperatorQueryService', () => {
         createdAt: NOW,
       })
       .run();
+    db.insert(connectorManagedAuthorityOutbox)
+      .values({
+        connectionId: 'connection-a',
+        providerInstanceId: PROVIDER_ID,
+        executionConfigGeneration: 1,
+        ownerKind: OWNER.kind,
+        ownerId: OWNER.installationId,
+        commandId: 'agent-grants-1',
+        managedConnectionId: 'private-account-a',
+        scopeKind: 'agent_grants',
+        subjectId: 'agent-a',
+        scopeVersion: 1,
+        requestHash: 'agent',
+        requestJson: '{}',
+        state: 'rejected',
+        safeReason: 'Refused.',
+        attemptCount: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    db.insert(connectorManagedAuthorityScopes)
+      .values({
+        managedConnectionId: 'private-account-a',
+        scopeKind: 'agent_grants',
+        subjectId: 'agent-a',
+        scopeVersion: 1,
+        lastCommandId: 'agent-grants-1',
+        lastCommandHash: 'agent',
+        updatedAt: NOW,
+      })
+      .run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
-      connections: [{ access: 'disabled', dominatingReason: 'authority_sync_required' }],
+      connections: [{ source: 'this_chat', readiness: { reason: 'access_update_failed' } }],
     });
     db.update(connectorManagedAuthorityOutbox)
       .set({ state: 'applied' })
-      .where(eq(connectorManagedAuthorityOutbox.commandId, 'current-applied'))
+      .where(eq(connectorManagedAuthorityOutbox.commandId, 'agent-grants-1'))
       .run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
       connections: [
-        { access: 'session_only', dominatingReason: 'none', operationRevisionIds: ['revision-a'] },
+        {
+          source: 'this_chat',
+          readiness: { state: 'ready' },
+          operationRevisionIds: ['revision-a'],
+        },
       ],
     });
   });

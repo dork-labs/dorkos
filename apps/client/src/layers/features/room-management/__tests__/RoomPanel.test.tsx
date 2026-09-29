@@ -574,6 +574,27 @@ describe('RoomPanel', () => {
       ).toBeInTheDocument();
     });
 
+    it('names a retired agent instead of promising a "second" one (DOR-2095)', async () => {
+      const ana = agentMember('Ana', '/repo/ana');
+      renderPanel({
+        room: DM,
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
+            .mockResolvedValue(
+              roster([HUMAN, { ...ana, author: { ...ana.author, retired: true } }], DM)
+            ),
+        }),
+      });
+      await rosterSection();
+
+      expect(
+        addSection().getByText(
+          'Ana is no longer on your team. Adding an agent turns this into a group conversation.'
+        )
+      ).toBeInTheDocument();
+    });
+
     it('says it only where it is true', async () => {
       // A channel is a channel however many agents are in it, and a
       // conversation already holding two is already a group. Red if the note

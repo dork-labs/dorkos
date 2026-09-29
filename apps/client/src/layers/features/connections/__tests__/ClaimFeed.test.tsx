@@ -253,4 +253,25 @@ describe('ClaimFeed — the group-add claim flow (DOR-883)', () => {
     expect(screen.queryByRole('button', { name: 'Join' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
+
+  it('shows only the chats that reached one chat app, inside that app’s panel', async () => {
+    transport.listUnclaimedChats = vi
+      .fn()
+      .mockResolvedValue([
+        chat(),
+        chat({ id: 'uc-2', adapterId: 'slack-1', senderName: 'Priya', senderId: '7' }),
+      ]);
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <TransportProvider transport={transport}>
+          <ClaimFeed enabled adapterId="slack-1" />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => expect(screen.getByText(/Priya/)).toBeInTheDocument());
+    expect(screen.queryByText(/Miguel/)).not.toBeInTheDocument();
+  });
 });

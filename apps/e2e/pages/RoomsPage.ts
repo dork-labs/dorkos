@@ -753,14 +753,13 @@ export class RoomsPage {
   }
 
   /**
-   * The vertical rules the panel hangs its replies off — one per reply.
+   * The line under the thread's root that counts its replies.
    *
-   * Counted rather than looked at: the connector is `aria-hidden` decoration, so
-   * the only honest question to ask it is whether the panel drew one for every
-   * reply and none for the root.
+   * `aria-hidden` decoration, so read by test id: the honest questions to ask
+   * it are whether there is exactly one and what number it shows.
    */
-  get threadConnectors(): Locator {
-    return this.threadPanel.getByTestId('room-thread-connector');
+  get threadDivider(): Locator {
+    return this.threadPanel.getByTestId('room-thread-divider');
   }
 
   /** The line the panel shows when the message a thread hangs off is not loaded. */

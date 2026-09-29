@@ -37,7 +37,7 @@ import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
 import { PackageFetcher } from '../package-fetcher.js';
 import { PackageResolver } from '../package-resolver.js';
 import { PermissionPreviewBuilder } from '../permission-preview.js';
-import type { GitTreeSource } from '../lib/git-tree.js';
+import type { GitTreeSource } from '../lib/git/git-tree.js';
 import { AdapterInstallFlow } from '../flows/install-adapter.js';
 import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
@@ -55,6 +55,8 @@ export interface InstallerTestSpies {
   /** Called by the uninstall flow for each bundled extension it removes. */
   extensionDisable: ReturnType<typeof vi.fn>;
   createAgentWorkspace: ReturnType<typeof vi.fn>;
+  /** The agent flow's `agentRegistry.unregisterAtPath`; resolves `null` by default. */
+  agentUnregister: ReturnType<typeof vi.fn>;
   adapterAdd: ReturnType<typeof vi.fn>;
   adapterRemove: ReturnType<typeof vi.fn>;
   /** `GitTreeSource.lookup` — resolves a ref to a commit. */
@@ -76,14 +78,37 @@ export interface InstallerTestHarness {
 }
 
 /**
+ * The extension manager both the plugin install flow and the uninstall flow
+ * hold: the union of what each of them calls.
+ */
+export type HarnessExtensionManager = ConstructorParameters<
+  typeof PluginInstallFlow
+>[0]['extensionManager'] &
+  ConstructorParameters<typeof UninstallFlow>[0]['extensionManager'];
+
+/** Optional overrides for {@link buildInstallerForTests}. */
+export interface InstallerTestOptions {
+  /**
+   * Use this extension manager instead of the stub, for a test that needs the
+   * real approval bookkeeping (a real `ExtensionManager`). The `extensionEnable`
+   * and `extensionDisable` spies are then not wired to anything.
+   */
+  extensionManager?: HarnessExtensionManager;
+}
+
+/**
  * Wire a full {@link MarketplaceInstaller} with real collaborators rooted at
  * the supplied temp `dorkHome` (see the module header for what is stubbed).
  *
  * @param dorkHome - Temp data directory every install writes under.
+ * @param options - Collaborators to use instead of the stubs.
  * @returns The installer plus the stub spies and the two collaborators tests
  *   reach for directly.
  */
-export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
+export function buildInstallerForTests(
+  dorkHome: string,
+  options: InstallerTestOptions = {}
+): InstallerTestHarness {
   const logger = noopLogger;
 
   // Marketplace cache + source manager — both just need a dorkHome. They are
@@ -126,7 +151,8 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
   const extensionEnable = vi.fn().mockResolvedValue({ extension: {}, reloadRequired: false });
   const extensionDisable = vi.fn().mockResolvedValue(undefined);
   const extensionCompiler = { compile: extensionCompile };
-  const extensionManager = {
+  const extensionManager: HarnessExtensionManager = options.extensionManager ?? {
+    get: vi.fn().mockReturnValue(undefined),
     enable: extensionEnable,
     disable: extensionDisable,
     forgetRunApproval: vi.fn().mockResolvedValue(undefined),
@@ -152,7 +178,17 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
     extensionManager,
     logger,
   });
-  const agentFlow = new AgentInstallFlow({ dorkHome, agentCreator, logger });
+  // The agent registry the agent flow unregisters an earlier, different
+  // package's agent through (DOR-2245 review 5). Nothing is registered here.
+  const agentUnregister = vi.fn(
+    async (_projectPath: string): Promise<{ id: string; directoryDenied: boolean } | null> => null
+  );
+  const agentFlow = new AgentInstallFlow({
+    dorkHome,
+    agentCreator,
+    agentRegistry: { unregisterAtPath: agentUnregister },
+    logger,
+  });
   const skillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
   const adapterFlow = new AdapterInstallFlow({ dorkHome, adapterManager, logger });
   const shapeFlow = new ShapeInstallFlow({ dorkHome, extensionCompiler, logger });
@@ -188,6 +224,7 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
       extensionEnable,
       extensionDisable,
       createAgentWorkspace,
+      agentUnregister,
       adapterAdd,
       adapterRemove,
       gitLookup,

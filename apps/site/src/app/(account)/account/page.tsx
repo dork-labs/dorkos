@@ -15,9 +15,15 @@ export const metadata: Metadata = {
  * `/account` — the signed-in DorkOS account profile. The session is re-read here
  * (behind the segment guard) to render name, email, and verification status;
  * Better Auth's cookie cache keeps this off the database on hot paths. Admins
- * also get a link into the `/admin` console.
+ * also get a link into the `/admin` console. `?deletion=postponed` is where a
+ * confirmed deletion lands when it has to wait for app sign-ins to end.
  */
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deletion?: string }>;
+}) {
+  const { deletion } = await searchParams;
   const session = await getServerSession();
   if (!session) redirect('/signin?returnTo=%2Faccount');
   const { user } = session;
@@ -38,7 +44,7 @@ export default async function AccountPage() {
           Open the admin console →
         </Link>
       ) : null}
-      <DangerZone email={user.email} />
+      <DangerZone email={user.email} deletionPostponed={deletion === 'postponed'} />
     </div>
   );
 }

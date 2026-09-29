@@ -61,7 +61,7 @@ import {
   writeLatest,
   type StewardContext,
 } from './steward.ts';
-import { addDays, count, dayOf, daysBetween, isoWeek } from './time.ts';
+import { addDays, count, dayOf, dayRange, daysBetween, isoWeek } from './time.ts';
 import { loadWorkflows, type WorkflowModel } from './workflows.ts';
 
 /** Where a command writes. */
@@ -163,7 +163,7 @@ export function cmdCollect(
       tmpDir: tmp,
     });
     env.io.out(
-      `collected ${r.days.length ? r.days.join(', ') : 'nothing'} with ${r.apiCalls} of ${gh.budget} API requests\n`
+      `collected ${r.days.length ? r.days.join(', ') : 'nothing'}${r.refreshed.length ? `, refreshed ${dayRange(r.refreshed)}` : ''} with ${r.apiCalls} of ${gh.budget} API requests\n`
     );
     if (r.newest) {
       const latest = writeLatest(ctx(env, dataDir), r.newest, {

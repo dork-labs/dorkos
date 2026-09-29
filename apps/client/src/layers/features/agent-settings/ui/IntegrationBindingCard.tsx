@@ -183,7 +183,7 @@ export function IntegrationBindingCard({
           {isPaused ? (
             <p className="text-muted-foreground mt-1 text-xs">{activityText}</p>
           ) : adapterState === 'error' && errorMessage ? (
-            <p className="text-xs text-red-600 dark:text-red-400">{errorMessage}</p>
+            <p className="text-destructive text-xs">{errorMessage}</p>
           ) : (
             <>
               {previewSentence && (

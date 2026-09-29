@@ -7,6 +7,7 @@ import type {
   UpdateSessionRequest,
   UsageStatus,
 } from '@dorkos/shared/types';
+import type { SessionContextUsage } from '@dorkos/shared/session-stream';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Workspace } from '@dorkos/shared/workspace';
 import type { SessionStatusData } from '@/layers/entities/session';
@@ -20,6 +21,8 @@ import {
   ContextItem,
   UsageStatusItem,
   hasRenderableUsage,
+  accountChipPromotion,
+  isUsageAbsorbed,
   ConnectionItem,
   SubagentsItem,
   type ActiveSubagent,
@@ -27,9 +30,12 @@ import {
   type StatusBarItemKey,
   type StatusDensity,
   type RuntimeChipState,
+  type SessionAccount,
+  type UsageSource,
   type MakeDefaultStopLineProps,
 } from '@/layers/features/status';
 import { AgentIdentityChip } from './AgentIdentityChip';
+import { AccountStatusItem } from './AccountStatusItem';
 
 /** The Plan switch's declared mode, current state, and toggle. */
 export interface PlanChipState {
@@ -80,14 +86,37 @@ export interface StatusItemNodesInput {
   workspace: Workspace | null | undefined;
   /** Runtime chip state (display runtime, model, selectability). */
   runtimeChip: RuntimeChipState;
+  /**
+   * Which account the session spends and how it is doing (`useSessionAccount`).
+   * The chip renders only while its `visible` gate is open.
+   */
+  account: SessionAccount;
   /** The percent to display for the context window, or `null` before the first reading. */
   contextPercent: number | null;
   /** The SDK context breakdown, when it has arrived. */
   contextUsage: ContextUsage | null;
+  /**
+   * The session status's own context reading, which a reopened session has
+   * before any turn (with `observedAt`), or `null`.
+   */
+  contextReading: SessionContextUsage | null;
   /** The inline compact action, or `null` when this runtime cannot compact. */
   compact: ContextCompactAction | null;
-  /** Runtime-neutral usage descriptor. */
+  /** Runtime-neutral usage descriptor: the session's account reading, or its own (`useStatusUsage`). */
   usage: UsageStatus | null;
+  /**
+   * Where {@link usage} came from. An `account` reading is the account's
+   * windows, never a cost the runtime measured, so it shows on every runtime.
+   */
+  usageSource: UsageSource | null;
+  /** When {@link usage} was observed, ISO-8601, or `null` when not known. */
+  usageObservedAt: string | null;
+  /**
+   * The moment the line reads freshness from. The same clock that decides
+   * whether the budget pays for "· old" (`usageStale`), so the item and the
+   * budget never disagree about it near the hour.
+   */
+  now: Date;
   /** Whether the runtime declares it can track cost. */
   supportsCostTracking: boolean;
   /**
@@ -119,6 +148,12 @@ export interface StatusItemNodesInput {
    * keeping the avatar.
    */
   density: StatusDensity;
+}
+
+/** A usage with every cost figure removed, for a runtime that cannot track cost. */
+function withoutCost(usage: UsageStatus): UsageStatus {
+  const { costUsd: _costUsd, costBasis: _costBasis, ...rest } = usage;
+  return rest;
 }
 
 /**
@@ -167,7 +202,6 @@ export function buildStatusItemNodes(
   if (runtimeChip.runtime !== null) {
     nodes.runtime = (
       <RuntimeItem
-        sessionId={sessionId}
         runtime={runtimeChip.runtime}
         model={runtimeChip.model}
         onChangeRuntime={runtimeChip.onChangeRuntime}
@@ -185,22 +219,13 @@ export function buildStatusItemNodes(
     );
   }
 
-  // `disabled={!sessionId}` looks vestigial in the cockpit and is not.
-  //
-  // Spec `execution-defaults` §3.3 asks that model and effort be choosable
-  // BEFORE a session's first message, and in the cockpit they already are: the
-  // `/session` route loader always redirects to a URL carrying a session id —
-  // the most recent cached one, or a fresh UUID — so `sessionId` is non-empty
-  // from the first paint (pinned by `session-route-loader.test.ts`, and
-  // browser-verified on a cold `/session?dir=…`, where the picker opens and the
-  // "Send a message first" tooltip never renders).
-  //
-  // The guard survives because the EMBED has no router and no loader: Obsidian's
-  // shell reads the id from the store, which starts `null` and is set back to
-  // `null` on a directory switch. There, `updateSession` has no session to PATCH,
-  // and a picker that silently wrote nowhere would be worse than one that says
-  // why it is not ready. Closing that gap means minting an id in the embed shell,
-  // which is a change to a surface this repo cannot yet verify end to end.
+  // The account chip sits beside the runtime it belongs to, and only where
+  // accounts are told apart (two or more on a runtime that supports them).
+  const accountPromotion = accountChipPromotion(input.account);
+  if (accountPromotion !== null) {
+    nodes.account = <AccountStatusItem sessionId={sessionId} account={input.account} />;
+  }
+
   nodes.model = (
     <ModelConfigPopover
       model={status.model}
@@ -271,15 +296,35 @@ export function buildStatusItemNodes(
         percent={input.contextPercent}
         contextUsage={input.contextUsage}
         compact={input.compact}
+        reading={input.contextReading}
       />
     );
   }
 
-  // `supportsCostTracking` gates the whole item, even the subscription-utilization
-  // display: today every runtime that reports usage also reports cost, and a
-  // runtime that declares it cannot track cost must never show a cost figure.
-  if (input.usage && hasRenderableUsage(input.usage) && input.supportsCostTracking) {
-    nodes.usage = <UsageStatusItem usage={input.usage} />;
+  // `supportsCostTracking` gates the session's OWN usage, even its
+  // subscription-utilization display: a runtime that declares it cannot track
+  // cost must never show a figure it measured. An `account` reading is exempt:
+  // it is the account's windows from the shared store, not a turn's cost, and
+  // it is how a Codex session shows its weekly window from open (spec
+  // `claude-account-ui` §6.8). Any cost the session carried is dropped from it
+  // on such a runtime.
+  //
+  // While the account chip shows, it carries usage itself, so this item is
+  // not built at all: a pin bypasses promotion, and must not bring a second
+  // usage display back (`isUsageAbsorbed`, the registry's rule too).
+  const usage =
+    input.usage && input.usageSource === 'account' && !input.supportsCostTracking
+      ? withoutCost(input.usage)
+      : input.usage;
+  if (
+    usage &&
+    hasRenderableUsage(usage) &&
+    (input.supportsCostTracking || input.usageSource === 'account') &&
+    !isUsageAbsorbed({ account: accountPromotion })
+  ) {
+    nodes.usage = (
+      <UsageStatusItem usage={usage} observedAt={input.usageObservedAt} now={input.now} />
+    );
   }
 
   if (input.liveSubagentCount > 0) {

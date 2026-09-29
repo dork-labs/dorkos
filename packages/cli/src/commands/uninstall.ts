@@ -1,9 +1,10 @@
 /**
- * CLI handler for `dorkos uninstall <name>`.
+ * CLI handler for `dorkos marketplace uninstall <name>` (and its shorthand,
+ * `dorkos uninstall <name>`).
  *
  * Calls `POST /api/marketplace/packages/:name/uninstall` and prints a
- * one-line summary. Defaults preserve `.dork/data/` and
- * `.dork/secrets.json`; pass `--purge` to remove them too.
+ * one-line summary. By default the files you and your agents added or
+ * changed are kept; pass `--purge` to remove them too.
  *
  * Removing a package cannot be undone, so the route gates it (DOR-467): a caller
  * that is not the person at the keyboard — an agent, which carries
@@ -14,15 +15,16 @@
  */
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { resolveProjectFlag } from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runUninstall}. */
 export interface UninstallArgs {
   /** Package name to uninstall. */
   name: string;
-  /** Remove preserved data and secrets in addition to package files. */
+  /** Also remove the files you and your agents added or changed. */
   purge?: boolean;
-  /** Project path for project-local uninstalls. */
+  /** Absolute project path for project-local uninstalls, resolved against the caller's cwd. */
   projectPath?: string;
   /** Approval token from a previous run that came back awaiting approval. */
   approvalToken?: string;
@@ -34,7 +36,24 @@ interface UninstallResultBody {
   packageName: string;
   removedFiles: number;
   preservedData: string[];
+  /** Files kept because nothing proved whose they were (DOR-2322). */
+  unproven?: string[];
+  /** Set when an agent package's agent was removed from the team (DOR-2245). */
+  agentRemoved?: { id: string; directoryDenied: boolean; removed: string[] };
+  warnings?: string[];
 }
+
+/** How each thing removing an agent takes away is said to a person. */
+const REMOVAL_WORDS: Record<string, string> = {
+  'relay-endpoint': 'its message address',
+  rooms: 'its rooms',
+  'schedules-paused': 'its schedules (paused)',
+  'task-roots': 'its scheduled task folders',
+  'mcp-sign-ins': 'its sign-ins',
+  'identity-tokens': 'its access tokens',
+  'community-enrollments': 'its community memberships',
+  'connection-access': 'its connection access',
+};
 
 /**
  * The tier gate's "a person has to approve this first" answer, returned instead
@@ -62,10 +81,10 @@ function isAwaitingApproval(
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE =
-  'Usage: dorkos uninstall <name> [--purge] [--project <path>] [--approval <token>]';
+  'Usage: dorkos marketplace uninstall <name> [--purge] [--project <path>] [--approval <token>]';
 
 /**
- * Parse the raw argv slice that follows `dorkos uninstall`.
+ * Parse the raw argv slice that follows `dorkos marketplace uninstall`.
  *
  * @param rawArgs - The argv slice after `uninstall`.
  * @returns A typed {@link UninstallArgs} object.
@@ -84,7 +103,7 @@ export function parseUninstallArgs(rawArgs: string[]): UninstallArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'uninstall', USAGE_LINE);
+    rethrowUnknownOption(err, 'marketplace uninstall', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;
@@ -96,13 +115,13 @@ export function parseUninstallArgs(rawArgs: string[]): UninstallArgs {
   return {
     name,
     purge: Boolean(values.purge),
-    projectPath: typeof values.project === 'string' ? values.project : undefined,
+    projectPath: resolveProjectFlag(values.project),
     approvalToken: typeof values.approval === 'string' ? values.approval : undefined,
   };
 }
 
 /**
- * Implements `dorkos uninstall <name>`.
+ * Implements `dorkos marketplace uninstall <name>`.
  *
  * @param args - Parsed uninstall arguments.
  * @returns The intended process exit code (`0` success, `1` error).
@@ -128,17 +147,37 @@ export async function runUninstall(args: UninstallArgs): Promise<number> {
       console.error(result.message);
       console.error(result.retry.instructions);
       console.error(`Approval id: ${result.approvalId}`);
-      console.error(`Retry with: dorkos uninstall ${args.name} --approval ${result.approvalToken}`);
+      console.error(
+        `Retry with: dorkos marketplace uninstall ${args.name} --approval ${result.approvalToken}`
+      );
       return 1;
     }
 
     console.log(`Uninstalled ${result.packageName} (${result.removedFiles} entries removed)`);
     if (!args.purge && result.preservedData.length > 0) {
-      console.log('Preserved:');
+      // Some kept files may not be the person's at all: DorkOS could not tell
+      // (DOR-2322), so the heading does not claim they added them.
+      console.log(
+        result.unproven && result.unproven.length > 0
+          ? 'Kept these files:'
+          : 'Kept the files you and your agents added or changed:'
+      );
       for (const path of result.preservedData) {
         console.log(`  ${path}`);
       }
     }
+    if (result.agentRemoved) {
+      const taken = result.agentRemoved.removed.map((r) => REMOVAL_WORDS[r] ?? r).join(', ');
+      console.log(
+        `Removed the agent from your team. That also took away ${taken}; reinstalling does not bring them back.`
+      );
+      if (result.agentRemoved.directoryDenied) {
+        console.log(
+          'Its folder is blocked from your team because git tracks its settings file, so the file was left in place.'
+        );
+      }
+    }
+    for (const warning of result.warnings ?? []) console.log(warning);
     return 0;
   } catch (err) {
     if (err instanceof ApiError) {

@@ -113,7 +113,7 @@ const meshCore = { getProjectPath: () => projectPath };
 /** Discover what is on disk, the way the five-minute pass does. */
 async function sweep(): Promise<Task> {
   await reconciler.reconcile();
-  const task = store.getByFilePath(packagedFile);
+  const task = store.fileSync.getByFilePath(packagedFile);
   expect(task).not.toBeNull();
   return task!;
 }
@@ -136,7 +136,11 @@ interface PatchResult {
 async function patch(existing: Task, data: UpdateTaskRequest): Promise<PatchResult> {
   const outcome = await applyTaskFileUpdate({ dorkHome, meshCore } as never, { existing, data });
   if (!outcome.ok) return { ok: false, code: outcome.code, error: outcome.error };
-  return { ok: true, task: store.updateTask(existing.id, data) ?? undefined };
+  return {
+    ok: true,
+    task:
+      store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn }) ?? undefined,
+  };
 }
 
 describe('a schedule that came with an installed package', () => {
@@ -196,8 +200,8 @@ describe('a schedule that came with an installed package', () => {
     // server-written value for the person's decision, or an updated package's
     // schedule ends up active, off, and asking nobody (the reviewer's finding).
     await patch(await sweep(), { status: 'active', enabled: true });
-    expect(store.markRemovedByFilePath(packagedFile)).toBe(1);
-    expect(store.getByFilePath(packagedFile)?.status).toBe('paused');
+    expect(store.fileSync.markRemovedByFilePath(packagedFile)).toBe(1);
+    expect(store.fileSync.getByFilePath(packagedFile)?.status).toBe('paused');
 
     const back = await sweep();
 
@@ -228,7 +232,7 @@ describe('a schedule that came with an installed package', () => {
     // way they set it, and never takes the file's shipped value for theirs.
     const approved = await patch(await sweep(), { status: 'active', enabled: true });
     await patch(approved.task!, { enabled: false });
-    store.markRemovedByFilePath(packagedFile);
+    store.fileSync.markRemovedByFilePath(packagedFile);
 
     const back = await sweep();
 
@@ -370,12 +374,15 @@ describe('a schedule that came with an installed package', () => {
   });
 
   it('still refuses a change to what it DOES, with nothing written', async () => {
+    // WHEN it runs is the person's to change since DOR-2302
+    // (`package-schedule-timing.integration.test.ts`); WHAT it does stays the
+    // package's.
     const task = await patch(await sweep(), { status: 'active', enabled: true });
 
-    const rescheduled = await patch(task.task!, { cron: '0 4 * * *' });
+    const renamed = await patch(task.task!, { name: 'something-else' });
     const rewritten = await patch(task.task!, { prompt: 'do something else entirely' });
 
-    for (const refused of [rescheduled, rewritten]) {
+    for (const refused of [renamed, rewritten]) {
       expect(refused.ok).toBe(false);
       expect(refused.code).toBe('schedule_package_owned');
     }
@@ -404,7 +411,7 @@ describe('a schedule that came with an installed package', () => {
 
     expect(refused.ok).toBe(false);
     expect(refused.code).toBe('schedule_package_owned');
-    expect(refused.error).toContain('did not change how much it may do');
+    expect(refused.error).toContain("didn't change how much it may do");
     expect(refused.error).toContain('You can still approve it as it stands');
     // Whole-request refusal: the approval did not half-land either.
     const row = store.getTask(task.id)!;
@@ -420,10 +427,10 @@ describe('a schedule that came with an installed package', () => {
 
   it('refuses a switch that rides along with a change to what it does', async () => {
     // The mixed request. `enabled` alone lands on the row, but it must not be a
-    // way to smuggle a cron edit into a package's checkout.
+    // way to smuggle a prompt edit into a package's checkout.
     const task = await patch(await sweep(), { status: 'active', enabled: true });
 
-    const refused = await patch(task.task!, { enabled: false, cron: '0 4 * * *' });
+    const refused = await patch(task.task!, { enabled: false, prompt: 'do something else' });
 
     expect(refused.ok).toBe(false);
     expect(refused.code).toBe('schedule_package_owned');

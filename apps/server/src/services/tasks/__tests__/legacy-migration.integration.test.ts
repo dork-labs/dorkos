@@ -245,7 +245,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
       expect(store.getTask(seeded.id)?.status).toBe('active');
 
       const report = await migrate();
@@ -298,7 +298,21 @@ describe('the boot migration off the legacy task directories', () => {
 
       await migrate();
 
-      expect(grantFor(seeded.id)).toBe(JSON.stringify(['Do the thing.', '0 3 * * *']));
+      expect(grantFor(seeded.id)).toBe(
+        JSON.stringify([
+          'Do the thing.',
+          '0 3 * * *',
+          'UTC',
+          'grandfathered',
+          null,
+          null,
+          null,
+          null,
+          false,
+          // The account (DOR-2384): none, as every row before it had.
+          null,
+        ])
+      );
     });
 
     it('leaves a parked row parked, with the story it already carried', async () => {
@@ -363,7 +377,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
       // Somebody edited the file with the server stopped.
       await fs.writeFile(
         legacyPath,
@@ -406,7 +420,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 7 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
 
       const report = await migrate();
 
@@ -722,7 +736,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
       await migrate();
       const afterFirst = await fs.readFile(globalDestination('nightly-sweep'), 'utf-8');
 
@@ -779,7 +793,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
 
       const report = await migrate();
 
@@ -825,21 +839,26 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
       const before = store.getTask(seeded.id)!;
       const grantBefore = grantFor(seeded.id);
 
       const faulty = {
-        rekeyMigratedFile: vi.fn(() => {
-          throw new Error('the disk went away mid-transaction');
-        }),
-        upsertFromFile: store.upsertFromFile.bind(store),
+        approvals: {
+          rekeyMigratedFile: vi.fn(() => {
+            throw new Error('the disk went away mid-transaction');
+          }),
+        },
+        fileSync: { upsertFromFile: store.fileSync.upsertFromFile.bind(store.fileSync) },
       };
       await migrateLegacySchedules({
         dorkHome,
         store: faulty as unknown as TaskStore,
         agents: [],
       });
+      // The injected fault is what stopped the move, not a stub missing the
+      // method the migration calls.
+      expect(faulty.approvals.rekeyMigratedFile).toHaveBeenCalledTimes(1);
 
       // The row is exactly as it was — same path, same approval.
       const after = store.getTask(seeded.id)!;
