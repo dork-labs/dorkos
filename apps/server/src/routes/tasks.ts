@@ -56,7 +56,6 @@ import {
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
-import { emitIneligibleAccountActivity } from '../services/tasks/run-activity.js';
 import {
   scheduleAccountRefusal,
   scheduleRunFolder,
@@ -327,11 +326,6 @@ export function createTasksRouter(
       });
     }
     const schedule = outcome.task;
-    // Saved, but its account may not work where it runs: say so now rather
-    // than at its first run (spec `flow-multiproject` §8.4).
-    if (outcome.accountWarning) {
-      emitIneligibleAccountActivity(activityService, schedule, outcome.accountWarning);
-    }
 
     activityService?.emit({
       // An untrusted caller reaches here too — its schedule is parked and clamped,
@@ -384,9 +378,9 @@ export function createTasksRouter(
     const accountLocked = refuseStickyAccountChange(store, existing, data);
     if (accountLocked) return res.status(400).json(accountLocked);
 
-    // The account rule (spec `flow-multiproject` §8.4): an agent may not point
-    // a schedule at an account that may not work where its runs start; a
-    // person's own edit lands and is warned about below.
+    // The account rule (spec `flow-multiproject` §8.4, D7): nobody, a person
+    // included, points a schedule at an account that may not work where its
+    // runs start. Refused before the file is touched, with the plain sentence.
     const accountRefusal =
       typeof data.account === 'string'
         ? await scheduleAccountRefusal({
@@ -397,7 +391,7 @@ export function createTasksRouter(
             ),
           })
         : null;
-    if (accountRefusal && !trusted) {
+    if (accountRefusal) {
       return res.status(409).json(accountRefusal.toBody());
     }
 
@@ -551,10 +545,6 @@ export function createTasksRouter(
     // Re-register or unregister the cron job to match the new state, through the
     // shared seam — see the note on the create path above.
     registrar.syncTask(updated.id);
-
-    // A person's edit that points the schedule at an account that may not work
-    // where it runs: saved, and said (spec `flow-multiproject` §8.4).
-    if (accountRefusal) emitIneligibleAccountActivity(activityService, updated, accountRefusal);
 
     if (data.enabled === false && activityService) {
       activityService.emit({

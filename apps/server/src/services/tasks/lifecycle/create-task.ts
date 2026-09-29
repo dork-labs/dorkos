@@ -55,7 +55,6 @@ import type { TaskRegistrar } from '../task-registrar.js';
 import { raiseStanding } from '../../notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../../notifications/emitters/schedule-park.js';
 import type { NotificationPayload } from '../../notifications/notification-registry.js';
-import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 
 /** The collaborators a create needs. Every one of them is required to get a task right. */
@@ -131,13 +130,6 @@ export interface CreateScheduledTaskSuccess {
    * the notification used, and the two cannot disagree about who asked.
    */
   parkPayload?: NotificationPayload<'schedule.parked'>;
-  /**
-   * The account the schedule names may not work in the folder its runs start
-   * in (spec `flow-multiproject` §8.4). Only a person's own save gets here (an
-   * agent's is refused); the caller warns in the Activity feed, and the rule
-   * still holds when the schedule runs.
-   */
-  accountWarning?: AccountNotAllowedError;
 }
 
 /** The outcome of a create. */
@@ -325,15 +317,15 @@ export async function createScheduledTask(
   const home = resolveTaskHome(data.target, deps);
   if (!home.ok) return home;
 
-  // The account rule (spec `flow-multiproject` §8.4): an agent may not propose
-  // a schedule on an account that may not work in the folder its runs start
-  // in. A person's own save goes through, and is warned about.
+  // The account rule (spec `flow-multiproject` §8.4, D7): nobody, a person
+  // included, saves a schedule on an account that may not work in the folder
+  // its runs start in. Refused before anything is written, with the sentence.
   const accountRefusal = await scheduleAccountRefusal({
     account: data.account,
     runtime: data.runtime,
     folder: scheduleRunFolder(home.projectPath),
   });
-  if (accountRefusal && !trusted) {
+  if (accountRefusal) {
     return { ok: false, status: 409, error: accountRefusal.message, code: accountRefusal.code };
   }
 
@@ -522,6 +514,5 @@ export async function createScheduledTask(
     task: schedule,
     parked: !trusted,
     ...(parkPayload && { parkPayload }),
-    ...(accountRefusal && { accountWarning: accountRefusal }),
   };
 }

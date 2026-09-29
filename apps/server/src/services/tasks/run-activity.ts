@@ -14,7 +14,6 @@ import type { ActivityService } from '../activity/activity-service.js';
 import type { TaskStore } from './task-store.js';
 import { formatDuration } from '../../lib/format-duration.js';
 import { logger } from '../../lib/logger.js';
-import type { AccountNotAllowedError } from '../core/usage/account-eligibility.js';
 
 /** How the feed names each way a run can end. */
 const TERMINAL_EVENT_TYPE = {
@@ -259,42 +258,6 @@ export function emitUnregisteredAccountActivity(
       `it names is not set up in DorkOS`,
     linkPath: '/',
     metadata: { runId: run.id, account },
-  });
-}
-
-/**
- * Warn in the Activity feed that a schedule a person just saved names a Claude
- * account that may not work in the folder its runs start in (spec
- * `flow-multiproject` §8.4). The save stands; its runs will be refused with the
- * same sentence until the account or the rule changes, and this entry is where
- * the person learns so before the first run fails.
- *
- * @param activityService - The feed to write to; nothing is emitted without one.
- * @param task - The schedule that was saved.
- * @param refusal - Why its account may not work there.
- */
-export function emitIneligibleAccountActivity(
-  activityService: ActivityService | null | undefined,
-  task: Pick<Task, 'id' | 'name' | 'displayName'>,
-  refusal: AccountNotAllowedError
-): void {
-  if (!activityService) return;
-  const name = task.displayName ?? task.name;
-  void activityService.emit({
-    actorType: 'user',
-    actorId: null,
-    actorLabel: 'You',
-    category: 'tasks',
-    eventType: 'tasks.account_not_allowed',
-    resourceType: 'schedule',
-    resourceId: task.id,
-    resourceLabel: name,
-    summary: `${name} won't run until this is fixed: ${refusal.message}`,
-    linkPath: '/?settings=runtimes',
-    metadata: {
-      account: refusal.accountId,
-      project: refusal.project?.name ?? null,
-    },
   });
 }
 

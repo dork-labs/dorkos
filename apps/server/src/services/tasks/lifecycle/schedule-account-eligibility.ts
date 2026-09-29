@@ -2,11 +2,9 @@
  * Whether the Claude account a schedule names may work in the folder its runs
  * start in (spec `flow-multiproject` §8.4, the three schedule rows).
  *
- * - **An agent's proposal is refused** when it names such an account: an
- *   agent never gets to put work on an account the person kept elsewhere.
- * - **A person's own save is kept, and warned about** in the Activity feed: the
- *   rule still holds at run time, so the save is harmless, and saying so now
- *   beats a failed run later.
+ * - **A save that names such an account is refused**, whoever saves it: a
+ *   person's own pick is held to the rule too (spec D7), and an agent never
+ *   gets to put work on an account the person kept elsewhere.
  * - **A run fails with the plain sentence** before either dispatch path starts
  *   anything, so the direct and relay paths say the same thing.
  *

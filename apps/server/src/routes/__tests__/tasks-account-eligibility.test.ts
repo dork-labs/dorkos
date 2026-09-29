@@ -2,11 +2,11 @@
  * Schedules hold to the account rules (spec `flow-multiproject` §8.4, the
  * three schedule rows) at the HTTP door:
  *
- * - an agent's proposal naming an account that may not work where the runs
- *   start is refused `409 account_not_allowed_here`, and nothing is saved;
- * - a person's own save lands, and the Activity feed warns
- *   (`tasks.account_not_allowed`) with the plain sentence;
- * - the same two answers on `PATCH`.
+ * - a save naming an account that may not work where the runs start is
+ *   refused `409 account_not_allowed_here` with the plain sentence, whoever
+ *   saves it, an agent's proposal or a person's own pick (spec D7), and
+ *   nothing is saved;
+ * - the same answer on `PATCH`, with nothing changed.
  *
  * Real store, registrar and create lifecycle; the rules live in a stand-in
  * config, and every folder a run starts in is one project (`/work/project`),
@@ -114,12 +114,6 @@ const BODY = {
 /** An agent's proposal must say why the schedule should exist. */
 const PROPOSAL_REASON = 'The queue backs up overnight.';
 
-function accountWarnings() {
-  return emit.mock.calls
-    .map(([event]) => event as { eventType: string; summary: string; metadata: unknown })
-    .filter((event) => event.eventType === 'tasks.account_not_allowed');
-}
-
 describe('POST /api/tasks — the account rule', () => {
   it("refuses an agent's proposal naming an account that may not work there, saving nothing", async () => {
     const res = await request(fixtureTarget.server)
@@ -142,32 +136,24 @@ describe('POST /api/tasks — the account rule', () => {
     expect(store.getTasks()).toHaveLength(1);
   });
 
-  it("keeps a person's save and warns in the Activity feed", async () => {
+  // Purpose: a person's own pick is held to the rule too (D7): refused with
+  // the plain sentence the schedule dialog shows, and nothing is saved.
+  it("refuses a person's save naming an account that may not work there", async () => {
     const res = await request(fixtureTarget.server)
       .post('/api/tasks')
       .send({ ...BODY, account: 'client' });
 
-    expect(res.status).toBe(201);
-    expect((res.body as Task).account).toBe('client');
-    expect(store.getTasks()).toHaveLength(1);
-    const warnings = accountWarnings();
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatchObject({
-      actorType: 'user',
-      category: 'tasks',
-      resourceType: 'schedule',
-      resourceId: (res.body as Task).id,
-      summary: `nightly won't run until this is fixed: ${SENTENCE}`,
-      metadata: { account: 'client', project: 'project' },
-    });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: SENTENCE, code: 'account_not_allowed_here' });
+    expect(store.getTasks()).toHaveLength(0);
   });
 
-  it("does not warn about a person's save on an allowed account", async () => {
+  it("saves a person's schedule on an allowed account (control)", async () => {
     const res = await request(fixtureTarget.server)
       .post('/api/tasks')
       .send({ ...BODY, account: 'work' });
     expect(res.status).toBe(201);
-    expect(accountWarnings()).toHaveLength(0);
+    expect(store.getTasks()).toHaveLength(1);
   });
 });
 
@@ -198,16 +184,15 @@ describe('PATCH /api/tasks/:id — the account rule', () => {
     expect(store.getTask(task.id)?.account).toBe('work');
   });
 
-  it("lands a person's edit and warns", async () => {
+  // Purpose: a person's edit is refused the same way, and nothing changes.
+  it("refuses a person's edit to an account that may not work there", async () => {
     const task = await personTask();
     const res = await request(fixtureTarget.server)
       .patch(`/api/tasks/${task.id}`)
       .send({ account: 'client' });
 
-    expect(res.status).toBe(200);
-    expect(store.getTask(task.id)?.account).toBe('client');
-    expect(accountWarnings()).toEqual([
-      expect.objectContaining({ summary: `nightly won't run until this is fixed: ${SENTENCE}` }),
-    ]);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: SENTENCE, code: 'account_not_allowed_here' });
+    expect(store.getTask(task.id)?.account).toBe('work');
   });
 });
