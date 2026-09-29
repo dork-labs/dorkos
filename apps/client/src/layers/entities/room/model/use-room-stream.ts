@@ -50,6 +50,55 @@ export function mergeRoomEntry(
 }
 
 /**
+ * Replace the words of an entry the cached history already holds with the ones
+ * a `revision` frame carries (DOR-2336): a mirrored Community message that was
+ * deleted, removed or erased on the Community server, now its tombstone.
+ *
+ * **Only the words move.** `body`, `mentions` and `mentionSpans` are what a
+ * rewrite changes; everything else on the held row stays as it was — its place
+ * in the timeline, its reactions (the `reaction` frame keeps those), and the
+ * thread reply count a page's thread root carries (#2056), which a live frame
+ * cannot know.
+ *
+ * **It never adds a row.** An entry this reader does not hold — paged out of
+ * view, or never loaded — is ignored: whatever pages it in later reads the log,
+ * which is normally rewritten already. Not always: an older page whose read was
+ * answered just before the rewrite and lands just after this frame keeps the
+ * old text until the room is read again, and a reconnect only re-sends the
+ * trailing window (the server's 100-entry `SNAPSHOT_HISTORY_LIMIT`). The same goes for a frame whose `seq` or room does
+ * not match the held row, which can only be a stale or foreign frame. And a
+ * frame that changes nothing keeps the cached array's identity, because a
+ * resume re-sends the whole trailing window and nearly all of it is unchanged.
+ *
+ * @param cached - The current cached history, oldest-first.
+ * @param entry - The entry as it stands now.
+ * @internal Exported for testing.
+ */
+export function reviseRoomEntry(
+  cached: readonly RoomEntry[] | undefined,
+  entry: RoomEntry
+): RoomEntry[] {
+  const list = cached ?? [];
+  const index = list.findIndex((held) => held.id === entry.id);
+  if (index === -1) return list as RoomEntry[];
+  const held = list[index]!;
+  if (held.seq !== entry.seq || held.roomId !== entry.roomId) return list as RoomEntry[];
+  const unchanged =
+    JSON.stringify(held.body) === JSON.stringify(entry.body) &&
+    JSON.stringify(held.mentions) === JSON.stringify(entry.mentions) &&
+    JSON.stringify(held.mentionSpans) === JSON.stringify(entry.mentionSpans);
+  if (unchanged) return list as RoomEntry[];
+  const next = [...list];
+  next[index] = {
+    ...held,
+    body: entry.body,
+    mentions: entry.mentions,
+    mentionSpans: entry.mentionSpans,
+  };
+  return next;
+}
+
+/**
  * Retire the indicator of the agent a notice is ABOUT, where the notice means
  * that agent has stopped.
  *
@@ -491,6 +540,19 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             if (event.type === 'reaction') {
               queryClient.setQueryData<RoomEntry[]>(roomKeys.entries(roomId), (cached) =>
                 mergeRoomReactions(cached, event.entryId, event.reactions)
+              );
+              continue;
+            }
+            // A message this reader may already be looking at was rewritten in
+            // place — a mirrored Community message deleted or erased on its
+            // server (DOR-2336). State like a reaction: no `seq` of its own, never
+            // the cursor, never a new row. The frame must be about THIS room: the
+            // stream is per room and a switch aborts it, so a frame for another
+            // room could only be stale, and is dropped rather than applied.
+            if (event.type === 'revision') {
+              if (event.entry.roomId !== roomId) continue;
+              queryClient.setQueryData<RoomEntry[]>(roomKeys.entries(roomId), (cached) =>
+                reviseRoomEntry(cached, event.entry)
               );
               continue;
             }

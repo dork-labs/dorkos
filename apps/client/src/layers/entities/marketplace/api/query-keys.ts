@@ -47,6 +47,11 @@ export const marketplaceKeys = {
 
   sources: () => [...marketplaceKeys.all, 'sources'] as const,
 
+  // Every global package held back from sessions, with what it runs and what
+  // a decision binds (DOR-2306). Under `installed`, so whatever refreshes the
+  // installed list refreshes this too.
+  heldBack: () => [...marketplaceKeys.all, 'installed', 'held-back'] as const,
+
   // The update check for the installations in one view: every scope (no
   // projectPath, what the Installed view lists) or one project's merged view.
   // A sibling of `installed`, not under it, so refreshing the installed list

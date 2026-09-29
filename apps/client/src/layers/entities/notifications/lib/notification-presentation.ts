@@ -19,6 +19,7 @@ import {
   LogIn,
   Mail,
   MessageSquare,
+  Puzzle,
   RotateCcw,
   ShieldQuestion,
   Sparkles,
@@ -36,6 +37,9 @@ import { toSession } from '@/layers/shared/lib';
  * short string, not shared logic worth a `shared/` home of its own.
  */
 const RUNTIMES_SETTINGS_TAB = 'runtimes';
+
+/** The Settings tab that lists every extension, where one can be turned on (DOR-2517). */
+const EXTENSIONS_SETTINGS_TAB = 'extensions';
 
 /**
  * Where a notification row navigates.
@@ -81,6 +85,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'report.daily': Sparkles,
   'account.limited': Hourglass,
   'account.reset': RotateCcw,
+  // The mark the right panel's header already uses for extensions (DOR-2517).
+  'extension.approval': Puzzle,
 };
 
 /** How loudly a notification draws. */
@@ -279,6 +285,12 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // `system`, so without this the switch below would send it nowhere and the
     // one row in the inbox that has something to DO would draw as plain text.
     return { to: '/', search: { settings: RUNTIMES_SETTINGS_TAB } };
+  }
+  if (kind === 'extension.approval') {
+    // Settings → Extensions, where the same extension's card can turn it on —
+    // the same place its phone-free arrival deep-links to
+    // (`standingDeepLink` in the server's `escalation-service.ts`).
+    return { to: '/', search: { settings: EXTENSIONS_SETTINGS_TAB } };
   }
   if (kind === 'update.installed' || kind === 'report.daily') {
     return null;

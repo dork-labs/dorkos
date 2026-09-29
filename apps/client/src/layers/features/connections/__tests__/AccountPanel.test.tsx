@@ -407,54 +407,59 @@ describe('AccountPanel', () => {
     const fix = await screen.findByTestId('app-panel-fix');
     expect(fix).toHaveTextContent('DorkOS is still removing its access at the service.');
     expect(fix).toHaveTextContent(/Trying again at .+\./);
-    expect(screen.queryByTestId('remove-account')).not.toBeInTheDocument();
     await user.click(within(fix).getByRole('button', { name: 'Try again now' }));
     await waitFor(() => expect(transport.disconnectConnectorConnection).toHaveBeenCalledTimes(1));
+    // Removing always works, even while DorkOS still owes the service a cleanup.
+    expect(within(fix).getByTestId('remove-account')).toBeEnabled();
+    await user.click(within(fix).getByTestId('remove-account'));
+    const confirm = await screen.findByRole('alertdialog', {
+      name: 'Remove Gmail from your apps?',
+    });
+    expect(confirm).toHaveTextContent('DorkOS still finishes removing its access at the service.');
   });
 
-  it('offers to try disconnecting again only when trying again can work', async () => {
+  it('offers removing, and the service’s own page, for a disconnect whose DorkOS account link ended', async () => {
+    // The live incident: the link ended overnight, and the panel offered a
+    // retry that could never work while Remove was blocked.
     const user = userEvent.setup();
+    const owner =
+      'Disconnected. Agents can’t use it. DorkOS can’t finish removing its access at the service, because your DorkOS account isn’t linked anymore. To be sure its access ended, remove it in that app’s own account settings.';
     const transport = transportFor(
       summary({
         lifecycle: 'disconnected',
-        externalCleanup: 'failed',
-        readiness: notReady('gone', 'disconnect_failed', 'Removing its access didn’t finish.', {
-          action: 'retry',
-          fixableBy: 'person',
+        externalCleanup: 'pending',
+        authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+        readiness: createMockConnectionReadiness({
+          state: 'gone',
+          reason: 'disconnect_stuck',
+          fix: { action: 'remove', fixableBy: 'person' },
+          serviceAccessPage: { service: 'Google', url: 'https://myaccount.google.com/connections' },
+          copy: { owner, agent: 'Agent line.' },
         }),
       })
     );
-    vi.mocked(transport.disconnectConnectorConnection).mockResolvedValue({} as never);
-    renderPanel(transport);
-    const fix = await screen.findByTestId('app-panel-fix');
-    await user.click(within(fix).getByRole('button', { name: 'Try disconnecting again' }));
-    await waitFor(() => expect(transport.disconnectConnectorConnection).toHaveBeenCalledTimes(1));
-    expect(screen.queryByTestId('remove-account')).not.toBeInTheDocument();
-  });
-
-  it('never offers a futile retry for a disconnect whose DorkOS account link ended', async () => {
-    const owner =
-      'Disconnected. Agents can’t use it. DorkOS can’t finish removing its access at the service, because your DorkOS account isn’t linked anymore. To be sure its access ended, remove it in that app’s own account settings.';
-    renderPanel(
-      transportFor(
-        summary({
-          lifecycle: 'disconnected',
-          externalCleanup: 'pending',
-          authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
-          readiness: notReady('gone', 'disconnect_stuck', owner),
-        })
-      )
-    );
+    vi.mocked(transport.removeConnectorConnection).mockResolvedValue(undefined as never);
+    const handlers = renderPanel(transport);
     const fix = await screen.findByTestId('app-panel-fix');
     expect(fix).toHaveTextContent(owner);
     // The raw refusal stays on the server; no button that can't work.
     expect(fix).not.toHaveTextContent('instance');
-    expect(within(fix).queryByRole('button')).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /Try disconnecting again|Try again now/ })
     ).toBeNull();
-    // Removing is refused while something is owed at the service, so it isn't offered.
-    expect(screen.queryByTestId('remove-account')).not.toBeInTheDocument();
+    expect(within(fix).getByRole('link', { name: /Open Google settings/ })).toHaveAttribute(
+      'href',
+      'https://myaccount.google.com/connections'
+    );
+    // Remove is the one fix, offered once.
+    expect(within(fix).queryByTestId('remove-account')).not.toBeInTheDocument();
+    await user.click(within(fix).getByRole('button', { name: 'Remove from your apps' }));
+    const confirm = await screen.findByRole('alertdialog', {
+      name: 'Remove Gmail from your apps?',
+    });
+    await user.click(within(confirm).getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(transport.removeConnectorConnection).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(handlers.onClose).toHaveBeenCalled());
   });
 
   it('asks before disconnecting, naming who loses access, then closes', async () => {

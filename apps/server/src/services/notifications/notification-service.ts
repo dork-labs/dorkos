@@ -505,7 +505,8 @@ function somebodyActed(outcome: NotificationOutcome | undefined): boolean {
     outcome === 'answered' ||
     outcome === 'approved' ||
     outcome === 'rejected' ||
-    outcome === 'cleared'
+    outcome === 'cleared' ||
+    outcome === 'dismissed'
   );
 }
 

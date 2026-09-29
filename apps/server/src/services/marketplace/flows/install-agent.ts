@@ -33,6 +33,7 @@ import { readInstalledFiles, sameSource } from '../lib/installed-files.js';
 import { runTransaction } from '../transaction.js';
 import type { AgentInstallIdentity, InstallRequest, InstallResult } from '../types.js';
 import type { UninstallAgentRegistry } from './uninstall.js';
+import { freeSavedFileName, makeInert } from '../lib/saved-copies/saved-copies.js';
 
 /**
  * Structural interface for the agent-creator dependency. Mirrors only the
@@ -307,11 +308,10 @@ async function setAsideIdentityFiles(targetDir: string): Promise<boolean> {
   for (const rel of [...AGENT_IDENTITY_FILES, UNINSTALLED_AGENT_PATH]) {
     const abs = path.join(targetDir, ...rel.split('/'));
     if ((await lstat(abs).catch(() => undefined)) === undefined) continue;
-    let saved = `${abs}.dork-old`;
-    for (let n = 2; (await lstat(saved).catch(() => undefined)) !== undefined; n++) {
-      saved = `${abs}.dork-old.${n}`;
-    }
+    const saved = path.join(targetDir, ...(await freeSavedFileName(targetDir, rel)).split('/'));
     await rename(abs, saved);
+    // Kept to read, never to run (DOR-2340).
+    await makeInert(saved);
     moved = true;
   }
   return moved;

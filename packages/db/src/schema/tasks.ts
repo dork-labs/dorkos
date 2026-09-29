@@ -108,6 +108,17 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * what was approved, not an approval.
    */
   previousApprovalKey: text('previous_approval_key'),
+  /**
+   * The agent's runtime, model or effort that changed outside DorkOS since this
+   * schedule was approved, while the schedule follows the agent for that part
+   * (DOR-2337): JSON `[{ field, from, to }]`, `from` being the value when the
+   * change was first seen. Written when such a change parks the schedule, kept
+   * current by any later outside change, and cleared whenever an approval is
+   * recorded. The schedule's own approval key cannot say this, because it
+   * records "follow the agent" rather than what the agent ran on. Never read by
+   * any gate: it is what the approval card shows, not an approval.
+   */
+  followedAgentChanges: text('followed_agent_changes'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   /**
    * Whether every fire of this schedule RESUMES one persistent session instead

@@ -618,6 +618,7 @@ export class ConnectorAccessQueryService {
         label: connections.label,
         providerInstanceId: connections.providerInstanceId,
         enabled: connections.enabled,
+        pausedBy: connections.pausedBy,
         status: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
@@ -675,6 +676,7 @@ export class ConnectorAccessQueryService {
     for (const { row, offHere, granted } of byConnection.values()) {
       const readiness = deriveConnectionReadiness({
         lifecycle: row.enabled ? 'connected' : 'paused',
+        pausedBy: row.pausedBy,
         authenticationStatus: row.status,
         reconciliationStatus: row.reconciliationStatus,
         // This agent's own hosted access, never another agent's.
@@ -682,7 +684,8 @@ export class ConnectorAccessQueryService {
           authoritySync: managedAgentAccess(this.db, row.externalAccountRef, agentId, granted).sync,
         }),
         mode: row.mode,
-        way: this.wayHealth(row.providerInstanceId),
+        toolkit: row.toolkit,
+        way: this.wayHealth(row.providerInstanceId, row.toolkit),
         offForThisChat: offHere,
       });
       if (readiness.state === 'ready') continue;

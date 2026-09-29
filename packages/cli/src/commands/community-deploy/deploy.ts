@@ -168,7 +168,7 @@ function runtimeEvidence(inventory: FlyRuntimeInventory) {
   );
   const address = inventory.addresses[0];
   if (!machine || !release || !address) throw new ProviderMutationError('INVALID_RESPONSE');
-  return { machine, release, address };
+  return { machine, release };
 }
 
 /**
@@ -267,14 +267,13 @@ export async function executeCommunityDeployPhase(
       }
       inventory = dependencies.verifyNewRuntime(await dependencies.readRuntime(), previous);
     }
-    const { machine, release, address } = runtimeEvidence(inventory);
+    const { machine, release } = runtimeEvidence(inventory);
     current = await persist(dependencies, current, {
       state: 'deployed',
       resources: {
         ...current.resources,
         flyMachineId: machine.id,
         flyReleaseId: release.id,
-        flyAddressId: address.id,
       },
       verifiedBindings: [
         ...current.verifiedBindings,

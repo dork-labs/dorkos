@@ -16,6 +16,7 @@ import {
   connectorUsageAttempts,
   eq,
   isNull,
+  ne,
   or,
   sessionConnectionOverrides,
   type Db,
@@ -523,6 +524,9 @@ export class ConnectorOperatorQueryService {
         lifecycleState: connections.lifecycleState,
         externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
+        pausedBy: connections.pausedBy,
+        closedBecause: connections.closedBecause,
+        cleanupRetryAt: connections.externalCleanupRetryAt,
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
         custody: connectorProviderInstances.custody,
@@ -625,7 +629,9 @@ export class ConnectorOperatorQueryService {
         operationRevisionIds: agent.operationRevisionIds.sort(),
         classifications: agent.classifications.sort(),
         reconciliationStatus: row.reconciliationStatus,
-        authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
+        // This agent's own latest change, so one refused change reads as
+        // that agent's, not as the whole account's.
+        authoritySync: this.authoritySync(row.mode, row.externalAccountRef, agent.agentId),
       })),
       sessions: { affectedCount: new Set(sessions.map((session) => session.sessionId)).size },
       subscriptions: {
@@ -712,7 +718,7 @@ export class ConnectorOperatorQueryService {
         reconciliationStatus: row.reconciliationStatus,
         operationRevisionIds: [...row.operationRevisionIds].sort(),
         everyAgent: row.everyAgent,
-        authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
+        authoritySync: this.authoritySync(row.mode, row.externalAccountRef, agentId),
         // This agent's own readiness: its own hosted access, never another's.
         readiness: this.agentReadiness(row, agentId, row),
       })),
@@ -722,8 +728,10 @@ export class ConnectorOperatorQueryService {
   /** One agent's readiness on one account it was given. */
   private agentReadiness(
     row: {
+      toolkit: string;
       lifecycleState: 'connected' | 'disconnected';
       enabled: boolean;
+      pausedBy: 'owner' | 'sign_in' | null;
       authenticationStatus: 'active' | 'expired' | 'revoked' | 'pending';
       reconciliationStatus: 'ready' | 'migration_needs_reconcile';
       externalCleanupState: 'not_required' | 'pending' | 'complete' | 'failed' | 'unknown';
@@ -737,6 +745,7 @@ export class ConnectorOperatorQueryService {
   ) {
     return deriveConnectionReadiness({
       lifecycle: lifecycle(row),
+      pausedBy: row.pausedBy,
       authenticationStatus: row.authenticationStatus,
       reconciliationStatus: row.reconciliationStatus,
       ...(row.mode === 'managed' && {
@@ -744,7 +753,8 @@ export class ConnectorOperatorQueryService {
       }),
       externalCleanup: row.externalCleanupState,
       mode: row.mode,
-      way: this.wayHealth(row.providerInstanceId),
+      toolkit: row.toolkit,
+      way: this.wayHealth(row.providerInstanceId, row.toolkit),
       ...overrides,
     });
   }
@@ -764,6 +774,9 @@ export class ConnectorOperatorQueryService {
         lifecycleState: connections.lifecycleState,
         externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
+        pausedBy: connections.pausedBy,
+        closedBecause: connections.closedBecause,
+        cleanupRetryAt: connections.externalCleanupRetryAt,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         externalAccountRef: connections.externalAccountRef,
@@ -800,6 +813,9 @@ export class ConnectorOperatorQueryService {
         lifecycleState: connections.lifecycleState,
         externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
+        pausedBy: connections.pausedBy,
+        closedBecause: connections.closedBecause,
+        cleanupRetryAt: connections.externalCleanupRetryAt,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         externalAccountRef: connections.externalAccountRef,
@@ -864,6 +880,9 @@ export class ConnectorOperatorQueryService {
         toolkit: connections.toolkit,
         label: connections.label,
         enabled: connections.enabled,
+        pausedBy: connections.pausedBy,
+        closedBecause: connections.closedBecause,
+        cleanupRetryAt: connections.externalCleanupRetryAt,
       })
       .from(connections)
       .innerJoin(
@@ -951,6 +970,9 @@ export class ConnectorOperatorQueryService {
         lifecycleState: connections.lifecycleState,
         externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
+        pausedBy: connections.pausedBy,
+        closedBecause: connections.closedBecause,
+        cleanupRetryAt: connections.externalCleanupRetryAt,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
@@ -1069,6 +1091,9 @@ export class ConnectorOperatorQueryService {
         lifecycleState: connections.lifecycleState,
         externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
+        pausedBy: connections.pausedBy,
+        closedBecause: connections.closedBecause,
+        cleanupRetryAt: connections.externalCleanupRetryAt,
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
         custody: connectorProviderInstances.custody,
@@ -1134,12 +1159,16 @@ export class ConnectorOperatorQueryService {
       usage,
       readiness: deriveConnectionReadiness({
         lifecycle: rowLifecycle,
+        pausedBy: row.pausedBy,
         authenticationStatus: row.authenticationStatus,
         reconciliationStatus: row.reconciliationStatus,
         authoritySync,
         externalCleanup: row.externalCleanupState,
+        cleanupRetryAt: row.cleanupRetryAt,
+        closedBecause: row.closedBecause,
         mode: row.mode,
-        way: this.wayHealth(row.providerInstanceId),
+        toolkit: row.toolkit,
+        way: this.wayHealth(row.providerInstanceId, row.toolkit),
       }),
     });
   }
@@ -1188,9 +1217,15 @@ export class ConnectorOperatorQueryService {
     }
   }
 
+  /**
+   * Where a DorkOS account's changes to one account stand: account-wide (its
+   * pause and disconnect, and who can use it), or, given an agent, only that
+   * agent's own access.
+   */
   private authoritySync(
     mode: 'managed' | 'byo',
-    managedConnectionId: string
+    managedConnectionId: string,
+    agentId?: string
   ): ConnectorAuthoritySyncState {
     if (mode === 'byo') return { status: 'ready' };
     const rows = this.db
@@ -1205,7 +1240,20 @@ export class ConnectorOperatorQueryService {
         connectorManagedAuthorityOutbox,
         eq(connectorManagedAuthorityOutbox.commandId, connectorManagedAuthorityScopes.lastCommandId)
       )
-      .where(eq(connectorManagedAuthorityScopes.managedConnectionId, managedConnectionId))
+      .where(
+        and(
+          eq(connectorManagedAuthorityScopes.managedConnectionId, managedConnectionId),
+          // Who can use the account, and whether it is on. A notification's
+          // own setup never decides whether the account works.
+          ne(connectorManagedAuthorityScopes.scopeKind, 'event_subscription'),
+          ...(agentId === undefined
+            ? []
+            : [
+                eq(connectorManagedAuthorityScopes.scopeKind, 'agent_grants'),
+                eq(connectorManagedAuthorityScopes.subjectId, agentId),
+              ])
+        )
+      )
       .all();
     const pending = rows.filter((row) => row.state === 'pending');
     if (pending.length > 0) {

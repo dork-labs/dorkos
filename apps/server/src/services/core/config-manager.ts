@@ -844,6 +844,32 @@ export function seedExtensionsApprovedSources(store: {
 }
 
 /**
+ * Migration body: seed `extensions.dismissedApprovals: {}` for configs persisted
+ * before the Activity inbox could be told "Not now" about an extension waiting
+ * to run (DOR-2517).
+ *
+ * Seeds the map empty. A config that predates it has never declined anything,
+ * so there is nothing to carry over, and losing it could only mean being asked
+ * once more. Additive and idempotent: writes only when `dismissedApprovals` is
+ * not already an object, and never touches the other `extensions` members. A
+ * config with no `extensions` key is skipped (the schema default supplies the
+ * object on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedExtensionsDismissedApprovals(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (!ext || typeof ext !== 'object' || Array.isArray(ext)) return;
+  const dismissed = (ext as { dismissedApprovals?: unknown }).dismissedApprovals;
+  if (dismissed && typeof dismissed === 'object' && !Array.isArray(dismissed)) return;
+  store.set('extensions', { ...(ext as Record<string, unknown>), dismissedApprovals: {} });
+}
+
+/**
  * Migration body: backfill the `workspace` section (WorkspaceManager, DOR-84)
  * for configs persisted before it existed. Additive + idempotent — only writes
  * when the key is absent; the schema default also yields this object on read, so
@@ -4545,6 +4571,23 @@ export const CONFIG_MIGRATIONS = {
     // `runtimes.claudeCode.dismissedFolders` — the found account folders a
     // person dismissed in Settings. See `seedClaudeDismissedFolders`.
     seedClaudeDismissedFolders(store);
+  },
+  // 0.91.0 has merged (found account folders a person dismissed) and v0.89.0 is
+  // the newest tag, so 0.92.0 is the next key. Frozen from merge, not from the
+  // release bump, for the reason `'0.60.0'` above states; anything further
+  // opens `'0.93.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `extensions`, beside `approvedSources`, which `'0.86.0'` writes and this
+  // body preserves.
+  '0.92.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `extensions.dismissedApprovals` — the extension copies a person said
+    // "Not now" to in the Activity inbox (DOR-2517). See
+    // `seedExtensionsDismissedApprovals`.
+    seedExtensionsDismissedApprovals(store);
   },
 } as const;
 
