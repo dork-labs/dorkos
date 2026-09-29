@@ -58,6 +58,14 @@ const UNINDEXED_FOREIGN_KEYS: Record<string, string> = {
   invites_channel_tenant_fk: PER_COMMUNITY_FEW,
   invites_issuer_member_id_fkey: PER_COMMUNITY_FEW,
   invites_issuer_tenant_fk: PER_COMMUNITY_FEW,
+  community_takedowns_actor_api_key_id_fkey: `${HOST_TABLE}: one row per host takedown`,
+  community_takedowns_actor_user_id_fkey: `${HOST_TABLE}: one row per host takedown`,
+  community_takedowns_released_by_user_id_fkey: `${HOST_TABLE}: one row per host takedown`,
+  // From migration 0022 (owner replacement, #2350). Listed before it lands; see the stale check.
+  owner_replacements_prior_owner_tenant_fk: `${PER_COMMUNITY_FEW}: one row per owner replacement`,
+  owner_replacements_new_owner_tenant_fk: `${PER_COMMUNITY_FEW}: one row per owner replacement`,
+  owner_replacement_object_tokens_community_id_fkey:
+    'a few short-lived tokens per replacement, reached through replacement_id',
 };
 
 beforeAll(async () => {
@@ -80,15 +88,21 @@ interface IndexRow {
   unique: boolean;
 }
 
-/** Plain-column btree indexes in the public schema, with their columns in order. */
+/**
+ * Plain-column btree indexes in the public schema, with their KEY columns in order. INCLUDE
+ * columns are left out: they ride along in the leaf pages but cannot be searched on.
+ */
 async function indexes(): Promise<IndexRow[]> {
   const result = await db.query<IndexRow>(
     `SELECT t.relname AS table, c.relname AS name, i.indisunique AS unique,
             pg_get_expr(i.indpred, i.indrelid) AS predicate,
-            array(SELECT a.attname::text FROM unnest(i.indkey::int2[]) WITH ORDINALITY k(n, o)
-                  JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.n ORDER BY k.o) AS columns
+            array(SELECT a.attname::text
+                  FROM unnest((i.indkey::int2[])[0:i.indnkeyatts - 1]) WITH ORDINALITY k(n, o)
+                  JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.n
+                  ORDER BY k.o) AS columns
      FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_class t ON t.oid=i.indrelid
-     WHERE t.relnamespace='public'::regnamespace AND i.indexprs IS NULL`
+     JOIN pg_am am ON am.oid=c.relam
+     WHERE t.relnamespace='public'::regnamespace AND i.indexprs IS NULL AND am.amname='btree'`
   );
   return result.rows;
 }
@@ -110,25 +124,58 @@ function serves(index: IndexRow, columns: string[]): boolean {
   );
 }
 
-describe('community indexes', () => {
-  it('back every foreign key with an index on the referencing columns', async () => {
-    const all = await indexes();
-    const keys = await db.query<{ name: string; table: string; columns: string[] }>(
-      `SELECT c.conname AS name, t.relname AS table,
-              array(SELECT a.attname::text FROM unnest(c.conkey) k
-                    JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k) AS columns
-       FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
-       WHERE c.contype='f' AND c.connamespace='public'::regnamespace`
-    );
-    const unindexed = keys.rows
+/** Foreign keys in the public schema that no index serves, and every key that exists. */
+async function unindexedForeignKeys(): Promise<{ unindexed: string[]; existing: Set<string> }> {
+  const all = await indexes();
+  const keys = await db.query<{ name: string; table: string; columns: string[] }>(
+    `SELECT c.conname AS name, t.relname AS table,
+            array(SELECT a.attname::text FROM unnest(c.conkey) k
+                  JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k) AS columns
+     FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+     WHERE c.contype='f' AND c.connamespace='public'::regnamespace`
+  );
+  return {
+    unindexed: keys.rows
       .filter(
         (key) => !all.some((index) => index.table === key.table && serves(index, key.columns))
       )
       .map((key) => key.name)
-      .sort();
+      .sort(),
+    existing: new Set(keys.rows.map((key) => key.name)),
+  };
+}
+
+describe('community indexes', () => {
+  it('back every foreign key with an index on the referencing columns', async () => {
+    const { unindexed, existing } = await unindexedForeignKeys();
     expect(unindexed.filter((name) => !(name in UNINDEXED_FOREIGN_KEYS))).toEqual([]);
-    // An allowance for a key that now has an index, or no longer exists, is stale.
-    expect(Object.keys(UNINDEXED_FOREIGN_KEYS).sort()).toEqual(unindexed);
+    // An allowance for a key that now has an index is stale. One for a key that does not exist
+    // is allowed, so a key a pending migration adds can be listed before it lands.
+    expect(
+      Object.keys(UNINDEXED_FOREIGN_KEYS)
+        .filter((name) => existing.has(name) && !unindexed.includes(name))
+        .sort()
+    ).toEqual([]);
+  });
+
+  it('count an INCLUDE column as no support for a foreign key', async () => {
+    await db.query(`CREATE TABLE index_probe_parent (id uuid PRIMARY KEY)`);
+    await db.query(
+      `CREATE TABLE index_probe_child (id uuid PRIMARY KEY, x int,
+         parent_id uuid CONSTRAINT index_probe_child_parent_fkey REFERENCES index_probe_parent(id))`
+    );
+    try {
+      await db.query(
+        `CREATE INDEX index_probe_include ON index_probe_child(x) INCLUDE (parent_id)`
+      );
+      expect((await unindexedForeignKeys()).unindexed).toContain('index_probe_child_parent_fkey');
+      await db.query(`CREATE INDEX index_probe_key ON index_probe_child(parent_id)`);
+      expect((await unindexedForeignKeys()).unindexed).not.toContain(
+        'index_probe_child_parent_fkey'
+      );
+    } finally {
+      await db.query(`DROP TABLE index_probe_child, index_probe_parent`);
+    }
   });
 
   it('keep no index that is only the leading columns of another', async () => {
