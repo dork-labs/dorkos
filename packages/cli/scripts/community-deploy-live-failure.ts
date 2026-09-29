@@ -61,17 +61,21 @@ export function describeLauncherStop(journal: unknown): string | null {
 /** Prefix the launcher prints on stderr when a command fails (`packages/cli/src/cli.ts`). */
 const LAUNCHER_FAILURE_PREFIX = 'Community setup failed:';
 
+/** Added only when the run has no launch journal, so the stop cannot have created anything. */
+export const NO_LAUNCH_RECORD_SUFFIX = ' before writing a launch record';
+
 /**
- * Say why the launcher exited when it stopped before writing a launch record, so there is no
- * journal to read. A launcher that refuses its release (for example `COMMUNITY_RELEASE_INVALID`,
- * DOR-2169) does exactly that.
+ * Say which error the launcher exited with, from its own terminal output. This is what explains a
+ * launcher that refused its release (for example `COMMUNITY_RELEASE_INVALID`, DOR-2169) before it
+ * wrote a journal, and a resumed launcher whose journal holds no saved error.
  *
  * Only a code token is ever returned: the last `Community setup failed:` line of the transcript,
  * its final `(CODE)`, checked against this checkout's error codes. Nothing else from the terminal
- * reaches the gate's output, so a message that echoes a name or an account cannot leak.
+ * reaches the gate's output, so a message that echoes a name or an account cannot leak. Whether a
+ * launch record exists is not known here; `explainCommunityLiveGateFailure` says so when none does.
  *
  * @param transcript - The tail of the launcher's terminal output.
- * @returns A fixed-vocabulary sentence, or null when no known code was printed.
+ * @returns `launcher exited with <CODE>`, or null when no known code was printed.
  */
 export function describeLauncherExit(transcript: string): string | null {
   // Carriage returns become line breaks so a terminal's CRLF splits cleanly. Colour codes need no
@@ -84,7 +88,7 @@ export function describeLauncherExit(transcript: string): string | null {
   if (!line) return null;
   const token = [...line.matchAll(/\(([A-Z][A-Z0-9_]{1,63})\)/gu)].at(-1)?.[1];
   const code = LaunchSafeErrorCodeSchema.safeParse(token);
-  return code.success ? `launcher exited with ${code.data} before writing a launch record` : null;
+  return code.success ? `launcher exited with ${code.data}` : null;
 }
 
 /** How far the run got when it failed. */
@@ -129,10 +133,16 @@ export async function explainCommunityLiveGateFailure(
     );
   // The journal's saved error is the more specific answer (it names the service); without a
   // journal, the launcher's own last code, which the PTY runner attached, is the next best.
-  const launcherStop =
-    error instanceof CommunityLiveGateError && error.step === PUBLISHED_LAUNCHER_STEP
-      ? ((await findLauncherStop().catch(() => null)) ?? error.detail ?? null)
+  const isLauncherExit =
+    error instanceof CommunityLiveGateError && error.step === PUBLISHED_LAUNCHER_STEP;
+  const journalStop = isLauncherExit ? await findLauncherStop().catch(() => null) : null;
+  // The launcher's own last code is only a fallback. It says nothing was written only when no
+  // launch record exists: a resumed launcher can stop with a journal (and resources) already there.
+  const outputStop =
+    isLauncherExit && !journalStop && error.detail
+      ? `${error.detail}${recoveryCommand ? '' : NO_LAUNCH_RECORD_SUFFIX}`
       : null;
+  const launcherStop = journalStop ?? outputStop;
   if (!recoveryCommand && !launcherStop) return error;
   return new CommunityLiveGateError(
     error instanceof CommunityLiveGateError ? error.step : 'execution',

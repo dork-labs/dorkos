@@ -240,6 +240,8 @@ describe('live gate pack recipe migration guard', () => {
     await write('apps/community/migrations/0001_init.sql', 'create table a();');
     await write('apps/community/migrations/README.md', 'notes');
     await write('launcher.ts', 'v1');
+    await mkdir(join(dir, 'packages/shared/src'), { recursive: true });
+    await write('packages/shared/src/community-release-manifest.ts', 'export const V = 1;');
     run(['add', '-A']);
     run(['commit', '-qm', 'release']);
     run(['tag', 'v0.92.0']);
@@ -258,6 +260,8 @@ describe('live gate pack recipe migration guard', () => {
       // Not a .sql file directly in the directory, so not in the fingerprint.
       'apps/community/migrations/README.md': 'more notes',
       'apps/community/migrations/meta/journal.json': '{}',
+      // build.ts reads only the directory itself, so a nested .sql file is not fingerprinted.
+      'apps/community/migrations/meta/snapshot.sql': 'select 1;',
     });
     expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([]);
     expect(() => assertReleasedCommunityMigrations(run, '0.92.0')).not.toThrow();
@@ -279,7 +283,9 @@ describe('live gate pack recipe migration guard', () => {
     } catch (error) {
       message = (error as Error).message;
     }
-    expect(message).toContain('Community migrations changed since v0.92.0:');
+    expect(message).toContain(
+      'The files the launcher checks a release against changed since v0.92.0:'
+    );
     expect(message).toContain('  apps/community/migrations/0002_more.sql');
     expect(message).toContain('COMMUNITY_RELEASE_INVALID');
     expect(message).toContain('Pack from v0.92.0 plus only the launcher commits under test');
@@ -300,5 +306,40 @@ describe('live gate pack recipe migration guard', () => {
     expect(() => assertReleasedCommunityMigrations(run, '0.93.0')).toThrow(
       'Tag v0.93.0 is not in this checkout. Run `git fetch --tags`, then pack again.'
     );
+  });
+
+  // The launcher also checks a manifest against its compiled contract (schema version, strict
+  // schema), so a change there can refuse a release too. Any content change counts, fail-safe.
+  it('refuses a change to the release-manifest contract', async () => {
+    const { run, commit } = await repo();
+    await commit({ 'packages/shared/src/community-release-manifest.ts': 'export const V = 2;' });
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
+      'packages/shared/src/community-release-manifest.ts',
+    ]);
+  });
+
+  // The build reads names and contents, never modes, so a chmod alone changes nothing it checks.
+  it('ignores a mode-only change to a migration', async () => {
+    const { run } = await repo();
+    run(['update-index', '--chmod=+x', 'apps/community/migrations/0001_init.sql']);
+    run(['commit', '-qm', 'chmod']);
+    expect(run(['diff', '--name-only', 'v0.92.0', 'HEAD'])).toBe(
+      'apps/community/migrations/0001_init.sql'
+    );
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([]);
+  });
+
+  it('refuses a renamed migration, which changes its fingerprinted name', async () => {
+    const { run } = await repo();
+    run([
+      'mv',
+      'apps/community/migrations/0001_init.sql',
+      'apps/community/migrations/0001_start.sql',
+    ]);
+    run(['commit', '-qm', 'rename']);
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
+      'apps/community/migrations/0001_init.sql',
+      'apps/community/migrations/0001_start.sql',
+    ]);
   });
 });

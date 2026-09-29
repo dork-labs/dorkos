@@ -227,13 +227,50 @@ export function assertPackedCommitUnchanged(before: string, after: string): void
 const COMMUNITY_MIGRATIONS = 'apps/community/migrations';
 
 /**
- * The Community migrations that differ between a release tag and HEAD, counted the way
- * `scripts/build.ts` fingerprints them: the `.sql` files directly in `apps/community/migrations`,
- * by name and content. Any change there changes the fingerprint the launcher is built with.
+ * The release-manifest contract the launcher is compiled with: `COMMUNITY_CONFIG_SCHEMA_VERSION`
+ * and a strict schema that refuses any manifest field it does not know.
+ */
+const COMMUNITY_RELEASE_CONTRACT = 'packages/shared/src/community-release-manifest.ts';
+
+/** `path -> blob id` for the files the launcher's release check depends on, at one ref. */
+function releaseCheckInputs(git: (args: string[]) => string, ref: string): Map<string, string> {
+  const inputs = new Map<string, string>();
+  const listing = git([
+    'ls-tree',
+    ref,
+    '--',
+    `${COMMUNITY_MIGRATIONS}/`,
+    COMMUNITY_RELEASE_CONTRACT,
+  ]);
+  for (const line of listing === '' ? [] : listing.split('\n')) {
+    // `<mode> <type> <blob>\t<path>`. Only the blob id is compared, so a mode-only change (chmod)
+    // never counts: the build reads names and contents, never modes.
+    const [meta, path] = line.split('\t');
+    const [, type, blob] = (meta ?? '').split(' ');
+    if (type !== 'blob' || !path || !blob) continue;
+    // `ls-tree` without -r lists only files directly in the directory, which is what build.ts
+    // reads; of those, only `.sql` files are fingerprinted.
+    const fingerprinted =
+      path === COMMUNITY_RELEASE_CONTRACT ||
+      (path.startsWith(`${COMMUNITY_MIGRATIONS}/`) && path.endsWith('.sql'));
+    if (fingerprinted) inputs.set(path, blob);
+  }
+  return inputs;
+}
+
+/**
+ * The files the launcher's release check depends on that differ between a release tag and HEAD.
+ *
+ * Two inputs. The Community migrations, counted the way `scripts/build.ts` fingerprints them: the
+ * `.sql` files directly in `apps/community/migrations`, by name and content. And the release-manifest
+ * contract, `packages/shared/src/community-release-manifest.ts`, whose schema version and strict
+ * schema the launcher checks a manifest against. Any content change to either counts; for the
+ * contract that includes a comment-only edit, which is fail-safe (a refused pack, never a pack that
+ * cannot deploy). A mode-only change never counts.
  *
  * @param git - Runs git in the repository and returns trimmed stdout; throws on a non-zero exit.
  * @param tag - The release tag, `v<version>`.
- * @returns The changed paths, sorted; empty when the fingerprint is the same.
+ * @returns The changed paths, sorted; empty when nothing the check reads changed.
  * @throws When the tag is not in this checkout.
  */
 export function changedCommunityMigrations(git: (args: string[]) => string, tag: string): string[] {
@@ -245,25 +282,21 @@ export function changedCommunityMigrations(git: (args: string[]) => string, tag:
       { cause: error }
     );
   }
-  const changed = git([
-    'diff',
-    '--name-only',
-    '--no-renames',
-    tag,
-    'HEAD',
-    '--',
-    `:(glob)${COMMUNITY_MIGRATIONS}/*.sql`,
-  ]);
-  return changed === '' ? [] : changed.split('\n').sort();
+  const before = releaseCheckInputs(git, `${tag}^{commit}`);
+  const after = releaseCheckInputs(git, 'HEAD');
+  const changed = new Set<string>();
+  for (const [path, blob] of before) if (after.get(path) !== blob) changed.add(path);
+  for (const [path, blob] of after) if (before.get(path) !== blob) changed.add(path);
+  return [...changed].sort();
 }
 
 /**
  * Refuse to pack a launcher that could never deploy the image it names.
  *
  * A tarball deploys the published Community image for its own package version, but its launcher
- * carries this checkout's migration fingerprint and refuses any release manifest with another one
- * (`COMMUNITY_RELEASE_INVALID`, before it writes a launch record). A checkout that added a Community
- * migration after its release tag can therefore never deploy, so say so before building.
+ * carries this checkout's migration fingerprint and release-manifest contract, and refuses a
+ * release manifest that does not match them (`COMMUNITY_RELEASE_INVALID`). A checkout that changed
+ * either after its release tag can therefore never deploy, so say so before building.
  *
  * @param git - Runs git in the repository.
  * @param version - The package version being packed.
@@ -277,7 +310,7 @@ export function assertReleasedCommunityMigrations(
   if (changed.length === 0) return;
   throw new Error(
     [
-      `Community migrations changed since ${tag}:`,
+      `The files the launcher checks a release against changed since ${tag}:`,
       ...changed.map((path) => `  ${path}`),
       `A launcher packed here would refuse the released ${version} image it deploys (COMMUNITY_RELEASE_INVALID).`,
       `Pack from ${tag} plus only the launcher commits under test (git worktree add <dir> ${tag}, then cherry-pick them).`,

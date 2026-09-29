@@ -237,7 +237,7 @@ describe('describeLauncherExit', () => {
       describeLauncherExit(
         failed('Community release resolution failed (COMMUNITY_RELEASE_INVALID)')
       )
-    ).toBe('launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record');
+    ).toBe('launcher exited with COMMUNITY_RELEASE_INVALID');
   });
 
   it('uses the last failure line and the last code in it', () => {
@@ -245,7 +245,7 @@ describe('describeLauncherExit', () => {
       describeLauncherExit(
         failed('first (TIMEOUT)') + failed('Provider command failed (EXIT) then (ACCESS_DENIED)')
       )
-    ).toBe('launcher exited with ACCESS_DENIED before writing a launch record');
+    ).toBe('launcher exited with ACCESS_DENIED');
   });
 
   it.each([
@@ -282,7 +282,7 @@ describe('describeLauncherExit', () => {
     const error = new CommunityLiveGateError(
       PUBLISHED_LAUNCHER_STEP,
       null,
-      'launcher exited with TIMEOUT before writing a launch record'
+      'launcher exited with TIMEOUT'
     );
     const explained = await explainCommunityLiveGateFailure(
       error,
@@ -298,20 +298,45 @@ describe('describeLauncherExit', () => {
     );
   });
 
-  it('keeps the launcher output when a recovery command is found but no journal stop', async () => {
+  // A resumed launcher can stop with a journal (and resources) already in place, and a journal whose
+  // saved error is null is the normal state. It must never say nothing was written beside a
+  // recovery command.
+  it.each([
+    ['a recovery command the run already holds', 'npx dorkos … --resume run-1', null],
+    ['a journal found after the stop', null, 'npx dorkos … --resume run-1'],
+  ])('never says nothing was written when there is %s', async (_label, held, found) => {
     const explained = await explainCommunityLiveGateFailure(
       new CommunityLiveGateError(
         PUBLISHED_LAUNCHER_STEP,
         null,
-        'launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record'
+        'launcher exited with COMMUNITY_RELEASE_NOT_READY'
+      ),
+      { cleanedUp: false, recoveryCommand: held },
+      async () => found,
+      // The journal exists but its lastSafeError is null.
+      async () => describeLauncherStop({ lastSafeError: null, pendingIntent: null })
+    );
+    const text = describeCommunityLiveGateFailure(explained);
+    expect(text).toBe(
+      'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_NOT_READY\n' +
+        'Retained resources can be reconciled with:\n  npx dorkos … --resume run-1\n'
+    );
+    expect(text).not.toContain('before writing a launch record');
+  });
+
+  it('says nothing was written only when there is no journal and no recovery command', async () => {
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateError(
+        PUBLISHED_LAUNCHER_STEP,
+        null,
+        'launcher exited with COMMUNITY_RELEASE_INVALID'
       ),
       { cleanedUp: false, recoveryCommand: null },
-      async () => 'npx dorkos … --resume run-1',
+      async () => null,
       async () => null
     );
-    expect((explained as Error).message).toContain('COMMUNITY_RELEASE_INVALID');
-    expect((explained as CommunityLiveGateError).recoveryCommand).toBe(
-      'npx dorkos … --resume run-1'
+    expect((explained as Error).message).toBe(
+      'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record'
     );
   });
 });
