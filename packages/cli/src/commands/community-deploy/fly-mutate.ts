@@ -129,7 +129,12 @@ export async function deployFlyImage(
   });
 }
 
-/** Apply already staged secrets without rebuilding or changing the selected image. */
+/**
+ * Apply already staged secrets without rebuilding or changing the selected image.
+ *
+ * No `--yes`: flyctl v0.4.104's `secrets deploy` registers only `--app`, `--config`, `--detach`
+ * and `--dns-checks`, and rejects any other flag (DOR-2559 audit).
+ */
 export async function deployFlySecrets(
   options: FlySessionReadOptions,
   appName: string
@@ -137,7 +142,7 @@ export async function deployFlySecrets(
   const app = parseInput(ExternalIdentifierSchema, appName);
   return runProviderMutation({
     ...options,
-    args: ['secrets', 'deploy', '--app', app, '--yes'],
+    args: ['secrets', 'deploy', '--app', app],
     parse: () => ({ operation: 'deploy' as const }),
   });
 }

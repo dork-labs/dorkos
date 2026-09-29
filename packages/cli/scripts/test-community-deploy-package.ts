@@ -98,6 +98,7 @@ else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyApp
 else if(args[0]==='auth'&&args[1]==='token') value={token:'fixture-fly-token'};
 else if(args[0]==='secrets'&&args[1]==='list') value=Object.entries(state.secrets).map(([name,item])=>({name,digest:item.digest,status:item.status}));
 else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0,'utf8'); for(const line of input.trim().split('\\n')) { const name=line.slice(0,line.indexOf('=')); state.stagedValues[name]=line.slice(line.indexOf('=')+1); state.secrets[name]={digest:'digest-'+name.toLowerCase().replaceAll('_','-')+'-'+Date.now(),status:'Staged'}; } write(state); value={}; }
+else if(args[0]==='secrets'&&args[1]==='deploy'&&args.some((arg)=>!['secrets','deploy','--app',at('--app'),'--detach'].includes(arg))) { process.stderr.write('Error: unknown flag'); process.exit(1); }
 else if(args[0]==='secrets'&&args[1]==='deploy') { for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
 else if(args[0]==='deploy') { state.deployed=true; state.imageDigest=at('--image').split('@')[1]; state.config=fs.readFileSync(at('--config'),'utf8'); for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
 else if(args[0]==='machine') value=state.deployed?[{id:'machine-1',name:'machine-1',state:'started',region:'ord',image_ref:{digest:state.imageDigest,registry:'ghcr.io',repository:'dork-labs/dorkos-community'},checks:[{name:'http',status:'passing'}]}]:[];
