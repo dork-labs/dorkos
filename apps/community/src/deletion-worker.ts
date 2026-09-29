@@ -363,6 +363,8 @@ export async function sweepCommunityDeletions(
       'community_handles',
       'export_archives',
       'owner_quota_windows',
+      'owner_replacement_object_tokens',
+      'owner_replacements',
       'invite_uses',
       'pending_admissions',
       'connection_grants',

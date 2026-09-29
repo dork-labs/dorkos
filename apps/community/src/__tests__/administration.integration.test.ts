@@ -108,6 +108,8 @@ const TENANT_TABLES = [
   'members',
   'notice_outbox',
   'owner_quota_windows',
+  'owner_replacement_object_tokens',
+  'owner_replacements',
   'pending_admissions',
   'read_cursors',
   'removed_file_blobs',

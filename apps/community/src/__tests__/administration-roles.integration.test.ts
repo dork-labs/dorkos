@@ -693,6 +693,7 @@ const actions: Action<unknown>[] = [
           'lifecycleVersion',
           'name',
           'ownerPresent',
+          'ownerReplacement',
           'settingsVersion',
           'shortName',
         ]);
@@ -744,6 +745,7 @@ const actions: Action<unknown>[] = [
         'lifecycleVersion',
         'name',
         'ownerPresent',
+        'ownerReplacement',
         'settingsVersion',
         'shortName',
       ]);

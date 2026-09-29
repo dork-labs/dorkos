@@ -10,7 +10,8 @@ type Scope =
   | 'communities:lifecycle'
   | 'communities:import'
   | 'communities:legal_hold'
-  | 'communities:takedown';
+  | 'communities:takedown'
+  | 'communities:ownership';
 type HostApiKey = {
   id: string;
   label: string;
@@ -55,6 +56,12 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     label: 'Take down content',
     detail:
       'Remove one message, file, or icon by its id, for example after a legal report. It never sees what it removes.',
+  },
+  {
+    scope: 'communities:ownership',
+    label: 'Replace owners',
+    detail:
+      'Ask to make someone else a community’s owner when its owner has left, see those requests, cancel them, and send the claim link again. The owner is always told and can say no.',
   },
 ];
 

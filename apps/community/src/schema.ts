@@ -225,7 +225,7 @@ export const hostApiKeys = pgTable(
     check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
     check(
       'host_api_keys_scopes',
-      sql`cardinality(${table.scopes}) BETWEEN 1 AND 6 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown']::text[]`
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 7 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership']::text[]`
     ),
     check(
       'host_api_keys_issuer',
@@ -1888,5 +1888,187 @@ export const noticeOutbox = pgTable(
     index('notice_outbox_due_idx').on(table.state, table.nextAttemptAt),
     index('notice_outbox_community_idx').on(table.communityId),
     index('notice_outbox_subject_idx').on(table.subjectId),
+  ]
+);
+
+const OPEN_OWNER_REPLACEMENT_STATES = sql`('notifying','waiting','claimable')`;
+const CLOSED_OWNER_REPLACEMENT_STATES = sql`('completed','objected','withdrawn','superseded','expired')`;
+const HOST_ACTOR_PATTERN = sql`'^(person|api_key):[A-Za-z0-9_-]{1,200}$'`;
+
+/**
+ * A host's request to make the account named in it the owner of a community whose owner has
+ * left. At most one is open per community; a closed one never reopens. The claim token is
+ * stored only as its hash, and only while the request is open.
+ */
+export const ownerReplacements = pgTable(
+  'owner_replacements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    state: text('state').notNull().default('notifying'),
+    reason: text('reason').notNull(),
+    /** The host's own pointer; never shown to admins or members, never in mail or audit. */
+    reference: text('reference'),
+    claimantOidcIssuer: text('claimant_oidc_issuer'),
+    claimantOidcSubject: text('claimant_oidc_subject'),
+    claimTokenHash: text('claim_token_hash').unique(),
+    claimReissuedAt: timestamp('claim_reissued_at', { withTimezone: true }),
+    requestedByHostActor: text('requested_by_host_actor').notNull(),
+    idempotencyActor: text('idempotency_actor').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    afterObjection: boolean('after_objection').notNull(),
+    afterWithdrawal: boolean('after_withdrawal').notNull(),
+    priorOwnerMemberId: uuid('prior_owner_member_id').notNull(),
+    newOwnerMemberId: uuid('new_owner_member_id'),
+    noticeState: text('notice_state').notNull().default('pending'),
+    noticeResolvedAt: timestamp('notice_resolved_at', { withTimezone: true }),
+    verifiedAddress: boolean('verified_address'),
+    claimableAfter: timestamp('claimable_after', { withTimezone: true }),
+    reminderQueuedAt: timestamp('reminder_queued_at', { withTimezone: true }),
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'owner_replacements_state_check',
+      sql`${table.state} IN ('notifying','waiting','claimable','completed','objected','withdrawn','superseded','expired')`
+    ),
+    check(
+      'owner_replacements_reason_check',
+      sql`${table.reason} IN ('owner_left_group','owner_unreachable','other')`
+    ),
+    check(
+      'owner_replacements_reference_check',
+      sql`${table.reference} ~ '^[A-Za-z0-9 ._#-]{1,80}$'`
+    ),
+    check(
+      'owner_replacements_claimant_oidc_issuer_check',
+      sql`char_length(${table.claimantOidcIssuer}) BETWEEN 1 AND 2048`
+    ),
+    check(
+      'owner_replacements_claimant_oidc_subject_check',
+      sql`char_length(${table.claimantOidcSubject}) BETWEEN 1 AND 255`
+    ),
+    check(
+      'owner_replacements_claim_token_hash_check',
+      sql`${table.claimTokenHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'owner_replacements_requested_by_host_actor_check',
+      sql`${table.requestedByHostActor} ~ ${HOST_ACTOR_PATTERN}`
+    ),
+    check(
+      'owner_replacements_idempotency_actor_check',
+      sql`${table.idempotencyActor} ~ ${HOST_ACTOR_PATTERN}`
+    ),
+    check(
+      'owner_replacements_idempotency_key_check',
+      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
+    ),
+    check('owner_replacements_payload_hash_check', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'owner_replacements_notice_state_check',
+      sql`${table.noticeState} IN ('pending','accepted','failed')`
+    ),
+    check(
+      'owner_replacements_claimant',
+      sql`(${table.claimantOidcIssuer} IS NULL) = (${table.claimantOidcSubject} IS NULL)`
+    ),
+    check(
+      'owner_replacements_notice',
+      sql`(${table.noticeState} = 'pending') = (${table.noticeResolvedAt} IS NULL)`
+    ),
+    check(
+      'owner_replacements_waiting',
+      sql`${table.state} NOT IN ('waiting','claimable','completed','expired') OR ${table.noticeState} <> 'pending'`
+    ),
+    check(
+      'owner_replacements_claimable_after',
+      sql`(${table.state} <> 'notifying' OR ${table.claimableAfter} IS NULL) AND (${table.state} NOT IN ('waiting','claimable','completed','expired') OR ${table.claimableAfter} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_claim_window',
+      sql`(${table.state} NOT IN ('notifying','waiting') OR ${table.claimExpiresAt} IS NULL) AND (${table.state} NOT IN ('claimable','completed','expired') OR ${table.claimExpiresAt} IS NOT NULL) AND (${table.claimExpiresAt} IS NULL OR (${table.claimableAfter} IS NOT NULL AND ${table.claimExpiresAt} > ${table.claimableAfter}))`
+    ),
+    check(
+      'owner_replacements_reminder',
+      sql`${table.reminderQueuedAt} IS NULL OR ${table.claimableAfter} IS NOT NULL`
+    ),
+    check(
+      'owner_replacements_ended',
+      sql`(${table.state} IN ${CLOSED_OWNER_REPLACEMENT_STATES}) = (${table.endedAt} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_new_owner',
+      sql`(${table.state} = 'completed') = (${table.newOwnerMemberId} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_claim_token',
+      sql`(${table.state} IN ${OPEN_OWNER_REPLACEMENT_STATES}) = (${table.claimTokenHash} IS NOT NULL)`
+    ),
+    foreignKey({
+      name: 'owner_replacements_prior_owner_tenant_fk',
+      columns: [table.communityId, table.priorOwnerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'owner_replacements_new_owner_tenant_fk',
+      columns: [table.communityId, table.newOwnerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    uniqueIndex('owner_replacements_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('owner_replacements_idempotency').on(
+      table.communityId,
+      table.idempotencyActor,
+      table.idempotencyKey
+    ),
+    uniqueIndex('owner_replacements_open_unique')
+      .on(table.communityId)
+      .where(sql`${table.state} IN ${OPEN_OWNER_REPLACEMENT_STATES}`),
+    index('owner_replacements_objected_idx')
+      .on(table.communityId, table.endedAt.desc())
+      .where(sql`${table.state} = 'objected'`),
+    index('owner_replacements_requested_idx').on(
+      table.communityId,
+      table.requestedAt.desc(),
+      table.id.desc()
+    ),
+  ]
+);
+
+/**
+ * Object-only links: one per send attempt of a notice, reminder, or reissue message, stored
+ * only as a hash. A token can only object, only while its request is open, and is never deleted
+ * when an attempt fails. `outboxId` has no foreign key: the message row is deleted 30 days after
+ * it resolves, while the token lives as long as its request.
+ */
+export const ownerReplacementObjectTokens = pgTable(
+  'owner_replacement_object_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    replacementId: uuid('replacement_id').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    tokenHash: text('token_hash').notNull().unique(),
+    outboxId: uuid('outbox_id'),
+    createdAt: time('created_at'),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'owner_replacement_object_tokens_token_hash_check',
+      sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    foreignKey({
+      name: 'owner_replacement_object_tokens_tenant_fk',
+      columns: [table.communityId, table.replacementId],
+      foreignColumns: [ownerReplacements.communityId, ownerReplacements.id],
+    }).onDelete('cascade'),
+    index('owner_replacement_object_tokens_replacement_idx').on(table.replacementId),
   ]
 );

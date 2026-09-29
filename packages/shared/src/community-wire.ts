@@ -13,6 +13,9 @@ import { z } from 'zod';
 import {
   CommunityAdminAdmissionPolicySchema,
   CommunityAdminLifecycleSchema,
+  CommunityAdminOwnerReplacementOpenStateSchema,
+  CommunityAdminOwnerReplacementReasonSchema,
+  COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN,
 } from './community-admin-wire.js';
 import { HANDLE_PATTERN } from './handle.js';
 
@@ -40,6 +43,10 @@ export const COMMUNITY_API_V1_ROUTES = {
   bootstrapComplete: '/api/v1/bootstrap/complete',
   ownerClaimPreflight: '/api/v1/owner-claims/preflight',
   ownerClaim: '/api/v1/owner-claims/claim',
+  ownerReplacementObjectPreflight: '/api/v1/owner-replacements/object-preflight',
+  ownerReplacementObject: '/api/v1/owner-replacements/object',
+  ownerReplacementPreflight: '/api/v1/owner-replacements/preflight',
+  ownerReplacementClaim: '/api/v1/owner-replacements/claim',
   hostCommunities: '/api/v1/host/communities',
   hostCommunityLifecycle: '/api/v1/host/communities/:id/lifecycle',
   memberships: '/api/v1/memberships',
@@ -85,6 +92,8 @@ export const COMMUNITY_API_V1_ROUTES = {
   meExport: '/api/v1/me/export',
   meLeave: '/api/v1/me/leave',
   ownerTransfer: '/api/v1/owner/transfer',
+  ownerReplacement: '/api/v1/owner-replacement',
+  ownerReplacementObjection: '/api/v1/owner-replacement/objection',
   ownerExport: '/api/v1/owner/export',
   ownerErasures: '/api/v1/owner/erasures',
   accountFormerMemberships: '/api/v1/account/former-memberships',
@@ -195,6 +204,99 @@ export const CommunityWireOwnerClaimPreflightResponseSchema = z.strictObject({
 });
 /** Redeeming a claim needs no client-supplied community or role. */
 export const CommunityWireOwnerClaimRequestSchema = z.strictObject({});
+
+/**
+ * A one-time owner replacement token (a claim token or an object-only token), read from a URL
+ * fragment. Any non-empty string is accepted here so that every unusable token, malformed or
+ * not, gets the same refusal from the route.
+ */
+const ownerReplacementToken = z.string().min(1).max(512);
+/** What the owner can do about an open replacement right now, from lifecycle and account. */
+export const CommunityWireOwnerReplacementOptionsSchema = z.strictObject({
+  /** Keeping ownership is always possible, with the email link or a signed-in session. */
+  keep: z.literal(true),
+  /** Hand the community to someone: `active` only, with a password. */
+  transfer: z.boolean(),
+  /** Delete the community: with a password. */
+  delete: z.boolean(),
+  /** The account has no password, so transfer and delete wait until it adds one. */
+  needsPassword: z.boolean(),
+});
+/** The open replacement as its admins see it: no reference, reissue date, or options. */
+export const CommunityWireOwnerReplacementAdminNoticeSchema = z.strictObject({
+  replacementId: id,
+  state: CommunityAdminOwnerReplacementOpenStateSchema,
+  reason: CommunityAdminOwnerReplacementReasonSchema,
+  requestedAt: timestamp,
+  /** Null until the notice resolves. */
+  claimableAfter: timestamp.nullable(),
+  noticeState: z.enum(['pending', 'accepted', 'failed']),
+});
+/** The open replacement as the owner sees it, with the host's reference and their options. */
+export const CommunityWireOwnerReplacementOwnerNoticeSchema =
+  CommunityWireOwnerReplacementAdminNoticeSchema.extend({
+    /** The host's own reference, shown as quoted plain text, never as a link. */
+    reference: z.string().regex(COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN).nullable(),
+    claimReissuedAt: timestamp.nullable(),
+    options: CommunityWireOwnerReplacementOptionsSchema,
+  });
+/**
+ * `GET /owner-replacement` for one member. The owner and admins see an open request (the owner
+ * with more); every member sees a completion for 7 days. Never names a host operator, a key,
+ * a legal hold, or the claimant.
+ */
+export const CommunityWireOwnerReplacementNoticeResponseSchema = z.strictObject({
+  open: z
+    .union([
+      CommunityWireOwnerReplacementOwnerNoticeSchema,
+      CommunityWireOwnerReplacementAdminNoticeSchema,
+    ])
+    .nullable(),
+  completed: z
+    .strictObject({ newOwnerDisplayName: z.string().min(1), completedAt: timestamp })
+    .nullable(),
+});
+/** The owner keeps ownership from a signed-in session. No password needed. */
+export const CommunityWireOwnerReplacementObjectionRequestSchema = z.strictObject({
+  replacementId: z.uuid(),
+});
+/** The object-only link's token, sent from the page; a `GET` never objects. */
+export const CommunityWireOwnerReplacementObjectRequestSchema = z.strictObject({
+  token: ownerReplacementToken,
+});
+/** A live object-only link reveals only the community's name and the earliest claim date. */
+export const CommunityWireOwnerReplacementObjectPreflightResponseSchema = z.strictObject({
+  communityName: z.string().min(1),
+  claimableAfter: timestamp.nullable(),
+});
+/**
+ * The object-only link's answer: `kept` when the request is now objected (including a replay of
+ * the link that objected), `ended` when it closed any other way.
+ */
+export const CommunityWireOwnerReplacementObjectResponseSchema = z.strictObject({
+  outcome: z.enum(['kept', 'ended']),
+});
+/** The claim token is exchanged for a signed, 30-minute, HTTP-only cookie. */
+export const CommunityWireOwnerReplacementPreflightRequestSchema = z.strictObject({
+  token: ownerReplacementToken,
+});
+/** Claim preflight: the community, when it can be claimed, and whether single sign-on is needed. */
+export const CommunityWireOwnerReplacementPreflightResponseSchema = z.strictObject({
+  communityId: z.uuid(),
+  communityName: z.string().min(1),
+  state: CommunityAdminOwnerReplacementOpenStateSchema,
+  claimableAfter: timestamp.nullable(),
+  claimExpiresAt: timestamp.nullable(),
+  /** The request names an account, so only a sign-in through the host's issuer can claim. */
+  requiresSingleSignOn: z.boolean(),
+});
+/** Taking ownership needs the session and the preflight cookie, nothing else. */
+export const CommunityWireOwnerReplacementClaimRequestSchema = z.strictObject({});
+/** The claimant now owns the community; `memberId` is their membership in it. */
+export const CommunityWireOwnerReplacementClaimResponseSchema = z.strictObject({
+  community: z.strictObject({ id: z.uuid(), name: z.string().min(1) }),
+  memberId: id,
+});
 
 /** Human roles. Agent membership is a distinct kind, not an elevated role. */
 export const CommunityWireHumanRoleSchema = z.enum(['owner', 'admin', 'member']);
@@ -1295,6 +1397,12 @@ export const CommunityWireErrorCodeSchema = z.enum([
    * `404 NOT_FOUND` like any unknown id. Added later; older readers see an unknown code.
    */
   'COMMUNITY_DELETED',
+  /** The host has no mail configured, so it cannot give an owner notice. */
+  'NOTICE_DELIVERY_UNAVAILABLE',
+  /** The community already has an open owner replacement. */
+  'OWNER_REPLACEMENT_OPEN',
+  /** The owner kept ownership recently; the host may ask again after the cooling-off. */
+  'OWNER_REPLACEMENT_COOLDOWN',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;
