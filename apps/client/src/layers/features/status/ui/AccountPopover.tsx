@@ -10,7 +10,7 @@ import {
 } from '@/layers/shared/ui';
 import { planName, type AccountWindow } from '@/layers/shared/lib';
 import type { SessionAccount } from '../model/use-session-account';
-import { canOfferContinue, popoverWindowLabel } from '../lib/account-chip';
+import { canOfferContinue, popoverWindowLabel, workingOnLine } from '../lib/account-chip';
 import { newestObservedAt, readableWindows } from '../lib/account-usage-status';
 import { UsageFreshnessLine } from './UsageFreshnessLine';
 
@@ -108,8 +108,8 @@ export function AccountPopover({
               <UsageBar key={key} window={window} label={label} now={now} />
             ))}
           </div>
-          {account.trackerItem && (
-            <p className="text-muted-foreground text-2xs">Working on {account.trackerItem.id}</p>
+          {account.trackerItems.length > 0 && (
+            <p className="text-muted-foreground text-2xs">{workingOnLine(account.trackerItems)}</p>
           )}
           {offerContinue && (
             <Button size="sm" onClick={onContinue} className="self-start">

@@ -61,7 +61,7 @@ function seedRequest(
       agentId: 'agent-1',
       sessionId: 'session-1',
       serviceSlug: 'gmail',
-      requestedOperationsJson: '["gmail.read"]',
+      requestedAccess: 'read',
       requestedEventsJson: '[]',
       reason: 'Read new mail',
       resumeState: 'ready',

@@ -14,8 +14,8 @@
 import { stat } from 'node:fs/promises';
 import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
 import type { MarketplaceJsonEntry, PluginSource } from '@dorkos/marketplace';
-import type { MarketplaceCache } from './marketplace-cache.js';
-import type { MarketplaceSourceManager } from './marketplace-source-manager.js';
+import type { MarketplaceCache } from './cache/marketplace-cache.js';
+import type { MarketplaceSourceManager } from './sources/marketplace-source-manager.js';
 import { assertPathSegment } from './lib/package-paths.js';
 import { validateBoundary } from '../../lib/boundary.js';
 

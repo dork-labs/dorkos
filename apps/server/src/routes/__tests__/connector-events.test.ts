@@ -81,7 +81,7 @@ function fixture(options: { login?: boolean; denyDestination?: boolean } = {}) {
     destinations,
     () => now
   );
-  const managed = { reconcile: vi.fn(async () => false), ready: () => false };
+  const managed = { reconcile: vi.fn(async () => false), ready: () => false, stage: vi.fn() };
   const grants = new ConnectorEventGrantService(
     store,
     subscriptions,

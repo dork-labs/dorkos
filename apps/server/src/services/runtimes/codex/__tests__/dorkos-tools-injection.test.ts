@@ -38,6 +38,8 @@ import {
   clearTestHomes,
   registerEveryFolderAsHome,
 } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS } from '../../connector-tools.js';
+import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../connectors/runtime-capability-scope.js';
 
 // Every scratch folder counts as a registered home here, so this suite's
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
@@ -449,6 +451,12 @@ describe('the dorkos tool server on a Codex turn', () => {
         { isCurrent: expect.any(Function) }
       );
       expect(lastMcpServers()['dorkos_connections']?.['url']).toBe('http://127.0.0.1:4341/mcp');
+      // Codex's own default (five minutes) is shorter than an access request
+      // holds for the person's answer, so the server states a ceiling past it.
+      expect(lastMcpServers()['dorkos_connections']?.['tool_timeout_sec']).toBe(
+        CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS / 1000
+      );
+      expect(CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS).toBeGreaterThan(CONNECTOR_REQUEST_LIVE_HOLD_MS);
       const options = sdkMocks.constructorOptions.at(-1) as {
         config?: unknown;
         env?: Record<string, string>;

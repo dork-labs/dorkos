@@ -800,7 +800,7 @@ function badgeAccount(n: number, limitState?: 'limited' | 'waiting-reset'): Sess
     usage,
     limit,
     chipState: limit ? 'out' : 'ok',
-    trackerItem: null,
+    trackerItems: [],
     lifecycle: 'idle',
     pending: false,
   };

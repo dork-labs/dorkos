@@ -38,7 +38,9 @@
  * @module shared/lib/link-navigation
  */
 import { toast } from 'sonner';
+import { APP_ROUTE_PATHS } from '@dorkos/shared/app-route-paths';
 import { isDesktopShell } from './platform';
+import { parseExtensionPagePath } from './extension-page-path';
 
 /**
  * One toast slot for every refusal anywhere in the app. A second refused click
@@ -47,35 +49,26 @@ import { isDesktopShell } from './platform';
 const REFUSAL_TOAST_ID = 'dorkos-link-refused';
 
 /**
- * Every path the cockpit's router serves — the definition of "internal".
- *
- * Kept here rather than derived from the router so classification stays a pure
- * function the tests can pin down. `app-route-paths.test.ts` builds the real
- * router and fails if the two ever drift.
- *
- * **Static paths only.** {@link classifyLink} matches a pathname by exact set
- * membership, so a parameterised route (`/session/$sessionId`) cannot be
- * represented by adding its literal here — the literal would satisfy the drift
- * guard while `/session/abc` classified as external and got handed to the
- * system browser. The guard rejects dynamic segments for that reason; a router
- * that grows one needs a real matcher here, not another entry.
+ * Every path the app's router serves — the definition of "internal". Lives in
+ * `@dorkos/shared/app-route-paths` so the server checks the links an extension
+ * hands core against the same list (spec `flow-multiproject` §7.1).
+ * `app-route-paths.test.ts` builds the real router and fails if the two ever
+ * drift. Static paths only; see the shared module.
  */
-export const APP_ROUTE_PATHS = [
-  '/',
-  '/activity',
-  '/agents',
-  '/channels',
-  '/connections',
-  '/feedback-requests',
-  '/marketplace',
-  '/marketplace/sources',
-  '/session',
-  '/tasks',
-  '/team',
-  '/workspaces',
-] as const;
+export { APP_ROUTE_PATHS };
 
 const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
+
+/**
+ * Whether the router serves this pathname: one of {@link APP_ROUTE_PATHS}, or
+ * an extension page under `/x/<extensionId>/…` (spec `flow-multiproject`
+ * §6.5). Extension pages are the one parameterised family, so they are matched
+ * by shape rather than listed; whether the extension or the page exists is the
+ * page route's question, and it answers with an empty state rather than a 404.
+ */
+function isAppRoutePath(pathname: string): boolean {
+  return APP_ROUTE_SET.has(pathname) || parseExtensionPagePath(pathname) !== null;
+}
 
 /**
  * Schemes the seam will dispatch from any surface. Everything else is refused
@@ -231,7 +224,7 @@ export function classifyLink(href: string, from: string = currentHref()): Classi
   }
 
   const pathname = normalizePathname(url.pathname);
-  if (!APP_ROUTE_SET.has(pathname)) return { kind: 'external', url: url.href };
+  if (!isAppRoutePath(pathname)) return { kind: 'external', url: url.href };
 
   return { kind: 'internal', url: url.href, path: `${pathname}${url.search}${url.hash}` };
 }

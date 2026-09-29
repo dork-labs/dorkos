@@ -43,6 +43,7 @@ import { resolveDorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js'
 import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
 import {
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
+  CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
   type ConnectorRuntimeMcpInjection,
 } from '../../connector-tools.js';
 import { enumerateOpenCodeMcpServers } from './mcp-status.js';
@@ -329,6 +330,12 @@ export class OpenCodeMcpManager {
               url: connectorTools.url,
               headers: connectorTools.headers,
               enabled: true,
+              // OpenCode applies a remote server's `timeout` to each tool call
+              // too; without it a call gets the MCP client's one-minute
+              // default, far shorter than an access request holds for the
+              // person's answer. It also bounds connecting to this loopback
+              // listener, which answers or refuses at once.
+              timeout: CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
             },
           }
         : {}),

@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
 import { useSessions, selectAgentSessions } from '@/layers/entities/session';
-import { useSlotContributions } from '@/layers/shared/model';
+import { useMenuExtensionPages, useSlotContributions } from '@/layers/shared/model';
+import { extensionPageHref } from '@/layers/shared/lib';
 // Deep, because the day boundary is off the `shared/lib` barrel on purpose —
 // see that barrel's note beside it.
 import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
@@ -38,6 +39,22 @@ export interface QuickActionItem {
   action: string;
   /** Extra search terms beyond `label` — see `CommandPaletteContribution.keywords`. */
   keywords?: string[];
+}
+
+/**
+ * A page an extension added, as the palette's "Add-ons" rows list it (spec
+ * `flow-multiproject` §6.5): only pages that asked to be listed and need no
+ * value in their address.
+ */
+export interface PaletteAddOnPage {
+  /** The page's registry id, `<extensionId>:<path>`. */
+  id: string;
+  /** The page's title. */
+  label: string;
+  /** Where choosing it goes, e.g. `/x/flow`. */
+  href: string;
+  /** The page's icon as the extension gave it; drawn through `ContributedIcon`. */
+  icon?: unknown;
 }
 
 export interface CommandItemData {
@@ -162,6 +179,21 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
   const { data: commandsData } = useCommands(activeCwd, activeSession?.id, activeSession?.runtime);
 
   const allPaletteItems = useSlotContributions('command-palette.items');
+
+  // Extension pages, the "Add-ons" rows. Searched, never drawn before a query:
+  // the empty palette is Continue, Recent and New and nothing else, and every
+  // action lives one keystroke away (PaletteCommandCenter).
+  const menuPages = useMenuExtensionPages();
+  const addOnPages = useMemo<PaletteAddOnPage[]>(
+    () =>
+      menuPages.map((page) => ({
+        id: page.id,
+        label: page.title,
+        href: extensionPageHref(page.extensionId, page.path),
+        icon: page.icon,
+      })),
+    [menuPages]
+  );
 
   const features = useMemo(
     () => allPaletteItems.filter((item) => item.category === 'feature'),
@@ -329,6 +361,17 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
       });
     }
 
+    for (const page of addOnPages) {
+      items.push({
+        id: page.id,
+        name: page.label,
+        type: 'page',
+        keywords: ['add-on', 'extension'],
+        ...UNTRACKED,
+        data: page,
+      });
+    }
+
     return items;
   }, [
     allAgents,
@@ -340,6 +383,7 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
     rooms.channels,
     rooms.dms,
     roomIdByOriginLabel,
+    addOnPages,
   ]);
 
   return {

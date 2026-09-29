@@ -56,7 +56,7 @@ The `docs-openapi-check` workflow runs both and fails on any difference, so CI c
 
 ## Marketplace (`/api/marketplace/*`)
 
-The marketplace routes are mounted at `/api/marketplace` and backed by injected service dependencies (source manager, cache, fetcher, installer, uninstall/update flows). Route file: `apps/server/src/routes/marketplace.ts`.
+The marketplace routes are mounted at `/api/marketplace` and backed by injected service dependencies (source manager, cache, fetcher, installer, uninstall/update flows). Route file: `apps/server/src/routes/marketplace.ts`, with one module per route group under `apps/server/src/routes/marketplace/`.
 
 | Method   | Path                                        | Description                                                                 |
 | -------- | ------------------------------------------- | --------------------------------------------------------------------------- |

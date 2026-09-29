@@ -10,8 +10,19 @@ export class ChatPage {
   readonly sendButton: Locator;
   readonly messageList: Locator;
   readonly panel: Locator;
-  readonly inferenceStreaming: Locator;
-  readonly inferenceComplete: Locator;
+  /**
+   * Matches while a turn is running in this chat — streaming, or parked on a
+   * person (an approval, a question, a capability hold) — and matches nothing
+   * once it has ended. Reads the panel's `data-turn-status` and
+   * `data-turn-lifecycle`, which mirror the turn's own state — never the lane's
+   * words or the composer's label, which a higher-priority rung (an Ask, a
+   * progress bar, an edited queued draft) can cover while the turn is still
+   * running (DOR-2546). The lifecycle is needed because the rendered status
+   * reads a parked turn as `idle`.
+   */
+  readonly turnRunning: Locator;
+  /** The finished turn's summary in the session's live lane — shown briefly after a turn ends. */
+  readonly turnComplete: Locator;
   readonly commandPalette: Locator;
   readonly paletteOptions: Locator;
 
@@ -22,8 +33,12 @@ export class ChatPage {
     this.sendButton = page.getByRole('button', { name: /send message/i });
     this.messageList = page.locator('[data-testid="message-list"]');
     this.panel = page.locator('[data-testid="chat-panel"]');
-    this.inferenceStreaming = page.locator('[data-testid="inference-indicator-streaming"]');
-    this.inferenceComplete = page.locator('[data-testid="inference-indicator-complete"]');
+    this.turnRunning = page.locator(
+      '[data-testid="chat-panel"]:is([data-turn-status="streaming"], [data-turn-lifecycle="blocked"])'
+    );
+    this.turnComplete = page.locator(
+      '[data-slot="live-lane"][data-lane-scope="session"] [data-testid="lane-complete"]'
+    );
     // Inline slash-command list (SlashCommandList.tsx): a listbox whose rows are
     // role="option" with ids `command-item-{n}`.
     this.commandPalette = page.locator('#command-palette-listbox');
@@ -106,20 +121,22 @@ export class ChatPage {
     await expect(replies).toHaveCount(repliesBefore + 1, { timeout: timeoutMs });
   }
 
-  /** Wait for a full streaming response cycle to complete. */
-  async waitForResponse(timeoutMs = 60_000) {
-    await this.inferenceStreaming.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
-    await this.inferenceStreaming.waitFor({ state: 'hidden', timeout: timeoutMs });
-  }
-
-  /** Wait for the streaming indicator to become visible (mid-stream). */
-  async waitForStreamingStart(timeoutMs = 10_000) {
-    await this.inferenceStreaming.waitFor({ state: 'visible', timeout: timeoutMs });
-  }
-
-  /** Wait for the complete indicator to appear after streaming ends. */
-  async waitForCompleteIndicator(timeoutMs = 60_000) {
-    await this.inferenceComplete.waitFor({ state: 'visible', timeout: timeoutMs });
+  /**
+   * Wait until no turn is running in this chat.
+   *
+   * A turn parked on an approval or a question has NOT ended, so this waits
+   * through it: answer the prompt first, or this runs to its timeout.
+   *
+   * On its own this proves nothing about a turn that has not started yet — it
+   * passes at once on an idle chat. So call it only after something has shown
+   * the turn began: {@link sendAndLand}, a visible {@link turnRunning}, or
+   * content the turn produced. `sendMessage` followed by this is the vacuous
+   * pairing the old `waitForResponse` was (DOR-2546).
+   *
+   * @param timeoutMs - How long the turn may take to finish.
+   */
+  async waitForTurnToEnd(timeoutMs = 60_000) {
+    await expect(this.turnRunning).toHaveCount(0, { timeout: timeoutMs });
   }
 
   /** Get all message items in the message list. */

@@ -297,7 +297,11 @@ describe('explicit event receive authority', () => {
 describe('durable owner event approval receipts', () => {
   function reviewedFixture() {
     const f = fixture();
-    const managed = { reconcile: vi.fn(async () => false), ready: vi.fn(() => false) };
+    const managed = {
+      reconcile: vi.fn(async () => false),
+      ready: vi.fn(() => false),
+      stage: vi.fn(),
+    };
     const grants = new ConnectorEventGrantService(f.store, f.service, f.policy, managed, () => now);
     return {
       ...f,

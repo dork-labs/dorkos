@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { CAPABILITY_TIERS } from './capabilities.js';
 import { PERMISSION_AREA_IDS } from './permissions/permission-ids.js';
+import { ProjectRefSchema } from './project-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -400,6 +401,13 @@ export const PendingApprovalSchema = z
      * agent's own words (see {@link ApprovalServiceActionSchema}).
      */
     serviceAction: ApprovalServiceActionSchema.optional(),
+    /**
+     * The project of the folder the asking session ran in, stamped by the
+     * server (spec `flow-multiproject` §6.2): null when that folder is in no
+     * repository or no session asked. ABSENT when the server has not resolved
+     * it yet, or is older.
+     */
+    project: ProjectRefSchema.nullable().optional(),
   })
   .openapi('PendingApproval');
 

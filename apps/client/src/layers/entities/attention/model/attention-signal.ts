@@ -42,10 +42,23 @@
  * is the assertion, and it stops compiling the day the two disagree.
  */
 export type AttentionSignalKind =
-  'permission-prompt' | 'question' | 'error' | 'schedule-approval' | 'extension-approval';
+  | 'permission-prompt'
+  | 'question'
+  | 'error'
+  | 'schedule-approval'
+  | 'extension-approval'
+  | 'extension-decision';
 
-/** The four blockages the Heads up zone may carry: every kind but `extension-approval`. */
-export type HeadsUpSignalKind = Exclude<AttentionSignalKind, 'extension-approval'>;
+/**
+ * The four blockages the Heads up zone may carry: every kind but the two an
+ * extension raises. `extension-decision` (spec `flow-multiproject` §7.5) is
+ * counted in the Inbox and may reach a phone, but it is about a project, not
+ * a session, so it has no row in a zone drawn one session at a time.
+ */
+export type HeadsUpSignalKind = Exclude<
+  AttentionSignalKind,
+  'extension-approval' | 'extension-decision'
+>;
 
 /**
  * One blockage, normalized.

@@ -116,8 +116,8 @@ Use POM methods for all interactions. Never use raw `page.locator()` calls in te
 
 ```typescript
 test('sends a message', async ({ chatPage }) => {
-  await chatPage.sendMessage('Hello');
-  await chatPage.waitForResponse();
+  await chatPage.sendAndLand('Hello'); // returns once the reply has started
+  await chatPage.waitForTurnToEnd(); // returns once the turn has ended
 
   const lastMessage = await chatPage.lastAssistantMessage();
   await expect(lastMessage).toContainText('Hello');

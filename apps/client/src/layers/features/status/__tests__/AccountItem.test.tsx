@@ -14,6 +14,7 @@ import type { AccountUsage } from '@dorkos/shared/account-usage';
 import {
   createMockAccountUsage,
   createMockSessionLimit,
+  createMockTrackerItem,
   createMockTransport,
 } from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
@@ -95,7 +96,7 @@ function account(overrides: Partial<SessionAccount> = {}): SessionAccount {
     usage: usage(),
     limit: null,
     chipState: 'ok',
-    trackerItem: null,
+    trackerItems: [],
     lifecycle: 'idle',
     pending: false,
     ...overrides,
@@ -335,7 +336,7 @@ describe('AccountPopover', () => {
 
   it('names the flow item only when the session serves one', async () => {
     const { dialog } = await openPopover({
-      account: account({ trackerItem: { id: 'DOR-2353', stage: 'execute' } }),
+      account: account({ trackerItems: [createMockTrackerItem()] }),
     });
     expect(within(dialog).getByText('Working on DOR-2353')).toBeInTheDocument();
     expect(within(dialog).queryByText(/started on this account/)).not.toBeInTheDocument();

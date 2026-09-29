@@ -339,7 +339,7 @@ export function AccountLimitBanner({
             runtime: banner.runtime,
             accountId: banner.account.accountId,
             limit,
-            trackerItem: banner.account.trackerItem,
+            trackerItems: banner.account.trackerItems,
           }}
           cancelAutoFirst={state === 'handing-off'}
           now={fixedNow}

@@ -52,7 +52,10 @@ import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { matchesUserEditable } from '@dorkos/marketplace';
 import { installRootsUnder, projectScopeRoot } from '../marketplace/lib/install-roots.js';
 import { INSTALL_METADATA_PATH } from '../marketplace/installed-metadata.js';
-import { readInstalledFiles, type InstalledFiles } from '../marketplace/lib/installed-files.js';
+import {
+  readInstalledFiles,
+  type InstalledFiles,
+} from '../marketplace/lib/records/installed-files.js';
 import { mergeTaskFrontmatter, type TaskFrontmatterWrite } from './task-frontmatter-merge.js';
 import type { TaskRoot } from './skills-roots.js';
 import { readTaskRootFile } from './skills-root-discovery.js';

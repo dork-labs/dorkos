@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
 import {
   Button,
@@ -9,7 +9,7 @@ import {
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
-import { listWaitingKinds, toSession } from '@/layers/shared/lib';
+import { internalRoutePath, listWaitingKinds, toSession } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
 import {
@@ -18,16 +18,15 @@ import {
   useNotifications,
   type NotificationLens,
 } from '@/layers/entities/notifications';
-import { AskList, useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
-import {
-  ScheduleApprovalCard,
-  useScheduleApprovalCards,
-} from '@/layers/features/schedule-approval';
+import { useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
+import { useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
-import { ApprovalList, ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
+import { ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
+import { takeOffersShownInBell, useExtensionDecisionActions } from '@/layers/entities/extension';
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
 import { ExtensionApprovalList } from './ExtensionApprovalList';
+import { WaitingGroups } from './WaitingGroups';
 
 /**
  * The entrance for the "All clear ✓" line — the same fade-and-rise idiom every
@@ -57,13 +56,23 @@ const allClearVariants = {
  * @param schedules - Parked schedules waiting.
  * @param asks - Prompts agents are parked on.
  * @param extensions - Installed extensions waiting to be turned on.
+ * @param decisions - Decisions extensions are asking a person about.
  */
 function waitingLabel(
   approvals: number,
   schedules: number,
   asks: number,
-  extensions: number
+  extensions: number,
+  decisions: number
 ): string {
+  if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
+    return decisions === 1
+      ? '1 decision needs you. Open to answer it.'
+      : `${decisions} decisions need you. Open to answer them.`;
+  }
+  if (decisions > 0) {
+    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions)} are waiting on you. Open to answer them.`;
+  }
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
     return extensions === 1
       ? '1 extension is waiting to be turned on. Open to answer it.'
@@ -101,13 +110,22 @@ function waitingLabel(
  * @param schedules - Parked schedules waiting.
  * @param asks - Prompts agents are parked on.
  * @param extensions - Installed extensions waiting to be turned on.
+ * @param decisions - Decisions extensions are asking a person about.
  */
 function waitingSummary(
   approvals: number,
   schedules: number,
   asks: number,
-  extensions: number
+  extensions: number,
+  decisions: number
 ): string {
+  if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
+    const subject = decisions === 1 ? '1 decision is' : `${decisions} decisions are`;
+    return `${subject} waiting on you.`;
+  }
+  if (decisions > 0) {
+    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions)} are waiting on you.`;
+  }
   if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
     const subject = extensions === 1 ? '1 extension is' : `${extensions} extensions are`;
     return `${subject} waiting to be turned on. None of it runs until you decide.`;
@@ -208,10 +226,12 @@ export function InboxBell() {
     asks,
     schedules,
     extensionApprovals,
+    extensionDecisions,
     items: waitingItems,
     isError,
     retry,
   } = useWaitingQueue();
+  const { answerOffer } = useExtensionDecisionActions();
   // Answered prompts, still on screen saying how they ended. They are NOT
   // counted — nothing is waiting on them — but the pill has to stay mounted
   // while one is being said, or the receipt is torn away in the frame it
@@ -243,6 +263,17 @@ export function InboxBell() {
   const inboxRequest = useInboxRequest();
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
+  // A "next time, on its own?" offer shows once (spec flow-multiproject
+  // §7.8): whenever the Inbox closes, by its own button, Escape, or a click
+  // that navigates, the offers it actually drew are dismissed. Offers drawn
+  // elsewhere (the Activity page) or on another device are left alone.
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (wasOpen.current && !open) {
+      for (const decisionId of takeOffersShownInBell()) answerOffer(decisionId, false);
+    }
+    wasOpen.current = open;
+  }, [open, answerOffer]);
   // The slice the Activity list is showing. Set when another surface asked for
   // a filtered Inbox (a session's menu), and dropped when the panel closes —
   // a filter nobody can see is a filter that makes the next open look broken.
@@ -312,6 +343,7 @@ export function InboxBell() {
     scheduleCount: schedules.length,
     askCount: asks.length,
     extensionCount: extensionApprovals.length,
+    decisionCount: extensionDecisions.length,
     settlingCount: settling.length,
     unreadable,
     unreadCount,
@@ -361,7 +393,11 @@ export function InboxBell() {
             <div className="flex min-w-0 flex-col gap-3">
               {showsPinned && (
                 <div>
-                  <h2 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
+                  <h2
+                    data-inbox-needs-you-heading
+                    tabIndex={-1}
+                    className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase outline-none md:not-sr-only"
+                  >
                     Needs You
                   </h2>
                   {/* While only a receipt is left the count is zero, and
@@ -380,7 +416,8 @@ export function InboxBell() {
                           approvals.length,
                           schedules.length,
                           asks.length,
-                          extensionApprovals.length
+                          extensionApprovals.length,
+                          extensionDecisions.length
                         )}
                       </p>
                     ))}
@@ -398,59 +435,33 @@ export function InboxBell() {
                       void navigate({ to: '/', search: { settings: 'extensions' } });
                     }}
                   />
-                  {/* The prompts first: their window is ten minutes and a
-                      capability approval's is two hours, so this IS time-left
-                      order — and the two lists stay separate objects. */}
-                  {(asks.length > 0 || settling.length > 0) && (
-                    <AskList
-                      asks={asks}
-                      agentNames={agentNames}
-                      // The tray is the one surface that is never the session, so
-                      // "Open session" is the one action it owes a reader who wants
-                      // the whole conversation rather than the one question.
-                      onOpenSession={(sessionId) => {
-                        setOpen(false);
-                        void navigate(toSession({ session: sessionId }));
-                      }}
-                      emptyState={
-                        <p className="text-muted-foreground text-xs">Nothing needs you</p>
-                      }
-                    />
-                  )}
-                  {shownApprovals.length > 0 && <ApprovalList approvals={shownApprovals} />}
-
-                  {/* Parked schedules, last of the three waiting groups: nothing
-                      is on a clock here — a proposal keeps until it is decided,
-                      while a prompt expires in ten minutes and a capability hold
-                      in two hours — so it goes under the two that do. */}
-                  {shownSchedules.length > 0 && (
-                    <div className="mt-3">
-                      <h3 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
-                        Scheduled Runs
-                      </h3>
-                      {/* `AnimatePresence` is what keeps a decided card mounted
-                          long enough to say so: `AskCard.Root` declares the
-                          hold-and-melt exit, and an exit nothing is watching for
-                          is an exit that never runs. */}
-                      <AnimatePresence initial={false}>
-                        {/* Answered in place, with no callback closing the
-                            panel: a schedule approved here retires where it
-                            stands and the panel shrinks around it. Deciding the
-                            last one empties the queue, which unmounts the pill
-                            on its own terms. Navigating IS different — see
-                            `onNavigate` — because the page it opens is behind
-                            this panel. */}
-                        {shownSchedules.map((task) => (
-                          <ScheduleApprovalCard
-                            key={task.id}
-                            task={task}
-                            className="mt-2"
-                            onNavigate={() => setOpen(false)}
-                          />
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  )}
+                  {/* Everything else waiting, under a project heading per
+                      project when two or more have something (spec
+                      flow-multiproject §6.3): prompts first (their window is
+                      ten minutes), then capability requests (two hours), then
+                      what extensions ask, then parked schedules (no clock). */}
+                  <WaitingGroups
+                    asks={asks}
+                    hasSettlingAsks={settling.length > 0}
+                    approvals={shownApprovals}
+                    decisions={extensionDecisions}
+                    schedules={shownSchedules}
+                    agentNames={agentNames}
+                    onOpenSession={(sessionId) => {
+                      setOpen(false);
+                      void navigate(toSession({ session: sessionId }));
+                    }}
+                    onNavigate={(path) => {
+                      // Only a page this app serves (a core route or an
+                      // extension's `/x/<id>/…` page): the server checked the
+                      // link, and this checks it again at the router's door.
+                      const target = internalRoutePath(path);
+                      if (!target) return;
+                      setOpen(false);
+                      void navigate({ href: target });
+                    }}
+                    onScheduleNavigate={() => setOpen(false)}
+                  />
                 </div>
               )}
 
@@ -506,7 +517,7 @@ export function InboxBell() {
                   </div>
                 </div>
                 <div className="mt-1">
-                  <InboxList lens={lens} onOpened={() => setOpen(false)} />
+                  <InboxList lens={lens} inBell onOpened={() => setOpen(false)} />
                 </div>
               </div>
             </div>
@@ -540,6 +551,7 @@ function resolvePill(counts: {
   scheduleCount: number;
   askCount: number;
   extensionCount: number;
+  decisionCount: number;
   settlingCount: number;
   unreadable: boolean;
   unreadCount: number;
@@ -554,7 +566,8 @@ function resolvePill(counts: {
         counts.approvalCount,
         counts.scheduleCount,
         counts.askCount,
-        counts.extensionCount
+        counts.extensionCount,
+        counts.decisionCount
       ),
     };
   }

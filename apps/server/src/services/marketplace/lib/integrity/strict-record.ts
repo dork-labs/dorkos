@@ -37,13 +37,13 @@ import {
   computeInstalledFiles,
   readInstalledFiles,
   writeInstalledFiles,
-} from '../installed-files.js';
+} from '../records/installed-files.js';
 import {
   fetchableSourceOf,
   recordIdentityOf,
   stageInstalledCommit,
   userEditableOf,
-} from '../legacy-record.js';
+} from '../records/legacy-record.js';
 import { hasPackageIdentity } from '../locate-install.js';
 import { rememberCheck } from './check-results.js';
 import { STRICT_RECORD_TEMP_PREFIX, strictDifferences } from './strict-differences.js';

@@ -1269,6 +1269,83 @@
           "resumed-early"
         ]
       },
+      "ProjectListResponse": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectInfo"
+            }
+          }
+        },
+        "required": [
+          "projects"
+        ]
+      },
+      "ProjectInfo": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProjectRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "originRepo": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastSeenAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "originRepo",
+              "lastSeenAt"
+            ]
+          }
+        ]
+      },
+      "ProjectRef": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]+$"
+          }
+        },
+        "required": [
+          "root",
+          "name"
+        ]
+      },
+      "ProjectResolveResponse": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -1473,7 +1550,15 @@
             },
             "required": [
               "id"
-            ]
+            ],
+            "deprecated": true,
+            "description": "Deprecated: the newest run in this chat (the newest `this-chat` item of `trackerItems`), kept for older flow installs. Read `trackerItems`."
+          },
+          "trackerItems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrackerItemRef"
+            }
           },
           "userLastMessageAt": {
             "type": "string",
@@ -1612,6 +1697,50 @@
         ],
         "default": "limited"
       },
+      "TrackerItemRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "stage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "this-chat",
+              "own-chat"
+            ]
+          },
+          "ownChatSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "stage",
+          "runStatus",
+          "startedAt",
+          "via",
+          "ownChatSessionId"
+        ]
+      },
       "SessionListWarning": {
         "type": "object",
         "properties": {
@@ -1671,6 +1800,19 @@
           "roomAuthorId": {
             "type": "string",
             "minLength": 1
+          },
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -2714,6 +2856,19 @@
           },
           "serviceAction": {
             "$ref": "#/components/schemas/ApprovalServiceAction"
+          },
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -6986,6 +7141,19 @@
               "type": "string"
             },
             "default": []
+          },
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -13669,6 +13837,9 @@
           },
           "outcome": {
             "$ref": "#/components/schemas/NotificationOutcome"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/NotificationDecision"
           }
         },
         "required": [
@@ -13699,7 +13870,8 @@
           "report.daily",
           "account.limited",
           "account.reset",
-          "extension.approval"
+          "extension.approval",
+          "extension.decision"
         ]
       },
       "NotificationTier": {
@@ -13776,6 +13948,64 @@
           "rejected",
           "cleared",
           "dismissed"
+        ]
+      },
+      "NotificationDecision": {
+        "type": "object",
+        "properties": {
+          "extensionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resolvedBy": {
+            "$ref": "#/components/schemas/DecisionResolvedBy"
+          },
+          "resolvedByLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded": {
+            "type": "boolean"
+          },
+          "watch": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "sessionId",
+              "label"
+            ]
+          }
+        },
+        "required": [
+          "extensionId",
+          "resolvedBy",
+          "resolvedByLabel",
+          "recorded",
+          "watch"
+        ]
+      },
+      "DecisionResolvedBy": {
+        "type": "string",
+        "enum": [
+          "person",
+          "deadline",
+          "agent",
+          "rule",
+          "extension"
         ]
       },
       "MarkNotificationsReadResponse": {
@@ -14066,6 +14296,439 @@
               }
             }
           }
+        ]
+      },
+      "ListExtensionDecisionsResponse": {
+        "type": "object",
+        "properties": {
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionDecision"
+            }
+          },
+          "offers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingDecisionOffer"
+            }
+          }
+        },
+        "required": [
+          "decisions",
+          "offers"
+        ]
+      },
+      "ExtensionDecision": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "extensionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "extensionName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "projectLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actions": {
+            "$ref": "#/components/schemas/DecisionActions"
+          },
+          "link": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "raisedAt": {
+            "type": "string"
+          },
+          "needsYou": {
+            "type": "boolean"
+          },
+          "watch": {
+            "$ref": "#/components/schemas/DecisionWatch"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "extensionId",
+          "extensionName",
+          "key",
+          "title",
+          "why",
+          "detail",
+          "project",
+          "projectLabel",
+          "since",
+          "actions",
+          "link",
+          "raisedAt",
+          "needsYou",
+          "watch",
+          "revision"
+        ]
+      },
+      "DecisionActions": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "yes-no"
+                ]
+              },
+              "approveLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "rejectLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "rejectAsksForNote": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "approveLabel",
+              "rejectLabel"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "word"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "href": {
+                "type": "string",
+                "minLength": 1
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "placeholder": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2000
+                  }
+                },
+                "required": [
+                  "placeholder",
+                  "maxLength"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "label"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "choice"
+                ]
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DecisionChoice"
+                },
+                "minItems": 2,
+                "maxItems": 5
+              },
+              "defaultChoice": {
+                "type": "string",
+                "minLength": 1
+              },
+              "decideBy": {
+                "type": "string"
+              },
+              "allowReply": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "choices"
+            ]
+          }
+        ]
+      },
+      "DecisionChoice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ]
+      },
+      "DecisionWatch": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "sessionId",
+          "label"
+        ]
+      },
+      "PendingDecisionOffer": {
+        "type": "object",
+        "properties": {
+          "decisionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decisionId",
+          "text",
+          "expiresAt"
+        ]
+      },
+      "DecisionActionResponse": {
+        "type": "object",
+        "properties": {
+          "resolved": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "navigate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offer": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ]
+          },
+          "watch": {
+            "$ref": "#/components/schemas/DecisionWatch"
+          }
+        },
+        "required": [
+          "resolved",
+          "message",
+          "navigate",
+          "offer",
+          "watch"
+        ]
+      },
+      "DecisionActionRequest": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject",
+              "word",
+              "choice"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "choiceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "DecisionOfferResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "DecisionOfferRequest": {
+        "type": "object",
+        "properties": {
+          "accept": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accept"
+        ]
+      },
+      "ProjectSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "value": {},
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "person",
+              "extension-page",
+              null
+            ]
+          }
+        },
+        "required": [
+          "updatedAt",
+          "updatedBy"
+        ]
+      },
+      "PutProjectSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {}
+        },
+        "required": [
+          "project"
         ]
       }
     },
@@ -15625,6 +16288,99 @@
         }
       }
     },
+    "/api/projects": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "List the projects this machine knows",
+        "description": "Every git main checkout the server has seen as a session, agent, workspace or install folder whose folder exists right now, sorted by name. A root only an extension reported or a lookup named is not listed until it is seen. A project whose folder is gone is hidden, not forgotten (a drive may be unplugged). Each project's `name` is URL-safe, unique, and never changes once given: the folder's name, or `name~parent` when another project already had it. `originRepo` is the `owner/name` of a GitHub `origin` remote, else null.",
+        "responses": {
+          "200": {
+            "description": "The known projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The projects could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/resolve": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Name the project a folder belongs to",
+        "description": "The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ \"project\": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "cwd",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResolveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`cwd` is missing or empty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The project could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -15707,7 +16463,7 @@
           "Sessions"
         ],
         "summary": "List all sessions",
-        "description": "Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle) and its flow `trackerItem`; the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.",
+        "description": "Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle), and its flow `trackerItems` (every item it works on, newest first, including work it started in chats of their own) beside the deprecated `trackerItem` (the newest); the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.",
         "parameters": [
           {
             "schema": {
@@ -70366,6 +71122,500 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extension-decisions": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List the decisions extensions are asking about",
+        "description": "Open decisions raised through `ctx.inbox` by extensions that are running, whose project folder exists, oldest first. `offers` holds the one-time \"next time, on its own?\" lines a person has not answered yet (they lapse after 15 minutes). `extensionId` narrows it to one extension.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "extensionId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open decisions and waiting offers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListExtensionDecisionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The query is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extension-decisions/{id}/action": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Answer a decision (the bell and the inbox)",
+        "description": "A person answers in DorkOS’s own UI. Core calls the extension’s action handler (5 seconds at most) and then resolves the decision, attributed to the person, or keeps it open when the extension asks to. The row is re-checked after the handler, so a decision settled meanwhile answers `already_resolved` and nothing is recorded. `navigate` is an in-app path already checked. Behind the person bar: an agent that names itself is refused, and with Require login on so is anything without the person’s cookie. With login off a local caller that does not name itself an agent passes, and in any posture an approved extension’s own page code can call it; that is the trust a person grants when they turn an extension on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Core’s id for the decision."
+            },
+            "required": true,
+            "description": "Core’s id for the decision.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the answer came to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionActionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The answer does not fit the decision, or a note is over 2000 characters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not_running` (the extension is not running) or `already_resolved`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The extension could not take the answer; the decision stays open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "`extension_timeout`: the extension did not answer in time; the decision stays open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extension-decisions/{id}/offer": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Answer a one-time \"next time, on its own?\" offer",
+        "description": "\"Yes\" first applies the offer’s settings change to the extension’s per-project settings, as the person, then tells the extension. A dismiss tells it nothing. Either way the offer is used up. Behind the person bar: an agent that names itself is refused, and with Require login on so is anything without the person’s cookie. With login off a local caller that does not name itself an agent passes, and in any posture an approved extension’s own page code can call it; that is the trust a person grants when they turn an extension on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Core’s id for the decision."
+            },
+            "required": true,
+            "description": "Core’s id for the decision.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionOfferRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the extension said back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionOfferResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`offer_gone`: used, dismissed, or older than 15 minutes; or `not_running`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The settings change could not be made; nothing changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/decisions": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List one extension’s open decisions (its own pages)",
+        "description": "What `api.listDecisions()` calls: the open decisions this extension raised, as the inbox shows them. Scoped to `{id}`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The extension id."
+            },
+            "required": true,
+            "description": "The extension id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The extension’s open decisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListExtensionDecisionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/decisions/{decisionId}/action": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Answer one of an extension’s decisions from its own page",
+        "description": "What `api.answerDecision()` calls. Scoped to `{id}`: another extension’s decision is 404. An answer here is attributed to the extension (\"answered in Flow\"), never to a person, and never returns an offer. Behind the person bar: an agent that names itself is refused, and with Require login on so is anything without the person’s cookie. With login off a local caller that does not name itself an agent passes, and in any posture an approved extension’s own page code can call it; that is the trust a person grants when they turn an extension on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The extension id."
+            },
+            "required": true,
+            "description": "The extension id.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "decisionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the answer came to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionActionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The answer does not fit the decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such decision for this extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not_running` or `already_resolved`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The extension could not take the answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "`extension_timeout`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/project-settings": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Read an extension’s settings for one project",
+        "description": "What `api.projectSettings.get()` calls: the value a person stored for this extension in the project `project` belongs to, or null.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The extension id."
+            },
+            "required": true,
+            "description": "The extension id.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "project",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored value, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSettingsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The folder is outside the server’s directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Change an extension’s settings for one project",
+        "description": "The only writer of an extension’s per-project settings (an autonomy dial lives here): the extension’s server half can read them and never write them. The project must hold a copy of the extension or have been reported by it. The value is any JSON, at most 16 KiB. Recorded as written from the extension's page, with an Activity entry. Behind the person bar: an agent that names itself is refused, and with Require login on so is anything without the person’s cookie. With login off a local caller that does not name itself an agent passes, and in any posture an approved extension’s own page code can call it; that is the trust a person grants when they turn an extension on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The extension id."
+            },
+            "required": true,
+            "description": "The extension id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutProjectSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Saved"
+          },
+          "400": {
+            "description": "Not `{ project, value }`, or the value is not JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such extension, or it is not set up in that project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The value is larger than 16 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

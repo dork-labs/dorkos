@@ -143,7 +143,13 @@ describe('callAdvisor', () => {
 
   it('invokeAdvisor tells a void success from a hang, a throw or a missing method', async () => {
     vi.useFakeTimers();
-    const info = { sessionId: 's', cwd: '/w', runtime: 'claude-code', accountId: 'work' };
+    const info = {
+      sessionId: 's',
+      cwd: '/w',
+      runtime: 'claude-code',
+      accountId: 'work',
+      trackerItems: [],
+    };
     const target = { runtime: 'claude-code', accountId: 'client' };
     registerAccountAdvisor('flow', advisor({ move: async () => {}, cancelAuto: () => {} }));
     expect(await invokeAdvisor('move', info, target)).toBe(true);

@@ -196,7 +196,13 @@ describe('Database Migrations', () => {
       'connector_runtime_bindings',
       'connector_usage_attempts',
       'connector_usage_terminal_receipts',
+      // Decisions an extension raised in the inbox (spec flow-multiproject
+      // §7.2, migration 0131).
+      'extension_decisions',
       'handle_tombstones',
+      // The project registry (spec flow-multiproject §6.1, migration 0129).
+      'known_project_reporters',
+      'known_projects',
       'mesh_namespace_rules',
       // The message-search index and its frontier: a derived, rebuildable
       // projection of what was said, never a store (ADR 260728-214214,

@@ -22,6 +22,7 @@ import {
   mayRunExtensionCode,
 } from './extension-load-policy.js';
 import { configManager } from '../core/config-manager.js';
+import { getExtensionInbox } from './inbox/extension-inbox.js';
 import { logger } from '../../lib/logger.js';
 
 const require = createRequire(import.meta.url);
@@ -214,14 +215,15 @@ export class ExtensionServerLifecycle {
       }
 
       const router = Router();
-      const { ctx, getScheduledCleanups, releaseAccounts } = createDataProviderContext({
+      const { ctx, getScheduledCleanups, releaseListeners } = createDataProviderContext({
         extensionId: id,
         extensionDir: record.path,
         dorkHome: this.dorkHome,
+        extensionName: record.manifest.name,
       });
       // A register() that throws after adding an account listener or advisor
       // must not leave it behind: this instance never becomes active.
-      registered = releaseAccounts;
+      registered = releaseListeners;
 
       const result = await registerFn(router, ctx);
       const cleanup = typeof result === 'function' ? result : null;
@@ -237,10 +239,15 @@ export class ExtensionServerLifecycle {
         router,
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
-        releaseAccounts,
+        releaseListeners,
         sourceKey,
       });
       registered = undefined;
+
+      // Its inbox decisions show again, escalate again, and a deadline that
+      // passed while it was down fires now that it can answer (spec
+      // `flow-multiproject` §7.1).
+      getExtensionInbox()?.markRunning(id, record.manifest.name);
 
       // A fixed `server.ts` took over, so the failure mark this method wrote
       // above no longer describes anything.
@@ -265,6 +272,10 @@ export class ExtensionServerLifecycle {
     const active = this.serverExtensions.get(id);
     if (!active) return;
 
+    // Nobody can answer its decisions while it is down: hide them and stop
+    // their clocks before its handler goes away.
+    getExtensionInbox()?.markStopped(id);
+
     for (const cancel of active.scheduledCleanups) {
       try {
         cancel();
@@ -283,7 +294,7 @@ export class ExtensionServerLifecycle {
 
     // After the extension's own cleanup, so it can still unregister gracefully;
     // whatever it left behind goes now.
-    active.releaseAccounts?.();
+    active.releaseListeners?.();
 
     this.serverExtensions.delete(id);
     logger.info(`[Extensions] Server shutdown for ${id}`);

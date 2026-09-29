@@ -24,7 +24,7 @@ import {
   notificationDeliveries,
   type Db,
 } from '@dorkos/db';
-import type { SQL } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type {
   ListNotificationsQuery,
   NotificationChannel,
@@ -271,6 +271,41 @@ export class NotificationStore {
    */
   hasEscalated(subjectKey: string): boolean {
     return this.deliveriesForSubject(subjectKey).some((row) => escalatedFlag(row.detailJson));
+  }
+
+  /**
+   * Whether this subject was escalated at or after `sinceMs`. For a group of
+   * conditions that share one push per window.
+   *
+   * @param subjectKey - The subject (or group) key.
+   * @param sinceMs - Epoch ms; older escalations do not count.
+   */
+  hasEscalatedSince(subjectKey: string, sinceMs: number): boolean {
+    const last = this.lastEscalatedAt(subjectKey);
+    return last !== null && last >= sinceMs;
+  }
+
+  /**
+   * When this subject (or group) was last escalated, in epoch ms, or null.
+   *
+   * @param subjectKey - The subject (or group) key.
+   */
+  lastEscalatedAt(subjectKey: string): number | null {
+    let last: number | null = null;
+    const rows = this.db
+      .select({
+        sentAt: notificationDeliveries.sentAt,
+        detailJson: notificationDeliveries.detailJson,
+      })
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.subjectKey, subjectKey))
+      .all();
+    for (const row of rows) {
+      if (!escalatedFlag(row.detailJson)) continue;
+      const at = Date.parse(row.sentAt);
+      if (!Number.isNaN(at) && (last === null || at > last)) last = at;
+    }
+    return last;
   }
 
   /**
@@ -543,6 +578,64 @@ export class NotificationStore {
   }
 
   /**
+   * Keep only the newest `keep` rows of one kind that one owner wrote, and
+   * delete the rest (with their deliveries).
+   *
+   * The history is one bounded table for every kind, so a single noisy source
+   * (one extension's decisions) is capped on its own here before it can push
+   * everybody else's rows out through {@link prune}.
+   *
+   * @param kind - The kind to trim.
+   * @param ownerField - The payload field that names the owner, e.g. `extensionId`.
+   * @param owner - The owner whose rows are trimmed.
+   * @param keep - How many of its newest rows to keep.
+   * @returns How many rows were deleted.
+   */
+  pruneOwned(
+    kind: NotificationKind,
+    ownerField: string,
+    owner: string,
+    keep: number,
+    protectedSubjects: ReadonlySet<string> = new Set()
+  ): number {
+    const path = `$.${ownerField}`;
+    const rows = this.db
+      .select({
+        id: notifications.id,
+        readAt: notifications.readAt,
+        subjectId: notifications.subjectId,
+      })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.kind, kind),
+          sql`json_extract(${notifications.dataJson}, ${path}) = ${owner}`
+        )
+      )
+      .orderBy(asc(notifications.id))
+      .all();
+    let excess = rows.length - keep;
+    if (excess <= 0) return 0;
+    // Oldest first, read rows before unread ones, and never a row something
+    // still draws under (a waiting follow-up offer).
+    const stale = new Set<string>();
+    for (const readOnly of [true, false]) {
+      for (const row of rows) {
+        if (excess <= 0) break;
+        if (protectedSubjects.has(row.subjectId) || stale.has(row.id)) continue;
+        if (readOnly && row.readAt === null) continue;
+        stale.add(row.id);
+        excess -= 1;
+      }
+    }
+    if (stale.size === 0) return 0;
+    return this.db
+      .delete(notifications)
+      .where(inArray(notifications.id, [...stale]))
+      .run().changes;
+  }
+
+  /**
    * Bring the table back under both caps, in two passes.
    *
    * Runs on every write. **In practice the ROW cap is the one that bites**: a
@@ -713,7 +806,38 @@ export class NotificationStore {
       ...(row.readAt ? { readAt: row.readAt } : {}),
       ...(row.resolvedAt ? { resolvedAt: row.resolvedAt } : {}),
       ...(row.outcome ? { outcome: row.outcome as NotificationOutcome } : {}),
+      ...(buildDecision(kind, row.dataJson) ?? {}),
     };
+  }
+}
+
+/**
+ * Who decided an `extension.decision` history row, read back from its payload
+ * so the inbox can tell "you answered" from "decided while you were away"
+ * (spec `flow-multiproject` §7.9). Nothing for any other kind, or a payload
+ * it cannot read.
+ */
+function buildDecision(
+  kind: NotificationKind,
+  dataJson: string | null
+): { decision: NonNullable<NotificationDTO['decision']> } | undefined {
+  if (kind !== 'extension.decision' || !dataJson) return undefined;
+  try {
+    const payload = JSON.parse(dataJson) as NotificationPayload<'extension.decision'>;
+    const r = payload.resolution;
+    if (!r) return undefined;
+    return {
+      decision: {
+        extensionId: payload.extensionId,
+        resolvedBy: r.resolvedBy,
+        resolvedByLabel: r.resolvedByLabel,
+        recorded: r.recorded,
+        watch: r.watch,
+      },
+    };
+  } catch (err) {
+    logger.debug('[Notifications] Could not read a decision row', { err });
+    return undefined;
   }
 }
 

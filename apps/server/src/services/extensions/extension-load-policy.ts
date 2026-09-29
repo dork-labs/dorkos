@@ -145,7 +145,7 @@
  *   path, is a different copy, so it asks again (above).
  *
  * - **Replacement by the marketplace.** Uninstalling a package forgets the
- *   approval for every extension it bundled (`flows/uninstall.ts`), so
+ *   approval for every extension it bundled (`flows/uninstall/side-effects.ts`), so
  *   reinstalling asks again. An update from the SAME package is the exception
  *   (DOR-2383): it is the approved copy's own publisher shipping a new version to
  *   the same path, the same trade as editing an approved extension's files, so

@@ -147,7 +147,7 @@ import {
   MARKETPLACE_STAGE_DIR_MARKER,
   type PackageFileNotice,
 } from '@dorkos/shared/marketplace-schemas';
-import { carryPersonFiles, lateWritePass, type CarryResult } from './lib/carry-over.js';
+import { carryPersonFiles, lateWritePass, type CarryResult } from './lib/records/carry-over.js';
 import { describeUnproven, runningUnproven } from './lib/integrity/unproven.js';
 import {
   computeInstalledFiles,
@@ -157,9 +157,9 @@ import {
   type InstalledFiles,
   type RecordIdentity,
   type UnprovenFiles,
-} from './lib/installed-files.js';
+} from './lib/records/installed-files.js';
 import { hasPackageIdentity } from './lib/locate-install.js';
-import { currentRecordOwner, formatRecordOwner } from './lib/record-owner.js';
+import { currentRecordOwner, formatRecordOwner } from './lib/records/record-owner.js';
 import {
   beginInstallRecord,
   commitInstallRecord,
@@ -171,7 +171,7 @@ import {
   rollBackInstallRecord,
   settleableBy,
   type InstallRecord,
-} from './install-recovery.js';
+} from './recovery/install-recovery.js';
 
 /** Staging directory prefix passed to `mkdtemp`. */
 const STAGING_DIR_PREFIX = 'dorkos-install-';

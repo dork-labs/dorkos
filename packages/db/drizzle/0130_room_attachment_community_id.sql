@@ -1,0 +1,1 @@
+ALTER TABLE `room_attachments` ADD `community_attachment_id` text;

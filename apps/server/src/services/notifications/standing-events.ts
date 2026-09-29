@@ -78,21 +78,26 @@ import { armEscalation, standingDeepLink } from './escalation-service.js';
  * @param options - `expiresAt` for a kind that expires with NObody acting — the
  *   one ending the server never announces by itself (see
  *   {@link StandingPendingEvent.expiresAt}). A surface draws its own retirement
- *   timer from it. A parked schedule has no expiry and omits it.
+ *   timer from it. A parked schedule has no expiry and omits it. `arm: false`
+ *   announces an update without touching the escalation clock.
  */
 export function raiseStanding<K extends StandingNotificationKind>(
   kind: K,
   payload: NotificationPayload<K>,
-  options: { expiresAt?: string } = {}
+  options: { expiresAt?: string; arm?: boolean } = {}
 ): void {
   try {
     const entry = notificationEntry(kind);
-    const body = entry.body?.(payload);
+    // A kind whose words are somebody else's (an extension's decision) is
+    // announced the way a phone is told: generic, and naming its source. The
+    // desktop banner can show on a lock screen too.
+    const said = entry.escalation?.(payload);
+    const body = said ? said.body : entry.body?.(payload);
     const event: StandingPendingEvent = {
       kind,
       subjectKey: entry.dedupeKey(payload),
       tier: resolvePerKind(entry.tier, payload),
-      title: entry.title(payload),
+      title: said ? said.title : entry.title(payload),
       ...(body ? { body } : {}),
       deepLink: standingDeepLink(kind, payload),
       since: new Date().toISOString(),
@@ -104,7 +109,10 @@ export function raiseStanding<K extends StandingNotificationKind>(
   }
   // After the announcement, and outside its try: `armEscalation` has its own
   // guard, and a failure to draw a banner must not also cost the phone leg.
-  armEscalation(kind, payload);
+  // `arm: false` is an update to a condition already standing (an extension
+  // re-raising an open decision with new words): open surfaces refresh, and
+  // the clock that is already running is left alone rather than re-armed.
+  if (options.arm !== false) armEscalation(kind, payload);
 }
 
 /**

@@ -31,6 +31,7 @@ import {
 } from '@dorkos/db';
 import {
   CommunityEntrySchema,
+  type CommunityAttachment,
   type CommunityEntry,
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
@@ -89,11 +90,89 @@ export interface MirrorPurge {
   attachments: readonly { roomId: string; attachmentId: string; extension: string }[];
 }
 
+/** One stored file of a local room: where its bytes live. */
+export interface MirrorAttachmentFile {
+  roomId: string;
+  attachmentId: string;
+  extension: string;
+}
+
 /** What one page of the redaction feed changed in a mirror. */
 export interface AppliedRedactions {
   localRoomId: string;
   /** Local `seq` of every room entry rewritten, for re-indexing. */
   changedSeqs: readonly number[];
+  /**
+   * Files whose rows this page deleted, because the Community no longer has them on the entry
+   * (DOR-2549). Their bytes are the caller's to delete, after the commit.
+   */
+  droppedAttachments: readonly MirrorAttachmentFile[];
+}
+
+/**
+ * The local files of one rewritten entry that the Community no longer carries on it.
+ *
+ * Matched on identity, never on the name: the Community cleans names on upload, and two files
+ * may share a name and a size, so a name match can both delete a file the message still has and
+ * keep the one that was removed.
+ *
+ * - A message with no files left on the Community (deleted, removed, erased) drops every local
+ *   file of it: there is nothing left for any of them to be.
+ * - A file delivered with its Community id recorded is dropped exactly when the Community no
+ *   longer lists that id on the message.
+ * - A file delivered before ids were recorded is matched on its bytes' SHA-256, which the
+ *   Community lists as the checksum: `checksums` carries it, read by the caller outside the
+ *   transaction. Each remaining Community file vouches for at most one local file.
+ * - A file with neither an id nor a known checksum is KEPT. A file wrongly kept is still the
+ *   owner's to remove; one wrongly deleted is gone from everywhere they could reach it.
+ *
+ * @param db - The database or open transaction to read from.
+ * @param localRoomId - The mirror's local room.
+ * @param localEntryId - The rewritten local entry.
+ * @param remaining - The files the entry still has on the Community.
+ * @param checksums - SHA-256 of the local bytes, by local attachment id, for files without a
+ *   recorded Community id.
+ */
+function attachmentsToDrop(
+  db: Pick<Db, 'select'> | Pick<DbTransaction, 'select'>,
+  localRoomId: string,
+  localEntryId: string,
+  remaining: readonly CommunityAttachment[],
+  checksums: ReadonlyMap<string, string>
+): Array<MirrorAttachmentFile & { id: string }> {
+  const rows = (db as Db)
+    .select({
+      id: roomAttachments.id,
+      extension: roomAttachments.extension,
+      communityAttachmentId: roomAttachments.communityAttachmentId,
+    })
+    .from(roomAttachments)
+    .where(and(eq(roomAttachments.roomId, localRoomId), eq(roomAttachments.entryId, localEntryId)))
+    .all();
+  const file = (row: (typeof rows)[number]) => ({
+    id: row.id,
+    roomId: localRoomId,
+    attachmentId: row.id,
+    extension: row.extension,
+  });
+  if (remaining.length === 0) return rows.map(file);
+  const listed = new Set(remaining.map((item) => item.id));
+  const claimed = new Set(rows.map((row) => row.communityAttachmentId).filter(Boolean));
+  // Community files no identified local file accounts for, for the legacy files to match on.
+  const unclaimed = remaining.filter((item) => !claimed.has(item.id));
+  const dropped: Array<MirrorAttachmentFile & { id: string }> = [];
+  for (const row of rows) {
+    if (row.communityAttachmentId) {
+      if (!listed.has(row.communityAttachmentId)) dropped.push(file(row));
+      continue;
+    }
+    const checksum = checksums.get(row.id);
+    if (checksum === undefined) continue;
+    const match = unclaimed.findIndex((item) => item.checksum === checksum);
+    if (match === -1) dropped.push(file(row));
+    else unclaimed.splice(match, 1);
+  }
+  return dropped;
 }
 
 /** One persisted mirror invalidated because no active enrolled agent still sees it. */
@@ -408,6 +487,162 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
   }
 
   /**
+   * The local entries that copy one Community entry: a local agent's post the outbox delivered
+   * as it, and a cached copy of it.
+   */
+  private localCopiesOf(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    remoteEntryId: string
+  ): string[] {
+    const delivered = this.db
+      .select({ localEntryId: communityOutbox.localEntryId })
+      .from(communityOutbox)
+      .where(
+        and(
+          eq(communityOutbox.communityRef, communityRef),
+          eq(communityOutbox.remoteRoomId, remoteRoomId),
+          eq(communityOutbox.ownerAuthorId, ownerAuthorId),
+          eq(communityOutbox.remoteEntryId, remoteEntryId)
+        )
+      )
+      .all();
+    const cached = this.db
+      .select({ localEntryId: communityMirrorEntries.localEntryId })
+      .from(communityMirrorEntries)
+      .where(
+        and(
+          eq(communityMirrorEntries.communityRef, communityRef),
+          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+          eq(communityMirrorEntries.remoteEntryId, remoteEntryId)
+        )
+      )
+      .all();
+    return [...delivered, ...cached].map((row) => row.localEntryId);
+  }
+
+  /** This owner's live mirror of a remote room, or `null`. */
+  private applicableMirror(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ) {
+    const mirror = this.findRoom(communityRef, remoteRoomId);
+    if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked')
+      return null;
+    return mirror;
+  }
+
+  /**
+   * The local files of these changed entries that can only be matched to the Community's copy
+   * by their bytes: delivered before the Community's id for them was recorded, on a message that
+   * still has files there. The caller hashes them and hands the result to
+   * {@link RemoteMirrorStore.plannedAttachmentDrops} and
+   * {@link RemoteMirrorStore.applyRedactions}.
+   */
+  attachmentsNeedingChecksum(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    items: readonly NativeMirrorEntry[]
+  ): Array<MirrorAttachmentFile & { mimeType: string }> {
+    const mirror = this.applicableMirror(communityRef, remoteRoomId, ownerAuthorId);
+    if (!mirror) return [];
+    const needed: Array<MirrorAttachmentFile & { mimeType: string }> = [];
+    for (const item of items) {
+      if (!item.entry.attachments?.length) continue;
+      for (const localEntryId of this.localCopiesOf(
+        communityRef,
+        remoteRoomId,
+        ownerAuthorId,
+        item.entry.id
+      )) {
+        for (const row of this.db
+          .select({
+            id: roomAttachments.id,
+            extension: roomAttachments.extension,
+            mimeType: roomAttachments.mimeType,
+          })
+          .from(roomAttachments)
+          .where(
+            and(
+              eq(roomAttachments.roomId, mirror.localRoomId),
+              eq(roomAttachments.entryId, localEntryId),
+              isNull(roomAttachments.communityAttachmentId)
+            )
+          )
+          .all())
+          needed.push({
+            roomId: mirror.localRoomId,
+            attachmentId: row.id,
+            extension: row.extension,
+            mimeType: row.mimeType,
+          });
+      }
+    }
+    return needed;
+  }
+
+  /**
+   * The files {@link RemoteMirrorStore.applyRedactions} would drop for these items, read without
+   * writing. The redaction sync deletes their bytes BEFORE it applies the page: if the process
+   * stops in between, the page is not recorded as applied and the next sync applies it again, so
+   * no file is ever left on disk with nothing pointing at it.
+   *
+   * @param checksums - As for {@link RemoteMirrorStore.applyRedactions}.
+   * @returns An empty list when there is no mirror to update.
+   */
+  plannedAttachmentDrops(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    items: readonly NativeMirrorEntry[],
+    checksums: ReadonlyMap<string, string> = new Map()
+  ): MirrorAttachmentFile[] {
+    const mirror = this.applicableMirror(communityRef, remoteRoomId, ownerAuthorId);
+    if (!mirror) return [];
+    const planned: MirrorAttachmentFile[] = [];
+    for (const item of items) {
+      if (item.entry.community !== communityRef || item.entry.roomId !== remoteRoomId) continue;
+      for (const localEntryId of this.localCopiesOf(
+        communityRef,
+        remoteRoomId,
+        ownerAuthorId,
+        item.entry.id
+      )) {
+        for (const { roomId, attachmentId, extension } of attachmentsToDrop(
+          this.db,
+          mirror.localRoomId,
+          localEntryId,
+          item.entry.attachments ?? [],
+          checksums
+        ))
+          planned.push({ roomId, attachmentId, extension });
+      }
+    }
+    return planned;
+  }
+
+  /**
+   * Delete attachment rows whose bytes are already gone: the redaction sync deleted them for a
+   * page it then could not apply (the mirror was revoked or changed owner in between). A row
+   * left behind would draw a file that can only answer 404.
+   *
+   * @param files - The files whose bytes were deleted.
+   */
+  forgetAttachmentRows(files: readonly MirrorAttachmentFile[]): void {
+    for (const file of files) {
+      this.db
+        .delete(roomAttachments)
+        .where(
+          and(eq(roomAttachments.roomId, file.roomId), eq(roomAttachments.id, file.attachmentId))
+        )
+        .run();
+    }
+  }
+
+  /**
    * Replace every local copy of remote entries that changed after they were posted, and store
    * the feed position, in one transaction.
    *
@@ -419,15 +654,21 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
    * before the change cannot import the older text later. Like an import, this never dispatches
    * a local agent, publishes, or indexes; the caller re-indexes the changed rows.
    *
-   * @returns The local room and the rows that changed, or `null` when there is no mirror to
-   *   update (none, another owner's, or revoked).
+   * A rewritten entry's files that the Community no longer carries on it lose their rows here
+   * too, so the room stops offering them; their bytes are the caller's to delete. `checksums`
+   * holds the SHA-256 of files delivered before their Community id was recorded (see
+   * `attachmentsToDrop`); a file with neither is kept.
+   *
+   * @returns The local room, the rows that changed and the files dropped, or `null` when there
+   *   is no mirror to update (none, another owner's, or revoked).
    */
   applyRedactions(
     communityRef: CommunityRef,
     remoteRoomId: string,
     ownerAuthorId: string,
     items: readonly NativeMirrorEntry[],
-    nextCursor: string
+    nextCursor: string,
+    checksums: ReadonlyMap<string, string> = new Map()
   ): AppliedRedactions | null {
     const mirror = this.findRoom(communityRef, remoteRoomId);
     if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked')
@@ -441,6 +682,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     return this.db.transaction(
       (tx) => {
         const changedSeqs: number[] = [];
+        const droppedAttachments: MirrorAttachmentFile[] = [];
         const rewrite = (
           localEntryId: string,
           item: NativeMirrorEntry,
@@ -461,6 +703,30 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
             .get();
           if (!row) return;
           changedSeqs.push(row.seq);
+          // Its files are copies too: a file the Community no longer has on the entry stops
+          // being offered here, in this transaction (DOR-2549). The bytes go after the commit.
+          const drop = attachmentsToDrop(
+            tx,
+            localRoomId,
+            localEntryId,
+            item.entry.attachments ?? [],
+            checksums
+          );
+          if (drop.length) {
+            tx.delete(roomAttachments)
+              .where(
+                and(
+                  eq(roomAttachments.roomId, localRoomId),
+                  inArray(
+                    roomAttachments.id,
+                    drop.map((file) => file.id)
+                  )
+                )
+              )
+              .run();
+            for (const { roomId, attachmentId, extension } of drop)
+              droppedAttachments.push({ roomId, attachmentId, extension });
+          }
           // An inbox notification that quoted the entry is a copy too.
           rewriteRoomEntryNotifications(tx, localRoomId, localEntryId, {
             text: item.entry.text,
@@ -569,7 +835,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
           .set({ redactionCursor: nextCursor })
           .where(eq(communityRoomMirrors.localRoomId, localRoomId))
           .run();
-        return { localRoomId, changedSeqs };
+        return { localRoomId, changedSeqs, droppedAttachments };
       },
       { behavior: 'immediate' }
     );

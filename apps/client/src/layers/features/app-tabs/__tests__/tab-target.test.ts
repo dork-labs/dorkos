@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { Puzzle } from 'lucide-react';
 import {
   parseTabHref,
   projectName,
   fallbackTabLabel,
+  extensionPageTab,
   ROUTE_LABELS,
   ROUTE_ICONS,
 } from '../lib/tab-target';
@@ -178,5 +180,36 @@ describe('route map key parity (drift guard)', () => {
 describe('the reports page label (DOR-2232)', () => {
   it('names the tab for what the help menu calls it: the person’s own reports', () => {
     expect(ROUTE_LABELS['/feedback-requests']).toBe('Your reports');
+  });
+});
+
+describe('a tab on an extension page (spec flow-multiproject §6.5)', () => {
+  const Icon = () => null;
+  const page = {
+    id: 'flow:',
+    extensionId: 'flow',
+    path: '',
+    component: () => null,
+    title: 'Flow',
+    icon: Icon,
+    menu: true,
+  };
+
+  it('is named and drawn the way the extension registered the page', () => {
+    expect(
+      extensionPageTab({ extensionId: 'flow', subpath: '', match: { page, params: {} } })
+    ).toEqual({ label: 'Flow', icon: Icon });
+  });
+
+  it('reads "Add-on" with a puzzle piece before the page is registered', () => {
+    expect(extensionPageTab({ extensionId: 'flow', subpath: '', match: null })).toEqual({
+      label: 'Add-on',
+      icon: Puzzle,
+    });
+    expect(fallbackTabLabel(parseTabHref('/x/flow/p/dorkos'))).toBe('Add-on');
+  });
+
+  it('has nothing to say about other routes', () => {
+    expect(extensionPageTab(null)).toBeNull();
   });
 });

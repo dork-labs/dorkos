@@ -13,9 +13,17 @@
       "types": "./src/capabilities.ts",
       "default": "./dist/capabilities.js"
     },
+    "./app-route-paths": {
+      "types": "./src/app-route-paths.ts",
+      "default": "./dist/app-route-paths.js"
+    },
     "./approval-schemas": {
       "types": "./src/approval-schemas.ts",
       "default": "./dist/approval-schemas.js"
+    },
+    "./extension-decision-schemas": {
+      "types": "./src/extension-decision-schemas.ts",
+      "default": "./dist/extension-decision-schemas.js"
     },
     "./extension-approval-schemas": {
       "types": "./src/extension-approval-schemas.ts",
@@ -364,6 +372,10 @@
     "./room-files": {
       "types": "./src/room-files.ts",
       "default": "./dist/room-files.js"
+    },
+    "./project-schemas": {
+      "types": "./src/project-schemas.ts",
+      "default": "./dist/project-schemas.js"
     },
     "./read-cursor-schemas": {
       "types": "./src/read-cursor-schemas.ts",

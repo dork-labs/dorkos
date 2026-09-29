@@ -234,10 +234,19 @@ All endpoints are under `/api/workspaces`:
 | `GET /api/workspaces`          | List workspaces (optionally `?projectKey=`), each with attached sessions and dirty state. |
 | `GET /api/workspaces/resolve`  | Resolve a workspace from an absolute `?path=`: powers the session status-bar indicator.   |
 | `POST /api/workspaces/ports`   | Preview the port block a given checkout `path` would receive.                             |
-| `POST /api/workspaces`         | Ensure a workspace (`{ projectKey, key, source, provider? }`): provisions on first use.   |
+| `POST /api/workspaces`         | Ensure a workspace (`{ projectKey, key, source, provider? }`). A new one is shown first.  |
 | `GET /api/workspaces/:id`      | Fetch a single workspace.                                                                 |
 | `POST /api/workspaces/:id/pin` | Pin or unpin (`{ pinned: boolean }`).                                                     |
 | `DELETE /api/workspaces/:id`   | Remove (`?force=true` to override a dirty refusal).                                       |
+
+<Callout type="warn">
+  A new workspace is shown to you before anything runs there. A copy can bring its own settings,
+  skills and setup commands, so `POST` answers `409` with the code `workspace_needs_review` and a
+  list of what the copy brings. Read it, then send the same request again with `approvedReviewHash`
+  set to the `reviewHash` you were shown. When an agent asks for a clone, or for a worktree whose
+  source runs setup commands, you get an approval card instead. Only the setup commands you were
+  shown ever run, both when the workspace is made and when it is removed.
+</Callout>
 
 <Callout type="info">
   `DELETE` returns `200` with `{ removed: false, blocked: 'dirty' }` when it refuses a dirty

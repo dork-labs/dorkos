@@ -1,0 +1,760 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtemp, rm, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { MarketplacePackageManifest } from '@dorkos/marketplace';
+import type { AdapterManager } from '../../../relay/adapter-manager.js';
+import { ConflictDetector } from '../conflict-detector.js';
+
+/**
+ * Build a minimal AdapterManager mock that exposes the `listAdapters()`
+ * surface ConflictDetector consumes. The detector only needs `config.id`
+ * and `config.type` from each entry, so we cast loosely after constructing
+ * the shape with handcrafted values.
+ */
+function buildMockAdapterManager(
+  installed: Array<{ id: string; type: string }> = []
+): AdapterManager {
+  const listAdapters = vi.fn().mockReturnValue(
+    installed.map((entry) => ({
+      config: {
+        id: entry.id,
+        type: entry.type,
+        enabled: true,
+        builtin: false,
+        config: {},
+      },
+      status: {
+        id: entry.id,
+        type: entry.type,
+        displayName: entry.type,
+        state: 'connected',
+      },
+    }))
+  );
+  return { listAdapters } as unknown as AdapterManager;
+}
+
+/** Build a minimal plugin package manifest for tests. */
+function pluginManifest(name: string, overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    schemaVersion: 1,
+    name,
+    version: '1.0.0',
+    type: 'plugin',
+    description: 'A test plugin package.',
+    tags: [],
+    layers: [],
+    requires: [],
+    extensions: [],
+    ...overrides,
+  } as unknown as MarketplacePackageManifest;
+}
+
+/** Build a minimal agent package manifest for tests (installs under `agents/`). */
+function agentManifest(name: string) {
+  return {
+    schemaVersion: 1,
+    name,
+    version: '1.0.0',
+    type: 'agent',
+    description: 'A test agent package.',
+    tags: [],
+    layers: [],
+    requires: [],
+  } as unknown as MarketplacePackageManifest;
+}
+
+/** Build a minimal adapter package manifest for tests. */
+function adapterManifest(name: string, adapterType: string) {
+  return {
+    schemaVersion: 1,
+    name,
+    version: '1.0.0',
+    type: 'adapter',
+    description: 'A test adapter package.',
+    tags: [],
+    layers: [],
+    requires: [],
+    adapterType,
+  } as unknown as MarketplacePackageManifest;
+}
+
+/** Build a minimal shape package manifest for tests. */
+function shapeManifest(name: string) {
+  return {
+    schemaVersion: 1,
+    name,
+    version: '1.0.0',
+    type: 'shape',
+    description: 'A test shape package.',
+    tags: [],
+    layers: [],
+    requires: [],
+    activates: [],
+    extensions: [],
+    layout: { sidebarOpen: true, openPanels: [], focusDashboardSections: [] },
+    agents: [],
+    schedules: [],
+    connections: [],
+  } as unknown as MarketplacePackageManifest;
+}
+
+/** Write a SKILL.md file with the given frontmatter into a directory. */
+async function writeSkill(
+  root: string,
+  skillName: string,
+  frontmatter: Record<string, string>
+): Promise<string> {
+  const dir = join(root, '.dork', 'tasks', skillName);
+  await mkdir(dir, { recursive: true });
+  const lines = ['---', `name: ${skillName}`];
+  for (const [key, value] of Object.entries(frontmatter)) {
+    lines.push(`${key}: ${value}`);
+  }
+  lines.push('---', '', `Body for ${skillName}.`, '');
+  const filePath = join(dir, 'SKILL.md');
+  await writeFile(filePath, lines.join('\n'), 'utf-8');
+  return filePath;
+}
+
+/** Write an extension.json file with the given slot bindings. */
+async function writeExtension(
+  root: string,
+  extensionId: string,
+  slots: Array<{ slot: string; priority: number }>
+): Promise<void> {
+  const dir = join(root, '.dork', 'extensions', extensionId);
+  await mkdir(dir, { recursive: true });
+  const payload = {
+    name: extensionId,
+    version: '1.0.0',
+    slots,
+  };
+  await writeFile(join(dir, 'extension.json'), JSON.stringify(payload), 'utf-8');
+}
+
+/** Lay down an installed plugin package skeleton under ${dorkHome}/plugins/{name}. */
+async function installPluginSkeleton(dorkHome: string, name: string): Promise<string> {
+  return installSkeletonUnder(dorkHome, 'plugins', name);
+}
+
+/**
+ * Lay down an installed package skeleton under `${scopeRoot}/${root}/${name}`,
+ * for any install root (`plugins`, `agents`, `shapes`).
+ */
+async function installSkeletonUnder(
+  scopeRoot: string,
+  root: 'plugins' | 'agents' | 'shapes',
+  name: string
+): Promise<string> {
+  const packageRoot = join(scopeRoot, root, name);
+  await mkdir(join(packageRoot, '.dork'), { recursive: true });
+  // A package root has an identity; a bare directory is only kept files (DOR-2245).
+  await writeFile(
+    join(packageRoot, '.dork', 'manifest.json'),
+    JSON.stringify({ schemaVersion: 1, name, version: '1.0.0', type: 'plugin', description: 'x' })
+  );
+  return packageRoot;
+}
+
+describe('ConflictDetector', () => {
+  let dorkHome: string;
+  let stagedRoot: string;
+  let adapterManager: AdapterManager;
+  let detector: ConflictDetector;
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(join(tmpdir(), 'conflict-detector-dorkhome-'));
+    stagedRoot = await mkdtemp(join(tmpdir(), 'conflict-detector-staged-'));
+    adapterManager = buildMockAdapterManager();
+    detector = new ConflictDetector(dorkHome, adapterManager);
+  });
+
+  afterEach(async () => {
+    await rm(dorkHome, { recursive: true, force: true });
+    await rm(stagedRoot, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('returns no conflicts on a clean dorkHome', async () => {
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('fresh-plugin'),
+      dorkHome,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('reports a non-blocking reinstall warning when the same package is already installed', async () => {
+    await installPluginSkeleton(dorkHome, 'duplicate-plugin');
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('duplicate-plugin'),
+      dorkHome,
+    });
+
+    // ADR-0304 made overwrite installs atomic and safe, so a same-name reinstall
+    // is a warning (a reinstall note), never an error that dead-ends the install.
+    expect(result.filter((r) => r.level === 'error')).toEqual([]);
+    const nameConflicts = result.filter((r) => r.type === 'package-name');
+    expect(nameConflicts).toHaveLength(1);
+    expect(nameConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'package-name',
+      conflictingPackage: 'duplicate-plugin',
+    });
+  });
+
+  it('reports a reinstall warning when a Shape already owns the name under shapes/', async () => {
+    await installSkeletonUnder(dorkHome, 'shapes', 'linear-ops');
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: shapeManifest('linear-ops'),
+      dorkHome,
+    });
+
+    // A Shape installs under shapes/ — the reinstall must be detected there, not
+    // missed because the check only looked at plugins/ (the pre-DOR-355 bug).
+    expect(result.filter((r) => r.level === 'error')).toEqual([]);
+    const nameConflicts = result.filter((r) => r.type === 'package-name');
+    expect(nameConflicts).toHaveLength(1);
+    expect(nameConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'package-name',
+      conflictingPackage: 'linear-ops',
+    });
+  });
+
+  // Purpose (DOR-2245): a root an uninstall left holds only the person's kept
+  // files, so installing into it is a plain install, not a reinstall warning.
+  it('raises no package-name warning over a root that holds only kept files', async () => {
+    const kept = join(dorkHome, 'plugins', 'kept-plugin');
+    await mkdir(join(kept, 'config'), { recursive: true });
+    await writeFile(join(kept, 'config', 'config.json'), '{}');
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('kept-plugin'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'package-name')).toEqual([]);
+  });
+
+  it('warns about cross-type coexistence when a plugin already owns a Shape name', async () => {
+    await installPluginSkeleton(dorkHome, 'ambient');
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: shapeManifest('ambient'),
+      dorkHome,
+    });
+
+    const nameConflicts = result.filter((r) => r.type === 'package-name');
+    expect(nameConflicts).toHaveLength(1);
+    expect(nameConflicts[0].description).toMatch(/plugins\//);
+  });
+
+  it('reports a warning when two extensions register the same slot at the same priority', async () => {
+    // Installed plugin with a slot binding
+    const installedRoot = await installPluginSkeleton(dorkHome, 'installed-plugin');
+    await writeExtension(installedRoot, 'installed-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    // Staged package binding to the same slot at the same priority
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const slotConflicts = result.filter((r) => r.type === 'slot');
+    expect(slotConflicts).toHaveLength(1);
+    expect(slotConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'slot',
+      conflictingPackage: 'installed-plugin',
+    });
+  });
+
+  it('does not read a staged extension.json that is a symbolic link (DOR-2319)', async () => {
+    // Purpose: a staged package's extension.json linked to a file elsewhere
+    // (here, a real slot binding that would conflict) is never followed, so
+    // nothing outside the package decides what the preview reports.
+    const installedRoot = await installPluginSkeleton(dorkHome, 'installed-plugin');
+    await writeExtension(installedRoot, 'installed-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+    const outside = await mkdtemp(join(tmpdir(), 'conflict-detector-outside-'));
+    try {
+      await writeExtension(outside, 'decoy', [{ slot: 'sidebar.top', priority: 10 }]);
+      await mkdir(join(stagedRoot, '.dork', 'extensions', 'staged-ext'), { recursive: true });
+      await symlink(
+        join(outside, '.dork', 'extensions', 'decoy', 'extension.json'),
+        join(stagedRoot, '.dork', 'extensions', 'staged-ext', 'extension.json')
+      );
+
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('staged-plugin'),
+        dorkHome,
+      });
+
+      expect(result.filter((r) => r.type === 'slot')).toEqual([]);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('does not report a slot conflict when priorities differ', async () => {
+    const installedRoot = await installPluginSkeleton(dorkHome, 'installed-plugin');
+    await writeExtension(installedRoot, 'installed-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 20 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'slot')).toEqual([]);
+  });
+
+  it('reports a slot conflict against an extension bundled by an installed agent package (DOR-1776)', async () => {
+    // Agent packages install under `agents/`, not `plugins/`. The installed-side
+    // readers used to hardcode `plugins/`, so an agent package's bundled
+    // extension was invisible to the slot check — the last instance of the
+    // hardcoded-root pattern DOR-994 eliminated everywhere else.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'installed-agent');
+    await writeExtension(installedRoot, 'agent-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const slotConflicts = result.filter((r) => r.type === 'slot');
+    expect(slotConflicts).toHaveLength(1);
+    expect(slotConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'slot',
+      conflictingPackage: 'installed-agent',
+    });
+  });
+
+  it('reports a slot conflict against an extension bundled by an installed Shape (DOR-1776)', async () => {
+    // Shapes install under `shapes/` and genuinely ship inline extensions —
+    // `ShapeInstallFlow` compiles every `.dork/extensions/<id>` it carries — so a
+    // plugins-only read misses a real, reachable collision.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'shapes', 'installed-shape');
+    await writeExtension(installedRoot, 'shape-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const slotConflicts = result.filter((r) => r.type === 'slot');
+    expect(slotConflicts).toHaveLength(1);
+    expect(slotConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'slot',
+      conflictingPackage: 'installed-shape',
+    });
+  });
+
+  it('reports a skill-name error against a skill bundled by an installed agent package (DOR-1776)', async () => {
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'installed-agent');
+    await writeSkill(installedRoot, 'shared-skill', { description: 'installed by an agent' });
+
+    await writeSkill(stagedRoot, 'shared-skill', { description: 'staged' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const skillConflicts = result.filter((r) => r.type === 'skill-name');
+    expect(skillConflicts).toHaveLength(1);
+    expect(skillConflicts[0]).toMatchObject({
+      level: 'error',
+      type: 'skill-name',
+      conflictingPackage: 'installed-agent',
+    });
+  });
+
+  it('walks every project-scope install root for bundled skills, not just plugins/ (DOR-1776)', async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
+    try {
+      const installedRoot = await installSkeletonUnder(
+        join(projectPath, '.dork'),
+        'agents',
+        'local-agent'
+      );
+      await writeSkill(installedRoot, 'shared-skill', { description: 'project-local agent' });
+
+      await writeSkill(stagedRoot, 'shared-skill', { description: 'staged' });
+
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('staged-plugin'),
+        dorkHome,
+        projectPath,
+      });
+
+      const skillConflicts = result.filter((r) => r.type === 'skill-name');
+      expect(skillConflicts).toHaveLength(1);
+      expect(skillConflicts[0]).toMatchObject({
+        level: 'error',
+        type: 'skill-name',
+        conflictingPackage: 'local-agent',
+      });
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('does not self-conflict with its own already-installed agent-root skills on reinstall (DOR-1776)', async () => {
+    // The widened read must not make a reinstall dead-end: an agent package's
+    // own skills are still on disk when the gate runs, and the self-comparison
+    // filter has to keep covering them now that they are visible at all. The
+    // staged manifest is an AGENT, so it targets the same `agents/` root the
+    // installed copy occupies — that identity, not the bare name, is what makes
+    // this a reinstall.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'self-agent');
+    await writeSkill(installedRoot, 'own-skill', { cron: '15 * * * *' });
+
+    await writeSkill(stagedRoot, 'own-skill', { cron: '15 * * * *' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: agentManifest('self-agent'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'skill-name')).toEqual([]);
+    expect(result.filter((r) => r.type === 'cron-collision')).toEqual([]);
+  });
+
+  it('does not self-conflict on slot when reinstalling an extension-bearing agent package (DOR-1776)', async () => {
+    // The slot check was handed the UNFILTERED installed set while skills and
+    // cron got the self-filtered one, so reinstalling any package that binds a
+    // slot raised a warning against its own on-disk copy. Slot, skill and cron
+    // now share one filter.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'my-agent');
+    await writeExtension(installedRoot, 'my-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    await writeExtension(stagedRoot, 'my-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: agentManifest('my-agent'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'slot')).toEqual([]);
+  });
+
+  it('still reports a skill conflict between same-named packages in different roots (DOR-1776)', async () => {
+    // An installed `agents/flow` and a staged `plugins/flow` are two DIFFERENT
+    // packages that the detector deliberately lets coexist (see `installKey`).
+    // A name-only self-filter collapsed them into one and suppressed a real
+    // blocking conflict; the filter keys on install root + name instead.
+    const installedRoot = await installSkeletonUnder(dorkHome, 'agents', 'flow');
+    await writeSkill(installedRoot, 'shared-skill', { description: 'installed by the agent' });
+
+    await writeSkill(stagedRoot, 'shared-skill', { description: 'staged by the plugin' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('flow'),
+      dorkHome,
+    });
+
+    const skillConflicts = result.filter((r) => r.type === 'skill-name');
+    expect(skillConflicts).toHaveLength(1);
+    expect(skillConflicts[0]).toMatchObject({
+      level: 'error',
+      type: 'skill-name',
+      conflictingPackage: 'flow',
+    });
+  });
+
+  it('reports an error when a skill with the same name is already installed', async () => {
+    const installedRoot = await installPluginSkeleton(dorkHome, 'installed-plugin');
+    await writeSkill(installedRoot, 'shared-skill', { description: 'installed' });
+
+    await writeSkill(stagedRoot, 'shared-skill', { description: 'staged' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const skillConflicts = result.filter((r) => r.type === 'skill-name');
+    expect(skillConflicts).toHaveLength(1);
+    expect(skillConflicts[0]).toMatchObject({
+      level: 'error',
+      type: 'skill-name',
+      conflictingPackage: 'installed-plugin',
+    });
+  });
+
+  it('does not raise a skill-name conflict against a crash-left install backup (DOR-175)', async () => {
+    // A crash mid-reinstall leaves `<name>.dorkos-bak-<ts>-<uuid>` beside the
+    // install target — a byte-for-byte copy of the previous installation, so
+    // it carries the SAME skill names as the package being reinstalled.
+    // Without the exclusion the detector would raise a blocking skill-name
+    // error against the package's own crash residue.
+    const backupRoot = await installPluginSkeleton(
+      dorkHome,
+      `staged-plugin.dorkos-bak-${Date.now()}-3fa85f64-5717-4562-b3fc-2c963f66afa6`
+    );
+    await writeSkill(backupRoot, 'shared-skill', { description: 'crash-left backup' });
+
+    await writeSkill(stagedRoot, 'shared-skill', { description: 'staged' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'skill-name')).toHaveLength(0);
+  });
+
+  it('reports a cron warning when two task SKILL.md files share the same minute field', async () => {
+    const installedRoot = await installPluginSkeleton(dorkHome, 'installed-plugin');
+    await writeSkill(installedRoot, 'installed-task', {
+      description: 'installed',
+      cron: '"0 9 * * *"',
+    });
+
+    await writeSkill(stagedRoot, 'staged-task', {
+      description: 'staged',
+      cron: '"0 17 * * *"',
+    });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('staged-plugin'),
+      dorkHome,
+    });
+
+    const cronWarnings = result.filter((r) => r.type === 'cron-collision');
+    expect(cronWarnings).toHaveLength(1);
+    expect(cronWarnings[0]).toMatchObject({
+      level: 'warning',
+      type: 'cron-collision',
+      conflictingPackage: 'installed-plugin',
+    });
+  });
+
+  it('reports an error when an adapter package collides with an installed adapter id', async () => {
+    adapterManager = buildMockAdapterManager([{ id: 'discord', type: 'discord' }]);
+    detector = new ConflictDetector(dorkHome, adapterManager);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: adapterManifest('discord-adapter', 'discord'),
+      dorkHome,
+    });
+
+    const adapterConflicts = result.filter((r) => r.type === 'adapter-id');
+    expect(adapterConflicts).toHaveLength(1);
+    expect(adapterConflicts[0]).toMatchObject({
+      level: 'error',
+      type: 'adapter-id',
+      conflictingPackage: 'discord',
+    });
+  });
+
+  it('does not check adapter ids when the package type is not adapter', async () => {
+    adapterManager = buildMockAdapterManager([{ id: 'slack', type: 'slack' }]);
+    detector = new ConflictDetector(dorkHome, adapterManager);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('slack'), // Same name as adapter, but plugin type
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'adapter-id')).toEqual([]);
+  });
+
+  it('reports multiple conflicts in the same run', async () => {
+    // Installed: a same-name plugin (reinstall → package-name warning). A
+    // *separate* installed plugin owns both a slot binding and a skill name the
+    // staged package collides with. Both live on the foreign package on purpose:
+    // the self-comparison filter excludes the reinstalled package's own slot and
+    // skill from every comparison, so sourcing either from `multi-plugin` would
+    // assert the self-conflict bug rather than a real collision (DOR-1776).
+    await installPluginSkeleton(dorkHome, 'multi-plugin');
+    const otherRoot = await installPluginSkeleton(dorkHome, 'other-plugin');
+    await writeExtension(otherRoot, 'installed-ext', [{ slot: 'header.right', priority: 5 }]);
+    await writeSkill(otherRoot, 'shared-skill', { description: 'installed' });
+
+    // Staged package collides on all three axes.
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'header.right', priority: 5 }]);
+    await writeSkill(stagedRoot, 'shared-skill', { description: 'staged' });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('multi-plugin'),
+      dorkHome,
+    });
+
+    const types = result.map((r) => r.type).sort();
+    expect(types).toEqual(['package-name', 'skill-name', 'slot']);
+  });
+
+  it('does not self-conflict when reinstalling a package that ships a task SKILL.md and an adapter', async () => {
+    // Fix #2: the conflict gate runs before the transaction moves the old install
+    // aside, so a package's OWN already-installed skills/adapters are still on
+    // disk. They must not count as collisions with itself, or reinstall dead-ends.
+
+    // The package's own task skill is already installed under its own plugin dir.
+    const installedRoot = await installPluginSkeleton(dorkHome, 'shipper');
+    await writeSkill(installedRoot, 'nightly-task', {
+      description: 'installed',
+      cron: '"0 3 * * *"',
+    });
+    // The same task ships in the staged reinstall (same name + same cron).
+    await writeSkill(stagedRoot, 'nightly-task', {
+      description: 'staged',
+      cron: '"0 3 * * *"',
+    });
+
+    // The package is an adapter already registered under its own name (config.id).
+    adapterManager = buildMockAdapterManager([{ id: 'shipper', type: 'shipper-type' }]);
+    detector = new ConflictDetector(dorkHome, adapterManager);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: adapterManifest('shipper', 'shipper-type'),
+      dorkHome,
+    });
+
+    // No error-level conflict remains — only the non-blocking reinstall warning.
+    expect(result.filter((r) => r.level === 'error')).toEqual([]);
+    expect(result.filter((r) => r.type === 'skill-name')).toEqual([]);
+    expect(result.filter((r) => r.type === 'cron-collision')).toEqual([]);
+    expect(result.filter((r) => r.type === 'adapter-id')).toEqual([]);
+    const nameWarnings = result.filter((r) => r.type === 'package-name');
+    expect(nameWarnings).toHaveLength(1);
+    expect(nameWarnings[0]).toMatchObject({ level: 'warning', type: 'package-name' });
+  });
+
+  it('warns (does not error) when a same-name package of a different type exists in the other root', async () => {
+    // Fix #5: a plugin `foo` and an agent `foo` would silently coexist. Surface the
+    // cross-type collision as a non-blocking warning so it is not invisible.
+    await installSkeletonUnder(dorkHome, 'agents', 'foo');
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('foo'), // installs under plugins/, agent foo lives under agents/
+      dorkHome,
+    });
+
+    const nameConflicts = result.filter((r) => r.type === 'package-name');
+    expect(nameConflicts).toHaveLength(1);
+    expect(nameConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'package-name',
+      conflictingPackage: 'foo',
+    });
+    expect(result.filter((r) => r.level === 'error')).toEqual([]);
+  });
+
+  it('detects an agent-local reinstall under projectPath/.dork/plugins', async () => {
+    // Fix #12: agent-local packages live at `${projectPath}/.dork/plugins/<name>`.
+    // The detector must probe the `.dork` segment, not `${projectPath}/plugins`.
+    const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
+    try {
+      await installSkeletonUnder(join(projectPath, '.dork'), 'plugins', 'local-plugin');
+
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('local-plugin'),
+        dorkHome,
+        projectPath,
+      });
+
+      const nameConflicts = result.filter((r) => r.type === 'package-name');
+      expect(nameConflicts).toHaveLength(1);
+      expect(nameConflicts[0]).toMatchObject({
+        level: 'warning',
+        type: 'package-name',
+        conflictingPackage: 'local-plugin',
+      });
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('warns (non-blocking) when an extension-bearing package is installed at agent scope', async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
+    try {
+      await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('themed-plugin'),
+        dorkHome,
+        projectPath,
+      });
+
+      const extensionWarnings = result.filter((r) => r.type === 'extension-scope');
+      expect(extensionWarnings).toHaveLength(1);
+      expect(extensionWarnings[0]).toMatchObject({
+        level: 'warning',
+        type: 'extension-scope',
+        conflictingPackage: 'themed-plugin',
+      });
+      // Non-blocking: the install proceeds because nothing is error-level.
+      expect(result.filter((r) => r.level === 'error')).toEqual([]);
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('does not warn about extension scope for a global install of the same package', async () => {
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('themed-plugin'),
+      dorkHome,
+      // no projectPath — global scope
+    });
+
+    expect(result.filter((r) => r.type === 'extension-scope')).toEqual([]);
+  });
+
+  it('does not warn about extension scope for an agent-scoped package with no extensions', async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
+    try {
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('plain-plugin'),
+        dorkHome,
+        projectPath,
+      });
+
+      expect(result.filter((r) => r.type === 'extension-scope')).toEqual([]);
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  });
+});

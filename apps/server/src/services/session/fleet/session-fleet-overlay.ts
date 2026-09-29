@@ -1,7 +1,8 @@
 /**
  * The fleet fields on a session list page (spec `claude-account-fleet` D7):
- * which account each session runs on, its live status, the work item it
- * serves, and the usage of every account the page names.
+ * which account each session runs on, its live status, the work items it
+ * serves (`trackerItems`, and the deprecated `trackerItem`), and the usage of
+ * every account the page names.
  *
  * `status` is MERGED onto whatever the session already carries, never
  * replaced, so another overlay's fields on it survive in either order.
@@ -93,7 +94,8 @@ export interface SessionFleetOverlayDeps {
    */
   limitsFor: (sessionIds: readonly string[]) => ReadonlyMap<string, { limit: SessionLimit }>;
   /**
-   * Set `trackerItem` on every session a flow run names, in place.
+   * Set `trackerItems` and the deprecated `trackerItem` on every session a
+   * flow run names, in place.
    *
    * @param page - The sessions about to be returned.
    */
@@ -140,7 +142,7 @@ function isLedgerRuntime(runtime: string | undefined): runtime is LedgerRuntime 
 }
 
 /**
- * Put `accountId`, `status` and `trackerItem` on each session of a list page,
+ * Put `accountId`, `status`, `trackerItems` and `trackerItem` on each session of a list page,
  * in place, and return the usage of the accounts the page names.
  *
  * A failure in one part (the limit table, the flow file) costs that part only:

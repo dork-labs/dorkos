@@ -137,6 +137,7 @@ import {
 import { titleForMcpTool } from '../services/core/mcp-tool-tiers.js';
 import { writerForPosture } from './permissions.js';
 import { logger } from '../lib/logger.js';
+import { projectsOfFolders } from '../services/projects/project-registry.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
@@ -518,7 +519,10 @@ export function createApprovalsRouter(
   };
 
   // GET /pending -- approvals still waiting on a person
-  router.get('/pending', (_req, res) => {
+  router.get('/pending', async (_req, res) => {
+    // Resolve the asking folders' projects first (spec `flow-multiproject`
+    // §6.2), so every card this read builds carries its project.
+    await projectsOfFolders(approvals.pendingFolders());
     res.json({ approvals: approvals.listPending() });
   });
 

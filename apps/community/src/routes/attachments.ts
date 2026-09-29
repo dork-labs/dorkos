@@ -17,7 +17,7 @@ import {
   transaction,
 } from '../data.js';
 import { assertStorageRoom, assertStorageWithinLimit } from '../host/limits.js';
-import { ApiError, json } from '../http.js';
+import { ApiError, UPLOAD_IDLE_MS, json } from '../http.js';
 import {
   BlobStoreError,
   completeManagedBlobCommit,
@@ -109,11 +109,33 @@ function uploadHeaders(c: Context) {
   return parsed.data;
 }
 
-async function* requestBytes(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+/**
+ * Read an upload's body, dropping it once it goes `idleMs` without a byte. The server lets a
+ * request take hours to arrive (for export uploads), so a slow drip here would otherwise hold
+ * a connection and a storage reservation open until the reservation's own deadline.
+ */
+async function* requestBytes(
+  body: ReadableStream<Uint8Array>,
+  idleMs: number
+): AsyncGenerator<Uint8Array> {
   const reader = body.getReader();
   try {
     while (true) {
-      const item = await reader.read();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const item = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new ApiError(408, 'UNAVAILABLE', 'The upload stopped sending.')),
+            idleMs
+          );
+        }),
+      ])
+        .catch(async (error: unknown) => {
+          await reader.cancel().catch(() => undefined);
+          throw error;
+        })
+        .finally(() => clearTimeout(timer));
       if (item.done) return;
       yield item.value;
     }
@@ -198,7 +220,15 @@ export function registerAttachmentRoutes(
     auth,
     config,
     blobStore,
-  }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; blobStore: BlobStore }
+    uploadIdleMs = UPLOAD_IDLE_MS,
+  }: {
+    pool: Pool;
+    auth: CommunityAuth;
+    config: CommunityConfig;
+    blobStore: BlobStore;
+    /** How long an upload may go without a byte before it is dropped. Tests shorten it. */
+    uploadIdleMs?: number;
+  }
 ) {
   app.post('/channels/:id/attachments', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'post');
@@ -233,7 +263,7 @@ export function registerAttachmentRoutes(
     try {
       stored = await blobStore.put({
         key: reservation.key,
-        source: requestBytes(c.req.raw.body),
+        source: requestBytes(c.req.raw.body, uploadIdleMs),
         displayName: metadata.name,
         maxBytes: config.limits.attachmentBytes,
         signal: managedBlobWriteSignal(c.req.raw.signal),

@@ -99,16 +99,12 @@ Instead:
 
 - **Element visibility**: `locator.waitFor({ state: 'visible' })`
 - **Element disappearance**: `locator.waitFor({ state: 'hidden' })`
-- **Streaming responses**: Wait for inference indicator lifecycle
+- **Streaming responses**: send through the page object, then wait for the turn to end
   ```typescript
-  await page
-    .locator('[data-testid="inference-indicator-streaming"]')
-    .waitFor({ state: 'visible', timeout: 10_000 })
-    .catch(() => {});
-  await page
-    .locator('[data-testid="inference-indicator-streaming"]')
-    .waitFor({ state: 'hidden', timeout: 60_000 });
+  await chatPage.sendAndLand('Hello'); // returns once the reply has started
+  await chatPage.waitForTurnToEnd(); // returns once the turn has ended
   ```
+  `waitForTurnToEnd()` passes at once on an idle chat, so never call it straight after a bare `sendMessage`. A turn parked on an approval or a question has not ended: answer it first.
 - **Navigation**: `await expect(page).toHaveURL(/session=/)`
 - **API calls**: `await page.waitForResponse(resp => resp.url().includes('/api/sessions'))`
 
@@ -150,7 +146,7 @@ Run by tag: `npx playwright test --grep @smoke`
 
 ## 8. DorkOS-Specific Patterns
 
-**SSE stream testing:** DorkOS uses Server-Sent Events for real-time updates. Test by sending a message and waiting for the inference indicator lifecycle (visible → hidden). The indicator has three testids: `inference-indicator-streaming`, `inference-indicator-waiting`, `inference-indicator-complete`.
+**SSE stream testing:** DorkOS uses Server-Sent Events for real-time updates. Test by sending with `chatPage.sendAndLand()` (the reply has started) and waiting with `chatPage.waitForTurnToEnd()` (the turn has ended). `chatPage.turnRunning` is the underlying locator: the chat panel's `data-turn-status="streaming"` or `data-turn-lifecycle="blocked"`. `chatPage.turnComplete` is the finished turn's summary in the live lane.
 
 **Session URL state:** Sessions are tracked via `?session=` URL parameter. After creating a new session, verify the URL updates: `await expect(page).toHaveURL(/session=/)`.
 
@@ -192,7 +188,7 @@ For every element you plan to interact with or assert against:
 
 ### Handling DorkOS Dynamic Content
 
-- **SSE streams**: Messages arrive via Server-Sent Events. The inference indicator (`data-testid="inference-indicator-streaming"`) signals when streaming is active. Always wait for it to reach `hidden` before asserting message content.
+- **SSE streams**: Messages arrive via Server-Sent Events. `chatPage.turnRunning` matches while a turn is running. Always call `chatPage.waitForTurnToEnd()` before asserting final message content.
 - **Optimistic updates**: Some UI updates appear before server confirmation. Re-locate elements after mutations rather than holding stale references.
 - **Session side effects**: Creating or switching sessions triggers URL changes, sidebar re-renders, and SSE reconnections. Allow these to settle before proceeding.
 

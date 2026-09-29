@@ -7,7 +7,7 @@ import {
   personalMarketplaceRoot,
   PERSONAL_MARKETPLACE_NAME,
 } from '../personal-marketplace.js';
-import type { MarketplaceSourceManager } from '../../marketplace/marketplace-source-manager.js';
+import type { MarketplaceSourceManager } from '../../marketplace/sources/marketplace-source-manager.js';
 import type { MarketplaceSource } from '../../marketplace/types.js';
 import type { Logger } from '@dorkos/shared/logger';
 
