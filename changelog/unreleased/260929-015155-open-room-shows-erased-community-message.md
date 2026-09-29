@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(rooms): update an open room when a Community message is deleted or erased (DOR-2336)'
+  - 'fix(rooms): narrow the revision claims and pin the words-only swap (DOR-2336 review)'
 ---
 
 ### Fixed
