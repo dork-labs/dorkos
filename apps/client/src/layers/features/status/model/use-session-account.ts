@@ -27,6 +27,12 @@ import type { AccountPromotionState } from './status-bar-registry';
 /** Shared empty list, so a session with no flow items never mints a fresh array. */
 const NO_TRACKER_ITEMS: readonly SessionTrackerItem[] = [];
 
+/** The older-server fallback lists, one per `trackerItem` object. */
+const LEGACY_ITEMS = new WeakMap<
+  NonNullable<Session['trackerItem']>,
+  readonly SessionTrackerItem[]
+>();
+
 /**
  * A session row's flow items. An older server sends only the deprecated
  * `trackerItem` (the newest run in this chat), which reads as that one item.
@@ -39,7 +45,11 @@ export function trackerItemsOf(
   if (row.trackerItems) return row.trackerItems;
   const legacy = row.trackerItem;
   if (!legacy) return NO_TRACKER_ITEMS;
-  return [
+  // Keyed on the row's own object, so one row reads as one list across
+  // renders (the fallback would otherwise be a new array every render).
+  const cached = LEGACY_ITEMS.get(legacy);
+  if (cached) return cached;
+  const items: readonly SessionTrackerItem[] = [
     {
       id: legacy.id,
       stage: legacy.stage ?? null,
@@ -50,6 +60,8 @@ export function trackerItemsOf(
       ownChatSessionId: null,
     },
   ];
+  LEGACY_ITEMS.set(legacy, items);
+  return items;
 }
 
 /** The registry id every runtime without an account registry bills (S4 N9). */

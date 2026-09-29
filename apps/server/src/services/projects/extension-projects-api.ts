@@ -14,7 +14,9 @@
  *
  * @module services/projects/extension-projects-api
  */
-import type { ProjectsApi } from '@dorkos/extension-api/server';
+import type { ProjectRef, ProjectsApi } from '@dorkos/extension-api/server';
+
+import { logger } from '../../lib/logger.js';
 
 import type { ProjectRegistry } from './project-registry.js';
 
@@ -31,20 +33,42 @@ export function createProjectsApi(
 ): { projects: ProjectsApi; release: () => void } {
   const removers = new Set<() => void>();
   let released = false;
+  let warned = false;
+
+  /**
+   * A storage failure (a full disk, or a clash with another server process on
+   * the same database) reaches the extension as "no project", never as a raw
+   * SQLite error. Logged once per extension instance.
+   */
+  const orNull = async (named: Promise<ProjectRef | null>): Promise<ProjectRef | null> => {
+    try {
+      return await named;
+    } catch (err) {
+      if (!warned) {
+        warned = true;
+        logger.warn(`[ext:${extensionId}] could not record a project; answering null`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return null;
+    }
+  };
 
   const projects: ProjectsApi = {
     resolve(cwd) {
       if (typeof cwd !== 'string' || cwd.length === 0) return Promise.resolve(null);
-      return registry
-        .resolveWithin(cwd, extensionId)
-        .then((project) => (project === 'outside' ? null : project));
+      return orNull(
+        registry
+          .resolveWithin(cwd, extensionId)
+          .then((project) => (project === 'outside' ? null : project))
+      );
     },
     list() {
       return registry.listForExtension(extensionId);
     },
     report(dir) {
       return typeof dir === 'string' && dir.length > 0
-        ? registry.report(dir, extensionId)
+        ? orNull(registry.report(dir, extensionId))
         : Promise.resolve(null);
     },
     onChange(listener) {

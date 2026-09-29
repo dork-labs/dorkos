@@ -406,6 +406,22 @@ describe('useSessionAccount', () => {
     );
   });
 
+  it('keeps the older-server fallback list stable across renders', async () => {
+    mockSessions = [
+      createMockSession({
+        id: SID,
+        runtime: 'claude-code',
+        accountId: 'acct-2',
+        trackerItem: { id: 'DOR-2002' },
+      }),
+    ];
+    const { result, rerender } = renderAccount(transportWith(2));
+    await waitFor(() => expect(result.current.trackerItems).toHaveLength(1));
+    const first = result.current.trackerItems;
+    rerender();
+    expect(result.current.trackerItems).toBe(first);
+  });
+
   it('carries the flow item the session serves', async () => {
     mockSessions = [
       createMockSession({

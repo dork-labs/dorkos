@@ -211,6 +211,11 @@ export class ProjectRegistry {
   private readonly lastWritten = new Map<string, number>();
   /** Root to the extensions that named it, and how. */
   private readonly reporters = new Map<string, Map<string, KnownProjectReporter['kind']>>();
+  /**
+   * New roots an extension is naming right now, reserved before the record's
+   * await so concurrent calls cannot all pass the cap check at once.
+   */
+  private readonly reserved = new Map<string, Set<string>>();
   private readonly listeners = new Set<() => void>();
   private sources: ProjectSources | undefined;
   private sourcesReadAt: number | undefined;
@@ -329,10 +334,12 @@ export class ProjectRegistry {
     if (root === 'outside' || root === null) return root;
     const known = this.byRoot.get(root);
     if (known) return toRef(known);
-    if (extensionId !== undefined && this.atCap(extensionId, root)) return null;
-    const project = await this.remember(root, 'reported');
-    if (extensionId !== undefined) this.addReporter(root, extensionId, 'resolve');
-    return toRef(project);
+    if (extensionId === undefined) return toRef(await this.remember(root, 'reported'));
+    return this.withSlot(extensionId, root, async () => {
+      const project = await this.remember(root, 'reported');
+      this.addReporter(root, extensionId, 'resolve');
+      return toRef(project);
+    });
   }
 
   /**
@@ -348,10 +355,11 @@ export class ProjectRegistry {
   async report(dir: string, extensionId: string): Promise<ProjectRef | null> {
     const root = await this.boundedRoot(dir);
     if (root === 'outside' || root === null) return null;
-    if (this.atCap(extensionId, root)) return null;
-    const project = await this.remember(root, 'reported');
-    this.addReporter(root, extensionId, 'report');
-    return toRef(project);
+    return this.withSlot(extensionId, root, async () => {
+      const project = await this.remember(root, 'reported');
+      this.addReporter(root, extensionId, 'report');
+      return toRef(project);
+    });
   }
 
   /**
@@ -445,12 +453,38 @@ export class ProjectRegistry {
     return root;
   }
 
-  /** Whether naming `root` would take an extension past its cap. */
-  private atCap(extensionId: string, root: string): boolean {
-    if (this.reporters.get(root)?.has(extensionId)) return false;
+  /**
+   * Run `name` holding one of the extension's cap slots for `root`, or answer
+   * null when the extension is at its cap. The slot is taken synchronously,
+   * before any await, and given back once the call settles (kept only as the
+   * reporter row it became), so a burst of concurrent calls cannot overshoot.
+   */
+  private async withSlot<T>(
+    extensionId: string,
+    root: string,
+    name: () => Promise<T>
+  ): Promise<T | null> {
+    if (this.reporters.get(root)?.has(extensionId)) return name();
+    let pending = this.reserved.get(extensionId);
+    if (pending?.has(root)) return name();
+    if (this.namedBy(extensionId) + (pending?.size ?? 0) >= MAX_REPORTED_ROOTS_PER_EXTENSION) {
+      return null;
+    }
+    if (!pending) this.reserved.set(extensionId, (pending = new Set()));
+    pending.add(root);
+    try {
+      return await name();
+    } finally {
+      pending.delete(root);
+      if (pending.size === 0) this.reserved.delete(extensionId);
+    }
+  }
+
+  /** How many roots an extension has named. */
+  private namedBy(extensionId: string): number {
     let named = 0;
     for (const byExtension of this.reporters.values()) if (byExtension.has(extensionId)) named++;
-    return named >= MAX_REPORTED_ROOTS_PER_EXTENSION;
+    return named;
   }
 
   private noteReporter(reporter: Pick<KnownProjectReporter, 'root' | 'extensionId' | 'kind'>) {
@@ -549,6 +583,7 @@ export class ProjectRegistry {
       try {
         this.insert(this.newProject(root, 'seen', origins[i] ?? null));
       } catch (err) {
+        this.learnFromStore();
         this.warn(`could not record ${root}`, err);
       }
     });
@@ -574,8 +609,33 @@ export class ProjectRegistry {
     const meanwhile = this.byRoot.get(root);
     if (meanwhile) return this.touch(meanwhile, how);
     const project = this.newProject(root, how, originRepo);
-    this.insert(project);
+    try {
+      this.insert(project);
+    } catch (err) {
+      // Another server process on the same database may have recorded this
+      // root, or taken this name, since the rows were loaded. Learn its rows so
+      // the next try picks a free name instead of repeating the clash.
+      this.learnFromStore();
+      const adopted = this.byRoot.get(root);
+      if (adopted) return this.touch(adopted, how);
+      throw err;
+    }
     return project;
+  }
+
+  /** Merge rows another process wrote into memory; never renames a known one. */
+  private learnFromStore(): void {
+    if (!this.store) return;
+    try {
+      for (const project of this.store.all()) {
+        if (this.byRoot.has(project.root)) continue;
+        this.byRoot.set(project.root, project);
+        this.names.add(project.name);
+      }
+      for (const reporter of this.store.reporters()) this.noteReporter(reporter);
+    } catch (err) {
+      this.warn('could not re-read the saved projects', err);
+    }
   }
 
   private newProject(root: string, how: RecordHow, originRepo: string | null): KnownProject {

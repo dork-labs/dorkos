@@ -315,6 +315,86 @@ describe('reported roots are second-class', () => {
   });
 });
 
+describe('the cap under concurrency, and a clash from another process', () => {
+  it(`records at most ${MAX_REPORTED_ROOTS_PER_EXTENSION} of 300 roots named at once`, async () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const reg = registry(
+      {
+        resolveRoot: async (cwd) => cwd,
+        checkBoundary: async (dir) => dir,
+        exists: async () => true,
+        // A real await between the cap check and the record.
+        readOriginRepo: () => new Promise((resolve) => setTimeout(() => resolve(null), 1)),
+      },
+      db
+    );
+    const dirs = Array.from({ length: 300 }, (_, i) => path.join(boundary, 'burst', `r${i}`));
+    const answers = await Promise.all(
+      dirs.map((dir, i) => (i % 2 ? reg.report(dir, 'burst') : reg.resolveWithin(dir, 'burst')))
+    );
+    expect(answers.filter((a) => a !== null)).toHaveLength(MAX_REPORTED_ROOTS_PER_EXTENSION);
+    expect(new KnownProjectsStore(db).all()).toHaveLength(MAX_REPORTED_ROOTS_PER_EXTENSION);
+    const reporters = new KnownProjectsStore(db).reporters();
+    expect(reporters.filter((r) => r.extensionId === 'burst')).toHaveLength(
+      MAX_REPORTED_ROOTS_PER_EXTENSION
+    );
+  });
+
+  it('gives a slot back when recording fails', async () => {
+    let fail = true;
+    const reg = registry({
+      resolveRoot: async (cwd) => cwd,
+      checkBoundary: async (dir) => dir,
+      exists: async () => true,
+    });
+    reg.attachStore({
+      all: () => [],
+      reporters: () => [],
+      insert: () => {
+        if (fail) throw new Error('disk full');
+      },
+      update: vi.fn(),
+      addReporter: vi.fn(),
+    });
+    const dirs = Array.from({ length: MAX_REPORTED_ROOTS_PER_EXTENSION }, (_, i) =>
+      path.join(boundary, 'slots', `r${i}`)
+    );
+    await Promise.allSettled(dirs.map((dir) => reg.report(dir, 'slotty')));
+    fail = false;
+    // Nothing was recorded, so every slot is free again.
+    expect(await reg.report(path.join(boundary, 'slots', 'after'), 'slotty')).not.toBeNull();
+  });
+
+  it('learns a name another process took on the same database instead of repeating the clash', async () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const root = repo('home', 'clash', 'dev', 'shared');
+    const otherRoot = repo('home', 'clash', 'other', 'shared');
+    const here = registry({}, db);
+    // Another server process on the same database names a DIFFERENT folder
+    // `shared` after this process loaded its rows.
+    const elsewhere = registry({}, db);
+    await elsewhere.resolve(otherRoot);
+
+    // This process thinks `shared` is free: the insert clashes on the name.
+    await expect(here.resolve(root)).rejects.toThrow(/UNIQUE/i);
+    // It learned the other process's row, so the next try takes the next name.
+    expect(here.get(otherRoot)?.name).toBe('shared');
+    expect(await here.resolve(root)).toEqual({ root, name: 'shared~dev' });
+  });
+
+  it('adopts the row when another process recorded the same root first', async () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const root = repo('home', 'race', 'app');
+    const here = registry({}, db);
+    const elsewhere = registry({}, db);
+    await elsewhere.resolve(root);
+    expect(await here.resolve(root)).toEqual({ root, name: 'app' });
+  });
+});
+
 describe('listForExtension', () => {
   let db: Db;
 

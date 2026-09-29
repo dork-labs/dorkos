@@ -528,6 +528,20 @@ describe('createDataProviderContext', () => {
       resolve.mockRestore();
     });
 
+    it('answers null, never a raw storage error, when recording a project fails', async () => {
+      const report = vi
+        .spyOn(projectRegistry, 'report')
+        .mockRejectedValue(new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed'));
+      const resolve = vi
+        .spyOn(projectRegistry, 'resolveWithin')
+        .mockRejectedValue(new Error('SQLITE_FULL'));
+      const { ctx } = buildCtx();
+      await expect(ctx.projects.report('/some/repo')).resolves.toBeNull();
+      await expect(ctx.projects.resolve('/some/repo')).resolves.toBeNull();
+      report.mockRestore();
+      resolve.mockRestore();
+    });
+
     it('removes its change listeners on release, and refuses new ones after', () => {
       // The registry's own listener set: the thing a leak would grow.
       const registered = (projectRegistry as unknown as { listeners: Set<() => void> }).listeners;
