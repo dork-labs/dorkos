@@ -1291,7 +1291,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   // files an update kept but nothing could sort (DOR-2341). The same bar as
   // deciding a held-back package: claiming files decides what every later
   // update keeps, so an agent cannot, and under login only a signed-in session
-  // can. Moves and deletes nothing; see `services/marketplace/keep-files.ts`.
+  // can. Moves and deletes nothing; see `services/marketplace/lib/integrity/keep-files.ts`.
   router.post('/packages/:name/keep-files', async (req, res) => {
     const authority = readCallerAuthority(req, res);
     if (!trustedCaller(authority)) {
