@@ -27,7 +27,7 @@ import {
   currentRecordOwner,
   formatRecordOwner,
   type RecordOwner,
-} from '../../lib/record-owner.js';
+} from '../../lib/records/record-owner.js';
 
 /** Returns true when `target` exists on disk. */
 async function exists(target: string): Promise<boolean> {

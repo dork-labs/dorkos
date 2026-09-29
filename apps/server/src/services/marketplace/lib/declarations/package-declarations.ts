@@ -18,7 +18,7 @@
  * `.mcp.json -> ~/.claude.json` would otherwise hand a person's own MCP
  * configuration, secrets and all, to the caller.
  *
- * @module services/marketplace/lib/package-declarations
+ * @module services/marketplace/lib/declarations/package-declarations
  */
 import { normalize } from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';

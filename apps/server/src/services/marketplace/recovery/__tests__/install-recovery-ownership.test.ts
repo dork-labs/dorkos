@@ -13,9 +13,17 @@ import {
   parseInstallRecordName,
   recoverInterruptedInstall,
 } from '../install-recovery.js';
-import { currentRecordOwner, formatRecordOwner, type RecordOwner } from '../../lib/record-owner.js';
-import { computeInstalledFiles, writeInstalledFiles } from '../../lib/installed-files.js';
-import { journaledMove, writeJournal, type UninstallJournal } from '../../lib/uninstall-journal.js';
+import {
+  currentRecordOwner,
+  formatRecordOwner,
+  type RecordOwner,
+} from '../../lib/records/record-owner.js';
+import { computeInstalledFiles, writeInstalledFiles } from '../../lib/records/installed-files.js';
+import {
+  journaledMove,
+  writeJournal,
+  type UninstallJournal,
+} from '../../lib/records/uninstall-journal.js';
 
 const dirs: string[] = [];
 afterEach(async () => {

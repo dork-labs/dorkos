@@ -20,7 +20,12 @@ import {
   isReservedPackagePath,
   matchesUserEditable,
 } from '@dorkos/marketplace';
-import { isNeverCarried, lstatChain, scanTree, type InstalledFiles } from '../installed-files.js';
+import {
+  isNeverCarried,
+  lstatChain,
+  scanTree,
+  type InstalledFiles,
+} from '../records/installed-files.js';
 import { cachedHashFile } from './file-hash-cache.js';
 
 /** The prefix of every scratch folder a strict rebuild or a sort stages into, for leftover cleanup. */

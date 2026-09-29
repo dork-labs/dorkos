@@ -275,7 +275,7 @@ import { MarketplaceSourceManager } from './services/marketplace/sources/marketp
 import { MarketplaceCache } from './services/marketplace/cache/marketplace-cache.js';
 import { PackageCacheRetention } from './services/marketplace/cache/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
-import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.js';
+import { rebuildInstalledFiles } from './services/marketplace/lib/records/legacy-record.js';
 import {
   legacySweepDirs,
   rebuildLegacyRecords,
@@ -364,7 +364,7 @@ import {
   retryInFlightTargetsLater,
   type InstallSweepSummary,
 } from './services/marketplace/recovery/backup-janitor.js';
-import { currentRecordOwner } from './services/marketplace/lib/record-owner.js';
+import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';

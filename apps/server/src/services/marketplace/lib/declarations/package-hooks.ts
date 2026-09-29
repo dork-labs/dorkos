@@ -34,9 +34,9 @@
  *   same keep rule at the event, group and command level (DOR-646) — and both
  *   sides report what they discarded (DOR-1724).
  *
- * @module services/marketplace/lib/package-hooks
+ * @module services/marketplace/lib/declarations/package-hooks
  */
-import type { PreviewHook, UnreadablePreviewHook } from '../types.js';
+import type { PreviewHook, UnreadablePreviewHook } from '../../types.js';
 import {
   declarationsOf,
   isRecord,

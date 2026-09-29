@@ -768,7 +768,7 @@ export interface ConflictReport {
  * Options for `POST /api/marketplace/packages/:name/install`.
  *
  * Mirrors the body of `InstallRequestBodySchema` in
- * `apps/server/src/routes/marketplace.ts`.
+ * `apps/server/src/routes/marketplace/shared.ts`.
  */
 export interface InstallOptions {
   /** Restrict lookup to a specific marketplace source. */
@@ -1382,7 +1382,7 @@ export interface ListedMarketplaceSource extends MarketplaceSource {
 /**
  * Request body for `POST /api/marketplace/sources`.
  *
- * Mirrors `AddSourceBodySchema` in `apps/server/src/routes/marketplace.ts`.
+ * Mirrors `AddSourceBodySchema` in `apps/server/src/routes/marketplace/sources.ts`.
  */
 export interface AddSourceInput {
   name: string;

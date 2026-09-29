@@ -14,7 +14,7 @@ import {
   writeJournal,
   type UninstallJournal,
 } from '../uninstall-journal.js';
-import { recoverInterruptedInstall } from '../../recovery/install-recovery.js';
+import { recoverInterruptedInstall } from '../../../recovery/install-recovery.js';
 import { readInstalledFiles, writeInstalledFiles } from '../installed-files.js';
 
 const dirs: string[] = [];

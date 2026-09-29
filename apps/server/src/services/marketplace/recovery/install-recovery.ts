@@ -107,8 +107,12 @@ import {
   MARKETPLACE_STAGE_DIR_MARKER,
   MARKETPLACE_UNINSTALL_DIR_MARKER,
 } from '@dorkos/shared/marketplace-schemas';
-import { isInstallWhole } from '../lib/installed-files.js';
-import { finishUninstall, readJournal, rollBackUninstall } from '../lib/uninstall-journal.js';
+import { isInstallWhole } from '../lib/records/installed-files.js';
+import {
+  finishUninstall,
+  readJournal,
+  rollBackUninstall,
+} from '../lib/records/uninstall-journal.js';
 import { atomicMove } from '../lib/atomic-move.js';
 import {
   assessRecordOwner,
@@ -117,7 +121,7 @@ import {
   parseRecordOwner,
   RECORD_OWNER_PATTERN,
   type RecordOwner,
-} from '../lib/record-owner.js';
+} from '../lib/records/record-owner.js';
 
 /**
  * What a transaction record says about its target — see the table in the

@@ -30,8 +30,8 @@ import {
   computeInstalledFiles,
   readInstalledFiles,
   writeInstalledFiles,
-} from '../../lib/installed-files.js';
-import * as journalModule from '../../lib/uninstall-journal.js';
+} from '../../lib/records/installed-files.js';
+import * as journalModule from '../../lib/records/uninstall-journal.js';
 import { migrateSavedCopies } from '../../lib/saved-copies/migrate-saved-copies.js';
 import { recoverInterruptedInstall } from '../../recovery/install-recovery.js';
 
@@ -439,7 +439,7 @@ describe('uninstalling an older install nothing proves (DOR-2322)', () => {
       })
     );
     await put(root, 'notes/mine.txt', 'mine');
-    const { rebuildInstalledFiles } = await import('../../lib/legacy-record.js');
+    const { rebuildInstalledFiles } = await import('../../lib/records/legacy-record.js');
     const { noopLogger } = await import('@dorkos/shared/logger');
     const offline = (installRoot: string) =>
       rebuildInstalledFiles(installRoot, {
@@ -469,7 +469,7 @@ describe('uninstalling an older install nothing proves (DOR-2322)', () => {
     const dorkHome = await home();
     const root = path.join(dorkHome, 'plugins', 'pkg');
     await installed(root, { 'a.md': 'a' });
-    const { readInstalledFiles: read } = await import('../../lib/installed-files.js');
+    const { readInstalledFiles: read } = await import('../../lib/records/installed-files.js');
     const record = await read(root);
     await put(root, 'old.md', 'old');
     await writeInstalledFiles(root, {

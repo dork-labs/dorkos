@@ -685,7 +685,7 @@ describe('globalConsentRecorder', () => {
     await mkdir(path.join(root, 'bin'), { recursive: true });
     await writeFile(path.join(root, 'bin', 'old-tool'), '#!/bin/sh\necho old');
     const { computeInstalledFiles, writeInstalledFiles } =
-      await import('../../lib/installed-files.js');
+      await import('../../lib/records/installed-files.js');
     const record = await computeInstalledFiles(root, {
       identity: { name: 'tool', type: 'plugin' },
       userEditable: [],
@@ -719,7 +719,7 @@ describe('globalConsentRecorder', () => {
     const seen = await shown(root);
     await writeFile(path.join(root, 'notes.txt'), 'mine');
     const { computeInstalledFiles, writeInstalledFiles } =
-      await import('../../lib/installed-files.js');
+      await import('../../lib/records/installed-files.js');
     const record = await computeInstalledFiles(root, {
       identity: { name: 'tool', type: 'plugin' },
       userEditable: [],

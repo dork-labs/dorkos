@@ -51,7 +51,7 @@
  * {@link RECORD_OWNER_PATTERN}), so it lands in the same atomic step that
  * creates the record, and no second file can go missing or be orphaned.
  *
- * @module services/marketplace/lib/record-owner
+ * @module services/marketplace/lib/records/record-owner
  */
 import { createHash } from 'node:crypto';
 import { readlinkSync } from 'node:fs';

@@ -17,8 +17,8 @@ import {
   lstatChain,
   readInstalledFiles,
   writeInstalledFiles,
-} from '../installed-files.js';
-import { stageInstalledCommit } from '../legacy-record.js';
+} from '../records/installed-files.js';
+import { stageInstalledCommit } from '../records/legacy-record.js';
 import { STRICT_RECORD_TEMP_PREFIX } from './strict-differences.js';
 import type { StrictRebuildResult } from './strict-record.js';
 import { freeSavedFileName, makeInert, savedCopyMustMove } from '../saved-copies/saved-copies.js';

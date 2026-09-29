@@ -40,7 +40,7 @@
  *   Closing it needs an attribution observer on `services/core/mcp-tool-gate.ts`.
  * - `authorizeCapability` callers do not either. The legacy marketplace mutation
  *   routes reach the gate and then perform the effect THEMSELVES
- *   (`routes/marketplace.ts`), so an approved uninstall through the cockpit route
+ *   (`routes/marketplace/package-actions.ts`), so an approved uninstall through the cockpit route
  *   leaves the same silence. Closing it needs the same observer on that seam.
  *
  * Both matter more now that an Always allow can let a call through: an

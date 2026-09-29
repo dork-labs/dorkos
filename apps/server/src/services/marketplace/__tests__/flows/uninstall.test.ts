@@ -27,8 +27,8 @@ import {
   type UninstallShapeScheduleTeardown,
 } from '../../flows/uninstall.js';
 import { InvalidPackageNameError } from '../../lib/package-paths.js';
-import { computeInstalledFiles, writeInstalledFiles } from '../../lib/installed-files.js';
-import { currentRecordOwner, formatRecordOwner } from '../../lib/record-owner.js';
+import { computeInstalledFiles, writeInstalledFiles } from '../../lib/records/installed-files.js';
+import { currentRecordOwner, formatRecordOwner } from '../../lib/records/record-owner.js';
 import { _internal as recoveryInternal } from '../../recovery/install-recovery.js';
 import { randomUUID } from 'node:crypto';
 

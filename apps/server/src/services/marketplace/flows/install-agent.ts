@@ -29,7 +29,7 @@ import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
 import { flowOwnership } from '../lib/flow-ownership.js';
-import { readInstalledFiles, sameSource } from '../lib/installed-files.js';
+import { readInstalledFiles, sameSource } from '../lib/records/installed-files.js';
 import { runTransaction } from '../transaction.js';
 import type { AgentInstallIdentity, InstallRequest, InstallResult } from '../types.js';
 import type { UninstallAgentRegistry } from './uninstall.js';

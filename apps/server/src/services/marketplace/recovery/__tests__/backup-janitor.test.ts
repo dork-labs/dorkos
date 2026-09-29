@@ -23,8 +23,8 @@ import {
   type InstallSweepSummary,
 } from '../backup-janitor.js';
 import { IN_FLIGHT_FLOOR_MS, _internal as recoveryInternal } from '../install-recovery.js';
-import { currentRecordOwner, formatRecordOwner } from '../../lib/record-owner.js';
-import { createUninstallSibling, writeJournal } from '../../lib/uninstall-journal.js';
+import { currentRecordOwner, formatRecordOwner } from '../../lib/records/record-owner.js';
+import { createUninstallSibling, writeJournal } from '../../lib/records/uninstall-journal.js';
 
 /** Returns true when `target` exists on disk. */
 async function pathExists(target: string): Promise<boolean> {

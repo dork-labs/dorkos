@@ -33,7 +33,7 @@
  * {@link planCarryOver} is the pure decision table an install over an existing
  * root applies; the transaction (`../transaction.ts`) performs its actions.
  *
- * @module services/marketplace/lib/installed-files
+ * @module services/marketplace/lib/records/installed-files
  */
 import { createHash } from 'node:crypto';
 import { createReadStream, type Stats } from 'node:fs';
@@ -52,7 +52,7 @@ import {
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import type { Logger } from '@dorkos/shared/logger';
 import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
-import { savedFileCandidates, savedFolderCandidates } from './saved-copies/saved-copies.js';
+import { savedFileCandidates, savedFolderCandidates } from '../saved-copies/saved-copies.js';
 
 /** The record format this module reads and writes. */
 export const INSTALLED_FILES_RECORD_VERSION = 1;

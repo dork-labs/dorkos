@@ -27,7 +27,7 @@ import {
   type InstalledFiles,
   type StagedFacts,
   type TreeScan,
-} from '../lib/installed-files.js';
+} from '../lib/records/installed-files.js';
 
 const dirs: string[] = [];
 afterEach(async () => {

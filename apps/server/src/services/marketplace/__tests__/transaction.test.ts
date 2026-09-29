@@ -26,7 +26,11 @@ import {
   _internal as recoveryInternal,
   recoverInterruptedInstall,
 } from '../recovery/install-recovery.js';
-import { currentRecordOwner, formatRecordOwner, type RecordOwner } from '../lib/record-owner.js';
+import {
+  currentRecordOwner,
+  formatRecordOwner,
+  type RecordOwner,
+} from '../lib/records/record-owner.js';
 import { randomUUID } from 'node:crypto';
 
 /** Returns true when `target` exists on disk (file or directory). */
@@ -545,7 +549,7 @@ describe('runTransaction crash windows (DOR-2273)', () => {
     try {
       const target = path.join(scratch, 'flow');
       await installV1(target);
-      const { _internal: ownerInternal } = await import('../lib/record-owner.js');
+      const { _internal: ownerInternal } = await import('../lib/records/record-owner.js');
       const owner: RecordOwner = {
         ...currentRecordOwner(),
         pid: other.pid!,
@@ -686,7 +690,7 @@ describe('runTransaction crash windows (DOR-2273)', () => {
       const target = path.join(scratch, 'flow');
       await mkdir(target, { recursive: true });
       await writeFile(path.join(target, 'version.txt'), 'v2-theirs', 'utf8');
-      const { _internal: ownerInternal } = await import('../lib/record-owner.js');
+      const { _internal: ownerInternal } = await import('../lib/records/record-owner.js');
       const owner: RecordOwner = {
         ...currentRecordOwner(),
         pid: other.pid!,

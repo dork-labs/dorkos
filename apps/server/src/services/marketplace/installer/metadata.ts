@@ -8,7 +8,7 @@
 import path from 'node:path';
 import type { SourceKey } from '@dorkos/marketplace';
 import type { ResolvedPackageSource } from '../package-resolver.js';
-import type { RecordSource } from '../lib/installed-files.js';
+import type { RecordSource } from '../lib/records/installed-files.js';
 import { packageContentHash } from '../lib/content-hash.js';
 
 /**

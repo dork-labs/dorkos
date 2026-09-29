@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { computeInstalledFiles, writeInstalledFiles } from '../../installed-files.js';
+import { computeInstalledFiles, writeInstalledFiles } from '../../records/installed-files.js';
 import { cachedHashFile, _internal, _resetHashCacheForTests } from '../file-hash-cache.js';
 import { verifyInstall, INTEGRITY_LIST_LIMIT } from '../verify-install.js';
 import { rebuildRecordStrict } from '../strict-record.js';
@@ -245,7 +245,7 @@ describe('verifyInstall', () => {
   // Fails if an inferred record verifies clean or modified.
   it('reports an inferred record as unknown, with Check files on offer', async () => {
     const root = await installed({ 'a.md': 'a' });
-    const { readInstalledFiles } = await import('../../installed-files.js');
+    const { readInstalledFiles } = await import('../../records/installed-files.js');
     const record = await readInstalledFiles(root);
     await writeInstalledFiles(root, { ...record!, inferred: true });
     expect(await verifyInstall(root)).toEqual({
@@ -261,7 +261,7 @@ describe('verifyInstall', () => {
   // Check files can sort them. Fails if they vanish into `added` or go unnamed.
   it('names the files an update kept unproven, apart from added', async () => {
     const root = await installed({ 'a.md': 'a' });
-    const { readInstalledFiles } = await import('../../installed-files.js');
+    const { readInstalledFiles } = await import('../../records/installed-files.js');
     const record = await readInstalledFiles(root);
     await put(root, 'skills/old/SKILL.md', 'old');
     await put(root, 'notes.txt', 'mine');

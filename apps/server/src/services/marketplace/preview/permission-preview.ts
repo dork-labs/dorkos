@@ -23,11 +23,11 @@ import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { clampSchedulePermissionMode } from '../../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { readNpmDependencies } from '../lib/npm-dependencies.js';
-import { readPluginJson } from '../lib/package-declarations.js';
-import { readPackageHooks } from '../lib/package-hooks.js';
-import { readPackagePrograms } from '../lib/package-programs.js';
-import { readPackageSkills } from '../lib/package-skills.js';
-import { packageSchedules, scheduleDisplayName } from '../lib/package-schedules.js';
+import { readPluginJson } from '../lib/declarations/package-declarations.js';
+import { readPackageHooks } from '../lib/declarations/package-hooks.js';
+import { readPackagePrograms } from '../lib/declarations/package-programs.js';
+import { readPackageSkills } from '../lib/declarations/package-skills.js';
+import { packageSchedules, scheduleDisplayName } from '../lib/declarations/package-schedules.js';
 import type { ConflictReport, PermissionPreview, PreviewSchedule } from '../types.js';
 
 /** Directory names ignored when walking the package contents. */
@@ -416,17 +416,17 @@ export class PermissionPreviewBuilder {
    *   in the package, expanded into `{ id, slots }` where `slots` are the
    *   extension's enabled `contributions` keys.
    * - `hooks` — every shell command declared in the package's
-   *   `hooks/hooks.json` and plugin.json `hooks` (`lib/package-hooks.ts`),
+   *   `hooks/hooks.json` and plugin.json `hooks` (`lib/declarations/package-hooks.ts`),
    *   flattened to `{ event, matcher?, command }` with the command verbatim,
    *   plus every hook in a skill's or command's frontmatter, tagged with its
-   *   `source` (`lib/package-skills.ts`), each one's `allowed-tools` in
+   *   `source` (`lib/declarations/package-skills.ts`), each one's `allowed-tools` in
    *   `skillTools`, and the shell commands its text runs in `skillCommands`.
    * - `unreadableHooks` — every hook declaration the package ships that could
    *   not be parsed. Reported separately so "declares hooks we could not read"
    *   never renders as "declares no hooks".
    * - `mcpServers`, `lspServers`, `monitors`, `executables` — every program
    *   the package starts on its own, from its default files and plugin.json
-   *   (`lib/package-programs.ts`), verbatim. `unreadableDeclarations` names
+   *   (`lib/declarations/package-programs.ts`), verbatim. `unreadableDeclarations` names
    *   every declaration that could not be read or points outside the package.
    * - `schedules` — every scheduled job the install creates, from both
    *   `.dork/tasks/<name>/SKILL.md` (parsed via `@dorkos/skills`) and a Shape

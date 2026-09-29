@@ -19,7 +19,7 @@ import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { MarketplaceJson, PluginPackageManifest, PluginSource } from '@dorkos/marketplace';
-import { resolvePackageSource } from '../marketplace.js';
+import { resolvePackageSource } from '../marketplace/packages.js';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -933,7 +933,7 @@ describe('Marketplace Routes', () => {
         version: '1.0.0',
       });
       const { computeInstalledFiles, writeInstalledFiles } =
-        await import('../../services/marketplace/lib/installed-files.js');
+        await import('../../services/marketplace/lib/records/installed-files.js');
       await writeInstalledFiles(
         pluginDir,
         await computeInstalledFiles(pluginDir, {
@@ -2517,7 +2517,7 @@ describe('Marketplace Routes', () => {
       writeTree(root, SHIPPED);
       writeTree(root, { 'old.md': 'old v1', 'notes.txt': 'mine' });
       const { computeInstalledFiles, writeInstalledFiles } =
-        await import('../../services/marketplace/lib/installed-files.js');
+        await import('../../services/marketplace/lib/records/installed-files.js');
       const record = await computeInstalledFiles(root, {
         identity: { name: 'old-plugin', type: 'plugin' },
         userEditable: [],

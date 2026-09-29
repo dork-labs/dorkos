@@ -27,14 +27,14 @@
  * disk for weeks. Failing here costs the author one clear sentence; failing at
  * boot costs the operator an investigation.
  *
- * @module services/marketplace/lib/validate-package-schedules
+ * @module services/marketplace/lib/schedules/validate-package-schedules
  */
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
-import { describeScheduleProblem } from '../../tasks/cron-validation.js';
+import { describeScheduleProblem } from '../../../tasks/cron-validation.js';
 import { slugify } from '@dorkos/skills/slug';
-import { packageSchedules, scheduleDisplayName } from './package-schedules.js';
+import { packageSchedules, scheduleDisplayName } from '../declarations/package-schedules.js';
 
 /**
  * Directories inside a package that may hold a schedulable skill, in the order

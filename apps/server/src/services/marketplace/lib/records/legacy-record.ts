@@ -28,7 +28,7 @@
  *    and listed as `unproven`, with why and the commit to compare it with
  *    later: nothing is deleted on a guess, and nothing is kept silently.
  *
- * @module services/marketplace/lib/legacy-record
+ * @module services/marketplace/lib/records/legacy-record
  */
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -43,9 +43,9 @@ import {
   type MarketplacePackageManifest,
   type PackageType,
 } from '@dorkos/marketplace';
-import { readInstallMetadataStrict, type InstallMetadata } from '../installed-metadata.js';
-import type { PackageFetcher } from '../package-fetcher.js';
-import { isFullCommitSha } from './git/git-tree.js';
+import { readInstallMetadataStrict, type InstallMetadata } from '../../installed-metadata.js';
+import type { PackageFetcher } from '../../package-fetcher.js';
+import { isFullCommitSha } from '../git/git-tree.js';
 import {
   computeInstalledFiles,
   hashFile,
@@ -56,9 +56,9 @@ import {
   type InstalledFiles,
   type UnprovenWhy,
 } from './installed-files.js';
-import { strictDifferences } from './integrity/strict-differences.js';
-import { materializePackageSchedules } from './materialize-schedules.js';
-import { stagePackageContents } from './stage-package.js';
+import { strictDifferences } from '../integrity/strict-differences.js';
+import { materializePackageSchedules } from '../schedules/materialize-schedules.js';
+import { stagePackageContents } from '../stage-package.js';
 
 /** Share of present recorded files that may differ before a rebuild is rejected. */
 export const LEGACY_MISMATCH_SHARE = 0.1;

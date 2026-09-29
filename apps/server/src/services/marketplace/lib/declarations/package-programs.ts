@@ -26,7 +26,7 @@
  * than dropped: "declares something we could not read" must never look like
  * "declares nothing".
  *
- * @module services/marketplace/lib/package-programs
+ * @module services/marketplace/lib/declarations/package-programs
  */
 import { lstat, open, readdir } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -36,7 +36,7 @@ import type {
   PreviewMonitor,
   UnreadableDeclaration,
   UnreadableDeclarationKind,
-} from '../types.js';
+} from '../../types.js';
 import {
   declarationsOf,
   isRecord,

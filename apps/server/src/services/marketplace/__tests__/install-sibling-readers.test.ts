@@ -43,7 +43,7 @@ const CENTRAL_READERS = ['packages/skills/src/scanner.ts', 'packages/harness/src
 
 /** Files the heuristic flags that do not read installs, and why. */
 const NOT_READING_INSTALLS: Record<string, string> = {
-  'apps/server/src/services/marketplace/lib/validate-package-schedules.ts':
+  'apps/server/src/services/marketplace/lib/schedules/validate-package-schedules.ts':
     'reads the contents of the package being installed, not an install root',
   'apps/server/src/services/marketplace/flows/install-skill-pack.ts':
     'reads the contents of the package being installed',

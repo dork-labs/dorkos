@@ -111,7 +111,7 @@ import { listEnabledPluginNames } from '../installed-scanner.js';
 import { readInstallMetadata, writeInstallMetadata } from '../installed-metadata.js';
 import { packageContentHash, RUNTIME_STATE_PATHS } from '../lib/content-hash.js';
 import { readRunnableDeclarations } from '../preview/permission-preview.js';
-import { readInstalledFiles } from '../lib/installed-files.js';
+import { readInstalledFiles } from '../lib/records/installed-files.js';
 import { runningUnproven } from '../lib/integrity/unproven.js';
 
 /** The package types the SDK loads into every session from the global scope. */

@@ -10,7 +10,7 @@
  * one place: when a sixth type arrives, this function is the only thing that has
  * to decide whether it carries schedules.
  *
- * @module services/marketplace/lib/package-schedules
+ * @module services/marketplace/lib/declarations/package-schedules
  */
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import type { PackageScheduleDecl } from '@dorkos/marketplace/manifest-schema';

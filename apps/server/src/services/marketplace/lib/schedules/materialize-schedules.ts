@@ -36,7 +36,7 @@
  * caught by `validate-package-schedules.ts` BEFORE anything touches disk, which
  * is where an install can still be refused cleanly.
  *
- * @module services/marketplace/lib/materialize-schedules
+ * @module services/marketplace/lib/schedules/materialize-schedules
  */
 import { lstat, mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -49,10 +49,10 @@ import type { Logger } from '@dorkos/shared/logger';
 import { scheduleToFrontmatter, type ScheduleBlock } from '@dorkos/skills/schedule-schema';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { slugify } from '@dorkos/skills/slug';
-import { clampSchedulePermissionMode } from '../../tasks/schedule-permission-clamp.js';
-import { runTransaction } from '../transaction.js';
-import { atomicMove } from './atomic-move.js';
-import { packageSchedules, scheduleDisplayName } from './package-schedules.js';
+import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
+import { runTransaction } from '../../transaction.js';
+import { atomicMove } from '../atomic-move.js';
+import { packageSchedules, scheduleDisplayName } from '../declarations/package-schedules.js';
 import { findShippedSkillDir } from './validate-package-schedules.js';
 
 /** Where a generated schedule file goes when the install is not project-scoped. */

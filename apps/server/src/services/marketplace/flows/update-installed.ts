@@ -22,7 +22,7 @@
  * check resolved, so an installation's `installPath` and `agentPath` are the
  * same however the caller spelled the directory, and `GET /installed` rows join
  * to these checks. The gate and the notification carry the CALLER's spelling
- * for the requested project (see `confineProjectPath` in `routes/marketplace.ts`):
+ * for the requested project (see `confineProjectPath` in `routes/marketplace/context.ts`):
  * an approval token binds to the arguments the caller sent, and listeners match
  * the project the way the person picked it. {@link callerSpelling} maps one to
  * the other; an agent's project is spelled as the registry has it.

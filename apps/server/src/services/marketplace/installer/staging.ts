@@ -18,7 +18,7 @@ import type { ResolvedPackageSource } from '../package-resolver.js';
 import { skillFileProblems } from '../flows/install-skill-pack.js';
 import { assertShipsNoRuntimeState } from '../lib/content-hash.js';
 import { sourceKeyOfFetchable } from '../lib/source-provenance.js';
-import { validatePackageSchedules } from '../lib/validate-package-schedules.js';
+import { validatePackageSchedules } from '../lib/schedules/validate-package-schedules.js';
 import { UnsupportedSourceUrlError } from '../sources/source-url-policy.js';
 import type { InstallRequest } from '../types.js';
 import { InvalidPackageError } from './errors.js';

@@ -22,12 +22,12 @@
  * not `key: value` fields. A file it refuses is reported unreadable, and so is
  * never approvable.
  *
- * @module services/marketplace/lib/package-skills
+ * @module services/marketplace/lib/declarations/package-skills
  */
 import { lstat, readdir } from 'node:fs/promises';
 import { basename, dirname, join, normalize, posix } from 'node:path';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
-import type { PreviewSkillCommand, PreviewSkillTools } from '../types.js';
+import type { PreviewSkillCommand, PreviewSkillTools } from '../../types.js';
 import { findSkillShellCommands, usesTypedArguments } from '@dorkos/skills/shell-commands';
 import { collectHooks, type PackageHooks } from './package-hooks.js';
 import { readPackageText } from './package-declarations.js';

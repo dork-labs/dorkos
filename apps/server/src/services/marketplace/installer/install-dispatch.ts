@@ -13,11 +13,11 @@ import {
   type PluginSource,
 } from '@dorkos/marketplace';
 import type { ResolvedPackageSource } from '../package-resolver.js';
-import { rebuildInstalledFiles } from '../lib/legacy-record.js';
+import { rebuildInstalledFiles } from '../lib/records/legacy-record.js';
 import { reportInstallEvent, type InstallEvent } from '../telemetry/telemetry-hook.js';
 import { writeInstallMetadata } from '../installed-metadata.js';
 import { deriveSourceProvenance } from '../lib/source-provenance.js';
-import { materializePackageSchedules } from '../lib/materialize-schedules.js';
+import { materializePackageSchedules } from '../lib/schedules/materialize-schedules.js';
 import { recordProjectInstall } from '../lib/project-install-index.js';
 import {
   describeDisclosedEffects,
@@ -161,7 +161,7 @@ export class InstallDispatcher {
       // Failures warn rather than fail: the package is already installed and
       // working, and the schedule problems that genuinely justify refusing an
       // install were caught in `resolveAndValidate`, before anything touched
-      // disk. See `lib/materialize-schedules.ts`.
+      // disk. See `lib/schedules/materialize-schedules.ts`.
       const materialized = await materializePackageSchedules({
         manifest: staged.manifest,
         installPath: result.installPath,

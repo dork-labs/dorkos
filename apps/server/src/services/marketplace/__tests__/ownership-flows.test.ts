@@ -25,7 +25,7 @@ import { initBoundary } from '../../../lib/boundary.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import { buildInstallerForTests } from './installer-harness.js';
 import { UninstallFlow } from '../flows/uninstall.js';
-import { readInstalledFiles } from '../lib/installed-files.js';
+import { readInstalledFiles } from '../lib/records/installed-files.js';
 
 const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
 

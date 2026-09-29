@@ -167,7 +167,8 @@ describe('rebuildInstalledFiles', () => {
     const root = await legacyInstall(shipped);
     // What the old install left: the same skill, with the schedule written in.
     const installedTree = await tree(shipped);
-    const { materializePackageSchedules } = await import('../materialize-schedules.js');
+    const { materializePackageSchedules } =
+      await import('../../schedules/materialize-schedules.js');
     const { MarketplacePackageManifestSchema } = await import('@dorkos/marketplace');
     await materializePackageSchedules({
       manifest: MarketplacePackageManifestSchema.parse(JSON.parse(manifest)),

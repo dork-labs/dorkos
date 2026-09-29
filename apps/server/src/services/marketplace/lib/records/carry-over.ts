@@ -18,7 +18,7 @@
  * version is live, and brings over anything written in between. That is the
  * common case of an agent working in its own folder while its package updates.
  *
- * @module services/marketplace/lib/carry-over
+ * @module services/marketplace/lib/records/carry-over
  */
 import { constants as fsConstants, type Stats } from 'node:fs';
 import { copyFile, lstat, mkdir, readlink, rename, rm, symlink, utimes } from 'node:fs/promises';
@@ -35,7 +35,7 @@ import {
   type InstalledFiles,
   type StagedFacts,
 } from './installed-files.js';
-import { freeSavedFileName, freeSavedFolderName, makeInert } from './saved-copies/saved-copies.js';
+import { freeSavedFileName, freeSavedFolderName, makeInert } from '../saved-copies/saved-copies.js';
 
 /** The `lstat` identities the late-write pass compares against. */
 export interface CarrySnapshot {

@@ -60,7 +60,7 @@ import {
   readInstalledFiles,
   scanTree,
   type InstalledFiles,
-} from '../lib/installed-files.js';
+} from '../lib/records/installed-files.js';
 import {
   createUninstallSibling,
   finishUninstall,
@@ -69,7 +69,7 @@ import {
   rollBackUninstall,
   writeJournal,
   type UninstallJournal,
-} from '../lib/uninstall-journal.js';
+} from '../lib/records/uninstall-journal.js';
 import { hasInstallRecords, type InstallRecord } from '../recovery/install-recovery.js';
 import {
   releaseSupersededRecords,

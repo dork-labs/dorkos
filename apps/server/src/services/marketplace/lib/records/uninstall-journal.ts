@@ -21,7 +21,7 @@
  * Crash recovery (`../install-recovery.ts`) settles a crash-left sibling with
  * the same two functions, chosen by the journal's phase.
  *
- * @module services/marketplace/lib/uninstall-journal
+ * @module services/marketplace/lib/records/uninstall-journal
  */
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, readdir, readFile, rename, rm, rmdir } from 'node:fs/promises';
@@ -36,7 +36,7 @@ import {
   writeInstalledFiles,
   type InstalledFiles,
 } from './installed-files.js';
-import { freeSavedFileName, freeSavedFolderName, makeInert } from './saved-copies/saved-copies.js';
+import { freeSavedFileName, freeSavedFolderName, makeInert } from '../saved-copies/saved-copies.js';
 
 /** The journal's file name, inside the uninstall sibling. */
 export const UNINSTALL_JOURNAL_FILE = '.dorkos-journal.json';

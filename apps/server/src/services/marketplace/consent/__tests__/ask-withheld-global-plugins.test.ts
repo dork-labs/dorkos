@@ -462,7 +462,7 @@ describe('a held-back package that kept files it could not sort (DOR-2322)', () 
     await mkdir(path.join(root, 'commands'), { recursive: true });
     await writeFile(path.join(root, 'commands', 'old.md'), 'old');
     const { computeInstalledFiles, writeInstalledFiles } =
-      await import('../../lib/installed-files.js');
+      await import('../../lib/records/installed-files.js');
     const record = await computeInstalledFiles(root, {
       identity: { name: 'tool', type: 'plugin' },
       userEditable: [],

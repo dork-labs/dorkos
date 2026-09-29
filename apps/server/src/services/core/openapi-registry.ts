@@ -2935,7 +2935,7 @@ registry.registerPath({
             disclosed: DisclosedEffectsSchema,
             contentHash: z.string(),
             // Raw README markdown read from the staged clone; omitted when the
-            // package ships no README (see routes/marketplace.ts readPackageReadme).
+            // package ships no README (see routes/marketplace/packages.ts readPackageReadme).
             readme: z.string().optional(),
           }),
         },
