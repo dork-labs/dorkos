@@ -1,6 +1,7 @@
 ---
 covers:
   - 'perf(db): index the reads that scanned whole tables on a busy install'
+  - 'perf(db): regenerate the query indexes as migration 0134 on current main'
 ---
 
 ### Changed
