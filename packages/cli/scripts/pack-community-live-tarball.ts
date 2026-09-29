@@ -6,6 +6,8 @@
  *   pnpm install --frozen-lockfile
  *   pnpm --filter dorkos pack:community-live -- --out /absolute/output/directory
  *
+ * The tarball lands in `<out>/<commit>/`, which must not exist yet.
+ *
  * It refuses a checkout with uncommitted changes, builds the CLI the way a release does
  * (`pnpm --filter dorkos build`), packs it with `pnpm pack` (which rewrites workspace dependency
  * ranges the way publishing does, unlike `npm pack`), checks the checkout is still clean, and writes
@@ -14,10 +16,12 @@
  * cleaned up: the gate's recovery command installs from that path.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import process from 'node:process';
 import {
+  assertPackedCommitUnchanged,
+  createCommunityLivePackDirectory,
   CommunityLiveTarballProvenanceSchema,
   communityLiveTarballSidecarPath,
   sha256File,
@@ -44,9 +48,12 @@ async function main(): Promise<void> {
   }
   requireClean('before packing');
   const commit = git(['rev-parse', 'HEAD']);
+  // A fresh <out>/<commit> directory, refused if it exists: never overwrite a tarball an earlier
+  // run's recovery command may still name.
+  const destination = await createCommunityLivePackDirectory(out, commit);
   execFileSync('pnpm', ['--filter', 'dorkos', 'build'], { cwd: root, stdio: 'inherit' });
-  await mkdir(out, { recursive: true });
-  const printed = execFileSync('pnpm', ['pack', '--pack-destination', out], {
+  assertPackedCommitUnchanged(commit, git(['rev-parse', 'HEAD']));
+  const printed = execFileSync('pnpm', ['pack', '--pack-destination', destination], {
     cwd: cliPackage,
     encoding: 'utf8',
   })

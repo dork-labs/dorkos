@@ -5,13 +5,15 @@
  * `pnpm --filter dorkos pack:community-live` packs the CLI from a clean checkout and writes a
  * sidecar, `<tarball>.provenance.json`, naming the commit, the package version and the tarball's
  * sha256. The gate refuses a tarball without a matching sidecar, so every receipt from this mode
- * names the exact code it ran and says that code was not a release. Nothing here contacts npm or a
- * service: it reads two local files and lists one file inside the tarball.
+ * names the exact code it ran and says that code was not a release. Nothing here contacts npm, a
+ * profile or a service: it copies the tarball into the run's own directory, reads the sidecar, and
+ * runs one local `tar` read of the copy. The `commit` comes from that local sidecar and is not
+ * checked against a remote.
  */
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { lstat, readFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { constants, createReadStream } from 'node:fs';
+import { copyFile, lstat, mkdir, readFile, rm } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { z } from 'zod';
 import { CommunityLiveGateError } from './community-deploy-live-capture.js';
 import { runCommunityLiveGateCommand } from './community-deploy-live-process.js';
@@ -49,6 +51,11 @@ export interface CommunityLiveTarballReceipt {
 
 /** A tarball the gate checked and may install. */
 export interface InspectedCommunityLiveTarball {
+  /**
+   * The gate's own verified copy, inside the retained run directory. Every later step (install,
+   * recovery) uses this path, never the operator's original, which could be replaced or repacked
+   * after the check.
+   */
   path: string;
   version: string;
   receipt: CommunityLiveTarballReceipt;
@@ -86,18 +93,29 @@ async function readPackedManifest(tarballPath: string): Promise<unknown> {
 }
 
 /**
- * Check an unreleased tarball before the gate installs it.
+ * Copy an unreleased tarball into the run's retained directory and check the copy before the gate
+ * installs it.
  *
- * It must be a regular file (not a link), carry a sidecar written by the pack recipe from a clean
- * checkout, hash to the sidecar's sha256, and contain the `dorkos` package at the sidecar's version.
+ * The original must be a regular file (not a link) with a sidecar written by the pack recipe from a
+ * clean checkout. The copy must hash to the sidecar's sha256 and contain the `dorkos` package at the
+ * sidecar's version. From then on only the copy is used: hashing, reading, installing and the
+ * recovery command all name it, so replacing or repacking the original afterwards cannot change
+ * what a failed run resumes with. The copy lives in the run's retained directory, which survives a
+ * failure and is removed with it on success. A failed check removes the copy.
  *
  * @param tarballPath - Absolute `.tgz` path the config already validated.
- * @param readManifest - Test seam for reading the packed `package.json`.
+ * @param copyDirectory - A directory in the run's retained home that does not exist yet.
+ * @param seams - Test seams: reading the packed `package.json`, and a hook right after the copy.
  */
 export async function inspectCommunityLiveTarball(
   tarballPath: string,
-  readManifest: (path: string) => Promise<unknown> = readPackedManifest
+  copyDirectory: string,
+  seams: {
+    readManifest?: (path: string) => Promise<unknown>;
+    afterCopy?: (copy: string) => Promise<void>;
+  } = {}
 ): Promise<InspectedCommunityLiveTarball> {
+  const readManifest = seams.readManifest ?? readPackedManifest;
   try {
     const stat = await lstat(tarballPath);
     if (!stat.isFile()) throw new Error('not a regular file');
@@ -112,25 +130,95 @@ export async function inspectCommunityLiveTarball(
   } catch {
     throw new CommunityLiveGateError('package-tarball-provenance');
   }
-  const sha256 = await sha256File(tarballPath);
-  if (sha256 !== provenance.sha256) throw new CommunityLiveGateError('package-tarball-provenance');
-  const manifest = z
-    .object({ name: z.literal('dorkos'), version: VersionSchema })
-    .passthrough()
-    .safeParse(await readManifest(tarballPath));
-  if (!manifest.success || manifest.data.version !== provenance.packageVersion) {
-    throw new CommunityLiveGateError('package-tarball-contents');
+  const copy = join(copyDirectory, basename(tarballPath));
+  try {
+    // A fresh directory, and an exclusive copy: nothing already there can stand in for the check.
+    await mkdir(copyDirectory, { recursive: false, mode: 0o700 });
+  } catch {
+    throw new CommunityLiveGateError('package-tarball-copy');
   }
+  try {
+    await copyFile(tarballPath, copy, constants.COPYFILE_EXCL);
+  } catch {
+    await rm(copyDirectory, { recursive: true, force: true });
+    throw new CommunityLiveGateError('package-tarball-copy');
+  }
+  try {
+    await seams.afterCopy?.(copy);
+    const sha256 = await sha256File(copy);
+    if (sha256 !== provenance.sha256) {
+      throw new CommunityLiveGateError('package-tarball-provenance');
+    }
+    const manifest = z
+      .object({ name: z.literal('dorkos'), version: VersionSchema })
+      .passthrough()
+      .safeParse(await readManifest(copy));
+    if (!manifest.success || manifest.data.version !== provenance.packageVersion) {
+      throw new CommunityLiveGateError('package-tarball-contents');
+    }
+    return verified(copy, sha256, provenance);
+  } catch (error) {
+    await rm(copyDirectory, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function verified(
+  copy: string,
+  sha256: string,
+  provenance: CommunityLiveTarballProvenance
+): InspectedCommunityLiveTarball {
   return {
-    path: tarballPath,
+    path: copy,
     version: provenance.packageVersion,
     receipt: {
       kind: 'tarball',
       released: false,
-      file: basename(tarballPath),
+      file: basename(copy),
       sha256,
       commit: provenance.commit,
       packageVersion: provenance.packageVersion,
     },
   };
+}
+
+/**
+ * The fresh directory a pack run writes into: `<out>/<commit>`. Refuses one that already exists, so
+ * a second pack can never overwrite a tarball (or a sidecar) that an earlier run may still name in
+ * its recovery command. Builds are not byte-reproducible, so an overwrite would swap in different,
+ * unchecked code.
+ *
+ * @param out - Absolute output directory.
+ * @param commit - The commit being packed.
+ */
+export async function createCommunityLivePackDirectory(
+  out: string,
+  commit: string
+): Promise<string> {
+  const directory = join(out, commit);
+  await mkdir(out, { recursive: true });
+  try {
+    await mkdir(directory, { recursive: false });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(
+        `${directory} already exists. A tarball packed from this commit is already there; use it, or pass a different --out.`,
+        { cause: error }
+      );
+    }
+    throw error;
+  }
+  return directory;
+}
+
+/**
+ * Refuse when HEAD moved while the build ran: the commit recorded must be the one packed.
+ *
+ * @param before - HEAD read before the build.
+ * @param after - HEAD read after the build.
+ */
+export function assertPackedCommitUnchanged(before: string, after: string): void {
+  if (before !== after) {
+    throw new Error(`HEAD moved from ${before} to ${after} while building; pack again.`);
+  }
 }

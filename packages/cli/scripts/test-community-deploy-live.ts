@@ -124,14 +124,6 @@ function runLauncherPty(input: {
 /** Execute only when every arm is explicit. No ordinary test task imports this entrypoint. */
 async function main(): Promise<void> {
   const config = parseCommunityLiveGateConfig(process.env);
-  // An unreleased tarball is checked before anything else runs: two local reads and a listing of
-  // one file inside it, never npm, a profile or a service.
-  const tarball =
-    config.source.kind === 'tarball' ? await inspectCommunityLiveTarball(config.source.path) : null;
-  const version = config.source.kind === 'release' ? config.source.version : tarball!.version;
-  const source = tarball
-    ? tarball.receipt
-    : { kind: 'release' as const, released: true as const, version };
   // node-pty 1.1.0 ships its spawn-helper non-executable, so on a fresh install every PTY spawn
   // fails. Heal it before the first one; a helper it cannot fix still fails at spawn, pre-write.
   ensureNodePtySpawnHelperExecutable({ resolveFrom: import.meta.url });
@@ -150,6 +142,30 @@ async function main(): Promise<void> {
   // Likewise the launcher, so a failure elsewhere never leaves its PTY waiting on a prompt.
   let launcher: LauncherRun | null = null;
   const journalDirectory = join(durableHome, 'launches', 'community');
+  // An unreleased tarball is copied into the retained run directory and checked there before any
+  // npm, profile or service call; the only process is a local `tar` read of the copy. Install and
+  // recovery then use that verified copy, never the original path.
+  let tarball: Awaited<ReturnType<typeof inspectCommunityLiveTarball>> | null = null;
+  if (config.source.kind === 'tarball') {
+    try {
+      await mkdir(durableHome, { recursive: true, mode: 0o700 });
+      tarball = await inspectCommunityLiveTarball(
+        config.source.path,
+        join(durableHome, 'package-under-test')
+      );
+    } catch (error) {
+      // Nothing was installed or created anywhere yet; both directories are this run's own.
+      await rm(durableHome, { recursive: true, force: true });
+      await rm(runDirectory, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  // For a tarball this is the package's own version, which is also the Community image and signed
+  // manifest version the launcher deploys; it must already be released.
+  const version = config.source.kind === 'release' ? config.source.version : tarball!.version;
+  const source = tarball
+    ? tarball.receipt
+    : { kind: 'release' as const, released: true as const, version };
   const launchArgs = [
     'community',
     'deploy',
