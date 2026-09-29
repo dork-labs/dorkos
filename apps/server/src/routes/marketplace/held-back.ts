@@ -21,7 +21,7 @@ import type { MarketplaceRouteContext } from './context.js';
 import type { Router } from 'express';
 
 /** Body schema for `POST /api/marketplace/held-back/:name/decision`. */
-export const HeldBackDecisionBodySchema = z
+const HeldBackDecisionBodySchema = z
   .object({
     decision: z.enum(['allow', 'refuse']),
     // Exactly as `GET /held-back` listed them: what it runs, and what the

@@ -32,7 +32,7 @@ import { mapErrorToStatus, safeReaddir } from './shared.js';
 import type { Router } from 'express';
 
 /** Query schema for `GET /api/marketplace/packages/:name`. */
-export const GetPackageQuerySchema = z.object({
+const GetPackageQuerySchema = z.object({
   marketplace: z.string().optional(),
 });
 
@@ -46,7 +46,7 @@ export const GetPackageQuerySchema = z.object({
  * every source — including zero-count sources — so the "empty results"
  * case is self-explanatory in logs without having to grep for warnings.
  */
-export async function aggregatePackages(
+async function aggregatePackages(
   sources: MarketplaceSource[],
   fetcher: PackageFetcher
 ): Promise<AggregatedPackage[]> {
@@ -129,7 +129,7 @@ export function resolvePackageSource(entrySource: PluginSource, marketplaceUrl: 
  * Flatten a {@link MergedMarketplaceEntry} (CC fields + nested DorkOS sidecar)
  * into the flat {@link AggregatedPackage} shape expected by the client.
  */
-export function flattenMergedEntry(
+function flattenMergedEntry(
   entry: MergedMarketplaceEntry,
   marketplace: string,
   marketplaceUrl: string
@@ -166,7 +166,7 @@ export function flattenMergedEntry(
  * are a preview surface, not a source of truth — at most this many bytes are
  * ever read from disk, so a pathological file cannot balloon server memory.
  */
-export const MAX_README_BYTES = 200 * 1024;
+const MAX_README_BYTES = 200 * 1024;
 
 /**
  * Read a package's root `README.md` from its staged directory for the detail
@@ -196,7 +196,7 @@ export const MAX_README_BYTES = 200 * 1024;
  *
  * @param packagePath - Absolute path to the staged package directory.
  */
-export async function readPackageReadme(packagePath: string): Promise<string | undefined> {
+async function readPackageReadme(packagePath: string): Promise<string | undefined> {
   const entries = await safeReaddir(packagePath);
   const match = entries.find((entry) => entry.toLowerCase() === 'readme.md');
   if (!match) return undefined;
@@ -243,7 +243,7 @@ export async function readPackageReadme(packagePath: string): Promise<string | u
  * @param length - Number of valid bytes in `buffer`.
  * @returns The largest end offset that does not end in a split sequence.
  */
-export function trimPartialUtf8Tail(buffer: Buffer, length: number): number {
+function trimPartialUtf8Tail(buffer: Buffer, length: number): number {
   let i = length - 1;
   const floor = Math.max(0, length - 4);
   // Walk back over continuation bytes (0b10xxxxxx) to the sequence's lead byte.
@@ -261,7 +261,7 @@ export function trimPartialUtf8Tail(buffer: Buffer, length: number): number {
 }
 
 /**
- * Register the `/packages` and `/packages/ routes on the marketplace router.
+ * Register the `/packages` and `/packages/:name` routes on the marketplace router.
  *
  * @param router - The marketplace router.
  * @param deps - The router's injected dependencies.

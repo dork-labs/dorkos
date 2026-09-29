@@ -18,10 +18,10 @@ import type { Router } from 'express';
  * Body schema for `POST /api/marketplace/cache/prune`: no options. Strict, so
  * the retired `keepLastN` is refused rather than silently ignored.
  */
-export const PruneCacheBodySchema = z.object({}).strict();
+const PruneCacheBodySchema = z.object({}).strict();
 
 /** Compute counts + total size of the marketplace cache. */
-export async function computeCacheStatus(cache: MarketplaceCache): Promise<{
+async function computeCacheStatus(cache: MarketplaceCache): Promise<{
   marketplaces: number;
   packages: number;
   totalSizeBytes: number;
@@ -43,7 +43,7 @@ export async function computeCacheStatus(cache: MarketplaceCache): Promise<{
 }
 
 /** Sum the recursive size of every cached package directory. */
-export async function sumPackageSizes(packages: { path: string }[]): Promise<number> {
+async function sumPackageSizes(packages: { path: string }[]): Promise<number> {
   let total = 0;
   for (const pkg of packages) {
     total += await directorySize(pkg.path);

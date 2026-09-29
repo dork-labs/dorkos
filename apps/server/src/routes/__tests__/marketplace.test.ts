@@ -3517,7 +3517,7 @@ describe('Marketplace Routes', () => {
         })
       );
       const { computeInstalledFiles, writeInstalledFiles } =
-        await import('../../services/marketplace/lib/installed-files.js');
+        await import('../../services/marketplace/lib/records/installed-files.js');
       const record = await computeInstalledFiles(root, {
         identity: { name, type: 'plugin' },
         userEditable: [],
@@ -3553,7 +3553,7 @@ describe('Marketplace Routes', () => {
 
     async function unprovenOnDisk(root: string) {
       const { readInstalledFiles } =
-        await import('../../services/marketplace/lib/installed-files.js');
+        await import('../../services/marketplace/lib/records/installed-files.js');
       return (await readInstalledFiles(root))?.unproven;
     }
 

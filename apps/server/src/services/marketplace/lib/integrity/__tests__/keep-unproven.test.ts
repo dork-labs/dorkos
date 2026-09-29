@@ -21,7 +21,7 @@ import {
   computeInstalledFiles,
   readInstalledFiles,
   writeInstalledFiles,
-} from '../../installed-files.js';
+} from '../../records/installed-files.js';
 import { writeInstallMetadata } from '../../../installed-metadata.js';
 import { keepUnprovenFiles, keptFilesKey } from '../keep-unproven.js';
 import { verifyInstall } from '../verify-install.js';

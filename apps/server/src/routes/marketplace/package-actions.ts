@@ -6,7 +6,10 @@
 import { z } from 'zod';
 import type { PackageType } from '@dorkos/marketplace';
 import { logger } from '../../lib/logger.js';
-import { disclosedEffectsOf } from '../../services/marketplace/preview/disclosed-effects.js';
+import {
+  DisclosedEffectsSchema,
+  disclosedEffectsOf,
+} from '../../services/marketplace/preview/disclosed-effects.js';
 import type { ApprovedPackage } from '../../services/marketplace/consent/global-plugin-consent.js';
 import { packageContentHash } from '../../services/marketplace/lib/content-hash.js';
 import { PackageNotInstalledError } from '../../services/marketplace/flows/uninstall/support.js';
@@ -19,7 +22,12 @@ import { assertPackageName } from '../../services/marketplace/lib/package-paths.
 import { locateInstallRoot } from '../../services/marketplace/lib/locate-install.js';
 import { scanInstallationRecords } from '../../services/marketplace/installed-scanner.js';
 import { trustedCaller } from '../../services/core/capabilities/index.js';
-import { readCallerAuthority } from '../../lib/caller-authority.js';
+import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
+import { OPERATOR_COOKIE_REQUIRED_CODE, readCallerAuthority } from '../../lib/caller-authority.js';
+import {
+  KeptFilesChangedError,
+  keepPackageFiles,
+} from '../../services/marketplace/lib/integrity/keep-files.js';
 import {
   describeStrictRebuild,
   rebuildRecordStrict,
@@ -30,7 +38,7 @@ import { InstallRequestBodySchema, mapErrorToStatus, outdatedClientResponse } fr
 import type { Router } from 'express';
 
 /** Body schema for `POST /api/marketplace/packages/:name/uninstall`. */
-export const UninstallRequestBodySchema = z.object({
+const UninstallRequestBodySchema = z.object({
   purge: z.boolean().optional(),
   projectPath: z.string().optional(),
 });
@@ -40,7 +48,7 @@ export const UninstallRequestBodySchema = z.object({
  * `installRoot` narrows the lookup to one installation the caller already
  * sees; it can never widen it past what the name and scope would find.
  */
-export const CheckFilesRequestBodySchema = z.object({
+const CheckFilesRequestBodySchema = z.object({
   projectPath: z.string().optional(),
   installRoot: z.string().optional(),
 });
@@ -51,14 +59,29 @@ export const CheckFilesRequestBodySchema = z.object({
  * rather than silently read as a check: an update is applied only through
  * `POST /updates`, which shows what it runs first (DOR-2306).
  */
-export const UpdateRequestBodySchema = z
+const UpdateRequestBodySchema = z
   .object({
     projectPath: z.string().optional(),
   })
   .strict();
 
 /**
- * Register the `/packages/ routes on the marketplace router.
+ * Body schema for `POST /api/marketplace/packages/:name/keep-files` (DOR-2341):
+ * the key and, for a held-back global package, the review exactly as the
+ * person was shown them.
+ */
+const KeepFilesRequestBodySchema = z
+  .object({
+    projectPath: z.string().optional(),
+    installRoot: z.string().optional(),
+    keepKey: z.string().min(1),
+    review: z.object({ effects: DisclosedEffectsSchema, bindsTo: z.string().min(1) }).optional(),
+  })
+  .strict();
+
+/**
+ * Register the `/packages/:name/{preview,install,check-files,keep-files,uninstall,update}` routes on
+ * the marketplace router.
  *
  * @param router - The marketplace router.
  * @param deps - The router's injected dependencies.
@@ -78,6 +101,7 @@ export function mountPackageActionRoutes(
     onPluginsChanged,
     listAgentScopes,
     consent,
+    heldBackCards,
   } = deps;
   const { authorize, gateResponse, confineProjectPath, askAboutAgentInstall } = ctx;
 
@@ -260,6 +284,67 @@ export function mountPackageActionRoutes(
       const mapped = mapErrorToStatus(err);
       if (mapped.status >= 500) {
         logger.error(`[Marketplace] Failed to check the files of ${req.params.name}`, err);
+      }
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  // POST /packages/:name/keep-files -- a person's "Keep these as mine" for the
+  // files an update kept but nothing could sort (DOR-2341). The same bar as
+  // deciding a held-back package: claiming files decides what every later
+  // update keeps, so an agent cannot, and under login only a signed-in session
+  // can. Moves and deletes nothing; see `services/marketplace/lib/integrity/keep-files.ts`.
+  router.post('/packages/:name/keep-files', async (req, res) => {
+    const authority = readCallerAuthority(req, res);
+    if (!trustedCaller(authority)) {
+      if (!resolveDecisionAuthority(authority).allowed) {
+        return res.status(403).json({
+          error: 'Only you can keep these files as yours, not an agent.',
+          code: 'operator_only',
+        });
+      }
+      return res.status(403).json({
+        error:
+          'DorkOS requires sign-in, so a person signed in to the app has to do this. Open ' +
+          'DorkOS, go to Marketplace, then Installed, and press Keep these as mine on the package.',
+        code: OPERATOR_COOKIE_REQUIRED_CODE,
+      });
+    }
+    const parsed = KeepFilesRequestBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    }
+    try {
+      assertPackageName(req.params.name);
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
+      const root = await locateInstallRoot({
+        dorkHome,
+        name: req.params.name,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
+        ...(parsed.data.installRoot !== undefined && { installRoot: parsed.data.installRoot }),
+      });
+      if (root === null) throw new PackageNotInstalledError(req.params.name);
+      const global = confined.projectPath === undefined;
+      const result = await keepPackageFiles({
+        dorkHome,
+        root,
+        name: req.params.name,
+        global,
+        keepKey: parsed.data.keepKey,
+        ...(global && parsed.data.review && { review: parsed.data.review }),
+      });
+      if (result.approved) await heldBackCards.onGranted();
+      return res.json(result);
+    } catch (err) {
+      if (err instanceof KeptFilesChangedError) {
+        return res.status(409).json({ error: err.message, code: 'kept_files_changed' });
+      }
+      const mapped = mapErrorToStatus(err);
+      if (mapped.status >= 500) {
+        logger.error(`[Marketplace] Failed to keep the files of ${req.params.name}`, err);
       }
       return res.status(mapped.status).json(mapped.body);
     }

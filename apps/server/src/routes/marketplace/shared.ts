@@ -68,7 +68,7 @@ export const InstallRequestBodySchema = z.object({
  * caller was shown: an update whose new version moved since the check, or an
  * install whose package changed since the preview (DOR-2306).
  */
-export const DISCLOSURE_CHANGED_CODE = 'disclosure_changed';
+const DISCLOSURE_CHANGED_CODE = 'disclosure_changed';
 
 /**
  * Whether a list request asked for each install's integrity (`?verify=true`,
@@ -168,7 +168,7 @@ export function mapErrorToStatus(err: unknown): { status: number; body: Record<s
 }
 
 /** Machine-readable code for a request only an older dorkos CLI sends. */
-export const OUTDATED_CLIENT_CODE = 'client_outdated';
+const OUTDATED_CLIENT_CODE = 'client_outdated';
 
 /**
  * Whether a `POST /updates` body is one only an older client sends: an apply

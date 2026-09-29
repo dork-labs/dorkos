@@ -40,7 +40,7 @@ import type { Router } from 'express';
  * apply if either moved. Strict, so the retired `names` / `installPaths`
  * selectors are refused rather than ignored.
  */
-export const ApplyUpdatesBodySchema = z
+const ApplyUpdatesBodySchema = z
   .object({
     apply: z.literal(true),
     projectPath: z.string().optional(),
