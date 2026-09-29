@@ -4,6 +4,7 @@ import { isReadableDenomination, withCreditUnit } from '../lib/credits';
 import { remainingFraction } from '../lib/remaining-fraction';
 import { useCloudPlan, useCloudUsage } from '../model/use-cloud-plan';
 import { useLocalSpend } from '../model/use-local-spend';
+import { OtherCharges } from './OtherCharges';
 import { UnreadableFigures } from './UnreadableFigures';
 
 /**
@@ -16,6 +17,8 @@ import { UnreadableFigures } from './UnreadableFigures';
  *    against.
  * 2. The per-agent breakdown, straight from the grouped usage rows. Each row's
  *    label is the service's `displayName`; its key is opaque and never rendered.
+ *    Charges that are not inference (storage, say) follow as their own list
+ *    with their own figures, never added to the credits total.
  * 3. The local spend view, which is the runtimes' own reporting and NOT the
  *    bill. On credits the DorkOS figure is the authoritative one, so the two are
  *    never added together and the local one says what it is.
@@ -51,6 +54,7 @@ export function CreditsGauge() {
   const total = usage?.available
     ? withCreditUnit(formatCharge(usage.usage.totals.dorkosPriceMicro, usageUnit))
     : null;
+  const otherCharges = usage?.available ? usage.usage.otherCharges : undefined;
 
   return (
     <FieldCard>
@@ -94,6 +98,8 @@ export function CreditsGauge() {
             )}
           </div>
         )}
+
+        <OtherCharges otherCharges={otherCharges} denomination={usageUnit} />
 
         {local.hasAnything && (
           <div className="space-y-1 border-t pt-3">

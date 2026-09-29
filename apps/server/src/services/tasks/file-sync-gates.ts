@@ -21,6 +21,7 @@ import type { TaskDefinition } from '@dorkos/skills/types';
 import type { pulseSchedules } from '@dorkos/db';
 import { parseDuration } from '@dorkos/skills/duration';
 import {
+  AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
   CHANGED_REASON,
   resolveFileArmStatus,
   resolveFilePermissionMode,
@@ -49,6 +50,7 @@ import {
  */
 const KEPT_PARK_REASONS: ReadonlySet<string> = new Set([
   CHANGED_REASON,
+  AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
   AGENT_TIMING_CHANGE_REASON,
   AGENT_CONTENT_CHANGE_REASON,
   AGENT_SETTINGS_CHANGE_REASON,

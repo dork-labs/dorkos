@@ -298,15 +298,17 @@ describe('ConnectorAccessQueryService', () => {
       connections: [expect.objectContaining({ connectionId: 'connection-a' })],
     });
 
-    // Paused, signed out, or waiting on a review: named, with what the person does.
+    // Paused, signed out, waiting on a review, or held by a sign-in again:
+    // named, with what the person does.
     for (const [patch, reason, words] of [
       [{ enabled: false }, 'paused', 'Ask them to resume it'],
       [{ status: 'expired' as const }, 'signed_out', 'sign in again'],
       [
         { grantReconciliationStatus: 'migration_needs_reconcile' as const },
         'needs_review',
-        'check who can use this account',
+        'confirm who can use it',
       ],
+      [{ enabled: false, pausedBy: 'sign_in' as const }, 'signing_in', 'finish signing in'],
     ] as const) {
       db.update(connections).set(patch).where(eq(connections.id, 'connection-a')).run();
       const listed = await withWays.listRuntimeConnections(RUNTIME_PRINCIPAL);
@@ -321,7 +323,12 @@ describe('ConnectorAccessQueryService', () => {
         },
       ]);
       db.update(connections)
-        .set({ enabled: true, status: 'active', grantReconciliationStatus: 'ready' })
+        .set({
+          enabled: true,
+          pausedBy: null,
+          status: 'active',
+          grantReconciliationStatus: 'ready',
+        })
         .where(eq(connections.id, 'connection-a'))
         .run();
     }

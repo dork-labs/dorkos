@@ -39,6 +39,7 @@ import {
   type UsageResponse,
 } from '@dork-labs/cloud-api';
 import { z } from 'zod';
+import { logger } from '../../../lib/logger.js';
 import { createCloudV1Client, readOrNull } from './v1-client.js';
 
 /** How a usage window may be grouped. Mirrors the contract's own vocabulary. */
@@ -105,6 +106,8 @@ export async function listMembers(orgId: string, signal?: AbortSignal): Promise<
  * `groupBy: 'seat'` is what the credits gauge's per-agent breakdown reads: each
  * row's `displayName` is the label, `key` is opaque, and the two price figures
  * ride along so the difference between them is visible without a second call.
+ * A malformed `otherCharges` block is dropped by the contract and logged here
+ * once, so a charge that could not be shown still leaves a trace.
  *
  * @param grouping - How to group the rows.
  * @param signal - Aborts the request.
@@ -115,12 +118,31 @@ export async function readUsage(
 ): Promise<UsageResponse | null> {
   const to = new Date();
   const from = new Date(to.getTime() - USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  return readOrNull((client) =>
-    client.get(V1_ROUTES.usage, UsageResponseSchema, {
+  // The contract drops a malformed `otherCharges` block rather than failing the
+  // read, so the inference rows still arrive. That keeps the card up, but it
+  // also hides a charge the account was billed for — so note whether the raw
+  // body carried the block, and leave a trace when the parse let it go.
+  let sentOtherCharges = false;
+  const schema = z.preprocess((raw) => {
+    sentOtherCharges =
+      typeof raw === 'object' &&
+      raw !== null &&
+      (raw as Record<string, unknown>).otherCharges !== undefined;
+    return raw;
+  }, UsageResponseSchema);
+  const usage = await readOrNull((client) =>
+    client.get(V1_ROUTES.usage, schema, {
       query: { from: from.toISOString(), to: to.toISOString(), groupBy: grouping },
       signal,
     })
   );
+  if (usage !== null && sentOtherCharges && usage.otherCharges === undefined) {
+    logger.warn(
+      '[Cloud] usage carried an otherCharges block this release could not read; it was dropped and the inference rows kept',
+      { groupBy: grouping }
+    );
+  }
+  return usage;
 }
 
 /**

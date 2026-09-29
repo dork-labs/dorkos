@@ -504,6 +504,109 @@ describe('the balance additions', () => {
   });
 });
 
+describe('charges that are not inference', () => {
+  const inferenceRow = {
+    key: 'seat_opaque_0001',
+    displayName: 'the agent shown in your usage page',
+    units: 64127,
+    unit: 'tokens',
+    listPriceMicro: '2137',
+    dorkosPriceMicro: '2519',
+    costBasis: 'published_price',
+  };
+  const inferenceOnly = {
+    from: '2026-09-01T00:00:00.000Z',
+    to: '2026-10-01T00:00:00.000Z',
+    groupBy: 'seat',
+    state: 'active',
+    rows: [inferenceRow],
+    totals: { listPriceMicro: '2137', dorkosPriceMicro: '2519' },
+  };
+  const chargeRow = {
+    periodStart: '2026-09-01T00:00:00.000Z',
+    periodEnd: '2026-10-01T00:00:00.000Z',
+    units: 3.719,
+    unit: 'GB-month',
+    displayName: 'Extra storage',
+    dorkosPriceMicro: '2864417',
+    costBasis: 'published_price',
+  };
+  const withCharge = (row: Record<string, unknown>) => ({
+    ...inferenceOnly,
+    otherCharges: { rows: [row], dorkosPriceMicro: '2864417' },
+  });
+  const parse = (body: unknown) => contract.UsageResponseSchema.safeParse(body);
+
+  it('leaves a response without them valid, which is what an older service sends', () => {
+    const parsed = parse(inferenceOnly);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && 'otherCharges' in parsed.data).toBe(false);
+  });
+
+  it('carries each billing period with the server`s own words for it', () => {
+    const parsed = parse(withCharge(chargeRow));
+    expect(parsed.success && parsed.data.otherCharges?.rows[0]).toEqual(chargeRow);
+  });
+
+  it('accepts any finite quantity of zero or more, rounding being the service`s job', () => {
+    // No `multipleOf`: a JSON Schema validator reads it with float division
+    // and refuses values like 1.005, which would fail a correct answer.
+    const units = (value: number) =>
+      contract.OtherChargeRowSchema.safeParse({ ...chargeRow, units: value }).success;
+    expect(units(0)).toBe(true);
+    expect(units(1.005)).toBe(true);
+    expect(units(12.3456)).toBe(true);
+    expect(units(-0.001)).toBe(false);
+    expect(units(Number.POSITIVE_INFINITY)).toBe(false);
+    expect(JSON.stringify(z.toJSONSchema(contract.OtherChargeRowSchema))).not.toContain(
+      'multipleOf'
+    );
+  });
+
+  it('drops a malformed block and keeps the inference rows, rather than failing the answer', () => {
+    for (const bad of [
+      withCharge({ ...chargeRow, units: -1 }),
+      withCharge({ ...chargeRow, dorkosPriceMicro: 3.41 }),
+      withCharge({ ...chargeRow, periodStart: 'not a time' }),
+      { ...inferenceOnly, otherCharges: 'nonsense' },
+    ]) {
+      const parsed = parse(bad);
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.otherCharges).toBeUndefined();
+      expect(parsed.success && parsed.data.rows).toEqual([inferenceRow]);
+      expect(parsed.success && parsed.data.totals.dorkosPriceMicro).toBe('2519');
+    }
+    // The inference part is still held to the contract.
+    expect(
+      parse({ ...withCharge(chargeRow), rows: [{ ...inferenceRow, units: -1 }] }).success
+    ).toBe(false);
+  });
+
+  it('carries no list price, no seat and no model, because nothing upstream is resold', () => {
+    expect(Object.keys(contract.OtherChargeRowSchema.shape).sort()).toEqual([
+      'costBasis',
+      'displayName',
+      'dorkosPriceMicro',
+      'periodEnd',
+      'periodStart',
+      'unit',
+      'units',
+    ]);
+    // An amount is a micro-unit string here like everywhere else.
+    expect(
+      contract.OtherChargeRowSchema.safeParse({ ...chargeRow, dorkosPriceMicro: 3.41 }).success
+    ).toBe(false);
+  });
+
+  it('names no unit: `unit` is any string the service sends', () => {
+    // A hard-coded unit would publish something about the catalog. The app
+    // renders whatever arrives.
+    expect(
+      contract.OtherChargeRowSchema.safeParse({ ...chargeRow, unit: 'a new unit' }).success
+    ).toBe(true);
+  });
+});
+
 describe('a member`s display name', () => {
   const member = {
     id: 'mem_0001',
