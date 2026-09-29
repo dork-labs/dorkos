@@ -21,6 +21,7 @@ import {
   minimalManifest,
   ownerExport,
   readArchive,
+  versionOneExport,
   readImport,
   sha256,
   uploadArchive,
@@ -99,50 +100,27 @@ afterAll(async () => {
   await h?.close();
 });
 
-// Purpose: the version 1 manifest schema is the contract an importer reads. A real owner
-// export must parse with it, or the exporter and the importer have drifted apart.
-it('parses a real owner export with the version 1 manifest schema', async () => {
-  const root = await post(
-    h,
-    a,
-    channelA,
-    { cookie: operatorCookie },
-    {
-      text: 'hello from A',
-      idempotencyKey: 'root',
-    }
-  );
-  await post(
-    h,
-    a,
-    channelA,
-    { cookie: operatorCookie },
-    {
-      text: 'a reply',
-      idempotencyKey: 'reply',
-      parentEntryId: root.id,
-    }
-  );
-  const file = await upload(h, a, channelA, operatorCookie, 'notes.txt', 'file body');
-  await post(
-    h,
-    a,
-    channelA,
-    { cookie: operatorCookie },
-    {
-      text: 'see the file',
-      idempotencyKey: 'with-file',
-      attachmentIds: [file],
-    }
-  );
-  const { manifest, files } = readArchive(
-    await ownerExport(h, a, operatorCookie, TENANCY_PASSWORD)
-  );
+// Purpose: the version 1 manifest schema is the contract an importer reads. The archive the
+// version 1 exporter wrote must parse with it, strictly, with every row shape that exporter
+// produced (threads, mentions, files, private and archived channels, a removed member, a
+// revoked agent, audit events), or the importer would refuse a real older export.
+it('parses the version 1 exporter’s own archive with the version 1 manifest schema', () => {
+  const { manifest, files } = readArchive(versionOneExport());
   const parsed = CommunityExportManifestV1Schema.parse(manifest);
   expect(parsed.scope).toBe('owner');
-  expect(parsed.entries.map((entry) => entry.seq)).toEqual(['1', '2', '3']);
-  expect(parsed.attachments).toHaveLength(1);
-  expect(sha256(files.get(parsed.attachments[0].id)!)).toBe(parsed.attachments[0].checksum);
+  expect(parsed.entries.length).toBeGreaterThan(5);
+  for (const entry of parsed.entries) expect(entry.seq).toMatch(/^[1-9][0-9]*$/);
+  expect(parsed.entries.some((entry) => entry.parent_entry_id !== null)).toBe(true);
+  expect(parsed.entries.some((entry) => entry.mentions.length === 2)).toBe(true);
+  expect(parsed.channels.some((channel) => channel.visibility === 'private')).toBe(true);
+  expect(parsed.channels.some((channel) => channel.archived)).toBe(true);
+  expect(parsed.members.some((member) => !member.active)).toBe(true);
+  expect(parsed.agents.some((agent) => agent.revoked_at !== null)).toBe(true);
+  expect(parsed.auditEvents?.length).toBeGreaterThan(0);
+  expect(parsed.attachments).toHaveLength(2);
+  expect(files.size).toBe(2);
+  for (const attachment of parsed.attachments)
+    expect(sha256(files.get(attachment.id)!)).toBe(attachment.checksum);
 });
 
 // Purpose: a historical member has no account. A re-export of a community holding one must
@@ -157,9 +135,8 @@ it('keeps a historical member, with a null email, in a re-export', async () => {
     'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
     [a, 'former', historical.rows[0].id]
   );
-  const { manifest } = readArchive(await ownerExport(h, a, operatorCookie, TENANCY_PASSWORD));
-  const parsed = CommunityExportManifestV1Schema.parse(manifest);
-  expect(parsed.members).toContainEqual(
+  const exported = await ownerExport(h, a, operatorCookie, TENANCY_PASSWORD);
+  expect(exported.rows('members')).toContainEqual(
     expect.objectContaining({
       id: historical.rows[0].id,
       display_name: 'Former Author',

@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { connect } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { strFromU8, unzipSync, Zip, ZipPassThrough } from 'fflate';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { runHostKeyCommand } from '../host-keys.js';
 import type { HostApiKeyScope } from '../host/authority.js';
+import { drainExports, openArchive, type OpenedArchive } from './export-test-helpers.js';
 import { expectStatus, type TenancyHarness } from './tenancy-test-harness.js';
 
 /** SHA-256 of some bytes, as lowercase hex. */
@@ -185,26 +188,44 @@ export async function readImport(h: TenancyHarness, importId: string, bearer: st
   return response.json();
 }
 
-/** Make a real owner export of a community and download its archive. */
+/**
+ * An owner export written by the version 1 exporter, the last one before export jobs (#2081)
+ * moved every new export to version 2. This server no longer writes version 1, so the archive
+ * is checked in: it is the frozen contract `CommunityExportManifestV1Schema` and the importer
+ * are pinned against.
+ *
+ * It holds three channels (one private, one archived), three members (the owner, a removed
+ * member, and a person), a revoked agent, a thread, a post mentioning a person and an agent,
+ * two files, and the audit events those made. Its owner is `olive@example.test`.
+ */
+export function versionOneExport(): Buffer {
+  return readFileSync(fileURLToPath(new URL('./fixtures/owner-export-v1.zip', import.meta.url)));
+}
+
+/**
+ * Make a real owner export of a community on this server (version 2, prepared by the export
+ * worker), download it, and open it.
+ */
 export async function ownerExport(
   h: TenancyHarness,
   communityId: string,
   ownerCookie: string,
   password: string
-): Promise<Buffer> {
+): Promise<OpenedArchive> {
   const base = `/api/v1/communities/${communityId}`;
-  const exported = await expectStatus(
-    await h.call(`${base}/owner/export`, { cookie: ownerCookie, body: { password } }),
-    201,
-    'owner export'
-  );
-  const { archiveId } = await exported.json();
+  const requested = await h.call(`${base}/owner/export`, {
+    cookie: ownerCookie,
+    body: { password },
+  });
+  const { export: job } = (await requested.json()) as { export?: { id: string } };
+  if (!job) throw new Error(`Owner export answered ${requested.status}`);
+  await drainExports(h.pool, h.blobStore);
   const download = await expectStatus(
-    await h.call(`${base}/exports/${archiveId}`, { cookie: ownerCookie }),
+    await h.call(`${base}/exports/${job.id}/archive`, { cookie: ownerCookie }),
     200,
     'download export'
   );
-  return Buffer.from(await download.arrayBuffer());
+  return openArchive(Buffer.from(await download.arrayBuffer()));
 }
 
 /**

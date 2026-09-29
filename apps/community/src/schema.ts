@@ -12,7 +12,6 @@ import {
   primaryKey,
   check,
   foreignKey,
-  jsonb,
   customType,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
