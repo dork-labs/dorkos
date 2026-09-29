@@ -12,7 +12,6 @@ import { sweepImports } from '../imports/worker.js';
 import { teardownImport } from '../imports/teardown.js';
 import { acquireUploadLease, renewUploadLease } from '../imports/upload.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
-import { post, upload } from './member-erasure-fixture.js';
 import {
   buildArchive,
   createImport,
