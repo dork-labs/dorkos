@@ -17,6 +17,7 @@ function row(overrides: Partial<typeof sessionStartedBy.$inferInsert> = {}) {
     startedBySessionId: null,
     originExtensionId: 'flow',
     reason: '12 new ideas were waiting to be sorted',
+    carried: false,
     createdAt: NOW,
     ...overrides,
   };
@@ -33,6 +34,12 @@ describe('session_started_by', () => {
   it('stores who started a chat and reads it back', () => {
     db.insert(sessionStartedBy).values(row()).run();
     expect(db.select().from(sessionStartedBy).all()).toEqual([row()]);
+  });
+
+  it('marks a row as a move only when told, so a start is never mistaken for one', () => {
+    const { carried: _carried, ...withoutCarried } = row();
+    db.insert(sessionStartedBy).values(withoutCarried).run();
+    expect(db.select().from(sessionStartedBy).get()?.carried).toBe(false);
   });
 
   it('keeps one row per chat', () => {

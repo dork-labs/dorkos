@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "461452af-68c4-4c0d-b8df-f929be65a333",
+  "id": "584a64f7-7934-4fe2-9144-585fcda6047b",
   "prevId": "a309d824-e480-4cec-9494-55c6e83a8d39",
   "tables": {
     "a2a_tasks": {
@@ -2354,6 +2354,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "carried": {
+          "name": "carried",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

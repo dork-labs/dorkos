@@ -571,7 +571,6 @@ import {
 } from './services/extensions/start-work.js';
 import {
   SessionStartedByStore,
-  STARTED_BY_PRUNE_EVERY_MS,
   getSessionStartedByStore,
   setSessionStartedByStore,
 } from './services/session/origin/session-started-by-store.js';
@@ -1222,16 +1221,6 @@ async function start() {
   // starts work finds it; the name lookup reads the manager at call time.
   const sessionStartedByStore = new SessionStartedByStore(db);
   setSessionStartedByStore(sessionStartedByStore);
-  // A light sweep: starts older than a week are forgotten.
-  const pruneStartedBy = () => {
-    try {
-      sessionStartedByStore.prune(Date.now());
-    } catch (err) {
-      logger.warn('[start-work] could not prune old chat starts', err);
-    }
-  };
-  pruneStartedBy();
-  setInterval(pruneStartedBy, STARTED_BY_PRUNE_EVERY_MS).unref();
   setStartWorkService(
     new StartWorkService({
       store: sessionStartedByStore,

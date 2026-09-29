@@ -15,7 +15,7 @@
  *
  * @module services/session/origin/session-started-by-store
  */
-import { and, eq, gte, inArray, lt, sessionStartedBy, sql, type Db } from '@dorkos/db';
+import { and, eq, gte, inArray, sessionStartedBy, sql, type Db } from '@dorkos/db';
 
 /** One stored start. */
 export interface StartedByRecord {
@@ -31,18 +31,11 @@ export interface StartedByRecord {
   originExtensionId: string | null;
   /** Why it was started, or null. */
   reason: string | null;
+  /** A move of a started chat to another account: outside the hourly count. */
+  carried: boolean;
   /** When it was started (ISO 8601). */
   createdAt: string;
 }
-
-/**
- * How long a start is kept. Well past the hour the limits look back over; after
- * it the chat stops saying who started it, which by then is old news.
- */
-export const STARTED_BY_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** How often {@link SessionStartedByStore.prune} runs. */
-export const STARTED_BY_PRUNE_EVERY_MS = 6 * 60 * 60 * 1000;
 
 /** Most ids one batched read asks SQLite for at once, well under its variable limit. */
 const BATCH = 500;
@@ -60,10 +53,10 @@ export class SessionStartedByStore {
    * Record a start. A second record for the same chat replaces nothing: the
    * first starter is the one the chat says.
    *
-   * @param record - The start.
+   * @param record - The start; `carried` defaults to false.
    * @returns Whether it was written.
    */
-  insert(record: StartedByRecord): boolean {
+  insert(record: Omit<StartedByRecord, 'carried'> & { carried?: boolean }): boolean {
     const result = this.db.insert(sessionStartedBy).values(record).onConflictDoNothing().run();
     return result.changes > 0;
   }
@@ -141,19 +134,8 @@ export class SessionStartedByStore {
   }
 
   /**
-   * Forget starts older than {@link STARTED_BY_KEEP_MS}.
-   *
-   * @param now - The current time, in ms.
-   * @returns How many rows were removed.
-   */
-  prune(now: number): number {
-    const before = new Date(now - STARTED_BY_KEEP_MS).toISOString();
-    return this.db.delete(sessionStartedBy).where(lt(sessionStartedBy.createdAt, before)).run()
-      .changes;
-  }
-
-  /**
-   * How many chats an extension's chain started since `since`.
+   * How many chats an extension's chain started since `since`. A move to
+   * another account is not a start and is left out.
    *
    * @param originExtensionId - The extension at the root of the chain.
    * @param since - ISO 8601; rows at or after it count.
@@ -165,7 +147,8 @@ export class SessionStartedByStore {
       .where(
         and(
           eq(sessionStartedBy.originExtensionId, originExtensionId),
-          gte(sessionStartedBy.createdAt, since)
+          gte(sessionStartedBy.createdAt, since),
+          eq(sessionStartedBy.carried, false)
         )
       )
       .get();

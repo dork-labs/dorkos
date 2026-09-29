@@ -348,16 +348,15 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
   const newId = randomUUID();
   // A chat an extension started (or one started from its chats) stays one
   // across the move (spec `flow-multiproject` §7.7): the new chat records the
-  // limited one as its starter, keeps its reason and its origin extension, and
-  // so keeps its first line, its folded prompt and its place in that
-  // extension's start limits. Asked before anything is written, so a start
-  // past the limits refuses the move and leaves nothing behind.
+  // limited one as its starter and keeps its reason and origin extension, so
+  // it keeps its first line, its folded prompt and its chain. A move replaces
+  // one chat with one and adds no work, so the extension's limits never refuse
+  // it and the hour does not count it; the successor counts as running.
   const claimed = getStartWorkService()?.reserveFromChat({
     sessionId: newId,
     parentSessionId: source.sessionId,
     carry: true,
   });
-  if (claimed && !claimed.ok) throw new CarryOverError(409, 'START_LIMIT', claimed.error.message);
   const reservation: StartReservation | null = claimed?.ok ? claimed.reservation : null;
   try {
     return await launchCarriedSession(request, {

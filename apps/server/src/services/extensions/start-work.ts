@@ -295,10 +295,13 @@ export class StartWorkService {
    * @param start - The start, without its time.
    */
   reserve(
-    start: Omit<StartedByRecord, 'createdAt'>
+    start: Omit<StartedByRecord, 'createdAt' | 'carried'> & { carried?: boolean }
   ): { ok: true; reservation: StartReservation } | { ok: false; error: StartWorkError } {
     const origin = start.originExtensionId;
-    if (origin !== null) {
+    // A move replaces one chat with one successor and adds no work, so it is
+    // never refused; it still registers as launching below, so it counts as
+    // running while its turn is live.
+    if (origin !== null && !start.carried) {
       const refusal = this.limitRefusal(origin);
       if (refusal) return { ok: false, error: refusal };
     }
@@ -403,7 +406,9 @@ export class StartWorkService {
    *   or not an extension is at the root of its chain.
    * - A carry-over to another account (`carry: true`) records only when the
    *   parent was itself started (the chat keeps its first line, its fold and
-   *   its place in the limits), and keeps the parent's reason.
+   *   its chain), and keeps the parent's reason. It is never refused by the
+   *   limits and never counted in the hour; it counts as running, and its own
+   *   `session_start` calls stay limited.
    *
    * @param opts - The new chat, its parent, and how it was started.
    */
@@ -422,6 +427,7 @@ export class StartWorkService {
       startedBySessionId: opts.parentSessionId,
       originExtensionId: parent?.originExtensionId ?? null,
       reason: opts.carry ? (parent?.reason ?? null) : (opts.reason ?? null),
+      carried: opts.carry === true,
     });
   }
 }

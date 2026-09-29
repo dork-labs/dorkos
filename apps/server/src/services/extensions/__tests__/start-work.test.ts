@@ -469,26 +469,20 @@ describe('the limits', () => {
   });
 });
 
-describe('pruning', () => {
-  it('forgets starts older than a week, and keeps the rest', () => {
-    const now = Date.parse('2026-09-29T09:00:00.000Z');
-    const row = (sessionId: string, daysAgo: number) =>
-      store.insert({
-        sessionId,
-        kind: 'extension',
-        extensionId: 'flow',
-        startedBySessionId: null,
-        originExtensionId: 'flow',
-        reason: 'r',
-        createdAt: new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString(),
-      });
-    row('old', 8);
-    row('week-less-a-bit', 6.9);
-    row('today', 0);
-    expect(store.prune(now)).toBe(1);
-    expect(store.get('old')).toBeNull();
-    expect(store.get('week-less-a-bit')).not.toBeNull();
-    expect(store.get('today')).not.toBeNull();
+describe('keeping starts', () => {
+  it('keeps a start however old, so an old chat still folds its prompt and its chats still count', async () => {
+    const old = new Date(clock - 90 * 24 * 60 * 60 * 1000).toISOString();
+    store.insert({
+      sessionId: 'old-chat',
+      kind: 'extension',
+      extensionId: 'flow',
+      startedBySessionId: null,
+      originExtensionId: 'flow',
+      reason: 'r',
+      createdAt: old,
+    });
+    expect('prune' in store).toBe(false);
+    expect(service.startedBy('flow', 'old-chat')).toBe(true);
   });
 });
 

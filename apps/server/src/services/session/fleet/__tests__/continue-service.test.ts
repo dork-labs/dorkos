@@ -1582,21 +1582,40 @@ describe('carrying a chat an extension started', () => {
       originExtensionId: 'flow',
       reason: '12 new ideas were waiting to be sorted',
     });
-    // It counts against Flow's limits like any chat its chats start.
-    expect(startedBy.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(2);
+    // A move adds no start to the hour.
+    expect(startedBy.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(1);
   });
 
-  it('is refused past the extension’s hourly limit, and starts and writes nothing', async () => {
+  it('is never refused by the extension’s limits: a move replaces one chat with one', async () => {
     startedByFlow('src-1');
     for (let i = 0; i < 9; i++) startedByFlow(`flow-${i}`);
     await limitedSession('src-1');
 
-    const err = await refusal(continueSession('src-1', { account: 'spare' }, deps));
+    const answer = await continueSession('src-1', { account: 'spare' }, deps);
 
-    expect(err).toMatchObject({ status: 409, code: 'START_LIMIT' });
-    expect(err.message).toBe('Flow has started a lot of chats in the last hour. Try again later.');
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(answer).toEqual({ sessionId: 'new-1' });
+    expect(startedBy.get('new-1')).toMatchObject({ startedBySessionId: 'src-1', carried: true });
+    // Adds no start to the hour: the extension's count is what it was.
     expect(startedBy.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(10);
+  });
+
+  it('counts the successor as running, so the extension cannot start past 3 working chats', async () => {
+    startedByFlow('src-1');
+    await limitedSession('src-1');
+    const service = new StartWorkService({
+      store: startedBy,
+      projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
+      extensionName: () => 'Flow',
+      runningSessionIds: () => ['flow-a', 'flow-b'],
+    });
+    setStartWorkService(service);
+    startedByFlow('flow-a');
+    startedByFlow('flow-b');
+
+    await continueSession('src-1', { account: 'spare' }, deps);
+
+    // flow-a, flow-b and the successor still launching: three working.
+    expect(service.limitRefusal('flow')?.code).toBe('start_limit');
   });
 
   it('forgets the row when the move does not start', async () => {

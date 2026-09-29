@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, index, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { check, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 /**
  * Who started a chat, when it was not a person typing into it (spec
@@ -16,6 +16,9 @@ import { check, index, sqliteTable, text } from 'drizzle-orm/sqlite-core';
  * `kind = 'extension'`, inherited from the parent chat for `kind = 'chat'`, and
  * NULL for a chat whose chain reaches no extension. Chats started from an
  * extension's chats count against that extension's limits through it.
+ *
+ * Rows are kept for as long as the chat: they are what folds its prompt,
+ * what a `watch` checks, and what keeps its chats inside the limits.
  */
 export const sessionStartedBy = sqliteTable(
   'session_started_by',
@@ -32,6 +35,12 @@ export const sessionStartedBy = sqliteTable(
     originExtensionId: text('origin_extension_id'),
     /** Why it was started, in plain words (≤ 200), or NULL when none was given. */
     reason: text('reason'),
+    /**
+     * A chat carried to another account from a started one (a move, not new
+     * work): it keeps the chain, and it is never refused by, nor counted in,
+     * the hourly limit.
+     */
+    carried: integer('carried', { mode: 'boolean' }).notNull().default(false),
     /** When it was started (ISO 8601). */
     createdAt: text('created_at').notNull(),
   },

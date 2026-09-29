@@ -29,10 +29,12 @@ export interface StartWorkInput {
  * - `account_not_allowed_here`: no account may work in that project.
  * - `start_limit`: the extension and its chats started 10 chats in the last
  *   hour, or 3 of those are working right now. Counted: `api.startWork`,
- *   `ctx.sessions.start`, `session_start` from an in-app chat of its chain, and
- *   a move of such a chat to another account. Not counted: `session_start`
- *   over the external `/mcp` server with an agent token (it names no calling
- *   chat), agent-to-agent relay messages, schedules and rooms.
+ *   `ctx.sessions.start`, and `session_start` from an in-app chat of its
+ *   chain. A move of such a chat to another account is never refused and
+ *   adds nothing to the hour, but the new chat counts as working. Not
+ *   counted: `session_start` over the external `/mcp` server with an agent
+ *   token (it names no calling chat), agent-to-agent relay messages,
+ *   schedules and rooms.
  *
  * `message` is plain words, safe to show as it is. Nothing was started. Match
  * on `err.code` rather than `instanceof`: an extension bundle carries its own
