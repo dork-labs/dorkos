@@ -6,7 +6,7 @@ status: proposed
 actor: agent
 gates:
   - wf.operating-skills-version-check.version-outranks-base
-prs: []
+prs: [2346]
 hypothesis:
   metric: 'gate.wf.operating-skills-version-check.version-outranks-base.failure_rate@pull_request'
   baseline: 0
