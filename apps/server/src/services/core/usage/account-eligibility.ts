@@ -101,7 +101,9 @@ export function readEligibilityRules(
   if (isRecord(block.projectAccounts)) {
     for (const [root, rule] of Object.entries(block.projectAccounts)) {
       if (!isRecord(rule) || !Array.isArray(rule.allow)) continue;
-      const allow = rule.allow.filter((id): id is string => typeof id === 'string');
+      const allow = rule.allow.filter(
+        (id): id is string => typeof id === 'string' && id.length > 0
+      );
       projectAllow.set(canonical(root), allow);
     }
   }

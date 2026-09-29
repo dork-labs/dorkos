@@ -4832,6 +4832,14 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
       anyOf: [{ type: 'string' }, { type: 'null' }],
       default: null,
     };
+    // The account rules (spec `flow-multiproject` §8.1) are hand-editable too,
+    // and every reader reads a wrong shape as "no rule" (`readProjectRootList`,
+    // `readEligibilityRules`, and the tolerant Zod schemas). Ajv refusing one
+    // would move the whole config aside for a fresh file, losing every other
+    // setting over one bad edit, so both accept any value here. Their defaults
+    // stay, as the generated nodes had them.
+    properties.defaultAccountOnlyProjects = { default: null };
+    properties.projectAccounts = { default: {} };
     return;
   }
   if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;

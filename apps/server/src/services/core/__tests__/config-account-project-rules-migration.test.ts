@@ -21,6 +21,7 @@ import os from 'os';
 import path from 'path';
 import { CONFIG_MIGRATIONS, ConfigManager, seedAccountProjectRules } from '../config-manager.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { writeOnlyProjects, writeProjectAccounts } from '../usage/account-eligibility-writes.js';
 
 /** A conf-like store over one plain object. */
@@ -184,5 +185,55 @@ describe('the 0.93.0 migration on an upgrade boot (real ConfigManager, real conf
 
     writeProjectAccounts(again, '/work/client.app', null);
     expect(readDisk(dir).runtimes.claudeCode.projectAccounts).toEqual({});
+  });
+});
+
+describe('a hand-edited account rule of the wrong shape (real ConfigManager on disk)', () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // Purpose: a bad hand edit reads as "no rule" and never makes the loader move
+  // config.json aside for a fresh file, which would lose every other setting.
+  it('loads the file as it is, keeps unrelated settings, and reads the rule as no rule', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-account-rules-bad-'));
+    dirs.push(dir);
+    const cfgPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark' },
+        runtimes: {
+          claudeCode: {
+            defaultAccount: null,
+            accounts: [{ ...STALE_ROWS[0], onlyProjects: 'client-app' }],
+            defaultAccountOnlyProjects: 'client-app',
+            projectAccounts: {
+              '/work/a': {},
+              '/work/b': { allowed: ['work'] },
+              '/work/c': { allow: ['work', ''] },
+            },
+          },
+        },
+        __internal__: { migrations: { version: '0.93.0' } },
+      })
+    );
+
+    const manager = new ConfigManager(dir);
+
+    // No recovery happened: nothing was set aside beside the file.
+    expect(fs.readdirSync(dir).filter((name) => /bak|backup|corrupt/i.test(name))).toEqual([]);
+    const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    expect(onDisk.ui.theme).toBe('dark');
+    expect(onDisk.runtimes.claudeCode.defaultAccountOnlyProjects).toBe('client-app');
+    expect(manager.get('ui').theme).toBe('dark');
+    // The parse reads each bad shape as no rule, the same as the launch reader.
+    const parsed = UserConfigSchema.parse(onDisk).runtimes.claudeCode;
+    expect(parsed.defaultAccountOnlyProjects).toBeNull();
+    expect(parsed.accounts[0]!.onlyProjects).toBeNull();
+    expect(parsed.projectAccounts).toEqual({ '/work/c': { allow: ['work'] } });
   });
 });
