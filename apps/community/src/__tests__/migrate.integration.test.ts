@@ -217,7 +217,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    ).toEqual(COMMUNITY_MIGRATIONS.map(([version]) => version));
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -407,7 +407,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    ).toEqual(COMMUNITY_MIGRATIONS.map(([version]) => version));
     expect(
       (
         await db.query(
@@ -1492,6 +1492,71 @@ it('upgrades a populated database to imports without changing what old code does
         [key, community, purpose]
       );
     }
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});
+
+// Purpose: the import-parts migration backfills how an existing export arrived (a single
+// upload, the only kind there was), leaves an import still waiting unmarked, keeps old code's
+// import writes working (they record an upload without naming its kind), and refuses an
+// upload kind with no export or of an unknown kind.
+it('upgrades a populated database to import parts without changing what old code does', async () => {
+  const name = `community_import_parts_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    await applyBefore(db, '0023_import_parts.sql');
+    const community = async () =>
+      (
+        await db.query<{ id: string }>(
+          "INSERT INTO communities(name,lifecycle) VALUES('Before','pending_owner') RETURNING id"
+        )
+      ).rows[0].id;
+    const insertImport = (communityId: string, arrived: boolean) =>
+      db.query<{ id: string }>(
+        `INSERT INTO community_imports(community_id,idempotency_key,payload_hash,upload_token_hash,
+           upload_expires_at,state,archive_sha256,archive_bytes,archive_received_at)
+         VALUES($1,$2,$3,$4,now()+interval '1 day',$5,$6,$7,$8) RETURNING id`,
+        [
+          communityId,
+          `key-${randomUUID()}`,
+          'a'.repeat(64),
+          randomUUID().replaceAll('-', '').padEnd(64, '0'),
+          arrived ? 'validating' : 'awaiting_upload',
+          arrived ? 'b'.repeat(64) : null,
+          arrived ? 10 : null,
+          arrived ? new Date() : null,
+        ]
+      );
+    const arrived = (await insertImport(await community(), true)).rows[0].id;
+    const waiting = (await insertImport(await community(), false)).rows[0].id;
+
+    await migrate(url.toString());
+
+    const kinds = await db.query(
+      'SELECT id,upload_kind,description_given,restore_progress FROM community_imports ORDER BY upload_kind'
+    );
+    expect(kinds.rows).toEqual([
+      { id: arrived, upload_kind: 'single', description_given: true, restore_progress: null },
+      { id: waiting, upload_kind: null, description_given: true, restore_progress: null },
+    ]);
+    // Old code's writes name no upload kind: a new import, and an upload recorded on it.
+    const old = (await insertImport(await community(), false)).rows[0].id;
+    await db.query(
+      `UPDATE community_imports SET state='validating',archive_sha256=$2,archive_bytes=1,
+         archive_received_at=now() WHERE id=$1`,
+      [old, 'c'.repeat(64)]
+    );
+    await expect(
+      db.query("UPDATE community_imports SET upload_kind='parts' WHERE id=$1", [waiting])
+    ).rejects.toThrow(/community_imports_upload_kind/);
+    await expect(
+      db.query("UPDATE community_imports SET upload_kind='zip' WHERE id=$1", [arrived])
+    ).rejects.toThrow(/community_imports_upload_kind/);
   } finally {
     await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);

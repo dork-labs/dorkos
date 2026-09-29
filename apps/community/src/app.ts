@@ -48,6 +48,7 @@ import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
+import { IMPORT_PART_UPLOAD_PATH } from './imports/part-routes.js';
 import { UploadSlots } from './imports/upload.js';
 import { registerHistoryOriginRoute } from './routes/history-origin.js';
 import { createHostAuthority } from './host/authority.js';
@@ -138,7 +139,9 @@ export function createCommunityApp({
       if (
         (c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
           c.req.method === 'POST') ||
-        (IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) && c.req.method === 'PUT')
+        ((IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) ||
+          IMPORT_PART_UPLOAD_PATH.test(c.req.path)) &&
+          c.req.method === 'PUT')
       ) {
         await next();
         return;
@@ -367,6 +370,8 @@ export function createCommunityApp({
     limitTokenMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
     uploadSlots: new UploadSlots(config.limits.importUploads),
+    // A refused part says when to try again: parts are many, and uploaders retry them.
+    partSlots: new UploadSlots(config.imports.partConcurrency, 5),
     uploadIdleMs: hooks?.uploadIdleMs ?? UPLOAD_IDLE_MS,
     freeTempBytes: hooks?.freeTempBytes,
   });

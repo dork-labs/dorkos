@@ -59,6 +59,14 @@ Exports are prepared in the background. These settings shape that work; the [ope
 | `COMMUNITY_EXPORT_MAX_HOURS`     | 24 hours |        1 to 168 |
 | `COMMUNITY_EXPORT_CONCURRENCY`   |        1 |          1 to 8 |
 
+Imports take an export from another server. These settings bound them; the [operations guide](OPERATIONS.md#imports) explains the disk they need.
+
+| Setting                             |  Default |          Range |
+| ----------------------------------- | -------: | -------------: |
+| `COMMUNITY_IMPORT_MAX_BYTES`        |    1 GiB | 1 MiB to 1 TiB |
+| `COMMUNITY_IMPORT_UPLOAD_HOURS`     | 24 hours |       1 to 168 |
+| `COMMUNITY_IMPORT_PART_CONCURRENCY` |        8 |        1 to 64 |
+
 ## Optional Google and GitHub sign-in
 
 Password sign-in is always available. To offer Google sign-in, set both `COMMUNITY_GOOGLE_CLIENT_ID` and `COMMUNITY_GOOGLE_CLIENT_SECRET`. To offer GitHub sign-in, set both `COMMUNITY_GITHUB_CLIENT_ID` and `COMMUNITY_GITHUB_CLIENT_SECRET`. The service refuses to start if either pair is incomplete.

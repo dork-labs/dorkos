@@ -107,6 +107,7 @@ export async function teardownImport(
     const unclaimed = community.rows[0]?.lifecycle === 'pending_owner';
     const own = await client.query<{ blob_key: string }>(
       `SELECT blob_key FROM community_import_files WHERE import_id=$1
+       UNION ALL SELECT blob_key FROM community_import_parts WHERE import_id=$1
        UNION ALL SELECT staging_blob_key FROM community_imports
        WHERE id=$1 AND staging_blob_key IS NOT NULL`,
       [importId]
@@ -119,9 +120,11 @@ export async function teardownImport(
         await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);
       }
     }
-    // Progress rows and the staging reference are what keep these files from the cleanup
-    // sweeps; they go too.
+    // Progress rows, uploaded parts, and the staging reference are what keep these files from
+    // the cleanup sweeps; they go too.
     await client.query('DELETE FROM community_import_files WHERE import_id=$1', [importId]);
+    await client.query('DELETE FROM community_import_parts WHERE import_id=$1', [importId]);
+    await client.query('DELETE FROM community_import_part_uploads WHERE import_id=$1', [importId]);
     await client.query('UPDATE community_imports SET staging_blob_key=NULL WHERE id=$1', [
       importId,
     ]);

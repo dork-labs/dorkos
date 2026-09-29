@@ -29,9 +29,11 @@ export interface PutBlobInput {
 /**
  * What a put holds, which decides the accepted first bytes and the size ceiling. `export` is a
  * whole version 1 archive; `export_segment` is one piece of a segmented archive, which starts with
- * a local file header, a central directory record, or the ZIP64 end record.
+ * a local file header, a central directory record, or the ZIP64 end record. `import_part` is one
+ * uploaded part of an export being imported: it can be cut anywhere, so any bytes are accepted,
+ * stored as opaque, and only ever read back by the import worker.
  */
-export type BlobKind = 'attachment' | 'export' | 'export_segment' | 'icon';
+export type BlobKind = 'attachment' | 'export' | 'export_segment' | 'icon' | 'import_part';
 
 /** An inclusive byte range of a stored object, as in an HTTP `Range: bytes=start-end`. */
 export interface BlobRange {
@@ -195,6 +197,7 @@ const ZIP_SEGMENT_SIGNATURES = [
 ];
 
 function detectedType(sample: Buffer, textValid: boolean, kind: BlobKind): string {
+  if (kind === 'import_part') return 'application/octet-stream';
   if (kind === 'export_segment') {
     const head = sample.subarray(0, 4);
     if (ZIP_SEGMENT_SIGNATURES.some((signature) => head.equals(signature))) {
@@ -231,7 +234,7 @@ function detectedType(sample: Buffer, textValid: boolean, kind: BlobKind): strin
 /** Stage a bounded source to a private temporary file and verify its bytes. */
 export async function stageBlob(directory: string, input: PutBlobInput) {
   const ceiling =
-    input.kind === 'export' || input.kind === 'export_segment'
+    input.kind === 'export' || input.kind === 'export_segment' || input.kind === 'import_part'
       ? 1024 * 1024 * 1024
       : 25 * 1024 * 1024;
   if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes < 1 || input.maxBytes > ceiling) {

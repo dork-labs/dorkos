@@ -10,10 +10,10 @@ import type { HostAuditActor } from '../host/authority.js';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 
-/** The largest export one upload accepts. */
+/** The largest export one upload accepts; a larger one comes in parts. */
 export const MAX_IMPORT_ARCHIVE_BYTES = 1024 * 1024 * 1024;
-/** How long the upload token works after an import is created. */
-export const IMPORT_UPLOAD_WINDOW_MS = 24 * 60 * 60_000;
+/** Uploads of parts one import receives at once, across every replica. */
+export const IMPORT_PART_UPLOADS_PER_IMPORT = 4;
 /** How long a checked import waits at `validated` for the host to commit it. */
 export const IMPORT_COMMIT_WINDOW_MS = 7 * 24 * 60 * 60_000;
 /** How long one upload's lease lasts between renewals. */
@@ -58,12 +58,22 @@ export interface ImportRow {
   created_by_user_id: string | null;
   created_by_api_key_id: string | null;
   validated_at: Date | null;
+  /** How the export arrived; null until it has. */
+  upload_kind: 'single' | 'parts' | null;
+  description_given: boolean;
+  admission_policy_given: boolean;
+  /** Where a version 2 restore stands; null until its files are stored. */
+  restore_progress: { step: number; file: number; line: number } | null;
   created_at: Date;
   updated_at: Date;
 }
 
 /** The host's view of one import: state, counts, and sizes; never the token or a name. */
-export function projectImport(row: ImportRow): z.infer<typeof CommunityAdminImportSchema> {
+export function projectImport(
+  row: ImportRow,
+  /** The largest export this host accepts in one upload. */
+  maxArchiveBytes = MAX_IMPORT_ARCHIVE_BYTES
+): z.infer<typeof CommunityAdminImportSchema> {
   return {
     importId: row.id,
     communityId: row.community_id,
@@ -73,7 +83,7 @@ export function projectImport(row: ImportRow): z.infer<typeof CommunityAdminImpo
     autoCommit: row.auto_commit,
     archiveBytes: row.archive_bytes === null ? null : Number(row.archive_bytes),
     uploadExpiresAt: row.upload_expires_at.toISOString(),
-    maxArchiveBytes: MAX_IMPORT_ARCHIVE_BYTES,
+    maxArchiveBytes,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };

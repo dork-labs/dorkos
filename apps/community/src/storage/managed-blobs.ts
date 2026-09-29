@@ -56,8 +56,9 @@ export async function reserveManagedBlob(
 }
 
 /**
- * Reserve a key for an import's own writes: its uploaded export (`import_staging`, while the
- * import waits for it) or a restored file (`attachment`, while the import restores).
+ * Reserve a key for an import's own writes: its uploaded export or one part of it
+ * (`import_staging`, while the import waits for it), or a restored file or community icon
+ * (`attachment` or `icon`, while the import restores).
  *
  * {@link reserveManagedBlob} refuses a community that is not active; this accepts only the
  * unclaimed community an import made, and only while that import is in `importState`, under
@@ -67,7 +68,7 @@ export async function reserveManagedBlob(
 export async function reserveImportBlob(
   client: PoolClient,
   importId: string,
-  purpose: 'import_staging' | 'attachment',
+  purpose: 'import_staging' | 'attachment' | 'icon',
   importState: 'awaiting_upload' | 'restoring'
 ): Promise<ManagedBlobReservation> {
   await client.query(
@@ -287,6 +288,7 @@ export async function discardManagedBlob(
          AND NOT EXISTS(SELECT 1 FROM export_archives e WHERE e.blob_key=m.blob_key)
          AND NOT EXISTS(SELECT 1 FROM export_segments s WHERE s.blob_key=m.blob_key)
          AND NOT EXISTS(SELECT 1 FROM community_imports i WHERE i.staging_blob_key=m.blob_key)
+         AND NOT EXISTS(SELECT 1 FROM community_import_parts p WHERE p.blob_key=m.blob_key)
          AND NOT EXISTS(SELECT 1 FROM community_import_files f WHERE f.blob_key=m.blob_key)`,
       [reservation.key, reservation.communityId]
     );

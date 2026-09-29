@@ -384,7 +384,8 @@ export const CommunityAdminImportCreateRequestSchema = z.strictObject({
 });
 /** What an owner export holds, measured before anything is restored. Counts and sizes only. */
 export const CommunityAdminImportReportSchema = z.strictObject({
-  manifestVersion: z.literal(1),
+  /** The export's format: version 1 (one manifest), or version 2 (any size, in data files). */
+  manifestVersion: z.union([z.literal(1), z.literal(2)]),
   sourceLifecycle: z.enum(['active', 'archived']),
   channels: z.int().nonnegative(),
   entries: z.int().nonnegative(),
@@ -448,3 +449,35 @@ export const CommunityAdminImportCreateResponseSchema = z.strictObject({
 });
 /** Commit and cancel take no input. */
 export const CommunityAdminImportMutationRequestSchema = z.strictObject({});
+
+/** A SHA-256 digest as lowercase hex. */
+const sha256Hex = z.string().regex(/^[a-f0-9]{64}$/);
+/** The most parts one export may be uploaded in. */
+export const COMMUNITY_IMPORT_MAX_PARTS = 10_000;
+
+/** One received part of an export uploaded in parts. */
+export const CommunityAdminImportPartSchema = z.strictObject({
+  partNumber: z.int().min(1).max(COMMUNITY_IMPORT_MAX_PARTS),
+  byteSize: bytes.positive(),
+  sha256: sha256Hex,
+});
+/**
+ * The parts received so far, in part-number order, so an uploader resumes after a crash, and
+ * the limits the rest must keep to.
+ */
+export const CommunityAdminImportPartListSchema = z.strictObject({
+  parts: z.array(CommunityAdminImportPartSchema).max(COMMUNITY_IMPORT_MAX_PARTS),
+  /** The largest one part may be. */
+  maxPartBytes: bytes.positive(),
+  /** The largest whole export this host accepts in parts. */
+  maxArchiveBytes: bytes.positive(),
+});
+/**
+ * Put the uploaded parts together: exactly parts 1 to `parts`, whose bytes in order are
+ * `archiveBytes` long with SHA-256 `archiveSha256`.
+ */
+export const CommunityAdminImportCompleteRequestSchema = z.strictObject({
+  parts: z.int().min(1).max(COMMUNITY_IMPORT_MAX_PARTS),
+  archiveBytes: bytes.positive(),
+  archiveSha256: sha256Hex,
+});

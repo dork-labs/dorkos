@@ -28,7 +28,6 @@ import {
   createImport,
   issueKey,
   ownerExport,
-  ownerExportArchive,
   readArchive,
   readImport,
   versionOneExport,
@@ -49,8 +48,6 @@ let h: TenancyHarness;
 let clock = new Date();
 let key = '';
 let archive: Buffer = Buffer.alloc(0);
-/** This server's own owner export, which it writes as version 2. */
-let versionTwo: Buffer = Buffer.alloc(0);
 /** The host operator's session, which may place and release a legal hold. */
 let hostCookie = '';
 let source: { manifest: CommunityExportManifestV1; files: Map<string, Uint8Array> };
@@ -157,7 +154,6 @@ beforeAll(async () => {
   hostCookie = host.cookie;
   key = await issueKey(h, ['communities:import', 'communities:read', 'communities:write']);
   archive = versionOneExport();
-  versionTwo = await ownerExportArchive(h, host.communityId, host.cookie, TENANCY_PASSWORD);
   source = readArchive(archive);
   CommunityExportManifestV1Schema.parse(source.manifest);
 });
@@ -613,16 +609,16 @@ describe('a tampered export fails with its named code and leaves nothing', () =>
       'IMPORT_NOT_OWNER_EXPORT',
     ],
     [
-      'version 2',
-      () => tampered((manifest) => Object.assign(manifest, { version: 2 })),
+      'version 3',
+      () => tampered((manifest) => Object.assign(manifest, { version: 3 })),
       'IMPORT_VERSION_UNSUPPORTED',
     ],
     [
-      // Its layout (data files, manifest last) breaks every version 1 rule; it is still named
-      // as a version this host cannot read, not as a damaged file.
-      'a version 2 export from this server',
-      () => versionTwo,
-      'IMPORT_VERSION_UNSUPPORTED',
+      // A version 1 layout (the manifest holding every row) under version 2's name is held to
+      // version 2's rules, which it breaks: damaged, not a version this host cannot read.
+      'a version 1 archive that claims version 2',
+      () => tampered((manifest) => Object.assign(manifest, { version: 2 })),
+      'IMPORT_ARCHIVE_INVALID',
     ],
     [
       'a file that inflates past its declared size',

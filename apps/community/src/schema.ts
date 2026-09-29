@@ -1607,10 +1607,26 @@ export const communityImports = pgTable(
     createdByApiKeyId: uuid('created_by_api_key_id').references(() => hostApiKeys.id),
     validatedAt: timestamp('validated_at', { withTimezone: true }),
     adoptMemberId: uuid('adopt_member_id').references(() => members.id, { onDelete: 'set null' }),
+    /** How the export arrived: one upload, or numbered parts put together by `complete`. */
+    uploadKind: text('upload_kind'),
+    /** Whether the create request named a description; a version 2 export fills it in if not. */
+    descriptionGiven: boolean('description_given').notNull().default(true),
+    /** Whether the create request named an admission policy; as for the description. */
+    admissionPolicyGiven: boolean('admission_policy_given').notNull().default(true),
+    /** Where a version 2 restore stands: step, file, and lines of that file committed. */
+    restoreProgress: jsonb('restore_progress'),
     createdAt: time('created_at'),
     updatedAt: time('updated_at'),
   },
   (table) => [
+    check(
+      'community_imports_upload_kind',
+      sql`${table.uploadKind} IS NULL OR (${table.uploadKind} IN ('single','parts') AND ${table.archiveSha256} IS NOT NULL)`
+    ),
+    check(
+      'community_imports_restore_progress',
+      sql`${table.restoreProgress} IS NULL OR jsonb_typeof(${table.restoreProgress}) = 'object'`
+    ),
     check(
       'community_imports_idempotency_key',
       sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
@@ -1672,6 +1688,55 @@ export const communityImportFiles = pgTable(
       .unique()
       .references(() => managedBlobs.blobKey),
     contentType: text('content_type').notNull(),
+    /** A restored attachment, or the community icon (under the nil UUID). */
+    purpose: text('purpose').notNull().default('attachment'),
   },
-  (table) => [primaryKey({ columns: [table.importId, table.sourceAttachmentId] })]
+  (table) => [
+    primaryKey({ columns: [table.importId, table.sourceAttachmentId] }),
+    check(
+      'community_import_files_purpose',
+      sql`${table.purpose} IN ('attachment','icon') AND (${table.purpose} = 'icon') = (${table.sourceAttachmentId} = '00000000-0000-0000-0000-000000000000')`
+    ),
+  ]
+);
+
+/** One uploaded part of an export, stored as a managed blob and put together in order. */
+export const communityImportParts = pgTable(
+  'community_import_parts',
+  {
+    importId: uuid('import_id')
+      .notNull()
+      .references(() => communityImports.id, { onDelete: 'cascade' }),
+    partNumber: integer('part_number').notNull(),
+    blobKey: text('blob_key')
+      .notNull()
+      .unique()
+      .references(() => managedBlobs.blobKey, { onDelete: 'cascade' }),
+    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+    sha256: text('sha256').notNull(),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.importId, table.partNumber] }),
+    check('community_import_parts_number', sql`${table.partNumber} BETWEEN 1 AND 10000`),
+    check('community_import_parts_size', sql`${table.byteSize} > 0`),
+    check('community_import_parts_sha256', sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
+  ]
+);
+
+/** One part upload in flight on any replica, held by a short renewed lease. */
+export const communityImportPartUploads = pgTable(
+  'community_import_part_uploads',
+  {
+    leaseToken: uuid('lease_token').primaryKey().defaultRandom(),
+    importId: uuid('import_id')
+      .notNull()
+      .references(() => communityImports.id, { onDelete: 'cascade' }),
+    partNumber: integer('part_number').notNull(),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check('community_import_part_uploads_number', sql`${table.partNumber} BETWEEN 1 AND 10000`),
+    index('community_import_part_uploads_import_idx').on(table.importId, table.partNumber),
+  ]
 );

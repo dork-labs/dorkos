@@ -189,6 +189,15 @@ An owner can export the whole community and any member can export their own mess
 
 To return to a release from before background exports, first run `pnpm --filter @dorkos/community exports:purge-v2` with `COMMUNITY_DATABASE_URL` set. It cancels exports in progress and deletes every export made by this release, queuing their files for cleanup, so the older release only sees exports it can read.
 
+## Imports
+
+A host can bring a community in from another server by importing its owner's export (see the [API](API.md#import-an-owner-export)). Exports up to 1 GiB can arrive in one upload; larger ones, up to `COMMUNITY_IMPORT_MAX_BYTES` (1 GiB unless you change it, at most 1 TiB), arrive in numbered parts of at most `COMMUNITY_EXPORT_SEGMENT_BYTES`, and a broken upload resumes from the last part received.
+
+- **Time to upload.** Whoever holds the upload link has `COMMUNITY_IMPORT_UPLOAD_HOURS` (24 hours unless you change it, 1 to 168) from when the import was started. Raise it for very large exports on slow connections.
+- **Disk.** Each part being received is written to the temporary folder and then stored, so it can use up to twice its size there. A server receives at most `COMMUNITY_IMPORT_PART_CONCURRENCY` parts at once (8 unless you change it, 1 to 64) and at most four per import; others are asked to wait a few seconds. Plan for twice that many parts of free temporary space, beside the single uploads `COMMUNITY_IMPORT_UPLOADS` allows.
+- **Storage.** The uploaded parts show in usage as import staging and never count against a community's storage limit. They are deleted once the import is ready, cancelled, or failed.
+- **Restarts.** Checking and restoring run in the background. A server that stops part-way through a restore loses at most one batch of rows or one file, and any server carries on from there about five minutes later.
+
 ## Storage and hosting choices
 
 A persistent container host or VPS can run the same image. Supply PostgreSQL separately, mount durable storage at `/data/blobs`, set the required environment values, and route HTTPS to port 6481. Run one app instance initially. Test reconnects and database access through the host’s actual proxy before inviting people.

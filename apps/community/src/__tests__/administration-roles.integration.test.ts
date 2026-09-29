@@ -908,7 +908,8 @@ const actions: Action<unknown>[] = [
       // Stand in for the worker: the matrix tests who may commit, not how an export is checked.
       await pool.query(
         `UPDATE community_imports SET state='validated',validated_at=now(),
-           archive_sha256=$2,archive_bytes=1,archive_received_at=now(),report=$3 WHERE id=$1`,
+           archive_sha256=$2,archive_bytes=1,archive_received_at=now(),upload_kind='single',
+           report=$3 WHERE id=$1`,
         [
           importId,
           'a'.repeat(64),
@@ -960,6 +961,80 @@ const actions: Action<unknown>[] = [
     effect: async (_body, _role, { importId }) => {
       const row = await pool.query('SELECT state FROM community_imports WHERE id=$1', [importId]);
       expect(row.rows).toEqual([{ state: 'validating' }]);
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'Upload one part of an import export: host operator or the upload token; community roles no',
+    route: 'PUT /imports/:id/archive/parts/:partNumber',
+    allowed: HOST_ROLES,
+    status: 200,
+    refused: { agent: 401 },
+    prepare: async () => ({ importId: (await startImport()).importId }),
+    call: ({ importId }) => ({
+      method: 'PUT',
+      path: `/api/v1/imports/${importId}/archive/parts/1`,
+      bytes: IMPORT_ARCHIVE,
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-part-sha256': createHash('sha256').update(IMPORT_ARCHIVE).digest('hex'),
+      },
+    }),
+    effect: async (_body, _role, { importId }) => {
+      const parts = await pool.query(
+        'SELECT part_number FROM community_import_parts WHERE import_id=$1',
+        [importId]
+      );
+      expect(parts.rows).toEqual([{ part_number: 1 }]);
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'List the parts of an import export received so far: host operator or the upload token',
+    route: 'GET /imports/:id/archive/parts',
+    allowed: HOST_ROLES,
+    status: 200,
+    refused: { agent: 401 },
+    prepare: async () => ({ importId: (await startImport()).importId }),
+    call: ({ importId }) => ({ method: 'GET', path: `/api/v1/imports/${importId}/archive/parts` }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8'))).toMatchObject({ parts: [] });
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'Put the parts of an import export together: host operator or the upload token',
+    route: 'POST /imports/:id/archive/complete',
+    allowed: HOST_ROLES,
+    status: 200,
+    refused: { agent: 401 },
+    prepare: async () => {
+      const { importId } = await startImport();
+      await ok(
+        {
+          method: 'PUT',
+          path: `/api/v1/imports/${importId}/archive/parts/1`,
+          bytes: IMPORT_ARCHIVE,
+          headers: {
+            'content-type': 'application/octet-stream',
+            'x-part-sha256': createHash('sha256').update(IMPORT_ARCHIVE).digest('hex'),
+          },
+        },
+        'founder'
+      );
+      return { importId };
+    },
+    call: ({ importId }) => ({
+      method: 'POST',
+      path: `/api/v1/imports/${importId}/archive/complete`,
+      body: {
+        parts: 1,
+        archiveBytes: IMPORT_ARCHIVE.length,
+        archiveSha256: createHash('sha256').update(IMPORT_ARCHIVE).digest('hex'),
+      },
+    }),
+    effect: async (_body, _role, { importId }) => {
+      const row = await pool.query('SELECT state,upload_kind FROM community_imports WHERE id=$1', [
+        importId,
+      ]);
+      expect(row.rows).toEqual([{ state: 'validating', upload_kind: 'parts' }]);
     },
   }),
   define({
@@ -2172,6 +2247,7 @@ it('classifies every registered route, and puts every host and settings route in
     now,
     limitTokenMiss: () => undefined,
     uploadSlots: new UploadSlots(1),
+    partSlots: new UploadSlots(1, 5),
     uploadIdleMs: 1_000,
   });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });

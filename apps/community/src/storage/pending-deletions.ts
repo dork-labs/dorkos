@@ -81,6 +81,7 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
            UNION ALL SELECT 1 FROM export_segments WHERE blob_key=$1
            UNION ALL SELECT 1 FROM communities WHERE icon_blob_key=$1
            UNION ALL SELECT 1 FROM community_imports WHERE staging_blob_key=$1
+           UNION ALL SELECT 1 FROM community_import_parts WHERE blob_key=$1
            UNION ALL SELECT 1 FROM community_import_files WHERE blob_key=$1 LIMIT 1`,
           [candidate.blob_key]
         );
