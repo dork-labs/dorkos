@@ -119,6 +119,15 @@ describe('startAgentExecutionWatch', () => {
     expect(raised).toEqual([task.id]);
   });
 
+  it('forgets an agent that leaves, so a later agent under its id starts fresh', async () => {
+    const leaving = await addAgent('agent-leaving');
+    await watch.checkAgent(leaving);
+
+    await watch.forget('agent-leaving');
+
+    expect(baselines()).toEqual([]);
+  });
+
   it('gives an agent a baseline when it registers', async () => {
     const late = await addAgent('agent-late');
     await watch.checkAgent(late);

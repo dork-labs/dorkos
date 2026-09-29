@@ -204,6 +204,16 @@ export class AgentExecutionObserver {
   }
 
   /**
+   * Forget an agent that left, so an agent registered later under the same id
+   * starts with no record of its own.
+   *
+   * @param agentId - The agent that was unregistered.
+   */
+  forget(agentId: string): Promise<void> {
+    return this.core.forget(agentId);
+  }
+
+  /**
    * Run one of DorkOS's own writes that may change an agent's runtime, model or
    * effort, so it is never taken for an outside change.
    *

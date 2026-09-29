@@ -3843,6 +3843,9 @@ async function start() {
     // meshCore.getProjectPath(agentId) would already return undefined here.
     if (meshCore) {
       meshCore.onUnregister((agentId, projectPath) => {
+        // Forgotten, like its permission record, so a later folder reusing
+        // its id starts fresh (DOR-2337).
+        void agentExecutionWatch.forget(agentId);
         const pausedCount = taskStore.disableTasksByAgentId(agentId);
         if (pausedCount > 0) {
           logger.info(

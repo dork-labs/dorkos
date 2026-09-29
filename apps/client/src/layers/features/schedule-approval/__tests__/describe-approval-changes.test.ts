@@ -33,8 +33,8 @@ describe('describeApprovalChanges (DOR-2323)', () => {
   it('names an account change, and an account left to the agent (DOR-2384)', () => {
     expect(
       describeApprovalChanges([
-        { field: 'account', from: null, to: 'work' },
-        { field: 'account', from: 'work', to: null },
+        { field: 'account', from: null, to: 'work', via: 'schedule' },
+        { field: 'account', from: 'work', to: null, via: 'schedule' },
       ])
     ).toEqual([
       { label: 'Account', from: 'the agent’s own', to: 'work', unbroken: true },

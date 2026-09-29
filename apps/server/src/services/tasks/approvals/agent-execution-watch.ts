@@ -61,6 +61,8 @@ export interface AgentExecutionWatch {
   checkAll(): Promise<void>;
   /** Look at one agent, by its project directory. Registration calls this. */
   checkAgent(agentPath: string): Promise<void>;
+  /** Forget an agent that left. Unregistration calls this. */
+  forget(agentId: string): Promise<void>;
   /**
    * Look at a task's agent just before its scheduled fire, and answer what was
    * read, for the run to resolve on.
@@ -132,6 +134,7 @@ export function startAgentExecutionWatch(deps: AgentExecutionWatchDeps): AgentEx
     checkAgent: async (agentPath) => {
       await observer.check(agentPath);
     },
+    forget: (agentId) => observer.forget(agentId),
     beforeScheduledFire: async (task) => {
       const agentPath = task.agentId ? pathOf(task.agentId) : undefined;
       if (!agentPath) return undefined;
