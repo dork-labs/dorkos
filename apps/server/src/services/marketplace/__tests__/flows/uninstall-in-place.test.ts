@@ -32,6 +32,7 @@ import {
   writeInstalledFiles,
 } from '../../lib/installed-files.js';
 import * as journalModule from '../../lib/uninstall-journal.js';
+import { migrateSavedCopies } from '../../lib/saved-copies/migrate-saved-copies.js';
 import { recoverInterruptedInstall } from '../../install-recovery.js';
 
 const dirs: string[] = [];
@@ -108,6 +109,30 @@ async function installed(
     JSON.stringify({ name, version: '1.0.0', type: manifest.type ?? 'plugin', installedAt: 'x' })
   );
 }
+
+describe('uninstall after the saved-copies migration (DOR-2340)', () => {
+  // Purpose: the migration's "done" mark lives in the record, so an uninstall
+  // of a migrated, untouched package still removes the folder and keeps
+  // nothing. A mark kept as a file in the folder would have been left behind.
+  it('removes a migrated clean install completely', async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, { 'skills/a/SKILL.md': 'a' });
+    // As an earlier version wrote it: a record without the mark.
+    const { savedCopies: _mark, ...older } = (await readInstalledFiles(root))!;
+    await writeInstalledFiles(root, older);
+    const passThrough = <T>(_r: string, fn: () => Promise<T>) => fn();
+    expect(
+      await migrateSavedCopies([root], passThrough, { info: vi.fn(), warn: vi.fn() })
+    ).toMatchObject({ migrated: 1 });
+    expect((await readInstalledFiles(root))?.savedCopies).toBe(1);
+
+    const result = await new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' });
+
+    expect(result.preservedData).toEqual([]);
+    expect(await readdir(path.dirname(root))).toEqual([]);
+  });
+});
 
 describe('in-place uninstall (DOR-2245)', () => {
   // Purpose: the person's files never move; package files leave; the record is pruned.

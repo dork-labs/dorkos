@@ -79,14 +79,13 @@ async function installOldLayout(): Promise<void> {
       contentHash: await packageContentHash(root),
     })
   );
-  await writeInstalledFiles(
-    root,
-    await computeInstalledFiles(root, {
-      identity: { name, type: 'plugin' },
-      userEditable: [],
-      npmRan: false,
-    })
-  );
+  // As an earlier version wrote it: a record without the saved-copies mark.
+  const { savedCopies: _mark, ...older } = await computeInstalledFiles(root, {
+    identity: { name, type: 'plugin' },
+    userEditable: [],
+    npmRan: false,
+  });
+  await writeInstalledFiles(root, older);
   // What the earlier update saved aside, the old way.
   await put(
     'skills/x.dork-old/SKILL.md',

@@ -260,3 +260,40 @@ describe.skipIf(process.platform === 'win32')('the recorded DOR-2340 reproductio
     ).toBe(true);
   });
 });
+
+// The record's `savedCopies` mark says a root holds no runnable or loadable
+// saved copy (DOR-2340): true of anything this version writes, but an update
+// carries an unmigrated root's old copies over as they are.
+describe('the saved-copies mark on a record', () => {
+  it('is set on a record made from a tree this version wrote', async () => {
+    await writeTree(live, { 'a.md': 'a' });
+    expect(
+      (await computeInstalledFiles(live, { identity, userEditable: [], npmRan: false })).savedCopies
+    ).toBe(1);
+  });
+
+  it('survives an update only from a record that had it', async () => {
+    await writeTree(live, { 'a.md': 'a' });
+    const marked = await computeInstalledFiles(live, { identity, userEditable: [], npmRan: false });
+    const { savedCopies: _mark, ...unmarked } = marked;
+    await writeTree(staged, { 'a.md': 'a2' });
+    for (const [rOld, expected] of [
+      [marked, 1],
+      [unmarked, undefined],
+    ] as const) {
+      const rNew = await computeInstalledFiles(staged, {
+        identity,
+        userEditable: [],
+        npmRan: false,
+      });
+      await carryPersonFiles({
+        liveRoot: live,
+        stagingDir: staged,
+        rOld,
+        oldHasIdentity: true,
+        rNew,
+      });
+      expect(rNew.savedCopies).toBe(expected);
+    }
+  });
+});

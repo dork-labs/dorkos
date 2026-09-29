@@ -159,6 +159,15 @@ export const InstalledFilesSchema = z.object({
   inferred: z.literal(true).optional(),
   /** Files kept as the person's because nothing proved otherwise (DOR-2322). */
   unproven: UnprovenFilesSchema.optional(),
+  /**
+   * `1` when every copy an update saved aside in this root is inert (DOR-2340):
+   * set on a record made from a tree this version wrote, carried over by an
+   * update only from a record that had it, and set by the boot migration once
+   * it has fixed what an earlier version left. A record without it is one the
+   * migration still has to visit. Kept in the record rather than as a file, so
+   * an uninstall that removes the record leaves nothing of it behind.
+   */
+  savedCopies: z.literal(1).optional(),
 });
 
 /** The installed-files record; see {@link InstalledFilesSchema}. */
@@ -413,6 +422,8 @@ export async function computeInstalledFiles(
     files,
     pendingDefaults: {},
     userEditable: [...opts.userEditable],
+    // A tree this version wrote holds no runnable or loadable saved copy.
+    savedCopies: 1,
   };
 }
 

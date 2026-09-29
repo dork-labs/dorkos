@@ -12,17 +12,19 @@
  *   runs from (the defaults and every location its plugin.json declares), and
  *   `X` is the package's (the record lists `X` or something under it). A
  *   folder a person named that way themselves stays where it is.
- * - A saved file in `bin/` moves under `.dork/saved`.
+ * - A saved file in `bin/` moves under `.dork/saved` when the file it was
+ *   saved from (`bin/X`) is the package's; a person's own is only made inert.
  * - Every other saved file inside those locations loses its execute bits.
  *
  * A root with no record is left alone (nothing says what is the package's).
- * The kept-file list (DOR-2322) follows every move. A marker in `.dork/saved`
- * records that a root was done, so later boots do not walk it again. Each root
+ * The kept-file list (DOR-2322) follows every move. The record's
+ * `savedCopies` says a root is done, so later boots do not walk it again, and
+ * an uninstall that removes the record leaves nothing of it behind. Each root
  * is handled under its install lock, so no install races it.
  *
  * @module services/marketplace/lib/saved-copies/migrate-saved-copies
  */
-import { lstat, mkdir, readdir, rename, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { EFFECT_BEARING_PATHS, KEPT_COPY_BASENAME } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
@@ -39,9 +41,6 @@ import {
   SAVED_COPIES_DIR,
   savedCopyMustMove,
 } from './saved-copies.js';
-
-/** The file whose presence says a root was already migrated. */
-export const SAVED_COPIES_MARKER = `${SAVED_COPIES_DIR}/.inert-v1`;
 
 /** Folders never walked: dependencies and git's own. */
 const NOT_WALKED = new Set(['node_modules', '.git']);
@@ -106,18 +105,14 @@ function recorded(record: InstalledFiles, p: string): boolean {
 }
 
 /**
- * Migrate one install root. See the module doc for the rules.
+ * Migrate one install root whose record lacks the mark. See the module doc
+ * for the rules.
  *
  * @param root - An install root.
- * @returns What moved, or why nothing was done.
+ * @param record - Its record, read under the root's install lock.
+ * @returns What moved.
  */
-export async function migrateRoot(root: string): Promise<RootMigration> {
-  if ((await lstat(fsPath(root, SAVED_COPIES_MARKER)).catch(() => undefined)) !== undefined) {
-    return { moved: 0, skipped: 'already-done' };
-  }
-  const record = await readInstalledFiles(root);
-  if (record === null) return { moved: 0, skipped: 'no-record' };
-
+async function migrateRoot(root: string, record: InstalledFiles): Promise<RootMigration> {
   const locations = [
     ...new Set([...Object.values(EFFECT_BEARING_PATHS), ...(await declaredLocationsOf(root))]),
   ].filter((l) => !isAtOrUnder(l, SAVED_COPIES_DIR));
@@ -147,7 +142,9 @@ export async function migrateRoot(root: string): Promise<RootMigration> {
         }
         await walk(child);
       } else if (entry.isFile() && kept) {
-        if (savedCopyMustMove(child, false)) toMove.push({ from: child, isDir: false });
+        // A saved program leaves bin/ only when it was the package's.
+        const packages = recorded(record, `${rel}/${originalName(entry.name)}`);
+        if (savedCopyMustMove(child, false) && packages) toMove.push({ from: child, isDir: false });
         else await makeInert(fsPath(root, child));
       }
     }
@@ -171,14 +168,11 @@ export async function migrateRoot(root: string): Promise<RootMigration> {
       unproven = next;
     }
   }
-  if (unproven && record.unproven && toMove.length > 0) {
-    await writeInstalledFiles(root, {
-      ...record,
-      unproven: { ...record.unproven, files: unproven },
-    });
-  }
-  await mkdir(fsPath(root, SAVED_COPIES_DIR), { recursive: true });
-  await writeFile(fsPath(root, SAVED_COPIES_MARKER), '');
+  await writeInstalledFiles(root, {
+    ...record,
+    ...(unproven && record.unproven && { unproven: { ...record.unproven, files: unproven } }),
+    savedCopies: 1,
+  });
   return { moved: toMove.length };
 }
 
@@ -203,12 +197,12 @@ export async function migrateSavedCopies<T>(
     if ((await lstat(root).catch(() => undefined))?.isDirectory() !== true) continue;
     try {
       const done = await lock(root, async () => {
-        if ((await lstat(fsPath(root, SAVED_COPIES_MARKER)).catch(() => undefined)) !== undefined) {
-          return { moved: 0, skipped: 'already-done' } as RootMigration;
-        }
+        const record = await readInstalledFiles(root);
+        if (record === null) return { moved: 0, skipped: 'no-record' } as RootMigration;
+        if (record.savedCopies === 1) return { moved: 0, skipped: 'already-done' } as RootMigration;
         const carried = hooks ? await hooks.before(root) : undefined;
-        const migration = await migrateRoot(root);
-        if (hooks && migration.skipped === undefined) await hooks.after(root, carried as T);
+        const migration = await migrateRoot(root, record);
+        if (hooks) await hooks.after(root, carried as T);
         return migration;
       });
       if (done.skipped !== undefined) continue;

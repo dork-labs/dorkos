@@ -16,7 +16,7 @@ import {
   writeInstalledFiles,
   type InstalledFiles,
 } from '../../installed-files.js';
-import { migrateSavedCopies, SAVED_COPIES_MARKER } from '../migrate-saved-copies.js';
+import { migrateSavedCopies } from '../migrate-saved-copies.js';
 
 let root: string;
 
@@ -87,6 +87,25 @@ describe.skipIf(process.platform === 'win32')('migrateSavedCopies', () => {
     expect(await runnable('bin/tool')).toBe(true);
   });
 
+  it("moves a saved program out of bin/ only when it was the package's", async () => {
+    await recordFiles(['bin/tool']);
+    await put('bin/tool.dork-old', '#!/bin/sh\n', 0o755);
+    await put('bin/mine.dork-old', '#!/bin/sh\n', 0o755);
+    await migrateSavedCopies([root], passThrough, logger);
+    expect(await exists('.dork/saved/bin__tool.dork-old')).toBe(true);
+    // The person's own stays, made inert.
+    expect(await exists('bin/mine.dork-old')).toBe(true);
+    expect(await runnable('bin/mine.dork-old')).toBe(false);
+  });
+
+  it('leaves a record this version wrote alone', async () => {
+    await recordFiles(['skills/x/SKILL.md']);
+    await writeInstalledFiles(root, { ...(await readInstalledFiles(root))!, savedCopies: 1 });
+    await put('skills/x.dork-old/SKILL.md', 'x');
+    expect(await migrateSavedCopies([root], passThrough, logger)).toMatchObject({ migrated: 0 });
+    expect(await exists('skills/x.dork-old/SKILL.md')).toBe(true);
+  });
+
   it("never moves a person's own folder: not the package's, or outside where it runs from", async () => {
     await recordFiles(['skills/shipped/SKILL.md', 'notes/a.md']);
     // Named like a saved copy, but no such folder was ever the package's.
@@ -122,13 +141,16 @@ describe.skipIf(process.platform === 'win32')('migrateSavedCopies', () => {
       failed: 0,
     });
     expect(await exists('skills/x.dork-old/SKILL.md')).toBe(true);
-    expect(await exists(SAVED_COPIES_MARKER)).toBe(false);
+    expect(await exists('.dork/saved')).toBe(false);
   });
 
-  it('marks a root done, so a later boot does not walk it again', async () => {
+  it('marks a root done in its record, so a later boot does not walk it again', async () => {
     await recordFiles(['skills/x/SKILL.md']);
     await migrateSavedCopies([root], passThrough, logger);
-    expect(await exists(SAVED_COPIES_MARKER)).toBe(true);
+    expect((await readInstalledFiles(root))?.savedCopies).toBe(1);
+    // Nothing is written into the folder to say so: an uninstall must be
+    // able to remove everything.
+    expect(await exists('.dork/saved')).toBe(false);
     // Something that would move is ignored once the root is marked.
     await put('skills/x.dork-old/SKILL.md', 'later');
     expect(await migrateSavedCopies([root], passThrough, logger)).toEqual({

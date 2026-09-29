@@ -241,6 +241,10 @@ export async function carryPersonFiles(opts: {
   // what tells the next update the person deleted it (row 3a).
   Object.assign(rNew.files, plan.addedFiles);
   rNew.pendingDefaults = plan.pendingDefaults;
+  // Copies an earlier version saved in the live root were carried over as
+  // they are: the new record is inert only if the old one was (DOR-2340), so
+  // an unmigrated root stays on the boot migration's list.
+  if (rOld && rOld.savedCopies === undefined) delete rNew.savedCopies;
 
   const source = new Map<string, EntryStat>();
   for (const [p, entry] of live.entries) if (entry.stat) source.set(p, entry.stat);
