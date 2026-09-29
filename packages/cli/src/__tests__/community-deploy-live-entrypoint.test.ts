@@ -142,4 +142,32 @@ describe('credentialed live gate entrypoint', () => {
     const recovery = main.slice(main.indexOf('communityLiveGateRecoveryCommand('));
     expect(recovery.slice(0, recovery.indexOf(';'))).toContain('tarball?.path');
   });
+
+  // A launcher that exits before writing a launch record leaves no journal, so its own last code is
+  // the only explanation (DOR-2169). A real run costs money, so this pins the wiring; the reading
+  // itself is unit-tested in community-deploy-live-failure.test.ts.
+  it('attaches the launcher last error code when it exits with a failure', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const onExit = source.slice(source.indexOf('terminal.onExit('));
+    expect(onExit.slice(0, onExit.indexOf('});'))).toMatch(
+      /new CommunityLiveGateError\(\s*PUBLISHED_LAUNCHER_STEP,\s*null,\s*describeLauncherExit\(transcript\) \?\? undefined\s*\)/u
+    );
+  });
+
+  // The pack recipe must refuse a checkout past its release's migrations before it spends minutes
+  // building a launcher that could never deploy.
+  it('checks the Community migrations against the release tag before building', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/pack-community-live-tarball.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const guard = main.indexOf('assertReleasedCommunityMigrations(git, packedVersion);');
+    expect(guard).toBeGreaterThan(main.indexOf("requireClean('before packing');"));
+    expect(guard).toBeLessThan(main.indexOf("['--filter', 'dorkos', 'build']"));
+    expect(guard).toBeLessThan(main.indexOf('createCommunityLivePackDirectory('));
+  });
 });

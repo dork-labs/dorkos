@@ -222,3 +222,66 @@ export function assertPackedCommitUnchanged(before: string, after: string): void
     throw new Error(`HEAD moved from ${before} to ${after} while building; pack again.`);
   }
 }
+
+/** Where the Community migrations live, relative to the repository root. */
+const COMMUNITY_MIGRATIONS = 'apps/community/migrations';
+
+/**
+ * The Community migrations that differ between a release tag and HEAD, counted the way
+ * `scripts/build.ts` fingerprints them: the `.sql` files directly in `apps/community/migrations`,
+ * by name and content. Any change there changes the fingerprint the launcher is built with.
+ *
+ * @param git - Runs git in the repository and returns trimmed stdout; throws on a non-zero exit.
+ * @param tag - The release tag, `v<version>`.
+ * @returns The changed paths, sorted; empty when the fingerprint is the same.
+ * @throws When the tag is not in this checkout.
+ */
+export function changedCommunityMigrations(git: (args: string[]) => string, tag: string): string[] {
+  try {
+    git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`]);
+  } catch (error) {
+    throw new Error(
+      `Tag ${tag} is not in this checkout. Run \`git fetch --tags\`, then pack again.`,
+      { cause: error }
+    );
+  }
+  const changed = git([
+    'diff',
+    '--name-only',
+    '--no-renames',
+    tag,
+    'HEAD',
+    '--',
+    `:(glob)${COMMUNITY_MIGRATIONS}/*.sql`,
+  ]);
+  return changed === '' ? [] : changed.split('\n').sort();
+}
+
+/**
+ * Refuse to pack a launcher that could never deploy the image it names.
+ *
+ * A tarball deploys the published Community image for its own package version, but its launcher
+ * carries this checkout's migration fingerprint and refuses any release manifest with another one
+ * (`COMMUNITY_RELEASE_INVALID`, before it writes a launch record). A checkout that added a Community
+ * migration after its release tag can therefore never deploy, so say so before building.
+ *
+ * @param git - Runs git in the repository.
+ * @param version - The package version being packed.
+ */
+export function assertReleasedCommunityMigrations(
+  git: (args: string[]) => string,
+  version: string
+): void {
+  const tag = `v${version}`;
+  const changed = changedCommunityMigrations(git, tag);
+  if (changed.length === 0) return;
+  throw new Error(
+    [
+      `Community migrations changed since ${tag}:`,
+      ...changed.map((path) => `  ${path}`),
+      `A launcher packed here would refuse the released ${version} image it deploys (COMMUNITY_RELEASE_INVALID).`,
+      `Pack from ${tag} plus only the launcher commits under test (git worktree add <dir> ${tag}, then cherry-pick them).`,
+      'The receipt then names a commit that is not on main; see "Unreleased tarball mode" in specs/community-self-host-launcher/04-live-gate.md for how to cite it.',
+    ].join('\n')
+  );
+}

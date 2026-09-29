@@ -26,6 +26,7 @@ import {
 import { inspectCommunityLiveTarball } from './community-deploy-live-tarball.js';
 import {
   describeCommunityLiveGateFailure,
+  describeLauncherExit,
   describeLauncherStop,
   explainCommunityLiveGateFailure,
   PUBLISHED_LAUNCHER_STEP,
@@ -110,7 +111,16 @@ function runLauncherPty(input: {
       running = false;
       clearTimeout(timeout);
       if (exitCode === 0 || interrupted) resolve();
-      else reject(new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP));
+      // A launcher that stops before writing a launch record leaves no journal to explain it, so
+      // keep its own last error code (only the code; see describeLauncherExit).
+      else
+        reject(
+          new CommunityLiveGateError(
+            PUBLISHED_LAUNCHER_STEP,
+            null,
+            describeLauncherExit(transcript) ?? undefined
+          )
+        );
     });
   });
   return {

@@ -58,6 +58,35 @@ export function describeLauncherStop(journal: unknown): string | null {
   return `launcher stopped with ${code}${provider ? ` (${provider})` : ''}`;
 }
 
+/** Prefix the launcher prints on stderr when a command fails (`packages/cli/src/cli.ts`). */
+const LAUNCHER_FAILURE_PREFIX = 'Community setup failed:';
+
+/**
+ * Say why the launcher exited when it stopped before writing a launch record, so there is no
+ * journal to read. A launcher that refuses its release (for example `COMMUNITY_RELEASE_INVALID`,
+ * DOR-2169) does exactly that.
+ *
+ * Only a code token is ever returned: the last `Community setup failed:` line of the transcript,
+ * its final `(CODE)`, checked against this checkout's error codes. Nothing else from the terminal
+ * reaches the gate's output, so a message that echoes a name or an account cannot leak.
+ *
+ * @param transcript - The tail of the launcher's terminal output.
+ * @returns A fixed-vocabulary sentence, or null when no known code was printed.
+ */
+export function describeLauncherExit(transcript: string): string | null {
+  // Carriage returns become line breaks so a terminal's CRLF splits cleanly. Colour codes need no
+  // stripping: only the prefix and a `(CODE)` token are read, and neither contains one.
+  const plain = transcript.replace(/\r/gu, '\n');
+  const line = plain
+    .split('\n')
+    .filter((entry) => entry.includes(LAUNCHER_FAILURE_PREFIX))
+    .at(-1);
+  if (!line) return null;
+  const token = [...line.matchAll(/\(([A-Z][A-Z0-9_]{1,63})\)/gu)].at(-1)?.[1];
+  const code = LaunchSafeErrorCodeSchema.safeParse(token);
+  return code.success ? `launcher exited with ${code.data} before writing a launch record` : null;
+}
+
 /** How far the run got when it failed. */
 export interface CommunityLiveGateFailureState {
   /** Whether cleanup returned successfully, so nothing the run created is left. */
@@ -98,9 +127,11 @@ export async function explainCommunityLiveGateFailure(
       recoveryCommand,
       `retained: ${error.retained.join(', ') || 'unknown'}`
     );
+  // The journal's saved error is the more specific answer (it names the service); without a
+  // journal, the launcher's own last code, which the PTY runner attached, is the next best.
   const launcherStop =
     error instanceof CommunityLiveGateError && error.step === PUBLISHED_LAUNCHER_STEP
-      ? await findLauncherStop().catch(() => null)
+      ? ((await findLauncherStop().catch(() => null)) ?? error.detail ?? null)
       : null;
   if (!recoveryCommand && !launcherStop) return error;
   return new CommunityLiveGateError(

@@ -21,6 +21,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import process from 'node:process';
 import {
   assertPackedCommitUnchanged,
+  assertReleasedCommunityMigrations,
   createCommunityLivePackDirectory,
   CommunityLiveTarballProvenanceSchema,
   communityLiveTarballSidecarPath,
@@ -47,6 +48,12 @@ async function main(): Promise<void> {
     throw new Error('Pass --out with an absolute directory for the tarball.');
   }
   requireClean('before packing');
+  // Before building: a checkout whose Community migrations moved past its release tag packs a
+  // launcher that refuses the released image it would deploy.
+  const packedVersion = (
+    JSON.parse(await readFile(join(cliPackage, 'package.json'), 'utf8')) as { version: string }
+  ).version;
+  assertReleasedCommunityMigrations(git, packedVersion);
   const commit = git(['rev-parse', 'HEAD']);
   // A fresh <out>/<commit> directory, refused if it exists: never overwrite a tarball an earlier
   // run's recovery command may still name.
