@@ -7,6 +7,7 @@ import {
   communityKeys,
   communityAccessState,
   isCommunityContentAuthorityCurrent,
+  applyRemoteCommunityRevisions,
   mergeRemoteCommunityEntries,
   useCommunityContentAuthority,
   useCommunityConnections,
@@ -163,14 +164,19 @@ export function RemoteCommunitySurface({
     () =>
       removed
         ? []
-        : mergeRemoteCommunityEntries(
-            community,
-            roomId,
-            ...(history.data?.pages.map((page) => page.entries) ?? []),
-            stream.entries,
-            receipts
+        : // Changes last, so a history page read before a message was deleted or erased on the
+          // Community still shows the tombstone (DOR-2544).
+          applyRemoteCommunityRevisions(
+            mergeRemoteCommunityEntries(
+              community,
+              roomId,
+              ...(history.data?.pages.map((page) => page.entries) ?? []),
+              stream.entries,
+              receipts
+            ),
+            stream.revisions
           ),
-    [community, roomId, history.data, stream.entries, receipts, removed]
+    [community, roomId, history.data, stream.entries, stream.revisions, receipts, removed]
   );
   const onReceipt = useCallback(
     (entry: RemoteCommunityEntry) => {

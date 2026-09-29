@@ -464,4 +464,87 @@ describe('remote community surface', () => {
       expect(screen.queryByRole('button', { name: /repl(y|ies) · last/ })).not.toBeInTheDocument();
     });
   });
+
+  describe('a message deleted or erased on the Community (DOR-2544)', () => {
+    const root = RemoteCommunityEntrySchema.parse({
+      ...ownerEntry,
+      id: 'root',
+      text: 'zqxrootcanary said once',
+      thread: { replyCount: 3, lastReplyAt: '2026-09-16T10:05:00Z' },
+      threadLastReplySeq: 5,
+    });
+    const reply = RemoteCommunityEntrySchema.parse({
+      ...ownerEntry,
+      id: 'reply-4',
+      text: 'zqxreplycanary in the thread',
+      parentEntryId: 'root',
+      threadRootEntryId: 'root',
+      depth: 1,
+      remoteSeq: 4,
+      cursor: 'cursor-4',
+      createdAt: '2026-09-16T10:04:00Z',
+    });
+    /** The entry as the redaction feed returns it: the tombstone, with no thread summary. */
+    const tombstone = (held: RemoteCommunityEntry, text: string) =>
+      RemoteCommunityEntrySchema.parse({
+        ...held,
+        text,
+        authorDisplayName: 'Erased member',
+        thread: undefined,
+        threadLastReplySeq: undefined,
+      });
+
+    it('replaces the words in place, keeps the reply line, and reads nothing again', async () => {
+      const view = mount(access, [root]);
+      await screen.findByText(root.text);
+      expect(screen.getByRole('button', { name: /^3 replies · last / })).toBeInTheDocument();
+
+      act(() =>
+        view.emit({ type: 'revision', entry: tombstone(root, 'This message was erased.') })
+      );
+
+      expect(await screen.findByText('This message was erased.')).toBeInTheDocument();
+      expect(screen.queryByText(root.text)).not.toBeInTheDocument();
+      expect(screen.getByText('Erased member')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^3 replies · last / })).toBeInTheDocument();
+      expect(view.transport.listRemoteCommunityEntries).toHaveBeenCalledTimes(1);
+      expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(1);
+    });
+
+    it('replaces a reply in the open thread', async () => {
+      const view = mount(access, [root, reply], 'root');
+      await screen.findByText(reply.text);
+
+      act(() =>
+        view.emit({ type: 'revision', entry: tombstone(reply, 'This message was deleted.') })
+      );
+
+      expect(await screen.findByText('This message was deleted.')).toBeInTheDocument();
+      expect(screen.queryByText(reply.text)).not.toBeInTheDocument();
+      expect(screen.getByText(root.text)).toBeInTheDocument();
+    });
+
+    it('adds no row for a message it does not hold', async () => {
+      const view = mount(access, [root]);
+      await screen.findByText(root.text);
+
+      act(() =>
+        view.emit({
+          type: 'revision',
+          entry: { ...tombstone(root, 'never loaded here'), id: 'elsewhere', remoteSeq: 9 },
+        })
+      );
+      // A later post, so the frame above has certainly been read.
+      act(() =>
+        view.emit({
+          type: 'entry',
+          entry: { ...ownerEntry, id: 'later', text: 'a later post', remoteSeq: 10 },
+        })
+      );
+
+      expect(await screen.findByText('a later post')).toBeInTheDocument();
+      expect(screen.queryByText('never loaded here')).not.toBeInTheDocument();
+      expect(screen.getByText(root.text)).toBeInTheDocument();
+    });
+  });
 });

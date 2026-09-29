@@ -55,6 +55,10 @@ import {
   RemoteConnectionNotFoundError,
 } from '../services/communities/remote/connection-store.js';
 import { communityRefusal, type CommunityRefusalAction } from './remote-community-refusal.js';
+import {
+  followNativeRedactions,
+  NATIVE_REDACTION_POLL_MS,
+} from '../services/communities/remote/native-redaction-follower.js';
 
 function isSafeAttachmentName(value: string): boolean {
   return [...value].every((character) => {
@@ -453,6 +457,21 @@ export function createRemoteCommunitiesRouter(): Router {
     });
     try {
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
+      // Deletions, removals and erasures do not travel on the live stream, so the channel's
+      // redaction feed is followed beside it (DOR-2544). Its end is read BEFORE the snapshot, so
+      // a change between the two reaches the first poll; changes go out only after the snapshot.
+      const redactions = followNativeRedactions(adapter, req.params.roomId, {
+        signal: abort.signal,
+        intervalMs: NATIVE_REDACTION_POLL_MS,
+        onChanged: (items) => {
+          if (!sawSnapshot || abort.signal.aborted || res.writableEnded) return;
+          for (const item of items) {
+            if (item.entry.community !== ref.data) continue;
+            writeEvent(res, { type: 'revision', entry: remoteEntry(item.entry, owner) });
+          }
+        },
+      });
+      await redactions.ready;
       for await (const event of adapter.subscribeRoom(
         req.params.roomId,
         typeof req.query.since === 'string' ? (req.query.since as never) : undefined,
@@ -470,6 +489,7 @@ export function createRemoteCommunitiesRouter(): Router {
           });
           sawSnapshot = true;
           writeDeliveries();
+          redactions.start();
         } else if (event.type === 'entry') {
           const author = remoteAuthorOf(event.entry);
           if (!author) throw new Error('Native remote entry lost authoritative metadata');

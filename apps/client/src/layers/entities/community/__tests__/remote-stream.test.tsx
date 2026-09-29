@@ -14,6 +14,7 @@ import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layer
 import { communityKeys } from '../model/use-community-connections';
 import { communityNavigationKeys } from '../model/use-community-navigation';
 import {
+  applyRemoteCommunityRevisions,
   mergeRemoteCommunityEntries,
   useRemoteCommunityStream,
 } from '../model/use-remote-community-stream';
@@ -213,6 +214,108 @@ describe('remote room stream lifecycle', () => {
     expect(hook.result.current.entries).toEqual([]);
     expect(hook.result.current.status).toBe('connecting');
     expect(client.getQueryData(communityKeys.room(authority, 'a', 'same'))).toBeUndefined();
+  });
+
+  // DOR-2544. Purpose: a `revision` rewrites the held entry and the cached history pages in
+  // place, keeping what the view derived (thread summary, native order), and never adds a row.
+  it('replaces a held entry in place, in the stream and the cached history, and adds nothing', () => {
+    const { streams, wrapper, client, authority } = setup();
+    const root = RemoteCommunityEntrySchema.parse({
+      ...entry('a', 1),
+      thread: { replyCount: 2, lastReplyAt: '2026-09-16T10:05:00Z' },
+      threadLastReplySeq: 4,
+    });
+    client.setQueryData(communityKeys.entries(authority, 'a', 'same'), {
+      pages: [
+        {
+          community: 'a',
+          roomId: 'same',
+          entries: [root],
+          nextCursor: null,
+          lastRemoteSeq: 1,
+          stale: false,
+        },
+      ],
+      pageParams: [undefined],
+    });
+    const hook = renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
+    act(() => streams[0].emit({ ...snapshot(), entries: [root, entry('a', 2)] }));
+    const tombstone = RemoteCommunityEntrySchema.parse({
+      ...entry('a', 1),
+      text: 'This message was erased.',
+      authorDisplayName: 'Erased member',
+    });
+
+    act(() => streams[0].emit({ type: 'revision', entry: tombstone }));
+    act(() =>
+      streams[0].emit({ type: 'revision', entry: { ...tombstone, id: 'unknown', remoteSeq: 9 } })
+    );
+
+    const [first, second] = hook.result.current.entries;
+    expect(hook.result.current.entries).toHaveLength(2);
+    expect(first).toMatchObject({
+      id: 'entry-1',
+      text: 'This message was erased.',
+      authorDisplayName: 'Erased member',
+      thread: { replyCount: 2 },
+      threadLastReplySeq: 4,
+      remoteSeq: 1,
+    });
+    expect(second?.text).toBe('a only');
+    const cached = client.getQueryData<{ pages: Array<{ entries: unknown[] }> }>(
+      communityKeys.entries(authority, 'a', 'same')
+    );
+    expect(cached?.pages[0]?.entries).toEqual([
+      expect.objectContaining({
+        text: 'This message was erased.',
+        thread: { replyCount: 2, lastReplyAt: '2026-09-16T10:05:00Z' },
+      }),
+    ]);
+    // A history page answered before the change still shows it.
+    expect(
+      applyRemoteCommunityRevisions([root], hook.result.current.revisions).map((item) => item.text)
+    ).toEqual(['This message was erased.']);
+  });
+
+  // DOR-2544. Purpose: a revision from a previous connection generation must never reach the view
+  // or the cache after a switch. It fails if the stream callback's fence is bypassed.
+  it('ignores a revision from a previous connection generation', () => {
+    const { streams, wrapper, client, authority } = setup();
+    const hook = renderHook(
+      ({ fingerprint }) => useRemoteCommunityStream('a', 'same', true, 0, fingerprint),
+      { wrapper, initialProps: { fingerprint: 'generation-1' } }
+    );
+    act(() => streams[0].emit(snapshot()));
+    hook.rerender({ fingerprint: 'generation-2' });
+    act(() => streams[1].emit(snapshot()));
+    const next = { ...authority, accessFingerprint: 'generation-2' };
+    client.setQueryData(communityKeys.entries(next, 'a', 'same'), {
+      pages: [
+        {
+          community: 'a',
+          roomId: 'same',
+          entries: [entry('a', 1)],
+          nextCursor: null,
+          lastRemoteSeq: 1,
+          stale: false,
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    act(() =>
+      streams[0].emit({
+        type: 'revision',
+        entry: RemoteCommunityEntrySchema.parse({ ...entry('a', 1), text: 'stale change' }),
+      })
+    );
+
+    expect(hook.result.current.entries.map((item) => item.text)).toEqual(['a only']);
+    expect(hook.result.current.revisions.size).toBe(0);
+    const cached = client.getQueryData<{ pages: Array<{ entries: Array<{ text: string }> }> }>(
+      communityKeys.entries(next, 'a', 'same')
+    );
+    expect(cached?.pages[0]?.entries[0]?.text).toBe('a only');
   });
 
   it('replaces private agent deliveries and removes them only on a matching remote confirmation', () => {

@@ -194,6 +194,14 @@ export const RemoteCommunityEventSchema = z
       stale: z.boolean(),
     }),
     z.strictObject({ type: z.literal('entry'), entry: RemoteCommunityEntrySchema }),
+    /**
+     * A confirmed entry changed in place after it was posted: deleted, removed, or erased on the
+     * Community server (DOR-2544). Carries the entry as it stands now — the tombstone, never the
+     * text it replaced. A view replaces an entry it holds with the same id and ignores one it does
+     * not; it never adds a row. Named after the local room stream's `revision` frame, which means
+     * the same thing for a mirrored room.
+     */
+    z.strictObject({ type: z.literal('revision'), entry: RemoteCommunityEntrySchema }),
     CommunityDeliverySnapshotSchema.safeExtend({ type: z.literal('deliveries') }),
     RoomAddressSchema.extend({
       type: z.literal('closed'),
@@ -207,7 +215,7 @@ export const RemoteCommunityEventSchema = z
         validEntries(event.entries, event.room.community, event.room.roomId, event.lastRemoteSeq)),
     { message: 'Snapshot must contain ordered entries for its room and freshness state' }
   );
-/** Snapshot, committed entry or explicit end of authorized live access. */
+/** Snapshot, committed entry, an entry changed in place, or explicit end of authorized live access. */
 export type RemoteCommunityEvent = z.infer<typeof RemoteCommunityEventSchema>;
 
 /** Local-server-only operations; each room address always includes its connection ref. */
