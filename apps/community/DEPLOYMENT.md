@@ -126,6 +126,20 @@ If other people sign up on your Community, you can link your own terms, privacy 
 
 A report from a message opens your page with `?community=<id>&entry=<id>` added, so you can find what was reported. A report from Settings adds only the community. For a `mailto:` address the same IDs go in the email body. The message text, the author's name, and the reporter's name are never added. The service checks each link before it starts and refuses a plain `http://` one. It never contacts your pages itself.
 
+## Optional minimum age
+
+You can ask everyone who creates an account to confirm they are old enough. Set `COMMUNITY_MINIMUM_AGE` to a whole number from 13 to 21. Leave it unset and nobody is asked. The service refuses to start with any other value.
+
+When it is set, every sign-up form shows "You must be at least N to join" and a box that says "I am at least N years old." No account is created until the box is ticked. The service checks this itself, not only the page:
+
+- **Email and password.** The box must be ticked before the form sends. A sign-up that arrives without it is refused.
+- **Google, GitHub, and single sign-on.** Those buttons stay off on a sign-up form until the box is ticked. If someone uses one to sign up without ticking it (for example, from the sign-in side of the form), no account is created. They come back to the page with a note asking them to tick the box and try again.
+- **The first owner, and a claimed community.** The first owner's setup and an owner claim link ask the same question.
+
+A tick lasts 30 minutes in that browser, long enough to finish signing up through Google, GitHub, or single sign-on. Raising the age asks again, even of someone who ticked a lower one. People who already have an account are never asked when they sign in, and turning the setting on or off changes nothing for them.
+
+This is a person's own word, not a check of their age. Invitations and owner claims work exactly as before.
+
 ## Optional Render deployment
 
 Render is an optional managed deployment. It does not change Community identity or access rules. The Community still owns its own database, secrets, and files.

@@ -49,6 +49,7 @@ import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostTakedownRoutes } from './routes/host-takedowns.js';
 import { registerTakedownNoticeRoutes } from './routes/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
+import { registerMinimumAgeRoutes, requireAgeConfirmation } from './sign-up/minimum-age.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
 import { UploadSlots } from './imports/upload.js';
 import { registerHistoryOriginRoute } from './routes/history-origin.js';
@@ -202,6 +203,7 @@ export function createCommunityApp({
   });
   app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
 
+  const now = hooks?.now ?? (() => new Date());
   app.post('/api/v1/bootstrap/preflight', async (c) => {
     limitAttempts(`bootstrap:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute);
     const body = await readJson(c, CommunityWireBootstrapPreflightRequestSchema);
@@ -257,6 +259,8 @@ export function createCommunityApp({
     if (!equalSecret(body.secret, config.bootstrapSecret)) {
       throw new ApiError(403, 'FORBIDDEN', 'The owner secret is incorrect.');
     }
+    // The first owner creates an account here too, so a minimum age asks them the same question.
+    requireAgeConfirmation(c.req.header('cookie') ?? null, config, now());
     const passwordHash = await hashPassword(body.password);
     const email = body.email.toLowerCase();
     const result = await transaction(pool, async (client) => {
@@ -340,7 +344,6 @@ export function createCommunityApp({
     return json(c, CommunityWireBootstrapCompleteResponseSchema, result, 201);
   });
 
-  const now = hooks?.now ?? (() => new Date());
   const authority = createHostAuthority({
     auth,
     pool,
@@ -349,6 +352,7 @@ export function createCommunityApp({
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
   registerHostLinkRoutes(app, { config });
+  registerMinimumAgeRoutes(app, { config, now });
   const hostApi = new Hono();
   registerHostRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
@@ -430,6 +434,7 @@ export function createCommunityApp({
       google: Boolean(config.oauth.google),
       github: Boolean(config.oauth.github),
       oidc: config.oidc ? { label: config.oidc.label } : null,
+      minimumAge: config.minimumAge,
     })
   );
 

@@ -7,7 +7,11 @@ import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
+import {
+  COMMUNITY_MINIMUM_AGE_CEILING,
+  COMMUNITY_MINIMUM_AGE_FLOOR,
+  parseCommunityReportMailto,
+} from '@dorkos/shared/community-wire';
 
 const integer = (name: string, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(1, `${name} must be positive`).max(ceiling).default(fallback);
@@ -317,6 +321,16 @@ const schema = z.object({
   COMMUNITY_TERMS_URL: optionalText,
   COMMUNITY_PRIVACY_URL: optionalText,
   COMMUNITY_REPORT_ABUSE_URL: optionalText,
+  // The age a person confirms before a new account is created here. Unset asks nothing.
+  COMMUNITY_MINIMUM_AGE: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.coerce
+      .number()
+      .int()
+      .min(COMMUNITY_MINIMUM_AGE_FLOOR)
+      .max(COMMUNITY_MINIMUM_AGE_CEILING)
+      .optional()
+  ),
 });
 
 /** Validated deployment settings, resolved only when the server starts. */
@@ -489,6 +503,11 @@ export function parseConfig(env: Record<string, unknown>) {
     /** Where each completed erasure's id-only line is also appended, outside the database. */
     erasureJournal: value.COMMUNITY_ERASURE_JOURNAL,
     hostLinks,
+    /**
+     * The age a person must confirm they have reached before any new account is created, by
+     * password, Google, GitHub or single sign-on; `null` when the host set none.
+     */
+    minimumAge: value.COMMUNITY_MINIMUM_AGE ?? null,
     /** The header a trusted proxy puts the caller's address in; per-caller limits read it. */
     trustedProxyHeader: value.COMMUNITY_TRUSTED_PROXY_HEADER?.toLowerCase(),
     /** Every short name no community may take: the built-in paths and this host's additions. */

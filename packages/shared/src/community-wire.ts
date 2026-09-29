@@ -234,15 +234,39 @@ export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
   members: z.array(CommunityWireMemberSchema).max(100),
   nextCursor: z.uuid().nullable(),
 });
+/** The lowest minimum age a host may ask people to confirm before they create an account. */
+export const COMMUNITY_MINIMUM_AGE_FLOOR = 13;
+/** The highest minimum age a host may ask for; a larger number is almost surely a typo. */
+export const COMMUNITY_MINIMUM_AGE_CEILING = 21;
 /** Public provider availability, without OAuth IDs, secrets or callback details. */
 export const CommunityWireAuthOptionsSchema = z.strictObject({
   google: z.boolean(),
   github: z.boolean(),
   /** The host's OpenID Connect sign-in and its button text, or `null` when the host set none. */
   oidc: z.strictObject({ label: z.string().trim().min(1).max(40) }).nullable(),
+  /**
+   * The age a person must confirm they have reached before a new account is created, or `null`
+   * when the host set none. Signing in to an existing account never asks.
+   */
+  minimumAge: z
+    .number()
+    .int()
+    .min(COMMUNITY_MINIMUM_AGE_FLOOR)
+    .max(COMMUNITY_MINIMUM_AGE_CEILING)
+    .nullable(),
 });
 /** Public sign-in options: which buttons the sign-in page shows beside email and password. */
 export type CommunityWireAuthOptions = z.infer<typeof CommunityWireAuthOptionsSchema>;
+
+/** A person's confirmation, before a new account is created, that they meet the minimum age. */
+export const CommunityWireAgeConfirmationRequestSchema = z.strictObject({
+  confirmed: z.literal(true),
+});
+/** The confirmation holds until `expiresAt`, long enough for a provider's sign-up round trip. */
+export const CommunityWireAgeConfirmationResponseSchema = z.strictObject({
+  confirmed: z.literal(true),
+  expiresAt: timestamp,
+});
 
 const REPORT_MAILBOX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 

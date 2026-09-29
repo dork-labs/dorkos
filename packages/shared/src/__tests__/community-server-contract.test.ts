@@ -107,13 +107,36 @@ describe('community server port additions', () => {
 
   it('keeps HTTP conversation DTOs strict and free of private fields', () => {
     expect(
-      CommunityWireAuthOptionsSchema.parse({ google: false, github: true, oidc: null })
-    ).toEqual({ google: false, github: true, oidc: null });
+      CommunityWireAuthOptionsSchema.parse({
+        google: false,
+        github: true,
+        oidc: null,
+        minimumAge: null,
+      })
+    ).toEqual({ google: false, github: true, oidc: null, minimumAge: null });
+    // A minimum age crosses as a whole number inside the host's allowed range, never outside it.
+    for (const [minimumAge, ok] of [
+      [18, true],
+      [13, true],
+      [21, true],
+      [12, false],
+      [22, false],
+      [17.5, false],
+    ] as const)
+      expect(
+        CommunityWireAuthOptionsSchema.safeParse({
+          google: false,
+          github: false,
+          oidc: null,
+          minimumAge,
+        }).success
+      ).toBe(ok);
     expect(
       CommunityWireAuthOptionsSchema.parse({
         google: false,
         github: false,
         oidc: { label: 'Example sign-in' },
+        minimumAge: null,
       }).oidc
     ).toEqual({ label: 'Example sign-in' });
     // Only the button text crosses the wire: never the issuer, client ID or secret.
@@ -122,6 +145,7 @@ describe('community server port additions', () => {
         google: false,
         github: false,
         oidc: { label: 'Example sign-in', clientId: 'private' },
+        minimumAge: null,
       }).success
     ).toBe(false);
     expect(
@@ -129,6 +153,7 @@ describe('community server port additions', () => {
         google: true,
         github: false,
         oidc: null,
+        minimumAge: null,
         clientSecret: 'private',
       }).success
     ).toBe(false);

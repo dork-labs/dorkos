@@ -2,9 +2,17 @@ import { useEffect, useState } from 'react';
 import type { CommunityWireAuthOptions } from '@dorkos/shared/community-wire';
 import { request } from './api.js';
 
-const NO_PROVIDERS: CommunityWireAuthOptions = { google: false, github: false, oidc: null };
+const NO_PROVIDERS: CommunityWireAuthOptions = {
+  google: false,
+  github: false,
+  oidc: null,
+  minimumAge: null,
+};
 
-/** The sign-in buttons this host offers beside email and password; none until loaded. */
+/**
+ * The sign-in buttons this host offers beside email and password, and the minimum age a new
+ * account must confirm; none until loaded.
+ */
 export function useSignInOptions(): CommunityWireAuthOptions {
   const [options, setOptions] = useState(NO_PROVIDERS);
   useEffect(() => {
@@ -24,6 +32,8 @@ export function useSignInOptions(): CommunityWireAuthOptions {
 const MESSAGES: Record<string, string> = {
   invitation_required:
     'This account is not on this host yet. Open your invitation link first, then sign in.',
+  age_confirmation_required:
+    'Your account was not created. Choose to create an account, tick the box that confirms your age, then try again.',
   account_not_linked:
     'An account with this email already exists here. Sign in with your password, then link single sign-on from Settings, Account.',
   unable_to_get_user_info:

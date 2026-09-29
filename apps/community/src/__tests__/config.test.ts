@@ -209,6 +209,20 @@ describe('community startup config', () => {
     });
   });
 
+  it('asks no minimum age unless the host sets a whole number from 13 to 21', () => {
+    // Purpose: fails if an unset or blank setting turns the age check on, or a typo such as 180,
+    // a fraction or a word starts a Community with an age check nobody meant.
+    expect(parseConfig(valid).minimumAge).toBeNull();
+    expect(parseConfig({ ...valid, COMMUNITY_MINIMUM_AGE: '' }).minimumAge).toBeNull();
+    expect(parseConfig({ ...valid, COMMUNITY_MINIMUM_AGE: '18' }).minimumAge).toBe(18);
+    expect(parseConfig({ ...valid, COMMUNITY_MINIMUM_AGE: '13' }).minimumAge).toBe(13);
+    expect(parseConfig({ ...valid, COMMUNITY_MINIMUM_AGE: '21' }).minimumAge).toBe(21);
+    for (const value of ['12', '22', '180', '16.5', 'eighteen', '-18'])
+      expect(() => parseConfig({ ...valid, COMMUNITY_MINIMUM_AGE: value }), value).toThrow(
+        'COMMUNITY_MINIMUM_AGE'
+      );
+  });
+
   it('refuses a host link that is not HTTPS, or for reports a bare mailto address', () => {
     // Purpose: fails if a link can be plain HTTP, script, carry credentials, or smuggle a
     // pre-filled mail body past the one the Report link writes itself.
