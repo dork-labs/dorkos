@@ -1935,6 +1935,116 @@ describe('after review', () => {
     expect(await copyEvidence(h)).toEqual({ claimed: true, stored: true });
   });
 
+  // Purpose: fails if a host operator (or the offline command) can let preserved material go
+  // while the community is under a legal hold, which obliges the host to keep its data.
+  it('refuses to release held content while the community is under a legal hold', async () => {
+    const c = await canary(bare, bareOperator.cookie, 'legalhold');
+    const key = await fileKeyOf(bare, c.attachmentId);
+    const t = await created(
+      await takedown(
+        bare,
+        c.s.communityId,
+        { bearer: bareKey.secret },
+        {
+          target: { kind: 'entry', entryId: c.entryId },
+          category: 'child_safety',
+        }
+      )
+    );
+    expect(t.evidence.state).toBe('held_on_primary');
+    const legalHold = (method: 'PUT' | 'DELETE') =>
+      bare.call(`/api/v1/host/communities/${c.s.communityId}/legal-hold`, {
+        method,
+        cookie: bareOperator.cookie,
+        ...(method === 'PUT' ? { body: { reference: null } } : {}),
+      });
+    await expectStatus(await legalHold('PUT'), 200, 'legal hold');
+    const release = () =>
+      hostCall(
+        bare,
+        `/takedowns/${t.id}/release-held`,
+        { cookie: bareOperator.cookie },
+        {
+          password: TENANCY_PASSWORD,
+        }
+      );
+    const refused = await release();
+    expect({ status: refused.status, code: (await refused.json()).code }).toEqual({
+      status: 409,
+      code: 'LEGAL_HOLD_ACTIVE',
+    });
+    await expect(
+      runTakedownCommand(
+        bare.pool,
+        { kind: 'release-held', takedownId: t.id },
+        { evidenceStore: false }
+      )
+    ).rejects.toMatchObject({ code: 'LEGAL_HOLD_ACTIVE' });
+    expect((await blobState(bare, key)).state).toBe('evidence_hold');
+    expect(await staged(bare, t.id)).toBe(1);
+    await expectStatus(await legalHold('DELETE'), 200, 'release legal hold');
+    expect((await release()).status).toBe(200);
+    expect((await blobState(bare, key)).state).toBe('pending_delete');
+  });
+
+  // Purpose: fails if an export already being built keeps what it wrote before a takedown: the
+  // job must drop its segments and start again, so its archive never holds the removed icon.
+  it('restarts an export being built, so it drops what it wrote before the takedown', async () => {
+    const s = await makeScene(h, operator.cookie, 'exportrestart');
+    const iconKey = await setIcon(h, s, 'restart-icon');
+    const started = await body<{ export: { id: string } }>(
+      await h.call(`${s.base}/owner/export`, {
+        cookie: s.owner.cookie,
+        body: { password: TENANCY_PASSWORD },
+      }),
+      202,
+      'owner export'
+    );
+    const exportId = started.export.id;
+    let checked = false;
+    await drainExports(h.pool, h.blobStore, {
+      hooks: {
+        afterSegment: async (event) => {
+          if (checked || event.exportId !== exportId) return;
+          checked = true;
+          const written = await h.pool.query<{ blob_key: string }>(
+            'SELECT blob_key FROM export_segments WHERE export_id=$1',
+            [exportId]
+          );
+          expect(written.rows.length).toBeGreaterThan(0);
+          await created(
+            await takedown(
+              h,
+              s.communityId,
+              { bearer: keys.takedown.secret },
+              {
+                target: { kind: 'icon' },
+              }
+            )
+          );
+          // The half-built job dropped every segment it wrote and went back to the queue.
+          expect(
+            (await h.pool.query('SELECT 1 FROM export_segments WHERE export_id=$1', [exportId]))
+              .rowCount
+          ).toBe(0);
+          expect(
+            (await h.pool.query('SELECT state FROM export_archives WHERE id=$1', [exportId])).rows
+          ).toEqual([{ state: 'queued' }]);
+          for (const row of written.rows)
+            expect((await blobState(h, row.blob_key)).state).toBe('pending_delete');
+        },
+      },
+    });
+    expect(checked).toBe(true);
+    const download = await h.call(`${s.base}/exports/${exportId}/archive`, {
+      cookie: s.owner.cookie,
+    });
+    expect(download.status).toBe(200);
+    const archive = await openArchive(Buffer.from(await download.arrayBuffer()));
+    expect(archive.names.some((name) => name.includes('icon'))).toBe(false);
+    expect((await blobState(h, iconKey)).state).toBe('evidence_hold');
+  });
+
   // Purpose: fails if a download that started before a takedown keeps sending the file: its
   // bytes stay in storage for the copy, so only a per-chunk check can stop it.
   it('stops a download in progress once the file is taken down', async () => {

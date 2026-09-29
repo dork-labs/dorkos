@@ -390,7 +390,7 @@ export async function retryTakedownEvidence(
  * `not_configured` and the staged record is dropped.
  *
  * A host operator may release only bytes held on this server for want of a store
- * (`held_on_primary`). The offline command (`offline: true`) may release any unsettled copy,
+ * (`held_on_primary`), and nobody may while the community is under a legal hold. The offline command (`offline: true`) may release any unsettled copy,
  * which is how a host backs out this feature.
  */
 export async function releaseHeldEvidence(
@@ -403,6 +403,18 @@ export async function releaseHeldEvidence(
     input.actor.kind === 'offline' ? UNSETTLED_EVIDENCE : ['held_on_primary'];
   if (!releasable.includes(row.evidence_state))
     throw new ApiError(409, 'STATE_CONFLICT', 'This takedown holds nothing to release.');
+  // A legal hold means the host must keep this community's data, so nobody, not even the
+  // offline command, lets preserved material go while one stands. A deleted community has none.
+  const hold = await client.query<{ legal_hold_at: Date | null }>(
+    'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
+    [row.community_id]
+  );
+  if (hold.rows[0]?.legal_hold_at)
+    throw new ApiError(
+      409,
+      'LEGAL_HOLD_ACTIVE',
+      'This community is under a legal hold. Release the hold before releasing held content.'
+    );
   const staged = await client.query<{ blob_keys: string[] }>(
     'DELETE FROM takedown_evidence_staging WHERE takedown_id=$1 RETURNING blob_keys',
     [row.id]
