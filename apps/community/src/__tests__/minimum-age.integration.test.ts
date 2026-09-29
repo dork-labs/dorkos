@@ -90,6 +90,13 @@ function forgedConfirmation(age: number, expiresAt: number, secret = AUTH_SECRET
   return `${AGE_CONFIRMATION_COOKIE}=${signValue(`age-${age}-${expiresAt}`, secret)}`;
 }
 
+/** Whether a response tells the browser to drop its age confirmation. */
+function clearsConfirmation(response: Response) {
+  return response.headers
+    .getSetCookie()
+    .some((value) => value.startsWith(`${AGE_CONFIRMATION_COOKIE}=;`) && /Max-Age=0/iu.test(value));
+}
+
 /** Issue a one-seat invitation and return the cookie its preflight grants. */
 async function invitation() {
   const issued = await call(agedUrl, '/api/v1/invites', 'POST', { seats: 1 }, ownerCookie);
@@ -139,7 +146,9 @@ async function oidcSignIn(cookie: string) {
   const held = cookies(cookie, cookieOf(begin));
   const callback = await call(agedUrl, `${back.pathname}${back.search}`, 'GET', undefined, held);
   expect(callback.status).toBe(302);
-  return new URL(callback.headers.get('location')!, PUBLIC_URL);
+  return Object.assign(new URL(callback.headers.get('location')!, PUBLIC_URL), {
+    cleared: clearsConfirmation(callback),
+  });
 }
 
 beforeAll(async () => {
@@ -211,6 +220,9 @@ describe('a minimum age set by the host', () => {
       cookies(grant, await confirmAge())
     );
     expect(done.status).toBe(201);
+    // One tick makes one account: the next person in this browser is asked again.
+    expect(clearsConfirmation(done)).toBe(true);
+    expect(clearsConfirmation(refused)).toBe(false);
     // Signing in to an account that already exists never asks.
     const signIn = await call(agedUrl, '/api/auth/sign-in/email', 'POST', {
       email: 'owner@example.com',
@@ -249,6 +261,7 @@ describe('a minimum age set by the host', () => {
     );
     expect(created.status).toBe(200);
     expect(await userIdFor('confirmed@example.com')).not.toBeNull();
+    expect(clearsConfirmation(created)).toBe(true);
   });
 
   it('refuses a single sign-on sign-up without the confirmation, and admits one with it', async () => {
@@ -269,6 +282,8 @@ describe('a minimum age set by the host', () => {
     const admitted = await oidcSignIn(cookies(admission, await confirmAge()));
     expect(admitted.pathname).toBe('/signed-in');
     expect(await userIdFor('sso@example.com')).not.toBeNull();
+    expect(admitted.cleared).toBe(true);
+    expect(refused.cleared).toBe(false);
     // The same identity signs in again later with no confirmation: no account is created.
     expect((await oidcSignIn('')).pathname).toBe('/signed-in');
   });

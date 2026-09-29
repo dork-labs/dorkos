@@ -49,7 +49,11 @@ import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostTakedownRoutes } from './routes/host-takedowns.js';
 import { registerTakedownNoticeRoutes } from './routes/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
-import { registerMinimumAgeRoutes, requireAgeConfirmation } from './sign-up/minimum-age.js';
+import {
+  forgetAgeConfirmation,
+  registerMinimumAgeRoutes,
+  requireAgeConfirmation,
+} from './sign-up/minimum-age.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
 import { UploadSlots } from './imports/upload.js';
 import { registerHistoryOriginRoute } from './routes/history-origin.js';
@@ -341,6 +345,7 @@ export function createCommunityApp({
       };
     });
     c.header('Cache-Control', 'no-store');
+    forgetAgeConfirmation(c, config);
     return json(c, CommunityWireBootstrapCompleteResponseSchema, result, 201);
   });
 

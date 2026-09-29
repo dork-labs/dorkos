@@ -47,7 +47,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
   const pairingId = new URLSearchParams(search).get('pairingId');
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [error, setError] = useState(() =>
-    pairingId ? (takeSignInError() ?? '') : 'This approval link is incomplete.'
+    pairingId ? (takeSignInError({ signInOnly: true }) ?? '') : 'This approval link is incomplete.'
   );
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [email, setEmail] = useState('');

@@ -136,7 +136,7 @@ When it is set, every sign-up form shows "You must be at least N to join" and a 
 - **Google, GitHub, and single sign-on.** Those buttons stay off on a sign-up form until the box is ticked. If someone uses one to sign up without ticking it (for example, from the sign-in side of the form), no account is created. They come back to the page with a note asking them to tick the box and try again.
 - **The first owner, and a claimed community.** The first owner's setup and an owner claim link ask the same question.
 
-A tick lasts 30 minutes in that browser, long enough to finish signing up through Google, GitHub, or single sign-on. Raising the age asks again, even of someone who ticked a lower one. People who already have an account are never asked when they sign in, and turning the setting on or off changes nothing for them.
+The page sends the confirmation when the person submits the form or chooses Google, GitHub, or single sign-on, not when they tick the box. It lasts 30 minutes in that browser, long enough to finish signing up through one of those, and it is used up once the account is made, so the next person to sign up in the same browser is asked again. Raising the age asks again, even of someone who confirmed a lower one. People who already have an account are never asked when they sign in, and turning the setting on or off changes nothing for them.
 
 This is a person's own word, not a check of their age. Invitations and owner claims work exactly as before.
 

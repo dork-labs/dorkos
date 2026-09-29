@@ -27,10 +27,10 @@ describe('the pricing page says what the price does not include', () => {
 });
 
 const ELIGIBILITY_LINE =
-  'Paid plans and hosted communities are for people in the United States who are 18 or older. The free, open-source app works everywhere, and so does running DorkOS or a community on your own computer or server.';
+  'Paid plans and communities we host for you are for people in the United States who are 18 or older. The free, open-source app is open to everyone, wherever they live, and so is running DorkOS or a community on your own computer or server.';
 
 describe('the pricing page says who can buy', () => {
-  // Fails if the line moves away from the plans, drops the free app's "everywhere", or the
+  // Fails if the line moves away from the plans, drops that the free app is open to everyone, or the
   // question and the note stop saying the same thing.
   it('says it beside the plan cards', () => {
     render(<PricingPage />);

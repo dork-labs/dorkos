@@ -4,7 +4,11 @@ import type { Pool } from 'pg';
 import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { accountErasureRunning } from './erasure/guards.js';
-import { ageConfirmationMessage, ageConfirmed } from './sign-up/minimum-age.js';
+import {
+  AGE_CONFIRMATION_COOKIE,
+  ageConfirmationMessage,
+  ageConfirmed,
+} from './sign-up/minimum-age.js';
 import { communityOidc } from './oidc.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
 
@@ -136,6 +140,18 @@ export function createCommunityAuth(
             }
             refuseUnconfirmedAge(ctx?.headers?.get('cookie') ?? null);
             return { data: user };
+          },
+          // One confirmation makes one account: clear it, so the next person to sign up in this
+          // browser is asked again rather than riding on someone else's tick.
+          after: async (_user, ctx) => {
+            if (config.minimumAge === null || !ctx) return;
+            ctx.setCookie(AGE_CONFIRMATION_COOKIE, '', {
+              path: '/',
+              maxAge: 0,
+              httpOnly: true,
+              sameSite: 'lax',
+              secure: config.publicUrl.startsWith('https:'),
+            });
           },
         },
       },

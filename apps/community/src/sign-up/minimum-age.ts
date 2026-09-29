@@ -1,5 +1,6 @@
 import type { Hono } from 'hono';
-import { setCookie } from 'hono/cookie';
+import type { Context } from 'hono';
+import { deleteCookie, setCookie } from 'hono/cookie';
 import {
   CommunityWireAgeConfirmationRequestSchema,
   CommunityWireAgeConfirmationResponseSchema,
@@ -59,11 +60,25 @@ export function requireAgeConfirmation(
 }
 
 /**
- * Register `POST /api/v1/age-confirmation`, which records that the person at this browser ticked
- * "I am at least N years old" before creating an account. It is the one door every sign-up path
- * goes through: a password sign-up, the first owner's setup, and the start of a Google, GitHub or
- * single sign-on round trip, whose callback reaches the account-creation hook with this cookie.
- * Not registered when the host set no minimum age, so the route answers 404 there.
+ * Clear this browser's confirmation once it has made an account, so the next person to sign up
+ * in the same browser is asked again. The Better Auth paths do the same in `auth.ts`.
+ */
+export function forgetAgeConfirmation(c: Context, config: MinimumAgeConfig): void {
+  if (config.minimumAge === null) return;
+  deleteCookie(c, AGE_CONFIRMATION_COOKIE, {
+    path: '/',
+    secure: config.publicUrl.startsWith('https:'),
+  });
+}
+
+/**
+ * Register `POST /api/v1/age-confirmation`, which records that the person at this browser
+ * confirmed "I am at least N years old" before creating an account. The page sends it when the
+ * sign-up form is submitted or a provider button is chosen, never on the tick itself. It is the
+ * one door every sign-up path goes through: a password sign-up, the first owner's setup, and the
+ * start of a Google, GitHub or single sign-on round trip, whose callback reaches the
+ * account-creation hook with this cookie. Not registered when the host set no minimum age, so the
+ * route answers 404 there.
  */
 export function registerMinimumAgeRoutes(
   app: Hono,

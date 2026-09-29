@@ -2,6 +2,7 @@
 covers:
   - 'feat(community): let a host ask for a minimum age at sign-up (DOR-2554)'
   - 'feat(site): say who can buy a plan or a hosted community (DOR-2555)'
+  - 'fix(community): use an age confirmation once, and word eligibility plainly (DOR-2554, DOR-2555)'
 ---
 
 ### Added
@@ -10,4 +11,4 @@ covers:
 
 ### Changed
 
-- The pricing page and the Communities guide now say that paid plans and hosted communities are for people in the United States who are 18 or older. The free, open-source app, and running DorkOS or a community yourself, still work everywhere (DOR-2555)
+- The pricing page and the Communities guide now say that paid plans, and communities DorkOS hosts for you, are for people in the United States who are 18 or older. The free, open-source app, and running DorkOS or a community yourself, stay open to everyone, wherever they live (DOR-2555)
