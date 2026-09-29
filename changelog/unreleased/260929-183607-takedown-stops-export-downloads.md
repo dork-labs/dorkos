@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(community): stop export and icon downloads a takedown deletes, and keep files an author took out (DOR-2331, DOR-2332)'
+  - "fix(community): re-check an export's archive per window, and mark files removed before a takedown"
 ---
 
 ### Fixed
