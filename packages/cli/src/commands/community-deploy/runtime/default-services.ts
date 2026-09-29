@@ -10,7 +10,7 @@ import {
   readFlyRegions,
   type FlyAppIdentity,
 } from '../fly-read.js';
-import { createFlyApp } from '../fly-mutate.js';
+import { createFlyApp, stageFlySecrets } from '../fly-mutate.js';
 import {
   readNeonBranches,
   readNeonBranchTopology,
@@ -21,10 +21,16 @@ import {
 } from '../neon-read.js';
 import { createNeonProject } from '../neon-mutate.js';
 import { FlyGraphqlClientError, FlyTigrisGraphqlClient } from '../fly-graphql-client.js';
-import { verifyTigrisBinding, type TigrisAddOnIdentity } from '../fly-graphql-contract.js';
 import {
+  verifyTigrisBinding,
+  type TigrisAddOnIdentity,
+  type TigrisBucketCredentials,
+} from '../fly-graphql-contract.js';
+import {
+  EXPECTED_TIGRIS_SECRET_NAMES,
   readFlySecretInventory,
   readFlySessionCredential,
+  TigrisSessionError,
   verifyTigrisSecretNames,
   type FlySessionReadOptions,
 } from '../tigris-session.js';
@@ -166,6 +172,39 @@ function tigrisIdentity(
   };
 }
 
+/**
+ * Put the bucket's two access keys on the app, unless both are already there.
+ *
+ * Fly's servers do not set them when the bucket is created; flyctl does it client-side from the
+ * add-on's `environment`. The keys come from the create answer held in memory, or, on a resumed
+ * launch that lost them, from one exact-ID read. They are staged with the same `secrets import
+ * --stage` path as every other app secret, so the first deploy applies them, and are proved by
+ * name only. One name without the other is never overwritten: that app holds keys this launch
+ * did not set.
+ */
+async function ensureTigrisSecrets(
+  options: CommunityServiceOptions,
+  appName: string,
+  addOnId: string,
+  held: TigrisBucketCredentials | null
+): Promise<void> {
+  const before = await readFlySecretInventory(options.fly, appName);
+  const present = EXPECTED_TIGRIS_SECRET_NAMES.filter((name) =>
+    before.some((item) => item.name === name)
+  );
+  if (present.length === EXPECTED_TIGRIS_SECRET_NAMES.length) return;
+  if (present.length > 0) throw new TigrisSessionError('MISSING_TIGRIS_SECRETS');
+  const credentials =
+    held ?? (await useTigrisClient(options, (client) => client.readTigrisCredentials(addOnId)));
+  if (!credentials) throw new TigrisSessionError('MISSING_TIGRIS_SECRETS');
+  try {
+    await credentials.use((values) => stageFlySecrets(options.fly, appName, values));
+  } finally {
+    credentials.dispose();
+  }
+  verifyTigrisSecretNames(await readFlySecretInventory(options.fly, appName));
+}
+
 /** Build exact-ID creation boundaries over the accepted service wrappers. */
 export function createDefaultCommunityCreationDependencies(input: {
   options: CommunityServiceOptions;
@@ -184,6 +223,8 @@ export function createDefaultCommunityCreationDependencies(input: {
   // The plan records the Fly organization by slug, as flyctl does; Fly's add-on API wants the
   // organization's GraphQL ID instead, as `fly ext tigris create` sends it.
   let flyOrganizationId: string | undefined;
+  // The keys from the create answer, held only until `inspect` has put them on the app.
+  let tigrisCredentials: TigrisBucketCredentials | null = null;
   return {
     persist: input.persist,
     now: input.now,
@@ -262,17 +303,22 @@ export function createDefaultCommunityCreationDependencies(input: {
             primaryRegion: input.plan.fly.region,
           })
         );
-        const result = tigrisIdentity(created, input.plan, exactApp);
-        return result;
+        tigrisCredentials?.dispose();
+        tigrisCredentials = created.credentials;
+        return tigrisIdentity(created.identity, input.plan, exactApp);
       },
       inspect: async (id) => {
-        const exactApp = await app();
-        const found = await useTigrisClient(input.options, (client) => client.readTigris(id));
-        const result = tigrisIdentity(found, input.plan, exactApp);
-        verifyTigrisSecretNames(
-          await readFlySecretInventory(input.options.fly, input.plan.fly.appName)
-        );
-        return result;
+        const held = tigrisCredentials;
+        tigrisCredentials = null;
+        try {
+          const exactApp = await app();
+          const found = await useTigrisClient(input.options, (client) => client.readTigris(id));
+          const result = tigrisIdentity(found, input.plan, exactApp);
+          await ensureTigrisSecrets(input.options, input.plan.fly.appName, found.addOnId, held);
+          return result;
+        } finally {
+          held?.dispose();
+        }
       },
     },
   };
