@@ -88,6 +88,18 @@ const RUNNERS: Record<string, (c: Case) => void> = {
     // unchanged, unknown fields included.
     expect(read(input.state)).toEqual(input.state);
     expect(read(expected.readBack)).toEqual(expected.readBack);
+    // Contract 4.1.0: a writer stamps `updatedAt` with its own clock
+    // (`input.now`) on the record it writes, and only there, so a reader sees
+    // that time as the record's last update and every other record's own.
+    if (input.now !== undefined && expected.valid === true) {
+      const written = (input.write as { issueId: string }).issueId;
+      const before = input.state as Record<string, { updatedAt?: unknown }>;
+      const after = read(expected.readBack) as Record<string, { updatedAt?: unknown }>;
+      expect(after[written]?.updatedAt).toBe(input.now);
+      for (const [issueId, record] of Object.entries(before)) {
+        if (issueId !== written) expect(after[issueId]?.updatedAt).toBe(record.updatedAt);
+      }
+    }
   },
 };
 

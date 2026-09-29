@@ -1,6 +1,6 @@
 {
   "contract": "fleet",
-  "about": "Reading <main checkout>/.dork/flow/flow-state.json, a map of issue id to FlowRun (spec flow-cli-core 1.3). input.state is the parsed file. expected.valid says whether the whole file passes the FlowRun schema; expected.readBack is what a reader returns: the records unchanged, unknown fields included, when valid, and {} when any record is invalid (the reader is all-or-nothing). 'account', 'host' and 'runtime' are optional strings. 'host' is a bare string (cli, dorkos or cmux today) and 'runtime' is a bare string (claude-code, codex or opencode today), so a record from a future launcher or runtime still reads. 'account' is an id in that runtime's registry. 'checkpointAt', 'checkpointSha', 'drain' and 'limit' are flow's own optional fields (spec flow-handoff-dispatch 4.3 and 5.1); DorkOS need not read them, but a writer must keep them, like any unknown field. When input.write is present, it is one FlowRun upserted by its issueId through the read-modify-write store, and expected.readBack is the file afterwards: unknown fields on every other record must survive.",
+  "about": "Reading <main checkout>/.dork/flow/flow-state.json, a map of issue id to FlowRun (spec flow-cli-core 1.3). input.state is the parsed file. expected.valid says whether the whole file passes the FlowRun schema; expected.readBack is what a reader returns: the records unchanged, unknown fields included, when valid, and {} when any record is invalid (the reader is all-or-nothing). 'account', 'host' and 'runtime' are optional strings. 'host' is a bare string (cli, dorkos or cmux today) and 'runtime' is a bare string (claude-code, codex or opencode today), so a record from a future launcher or runtime still reads. 'account' is an id in that runtime's registry. 'checkpointAt', 'checkpointSha', 'drain' and 'limit' are flow's own optional fields (spec flow-handoff-dispatch 4.3 and 5.1); DorkOS need not read them, but a writer must keep them, like any unknown field. When input.write is present, it is one FlowRun upserted by its issueId through the read-modify-write store, and expected.readBack is the file afterwards: unknown fields on every other record must survive. 'updatedAt' (when the record was last written, ISO) and 'dispatchedBy' (the session id of the chat that launched the run, when another chat did) are optional strings (contract 4.1.0). A reader shows a run in the launching chat by matching 'dispatchedBy' to that chat's session id, and takes the newest of 'updatedAt' and the run's other timestamps as its last update. A writer stamps 'updatedAt' with its own clock on the record it writes, and only on that record; a record from before 4.1.0 has neither field and still reads. So when input.write is present, input.now is the writer's clock: the written record reads back with 'updatedAt' equal to input.now (whatever it carried), and every other record keeps its own 'updatedAt' untouched.",
   "cases": [
     {
       "name": "a minimal record reads back unchanged",
@@ -227,6 +227,7 @@
     {
       "name": "writing one run keeps another run's unknown fields",
       "input": {
+        "now": "2026-09-26T16:31:00.000Z",
         "state": {
           "issue-1": {
             "issueId": "issue-1",
@@ -289,7 +290,8 @@
             "workerPid": 2,
             "startedAt": "2026-09-26T16:30:00.000Z",
             "account": "personal",
-            "host": "cli"
+            "host": "cli",
+            "updatedAt": "2026-09-26T16:31:00.000Z"
           }
         }
       }
@@ -297,6 +299,7 @@
     {
       "name": "a record carrying a checkpoint, drain state and a limit reads back unchanged after another run is written",
       "input": {
+        "now": "2026-09-26T16:31:00.000Z",
         "state": {
           "issue-1": {
             "issueId": "issue-1",
@@ -441,7 +444,8 @@
             "status": "queued",
             "attemptCount": 0,
             "workerPid": 2,
-            "startedAt": "2026-09-26T16:30:00.000Z"
+            "startedAt": "2026-09-26T16:30:00.000Z",
+            "updatedAt": "2026-09-26T16:31:00.000Z"
           }
         }
       }
@@ -526,6 +530,154 @@
             "startedAt": "2026-09-26T16:00:00.000Z"
           },
           "issue-2": {"issueId": "issue-2", "identifier": "ABC-2"}
+        }
+      },
+      "expected": {"valid": false, "readBack": {}}
+    },
+    {
+      "name": "updatedAt and dispatchedBy read back",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "updatedAt": "2026-09-26T16:45:00.000Z",
+            "dispatchedBy": "orchestrator-session"
+          }
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "updatedAt": "2026-09-26T16:45:00.000Z",
+            "dispatchedBy": "orchestrator-session"
+          }
+        }
+      }
+    },
+    {
+      "name": "writing one run keeps another run's updatedAt and dispatchedBy",
+      "input": {
+        "now": "2026-09-26T16:50:00.000Z",
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "updatedAt": "2026-09-26T16:45:00.000Z",
+            "dispatchedBy": "orchestrator-session"
+          }
+        },
+        "write": {
+          "issueId": "issue-2",
+          "identifier": "ABC-2",
+          "sessionId": "s-2",
+          "worktreePath": "/work/ABC-2",
+          "branch": "abc-2",
+          "stage": "execute",
+          "status": "running",
+          "attemptCount": 0,
+          "workerPid": 4242,
+          "startedAt": "2026-09-26T16:30:00.000Z"
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "updatedAt": "2026-09-26T16:45:00.000Z",
+            "dispatchedBy": "orchestrator-session"
+          },
+          "issue-2": {
+            "issueId": "issue-2",
+            "identifier": "ABC-2",
+            "sessionId": "s-2",
+            "worktreePath": "/work/ABC-2",
+            "branch": "abc-2",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:30:00.000Z",
+            "updatedAt": "2026-09-26T16:50:00.000Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "an updatedAt that is not a string makes the file invalid",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "updatedAt": 1759000000000
+          }
+        }
+      },
+      "expected": {"valid": false, "readBack": {}}
+    },
+    {
+      "name": "a dispatchedBy that is not a string makes the file invalid",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "dispatchedBy": {"sessionId": "orchestrator-session"}
+          }
         }
       },
       "expected": {"valid": false, "readBack": {}}
