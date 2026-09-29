@@ -10,6 +10,7 @@ import type {
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import {
+  accessLevelRevisionIds,
   CONNECTION_GONE_AGENT_COPY,
   CONNECTION_READINESS_COPY,
   disconnectStuckOwnerLine,
@@ -413,15 +414,7 @@ export function mockAccessPreview(connectionId: string): ConnectorReconciliation
           supported: true,
         }))
       : [];
-  const ids = (level: 'read' | 'read-write') =>
-    candidates
-      .filter(
-        (candidate) =>
-          candidate.capabilityClassification === 'read' ||
-          (level === 'read-write' && candidate.capabilityClassification === 'write')
-      )
-      .map((candidate) => candidate.operationRevisionId)
-      .sort();
+  const ids = (level: 'read' | 'read-write') => accessLevelRevisionIds(candidates, level);
   return {
     previewId: `preview-${connectionId}`,
     connection: {
@@ -438,8 +431,8 @@ export function mockAccessPreview(connectionId: string): ConnectorReconciliation
       { agentId: 'mailroom', displayName: 'mailroom' },
     ],
     currentGrants: [
-      { agentId: 'dorkbot', operationRevisionIds: ids('read-write') },
-      { agentId: 'mailroom', operationRevisionIds: ids('read') },
+      { agentId: 'dorkbot', operationRevisionIds: ids('read-write'), level: 'read-write' },
+      { agentId: 'mailroom', operationRevisionIds: ids('read'), level: 'read' },
     ],
     everyAgent: { available: true, operationRevisionIds: [] },
     catalogComplete: true,

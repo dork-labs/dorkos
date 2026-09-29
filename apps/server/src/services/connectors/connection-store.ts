@@ -18,6 +18,11 @@ import {
   type Db,
 } from '@dorkos/db';
 import {
+  endAgentAccessLevels,
+  endConnectionAccessLevels,
+  endEveryAgentAccessLevels,
+} from './execution/access-levels.js';
+import {
   liveEveryAgentConnections,
   revokeEveryAgentGrants,
   type EndedEveryAgentGrant,
@@ -276,6 +281,7 @@ export class ConnectionStore {
           .map((row) => row.id);
         ended = liveEveryAgentConnections(tx, instanceConnections);
         revokeEveryAgentGrants(tx, instanceConnections, now);
+        endEveryAgentAccessLevels(tx, instanceConnections);
       }
       return executionConfigGeneration;
     });
@@ -396,6 +402,7 @@ export class ConnectionStore {
           )
         )
         .run();
+      endConnectionAccessLevels(tx, ids);
       tx.update(connectorEventSubscriptions)
         .set({
           enabled: false,
@@ -916,6 +923,7 @@ export class ConnectionStore {
         .set({ revokedAt: now })
         .where(inArray(connectionOperationGrants.connectionId, [...ids]))
         .run();
+      endConnectionAccessLevels(tx, ids);
       tx.update(connectorEventSubscriptions)
         .set({
           enabled: false,
@@ -955,6 +963,7 @@ export class ConnectionStore {
         .set({ revokedAt: now })
         .where(eq(connectionOperationGrants.agentId, agentId))
         .run();
+      endAgentAccessLevels(tx, agentId);
       tx.update(connectorEventSubscriptions)
         .set({
           enabled: false,
@@ -1022,6 +1031,7 @@ export class ConnectionStore {
         .set({ revokedAt: now })
         .where(and(eq(connectionOperationGrants.connectionId, connectionId), or(...grantOwners)))
         .run();
+      endAgentAccessLevels(tx, agentId, connectionId);
       tx.update(connectorEventSubscriptions)
         .set({
           enabled: false,

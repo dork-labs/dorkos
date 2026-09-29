@@ -2,6 +2,24 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260929-071355",
+      "slug": "access-levels-are-stored-as-intent",
+      "title": "Access levels are stored as intent and follow the app, never wider than their class",
+      "status": "accepted",
+      "created": "2026-09-29",
+      "extractedFrom": null,
+      "specSlug": "connections-health",
+      "amends": "260928-121730",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/connectors/execution/access-levels.ts",
+        "apps/server/src/services/connectors/reconciliation-service.ts",
+        "packages/db/src/schema/connectors/connections.ts",
+        "packages/shared/src/connector-schemas.ts",
+        "apps/client/src/layers/features/connections/lib/access-card-selection.ts"
+      ]
+    },
+    {
       "id": "260928-130908",
       "slug": "own-terminal-actions-separately-from-request-admission",
       "title": "Own terminal actions separately from request admission",
@@ -28,7 +46,7 @@
       "supersedes": null,
       "affects": [
         "packages/connector-providers/src/composio/sdk-client.ts",
-        "apps/client/src/layers/features/connections/lib/reconciliation-selection.ts"
+        "packages/shared/src/connector-schemas.ts"
       ]
     },
     {

@@ -45,6 +45,7 @@ import type {
 } from '../../core/auth/cloud-link-client.js';
 import { logger } from '../../../lib/logger.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import { endAgentAccessLevels, endConnectionAccessLevels } from '../execution/access-levels.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type {
   ConnectorManagedLifecyclePort,
@@ -693,6 +694,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .set({ revokedAt: now })
       .where(eq(connectionOperationGrants.connectionId, connectionId))
       .run();
+    endConnectionAccessLevels(tx, [connectionId]);
     tx.update(connectorEventSubscriptions)
       .set({
         enabled: false,
@@ -734,6 +736,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         revisions: [],
         operationRevisionIds: [],
       });
+      endAgentAccessLevels(tx, input.agentId, input.connectionId);
       tx.delete(agentConnectionAttachments)
         .where(
           and(

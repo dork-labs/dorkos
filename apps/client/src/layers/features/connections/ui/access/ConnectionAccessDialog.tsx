@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import {
+  accessLevelRevisionIds,
   actionNameFromSlug,
   type ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
@@ -21,7 +22,6 @@ import {
 } from '@/layers/shared/ui';
 import {
   changedGrantSelections,
-  revisionIdsForAccessLevel,
   selectionsFromPreview,
   type AgentOperationSelections,
 } from '../../lib/reconciliation-selection';
@@ -182,26 +182,26 @@ function ReconciliationEditor({
       ) : (
         <div className="space-y-2">
           {preview.agents.map((agent) => {
-            const selected = new Set(selections[agent.agentId] ?? []);
-            const read = revisionIdsForAccessLevel(preview.candidates, 'read');
-            const readWrite = revisionIdsForAccessLevel(preview.candidates, 'read-write');
-            const sorted = [...selected].sort();
-            const same = (candidate: string[]) =>
-              candidate.length === sorted.length &&
-              candidate.every((value, index) => value === sorted[index]);
+            const selection = selections[agent.agentId];
+            const selected = new Set(selection?.operationRevisionIds ?? []);
+            // The level the owner chose, kept as the app changes; ticking
+            // single actions below makes it exact actions instead.
             const level =
-              sorted.length === 0
-                ? 'No access'
-                : same(read)
-                  ? 'Read'
-                  : same(readWrite)
-                    ? 'Read + write'
+              selection?.level === 'read'
+                ? 'Read'
+                : selection?.level === 'read-write'
+                  ? 'Read + write'
+                  : selected.size === 0
+                    ? 'No access'
                     : 'Custom access';
             const advanced = advancedAgentId === agent.agentId;
             const setLevel = (next: 'none' | 'read' | 'read-write') =>
               setSelections({
                 ...selections,
-                [agent.agentId]: revisionIdsForAccessLevel(preview.candidates, next),
+                [agent.agentId]: {
+                  operationRevisionIds: accessLevelRevisionIds(preview.candidates, next),
+                  ...(next !== 'none' && { level: next }),
+                },
               });
 
             return (
@@ -264,7 +264,7 @@ function ReconciliationEditor({
                               else updated.delete(candidate.operationRevisionId);
                               setSelections({
                                 ...selections,
-                                [agent.agentId]: [...updated].sort(),
+                                [agent.agentId]: { operationRevisionIds: [...updated].sort() },
                               });
                             }}
                           />

@@ -56,13 +56,24 @@ function preview(
 }
 
 describe('heldAccess', () => {
-  const { candidates } = preview([]);
-  it('reads exact presets and calls anything else custom', () => {
-    expect(heldAccess(candidates, [])).toBe('none');
-    expect(heldAccess(candidates, ['read'])).toBe('read');
-    expect(heldAccess(candidates, ['send', 'read'])).toBe('read-write');
-    expect(heldAccess(candidates, ['read', 'send', 'delete'])).toBe('custom');
-    expect(heldAccess(candidates, ['send'])).toBe('custom');
+  it('reads the level the owner chose, and calls a grant without one exact actions', () => {
+    expect(heldAccess(undefined)).toBe('none');
+    expect(heldAccess({ operationRevisionIds: [] })).toBe('none');
+    expect(heldAccess({ operationRevisionIds: ['read'], level: 'read' })).toBe('read');
+    expect(heldAccess({ operationRevisionIds: ['send', 'read'], level: 'read-write' })).toBe(
+      'read-write'
+    );
+    expect(heldAccess({ operationRevisionIds: ['read', 'send', 'delete'] })).toBe('custom');
+    // Exactly what Read covers, but picked action by action: exact actions,
+    // never guessed into a level.
+    expect(heldAccess({ operationRevisionIds: ['read'] })).toBe('custom');
+  });
+
+  it('keeps saying Read after the app changes its actions (DOR-2506)', () => {
+    // The set no longer matches today's Read actions; the level is still Read.
+    expect(heldAccess({ operationRevisionIds: ['old-read'], level: 'read' })).toBe('read');
+    // A level with nothing in it yet is still the level the owner chose.
+    expect(heldAccess({ operationRevisionIds: [], level: 'read' })).toBe('read');
   });
 });
 
@@ -95,7 +106,7 @@ const ALL = ['ada', 'bo', 'cy'];
 
 describe('cardDecision', () => {
   it('gives a newly picked agent the level without touching agents already on a preset', () => {
-    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'] }]);
+    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'], level: 'read' }]);
     expect(
       cardDecision(snapshot, {
         scope: ALL,
@@ -103,11 +114,11 @@ describe('cardDecision', () => {
         level: 'read-write',
         levelTouched: false,
       }).changes
-    ).toEqual([{ agentId: 'bo', operationRevisionIds: ['read', 'send'] }]);
+    ).toEqual([{ agentId: 'bo', operationRevisionIds: ['read', 'send'], level: 'read-write' }]);
   });
 
   it('moves every picked preset holder once a level is picked, never adding sensitive actions', () => {
-    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'] }]);
+    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'], level: 'read' }]);
     expect(
       cardDecision(snapshot, {
         scope: ALL,
@@ -116,15 +127,15 @@ describe('cardDecision', () => {
         levelTouched: true,
       }).changes
     ).toEqual([
-      { agentId: 'ada', operationRevisionIds: ['read', 'send'] },
-      { agentId: 'bo', operationRevisionIds: ['read', 'send'] },
+      { agentId: 'ada', operationRevisionIds: ['read', 'send'], level: 'read-write' },
+      { agentId: 'bo', operationRevisionIds: ['read', 'send'], level: 'read-write' },
     ]);
   });
 
   it('keeps exact per-action access, but names and revokes an unpicked agent', () => {
     const snapshot = preview([
       { agentId: 'ada', operationRevisionIds: ['read', 'delete'] },
-      { agentId: 'bo', operationRevisionIds: ['read'] },
+      { agentId: 'bo', operationRevisionIds: ['read'], level: 'read' },
     ]);
     expect(
       cardDecision(snapshot, {
@@ -133,7 +144,7 @@ describe('cardDecision', () => {
         level: 'read-write',
         levelTouched: true,
       }).changes
-    ).toEqual([{ agentId: 'bo', operationRevisionIds: ['read', 'send'] }]);
+    ).toEqual([{ agentId: 'bo', operationRevisionIds: ['read', 'send'], level: 'read-write' }]);
     expect(
       cardDecision(snapshot, {
         scope: ALL,
@@ -152,7 +163,7 @@ describe('cardDecision', () => {
   it('writes only the agents in scope, whatever everyone else holds', () => {
     const snapshot = preview([
       { agentId: 'ada', operationRevisionIds: ['read', 'delete'] },
-      { agentId: 'cy', operationRevisionIds: ['read', 'send'] },
+      { agentId: 'cy', operationRevisionIds: ['read', 'send'], level: 'read-write' },
     ]);
     expect(
       cardDecision(snapshot, {
@@ -162,7 +173,7 @@ describe('cardDecision', () => {
         levelTouched: true,
       })
     ).toEqual({
-      changes: [{ agentId: 'bo', operationRevisionIds: ['read'] }],
+      changes: [{ agentId: 'bo', operationRevisionIds: ['read'], level: 'read' }],
       removedAgentIds: [],
       downgradedAgentIds: [],
       needsLevel: false,
@@ -171,8 +182,8 @@ describe('cardDecision', () => {
 
   it('changes nobody on a mixed switch and asks for a level before adding someone', () => {
     const snapshot = preview([
-      { agentId: 'ada', operationRevisionIds: ['read', 'send'] },
-      { agentId: 'bo', operationRevisionIds: ['read'] },
+      { agentId: 'ada', operationRevisionIds: ['read', 'send'], level: 'read-write' },
+      { agentId: 'bo', operationRevisionIds: ['read'], level: 'read' },
     ]);
     expect(
       cardDecision(snapshot, {
@@ -193,6 +204,32 @@ describe('cardDecision', () => {
   });
 
   it('writes nothing when the decision matches what the server already holds', () => {
+    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'], level: 'read' }]);
+    expect(
+      cardDecision(snapshot, {
+        scope: ALL,
+        picked: new Set(['ada']),
+        level: 'read',
+        levelTouched: true,
+      }).changes
+    ).toEqual([]);
+  });
+
+  it('saves Read as the level again after the app changed its actions, not as exact actions', () => {
+    // Ada holds Read from before the app added its current read action.
+    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: [], level: 'read' }]);
+    const decision = cardDecision(snapshot, {
+      scope: ALL,
+      picked: new Set(['ada']),
+      level: 'read',
+      levelTouched: false,
+    });
+    // Untouched: nothing is written, and she still reads as Read.
+    expect(decision.changes).toEqual([]);
+    expect(heldAccess(snapshot.currentGrants[0])).toBe('read');
+  });
+
+  it('never turns hand-picked actions into a level, even when they equal one', () => {
     const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'] }]);
     expect(
       cardDecision(snapshot, {
@@ -205,7 +242,9 @@ describe('cardDecision', () => {
   });
 
   it('names a downgrade, and never makes one when downgrades are not allowed', () => {
-    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read', 'send'] }]);
+    const snapshot = preview([
+      { agentId: 'ada', operationRevisionIds: ['read', 'send'], level: 'read-write' },
+    ]);
     const choice = {
       scope: ALL,
       picked: new Set(['ada']),
@@ -213,7 +252,7 @@ describe('cardDecision', () => {
       levelTouched: true,
     };
     expect(cardDecision(snapshot, choice)).toEqual({
-      changes: [{ agentId: 'ada', operationRevisionIds: ['read'] }],
+      changes: [{ agentId: 'ada', operationRevisionIds: ['read'], level: 'read' }],
       removedAgentIds: [],
       downgradedAgentIds: ['ada'],
       needsLevel: false,
@@ -235,13 +274,16 @@ describe('everyAgentDecision (DOR-2420)', () => {
 
   it('sends the chosen preset for every agent, and nothing when it already holds it', () => {
     expect(everyAgentDecision(off, { who: 'every', level: 'read', levelTouched: false })).toEqual({
-      everyAgent: { operationRevisionIds: ['read'] },
+      everyAgent: { operationRevisionIds: ['read'], level: 'read' },
       needsLevel: false,
     });
     expect(
       everyAgentDecision(off, { who: 'every', level: 'read-write', levelTouched: true })
-    ).toEqual({ everyAgent: { operationRevisionIds: ['read', 'send'] }, needsLevel: false });
-    const reading = withEvery({ available: true, operationRevisionIds: ['read'] });
+    ).toEqual({
+      everyAgent: { operationRevisionIds: ['read', 'send'], level: 'read-write' },
+      needsLevel: false,
+    });
+    const reading = withEvery({ available: true, operationRevisionIds: ['read'], level: 'read' });
     expect(initialWhoCanUse(reading)).toBe('every');
     expect(
       everyAgentDecision(reading, { who: 'every', level: 'read', levelTouched: true })
@@ -256,11 +298,14 @@ describe('everyAgentDecision (DOR-2420)', () => {
     });
     expect(initialWhoCanUse(off)).toBe('picked');
     expect(
-      everyAgentDecision(withEvery({ available: true, operationRevisionIds: ['read'] }), {
-        who: 'picked',
-        level: 'read',
-        levelTouched: false,
-      })
+      everyAgentDecision(
+        withEvery({ available: true, operationRevisionIds: ['read'], level: 'read' }),
+        {
+          who: 'picked',
+          level: 'read',
+          levelTouched: false,
+        }
+      )
     ).toEqual({ everyAgent: { operationRevisionIds: [] }, needsLevel: false });
     expect(
       everyAgentDecision(withEvery({ available: false, operationRevisionIds: [] }), {
@@ -283,7 +328,7 @@ describe('everyAgentDecision (DOR-2420)', () => {
       }
     );
     expect(everyAgentDecision(exact, { who: 'every', level: 'read', levelTouched: true })).toEqual({
-      everyAgent: { operationRevisionIds: ['read'] },
+      everyAgent: { operationRevisionIds: ['read'], level: 'read' },
       needsLevel: false,
     });
     expect(everyAgentDecision(off, { who: 'every', level: null, levelTouched: false })).toEqual({
@@ -320,12 +365,18 @@ describe('everyAgentDecision (DOR-2420)', () => {
         null
       )
     ).toBe(false);
-    const reading = withEvery({ available: true, operationRevisionIds: ['read'] });
+    const reading = withEvery({ available: true, operationRevisionIds: ['read'], level: 'read' });
     expect(initialEveryAgentLevel(reading)).toBe('read');
+    // Shared as exact actions that happen to equal Read: never shown as Read.
+    expect(
+      initialEveryAgentLevel(withEvery({ available: true, operationRevisionIds: ['read'] }))
+    ).toBeNull();
     expect(everyAgentCanWrite(reading, null)).toBe(false);
     expect(initialEveryAgentLevel(off)).toBe('read');
     expect(
-      initialEveryAgentLevel(withEvery({ available: true, operationRevisionIds: ['read', 'send'] }))
+      initialEveryAgentLevel(
+        withEvery({ available: true, operationRevisionIds: ['read', 'send'], level: 'read-write' })
+      )
     ).toBe('read-write');
   });
 });

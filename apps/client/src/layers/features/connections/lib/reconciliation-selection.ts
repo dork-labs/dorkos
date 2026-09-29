@@ -1,30 +1,58 @@
 import type {
-  ConnectorOperationClassification,
-  ConnectorReconciliationCandidate,
+  ConnectorAccessLevel,
   ConnectorReconciliationGrantSelection,
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 
-/** Mutable UI selection keyed by the named agent whose complete set it represents. */
-export type AgentOperationSelections = Record<string, string[]>;
+/**
+ * What one agent holds, or is set to hold: its exact revisions, and the level
+ * the owner chose when there is one. Without a level the revisions are exact
+ * actions, which stay exactly as picked as the app changes.
+ */
+export interface AgentAccessSelection {
+  /** The complete revision set, sorted. */
+  operationRevisionIds: string[];
+  /** The chosen level, kept as the app changes (ADR 260929-071355); absent for exact actions. */
+  level?: ConnectorAccessLevel;
+}
 
-/** Copy the server's exact current grants into deterministic UI state. */
+/** Mutable UI selection keyed by the named agent whose complete set it represents. */
+export type AgentOperationSelections = Record<string, AgentAccessSelection>;
+
+/** Copy the server's current grants, and the level each one keeps, into deterministic UI state. */
 export function selectionsFromPreview(
   preview: ConnectorReconciliationPreview
 ): AgentOperationSelections {
   return Object.fromEntries(
-    preview.agents.map((agent) => [
-      agent.agentId,
-      [
-        ...(preview.currentGrants.find((grant) => grant.agentId === agent.agentId)
-          ?.operationRevisionIds ?? []),
-      ].sort(),
-    ])
+    preview.agents.map((agent) => {
+      const grant = preview.currentGrants.find((current) => current.agentId === agent.agentId);
+      return [
+        agent.agentId,
+        {
+          operationRevisionIds: [...(grant?.operationRevisionIds ?? [])].sort(),
+          ...(grant?.level && { level: grant.level }),
+        },
+      ];
+    })
+  );
+}
+
+/** Whether two selections are the same revisions and the same level. */
+export function sameSelection(
+  left: AgentAccessSelection | undefined,
+  right: AgentAccessSelection | undefined
+): boolean {
+  const a = [...(left?.operationRevisionIds ?? [])].sort();
+  const b = [...(right?.operationRevisionIds ?? [])].sort();
+  return (
+    left?.level === right?.level &&
+    a.length === b.length &&
+    a.every((value, index) => value === b[index])
   );
 }
 
 /**
- * Return only named agents whose complete set changed.
+ * Return only named agents whose complete set or level changed.
  *
  * An unchanged agent is omitted. A changed agent with no selected revisions is
  * retained as an explicit empty replacement, which revokes its operation access.
@@ -35,42 +63,14 @@ export function changedGrantSelections(
 ): ConnectorReconciliationGrantSelection[] {
   const original = selectionsFromPreview(preview);
   return preview.agents.flatMap((agent) => {
-    const before = original[agent.agentId] ?? [];
-    const after = [...(selections[agent.agentId] ?? [])].sort();
-    if (before.length === after.length && before.every((value, index) => value === after[index])) {
-      return [];
-    }
-    return [{ agentId: agent.agentId, operationRevisionIds: after }];
+    const after = selections[agent.agentId];
+    if (sameSelection(original[agent.agentId], after)) return [];
+    return [
+      {
+        agentId: agent.agentId,
+        operationRevisionIds: [...(after?.operationRevisionIds ?? [])].sort(),
+        ...(after?.level && { level: after.level }),
+      },
+    ];
   });
-}
-
-/**
- * Whether a quick access level includes an action of this safety
- * classification: "Read" is `read` only, "Read and write" adds `write`, and
- * no level includes `destructive`, which is only ever allowed one action at a
- * time. The one rule every level preset, and every screen describing one,
- * reads from.
- *
- * @param classification - The action's stored safety classification.
- * @param level - The quick access level.
- */
-export function levelIncludes(
-  classification: ConnectorOperationClassification,
-  level: 'none' | 'read' | 'read-write'
-): boolean {
-  if (level === 'none') return false;
-  return classification === 'read' || (level === 'read-write' && classification === 'write');
-}
-
-/** Exact supported revision IDs selected by a quick access level. */
-export function revisionIdsForAccessLevel(
-  candidates: ConnectorReconciliationCandidate[],
-  level: 'none' | 'read' | 'read-write'
-): string[] {
-  return candidates
-    .filter(
-      (candidate) => candidate.supported && levelIncludes(candidate.capabilityClassification, level)
-    )
-    .map((candidate) => candidate.operationRevisionId)
-    .sort();
 }
