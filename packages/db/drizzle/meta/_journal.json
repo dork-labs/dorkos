@@ -925,6 +925,13 @@
       "when": 1790673861395,
       "tag": "0131_extension_decisions",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "6",
+      "when": 1790698124415,
+      "tag": "0132_query_indexes",
+      "breakpoints": true
     }
   ]
 }

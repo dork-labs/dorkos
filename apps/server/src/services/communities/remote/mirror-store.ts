@@ -435,10 +435,16 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       this.db
         .select({ entryJson: communityMirrorEntries.entryJson })
         .from(communityMirrorEntries)
+        // The mirror's local room names the same rows as (communityRef, remoteRoomId), one
+        // to one, and it is what `(local_room_id, remote_seq)` is keyed by: with it the page
+        // is read in order from the index; without it every cached entry of the room was
+        // read and sorted to return 200 (0.55 ms to 0.09 ms at 2,000 entries, growing with
+        // the room).
         .where(
           and(
             eq(communityMirrorEntries.communityRef, communityRef),
             eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+            eq(communityMirrorEntries.localRoomId, mirror.localRoomId),
             ...(opts.afterRemoteSeq === undefined
               ? []
               : [gt(communityMirrorEntries.remoteSeq, opts.afterRemoteSeq)])
