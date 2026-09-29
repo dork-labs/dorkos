@@ -757,6 +757,18 @@ In `apps/server/src/routes/runtimes.ts`:
 
 Phase 3 re-vendors flow's fleet contract into `packages/shared/src/__fixtures__/flow-fleet-conformance/` (today at 4.0.1) by the existing procedure. **Numbering, amended in DOR-2526:** flow (marketplace PR #103) took **4.1.0** for `updatedAt` and `dispatchedBy` on `FlowRun`, so account eligibility is **4.2.0**. Core re-vendors 4.1.0 from marketplace main (its `input.now` write cases run against core's `flow-run` reader and `FlowRunSchema`), then adds the 4.2.0 cases as the contract-first proposal: a new `project-eligibility.cases.json` (the existing `eligibility.cases.json` is flow's room rule, not projects) with the `onlyProjects` and `projectAccounts` rules, Main (`default`) restricted through `defaultAccountOnlyProjects`, and path canonicalization (a trailing slash, a symlinked root, a worktree and a subfolder all resolve to the same project), a README section, `CONTRACT_VERSION` 4.2.0 and a `proposed` note in `SOURCE.json`/`VENDORED.md`. `apps/server/src/services/core/usage/__tests__/fleet-conformance.test.ts` runs those cases against core's rule, so flow's CLI (`mayServe`) and core cannot disagree. Flow's F4 (DOR-2532) adopts the 4.2.0 cases upstream; the next re-sync from marketplace replaces the proposal. The `dispatchedBy` case in `flow-run.cases.json` (§6.8) rides the 4.1.0 re-vendoring.
 
+### 8.8 Amended in implementation (DOR-2526)
+
+Where the build differs from §8.1-§8.7, and why:
+
+- **`accounts[].onlyProjects` is optional, not defaulted.** A registry row is a contract shared with flow ("readers ignore fields they do not know; writers keep them"), so rows written by an older flow or by hand carry no such field. Absent reads exactly as `null` everywhere; the `0.93.0` migration still writes `null` onto stored rows. `defaultAccountOnlyProjects` and `projectAccounts` are defaulted as specified.
+- **Default verdicts.** The drift guard allows a wipe carry-over only on a leaf whose default is not `no-risk`, so `defaultAccountOnlyProjects` and `projectAccounts` are `permissive` (argued in `PERMISSIVE_DEFAULTS`: "no rule" is how every account behaved before) and both are in `PROTECTIVE_CARRYOVERS` (new direction `ruled`: any stated rule is narrower than none). `accounts[].onlyProjects` stays `no-risk` and has no carry-over: a wipe does not carry the registry row it rides on, so the account it limited is gone with it.
+- **The ladder's automatic fallback** takes the next eligible account in core's own ranking order (weekly headroom, then registry order), never the advisor's, so a launch never waits on an extension.
+- **Refusals before anything starts.** `dispatchSessionMessage` asks the ladder (through `ClaudeCodeRuntime.checkLaunchAccount`) for any unbound Claude Code session, named account or not, so the first message, `session_start` (both paths), carry-over and anything else that launches through it answers `account_not_allowed_here` before binding. The turn's own ladder stays the authority.
+- **Continue picker.** `continue-options` marks an account the project may not use with `notAllowed: true` (and the "Only for" reason); the client never makes it pickable.
+- **Starting work from an extension** (§7.7) is not on `main` yet; it launches through `dispatchSessionMessage`, so it inherits the refusal when it lands.
+- **Schedules.** A person's save that names an ineligible account lands and records a `tasks.account_not_allowed` Activity entry; an agent's proposal (MCP or untrusted HTTP) is refused `409`; a run fails with the sentence before either dispatch path.
+
 ## 9. Phase 4: extensions across many projects (N5, D9)
 
 ### 9.1 Trusted origin

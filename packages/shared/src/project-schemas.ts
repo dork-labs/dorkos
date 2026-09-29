@@ -171,22 +171,8 @@ export const OnlyProjectsResponseSchema = z
 export type OnlyProjectsResponse = z.infer<typeof OnlyProjectsResponseSchema>;
 
 /**
- * Why a launch was refused because the account may not work in the project
- * (HTTP `409`, spec `flow-multiproject` §8.3).
+ * The machine-readable code of every account-eligibility refusal. A launch
+ * refused this way answers HTTP `409` with `{ error, message, code, project,
+ * accountId }` (spec `flow-multiproject` §8.3).
  */
-export const AccountNotAllowedResponseSchema = z
-  .object({
-    /** The sentence to show as it is. */
-    error: z.string(),
-    /** The same sentence. */
-    message: z.string(),
-    code: z.literal('account_not_allowed_here'),
-    /** The project the work was for, or null when the folder is in no project. */
-    project: ProjectRefSchema.nullable(),
-    /** The account that was refused, or null when no account was eligible. */
-    accountId: z.string().nullable(),
-  })
-  .openapi('AccountNotAllowedResponse');
-
-/** The machine-readable code of every account-eligibility refusal. */
 export const ACCOUNT_NOT_ALLOWED_CODE = 'account_not_allowed_here';
