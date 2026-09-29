@@ -427,6 +427,12 @@ export const ContinueAccountOptionSchema = z
     reason: z.string(),
     /** The advisor's badge, when it gave one. */
     badge: z.enum(['recommended', 'reserved']).optional(),
+    /**
+     * `true` when the account may not work in this session's project (spec
+     * `flow-multiproject` §8.4): shown so a person sees why, never pickable,
+     * and `reason` says which rule ("Only for client-app"). Absent otherwise.
+     */
+    notAllowed: z.literal(true).optional(),
   })
   .openapi('ContinueAccountOption');
 

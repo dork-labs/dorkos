@@ -62,6 +62,8 @@ export interface RankedAccount {
   reason: string;
   /** The advisor's badge, when it gave one. */
   badge?: 'recommended' | 'reserved';
+  /** `true` for an account that may not work in the project ({@link notAllowedAccounts}). */
+  notAllowed?: true;
 }
 
 /** The answer to {@link rankAccounts}. */
@@ -336,6 +338,7 @@ export async function notAllowedAccounts(ctx: AdvisorContext): Promise<RankedAcc
         usage: store.usageOfAccount(account),
         eligible: false,
         reason: notAllowedReason(verdict, project),
+        notAllowed: true,
       } satisfies RankedAccount;
     });
 }

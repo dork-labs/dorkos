@@ -19,6 +19,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { readManifest } from '@dorkos/shared/manifest';
 import { resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import { AccountNotAllowedError } from '../../../core/usage/account-eligibility.js';
 import { SessionStore } from '../sessions/session-store.js';
 import { TranscriptReader } from '../sessions/transcript-reader.js';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
@@ -200,6 +201,22 @@ describe('D8 env-lock call sites', () => {
         agentAccountId: undefined,
         project: null,
       });
+    });
+
+    it('predicts no account when the ladder refuses the launch (spec flow-multiproject §8.4)', async () => {
+      // Purpose: a launch the account rules would refuse must not be predicted
+      // to bill some account; billing and sign-in surfaces read null instead.
+      vi.mocked(readManifest).mockResolvedValue({ account: 'work' } as never);
+      vi.mocked(resolveLaunchAccountRoot).mockReturnValueOnce({
+        ok: false,
+        error: new AccountNotAllowedError(null, 'work', {
+          reason: 'only-projects',
+          allowedProjects: [{ root: '/projects/client-app', name: 'client-app' }],
+        }),
+      });
+      const runtime = runtimeWithProbe(undefined);
+
+      await expect(runtime.accountRootForSession('first-turn', '/work')).resolves.toBeNull();
     });
   });
 

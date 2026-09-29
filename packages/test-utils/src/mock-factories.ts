@@ -1277,6 +1277,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // "Found on this computer" group stays hidden unless a test supplies some.
     getFoundClaudeFolders: vi.fn().mockResolvedValue({ folders: [] }),
     dismissFoundClaudeFolder: vi.fn().mockResolvedValue(undefined),
+    // Account rules (spec `flow-multiproject` §8.6): no projects and no rules,
+    // so every account reads as allowed unless a test supplies otherwise.
+    listProjects: vi.fn().mockResolvedValue({ projects: [] }),
+    getAccountEligibility: vi.fn().mockResolvedValue({ project: null, allow: null, accounts: [] }),
+    setProjectAccounts: vi.fn().mockResolvedValue({ project: null, allow: null, accounts: [] }),
+    setAccountOnlyProjects: vi.fn().mockResolvedValue({ onlyProjects: null }),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
     // takes its success path unless a test deliberately makes one reject.

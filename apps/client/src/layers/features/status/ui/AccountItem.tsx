@@ -202,27 +202,36 @@ function AccountPicker({
               usage={defaultEntry ? usageOf(defaultEntry.id, defaultEntry.path) : null}
             />
           </ResponsiveDropdownMenuRadioItem>
-          {ordered.map((entry) => (
-            <ResponsiveDropdownMenuRadioItem
-              key={entry.id}
-              // The registry id, never the path: the server resolves the hint
-              // against `accounts[].id` (ADR 260821-205324).
-              value={entry.id}
-              // Still selectable: an account signed in a minute ago has no
-              // `projects/` yet, and choosing it is how the first session gets there.
-              description={
-                entry.isAccountRoot === false
-                  ? 'Does not look like an account folder yet'
-                  : undefined
-              }
-            >
-              <AccountMenuRow
-                label={nameFor(entry.path)}
-                color={entry.color}
-                usage={usageOf(entry.id, entry.path)}
-              />
-            </ResponsiveDropdownMenuRadioItem>
-          ))}
+          {ordered.map((entry) => {
+            // An account this project may not use is shown, disabled, with
+            // why ("Only for client-app"), rather than hidden: a person looking
+            // for it learns where it went (spec `flow-multiproject` §8.4).
+            const notAllowed = accountSwitch.notAllowedReason(entry.id);
+            return (
+              <ResponsiveDropdownMenuRadioItem
+                key={entry.id}
+                // The registry id, never the path: the server resolves the hint
+                // against `accounts[].id` (ADR 260821-205324).
+                value={entry.id}
+                disabled={notAllowed !== undefined}
+                // Still selectable when only the folder looks new: an account
+                // signed in a minute ago has no `projects/` yet, and choosing it
+                // is how the first session gets there.
+                description={
+                  notAllowed ??
+                  (entry.isAccountRoot === false
+                    ? 'Does not look like an account folder yet'
+                    : undefined)
+                }
+              >
+                <AccountMenuRow
+                  label={nameFor(entry.path)}
+                  color={entry.color}
+                  usage={usageOf(entry.id, entry.path)}
+                />
+              </ResponsiveDropdownMenuRadioItem>
+            );
+          })}
         </ResponsiveDropdownMenuRadioGroup>
       </ResponsiveDropdownMenuContent>
     </ResponsiveDropdownMenu>

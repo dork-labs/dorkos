@@ -51,6 +51,11 @@ export {
 } from './server-config/use-account-usage';
 export { useAccountUsageSync } from './server-config/use-account-usage-sync';
 export {
+  useAccountEligibility,
+  notAllowedLine,
+  type AccountEligibilityView,
+} from './server-config/use-account-eligibility';
+export {
   useClaudeAccounts,
   type ClaudeAccountEntry,
   type ClaudeAccountsView,

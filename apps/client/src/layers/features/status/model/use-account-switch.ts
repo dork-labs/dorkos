@@ -16,7 +16,12 @@
  * @module features/status/model/use-account-switch
  */
 import { useEffect } from 'react';
-import { useAppStore, useClaudeAccounts, type ClaudeAccountEntry } from '@/layers/shared/model';
+import {
+  useAccountEligibility,
+  useAppStore,
+  useClaudeAccounts,
+  type ClaudeAccountEntry,
+} from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
 
 /**
@@ -64,6 +69,13 @@ export interface AccountSwitch {
   defaultPath: string | undefined;
   /** Hold an account (or the sentinel) as this session's launch hint. */
   choose: (value: string) => void;
+  /**
+   * Why an account may not work in this session's project ("Only for
+   * client-app"), or undefined when it may or nobody can say yet. The menu
+   * draws such an account disabled with this line (spec `flow-multiproject`
+   * §8.4): the server would refuse it on send, whoever picked it.
+   */
+  notAllowedReason: (accountId: string) => string | undefined;
 }
 
 /**
@@ -97,6 +109,8 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
   // The agent the launch would resolve against — same directory, same query the
   // agent surfaces read, so this cannot disagree with the profile.
   const agentQuery = useCurrentAgent(selectedCwd);
+  // Which accounts may work in this folder's project; silent until the server says.
+  const eligibility = useAccountEligibility(selectedCwd);
 
   const selectable = accounts.filter((account): account is SelectableAccount =>
     Boolean(account.id)
@@ -122,7 +136,12 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
   // Only this session's own pick is ever in play here.
   const heldId = pendingAccount?.sessionId === sessionId ? pendingAccount.id : null;
 
-  const staleHint = heldId !== null && selectable.length > 0 && !isRegistered(heldId);
+  // A held pick the project's rules now refuse goes the same way: the send would
+  // be refused with it, and the menu no longer offers it.
+  const staleHint =
+    heldId !== null &&
+    ((selectable.length > 0 && !isRegistered(heldId)) ||
+      eligibility.reasonFor(heldId) !== undefined);
   useEffect(() => {
     if (staleHint) setPendingAccount(null);
   }, [staleHint, setPendingAccount]);
@@ -147,6 +166,7 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
     defaultPath,
     choose: (value: string) =>
       setPendingAccount(value === DEFAULT_ACCOUNT_VALUE ? null : { id: value, sessionId }),
+    notAllowedReason: eligibility.reasonFor,
   };
 }
 

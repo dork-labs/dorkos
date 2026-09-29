@@ -62,6 +62,7 @@ import {
   waitForReset,
 } from '../../services/session/fleet/continue-service.js';
 import { rejectUnknownModel } from '../session-model-gate.js';
+import { AccountNotAllowedError } from '../../services/core/usage/account-eligibility.js';
 import {
   SessionLimitStore,
   setSessionLimitStore,
@@ -151,6 +152,27 @@ describe('the out-of-usage routes', () => {
     );
     const waited = await request(testServer).post(`${base}/wait`).send({});
     expect(waited.status).toBe(503);
+  });
+
+  it('answers an account that may not work in the project with 409 account_not_allowed_here', async () => {
+    const project = { root: '/work/client-app', name: 'client-app' };
+    vi.mocked(continueSession).mockRejectedValue(
+      new AccountNotAllowedError(project, 'work', {
+        reason: 'only-projects',
+        allowedProjects: [{ root: '/work/other', name: 'other' }],
+      })
+    );
+    const res = await request(testServer).post(`${base}/continue`).send({ account: 'work' });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error:
+        "work can't be used in client-app. It's set to work only in other. Pick another account, or change this in Settings → Runtimes.",
+      message:
+        "work can't be used in client-app. It's set to work only in other. Pick another account, or change this in Settings → Runtimes.",
+      code: 'account_not_allowed_here',
+      project,
+      accountId: 'work',
+    });
   });
 
   it('refuses a malformed body before the service is asked', async () => {

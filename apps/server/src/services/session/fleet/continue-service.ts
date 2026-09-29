@@ -182,6 +182,7 @@ export async function continueOptions(sessionId: string): Promise<ContinueOption
         eligible: a.eligible,
         reason: a.reason,
         ...(a.badge ? { badge: a.badge } : {}),
+        ...(a.notAllowed ? { notAllowed: true as const } : {}),
       })),
       recommendedId: ranking.recommendedId,
     },
