@@ -7,7 +7,7 @@ actor: agent
 gates:
   - wf.changelog-fragment-check.fragment-present
   - wf.changelog-fragment-check.no-fragment-under-skip-label
-prs: []
+prs: [2343]
 hypothesis:
   metric: 'gate.wf.changelog-fragment-check.fragment-present.failure_rate@pull_request'
   baseline: 0.06
