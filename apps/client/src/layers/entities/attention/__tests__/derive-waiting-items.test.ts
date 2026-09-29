@@ -57,6 +57,7 @@ describe('deriveWaitingItems — what extensions ask (spec flow-multiproject §7
       raisedAt: '2026-09-29T09:00:00.000Z',
       needsYou: false,
       watch: null,
+      revision: 0,
     };
     const items = deriveWaitingItems({
       approvals: [],

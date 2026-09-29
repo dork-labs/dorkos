@@ -4,11 +4,16 @@
  *
  * @module features/inbox/ui/ExtensionDecisionHistoryRow
  */
+import { useEffect } from 'react';
 import { MessageCircleQuestion } from 'lucide-react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { toSession } from '@/layers/shared/lib';
 import { useSafeNavigate } from '@/layers/shared/model';
-import { useExtensionDecisionActions, useExtensionDecisions } from '@/layers/entities/extension';
+import {
+  markOfferShownInBell,
+  useDecisionOffers,
+  useExtensionDecisionActions,
+} from '@/layers/entities/extension';
 import { decisionHistoryTrail } from '../lib/decision-copy';
 import { InboxDecisionRow } from './InboxDecisionRow';
 
@@ -20,6 +25,11 @@ export interface ExtensionDecisionHistoryRowProps {
   onOpen?: () => void;
   /** Called after "Watch" opened the chat, so a host can get out of the way. */
   onOpened?: () => void;
+  /**
+   * Drawn inside the bell: an offer shown here is dismissed when the bell
+   * closes. On the Activity page it is not.
+   */
+  inBell?: boolean;
 }
 
 /**
@@ -36,13 +46,18 @@ export function ExtensionDecisionHistoryRow({
   notification,
   onOpen,
   onOpened,
+  inBell = false,
 }: ExtensionDecisionHistoryRowProps) {
-  const { offers } = useExtensionDecisions();
+  const offers = useDecisionOffers();
   const { answerOffer } = useExtensionDecisionActions();
   const navigate = useSafeNavigate();
   const trail = decisionHistoryTrail(notification, new Date());
   const offer = offers.find((o) => o.decisionId === notification.subject.id) ?? null;
   const watch = notification.decision?.watch ?? null;
+  const shownId = inBell ? (offer?.decisionId ?? null) : null;
+  useEffect(() => {
+    if (shownId) markOfferShownInBell(shownId);
+  }, [shownId]);
 
   return (
     <InboxDecisionRow

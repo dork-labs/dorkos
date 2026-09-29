@@ -14394,6 +14394,10 @@
           },
           "watch": {
             "$ref": "#/components/schemas/DecisionWatch"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -14411,7 +14415,8 @@
           "link",
           "raisedAt",
           "needsYou",
-          "watch"
+          "watch",
+          "revision"
         ]
       },
       "DecisionActions": {
@@ -14651,6 +14656,10 @@
           "choiceId": {
             "type": "string",
             "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [

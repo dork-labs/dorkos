@@ -15,10 +15,11 @@ import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import {
   DecisionActionResponseSchema,
   ListExtensionDecisionsResponseSchema,
+  ProjectSettingsResponseSchema,
 } from '@dorkos/shared/extension-decision-schemas';
 import type { CommandPaletteContribution } from '@/layers/shared/model';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
-import { internalRoutePath } from '@/layers/shared/lib/link-navigation';
+import { internalRoutePath, openLink } from '@/layers/shared/lib/link-navigation';
 import { toast } from 'sonner';
 import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
@@ -262,8 +263,13 @@ export function createExtensionAPI(
       );
       if (!res.ok) throw await requestError(res, 'answerDecision');
       const body = DecisionActionResponseSchema.parse(await res.json());
-      // The server checked it is an in-app path; follow it, as the result promises.
-      if (body.navigate) deps.navigate({ to: body.navigate });
+      // The server checked it is an in-app path. Follow it through the app's
+      // link seam (the same one the bell's links take) when it is a page this
+      // app serves; one it cannot draw yet is handed back, not opened.
+      if (body.navigate) {
+        const target = internalRoutePath(body.navigate);
+        if (target) openLink(target);
+      }
       return {
         resolved: body.resolved,
         message: body.message,
@@ -299,8 +305,8 @@ export function createExtensionAPI(
           extensionApiUrl(`/extensions/${extId}/project-settings?${query.toString()}`)
         );
         if (!res.ok) throw await requestError(res, 'projectSettings.get');
-        const body = (await res.json()) as { value: T | null };
-        return body.value ?? null;
+        const body = ProjectSettingsResponseSchema.parse(await res.json());
+        return (body.value as T | null) ?? null;
       },
       async set(projectRoot: string, value: unknown): Promise<void> {
         const res = await fetch(extensionApiUrl(`/extensions/${extId}/project-settings`), {

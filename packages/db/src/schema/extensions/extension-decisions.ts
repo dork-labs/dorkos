@@ -122,6 +122,12 @@ export const extensionDecisions = sqliteTable(
      * `resolve(key, { answering })` with that id credits the person.
      */
     pendingActionJson: text('pending_action_json'),
+    /**
+     * Bumped whenever a re-raise changes what the person is asked (title,
+     * why, detail, actions or link). An answer names the revision it saw, and
+     * one for an older revision is refused as stale.
+     */
+    revision: integer('revision').notNull().default(0),
     /** 1 for a history-only row from `ctx.inbox.record`. */
     recorded: integer('recorded').notNull().default(0),
   },

@@ -34,6 +34,9 @@ export {
 export {
   useExtensionDecisions,
   useExtensionDecisionActions,
+  useDecisionOffers,
+  markOfferShownInBell,
+  takeOffersShownInBell,
   extensionDecisionsKey,
   type ExtensionDecisionsState,
   type ExtensionDecisionActions,

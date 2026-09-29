@@ -60,6 +60,7 @@ import {
   DECISION_NOT_RUNNING_CODE,
   DECISION_OFFER_GONE_CODE,
   DECISION_OFFER_TTL_MS,
+  DECISION_STALE_CODE,
   type DecisionActionRequest,
   type DecisionActionResponse,
   type ExtensionDecisionDTO,
@@ -370,8 +371,17 @@ export class ExtensionInboxService {
         // for) starts over; new words for the same question change nothing
         // about its deadline or what a person already said.
         const sameQuestion = existing.actionsJson === fields.actionsJson;
+        const sameWords =
+          existing.title === fields.title &&
+          existing.why === fields.why &&
+          existing.detail === fields.detail &&
+          existing.link === fields.link;
         tx.update(extensionDecisions)
-          .set({ ...fields, ...(sameQuestion ? {} : question) })
+          .set({
+            ...fields,
+            ...(sameQuestion ? {} : question),
+            ...(sameQuestion && sameWords ? {} : { revision: existing.revision + 1 }),
+          })
           .where(eq(extensionDecisions.id, existing.id))
           .run();
         const updated = tx
@@ -502,7 +512,9 @@ export class ExtensionInboxService {
       choiceId: pending?.choiceId ?? null,
       choiceLabel,
       note: pending?.note ?? null,
-      offer: offer ? { ...offer, createdAt: new Date(this.now()).toISOString() } : null,
+      offer: offer
+        ? { ...offer, createdAt: new Date(this.now()).toISOString(), via: 'answering' }
+        : null,
       watch: this.allowedWatch(extensionId, opts.watch),
       unread: resolvedBy === 'deadline' || resolvedBy === 'agent' || resolvedBy === 'rule',
     });
@@ -609,7 +621,9 @@ export class ExtensionInboxService {
       .all()
       .flatMap((row) => {
         const offer = parseJson<StoredOffer>(row.offerJson);
-        if (!offer || row.resolvedBy !== 'person') return [];
+        // Only a later credit is listed: an offer in reply to an answer went
+        // back to the one client that answered, and shows nowhere else.
+        if (!offer || row.resolvedBy !== 'person' || offer.via !== 'answering') return [];
         const made = Date.parse(offer.createdAt);
         if (Number.isNaN(made) || made < floor) return [];
         return [
@@ -652,6 +666,9 @@ export class ExtensionInboxService {
     const handler = this.handlers.get(row.extensionId);
     if (!this.running.has(row.extensionId) || !handler) {
       return refuse(409, DECISION_NOT_RUNNING_CODE, `${name} isn't running right now.`);
+    }
+    if (request.revision !== undefined && request.revision !== row.revision) {
+      return refuse(409, DECISION_STALE_CODE, 'This question changed. Take another look.');
     }
     const actions = actionsOf(row);
     const shaped = shapeAnswer(actions, request);
@@ -744,7 +761,9 @@ export class ExtensionInboxService {
       choiceId: shaped.choiceId,
       choiceLabel: shaped.choiceLabel ?? choiceWords(actions, result.outcome, shaped.choiceId),
       note: shaped.note ?? shaped.text,
-      offer: offer ? { ...offer, createdAt: new Date(this.now()).toISOString() } : null,
+      offer: offer
+        ? { ...offer, createdAt: new Date(this.now()).toISOString(), via: 'answer' }
+        : null,
       watch,
       unread: false,
     });

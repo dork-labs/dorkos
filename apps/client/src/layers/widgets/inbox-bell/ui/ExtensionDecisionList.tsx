@@ -4,6 +4,7 @@
  *
  * @module widgets/inbox-bell/ui/ExtensionDecisionList
  */
+import { useRef } from 'react';
 import { MessageCircleQuestion } from 'lucide-react';
 import type {
   DecisionActionRequest,
@@ -19,6 +20,9 @@ import {
 
 /** What a row says when the agent's pick could not be applied at the deadline. */
 const NEEDS_YOU = 'The agent couldn’t go ahead. It needs you.';
+
+/** The first control in a row, where focus lands when a row above it leaves. */
+const ROW_FOCUS_TARGET = 'button:not([disabled])';
 
 /** Props for {@link ExtensionDecisionList}. */
 export interface ExtensionDecisionListProps {
@@ -42,9 +46,10 @@ export interface ExtensionDecisionListProps {
  * - a question: chips with the agent's pick marked, "Reply…", and the
  *   deadline line when there is a deadline.
  *
- * Answers are the person's, through core's own endpoint. A decision the
- * extension keeps open stays; one it settles leaves, and its history row may
- * carry a one-time "next time, on its own?" line.
+ * Answers are the person's, through core's own endpoint, and name the version
+ * of the question they saw. A field stays open with its text until its answer
+ * goes through. When a row leaves, focus moves to the next row, or to the
+ * "Needs You" heading when it was the last.
  *
  * @param props - The decisions and where links go.
  */
@@ -53,14 +58,40 @@ export function ExtensionDecisionList({
   onNavigate,
   onWatch,
 }: ExtensionDecisionListProps) {
-  const { answer, pending } = useExtensionDecisionActions();
+  const { answer, pendingFor } = useExtensionDecisionActions();
+  const listRef = useRef<HTMLDivElement>(null);
   if (decisions.length === 0) return null;
   const now = new Date();
 
-  const send = (decision: ExtensionDecisionDTO, request: DecisionActionRequest) => {
-    void answer({ decision, request }).then((response) => {
-      if (response?.navigate) onNavigate(response.navigate);
-    });
+  /** Keep focus somewhere real after a row that held it leaves. */
+  const refocusAfter = (decisionId: string) => {
+    const list = listRef.current;
+    if (!list || !list.contains(document.activeElement)) return;
+    // The whole "Needs You" list, when this row sits in one; else just this list.
+    const scope = list.closest<HTMLElement>('[data-slot="inbox-waiting"]') ?? list;
+    const rows = Array.from(scope.querySelectorAll<HTMLElement>('[data-decision-id]'));
+    const index = rows.findIndex((row) => row.dataset.decisionId === decisionId);
+    setTimeout(() => {
+      const remaining = Array.from(
+        scope.querySelectorAll<HTMLElement>('[data-decision-id]')
+      ).filter((row) => row.dataset.decisionId !== decisionId);
+      const next = remaining[Math.min(index, remaining.length - 1)];
+      const target =
+        next?.querySelector<HTMLElement>(ROW_FOCUS_TARGET) ??
+        document.querySelector<HTMLElement>('[data-inbox-needs-you-heading]');
+      target?.focus();
+    }, 0);
+  };
+
+  const send = async (
+    decision: ExtensionDecisionDTO,
+    request: Omit<DecisionActionRequest, 'revision'>
+  ): Promise<boolean> => {
+    const response = await answer({ decision, request });
+    if (!response) return false;
+    if (response.resolved) refocusAfter(decision.id);
+    if (response.navigate) onNavigate(response.navigate);
+    return true;
   };
 
   const actionsOf = (decision: ExtensionDecisionDTO): InboxDecisionRowProps['actions'] => {
@@ -71,8 +102,8 @@ export function ExtensionDecisionList({
           kind: 'yes-no',
           approveLabel: actions.approveLabel,
           rejectLabel: actions.rejectLabel,
-          onApprove: () => send(decision, { action: 'approve' }),
-          onReject: () => send(decision, { action: 'reject' }),
+          onApprove: () => void send(decision, { action: 'approve' }),
+          onReject: () => void send(decision, { action: 'reject' }),
           ...(actions.rejectAsksForNote
             ? {
                 rejectNote: {
@@ -108,7 +139,7 @@ export function ExtensionDecisionList({
           defaultChoiceId: pick?.id ?? null,
           deadlineLine: deadlineLine(actions.decideBy, pick?.label ?? null, now),
           allowReply: actions.allowReply === true,
-          onChoose: (choiceId) => send(decision, { action: 'choice', choiceId }),
+          onChoose: (choiceId) => void send(decision, { action: 'choice', choiceId }),
           onReply: (text) => send(decision, { action: 'choice', text }),
         };
       }
@@ -116,19 +147,17 @@ export function ExtensionDecisionList({
   };
 
   return (
-    <div data-slot="extension-decision-list" className="mt-2 flex flex-col gap-1">
-      {decisions.map((decision) => {
-        const busy = pending?.id === decision.id ? pending.action : null;
-        return (
+    <div ref={listRef} data-slot="extension-decision-list" className="mt-2 flex flex-col gap-1">
+      {decisions.map((decision) => (
+        <div key={decision.id} data-decision-id={decision.id}>
           <InboxDecisionRow
-            key={decision.id}
             icon={MessageCircleQuestion}
             title={decision.title}
             why={decision.why}
             sourceLine={decision.extensionName}
             meta={sinceLine(decision.since, decision.raisedAt, now) ?? undefined}
             notice={decision.needsYou ? NEEDS_YOU : undefined}
-            more={decision.detail ? <p>{decision.detail}</p> : undefined}
+            more={decision.detail ? <p className="break-words">{decision.detail}</p> : undefined}
             onOpen={decision.link ? () => onNavigate(decision.link as string) : undefined}
             watch={
               decision.watch
@@ -139,10 +168,11 @@ export function ExtensionDecisionList({
                 : null
             }
             actions={actionsOf(decision)}
-            pending={busy}
+            pending={pendingFor(decision.id)}
+            draftKey={decision.id}
           />
-        );
-      })}
+        </div>
+      ))}
     </div>
   );
 }

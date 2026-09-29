@@ -28,6 +28,7 @@ CREATE TABLE `extension_decisions` (
 	`offer_used_at` text,
 	`watch_json` text,
 	`pending_action_json` text,
+	`revision` integer DEFAULT 0 NOT NULL,
 	`recorded` integer DEFAULT 0 NOT NULL,
 	CONSTRAINT "extension_decisions_resolved_by" CHECK("extension_decisions"."resolved_by" IS NULL OR "extension_decisions"."resolved_by" IN ('person', 'deadline', 'agent', 'rule', 'extension')),
 	CONSTRAINT "extension_decisions_deadline_state" CHECK("extension_decisions"."deadline_state" IS NULL OR "extension_decisions"."deadline_state" IN ('kept_open', 'settled', 'failed', 'answered'))

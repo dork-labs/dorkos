@@ -20,6 +20,12 @@ describe('deadlineLine', () => {
     expect(deadlineLine(at(17, 0, 30), 'Keep it', NOW)).toMatch(/by \S+ /);
   });
 
+  it('never names a deadline in the past', () => {
+    expect(deadlineLine(at(8), 'Keep it', NOW)).toBe(
+      'The agent picks “Keep it” any moment now, unless you answer.'
+    );
+  });
+
   it('says nothing without a deadline or a pick', () => {
     expect(deadlineLine(undefined, 'Keep it', NOW)).toBeNull();
     expect(deadlineLine(at(17), null, NOW)).toBeNull();
@@ -56,6 +62,14 @@ describe('decisionHistoryTrail', () => {
     expect(
       decisionHistoryTrail(row({ body: 'Resolved on its own', outcome: 'cleared' }), NOW)
     ).toMatch(/^Resolved on its own at .+$/);
+  });
+
+  it('says "on <day>" for an answer on another day, never "at Sep 12"', () => {
+    const trail = decisionHistoryTrail(
+      row({ body: 'Ship it · you', outcome: 'approved', resolvedAt: at(14, 0, 12) }),
+      NOW
+    );
+    expect(trail).toMatch(/^Ship it · you on \S+ 12$/);
   });
 
   it('says only "No longer needed" for a withdrawn decision', () => {

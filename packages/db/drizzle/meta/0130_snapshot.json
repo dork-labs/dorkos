@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ccc6273c-bd64-4233-a57e-3e6ec375c881",
+  "id": "4c6f913d-6c33-4aec-82ae-a5b662d50459",
   "prevId": "3f14bc8b-ce6f-407b-9b79-75d0e938067e",
   "tables": {
     "a2a_tasks": {
@@ -9818,6 +9818,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         },
         "recorded": {
           "name": "recorded",

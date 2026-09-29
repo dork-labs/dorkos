@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { registerLinkNavigator } from '@/layers/shared/lib/link-navigation';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { UiCanvasContent } from '@dorkos/shared/types';
@@ -620,28 +621,32 @@ describe('createExtensionAPI', () => {
       raisedAt: '2026-09-29T09:00:00.000Z',
       needsYou: false,
       watch: null,
+      revision: 0,
     };
 
     afterEach(() => {
       vi.unstubAllGlobals();
     });
 
-    it('answers through this extension’s own scoped route and follows a checked navigate', async () => {
+    it('answers through this extension’s own scoped route and follows a checked navigate through the link seam', async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         json: vi.fn().mockResolvedValue({
           resolved: true,
           message: 'Shipping.',
-          navigate: '/x/my-ext/p/dorkos',
+          navigate: '/tasks',
           offer: null,
           watch: null,
         }),
       });
       vi.stubGlobal('fetch', fetchMock);
+      const linkNavigator = vi.fn();
+      const unregister = registerLinkNavigator(linkNavigator);
       const { api } = createExtensionAPI('my-ext', deps);
 
       const result = await api.answerDecision(decision.id, { action: 'approve' });
+      unregister();
 
       expect(fetchMock.mock.calls[0][0]).toBe(
         `/api/extensions/my-ext/decisions/${decision.id}/action`
@@ -650,10 +655,48 @@ describe('createExtensionAPI', () => {
       expect(result).toEqual({
         resolved: true,
         message: 'Shipping.',
-        navigate: '/x/my-ext/p/dorkos',
+        navigate: '/tasks',
         watch: null,
       });
-      expect(deps.navigate).toHaveBeenCalledWith({ to: '/x/my-ext/p/dorkos' });
+      expect(linkNavigator).toHaveBeenCalledWith(expect.objectContaining({ href: '/tasks' }));
+      expect(deps.navigate).not.toHaveBeenCalled();
+    });
+
+    it('hands back, but does not open, a page this app does not serve yet', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({
+            resolved: true,
+            message: null,
+            navigate: '/x/my-ext/p/dorkos',
+            offer: null,
+            watch: null,
+          }),
+        })
+      );
+      const linkNavigator = vi.fn();
+      const unregister = registerLinkNavigator(linkNavigator);
+      const { api } = createExtensionAPI('my-ext', deps);
+      const result = await api.answerDecision(decision.id, { action: 'approve' });
+      unregister();
+      expect(result.navigate).toBe('/x/my-ext/p/dorkos');
+      expect(linkNavigator).not.toHaveBeenCalled();
+    });
+
+    it('checks what project settings come back against their schema', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({ value: 1, updatedAt: 42, updatedBy: 'robot' }),
+        })
+      );
+      const { api } = createExtensionAPI('my-ext', deps);
+      await expect(api.projectSettings.get('/repos/dorkos')).rejects.toThrow();
     });
 
     it('throws with the server’s code when an answer is refused', async () => {
@@ -707,7 +750,11 @@ describe('createExtensionAPI', () => {
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          json: vi.fn().mockResolvedValue({ value: { autonomy: 'ask-me-first' } }),
+          json: vi.fn().mockResolvedValue({
+            value: { autonomy: 'ask-me-first' },
+            updatedAt: '2026-09-29T09:00:00.000Z',
+            updatedBy: 'extension-page',
+          }),
         })
         .mockResolvedValueOnce({ ok: true, status: 204, json: vi.fn() });
       vi.stubGlobal('fetch', fetchMock);

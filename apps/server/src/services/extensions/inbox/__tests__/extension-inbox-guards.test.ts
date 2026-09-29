@@ -297,3 +297,50 @@ describe('crediting, offers and late timers (nits)', () => {
     expect(handler.mock.calls[0][0].decidedBy).toBe('deadline');
   });
 });
+
+describe('answers name the question they saw (client review 2)', () => {
+  it('bumps the revision only when what is asked changes, and refuses a stale answer', async () => {
+    const handler = vi.fn().mockResolvedValue({ resolve: 'approved' });
+    fx.inbox.setHandler('flow', handler);
+    await fx.inbox.raise('flow', 'Flow', shipDecision());
+    const first = fx.inbox.listOpen()[0].revision;
+    await fx.inbox.raise('flow', 'Flow', shipDecision());
+    expect(fx.inbox.listOpen()[0].revision).toBe(first);
+    await fx.inbox.raise('flow', 'Flow', shipDecision({ title: 'Ship the calmer banner?' }));
+    const [open] = fx.inbox.listOpen();
+    expect(open.revision).toBe(first + 1);
+
+    expect(
+      await fx.inbox.answer(open.id, { action: 'approve', revision: first }, { kind: 'person' })
+    ).toMatchObject({ ok: false, status: 409, code: 'stale_decision' });
+    expect(handler).not.toHaveBeenCalled();
+    expect(
+      await fx.inbox.answer(
+        open.id,
+        { action: 'approve', revision: open.revision },
+        { kind: 'person' }
+      )
+    ).toMatchObject({ ok: true });
+  });
+});
+
+describe('a later credit’s offer is listed (client review 1)', () => {
+  it('lists an offer made through resolve(..., { answering })', async () => {
+    let pendingActionId: string | null = null;
+    fx.inbox.setHandler('flow', (event) => {
+      pendingActionId = event.pendingActionId;
+      return { keepOpen: true };
+    });
+    await fx.inbox.raise('flow', 'Flow', shipDecision());
+    const [open] = fx.inbox.listOpen();
+    await fx.inbox.answer(open.id, { action: 'approve' }, { kind: 'person' });
+    await fx.inbox.resolve('flow', 'ship:DOR-2387', {
+      outcome: 'approved',
+      answering: pendingActionId!,
+      offer: { text: 'Next time?', offerId: 'o' },
+    });
+    expect(fx.inbox.pendingOffers()).toEqual([
+      expect.objectContaining({ decisionId: open.id, text: 'Next time?' }),
+    ]);
+  });
+});

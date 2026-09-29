@@ -17,6 +17,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import type {
   ExtensionDecisionDTO,
   PendingDecisionOffer,
@@ -71,6 +72,7 @@ function shipDecision(overrides: Partial<ExtensionDecisionDTO> = {}): ExtensionD
     raisedAt: '2026-09-29T09:00:00.000Z',
     needsYou: false,
     watch: null,
+    revision: 0,
     ...overrides,
   };
 }
@@ -97,6 +99,31 @@ let decisions: ExtensionDecisionDTO[];
 let offers: PendingDecisionOffer[];
 let actionResponse: Record<string, unknown>;
 let posts: Array<{ url: string; body: unknown }>;
+let historyRows: NotificationDTO[];
+let staleNext: boolean;
+
+/** An answered decision's history row, as the Activity list holds it. */
+function historyRow(decisionId: string, title: string): NotificationDTO {
+  return {
+    id: `N${decisionId}`,
+    kind: 'extension.decision',
+    tier: 'quiet',
+    subject: { type: 'system', id: decisionId },
+    title,
+    body: 'Ship it · you',
+    createdAt: new Date().toISOString(),
+    resolvedAt: new Date().toISOString(),
+    outcome: 'approved',
+    readAt: new Date().toISOString(),
+    decision: {
+      extensionId: 'flow',
+      resolvedBy: 'person',
+      resolvedByLabel: null,
+      recorded: false,
+      watch: null,
+    },
+  };
+}
 
 /** A fake of the routes the bell reaches. */
 async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -106,6 +133,13 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
   if (init?.method === 'POST') {
     posts.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
     if (url.includes('/extension-decisions/') && url.endsWith('/action')) {
+      if (staleNext) {
+        staleNext = false;
+        return json(
+          { error: 'This question changed. Take another look.', code: 'stale_decision' },
+          409
+        );
+      }
       if (actionResponse.resolved) decisions = [];
       return json(actionResponse);
     }
@@ -122,6 +156,11 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
 function renderBell(approvals: PendingApproval[] = []) {
   const transport = createMockTransport({
     listPendingApprovals: vi.fn().mockResolvedValue({ approvals }),
+    listNotifications: vi.fn().mockImplementation(async () => ({
+      notifications: historyRows,
+      nextCursor: null,
+      unreadCount: 0,
+    })),
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
@@ -161,6 +200,8 @@ beforeEach(() => {
   offers = [];
   actionResponse = { resolved: true, message: null, navigate: null, offer: null, watch: null };
   posts = [];
+  historyRows = [];
+  staleNext = false;
   mockNavigate.mockReset();
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
 });
@@ -203,10 +244,15 @@ describe('what extensions ask, in the bell', () => {
       (h) => h.textContent
     );
     expect(headings).toEqual(['dorkos', 'blintzLinear BLZ']);
-    const blintzGroup = screen
-      .getByText('Linear BLZ')
-      .closest('[data-slot="inbox-waiting-group"]') as HTMLElement;
-    expect(within(blintzGroup).getByText('Ship the new out-of-usage banner?')).toBeInTheDocument();
+    const blintzRow = screen
+      .getByText('Ship the new out-of-usage banner?')
+      .closest('[data-slot="inbox-waiting-decision"]') as HTMLElement;
+    expect(blintzRow).toHaveAttribute('data-project', 'blintz');
+    // The heading comes before its project's row.
+    const heading = screen.getByText('Linear BLZ').closest('h3') as HTMLElement;
+    expect(
+      heading.compareDocumentPosition(blintzRow) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 
   it('answers 👍 as the person and the row leaves', async () => {
@@ -216,7 +262,7 @@ describe('what extensions ask, in the bell', () => {
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0]).toEqual({
       url: '/api/extension-decisions/01J0000000000000000000000D/action',
-      body: { action: 'approve' },
+      body: { action: 'approve', revision: 0 },
     });
     await waitFor(() =>
       expect(screen.queryByText('Ship the new out-of-usage banner?')).not.toBeInTheDocument()
@@ -249,7 +295,7 @@ describe('what extensions ask, in the bell', () => {
     await user.type(within(row).getByLabelText('What needs to change?'), 'Use the calmer red.');
     await user.click(within(row).getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(posts).toHaveLength(1));
-    expect(posts[0].body).toEqual({ action: 'reject', note: 'Use the calmer red.' });
+    expect(posts[0].body).toEqual({ action: 'reject', note: 'Use the calmer red.', revision: 0 });
     await waitFor(() => expect(toast).toHaveBeenCalledWith('Sent back.'));
   });
 
@@ -278,7 +324,9 @@ describe('what extensions ask, in the bell', () => {
     ).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'Reply…' })).toBeInTheDocument();
     await user.click(within(row).getByRole('button', { name: 'Remove it' }));
-    await waitFor(() => expect(posts[0]?.body).toEqual({ action: 'choice', choiceId: 'remove' }));
+    await waitFor(() =>
+      expect(posts[0]?.body).toEqual({ action: 'choice', choiceId: 'remove', revision: 0 })
+    );
   });
 
   it('draws no deadline line for a question without one', async () => {
@@ -316,34 +364,64 @@ describe('what extensions ask, in the bell', () => {
     actionResponse = {
       resolved: true,
       message: null,
-      navigate: '/x/flow/p/dorkos',
+      navigate: '/tasks',
       offer: null,
       watch: null,
     };
     renderBell();
     const { user } = await openBell();
     await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ href: '/x/flow/p/dorkos' }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ href: '/tasks' }));
   });
 
-  it('dismisses a waiting follow-up offer when the Inbox closes', async () => {
-    decisions = [];
+  it('shows an offer only on the client that answered, and closing the Inbox dismisses only what it drew', async () => {
+    // The answer comes back with an offer; the listed offers stay empty.
+    actionResponse = {
+      resolved: true,
+      message: null,
+      navigate: null,
+      offer: { text: 'Shipped. Next time, ship on its own?' },
+      watch: null,
+    };
+    historyRows = [
+      historyRow('01J0000000000000000000000D', 'Ship the new out-of-usage banner?'),
+      historyRow('01J0000000000000000000000E', 'Another decision'),
+    ];
+    // Listed for a later credit, but its row is not in this Inbox's view.
     offers = [
       {
-        decisionId: '01J0000000000000000000000D',
-        text: 'Shipped. Next time, ship on its own?',
+        decisionId: '01J00000000000000000000ZZZ',
+        text: 'Listed elsewhere',
         expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       },
     ];
-    // Something in the Inbox so the bell draws at all.
-    renderBell([approvalIn(null)]);
+    renderBell();
     const { user } = await openBell();
+    const waiting = await waitFor(
+      () => document.querySelector('[data-slot="inbox-waiting"]') as HTMLElement
+    );
+    await user.click(await within(waiting).findByLabelText('Ship it'));
+    expect(await screen.findByText('Shipped. Next time, ship on its own?')).toBeInTheDocument();
+
     await user.keyboard('{Escape}');
     await waitFor(() =>
-      expect(posts).toContainEqual({
-        url: '/api/extension-decisions/01J0000000000000000000000D/offer',
-        body: { accept: false },
-      })
+      expect(posts.filter((post) => post.url.endsWith('/offer'))).toEqual([
+        {
+          url: '/api/extension-decisions/01J0000000000000000000000D/offer',
+          body: { accept: false },
+        },
+      ])
     );
+  });
+
+  it('says quietly that a question changed, and reads the list again', async () => {
+    staleNext = true;
+    renderBell();
+    const { user } = await openBell();
+    await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith('This question changed. Take another look.')
+    );
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

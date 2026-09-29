@@ -4,7 +4,7 @@
  *
  * @module features/inbox/ui/InboxDecisionRow
  */
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Info, ThumbsDown, ThumbsUp, type LucideIcon } from 'lucide-react';
 import {
@@ -16,6 +16,12 @@ import {
   TooltipTrigger,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+
+/**
+ * What an answer callback hands back: nothing (it cannot fail), or whether it
+ * went through. A field stays open, with the text in it, until it does.
+ */
+export type InboxAnswerSent = void | boolean | Promise<boolean>;
 
 /** A yes-or-no answer drawn as 👎 and 👍, each labelled as its outcome. */
 export interface InboxDecisionYesNo {
@@ -30,7 +36,7 @@ export interface InboxDecisionYesNo {
    * 👎 first asks for a short note ("What needs to change?") and sends it
    * with the answer. It never closes anything by itself.
    */
-  rejectNote?: { onSubmit(note: string): void };
+  rejectNote?: { onSubmit(note: string): InboxAnswerSent };
 }
 
 /** One small text button, for an answer that is not yes or no ("Answer", "Reconnect"). */
@@ -39,7 +45,7 @@ export interface InboxDecisionWord {
   label: string;
   onClick(): void;
   /** The button opens an inline field instead, and sends what is typed. */
-  input?: { placeholder: string; maxLength: number; onSubmit(text: string): void };
+  input?: { placeholder: string; maxLength: number; onSubmit(text: string): InboxAnswerSent };
 }
 
 /** A question: chips, the agent's pick marked, and maybe a deadline and "Reply…". */
@@ -53,7 +59,7 @@ export interface InboxDecisionChoice {
   /** Offer "Reply…" with free text. */
   allowReply: boolean;
   onChoose(id: string): void;
-  onReply(text: string): void;
+  onReply(text: string): InboxAnswerSent;
 }
 
 /** Props for {@link InboxDecisionRow}. */
@@ -96,7 +102,15 @@ export interface InboxDecisionRowProps {
   followUp?: { text: string; onAccept(): void; onDismiss(): void } | null;
   /** A history row the person has not seen yet ("Tell me after"): draws the unread dot. */
   unread?: boolean;
+  /**
+   * What names this row's drafts (a note, a typed answer, a reply) so they
+   * survive the row being drawn again, e.g. when the inbox regroups by project.
+   */
+  draftKey?: string;
 }
+
+/** Drafts typed into a row's fields, kept across a row being drawn again. */
+const drafts = new Map<string, string>();
 
 /** One 26px outlined icon button with its name as a tooltip. */
 function IconAction({
@@ -104,17 +118,17 @@ function IconAction({
   icon: Icon,
   onClick,
   disabled,
-  pressed,
   expanded,
   controls,
+  buttonRef,
 }: {
   label: string;
   icon: LucideIcon;
   onClick: () => void;
   disabled?: boolean;
-  pressed?: boolean;
   expanded?: boolean;
   controls?: string;
+  buttonRef?: Ref<HTMLButtonElement>;
 }) {
   return (
     <Tooltip>
@@ -124,13 +138,13 @@ function IconAction({
           variant="outline"
           size="icon-xs"
           responsive={false}
+          ref={buttonRef}
           aria-label={label}
-          aria-pressed={pressed}
           aria-expanded={expanded}
           aria-controls={controls}
           disabled={disabled}
           onClick={onClick}
-          className={cn('size-[26px]', pressed && 'bg-accent text-accent-foreground')}
+          className={cn('size-[26px]', expanded && 'bg-accent text-accent-foreground')}
         >
           <Icon aria-hidden className="size-3.5" />
         </Button>
@@ -143,24 +157,31 @@ function IconAction({
 /**
  * A short text field inside the row with Send and Cancel: a "Needs changes"
  * note, a typed answer, or a question's "Reply…". Shows a counter once the
- * text is near its limit, and never sends more than the limit.
+ * text is near its limit, and never sends more than the limit. It stays open,
+ * with the text in it, until the answer goes through; a failure says so here.
  */
 function InlineAnswer({
   label,
   placeholder,
   maxLength,
   busy,
+  draftKey,
   onSend,
+  onDone,
   onCancel,
 }: {
   label: string;
   placeholder: string;
   maxLength: number;
   busy: boolean;
-  onSend: (text: string) => void;
+  draftKey: string | undefined;
+  onSend: (text: string) => InboxAnswerSent;
+  onDone: () => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => (draftKey ? (drafts.get(draftKey) ?? '') : ''));
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
   // The field opens because the person just asked for it (👎, "Answer",
   // "Reply…"), so the cursor goes there.
@@ -169,6 +190,26 @@ function InlineAnswer({
   }, []);
   const trimmed = text.trim();
   const nearLimit = text.length >= maxLength * 0.8;
+
+  const update = (next: string) => {
+    const value = next.slice(0, maxLength);
+    setText(value);
+    setFailed(false);
+    if (draftKey) drafts.set(draftKey, value);
+  };
+  const send = async () => {
+    setSending(true);
+    const ok = await Promise.resolve(onSend(trimmed));
+    setSending(false);
+    if (ok === false) {
+      setFailed(true);
+      field.current?.focus();
+      return;
+    }
+    if (draftKey) drafts.delete(draftKey);
+    onDone();
+  };
+
   return (
     <div className="mt-1.5 flex flex-col gap-1.5" data-slot="inbox-decision-answer">
       <Textarea
@@ -178,9 +219,15 @@ function InlineAnswer({
         maxLength={maxLength}
         rows={2}
         ref={field}
-        onChange={(event) => setText(event.target.value.slice(0, maxLength))}
+        aria-invalid={failed || undefined}
+        onChange={(event) => update(event.target.value)}
         className="min-h-14 text-xs"
       />
+      {failed && (
+        <p role="alert" className="text-status-error-fg text-[11px]">
+          That didn’t go through. Your text is still here; try again.
+        </p>
+      )}
       <div className="flex items-center justify-end gap-1.5">
         {nearLimit && (
           <span className="text-muted-foreground mr-auto text-[11px] tabular-nums">
@@ -195,8 +242,8 @@ function InlineAnswer({
           variant="outline"
           size="xs"
           responsive={false}
-          disabled={busy || trimmed.length === 0}
-          onClick={() => onSend(trimmed)}
+          disabled={busy || sending || trimmed.length === 0}
+          onClick={() => void send()}
         >
           Send
         </Button>
@@ -243,9 +290,21 @@ export function InboxDecisionRow({
   watch,
   followUp,
   unread = false,
+  draftKey,
 }: InboxDecisionRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [answering, setAnswering] = useState<'note' | 'word' | 'reply' | null>(null);
+  const rejectRef = useRef<HTMLButtonElement>(null);
+  const wordRef = useRef<HTMLButtonElement>(null);
+  const replyRef = useRef<HTMLButtonElement>(null);
+  /** Close a field; on Cancel, focus goes back to the button that opened it. */
+  const closeField = (returnFocus: boolean) => {
+    const from = answering;
+    setAnswering(null);
+    if (!returnFocus) return;
+    const target = from === 'note' ? rejectRef : from === 'word' ? wordRef : replyRef;
+    setTimeout(() => target.current?.focus(), 0);
+  };
   const panelId = useId();
   const reducedMotion = useReducedMotion();
   const busy = pending !== null;
@@ -257,10 +316,10 @@ export function InboxDecisionRow({
       onClick={onOpen}
       className="hover:text-foreground focus-visible:ring-ring/60 rounded-sm text-left outline-none hover:underline focus-visible:ring-2"
     >
-      {title}
+      <bdi>{title}</bdi>
     </button>
   ) : (
-    title
+    <bdi>{title}</bdi>
   );
 
   const watchLine = watch ? (
@@ -296,7 +355,7 @@ export function InboxDecisionRow({
         <div className="min-w-0 flex-1">
           <p
             className={cn(
-              'text-xs',
+              'text-xs break-words',
               history ? 'text-foreground/90' : 'text-foreground text-[13px] font-semibold',
               unread && 'text-foreground font-medium'
             )}
@@ -318,7 +377,11 @@ export function InboxDecisionRow({
               </span>
             ))}
           </p>
-          {why && <p className="text-foreground mt-0.5 text-xs leading-snug">{why}</p>}
+          {why && (
+            <p className="text-foreground mt-0.5 text-xs leading-snug break-words">
+              <bdi>{why}</bdi>
+            </p>
+          )}
           {notice && (
             <p className="text-status-warning-fg mt-0.5 text-xs leading-snug font-medium">
               {notice}
@@ -347,7 +410,7 @@ export function InboxDecisionRow({
                       onClick={() => actions.onChoose(choice.id)}
                       className={cn('rounded-full', pick && 'border-foreground')}
                     >
-                      {choice.label}
+                      <bdi>{choice.label}</bdi>
                       {pick && (
                         <span className="text-muted-foreground ml-1 font-normal">
                           · agent’s pick
@@ -362,6 +425,7 @@ export function InboxDecisionRow({
                     variant="ghost"
                     size="xs"
                     responsive={false}
+                    ref={replyRef}
                     disabled={busy}
                     onClick={() => setAnswering('reply')}
                     className="rounded-full"
@@ -379,11 +443,10 @@ export function InboxDecisionRow({
                   placeholder="Your reply"
                   maxLength={2000}
                   busy={busy}
-                  onCancel={() => setAnswering(null)}
-                  onSend={(text) => {
-                    setAnswering(null);
-                    actions.onReply(text);
-                  }}
+                  draftKey={draftKey ? `${draftKey}:reply` : undefined}
+                  onCancel={() => closeField(true)}
+                  onDone={() => closeField(false)}
+                  onSend={(text) => actions.onReply(text)}
                 />
               )}
             </div>
@@ -394,11 +457,10 @@ export function InboxDecisionRow({
               placeholder="What needs to change?"
               maxLength={2000}
               busy={busy}
-              onCancel={() => setAnswering(null)}
-              onSend={(note) => {
-                setAnswering(null);
-                actions.rejectNote?.onSubmit(note);
-              }}
+              draftKey={draftKey ? `${draftKey}:note` : undefined}
+              onCancel={() => closeField(true)}
+              onDone={() => closeField(false)}
+              onSend={(note) => actions.rejectNote?.onSubmit(note)}
             />
           )}
           {actions?.kind === 'word' && answering === 'word' && actions.input && (
@@ -407,11 +469,10 @@ export function InboxDecisionRow({
               placeholder={actions.input.placeholder}
               maxLength={actions.input.maxLength}
               busy={busy}
-              onCancel={() => setAnswering(null)}
-              onSend={(text) => {
-                setAnswering(null);
-                actions.input?.onSubmit(text);
-              }}
+              draftKey={draftKey ? `${draftKey}:word` : undefined}
+              onCancel={() => closeField(true)}
+              onDone={() => closeField(false)}
+              onSend={(text) => actions.input?.onSubmit(text)}
             />
           )}
         </div>
@@ -423,7 +484,6 @@ export function InboxDecisionRow({
                   label="More about this"
                   icon={Info}
                   onClick={() => setExpanded((open) => !open)}
-                  pressed={expanded}
                   expanded={expanded}
                   controls={expanded ? panelId : undefined}
                 />
@@ -434,7 +494,8 @@ export function InboxDecisionRow({
                     label={actions.rejectLabel}
                     icon={ThumbsDown}
                     onClick={actions.rejectNote ? () => setAnswering('note') : actions.onReject}
-                    pressed={answering === 'note'}
+                    expanded={actions.rejectNote ? answering === 'note' : undefined}
+                    buttonRef={rejectRef}
                     disabled={busy}
                   />
                   <IconAction
@@ -447,6 +508,7 @@ export function InboxDecisionRow({
               )}
               {actions.kind === 'word' && (
                 <Button
+                  ref={wordRef}
                   type="button"
                   variant="outline"
                   size="xs"

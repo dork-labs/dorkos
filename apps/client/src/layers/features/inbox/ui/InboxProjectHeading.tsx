@@ -24,10 +24,14 @@ export function InboxProjectHeading({ name, label }: InboxProjectHeadingProps) {
   return (
     <h3
       data-slot="inbox-project-heading"
-      className="text-foreground/80 mt-2 flex items-baseline justify-between gap-2 px-2 text-[11px] font-semibold"
+      className="text-foreground/80 mt-2 flex min-w-0 items-baseline justify-between gap-2 px-2 text-[11px] font-semibold"
     >
-      <span className="truncate">{name}</span>
-      {label && <span className="text-muted-foreground shrink-0 font-normal">{label}</span>}
+      <span className="max-w-[65%] shrink-0 truncate">{name}</span>
+      {label && (
+        <span className="text-muted-foreground min-w-0 truncate font-normal">
+          <bdi>{label}</bdi>
+        </span>
+      )}
     </h3>
   );
 }

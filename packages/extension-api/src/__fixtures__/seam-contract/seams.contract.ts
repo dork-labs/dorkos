@@ -157,7 +157,10 @@ export interface DecisionAnswerResult {
   readonly resolved: boolean;
   /** Something to tell the person, or null. */
   readonly message: string | null;
-  /** A validated in-app path the host already navigated to, or null. */
+  /**
+   * The checked in-app path the extension answered with, or null. The host
+   * follows it when it is a page this app serves.
+   */
   readonly navigate: string | null;
   /** "Sorting 12 ideas… · Watch", when the handler returned one. */
   readonly watch: { sessionId: string; label: string } | null;

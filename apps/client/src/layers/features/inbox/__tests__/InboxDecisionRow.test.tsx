@@ -6,7 +6,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { Puzzle } from 'lucide-react';
@@ -64,7 +64,8 @@ describe('InboxDecisionRow', () => {
     const info = screen.getByRole('button', { name: 'More about this' });
 
     expect(info).toHaveAttribute('aria-expanded', 'false');
-    expect(info).toHaveAttribute('aria-pressed', 'false');
+    // One state, said once: an expander is expanded, not pressed.
+    expect(info).not.toHaveAttribute('aria-pressed');
     // It points at the panel only while there is one to point at.
     expect(info).not.toHaveAttribute('aria-controls');
     expect(screen.queryByText('None of it has run yet.')).not.toBeInTheDocument();
@@ -72,7 +73,6 @@ describe('InboxDecisionRow', () => {
     await user.click(info);
 
     expect(info).toHaveAttribute('aria-expanded', 'true');
-    expect(info).toHaveAttribute('aria-pressed', 'true');
     const panel = document.getElementById(info.getAttribute('aria-controls') ?? '');
     expect(panel).not.toBeNull();
     // In the row, not a popover: the panel lives inside the row itself.
@@ -233,5 +233,66 @@ describe('InboxDecisionRow, phase 2 answers (spec flow-multiproject §7.5)', () 
   it('marks an unseen history row', () => {
     render(<InboxDecisionRow icon={Puzzle} title="Shipped the calmer red" unread />);
     expect(screen.getByText('Unread.')).toBeInTheDocument();
+  });
+});
+
+describe('InboxDecisionRow, answers that must go through (client review 3, 6)', () => {
+  it('keeps the note and its text open when sending fails, and closes it when it works', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    renderRow({
+      actions: {
+        kind: 'yes-no',
+        approveLabel: 'Looks good',
+        rejectLabel: 'Needs changes',
+        onApprove: vi.fn(),
+        onReject: vi.fn(),
+        rejectNote: { onSubmit },
+      },
+    });
+    await user.click(screen.getByLabelText('Needs changes'));
+    await user.type(screen.getByLabelText('What needs to change?'), 'Use the calmer red.');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/didn’t go through/);
+    expect(screen.getByLabelText('What needs to change?')).toHaveValue('Use the calmer red.');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(screen.queryByLabelText('What needs to change?')).not.toBeInTheDocument();
+  });
+
+  it('sends focus back to 👎 on Cancel', async () => {
+    const user = userEvent.setup();
+    renderRow({
+      actions: {
+        kind: 'yes-no',
+        approveLabel: 'Looks good',
+        rejectLabel: 'Needs changes',
+        onApprove: vi.fn(),
+        onReject: vi.fn(),
+        rejectNote: { onSubmit: vi.fn() },
+      },
+    });
+    await user.click(screen.getByLabelText('Needs changes'));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.getByLabelText('Needs changes')).toHaveFocus());
+  });
+
+  it('keeps a draft when the row is drawn again', async () => {
+    const user = userEvent.setup();
+    const actions = {
+      kind: 'word' as const,
+      label: 'Answer',
+      onClick: vi.fn(),
+      input: { placeholder: 'Why?', maxLength: 200, onSubmit: vi.fn() },
+    };
+    const first = render(
+      <InboxDecisionRow icon={Puzzle} title="Why?" draftKey="d-1" actions={actions} />
+    );
+    await user.click(screen.getByRole('button', { name: 'Answer' }));
+    await user.type(screen.getByLabelText('Answer', { selector: 'textarea' }), 'Half done');
+    first.unmount();
+    render(<InboxDecisionRow icon={Puzzle} title="Why?" draftKey="d-1" actions={actions} />);
+    await user.click(screen.getByRole('button', { name: 'Answer' }));
+    expect(screen.getByLabelText('Answer', { selector: 'textarea' })).toHaveValue('Half done');
   });
 });

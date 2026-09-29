@@ -27,6 +27,11 @@ export function deadlineLine(
   now: Date
 ): string | null {
   if (!decideBy || !pickLabel) return null;
+  const due = Date.parse(decideBy);
+  if (Number.isNaN(due)) return null;
+  // Never a deadline in the past: the agent is about to go ahead.
+  if (due <= now.getTime())
+    return `The agent picks “${pickLabel}” any moment now, unless you answer.`;
   const when = formatResetTime(decideBy, now);
   return when ? `If you don’t answer by ${when}, the agent picks “${pickLabel}”.` : null;
 }
@@ -50,8 +55,24 @@ export function sinceLine(since: string | null, raisedAt: string, now: Date): st
 }
 
 /**
+ * "at 2:14 PM" today, "on Sep 12" any other day, in the viewer's zone.
+ *
+ * @param iso - The moment, ISO.
+ * @param now - The moment to read from.
+ */
+function whenPhrase(iso: string, now: Date): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const sameDay = date.toDateString() === now.toDateString();
+  return sameDay
+    ? `at ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)}`
+    : `on ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date)}`;
+}
+
+/**
  * What follows the title on a decision's history row: "Ship it · you at
- * 2:14pm", "Resolved on its own at 11:02", "No longer needed". The server
+ * 2:14 PM", "Ship it · you on Sep 12", "Resolved on its own at 11:02", "No
+ * longer needed". The server
  * wrote who decided (the body); this adds the time in the viewer's zone.
  *
  * @param notification - The stored history row.
@@ -60,7 +81,7 @@ export function sinceLine(since: string | null, raisedAt: string, now: Date): st
 export function decisionHistoryTrail(notification: NotificationDTO, now: Date): string | null {
   const body = notification.body ?? null;
   if (notification.outcome === 'cancelled') return body;
-  const at = formatResetTime(notification.resolvedAt ?? notification.createdAt, now);
-  if (!body) return at;
-  return at ? `${body} at ${at}` : body;
+  const when = whenPhrase(notification.resolvedAt ?? notification.createdAt, now);
+  if (!body) return when;
+  return when ? `${body} ${when}` : body;
 }

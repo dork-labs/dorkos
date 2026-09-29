@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
@@ -9,7 +9,7 @@ import {
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
-import { listWaitingKinds, toSession } from '@/layers/shared/lib';
+import { internalRoutePath, listWaitingKinds, toSession } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
 import {
@@ -22,7 +22,7 @@ import { useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import { useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
 import { ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
-import { useExtensionDecisionActions } from '@/layers/entities/extension';
+import { takeOffersShownInBell, useExtensionDecisionActions } from '@/layers/entities/extension';
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
 import { ExtensionApprovalList } from './ExtensionApprovalList';
@@ -227,7 +227,6 @@ export function InboxBell() {
     schedules,
     extensionApprovals,
     extensionDecisions,
-    decisionOffers,
     items: waitingItems,
     isError,
     retry,
@@ -264,6 +263,17 @@ export function InboxBell() {
   const inboxRequest = useInboxRequest();
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
+  // A "next time, on its own?" offer shows once (spec flow-multiproject
+  // §7.8): whenever the Inbox closes, by its own button, Escape, or a click
+  // that navigates, the offers it actually drew are dismissed. Offers drawn
+  // elsewhere (the Activity page) or on another device are left alone.
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (wasOpen.current && !open) {
+      for (const decisionId of takeOffersShownInBell()) answerOffer(decisionId, false);
+    }
+    wasOpen.current = open;
+  }, [open, answerOffer]);
   // The slice the Activity list is showing. Set when another surface asked for
   // a filtered Inbox (a session's menu), and dropped when the panel closes —
   // a filter nobody can see is a filter that makes the next open look broken.
@@ -356,12 +366,7 @@ export function InboxBell() {
           open={open}
           onOpenChange={(next) => {
             setOpen(next);
-            if (!next) {
-              setLens(undefined);
-              // A "next time, on its own?" offer shows once: closing the
-              // Inbox is saying no to it (spec flow-multiproject §7.8).
-              for (const offer of decisionOffers) answerOffer(offer.decisionId, false);
-            }
+            if (!next) setLens(undefined);
           }}
         >
           <ResponsivePopoverTrigger asChild>
@@ -388,7 +393,11 @@ export function InboxBell() {
             <div className="flex min-w-0 flex-col gap-3">
               {showsPinned && (
                 <div>
-                  <h2 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
+                  <h2
+                    data-inbox-needs-you-heading
+                    tabIndex={-1}
+                    className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase outline-none md:not-sr-only"
+                  >
                     Needs You
                   </h2>
                   {/* While only a receipt is left the count is zero, and
@@ -443,8 +452,13 @@ export function InboxBell() {
                       void navigate(toSession({ session: sessionId }));
                     }}
                     onNavigate={(path) => {
+                      // Only a page this app serves: the server checked the
+                      // link, and this keeps a page the app cannot draw yet
+                      // (another build's `/x/…`) from opening elsewhere.
+                      const target = internalRoutePath(path);
+                      if (!target) return;
                       setOpen(false);
-                      void navigate({ href: path });
+                      void navigate({ href: target });
                     }}
                     onScheduleNavigate={() => setOpen(false)}
                   />
@@ -503,7 +517,7 @@ export function InboxBell() {
                   </div>
                 </div>
                 <div className="mt-1">
-                  <InboxList lens={lens} onOpened={() => setOpen(false)} />
+                  <InboxList lens={lens} inBell onOpened={() => setOpen(false)} />
                 </div>
               </div>
             </div>

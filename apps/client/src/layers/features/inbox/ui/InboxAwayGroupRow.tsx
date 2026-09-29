@@ -25,6 +25,8 @@ export interface InboxAwayGroupRowProps {
   onOpenNotification: (notification: NotificationDTO) => void;
   /** Called after a member's "Watch" opened a chat. */
   onOpened?: () => void;
+  /** Drawn inside the bell (see `ExtensionDecisionHistoryRow`). */
+  inBell?: boolean;
   /** Where the row sits in its list, so the entrance can stop staggering. */
   index?: number;
 }
@@ -44,6 +46,7 @@ export function InboxAwayGroupRow({
   onOpenNotification,
   onOpened,
   index,
+  inBell = false,
 }: InboxAwayGroupRowProps) {
   const membersId = useId();
   const unread = group.notifications.some((notification) => notification.readAt === undefined);
@@ -96,6 +99,7 @@ export function InboxAwayGroupRow({
               notification={notification}
               onOpen={() => onOpenNotification(notification)}
               onOpened={onOpened}
+              inBell={inBell}
             />
           ))}
         </div>

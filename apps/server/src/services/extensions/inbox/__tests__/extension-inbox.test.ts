@@ -268,9 +268,10 @@ describe('answering in core’s UI (a person)', () => {
       project: { root: '/repos/dorkos', name: 'dorkos' },
     });
     expect(fx.history()[0].body).toBe('Ship it · you');
-    expect(fx.inbox.pendingOffers()).toEqual([
-      expect.objectContaining({ decisionId: id, text: 'Shipped. Next time, ship on its own?' }),
-    ]);
+    // The offer went back with the answer, to the one client that gave it;
+    // it is never listed for other devices.
+    expect(fx.inbox.pendingOffers()).toEqual([]);
+    expect(await fx.inbox.answerOffer(id, false)).toMatchObject({ ok: true });
   });
 
   it('asks for the note on "Needs changes" and hands it over', async () => {

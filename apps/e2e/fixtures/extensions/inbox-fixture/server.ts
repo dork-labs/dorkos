@@ -14,6 +14,7 @@ interface FixtureInbox {
     actions: { kind: 'yes-no'; approveLabel: string; rejectLabel: string };
   }): Promise<{ id: string }>;
   onAction(handler: () => { resolve: 'approved' }): () => void;
+  resolve(key: string, opts: { outcome: 'cancelled' }): Promise<boolean>;
 }
 
 /** The slice of the context this fixture uses. */
@@ -52,6 +53,10 @@ export default function register(router: FixtureRouter, ctx: FixtureContext): ()
       actions: { kind: 'yes-no', approveLabel: 'Ship it', rejectLabel: 'Send it back' },
     });
     res.json(raised);
+  });
+  // Clean-up for the spec: withdraw what it raised.
+  router.post('/resolve', ctx.requirePerson, async (req, res) => {
+    res.json({ resolved: await ctx.inbox.resolve(req.body.key, { outcome: 'cancelled' }) });
   });
   return stop;
 }

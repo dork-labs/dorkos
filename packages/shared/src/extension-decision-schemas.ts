@@ -77,6 +77,9 @@ export const DECISION_ALREADY_RESOLVED_CODE = 'already_resolved';
 /** `504` when the extension did not answer within its 5 seconds. */
 export const DECISION_EXTENSION_TIMEOUT_CODE = 'extension_timeout';
 
+/** `409` when the question changed after the person saw it. */
+export const DECISION_STALE_CODE = 'stale_decision';
+
 /** `409` when a follow-up offer was used, dismissed, or is too old. */
 export const DECISION_OFFER_GONE_CODE = 'offer_gone';
 
@@ -186,6 +189,11 @@ export const ExtensionDecisionDTOSchema = z
     needsYou: z.boolean(),
     /** A chat the extension started about this, or null. */
     watch: DecisionWatchSchema.nullable(),
+    /**
+     * Bumped whenever the extension changes what is asked. Send it back with
+     * an answer so an answer to an older version is refused, not applied.
+     */
+    revision: z.number().int().min(0),
   })
   .openapi('ExtensionDecision');
 
@@ -222,8 +230,9 @@ export const ListExtensionDecisionsResponseSchema = z
     decisions: z.array(ExtensionDecisionDTOSchema),
     /**
      * Follow-up offers a person has not answered yet, for an answer an
-     * extension settled later (`resolve` with `answering`). Empty on the
-     * extension-scoped route.
+     * extension settled later (`resolve` with `answering`). An offer made in
+     * reply to an answer is not listed: it comes back with that answer, to the
+     * one client that gave it. Empty on the extension-scoped route.
      */
     offers: z.array(PendingDecisionOfferSchema),
   })
@@ -242,6 +251,8 @@ export const DecisionActionRequestSchema = z
     text: z.string().max(DECISION_LIMITS.note).optional(),
     /** The chosen chip, for a `choice`. */
     choiceId: z.string().min(1).optional(),
+    /** The revision the person saw; an older one is refused (`stale_decision`). */
+    revision: z.number().int().min(0).optional(),
   })
   .openapi('DecisionActionRequest');
 

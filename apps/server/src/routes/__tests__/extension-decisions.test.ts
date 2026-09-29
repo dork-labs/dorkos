@@ -244,8 +244,9 @@ describe('POST /api/extension-decisions/:id/offer', () => {
     );
     const id = await raised();
     await request(server).post(`/api/extension-decisions/${id}/action`).send({ action: 'approve' });
+    // Returned with the answer only, never listed for another device.
     const listed = await request(server).get('/api/extension-decisions');
-    expect(listed.body.offers).toEqual([expect.objectContaining({ decisionId: id })]);
+    expect(listed.body.offers).toEqual([]);
 
     const yes = await request(server)
       .post(`/api/extension-decisions/${id}/offer`)

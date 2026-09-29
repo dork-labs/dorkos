@@ -3,6 +3,7 @@
  *
  * @module widgets/inbox-bell/ui/WaitingGroups
  */
+import type { ReactNode } from 'react';
 import { AnimatePresence } from 'motion/react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { ExtensionDecisionDTO } from '@dorkos/shared/extension-decision-schemas';
@@ -98,76 +99,103 @@ export function WaitingGroups({
     groups.push({ project: null, items: [] });
   }
 
-  return (
-    <>
-      {groups.map((group) => {
-        const groupAsks: InteractionPendingEvent[] = [];
-        const groupApprovals: PendingApproval[] = [];
-        const groupDecisions: ExtensionDecisionDTO[] = [];
-        const groupSchedules: Task[] = [];
-        for (const item of group.items) {
-          if (item.kind === 'ask') groupAsks.push(item.ask);
-          else if (item.kind === 'approval') groupApprovals.push(item.approval);
-          else if (item.kind === 'decision') groupDecisions.push(item.decision);
-          else groupSchedules.push(item.task);
+  // Every piece is a keyed sibling in ONE flat list, keyed by what it holds
+  // rather than by which group it sits in. When the headings appear or go
+  // (one project becomes two), React keeps each row where it is instead of
+  // remounting it, so a half-typed answer and focus survive the regroup.
+  const roots = new Set(groups.map((group) => group.project?.root ?? null));
+  const nodes: ReactNode[] = [];
+  groups.forEach((group, index) => {
+    const groupAsks: InteractionPendingEvent[] = [];
+    const groupApprovals: PendingApproval[] = [];
+    const groupDecisions: ExtensionDecisionDTO[] = [];
+    const groupSchedules: Task[] = [];
+    for (const item of group.items) {
+      if (item.kind === 'ask') groupAsks.push(item.ask);
+      else if (item.kind === 'approval') groupApprovals.push(item.approval);
+      else if (item.kind === 'decision') groupDecisions.push(item.decision);
+      else groupSchedules.push(item.task);
+    }
+    const root = group.project?.root ?? null;
+    const last = index === groups.length - 1;
+    // A receipt belongs to the group of the project it was asked in; one whose
+    // group is gone (its last prompt answered) is drawn with the last group,
+    // never dropped. With no headings every receipt belongs here.
+    const holds = grouped
+      ? (ask: InteractionPendingEvent) => {
+          const own = ask.project?.root ?? null;
+          return own === root || (last && !roots.has(own));
         }
-        const root = group.project?.root ?? null;
-        // A receipt belongs to the group of the project it was asked in; with
-        // no headings every receipt belongs here.
-        const holds = grouped
-          ? (ask: InteractionPendingEvent) => (ask.project?.root ?? null) === root
-          : undefined;
-        const label =
-          groupDecisions
-            .filter((decision) => decision.projectLabel)
-            .sort((a, b) => b.raisedAt.localeCompare(a.raisedAt))[0]?.projectLabel ?? null;
+      : undefined;
+    const label =
+      groupDecisions
+        .filter((decision) => decision.projectLabel)
+        .sort((a, b) => b.raisedAt.localeCompare(a.raisedAt))[0]?.projectLabel ?? null;
 
-        return (
-          <div key={root ?? 'no-project'} data-slot="inbox-waiting-group">
-            {grouped && group.project && (
-              <InboxProjectHeading name={group.project.name} label={label} />
-            )}
-            {(groupAsks.length > 0 || hasSettlingAsks) && (
-              <AskList
-                asks={groupAsks}
-                agentNames={agentNames}
-                onOpenSession={onOpenSession}
-                holds={holds}
-                emptyState={
-                  grouped ? null : (
-                    <p className="text-muted-foreground text-xs">Nothing needs you</p>
-                  )
-                }
+    if (grouped && group.project) {
+      nodes.push(
+        <InboxProjectHeading key={`heading:${root}`} name={group.project.name} label={label} />
+      );
+    }
+    if (groupAsks.length > 0 || (hasSettlingAsks && (last || !grouped))) {
+      nodes.push(
+        <AskList
+          key={`asks:${groupAsks[0]?.interaction.id ?? 'receipts'}`}
+          asks={groupAsks}
+          agentNames={agentNames}
+          onOpenSession={onOpenSession}
+          holds={holds}
+          emptyState={
+            grouped ? null : <p className="text-muted-foreground text-xs">Nothing needs you</p>
+          }
+        />
+      );
+    }
+    if (groupApprovals.length > 0) {
+      nodes.push(
+        <ApprovalList
+          key={`approvals:${groupApprovals[0].approvalId}`}
+          approvals={groupApprovals}
+        />
+      );
+    }
+    for (const decision of groupDecisions) {
+      nodes.push(
+        <div
+          key={`decision:${decision.id}`}
+          data-slot="inbox-waiting-decision"
+          data-project={decision.project?.name ?? ''}
+        >
+          <ExtensionDecisionList
+            decisions={[decision]}
+            onNavigate={onNavigate}
+            onWatch={onOpenSession}
+          />
+        </div>
+      );
+    }
+    if (groupSchedules.length > 0) {
+      nodes.push(
+        <div key={`schedules:${groupSchedules[0].id}`} className="mt-3">
+          <h3 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
+            Scheduled Runs
+          </h3>
+          {/* `AnimatePresence` keeps a decided card mounted long enough to say
+              so; see `InboxBell`'s own note. */}
+          <AnimatePresence initial={false}>
+            {groupSchedules.map((task) => (
+              <ScheduleApprovalCard
+                key={task.id}
+                task={task}
+                className="mt-2"
+                onNavigate={onScheduleNavigate}
               />
-            )}
-            {groupApprovals.length > 0 && <ApprovalList approvals={groupApprovals} />}
-            <ExtensionDecisionList
-              decisions={groupDecisions}
-              onNavigate={onNavigate}
-              onWatch={onOpenSession}
-            />
-            {groupSchedules.length > 0 && (
-              <div className="mt-3">
-                <h3 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
-                  Scheduled Runs
-                </h3>
-                {/* `AnimatePresence` keeps a decided card mounted long enough
-                    to say so; see `InboxBell`'s own note. */}
-                <AnimatePresence initial={false}>
-                  {groupSchedules.map((task) => (
-                    <ScheduleApprovalCard
-                      key={task.id}
-                      task={task}
-                      className="mt-2"
-                      onNavigate={onScheduleNavigate}
-                    />
-                  ))}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </>
-  );
+            ))}
+          </AnimatePresence>
+        </div>
+      );
+    }
+  });
+
+  return <div data-slot="inbox-waiting">{nodes}</div>;
 }

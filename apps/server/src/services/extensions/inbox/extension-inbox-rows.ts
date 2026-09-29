@@ -39,6 +39,12 @@ export interface PendingAction {
 export interface StoredOffer extends DecisionOffer {
   /** When the offer was made (it lapses 15 minutes later). */
   createdAt: string;
+  /**
+   * `answer`: made in reply to an answer, returned to the client that gave
+   * it and never listed. `answering`: made when the extension settled a kept
+   * answer later, so it is listed for the person's next open app.
+   */
+  via: 'answer' | 'answering';
 }
 
 /** Parse a JSON column, or null when empty or unreadable. */
@@ -138,6 +144,7 @@ export function toDecisionDTO(
     raisedAt: row.raisedAt,
     needsYou: row.deadlineState === 'failed',
     watch: parseJson<DecisionWatch>(row.watchJson),
+    revision: row.revision,
   };
 }
 

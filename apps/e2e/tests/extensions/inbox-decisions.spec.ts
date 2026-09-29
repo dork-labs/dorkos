@@ -62,6 +62,11 @@ test.describe('An extension asks in the inbox', () => {
   });
 
   test.afterAll(async ({ request }) => {
+    // Leave the leg as it was found: nothing waiting, nothing approved, off.
+    for (const key of ['ship-alpha', 'ship-beta']) {
+      await request.post(`/api/ext/${EXT_ID}/resolve`, { data: { key } });
+    }
+    await request.post(`/api/extensions/${EXT_ID}/revoke`, { data: {} });
     await request.post(`/api/extensions/${EXT_ID}/disable`, { data: {} });
     if (extensionDir) rmSync(extensionDir, { recursive: true, force: true });
     rmSync(PROJECTS_ROOT, { recursive: true, force: true });
@@ -81,14 +86,20 @@ test.describe('An extension asks in the inbox', () => {
     await expect(headings.filter({ hasText: `alpha-${RUN}` })).toContainText('Linear ALP');
     await expect(headings.filter({ hasText: `beta-${RUN}` })).toContainText('Linear BET');
 
-    const alphaGroup = page
-      .locator('[data-slot="inbox-waiting-group"]')
-      .filter({ has: page.getByText('Ship the alpha banner?') });
-    await expect(alphaGroup.getByText(/reviewer agent found nothing/)).toBeVisible();
+    const waiting = page.locator('[data-slot="inbox-waiting"]');
+    const alphaRow = waiting.locator(
+      `[data-slot="inbox-waiting-decision"][data-project="alpha-${RUN}"]`
+    );
+    await expect(alphaRow.getByText('Ship the alpha banner?')).toBeVisible();
+    await expect(alphaRow.getByText(/reviewer agent found nothing/)).toBeVisible();
 
-    await alphaGroup.getByRole('button', { name: 'Ship it' }).click();
-    await expect(page.getByText('Ship the alpha banner?')).toHaveCount(1); // the history row
+    await alphaRow.getByRole('button', { name: 'Ship it' }).click();
+    // Answered: it leaves "Needs You", the headings go with the second project,
+    // and Activity reads it back as the person's answer.
+    await expect(waiting.getByText('Ship the alpha banner?')).toHaveCount(0);
     await expect(page.locator('[data-slot="inbox-project-heading"]')).toHaveCount(0);
-    await expect(page.getByText(/Ship it · you at /)).toBeVisible();
+    await expect(
+      page.locator('[data-history="true"]').filter({ hasText: 'Ship the alpha banner?' })
+    ).toContainText(/Ship it · you at /);
   });
 });
