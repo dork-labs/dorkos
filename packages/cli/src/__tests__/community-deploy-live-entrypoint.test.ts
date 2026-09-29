@@ -109,8 +109,10 @@ describe('credentialed live gate entrypoint', () => {
     expect(cleanedUp).toBeGreaterThan(cleanup);
     expect(cleanedUp).toBeLessThan(afterRead);
     expect(main).toMatch(
-      /catch \(error\) \{\s*throw await explainCommunityLiveGateFailure\(error, \{ cleanedUp, recoveryCommand \}/u
+      /catch \(error\) \{\s*throw await explainCommunityLiveGateFailure\(\s*error,\s*\{ cleanedUp, recoveryCommand \}/u
     );
+    // A launcher that exits with a failure is reported with the code it saved in its journal.
+    expect(main).toMatch(/return describeLauncherStop\(JSON\.parse\(journal\) as unknown\);/u);
     expect(source).toMatch(/process\.stderr\.write\(describeCommunityLiveGateFailure\(error\)\)/u);
     expect(main).toMatch(
       /bootstrap = await whileLauncherRuns\(resumed, capture\.next\(TIMEOUT_MS\), \{\s*ms: DELIVERED_CAPTURE_MS,\s*step: 'bootstrap-capture-after-launcher-exit',\s*\}\)/u

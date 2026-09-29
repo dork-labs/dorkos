@@ -51,6 +51,9 @@ Packages:
   check-files <name>          Compare a package an older DorkOS installed
                                 with the version you installed, so updates
                                 keep your edits
+  keep-files <name>           Keep the files an update couldn't sort as
+                                yours, when there's no earlier version to
+                                sort them with
   outdated                    List only the packages that have an update
                                 (exits 1 when any do, for scripts)
   held-back                   List global packages held back from sessions,
@@ -213,6 +216,31 @@ Examples:
   dorkos marketplace check-files flow
   dorkos marketplace check-files flow --project .
 `,
+  'keep-files': `
+Usage: dorkos marketplace keep-files <name> [options]
+
+Keeps the files an update couldn't sort as yours.
+
+When an update couldn't tell whether some files were yours or left over from
+the version you had, it kept them. Check files sorts them once that version can
+be fetched. A package installed from a folder on this computer, or one whose
+version no longer exists, never has one, so this makes them yours instead:
+updates keep them, and nothing is moved or deleted.
+
+It prints the files first, and marks the ones that still run. For a global
+package held back from sessions, it also prints everything the package runs,
+and your yes approves what it discloses now, like a Review.
+
+Only you can do this, not an agent. With sign-in on, do it in the app instead.
+
+Options:
+      --project <path>  The project the package is installed in
+  -y, --yes             Do not ask first (it still prints what it keeps)
+      --json            Print the answer as JSON
+
+Examples:
+  dorkos marketplace keep-files my-local-plugin
+`,
   outdated: `
 Usage: dorkos marketplace outdated [options]
 
@@ -242,7 +270,7 @@ Examples:
 
 /** Every subcommand, in the order the one-line usage names them. */
 const SUBCOMMANDS =
-  'install|update|uninstall|installed|outdated|held-back|check-files|add|remove|list|refresh|validate';
+  'install|update|uninstall|installed|outdated|held-back|check-files|keep-files|add|remove|list|refresh|validate';
 
 /**
  * Dispatch a `dorkos marketplace <subcommand>` invocation.
@@ -306,6 +334,11 @@ export async function runMarketplaceDispatcher(
       const { runMarketplaceCheckFiles, parseMarketplaceCheckFilesArgs } =
         await import('./marketplace-check-files.js');
       return await runMarketplaceCheckFiles(parseMarketplaceCheckFilesArgs(subArgs));
+    }
+    if (subcommand === 'keep-files') {
+      const { runMarketplaceKeepFiles, parseMarketplaceKeepFilesArgs } =
+        await import('./marketplace-keep-files.js');
+      return await runMarketplaceKeepFiles(parseMarketplaceKeepFilesArgs(subArgs));
     }
     if (subcommand === 'add') {
       const { runMarketplaceAdd, parseMarketplaceAddArgs } = await import('./marketplace-add.js');

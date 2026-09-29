@@ -34,6 +34,11 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 
+// Radix Select reads pointer capture, which jsdom does not implement.
+Element.prototype.hasPointerCapture = () => false;
+Element.prototype.setPointerCapture = () => {};
+Element.prototype.releasePointerCapture = () => {};
+
 afterEach(cleanup);
 
 /** The chat's own view with Gmail turned off; `canTurnOn` is whether readiness offers turning it on. */
@@ -63,11 +68,11 @@ function chatTurnedOff(canTurnOn: boolean) {
 
 const REQUEST = {
   requestId: 'request-1',
-  reviewUrl: '/connections?request=request-1',
   serviceSlug: 'gmail',
   reason: 'Summarise today’s inbox',
-  requestedOperations: ['GMAIL_FETCH_EMAILS'],
+  access: 'read',
   requestedEvents: [],
+  note: 'The person hasn’t answered yet.',
   createdAt: '2026-09-26T10:00:00.000Z',
   expiresAt: '2099-09-26T12:00:00.000Z',
   status: 'awaiting_owner',
@@ -334,6 +339,7 @@ describe('AgentRequestCard — an account exists', () => {
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
         decision: 'current_access',
         connectionId: 'connection-1',
+        eventScopes: [],
       })
     );
     // Only the fixed agent's access was written, and before the answer.
@@ -365,6 +371,7 @@ describe('AgentRequestCard — an account exists', () => {
     expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
       decision: 'current_access',
       connectionId: 'connection-1',
+      eventScopes: [],
     });
   });
 
@@ -405,6 +412,7 @@ describe('AgentRequestCard — an account exists', () => {
     expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
       decision: 'current_access',
       connectionId: 'connection-1',
+      eventScopes: [],
     });
   });
 
@@ -470,37 +478,32 @@ describe('AgentRequestCard — an account exists', () => {
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 
-  it('starts on the level the agent asked for and lists what it asked', async () => {
+  it('starts on the level the agent asked for and says what it asked for', async () => {
     const transport = transportWith([account('connection-1')]);
-    renderWith(
-      transport,
-      <AgentRequestCard
-        request={{ ...REQUEST, requestedOperations: ['GMAIL_FETCH_EMAILS', 'GMAIL_SEND_EMAIL'] }}
-      />
-    );
-    const asked = await screen.findByTestId('requested-actions');
+    renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
+    const asked = await screen.findByTestId('requested-access');
     expect(asked).toHaveTextContent('Bo asked: Summarise today’s inbox');
-    expect(asked).toHaveTextContent('It wants to: Fetch emails and Send email.');
+    expect(asked).toHaveTextContent('It wants to read and change things in Gmail.');
     expect(screen.getByRole('radio', { name: 'Read and write' })).toBeChecked();
     expect(asked).not.toHaveTextContent('With Read');
   });
 
-  it('says what Read leaves out when the person picks it, and what neither level covers', async () => {
+  it('says what Read leaves out when the person picks it over the level asked for', async () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
-    renderWith(
-      transport,
-      <AgentRequestCard
-        request={{
-          ...REQUEST,
-          requestedOperations: ['GMAIL_SEND_EMAIL', 'GMAIL_DELETE_EMAIL'],
-        }}
-      />
-    );
-    const asked = await screen.findByTestId('requested-actions');
-    expect(asked).toHaveTextContent('Neither choice includes delete email.');
+    renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
+    const asked = await screen.findByTestId('requested-access');
     await user.click(screen.getByRole('radio', { name: 'Read' }));
-    expect(asked).toHaveTextContent('With Read, Bo can’t send email.');
+    expect(asked).toHaveTextContent('With Read, Bo can’t change anything in Gmail.');
+  });
+
+  it('starts on Read when that is all the agent asked for', async () => {
+    const transport = transportWith([account('connection-1')]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+    expect(await screen.findByTestId('requested-access')).toHaveTextContent(
+      'It wants to read Gmail.'
+    );
+    expect(screen.getByRole('radio', { name: 'Read' })).toBeChecked();
   });
 });
 
@@ -530,18 +533,241 @@ describe('AgentRequestCard — answered', () => {
     expect(await screen.findByTestId('agent-request-receipt')).toHaveTextContent(line);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
+});
 
-  it('sends a request that also asks for new-activity updates to the full review', async () => {
+describe('AgentRequestCard — a request that also asks for updates', () => {
+  const EVENT_REQUEST = { ...REQUEST, requestedEvents: ['gmail.message_received'] };
+
+  function updatesTransport(): Transport {
     const transport = transportWith([account('connection-1')]);
-    renderWith(
-      transport,
-      <AgentRequestCard request={{ ...REQUEST, requestedEvents: ['GMAIL_NEW_MESSAGE'] }} />
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+    });
+    vi.mocked(transport.getConnectionEventSource).mockResolvedValue({
+      setupMode: 'managed',
+      configured: false,
+      endpoint: null,
+      reason: null,
+    });
+    vi.mocked(transport.listConnectionEventDefinitions).mockResolvedValue({
+      definitions: [
+        {
+          id: 'definition-1',
+          eventType: 'gmail.message_received',
+          displayName: 'New email',
+          toolkit: 'gmail',
+          toolkitVersion: '2026-09-01',
+          definitionHash: `sha256:${'1'.repeat(64)}`,
+          filterSchema: {},
+          payloadSchema: {},
+          deliveryMode: 'webhook',
+          expectedCadenceSeconds: null,
+        },
+      ],
+    });
+    return transport;
+  }
+
+  it('answers in the card: access first, then the exact updates, in one answer', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Send Bo updates from Gmail?' })
+    ).toBeInTheDocument();
+    // The access is saved; the request waits for the updates choice.
+    expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    expect(send).toBeDisabled();
+    await user.click(screen.getByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+
+    await waitFor(() =>
+      expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
+        decision: 'current_access',
+        connectionId: 'connection-1',
+        eventScopes: [
+          {
+            connectionId: 'connection-1',
+            definitionId: 'definition-1',
+            filter: {},
+            agentId: 'agent-bo',
+            destination: { kind: 'agent', id: 'agent-bo' },
+          },
+        ],
+      })
     );
-    expect(await screen.findByRole('link', { name: /Review request/ })).toHaveAttribute(
-      'href',
-      '/connections?request=request-1'
+    expect(screen.queryByRole('link', { name: /Review request/ })).not.toBeInTheDocument();
+  });
+
+  it('never resends updates that failed, and offers the two answers that can work', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
+      Object.assign(new Error('unavailable'), { code: 'event_selection_unavailable' })
     );
-    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+
+    expect(await screen.findByTestId('agent-request-unanswered')).toHaveTextContent(
+      'the updates you picked can’t be set up right now'
+    );
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Pick updates again' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Send Bo updates from Gmail?' })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'No updates' }));
+    await waitFor(() =>
+      expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
+        decision: 'current_access',
+        connectionId: 'connection-1',
+        eventScopes: [],
+      })
+    );
+  });
+
+  it('reads a changed update choice as "pick again", never as a lost connection', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
+      Object.assign(new Error('conflict'), { code: 'review_conflict' })
+    );
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+    const unanswered = await screen.findByTestId('agent-request-unanswered');
+    expect(unanswered).not.toHaveTextContent('didn’t reach the server');
+    expect(screen.getByRole('button', { name: 'Pick updates again' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  it('answers without updates straight from the failure', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
+      Object.assign(new Error('unavailable'), { code: 'event_selection_unavailable' })
+    );
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+    await user.click(await screen.findByRole('button', { name: 'Answer without updates' }));
+    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
+      decision: 'current_access',
+      connectionId: 'connection-1',
+      eventScopes: [],
+    });
+  });
+
+  /** Allow, pick "New email", send: the answer carries exactly this update. */
+  async function answerWithUpdates(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+  }
+
+  const PICKED_UPDATES = {
+    decision: 'current_access',
+    connectionId: 'connection-1',
+    eventScopes: [
+      {
+        connectionId: 'connection-1',
+        definitionId: 'definition-1',
+        filter: {},
+        agentId: 'agent-bo',
+        destination: { kind: 'agent', id: 'agent-bo' },
+      },
+    ],
+  };
+
+  it('resends the same updates after turning the app on for this chat', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest)
+      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'session_access_off' }))
+      .mockResolvedValueOnce({ ...EVENT_REQUEST, status: 'granted' } as never);
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(true));
+    vi.mocked(transport.setSessionConnectorAccess).mockResolvedValue({
+      sessionId: EVENT_REQUEST.sessionId,
+      agentId: 'agent-bo',
+      connections: [],
+    });
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+
+    await answerWithUpdates(user);
+    await user.click(await screen.findByRole('button', { name: 'Turn on for this chat' }));
+
+    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenNthCalledWith(
+      1,
+      'request-1',
+      PICKED_UPDATES
+    );
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenNthCalledWith(
+      2,
+      'request-1',
+      PICKED_UPDATES
+    );
+  });
+
+  it('resends the same updates on Try again', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest)
+      .mockRejectedValueOnce(new Error('network dropped'))
+      .mockResolvedValueOnce({ ...EVENT_REQUEST, status: 'granted' } as never);
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+
+    await answerWithUpdates(user);
+    await user.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenNthCalledWith(
+      2,
+      'request-1',
+      PICKED_UPDATES
+    );
+  });
+
+  it('can leave updates out and still answer the access', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('button', { name: 'No updates' }));
+    await waitFor(() =>
+      expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
+        decision: 'current_access',
+        connectionId: 'connection-1',
+        eventScopes: [],
+      })
+    );
   });
 });
 
@@ -550,7 +776,7 @@ describe('ChatAgentRequest', () => {
     version: 1,
     serviceSlug: 'gmail',
     reason: 'Summarise today’s inbox',
-    requestedOperations: ['GMAIL_FETCH_EMAILS'],
+    access: 'read',
   });
 
   it('draws the card for the request a held call opened, reading only this conversation', async () => {
@@ -888,6 +1114,7 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
         decision: 'current_access',
         connectionId: 'connection-1',
+        eventScopes: [],
       })
     );
     expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(1);
@@ -963,11 +1190,8 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
       preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'] }])
     );
-    renderWith(
-      transport,
-      <AgentRequestCard request={{ ...REQUEST, requestedOperations: ['GMAIL_FETCH_EMAILS'] }} />
-    );
-    await screen.findByTestId('requested-actions');
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+    await screen.findByTestId('requested-access');
     // It asked only to read, but already reads and writes: the card says so and
     // offers nothing lower.
     expect(screen.getByText('Bo can already do this.')).toBeInTheDocument();
@@ -998,6 +1222,7 @@ describe('AgentRequestCard — access through "Every agent"', () => {
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
         decision: 'current_access',
         connectionId: 'connection-1',
+        eventScopes: [],
       })
     );
     expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();

@@ -83,9 +83,12 @@ const FlyReleaseSchema = z
     Version: z.number().int().positive(),
   })
   .passthrough();
+/**
+ * One address as `ips list --json` renders it. flyctl v0.4.104 builds these rows from the Machines
+ * API, which has no address id, so every row's `ID` is `""`; the address itself is the identity.
+ */
 const FlyIpSchema = z
   .object({
-    ID: ExternalIdentifierSchema,
     Address: z
       .string()
       .min(2)
@@ -174,9 +177,7 @@ export interface FlyReleaseIdentity {
 
 /** Public IP assignment without DNS or certificate details. */
 export interface FlyIpIdentity {
-  /** Provider-issued address ID. */
-  id: string;
-  /** Assigned IP address. */
+  /** Assigned IP address, which is also its identity: Fly issues no address ID. */
   address: string;
   /** Address family or sharing type. */
   type: string;
@@ -335,7 +336,7 @@ export async function readFlyRuntimeInventory(
       args: ['ips', 'list', '--app', app, '--json'],
       parse: (stdout) => {
         const parsed = z.array(FlyIpSchema).parse(parseExternalJson(stdout));
-        requireUniqueExternalIds(parsed, (address) => address.ID);
+        requireUniqueExternalIds(parsed, (address) => address.Address);
         return parsed;
       },
     }),
@@ -358,7 +359,6 @@ export async function readFlyRuntimeInventory(
       version: release.Version,
     })),
     addresses: addresses.value.map((address) => ({
-      id: address.ID,
       address: address.Address,
       type: address.Type,
       region: address.Region,

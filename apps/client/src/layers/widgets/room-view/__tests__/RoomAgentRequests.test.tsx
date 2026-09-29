@@ -19,11 +19,11 @@ afterEach(cleanup);
 function request(roomId: string | undefined, requestId: string): ConnectorAgentRequestItem {
   return {
     requestId,
-    reviewUrl: `/connections?request=${requestId}`,
     serviceSlug: 'gmail',
     reason: 'Summarise today’s inbox',
-    requestedOperations: ['GMAIL_FETCH_EMAILS'],
+    access: 'read',
     requestedEvents: [],
+    note: 'The person said no to Gmail.',
     createdAt: '2026-09-26T10:00:00.000Z',
     expiresAt: '2099-09-26T12:00:00.000Z',
     status: 'denied',

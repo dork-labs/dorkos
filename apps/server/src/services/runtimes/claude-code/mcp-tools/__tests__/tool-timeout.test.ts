@@ -25,6 +25,7 @@ import { createDorkOsToolServer } from '../index.js';
 import { DORKOS_MCP_TOOL_TIMEOUT_MS, RELAY_SEND_AND_WAIT_MAX_MS } from '../tool-timeout.js';
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../../../../core/capabilities/capability-approval-hold.js';
 import { CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../../../../session/session-state-projector.js';
+import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../../connectors/runtime-capability-scope.js';
 import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 
@@ -58,9 +59,18 @@ describe('DORKOS_MCP_TOOL_TIMEOUT_MS', () => {
     // with it; a literal would drift the first time one moved and nothing would
     // say so until a person's approval, or an agent's reply, came back an error.
     expect(DORKOS_MCP_TOOL_TIMEOUT_MS).toBe(
-      Math.max(CAPABILITY_APPROVAL_HOLD_CAP_MS, RELAY_SEND_AND_WAIT_MAX_MS) +
-        CAPABILITY_HOLD_PAUSE_GRACE_MS
+      Math.max(
+        CAPABILITY_APPROVAL_HOLD_CAP_MS,
+        RELAY_SEND_AND_WAIT_MAX_MS,
+        CONNECTOR_REQUEST_LIVE_HOLD_MS
+      ) + CAPABILITY_HOLD_PAUSE_GRACE_MS
     );
+  });
+
+  it('clears an access request held for its full hold', () => {
+    // `request_connection` rides this server in Claude Code; a ceiling under
+    // the hold would hand the agent an error while the person could still answer.
+    expect(DORKOS_MCP_TOOL_TIMEOUT_MS).toBeGreaterThan(CONNECTOR_REQUEST_LIVE_HOLD_MS);
   });
 
   it('clears a held approval running its full cap', () => {

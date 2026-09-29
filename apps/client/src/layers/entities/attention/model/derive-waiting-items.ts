@@ -21,9 +21,11 @@
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { Task } from '@dorkos/shared/types';
+import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import type { AttentionSignalKind } from './attention-signal';
 import {
   approvalSignalId,
+  extensionApprovalSignalId,
   interactionSignalId,
   interactionSignalKind,
   scheduleSignalId,
@@ -41,7 +43,7 @@ export interface WaitingItem {
   /** Stable across polls — the same namespacing `AttentionSignal.id` uses. */
   id: string;
   /**
-   * Always one of the three kinds a raw queue item can be. Never `error`: an
+   * Always one of the kinds a raw queue item can be. Never `error`: an
    * errored session raises no approval, no ask and no schedule, so it never
    * reaches this derivation at all — membership is enforced by which sources
    * are read, the same way {@link deriveAttentionSignals}'s own doc describes
@@ -58,6 +60,12 @@ export interface WaitingQueueSources {
   asks: readonly InteractionPendingEvent[];
   /** Schedules an agent proposed and parked. */
   schedules: readonly Task[];
+  /**
+   * Installed extensions waiting for a person to turn them on (DOR-2517).
+   * Optional so a caller that only reads the three blocking queues — the
+   * agreement check against {@link deriveAttentionSignals} — can leave it out.
+   */
+  extensionApprovals?: readonly PendingExtensionApproval[];
 }
 
 /**
@@ -81,6 +89,10 @@ export function deriveWaitingItems(sources: WaitingQueueSources): WaitingItem[] 
 
   for (const task of sources.schedules) {
     items.push({ id: scheduleSignalId(task.id), kind: 'schedule-approval' });
+  }
+
+  for (const approval of sources.extensionApprovals ?? []) {
+    items.push({ id: extensionApprovalSignalId(approval), kind: 'extension-approval' });
   }
 
   return items;

@@ -13,7 +13,10 @@
  *
  * @module services/extensions/extension-enable-resolution
  */
-import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
+import type {
+  ExtensionApprovedSource,
+  ExtensionDismissedApproval,
+} from '@dorkos/shared/config-schema';
 
 /** Tier metadata for a bundled core extension (the canonical definition). */
 export interface CoreExtensionInfo {
@@ -45,6 +48,12 @@ export interface ExtensionsConfig {
    * untouched, like `approvedToRun`; see `extension-load-policy.ts`.
    */
   approvedSources?: Record<string, ExtensionApprovedSource>;
+  /**
+   * The copies a person said "Not now" to in the Activity inbox, keyed by id
+   * (DOR-2517). Absent reads as empty. Carried through {@link setEnabled}
+   * untouched; see `extension-load-policy.ts` for how it is read.
+   */
+  dismissedApprovals?: Record<string, ExtensionDismissedApproval>;
 }
 
 /**

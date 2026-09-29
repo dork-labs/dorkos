@@ -274,6 +274,17 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     return this.eventSubscriptionReady(subscriptionId, subscriptionVersion);
   }
 
+  /**
+   * Stage the hosted command for one exact local subscription generation
+   * without delivering it; the outbox's own recovery delivers it. Used when a
+   * local change must reach the hosted side durably in the same transaction
+   * that made it (an agent's pick taken back, DOR-2503). A generation that is
+   * not managed stages nothing.
+   */
+  stageEventSubscriptionChange(subscriptionId: string, subscriptionVersion: number): void {
+    this.stageEventSubscription(subscriptionId, subscriptionVersion);
+  }
+
   private stageEventSubscription(
     subscriptionId: string,
     subscriptionVersion: number

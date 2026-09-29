@@ -164,7 +164,7 @@ describe('POST /api/test/connectors/request', () => {
           version: 1,
           serviceSlug: 'gmail',
           reason: 'Read new customer messages.',
-          requestedOperations: ['GMAIL_FETCH_EMAILS'],
+          access: 'read',
           requestedEvents: ['gmail_new_message'],
         },
       });
@@ -237,7 +237,7 @@ describe('POST /api/test/connectors/request', () => {
           version: 1,
           serviceSlug: 'gmail',
           reason: 'Read new customer messages.',
-          requestedOperations: ['GMAIL_FETCH_EMAILS'],
+          access: 'read',
           requestedEvents: [],
         },
       });

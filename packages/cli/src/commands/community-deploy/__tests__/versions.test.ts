@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import { ProviderCommandError } from '../provider-process.js';
 import {
+  assertCommunityCliVersions,
   classifyCommunityProviderPreflightFailure,
   CommunityCliVersionError,
   CommunityProviderPreflightError,
@@ -32,5 +36,51 @@ describe('Community provider preflight guidance', () => {
     expect(new CommunityCliVersionError('neonctl').message).toContain(
       'https://neon.com/docs/reference/neon-cli'
     );
+  });
+});
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true })));
+});
+
+async function fakeCli(output: string): Promise<{
+  executable: string;
+  env: Record<string, string>;
+  timeoutMs: number;
+}> {
+  const directory = await mkdtemp(join(tmpdir(), 'dorkos-cli-version-'));
+  temporaryDirectories.push(directory);
+  const executable = join(directory, 'cli');
+  await writeFile(executable, `#!/bin/sh\nprintf '%s' '${output}'\n`, { mode: 0o700 });
+  await chmod(executable, 0o700);
+  return { executable, env: {}, timeoutMs: 10_000 };
+}
+
+describe('assertCommunityCliVersions', () => {
+  // flyctl reports the running executable's base name. It ships as `flyctl` with a `fly` link, and
+  // Linux resolves the link, so a correct install there reports `flyctl`.
+  it.each(['fly', 'flyctl', 'fly.exe', 'flyctl.exe'])(
+    'accepts a Fly CLI named %s',
+    async (name) => {
+      await expect(
+        assertCommunityCliVersions(
+          await fakeCli(`{"Name":"${name}","Version":"0.4.104","OS":"linux"}`),
+          await fakeCli('6.3.0\n'),
+          { fly: '0.4.104', neon: '5.0.0' }
+        )
+      ).resolves.toBeUndefined();
+    }
+  );
+
+  it('refuses a version report from some other program', async () => {
+    await expect(
+      assertCommunityCliVersions(
+        await fakeCli('{"Name":"other","Version":"0.4.104"}'),
+        await fakeCli('6.3.0'),
+        { fly: '0.4.104', neon: '5.0.0' }
+      )
+    ).rejects.toMatchObject({ provider: 'fly', code: 'PROVIDER_UNAVAILABLE' });
   });
 });

@@ -199,6 +199,7 @@ describe('ManagedAuthoritySyncService', () => {
       {
         reconcile: (id, version, signal) => sync.reconcileEventSubscription(id, version, signal),
         ready: (id, version) => sync.eventSubscriptionReady(id, version),
+        stage: (id, version) => sync.stageEventSubscriptionChange(id, version),
       },
       () => new Date(clock).toISOString()
     );
@@ -216,6 +217,111 @@ describe('ManagedAuthoritySyncService', () => {
     };
     return { store, grants, review, sync, signal: new AbortController().signal };
   }
+
+  describe('an agent’s pick taken back on a managed account (DOR-2503)', () => {
+    function row(id: string) {
+      return db.$client
+        .prepare(
+          'SELECT scope_version, enabled, revoked_at FROM connector_event_subscriptions WHERE id = ?'
+        )
+        .get(id) as { scope_version: number; enabled: number; revoked_at: string | null };
+    }
+    function latestEventCommand() {
+      return submitted.filter((command) => command.kind === 'set_event_subscription').at(-1) as
+        Extract<ManagedConnectorAuthorityCommand, { kind: 'set_event_subscription' }> | undefined;
+    }
+
+    it('puts a pending update back at a newer generation the hosted side hears about', async () => {
+      const f = eventReview();
+      // The person's own update is waiting on the hosted side at v1.
+      vi.mocked(cloud.submitConnectorAuthorityCommand).mockImplementationOnce(async (command) => {
+        submitted.push(command);
+        return statusFor(command, 'pending');
+      });
+      const person = await f.grants.approve(OWNER, f.review, f.signal);
+      expect(person.state).toBe('pending');
+      const id = person.selections[0]!.subscriptionId;
+      expect(row(id)).toMatchObject({ scope_version: 1, enabled: 0 });
+
+      // An agent's pick of the same update takes it over at v2 and is acknowledged.
+      const pick = await f.grants.approve(
+        OWNER,
+        { ...f.review, reviewId: 'agent-request-review' },
+        f.signal
+      );
+      expect(pick.state).toBe('ready');
+      expect(row(id).scope_version).toBe(2);
+
+      // The pick is taken back: never back to v1, which the hosted side has passed.
+      f.grants.withdraw(OWNER, 'agent-request-review', new Date(clock).toISOString());
+      expect(row(id)).toMatchObject({ scope_version: 3, enabled: 0, revoked_at: null });
+      await f.sync.recoverPending(f.signal);
+
+      expect(latestEventCommand()).toMatchObject({
+        subscriptionId: id,
+        subscriptionVersion: 3,
+        enabled: true,
+      });
+      expect(row(id)).toMatchObject({ scope_version: 3, enabled: 1 });
+      // Ingress accepts an event only for the exact live generation it names.
+      expect(f.store.active(id, 3)).toMatchObject({ mode: 'managed', subscriptionVersion: 3 });
+      expect(f.sync.eventSubscriptionReady(id, 3)).toBe(true);
+    });
+
+    it('keeps a put-back update off until the hosted side confirms its new generation', async () => {
+      const f = eventReview();
+      const person = await f.grants.approve(OWNER, f.review, f.signal);
+      if (person.state !== 'ready') throw new Error('Event was not acknowledged');
+      const id = person.selections[0]!.subscriptionId;
+      expect(row(id)).toMatchObject({ scope_version: 1, enabled: 1 });
+      // Its delivery binding is not ready, so it is on but not live, and a pick
+      // takes it over instead of using it.
+      db.$client.prepare("UPDATE connector_event_bindings SET state = 'pending'").run();
+      expect(f.store.active(id, 1)).toBeUndefined();
+      await f.grants.approve(OWNER, { ...f.review, reviewId: 'agent-request-review' }, f.signal);
+      expect(row(id).scope_version).toBe(2);
+
+      f.grants.withdraw(OWNER, 'agent-request-review', new Date(clock).toISOString());
+      // On again only once the hosted side has the new generation.
+      expect(row(id)).toMatchObject({ scope_version: 3, enabled: 0 });
+      expect(f.store.active(id, 3)).toBeUndefined();
+      await f.sync.recoverPending(f.signal);
+      expect(row(id)).toMatchObject({ scope_version: 3, enabled: 1 });
+      expect(f.store.active(id, 3)).toBeDefined();
+      expect(latestEventCommand()).toMatchObject({ subscriptionVersion: 3, enabled: true });
+    });
+
+    it('puts a stopped update back stopped, and stages that stop at the new generation', async () => {
+      const f = eventReview();
+      const person = await f.grants.approve(OWNER, f.review, f.signal);
+      if (person.state !== 'ready') throw new Error('Event was not acknowledged');
+      const id = person.selections[0]!.subscriptionId;
+      f.store.revoke(OWNER, id, new Date(clock).toISOString());
+      await f.sync.recoverPending(f.signal);
+      expect(row(id)).toMatchObject({ scope_version: 2, enabled: 0 });
+
+      // The pick takes the stopped update over and switches it on at v3.
+      const pick = await f.grants.approve(
+        OWNER,
+        { ...f.review, reviewId: 'agent-request-review' },
+        f.signal
+      );
+      expect(pick.state).toBe('ready');
+      expect(row(id)).toMatchObject({ scope_version: 3, enabled: 1, revoked_at: null });
+
+      f.grants.withdraw(OWNER, 'agent-request-review', new Date(clock).toISOString());
+      expect(row(id)).toMatchObject({ scope_version: 4, enabled: 0 });
+      expect(row(id).revoked_at).not.toBeNull();
+      await f.sync.recoverPending(f.signal);
+
+      expect(latestEventCommand()).toMatchObject({
+        subscriptionId: id,
+        subscriptionVersion: 4,
+        enabled: false,
+      });
+      expect(f.store.active(id)).toBeUndefined();
+    });
+  });
 
   it('activates managed receive consent only through its exact full outbox ACK', async () => {
     const f = eventReview();

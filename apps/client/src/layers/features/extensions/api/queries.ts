@@ -1,5 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import { extensionQueryKeys, useExtensionList } from '@/layers/entities/extension';
 import { extensionApiUrl } from '../model/extension-api-url';
 
 /** Response shape from enable/disable endpoints. */
@@ -9,35 +10,23 @@ interface ExtensionActionResponse {
 }
 
 /**
- * TanStack Query key factory for extension queries.
+ * TanStack Query key factory for extension queries. The list key is the
+ * extension entity's own, so the inbox and this tab share one cache entry.
  *
  * @module features/extensions/api
  */
 export const extensionKeys = {
-  all: ['extensions'] as const,
-  lists: () => [...extensionKeys.all, 'list'] as const,
+  all: extensionQueryKeys.all,
+  lists: extensionQueryKeys.list,
   detail: (id: string) => [...extensionKeys.all, 'detail', id] as const,
 };
 
 /**
- * Fetch all discovered extensions with their current status.
- *
- * Polls every 30 seconds so newly compiled extensions appear without a page
- * refresh. Background polling is disabled to avoid unnecessary requests when
- * the tab is hidden.
+ * Fetch all discovered extensions with their current status. The read lives in
+ * the extension entity (`useExtensionList`), shared with the Activity inbox.
  */
 export function useExtensions() {
-  return useQuery<ExtensionRecordPublic[]>({
-    queryKey: extensionKeys.lists(),
-    queryFn: async () => {
-      const res = await fetch(extensionApiUrl('/extensions'));
-      if (!res.ok) throw new Error(`Failed to fetch extensions: ${res.status}`);
-      return res.json() as Promise<ExtensionRecordPublic[]>;
-    },
-    staleTime: 10_000,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: false,
-  });
+  return useExtensionList();
 }
 
 /**
@@ -100,6 +89,13 @@ export function useDisableExtension() {
   });
 }
 
+/** The copy a Settings card shows: its id, version and carrying plugin. */
+export interface RunApprovalTarget {
+  id: string;
+  version: string;
+  plugin: string | null;
+}
+
 /** Response shape from the approve/revoke endpoints. */
 interface ExtensionApprovalResponse {
   extension: ExtensionRecordPublic;
@@ -123,11 +119,21 @@ interface ExtensionApprovalResponse {
 export function useSetExtensionRunApproval(approve: boolean) {
   const queryClient = useQueryClient();
 
-  return useMutation<ExtensionApprovalResponse, Error, string>({
-    mutationFn: async (id: string) => {
+  return useMutation<ExtensionApprovalResponse, Error, RunApprovalTarget>({
+    mutationFn: async ({ id, version, plugin }: RunApprovalTarget) => {
+      // Approving binds the copy the card shows — its version and carrying
+      // plugin — so a copy that took its place since the card was drawn is
+      // refused with `stale_approval` instead of approved (DOR-2517). The card
+      // is never told a path; the server compares what it is sent.
       const res = await fetch(
         extensionApiUrl(`/extensions/${id}/${approve ? 'approve' : 'revoke'}`),
-        { method: 'POST' }
+        approve
+          ? {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ version, plugin }),
+            }
+          : { method: 'POST' }
       );
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };

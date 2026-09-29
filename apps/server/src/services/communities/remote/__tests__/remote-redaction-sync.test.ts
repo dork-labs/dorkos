@@ -19,7 +19,12 @@ import {
   notifications,
   roomAttachments,
 } from '@dorkos/db';
+import type { RoomEvent, RoomRevisionEvent } from '@dorkos/shared/room-schemas';
+import type { StreamFrame } from '@dorkos/shared/stream-socket';
 import { describe, expect, it, vi } from 'vitest';
+import { eventFanOut } from '../../../core/event-fan-out.js';
+import { deliverRoomStream } from '../../../core/streams/room-stream-delivery.js';
+import { setRoomService } from '../../../rooms/index.js';
 import { logger } from '../../../../lib/logger.js';
 import { agentLookupFor, createRoomHarness } from '../../../rooms/__tests__/room-test-harness.js';
 import { searchMessages } from '../../../search/index.js';
@@ -83,10 +88,20 @@ function setup(agents = agentLookupFor({})) {
     return next;
   });
   const deletedFiles: string[] = [];
+  // Every frame the room streams fan out, as an open window would receive it.
+  const published: Array<{ roomId: string; event: RoomEvent }> = [];
+  const publish = harness.service.stream.publish.bind(harness.service.stream);
+  vi.spyOn(harness.service.stream, 'publish').mockImplementation((roomId, event) => {
+    published.push({ roomId, event });
+    publish(roomId, event);
+  });
   const sync = new RemoteRedactionSync({
     db: harness.db,
     mirrors,
     readers: () => ({ readRedactions }),
+    // Wired as production wires it.
+    publishRevisions: (localRoomId, seqs) =>
+      harness.service.publishEntryRevisions(localRoomId, seqs),
     now: () => clock.now,
     attachmentBytes: {
       delete: async (roomId, attachmentId, extension) => {
@@ -114,8 +129,15 @@ function setup(agents = agentLookupFor({})) {
     target,
     search,
     deletedFiles,
+    published,
   };
 }
+
+/** The `revision` frames a room's open windows were sent. */
+const revisionsOf = (s: ReturnType<typeof setup>) =>
+  s.published.flatMap(({ roomId, event }) =>
+    event.type === 'revision' ? [{ roomId, entry: event.entry }] : []
+  );
 
 /** An inbox row quoting one room entry, as the room-message emitter writes it. */
 function quoteNotification(
@@ -642,5 +664,129 @@ describe('RemoteRedactionSync', () => {
     s.mirrors.revoke(REF, s.harness.human);
     await s.sync.sync(s.target, {});
     expect(s.readRedactions).toHaveBeenCalledOnce();
+  });
+
+  describe('open windows (DOR-2336)', () => {
+    // Purpose: an open window of the mirrored room is told which messages changed, carrying the
+    // tombstone as the log now holds it and never the erased words, and the room list re-reads.
+    // It fails if the sync stops emitting, emits before the rewrite, or carries the old text.
+    it('sends each rewritten entry to the room with the tombstone only', async () => {
+      const s = setup();
+      s.mirrors.importEntries(REF, ROOM, [
+        native(1, 'zqxerasedcanary secret words', 'Zephyrine Quill'),
+        native(2, 'untouched words'),
+      ]);
+      const [first] = s.harness.store.listEntriesAfter(s.room.id, 0);
+      const fanOut = vi.spyOn(eventFanOut, 'broadcast');
+      s.pages.push({
+        items: [native(1, 'This message was erased.', 'Erased member')],
+        nextCursor: 'c1',
+        hasMore: false,
+      });
+      await s.sync.sync(s.target, {});
+
+      const revisions = revisionsOf(s);
+      expect(revisions).toHaveLength(1);
+      expect(revisions[0]).toMatchObject({
+        roomId: s.room.id,
+        entry: {
+          id: first!.id,
+          seq: first!.seq,
+          roomId: s.room.id,
+          body: { text: 'This message was erased.' },
+        },
+      });
+      expect(JSON.stringify(s.published)).not.toMatch(/zqxerasedcanary|Zephyrine/);
+      expect(fanOut).toHaveBeenCalledWith('room_updated', { roomId: s.room.id });
+      fanOut.mockRestore();
+    });
+
+    // Purpose: a page that changes nothing on this machine sends nothing, and a mirror this owner
+    // does not hold (or one that was revoked) is never rewritten, so nothing is announced.
+    it('sends nothing when no row changed, or for a mirror that is not this owner’s', async () => {
+      const s = setup();
+      s.mirrors.importEntries(REF, ROOM, [native(1, 'same words')]);
+      s.pages.push({ items: [native(1, 'same words')], nextCursor: 'c1', hasMore: false });
+      await s.sync.sync(s.target, {});
+      s.pages.push({
+        items: [native(1, 'This message was deleted.')],
+        nextCursor: 'c2',
+        hasMore: false,
+      });
+      await s.sync.sync({ ...s.target, ownerAuthorId: 'someone-else' }, {});
+      expect(revisionsOf(s)).toEqual([]);
+    });
+
+    // Purpose: the path can never rewrite a room on this machine. Only a registered remote mirror
+    // answers, both live and on a resume. It fails if the mirror check is removed.
+    it('never sends a revision for a room that is not a mirror', async () => {
+      const s = setup();
+      const local = s.harness.service.createRoom(
+        { kind: 'channel', title: 'Local', members: [], agentPaths: [] },
+        s.harness.human
+      );
+      const posted = s.harness.service.post(local.id, {
+        authorId: s.harness.human,
+        text: 'local words',
+      });
+      s.harness.service.publishEntryRevisions(local.id, [posted.seq]);
+      expect(revisionsOf(s)).toEqual([]);
+      expect(s.harness.service.revisionResync(local.id, 100)).toEqual([]);
+
+      s.mirrors.importEntries(REF, ROOM, [native(1, 'mirrored words')]);
+      expect(
+        s.harness.service.revisionResync(s.room.id, 100).map((event) => event.entry.body.text)
+      ).toEqual(['mirrored words']);
+    });
+
+    // Purpose: a window that was away while a message was erased gets the tombstone when its
+    // stream resumes, although the entry is below its cursor, and the frame never carries an
+    // `id:` line that could move that cursor. It fails if the resume skips the revision resync.
+    it('resyncs a rewrite made while the reader was away, without moving its cursor', async () => {
+      const s = setup();
+      s.mirrors.importEntries(REF, ROOM, [native(1, 'zqxawaycanary'), native(2, 'later words')]);
+      const cursor = s.harness.store.maxSeq(s.room.id);
+      s.pages.push({
+        items: [native(1, 'This message was deleted.')],
+        nextCursor: 'c1',
+        hasMore: false,
+      });
+      await s.sync.sync(s.target, {});
+
+      setRoomService(s.harness.service);
+      const frames: StreamFrame[] = [];
+      const controller = new AbortController();
+      let settle: () => void = () => undefined;
+      const resynced = new Promise<void>((resolve) => (settle = resolve));
+      const delivered = deliverRoomStream(
+        {
+          send: async (frame) => {
+            frames.push(frame);
+            if (
+              frame.event === 'revision' &&
+              frames.filter((f) => f.event === 'revision').length === 2
+            )
+              settle();
+          },
+          get closed() {
+            return controller.signal.aborted;
+          },
+          signal: controller.signal,
+          end: () => undefined,
+        },
+        { roomId: s.room.id, viewerAuthorId: s.harness.human, sinceCursor: cursor }
+      );
+      await resynced;
+      controller.abort();
+      await delivered;
+
+      const revisions = frames.filter((frame) => frame.event === 'revision');
+      expect(revisions.map((frame) => (frame.data as RoomRevisionEvent).entry.body.text)).toEqual([
+        'This message was deleted.',
+        'later words',
+      ]);
+      expect(revisions.every((frame) => frame.id === undefined)).toBe(true);
+      expect(JSON.stringify(frames)).not.toContain('zqxawaycanary');
+    });
   });
 });

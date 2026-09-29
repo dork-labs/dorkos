@@ -264,6 +264,7 @@ import { createTemplateRouter } from './routes/templates.js';
 import { createHarnessRouter } from './routes/harness.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
+import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
@@ -1513,6 +1514,10 @@ async function start() {
     extensionManager = new ExtensionManager(dorkHome, coreExtensions);
     const initialCwd = env.DORKOS_DEFAULT_CWD ?? null;
     await extensionManager.initialize(initialCwd);
+    // Every extension waiting for a person to let it run asks in the Activity
+    // inbox, and keeps asking as installs, updates and answers change the set
+    // (DOR-2517). Follows the manager for the life of the process.
+    startExtensionApprovalQueue(extensionManager);
     logger.info('[Extensions] Extension system initialized');
   } catch (err) {
     logger.error('[Extensions] Failed to initialize extension system', err);
@@ -1807,6 +1812,7 @@ async function start() {
     readers: (communityRef, ownerAuthorId) =>
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     attachmentBytes: roomAttachmentBytes,
+    publishRevisions: (localRoomId, seqs) => roomService.publishEntryRevisions(localRoomId, seqs),
   });
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,
@@ -3332,6 +3338,8 @@ async function start() {
       managedConnectorAuthority.reconcileEventSubscription(id, version, signal),
     ready: (id: string, version: number) =>
       managedConnectorAuthority.eventSubscriptionReady(id, version),
+    stage: (id: string, version: number) =>
+      managedConnectorAuthority.stageEventSubscriptionChange(id, version),
   };
   const connectorEventGrants = new ConnectorEventGrantService(
     connectorEventSubscriptions,
@@ -3517,7 +3525,6 @@ async function start() {
       runtimePrincipals: connectorRuntimePrincipals,
       authority: requestAuthority,
       bootEpoch: connectorBootEpoch,
-      managedAuthority: managedConnectorAuthority,
       eventGrants: connectorEventGrants,
       authentication: connectorAuthenticationFlows,
       resume: {

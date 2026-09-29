@@ -3,7 +3,13 @@ import { createDb, runMigrations, eq, notificationDeliveries, type Db } from '@d
 import type { EscalationDelay } from '@dorkos/shared/config-schema';
 import { NotificationStore } from '../notification-store.js';
 import { notificationEntry } from '../notification-registry.js';
-import { EscalationService, type StandingCondition } from '../escalation-service.js';
+import {
+  EscalationService,
+  setEscalationService,
+  type StandingCondition,
+} from '../escalation-service.js';
+import { raiseStanding } from '../standing-events.js';
+import { eventFanOut } from '../../core/event-fan-out.js';
 import type { WebPushChannel, PushFanOutResult } from '../channels/web-push.js';
 import type { RelayChannelDeps } from '../channels/relay.js';
 
@@ -448,6 +454,75 @@ describe('re-arming on boot', () => {
     service.rearmFromStandingState([standing(3 * ONE_MINUTE)]);
     await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
 
+    expect(sendToAll).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The tier gate (DOR-2517): only a `blocking` kind may escalate. Before
+ * `extension.approval` every standing kind happened to be `blocking`, so
+ * nothing enforced it, and a `notable` kind raised through `raiseStanding`
+ * armed a timer and pushed to a phone like the rest.
+ */
+describe('the tier gate', () => {
+  const waitingExtension = {
+    id: 'flow',
+    name: 'Flow',
+    version: '1.0.0',
+    path: '/home/me/.dork/plugins/flow/.dork/extensions/flow',
+    plugin: 'flow',
+    sourceLabel: 'flow plugin · dork-labs/marketplace',
+    why: 'You installed the flow plugin. It runs as you.',
+    runsInServer: false,
+    adds: null,
+    added: null,
+  };
+
+  afterEach(() => {
+    setEscalationService(null);
+  });
+
+  it('arms no timer and makes no push call for a notable kind armed directly', async () => {
+    const service = buildService();
+
+    service.arm('extension.approval', waitingExtension);
+
+    expect(service.armedSubjects()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(60 * ONE_MINUTE);
+    expect(sendToAll).not.toHaveBeenCalled();
+  });
+
+  it('arms no timer and makes no push call when it is raised through raiseStanding', async () => {
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+    const service = buildService();
+    setEscalationService(service);
+
+    raiseStanding('extension.approval', waitingExtension);
+
+    expect(service.armedSubjects()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(60 * ONE_MINUTE);
+    expect(sendToAll).not.toHaveBeenCalled();
+  });
+
+  it('still arms a blocking kind raised the same way', () => {
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+    const service = buildService();
+    setEscalationService(service);
+
+    raiseStanding('ask.pending', ask());
+
+    expect(service.armedSubjects()).toEqual([notificationEntry('ask.pending').dedupeKey(ask())]);
+  });
+
+  it('skips a notable kind still standing at boot', async () => {
+    const service = buildService();
+
+    service.rearmFromStandingState([
+      { kind: 'extension.approval', payload: waitingExtension, since: Date.now() - 3 * ONE_MINUTE },
+    ]);
+    await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
+
+    expect(service.armedSubjects()).toEqual([]);
     expect(sendToAll).not.toHaveBeenCalled();
   });
 });

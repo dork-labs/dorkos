@@ -1,1 +1,11 @@
-[{ "ID": "ip_fixture_01", "Address": "203.0.113.1", "Type": "shared_v4", "Region": "global" }]
+[
+  {
+    "ID": "",
+    "Address": "203.0.113.1",
+    "Type": "shared_v4",
+    "Region": "global",
+    "CreatedAt": "2026-09-21T00:00:00Z",
+    "ServiceName": "",
+    "Network": null
+  }
+]

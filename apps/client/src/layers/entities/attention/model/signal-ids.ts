@@ -86,6 +86,24 @@ export function errorSessionSignalId(sessionId: string): string {
 }
 
 /**
+ * The id an installed extension waiting to be turned on carries (DOR-2517).
+ *
+ * Per copy and version, the same identity the server's `extension.approval`
+ * condition is filed under, so a waiting copy that updates in place is a new
+ * item rather than the old one quietly changing underneath a count.
+ *
+ * @param approval - The waiting extension's id, plugin, path and version.
+ */
+export function extensionApprovalSignalId(approval: {
+  id: string;
+  path?: string;
+  plugin: string | null;
+  version: string;
+}): string {
+  return `extension:${approval.id}:${approval.plugin ?? ''}:${approval.path ?? ''}:${approval.version}`;
+}
+
+/**
  * Whether a captured prompt reads as a question or a permission prompt.
  *
  * An MCP elicitation is not its own kind — it is a prompt from a server

@@ -40,6 +40,7 @@ import type {
   RoomMoment,
   RoomPresencePayload,
   RoomReactionEvent,
+  RoomRevisionEvent,
   RoomRosterEntry,
   RoomSessionBinding,
   RoomSummary,
@@ -606,6 +607,22 @@ export class RoomService {
   /** A room's whole trailing reaction state. See {@link RoomReactions.reactionResync}. */
   reactionResync(roomId: string, historyLimit: number): RoomReactionEvent[] {
     return this.parts.reactions.reactionResync(roomId, historyLimit);
+  }
+  /**
+   * Tell a mirrored room's open readers that some of its entries were rewritten
+   * in place (DOR-2336). Call AFTER the rewrite commits: the frames carry the
+   * rows as the log holds them then. A room that is not a remote mirror sends
+   * nothing. See {@link RoomReads.revisedEntries}.
+   *
+   * @param roomId - The local room backing the mirror.
+   * @param seqs - The local positions the change rewrote.
+   */
+  publishEntryRevisions(roomId: string, seqs: readonly number[]): void {
+    this.parts.publisher.publishRevisions(this.parts.reads.revisedEntries(roomId, seqs));
+  }
+  /** A mirrored room's trailing window, for a resume. See {@link RoomReads.revisionResync}. */
+  revisionResync(roomId: string, historyLimit: number): RoomRevisionEvent[] {
+    return this.parts.reads.revisionResync(roomId, historyLimit);
   }
   /** The snapshot a cold SSE connect opens with. See {@link RoomReads.snapshot}. */
   snapshot(

@@ -16,7 +16,6 @@ import {
   everyAgentDecision,
   heldAccess,
   initialCardLevel,
-  levelForRequest,
   initialEveryAgentLevel,
   initialWhoCanUse,
   type CardAccessLevel,
@@ -36,7 +35,7 @@ import { AccountChoice } from './AccountChoice';
 import { AgentChecklist } from './AgentChecklist';
 import { LEVEL_LABELS } from './access-labels';
 import { EveryAgentWarning } from './EveryAgentWarning';
-import { RequestedActions } from './RequestedActions';
+import { RequestedAccess } from './RequestedAccess';
 import { savedSummary } from './saved-summary';
 import { StopSharingFallback } from './StopSharingFallback';
 import { WhoCanUseChoice } from './WhoCanUseChoice';
@@ -99,10 +98,10 @@ export interface AgentAccessCardProps extends SharedCardProps {
   onAllowed?: (connectionId: string) => void;
   /**
    * What the agent asked for, when a request opened the card: the level starts
-   * on the one that covers it, and the card shows the reason and the actions
-   * asked for, and says plainly what a level leaves out.
+   * on the one it asked for, and the card shows the reason and the level
+   * asked for, and says plainly what a lower pick leaves out.
    */
-  request?: { readonly reason: string; readonly operations: readonly string[] };
+  request?: { readonly reason: string; readonly access: CardAccessLevel };
 }
 
 /** Props for {@link ConnectionAccessCard}. */
@@ -179,12 +178,9 @@ function AccessStep(
             : initialCardLevel(
                 subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
               );
-      // A request starts on the level that covers what the agent asked for, and
-      // never below what it already holds.
-      const asked =
-        props.mode === 'agent' && props.request
-          ? levelForRequest(preview.candidates, props.request.operations).level
-          : null;
+      // A request starts on the level the agent asked for, and never below
+      // what it already holds.
+      const asked = props.mode === 'agent' && props.request ? props.request.access : null;
       setLevel(asked === 'read-write' || heldLevel === 'read-write' ? 'read-write' : heldLevel);
       setLevelTouched(false);
     },
@@ -457,7 +453,10 @@ function AccessEditor({
       </p>
     ) : held === 'custom' ? (
       <p className="text-muted-foreground text-sm">
-        {agent.displayName} already has exact actions chosen for this account. Change them there.
+        {agent.displayName} already has exact actions chosen for this account.{' '}
+        {props.onEditExactActions
+          ? 'Choose exact actions to change them.'
+          : 'You can change them on the Connections page.'}
       </p>
     ) : held === level ? (
       <p className="text-muted-foreground text-sm">{agent.displayName} can already do this.</p>
@@ -506,15 +505,14 @@ function AccessEditor({
         />
       )}
       {props.mode === 'agent' && props.request && (
-        <RequestedActions
+        <RequestedAccess
           agentName={
             preview.agents.find((agent) => agent.agentId === props.agentId)?.displayName ??
             'The agent'
           }
-          toolkit={props.toolkit}
+          serviceName={props.serviceName}
           reason={props.request.reason}
-          operations={props.request.operations}
-          candidates={preview.candidates}
+          access={props.request.access}
           level={level}
         />
       )}
