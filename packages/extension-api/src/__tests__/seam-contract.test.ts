@@ -21,6 +21,7 @@ import type {
   StatusBarSlotContext,
   TrackerItemRef,
 } from '../extension-api.js';
+import type { StartWorkError, StartWorkInput } from '../start-work.js';
 import type {
   DataProviderContext,
   LimitedSessionInfo,
@@ -38,6 +39,7 @@ import type {
   RaisedDecision,
   RecordedDecisionInput,
   SessionInfo,
+  SessionsApi,
 } from '../server-extension-api.js';
 import type * as Contract from '../__fixtures__/seam-contract/seams.contract.js';
 
@@ -59,7 +61,10 @@ describe('extension seam contract', () => {
 
   it('matches the context and session members it covers both ways', () => {
     expectTypeOf<
-      Pick<DataProviderContext, 'projects' | 'inbox' | 'requirePerson' | 'projectSettings'>
+      Pick<
+        DataProviderContext,
+        'projects' | 'inbox' | 'requirePerson' | 'projectSettings' | 'sessions'
+      >
     >().toEqualTypeOf<Contract.DataProviderContextSeams>();
     expectTypeOf<
       Pick<SessionInfo, 'trackerItems' | 'trackerItem'>
@@ -87,6 +92,15 @@ describe('extension seam contract', () => {
     expectTypeOf<ProjectSettingsReader>().toEqualTypeOf<Contract.ProjectSettingsReader>();
   });
 
+  it('matches starting work in a new chat both ways (§7.7)', () => {
+    expectTypeOf<StartWorkInput>().toEqualTypeOf<Contract.StartWorkInput>();
+    expectTypeOf<StartWorkError>().toEqualTypeOf<Contract.StartWorkError>();
+    expectTypeOf<StartWorkError['code']>().toEqualTypeOf<
+      'not_a_project' | 'account_not_allowed_here' | 'start_limit'
+    >();
+    expectTypeOf<SessionsApi>().toEqualTypeOf<Contract.SessionsApi>();
+  });
+
   it('gives the server half no way to write per-project settings (§7.10)', () => {
     expectTypeOf<ProjectSettingsReader>().not.toHaveProperty('set');
     expectTypeOf<DataProviderContext['projectSettings']>().not.toHaveProperty('set');
@@ -112,6 +126,7 @@ describe('extension seam contract', () => {
         | 'answerDecision'
         | 'listDecisions'
         | 'projectSettings'
+        | 'startWork'
       >
     >().toEqualTypeOf<Contract.ExtensionAPISeams>();
   });

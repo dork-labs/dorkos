@@ -192,10 +192,11 @@ describe('defaultModelFallback', () => {
 });
 
 describe('carryOverAllowed', () => {
-  it('allows exactly a person’s session, an agent launch, and a carry-over', () => {
+  it('allows exactly a person’s session, an agent or extension launch, and a carry-over', () => {
     expect([...CARRY_OVER_ORIGINS].sort()).toEqual([
       'account-handoff',
       'agent-launch',
+      'extension-start',
       'interactive',
     ]);
     for (const kind of CARRY_OVER_ORIGINS) expect(carryOverAllowed(kind)).toBe(true);

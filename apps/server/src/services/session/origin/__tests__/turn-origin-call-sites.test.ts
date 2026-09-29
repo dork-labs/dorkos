@@ -46,6 +46,8 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/connectors/events/session-target.ts': ['connector-event'],
   // An agent started a session through the `session_start` tool.
   'services/runtimes/claude-code/mcp-tools/session-tools.ts': ['agent-launch'],
+  // An extension started work in a new chat (`api.startWork`, `ctx.sessions.start`).
+  'services/extensions/start-work.ts': ['extension-start'],
   // A limited session's work carried over to a new session on another account.
   'services/session/fleet/carry-over.ts': ['account-handoff'],
   // A person chose another model for their limited session and continued it:

@@ -11,6 +11,7 @@ export type {
   PermissionModeId,
   Session,
   TrackerItemRef,
+  SessionStartedBy,
   SessionOrigin,
   SessionListWarning,
   SessionListResponse,

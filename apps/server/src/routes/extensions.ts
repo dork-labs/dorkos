@@ -37,6 +37,7 @@ import { resolveBlobPath } from '../services/extensions/extension-data-paths.js'
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
+import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
@@ -640,6 +641,7 @@ export function createExtensionsRouter(
 
   registerExtensionApprovalRoutes(router, extensionManager, SAFE_EXT_ID);
   registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID);
+  registerExtensionStartWorkRoute(router, extensionManager, SAFE_EXT_ID);
 
   return router;
 }
