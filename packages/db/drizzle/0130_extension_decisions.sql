@@ -30,7 +30,7 @@ CREATE TABLE `extension_decisions` (
 	`pending_action_json` text,
 	`recorded` integer DEFAULT 0 NOT NULL,
 	CONSTRAINT "extension_decisions_resolved_by" CHECK("extension_decisions"."resolved_by" IS NULL OR "extension_decisions"."resolved_by" IN ('person', 'deadline', 'agent', 'rule', 'extension')),
-	CONSTRAINT "extension_decisions_deadline_state" CHECK("extension_decisions"."deadline_state" IS NULL OR "extension_decisions"."deadline_state" IN ('kept_open', 'settled', 'failed'))
+	CONSTRAINT "extension_decisions_deadline_state" CHECK("extension_decisions"."deadline_state" IS NULL OR "extension_decisions"."deadline_state" IN ('kept_open', 'settled', 'failed', 'answered'))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `extension_decisions_open_key_unique` ON `extension_decisions` (`extension_id`,`key`) WHERE "resolved_at" is null;--> statement-breakpoint

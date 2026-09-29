@@ -52,9 +52,12 @@ export function parseJson<T>(raw: string | null): T | null {
 }
 
 /**
- * A row's actions as the reader should see them. Once a question's deadline
- * has passed and been dealt with (kept open, settled, or failed), its
- * `decideBy` is dropped, so the deadline line goes away.
+ * A row's actions as the reader should see them. `actions_json` holds them as
+ * the extension asked; a question's deadline shown is the one in effect (the
+ * `decide_by` column, clamped once when the question was first asked). Once
+ * the deadline is dealt with (a person answered, or the extension kept the
+ * row open, settled it, or could not be reached), it is dropped, so the
+ * deadline line goes away.
  *
  * @param row - The stored row.
  */
@@ -63,11 +66,9 @@ export function actionsOf(row: ExtensionDecisionRow): DecisionActions {
     kind: 'word',
     label: 'Open',
   };
-  if (actions.kind === 'choice' && row.deadlineState !== null && actions.decideBy !== undefined) {
-    const { decideBy: _passed, ...rest } = actions;
-    return rest;
-  }
-  return actions;
+  if (actions.kind !== 'choice') return actions;
+  const { decideBy: _asked, ...rest } = actions;
+  return row.decideBy && row.deadlineState === null ? { ...rest, decideBy: row.decideBy } : rest;
 }
 
 /**

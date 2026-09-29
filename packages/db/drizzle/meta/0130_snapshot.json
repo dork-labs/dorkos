@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "dc50995e-04df-4ece-baaa-01979fc6ff93",
+  "id": "ccc6273c-bd64-4233-a57e-3e6ec375c881",
   "prevId": "3f14bc8b-ce6f-407b-9b79-75d0e938067e",
   "tables": {
     "a2a_tasks": {
@@ -9857,7 +9857,7 @@
         },
         "extension_decisions_deadline_state": {
           "name": "extension_decisions_deadline_state",
-          "value": "\"extension_decisions\".\"deadline_state\" IS NULL OR \"extension_decisions\".\"deadline_state\" IN ('kept_open', 'settled', 'failed')"
+          "value": "\"extension_decisions\".\"deadline_state\" IS NULL OR \"extension_decisions\".\"deadline_state\" IN ('kept_open', 'settled', 'failed', 'answered')"
         }
       }
     }

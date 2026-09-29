@@ -70,8 +70,14 @@ import {
   cancelEscalationByKey,
   getEscalationService,
 } from '../../notifications/escalation-service.js';
-import { notificationEntry } from '../../notifications/notification-registry.js';
-import { resolveStanding } from '../../notifications/notification-service.js';
+import {
+  notificationEntry,
+  setOpenProjectCounter,
+} from '../../notifications/notification-registry.js';
+import {
+  pruneExtensionHistory,
+  resolveStanding,
+} from '../../notifications/notification-service.js';
 import { broadcastStandingResolved, raiseStanding } from '../../notifications/standing-events.js';
 import type { ProjectRegistry } from '../../projects/project-registry.js';
 import {
@@ -106,7 +112,23 @@ const HANDLER_TIMEOUT_MS = 5_000;
 /** When a failed deadline call is tried again: one minute, then five. */
 const DEADLINE_RETRY_DELAYS_MS = [60_000, 5 * 60_000] as const;
 
-/** How often hidden-by-folder decisions are looked at again. */
+/** Most new decisions (raised or recorded) one extension may add in an hour. */
+const NEW_DECISIONS_PER_HOUR = 60;
+
+/** The hour {@link NEW_DECISIONS_PER_HOUR} counts over. */
+const RATE_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * Most `extension.decision` history rows kept per extension. Activity keeps
+ * one bounded history for every kind, so without this one busy extension
+ * could push everything else out of it.
+ */
+const HISTORY_ROWS_PER_EXTENSION = 100;
+
+/** How late a deadline's timer may be before the sweep fires it instead. */
+const LATE_TIMER_GRACE_MS = 1_000;
+
+/** How often hidden-by-folder decisions and overdue deadlines are looked at again. */
 const FOLDER_SWEEP_MS = 60_000;
 
 /** How long resolved rows are kept. */
@@ -170,6 +192,14 @@ export class ExtensionInboxService {
   private readonly handlers = new Map<string, DecisionHandler>();
   private readonly deadlines = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly hiddenByFolder = new Set<string>();
+  /** Decisions whose person's answer is with the extension right now: no deadline may fire. */
+  private readonly answering = new Set<string>();
+  /** When each armed deadline timer is due, to tell a late timer from one on time. */
+  private readonly deadlineDue = new Map<string, number>();
+  /** Decisions whose deadline call is with the extension right now: no answer may start. */
+  private readonly firing = new Set<string>();
+  /** When each extension added its recent decisions, for the hourly budget. */
+  private readonly added = new Map<string, number[]>();
   private sweep: ReturnType<typeof setInterval> | null = null;
   private readonly now: () => number;
   private readonly handlerTimeoutMs: number;
@@ -252,6 +282,7 @@ export class ExtensionInboxService {
         .where(and(eq(extensionDecisions.id, row.id), isNull(extensionDecisions.resolvedAt)))
         .run();
       this.stand(row, false);
+      this.hiddenByFolder.delete(row.id);
     }
   }
 
@@ -309,12 +340,20 @@ export class ExtensionInboxService {
       actionsJson: JSON.stringify(checked.actions),
       link: checked.link,
       since: checked.since,
-      decideBy: checked.decideBy,
-      defaultChoice: checked.defaultChoice,
       updatedAt: stamp,
     };
+    // Only a new question sets these: a re-raise of the same one never moves
+    // its deadline, re-arms it, or forgets what a person already answered.
+    const question = {
+      decideBy: checked.decideBy,
+      defaultChoice: checked.defaultChoice,
+      deadlineState: null,
+      deadlineAttempts: 0,
+      pendingActionJson: null,
+      watchJson: null,
+    };
 
-    const { row, created } = this.deps.db.transaction((tx) => {
+    const { row, created, changedQuestion } = this.deps.db.transaction((tx) => {
       const existing = tx
         .select()
         .from(extensionDecisions)
@@ -327,15 +366,12 @@ export class ExtensionInboxService {
         )
         .get();
       if (existing) {
-        // A new question (different actions or deadline) starts its deadline
-        // over; new words for the same question do not.
-        const sameQuestion =
-          existing.actionsJson === fields.actionsJson && existing.decideBy === fields.decideBy;
+        // A new question (different actions, or a different deadline asked
+        // for) starts over; new words for the same question change nothing
+        // about its deadline or what a person already said.
+        const sameQuestion = existing.actionsJson === fields.actionsJson;
         tx.update(extensionDecisions)
-          .set({
-            ...fields,
-            ...(sameQuestion ? {} : { deadlineState: null, deadlineAttempts: 0 }),
-          })
+          .set({ ...fields, ...(sameQuestion ? {} : question) })
           .where(eq(extensionDecisions.id, existing.id))
           .run();
         const updated = tx
@@ -343,7 +379,7 @@ export class ExtensionInboxService {
           .from(extensionDecisions)
           .where(eq(extensionDecisions.id, existing.id))
           .get();
-        return { row: updated!, created: false };
+        return { row: updated!, created: false, changedQuestion: !sameQuestion };
       }
       const open = tx
         .select({ id: extensionDecisions.id })
@@ -355,6 +391,7 @@ export class ExtensionInboxService {
           )
         )
         .all().length;
+      this.spendBudget(extensionId, extensionName);
       if (open >= DECISION_LIMITS.open) {
         throw new InboxLimitError(
           'open',
@@ -367,6 +404,7 @@ export class ExtensionInboxService {
         key: checked.key,
         raisedAt: stamp,
         ...fields,
+        ...question,
       };
       tx.insert(extensionDecisions).values(inserted).run();
       const stored = tx
@@ -374,10 +412,13 @@ export class ExtensionInboxService {
         .from(extensionDecisions)
         .where(eq(extensionDecisions.id, inserted.id))
         .get();
-      return { row: stored!, created: true };
+      return { row: stored!, created: true, changedQuestion: true };
     });
 
-    if (created) this.prune();
+    if (created) {
+      this.noteAdded(extensionId);
+      this.prune();
+    }
     // Raised into a folder that is missing right now (an unplugged drive):
     // hidden, and the sweep shows it once the folder is back.
     if (this.running.has(extensionId) && !this.folderOk(row)) this.hiddenByFolder.add(row.id);
@@ -386,8 +427,10 @@ export class ExtensionInboxService {
         arm: created,
       });
     }
-    this.clearDeadline(row.id);
-    this.scheduleDeadline(row);
+    if (changedQuestion) {
+      this.clearDeadline(row.id);
+      this.scheduleDeadline(row);
+    }
     return toRaisedDecision(row, this.projectRef(row.projectRoot));
   }
 
@@ -431,6 +474,11 @@ export class ExtensionInboxService {
         ? stored
         : null;
     const credited = pending !== null;
+    if (pending && !agrees(pending.action, opts.outcome)) {
+      throw new TypeError(
+        `resolve() with answering: ${opts.outcome} contradicts what the person chose (${pending.action}).`
+      );
+    }
     const actions = actionsOf(row);
     let resolvedBy: ExtensionDecisionRow['resolvedBy'] = 'extension';
     let resolvedByLabel: string | null = null;
@@ -479,6 +527,7 @@ export class ExtensionInboxService {
     }
     const by = checkActor(input.by);
     if (!by) throw new InboxLimitError('title', 'record() needs `by`: who decided.');
+    this.spendBudget(extensionId, extensionName);
     const project = await this.reportProject(checked.project, extensionId);
     const stamp = new Date(this.now()).toISOString();
     const row = {
@@ -503,6 +552,7 @@ export class ExtensionInboxService {
       recorded: 1,
     };
     this.deps.db.insert(extensionDecisions).values(row).run();
+    this.noteAdded(extensionId);
     this.prune();
     const stored = this.deps.db
       .select()
@@ -513,6 +563,7 @@ export class ExtensionInboxService {
       outcome: input.outcome,
       unread: input.tell === true,
     });
+    pruneExtensionHistory(extensionId, HISTORY_ROWS_PER_EXTENSION);
   }
 
   /**
@@ -606,25 +657,56 @@ export class ExtensionInboxService {
     const shaped = shapeAnswer(actions, request);
     if ('refusal' in shaped) return refuse(400, 'bad_answer', shaped.refusal);
 
+    if (this.firing.has(row.id) || this.answering.has(row.id)) {
+      return refuse(409, 'busy', `${name} is still working on this. Try again in a moment.`);
+    }
+
+    // The answer is with the extension now: the deadline waits, so the
+    // agent's pick can never reach the handler beside the person's answer.
+    this.clearDeadline(row.id);
+    this.answering.add(row.id);
     const pendingActionId = via.kind === 'person' ? nextId() : null;
-    const call = await this.callHandler(row.extensionId, handler, {
-      key: row.key,
-      action: request.action,
-      choiceId: shaped.choiceId,
-      decidedBy: 'person',
-      offerId: null,
-      pendingActionId,
-      note: shaped.note,
-      text: shaped.text,
-      project: this.projectRef(row.projectRoot),
-    });
+    let call: HandlerCall;
+    try {
+      call = await this.callHandler(row.extensionId, handler, {
+        key: row.key,
+        action: request.action,
+        choiceId: shaped.choiceId,
+        decidedBy: 'person',
+        offerId: null,
+        pendingActionId,
+        note: shaped.note,
+        text: shaped.text,
+        project: this.projectRef(row.projectRoot),
+      });
+    } finally {
+      this.answering.delete(row.id);
+    }
     if (!call.ok) {
+      // Nothing was decided, so the deadline stands as it was.
+      const current = this.byId(row.id);
+      if (current) this.scheduleDeadline(current);
       const status = call.reason === 'timeout' ? 504 : 502;
       const code = call.reason === 'timeout' ? DECISION_EXTENSION_TIMEOUT_CODE : 'extension_error';
       return refuse(status, code, `${name} couldn't take that. Try again.`);
     }
     const result = call.result;
+    // Somebody answered: whatever the extension does with it, the agent's pick
+    // no longer applies to this question.
+    this.deps.db
+      .update(extensionDecisions)
+      .set({ deadlineState: 'answered' })
+      .where(
+        and(
+          eq(extensionDecisions.id, row.id),
+          isNull(extensionDecisions.resolvedAt),
+          isNotNull(extensionDecisions.decideBy),
+          isNull(extensionDecisions.deadlineState)
+        )
+      )
+      .run();
     if (result.kind === 'settled') {
+      this.announceUpdate(row.id);
       return { ok: true, response: noChange(null, null, null) };
     }
     const watch = this.allowedWatch(row.extensionId, result.watch);
@@ -650,7 +732,7 @@ export class ExtensionInboxService {
       if (changed === 0 && (pending || watch)) {
         return refuse(409, DECISION_ALREADY_RESOLVED_CODE, 'This was already settled.');
       }
-      if (watch) this.announceUpdate(row.id);
+      this.announceUpdate(row.id);
       return { ok: true, response: noChange(result.message, result.navigate, watch) };
     }
 
@@ -749,6 +831,15 @@ export class ExtensionInboxService {
     return { ok: true, message, settingsChanged };
   }
 
+  /**
+   * In how many projects an extension has open, showing decisions right now.
+   *
+   * @param extensionId - The extension.
+   */
+  openProjectCount(extensionId: string): number {
+    return this.running.has(extensionId) ? this.openProjects(extensionId) : 0;
+  }
+
   /** Delete resolved rows older than 30 days. @returns How many were deleted. */
   prune(): number {
     const floor = new Date(this.now() - RETENTION_MS).toISOString();
@@ -797,6 +888,7 @@ export class ExtensionInboxService {
     ).changes;
     if (changed === 0) return false;
     this.clearDeadline(row.id);
+    this.hiddenByFolder.delete(row.id);
     const stored = this.byId(row.id)!;
     await resolveStanding(
       'extension.decision',
@@ -806,6 +898,7 @@ export class ExtensionInboxService {
         unread: fields.unread,
       }
     );
+    pruneExtensionHistory(row.extensionId, HISTORY_ROWS_PER_EXTENSION);
     return true;
   }
 
@@ -848,6 +941,7 @@ export class ExtensionInboxService {
       !row.defaultChoice ||
       row.deadlineState !== null ||
       this.deadlines.has(row.id) ||
+      this.answering.has(row.id) ||
       !this.running.has(row.extensionId) ||
       !this.handlers.has(row.extensionId) ||
       !this.folderOk(row)
@@ -858,10 +952,12 @@ export class ExtensionInboxService {
     const delay = delayOverride ?? (row.deadlineAttempts > 0 ? 0 : Math.max(0, due - this.now()));
     const timer = setTimeout(() => {
       this.deadlines.delete(row.id);
+      this.deadlineDue.delete(row.id);
       void this.fireDeadline(row.id);
     }, delay);
     timer.unref?.();
     this.deadlines.set(row.id, timer);
+    this.deadlineDue.set(row.id, this.now() + delay);
   }
 
   /** Stop a row's deadline timer. */
@@ -870,6 +966,7 @@ export class ExtensionInboxService {
     if (timer === undefined) return;
     clearTimeout(timer);
     this.deadlines.delete(decisionId);
+    this.deadlineDue.delete(decisionId);
   }
 
   /** The deadline passed: ask the extension to apply its pick. */
@@ -879,20 +976,27 @@ export class ExtensionInboxService {
     const handler = this.handlers.get(row.extensionId);
     // Not a failure: it waits until the extension runs and listens again.
     if (!handler || !this.running.has(row.extensionId) || !this.folderOk(row)) return;
+    if (this.answering.has(decisionId) || this.firing.has(decisionId)) return;
 
-    const call = await this.callHandler(row.extensionId, handler, {
-      key: row.key,
-      action: 'choice',
-      choiceId: row.defaultChoice,
-      decidedBy: 'deadline',
-      offerId: null,
-      pendingActionId: null,
-      note: null,
-      text: null,
-      project: this.projectRef(row.projectRoot),
-    });
+    this.firing.add(decisionId);
+    let call: HandlerCall;
+    try {
+      call = await this.callHandler(row.extensionId, handler, {
+        key: row.key,
+        action: 'choice',
+        choiceId: row.defaultChoice,
+        decidedBy: 'deadline',
+        offerId: null,
+        pendingActionId: null,
+        note: null,
+        text: null,
+        project: this.projectRef(row.projectRoot),
+      });
+    } finally {
+      this.firing.delete(decisionId);
+    }
     const now = this.byId(decisionId);
-    if (!now || now.resolvedAt) return;
+    if (!now || now.resolvedAt || now.deadlineState !== null) return;
 
     if (!call.ok) {
       const attempts = now.deadlineAttempts + 1;
@@ -965,10 +1069,15 @@ export class ExtensionInboxService {
     this.clearDeadline(row.id);
   }
 
-  /** Look at hidden-by-folder rows again: a folder that came back shows its rows. */
+  /**
+   * Look at open rows again: a folder that came back shows its rows, and a
+   * deadline that is overdue but did not fire (a laptop asleep, a timer that
+   * came late) fires now.
+   */
   private sweepFolders(): void {
     for (const extensionId of this.running.keys()) {
       for (const row of this.openRows(extensionId)) {
+        this.fireIfOverdue(row);
         if (!row.projectRoot) continue;
         const exists = this.folderExists(row.projectRoot);
         const wasHidden = this.hiddenByFolder.has(row.id);
@@ -981,6 +1090,37 @@ export class ExtensionInboxService {
         }
       }
     }
+  }
+
+  /** Fire a deadline whose time has passed, when its timer has not. */
+  private fireIfOverdue(row: ExtensionDecisionRow): void {
+    if (!row.decideBy || row.deadlineState !== null || this.firing.has(row.id)) return;
+    // Its own timer (the deadline, or a retry) is still on time: leave it.
+    const due = this.deadlineDue.get(row.id) ?? Date.parse(row.decideBy);
+    if (due + LATE_TIMER_GRACE_MS > this.now()) return;
+    if (!this.handlers.has(row.extensionId) || this.answering.has(row.id)) return;
+    this.clearDeadline(row.id);
+    void this.fireDeadline(row.id);
+  }
+
+  /** Spend one of an extension's hourly new decisions, or throw when none are left. */
+  private spendBudget(extensionId: string, extensionName: string): void {
+    const floor = this.now() - RATE_WINDOW_MS;
+    const recent = (this.added.get(extensionId) ?? []).filter((at) => at > floor);
+    this.added.set(extensionId, recent);
+    if (recent.length >= NEW_DECISIONS_PER_HOUR) {
+      throw new InboxLimitError(
+        'rate',
+        `${extensionName} added ${NEW_DECISIONS_PER_HOUR} decisions in the last hour; wait before adding more.`
+      );
+    }
+  }
+
+  /** Count one new decision against an extension's hourly budget. */
+  private noteAdded(extensionId: string): void {
+    const recent = this.added.get(extensionId) ?? [];
+    recent.push(this.now());
+    this.added.set(extensionId, recent);
   }
 
   /** Start the folder sweep once something is running. */
@@ -1105,6 +1245,19 @@ function refuse(
   return { ok: false, status, code, message };
 }
 
+/**
+ * Whether a resolution agrees with what a person chose: 👍 is `approved`, 👎
+ * is `rejected`, a word or a choice is `answered`.
+ *
+ * @param action - What the person chose.
+ * @param outcome - How the extension is settling it.
+ */
+function agrees(action: PendingAction['action'], outcome: DecisionOutcome): boolean {
+  if (action === 'approve') return outcome === 'approved';
+  if (action === 'reject') return outcome === 'rejected';
+  return outcome === 'answered';
+}
+
 /** A response for an answer that did not settle the decision. */
 function noChange(
   message: string | null,
@@ -1124,6 +1277,8 @@ let current: ExtensionInboxService | null = null;
 export function setExtensionInbox(service: ExtensionInboxService | null): void {
   current?.stop();
   current = service;
+  // A push counts the projects open when it is sent, not when the first row was.
+  setOpenProjectCounter(service ? (extensionId) => service.openProjectCount(extensionId) : null);
 }
 
 /** The live inbox, or null before boot wired one. */

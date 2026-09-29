@@ -88,12 +88,16 @@ export function raiseStanding<K extends StandingNotificationKind>(
 ): void {
   try {
     const entry = notificationEntry(kind);
-    const body = entry.body?.(payload);
+    // A kind whose words are somebody else's (an extension's decision) is
+    // announced the way a phone is told: generic, and naming its source. The
+    // desktop banner can show on a lock screen too.
+    const said = entry.escalation?.(payload);
+    const body = said ? said.body : entry.body?.(payload);
     const event: StandingPendingEvent = {
       kind,
       subjectKey: entry.dedupeKey(payload),
       tier: resolvePerKind(entry.tier, payload),
-      title: entry.title(payload),
+      title: said ? said.title : entry.title(payload),
       ...(body ? { body } : {}),
       deepLink: standingDeepLink(kind, payload),
       since: new Date().toISOString(),

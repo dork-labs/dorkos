@@ -24,7 +24,7 @@ import {
   notificationDeliveries,
   type Db,
 } from '@dorkos/db';
-import type { SQL } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type {
   ListNotificationsQuery,
   NotificationChannel,
@@ -271,6 +271,26 @@ export class NotificationStore {
    */
   hasEscalated(subjectKey: string): boolean {
     return this.deliveriesForSubject(subjectKey).some((row) => escalatedFlag(row.detailJson));
+  }
+
+  /**
+   * Whether this subject was escalated at or after `sinceMs`. For a group of
+   * conditions that share one push per window.
+   *
+   * @param subjectKey - The subject (or group) key.
+   * @param sinceMs - Epoch ms; older escalations do not count.
+   */
+  hasEscalatedSince(subjectKey: string, sinceMs: number): boolean {
+    const since = new Date(sinceMs).toISOString();
+    return this.db
+      .select({
+        sentAt: notificationDeliveries.sentAt,
+        detailJson: notificationDeliveries.detailJson,
+      })
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.subjectKey, subjectKey))
+      .all()
+      .some((row) => row.sentAt >= since && escalatedFlag(row.detailJson));
   }
 
   /**
@@ -540,6 +560,46 @@ export class NotificationStore {
       .where(inArray(notifications.id, ids))
       .run();
     return ids;
+  }
+
+  /**
+   * Keep only the newest `keep` rows of one kind that one owner wrote, and
+   * delete the rest (with their deliveries).
+   *
+   * The history is one bounded table for every kind, so a single noisy source
+   * (one extension's decisions) is capped on its own here before it can push
+   * everybody else's rows out through {@link prune}.
+   *
+   * @param kind - The kind to trim.
+   * @param ownerField - The payload field that names the owner, e.g. `extensionId`.
+   * @param owner - The owner whose rows are trimmed.
+   * @param keep - How many of its newest rows to keep.
+   * @returns How many rows were deleted.
+   */
+  pruneOwned(kind: NotificationKind, ownerField: string, owner: string, keep: number): number {
+    const path = `$.${ownerField}`;
+    const stale = this.db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.kind, kind),
+          sql`json_extract(${notifications.dataJson}, ${path}) = ${owner}`
+        )
+      )
+      .orderBy(desc(notifications.id))
+      .all()
+      .slice(keep);
+    if (stale.length === 0) return 0;
+    return this.db
+      .delete(notifications)
+      .where(
+        inArray(
+          notifications.id,
+          stale.map((row) => row.id)
+        )
+      )
+      .run().changes;
   }
 
   /**

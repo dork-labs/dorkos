@@ -322,6 +322,12 @@ export class EscalationService {
 
       if (this.deps.store.hasEscalated(subjectKey)) return;
       if (this.deps.store.wasAcknowledged(subjectKey)) return;
+      // One push per group per window: an extension with five decisions open
+      // reaches a phone once, with one line that counts them.
+      const group = entry.escalationGroup?.(payload);
+      if (group && this.deps.store.hasEscalatedSince(group.key, this.now() - group.windowMs)) {
+        return;
+      }
 
       // A kind whose title is somebody else's words (an extension's decision)
       // says a generic line instead, because a lock screen is not private.
@@ -344,6 +350,17 @@ export class EscalationService {
 
       const [push, relay] = await Promise.all([pushLeg, relayLeg]);
 
+      if (group && (push.delivered > 0 || relay?.ok)) {
+        this.recordEscalation(
+          group.key,
+          push.delivered > 0
+            ? 'web_push'
+            : relayLedgerChannel(relay as Extract<RelayDeliveryOutcome, { ok: true }>),
+          {
+            group: true,
+          }
+        );
+      }
       if (push.delivered > 0) {
         this.recordEscalation(subjectKey, 'web_push', {
           delivered: push.delivered,

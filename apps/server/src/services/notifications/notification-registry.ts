@@ -572,6 +572,12 @@ export interface NotificationRegistryEntry<K extends NotificationKind = Notifica
    * and does not belong on a lock screen.
    */
   escalation?: (payload: NotificationPayload<K>) => { title: string; body?: string };
+  /**
+   * Several conditions that should reach a phone once between them: one push
+   * per `key` per `windowMs`, however many of them stand. For a source that
+   * can have many rows open at once (an extension's decisions).
+   */
+  escalationGroup?: (payload: NotificationPayload<K>) => { key: string; windowMs: number };
 }
 
 /**
@@ -645,6 +651,22 @@ function subjectIdForCopy(p: NotificationPayload<'extension.approval'>): Notific
   };
 }
 
+/** Counts an extension's projects with open decisions right now, when the inbox is up. */
+let openProjectCounter: ((extensionId: string) => number) | null = null;
+
+/**
+ * Let the inbox answer "in how many projects?" live, so a push sent minutes
+ * after the first decision counts every project open by then.
+ *
+ * @param counter - The live count, or null to fall back to the payload's.
+ */
+export function setOpenProjectCounter(counter: ((extensionId: string) => number) | null): void {
+  openProjectCounter = counter;
+}
+
+/** One phone push per extension per hour, whatever number of its decisions stand. */
+const EXTENSION_DECISION_PUSH_WINDOW_MS = 60 * 60 * 1000;
+
 /**
  * What a phone is told about an extension's decisions: who, and in how many
  * projects, never the title, key or project name (spec `flow-multiproject`
@@ -655,8 +677,9 @@ function subjectIdForCopy(p: NotificationPayload<'extension.approval'>): Notific
 export function extensionDecisionEscalation(p: NotificationPayload<'extension.decision'>): {
   title: string;
 } {
-  if (p.openProjects <= 0) return { title: `${p.extensionName} needs you` };
-  const projects = p.openProjects === 1 ? '1 project' : `${p.openProjects} projects`;
+  const open = openProjectCounter?.(p.extensionId) ?? p.openProjects;
+  if (open <= 0) return { title: `${p.extensionName} needs you` };
+  const projects = open === 1 ? '1 project' : `${open} projects`;
   return { title: `${p.extensionName} needs you in ${projects}` };
 }
 
@@ -1167,7 +1190,9 @@ const ENTRIES: NotificationRegistryMap = {
     // already waited its own time limit before asking (N7), so it may reach a
     // phone through the escalation ladder. What reaches the phone is generic
     // (`escalation` below).
-    tier: 'blocking',
+    // History is quiet: a decision that was settled is news, never an alarm,
+    // and a quiet row never draws a native banner with the extension's words.
+    tier: (p) => (p.resolution ? 'quiet' : 'blocking'),
     storage: 'standing',
     subjectType: 'system',
     // The subject is core's id for the row, so an inbox that holds a
@@ -1185,6 +1210,10 @@ const ENTRIES: NotificationRegistryMap = {
     dedupeWindowMs: 0,
     relay: 'never',
     escalation: (p) => extensionDecisionEscalation(p),
+    escalationGroup: (p) => ({
+      key: `ext-decision-push:${p.extensionId}`,
+      windowMs: EXTENSION_DECISION_PUSH_WINDOW_MS,
+    }),
   },
 
   'report.daily': {

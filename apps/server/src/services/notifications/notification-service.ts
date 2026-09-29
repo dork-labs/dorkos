@@ -41,6 +41,7 @@ import type {
   MarkNotificationsReadResponse,
   NotificationChannel,
   NotificationDTO,
+  NotificationKind,
   NotificationOutcome,
 } from '@dorkos/shared/notification-schemas';
 import type { CallerPrincipal } from '../../lib/caller-principal.js';
@@ -234,6 +235,24 @@ export class NotificationService {
     } catch (err) {
       logger.warn('[Notifications] Could not record a resolution', { err, kind });
       return { notification: null, deduped: false };
+    }
+  }
+
+  /**
+   * Trim one owner's rows of one kind to its newest `keep`. See
+   * {@link NotificationStore.pruneOwned}.
+   *
+   * @param kind - The kind to trim.
+   * @param ownerField - The payload field naming the owner.
+   * @param owner - The owner.
+   * @param keep - How many to keep.
+   */
+  pruneOwned(kind: NotificationKind, ownerField: string, owner: string, keep: number): number {
+    try {
+      return this.store.pruneOwned(kind, ownerField, owner, keep);
+    } catch (err) {
+      logger.warn("[Notifications] Could not trim one source's history", { err, kind });
+      return 0;
     }
   }
 
@@ -655,4 +674,16 @@ export function markRoomRead(roomId: string, uptoSeq: number): MarkNotifications
     return { ok: true, marked: 0, unreadCount: 0 };
   }
   return current.markRoomRead(roomId, uptoSeq);
+}
+
+/**
+ * Keep at most `keep` `extension.decision` history rows for one extension,
+ * from anywhere. A no-op before boot has wired a service.
+ *
+ * @param extensionId - The extension whose history is trimmed.
+ * @param keep - How many of its newest rows to keep.
+ */
+export function pruneExtensionHistory(extensionId: string, keep: number): number {
+  if (!current) return 0;
+  return current.pruneOwned('extension.decision', 'extensionId', extensionId, keep);
 }

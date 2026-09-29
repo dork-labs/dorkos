@@ -26,6 +26,7 @@ import {
   DECIDE_BY_MIN_MS,
   DECISION_KEY_PATTERN,
   DECISION_LIMITS,
+  PROJECT_SETTINGS_MAX_BYTES,
   DecisionActionsSchema,
 } from '@dorkos/shared/extension-decision-schemas';
 import { isAllowedExtensionLink } from './extension-links.js';
@@ -39,6 +40,7 @@ export interface CheckedDecision {
   project: string | null;
   projectLabel: string | null;
   since: string | null;
+  /** As the extension asked, a question's `decideBy` unclamped. */
   actions: DecisionActions;
   link: string | null;
   /** A question's deadline, clamped, or null. */
@@ -231,11 +233,12 @@ export function checkDecisionInput(
     typeof input.since === 'string' && !Number.isNaN(Date.parse(input.since)) ? input.since : null;
   const link = checkLink(input.link, extensionId, 'link');
   const checked = checkActions(input.actions, extensionId);
-  let actions = checked.actions;
+  // Stored as asked: the clamped deadline lives beside it, so a re-raise of
+  // the same question compares equal and never moves its deadline.
+  const actions = checked.actions;
   let decideBy: string | null = null;
   if (actions.kind === 'choice' && actions.decideBy !== undefined) {
     decideBy = clampDecideBy(actions.decideBy, now);
-    actions = { ...actions, decideBy };
   }
   return {
     key,
@@ -324,6 +327,15 @@ export function checkOffer(offer: unknown): DecisionOffer | null {
     patch.patch !== null &&
     !Array.isArray(patch.patch)
   ) {
+    // A patch that could never be written (over 16 KiB) makes the offer a
+    // promise core cannot keep, so the whole offer is dropped up front.
+    let size = Number.POSITIVE_INFINITY;
+    try {
+      size = Buffer.byteLength(JSON.stringify(patch.patch), 'utf8');
+    } catch {
+      /* not JSON: dropped below */
+    }
+    if (size > PROJECT_SETTINGS_MAX_BYTES) return null;
     checked.settingsPatch = { project: patch.project, patch: patch.patch };
   }
   return checked;

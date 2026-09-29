@@ -18,11 +18,17 @@ export const EXTENSION_DECISION_RESOLVERS = [
 export type ExtensionDecisionResolver = (typeof EXTENSION_DECISION_RESOLVERS)[number];
 
 /**
- * What became of a question's deadline once it passed: the extension kept the
- * row open, said it was already settled, or could not be reached after its
- * retries (the row then says it needs a person).
+ * What became of a question's deadline: the extension kept the row open at
+ * it, said it was already settled, or could not be reached after its retries
+ * (the row then says it needs a person); or a person answered first, which
+ * cancels the deadline for good whatever the extension did with the answer.
  */
-export const EXTENSION_DECISION_DEADLINE_STATES = ['kept_open', 'settled', 'failed'] as const;
+export const EXTENSION_DECISION_DEADLINE_STATES = [
+  'kept_open',
+  'settled',
+  'failed',
+  'answered',
+] as const;
 
 /** What became of a question's deadline. See {@link EXTENSION_DECISION_DEADLINE_STATES}. */
 export type ExtensionDecisionDeadlineState = (typeof EXTENSION_DECISION_DEADLINE_STATES)[number];
@@ -68,13 +74,17 @@ export const extensionDecisions = sqliteTable(
     why: text('why').notNull(),
     /** Shown behind ⓘ, ≤ 500, or null. */
     detail: text('detail'),
-    /** `DecisionActions` as JSON. */
+    /**
+     * `DecisionActions` as JSON, exactly as the extension asked (a question's
+     * `decideBy` as requested, before clamping). Comparing it is how a
+     * re-raise of the same question is told from a new one.
+     */
     actionsJson: text('actions_json').notNull(),
     /** In-app path the title opens, or null. */
     link: text('link'),
     /** When the condition began, or null. */
     since: text('since'),
-    /** A question's deadline, already clamped, or null. */
+    /** A question's deadline in effect: clamped once, when the question was first asked. */
     decideBy: text('decide_by'),
     /** A question's agent's pick, or null. */
     defaultChoice: text('default_choice'),

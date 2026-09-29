@@ -444,12 +444,14 @@ export interface DecisionOffer {
 }
 
 /** Which limit an {@link InboxLimitError} names. */
-export type InboxLimit = 'why' | 'title' | 'detail' | 'open' | 'key' | 'choices' | 'decideBy';
+export type InboxLimit =
+  'why' | 'title' | 'detail' | 'open' | 'key' | 'choices' | 'decideBy' | 'rate';
 
 /**
  * Thrown by `raise`/`record` when a limit is broken: missing or long why,
  * title > 120, detail > 500, > 50 open, a bad key, a bad choice set or
- * decideBy. Nothing is written. Match on `err.code === 'inbox_limit'` rather
+ * decideBy, or more than 60 new decisions (raised or recorded) in an hour
+ * (`rate`). Nothing is written. Match on `err.code === 'inbox_limit'` rather
  * than `instanceof`: an extension bundle carries its own copy of this class.
  */
 export class InboxLimitError extends Error {
