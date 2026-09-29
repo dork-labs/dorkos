@@ -207,14 +207,14 @@ export function versionOneExport(): Buffer {
 
 /**
  * Make a real owner export of a community on this server (version 2, prepared by the export
- * worker), download it, and open it.
+ * worker) and download the whole archive.
  */
-export async function ownerExport(
+export async function ownerExportArchive(
   h: TenancyHarness,
   communityId: string,
   ownerCookie: string,
   password: string
-): Promise<OpenedArchive> {
+): Promise<Buffer> {
   const base = `/api/v1/communities/${communityId}`;
   const requested = await h.call(`${base}/owner/export`, {
     cookie: ownerCookie,
@@ -228,7 +228,17 @@ export async function ownerExport(
     200,
     'download export'
   );
-  return openArchive(Buffer.from(await download.arrayBuffer()));
+  return Buffer.from(await download.arrayBuffer());
+}
+
+/** Make a real owner export of a community on this server, download it, and open it. */
+export async function ownerExport(
+  h: TenancyHarness,
+  communityId: string,
+  ownerCookie: string,
+  password: string
+): Promise<OpenedArchive> {
+  return openArchive(await ownerExportArchive(h, communityId, ownerCookie, password));
 }
 
 /**

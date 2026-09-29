@@ -3,37 +3,41 @@
  * uploaded owner export, reports on it, waits for a commit, restores it all or nothing, and
  * the owner claim that adopts the exporting owner's own history.
  *
- * One source community, A, is seeded once with everything a version 1 export carries and
- * exported once; each test imports that archive (or a tampered copy) into a new community.
+ * The source is the archive the version 1 exporter wrote from a community seeded with
+ * everything a version 1 export carries (`versionOneExport`); this server now writes version 2
+ * only. Each test imports that archive (or a tampered copy) into a new community.
  */
 import { randomUUID } from 'node:crypto';
 import { strFromU8, unzipSync } from 'fflate';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
-import { CommunityExportManifestV1Schema } from '@dorkos/shared/community-wire';
+import {
+  CommunityExportManifestV1Schema,
+  CommunityExportMemberRowSchema,
+} from '@dorkos/shared/community-wire';
 import { uuidv5 } from '../imports/derived-id.js';
 import { renumberedSequences } from '../imports/manifest.js';
 import type { ImportWorkerHooks } from '../imports/process.js';
 import { sweepImports } from '../imports/worker.js';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
-import { REMOVED_ENTRY_TEXT } from '../content-removal.js';
+import { REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
 import { responseCookies } from './bootstrap-test-helper.js';
-import { drainCleanup, person, post, seedCanaries, upload } from './member-erasure-fixture.js';
+import { drainCleanup } from './member-erasure-fixture.js';
 import {
   buildArchive,
   createImport,
   issueKey,
   ownerExport,
+  ownerExportArchive,
   readArchive,
   readImport,
+  versionOneExport,
   sha256,
   uploadArchive,
 } from './import-fixture.js';
 import {
   TENANCY_PASSWORD,
-  admit,
   bootstrapHost,
-  createChannel,
   expectStatus,
   preflightOwnerClaim,
   startTenancyHarness,
@@ -44,8 +48,11 @@ import {
 let h: TenancyHarness;
 let clock = new Date();
 let key = '';
-let a = '';
 let archive: Buffer = Buffer.alloc(0);
+/** This server's own owner export, which it writes as version 2. */
+let versionTwo: Buffer = Buffer.alloc(0);
+/** The host operator's session, which may place and release a legal hold. */
+let hostCookie = '';
 let source: { manifest: CommunityExportManifestV1; files: Map<string, Uint8Array> };
 
 async function count(sql: string, params: unknown[] = []): Promise<number> {
@@ -147,87 +154,10 @@ async function expectNothingLeft(communityId: string): Promise<void> {
 beforeAll(async () => {
   h = await startTenancyHarness('importrestore', { now: () => clock });
   const host = await bootstrapHost(h, 'Olive Owner', 'olive@example.test');
-  a = host.communityId;
+  hostCookie = host.cookie;
   key = await issueKey(h, ['communities:import', 'communities:read', 'communities:write']);
-  const owner = { cookie: host.cookie, memberId: host.memberId };
-  const p = await person(h, await admit(h, a, owner.cookie, { name: 'Zeph', email: 'z@e.test' }));
-  const leaver = await admit(h, a, owner.cookie, { name: 'Lee Leaver', email: 'lee@e.test' });
-  await expectStatus(
-    await h.call(`/api/v1/communities/${a}/channels/${host.channelId}/join`, {
-      cookie: p.cookie,
-      body: {},
-    }),
-    200,
-    'join general'
-  );
-  const seeded = await seedCanaries(h, {
-    communityId: a,
-    channelId: host.channelId,
-    p,
-    other: owner,
-  });
-  // A post mentioning a person and an agent, by the owner.
-  await expectStatus(
-    await h.call(`/api/v1/communities/${a}/channels/${host.channelId}/entries`, {
-      cookie: owner.cookie,
-      body: {
-        text: 'thanks both',
-        idempotencyKey: 'mentions',
-        mentions: [p.memberId, seeded.agent.id],
-      },
-    }),
-    201,
-    'mentioning post'
-  );
-  const secret = await createChannel(h, a, owner.cookie, 'secret', [leaver.cookie]);
-  await h.call(`/api/v1/communities/${a}/channels/${secret}`, {
-    method: 'PATCH',
-    cookie: owner.cookie,
-    body: { name: 'secret' },
-  });
-  await h.pool.query("UPDATE channels SET visibility='private' WHERE id=$1", [secret]);
-  await post(
-    h,
-    a,
-    secret,
-    { cookie: leaver.cookie },
-    { text: 'goodbye all', idempotencyKey: 'bye' }
-  );
-  const file = await upload(h, a, secret, owner.cookie, 'plan.txt', 'the plan');
-  await post(
-    h,
-    a,
-    secret,
-    { cookie: owner.cookie },
-    {
-      text: 'the plan, attached',
-      idempotencyKey: 'plan',
-      attachmentIds: [file],
-    }
-  );
-  const old = await createChannel(h, a, owner.cookie, 'old-news');
-  await post(h, a, old, { cookie: owner.cookie }, { text: 'last word', idempotencyKey: 'last' });
-  await expectStatus(
-    await h.call(`/api/v1/communities/${a}/channels/${old}`, {
-      method: 'PATCH',
-      cookie: owner.cookie,
-      body: { archived: true },
-    }),
-    200,
-    'archive channel'
-  );
-  await expectStatus(
-    await h.call(`/api/v1/communities/${a}/members/${leaver.memberId}`, {
-      method: 'DELETE',
-      cookie: owner.cookie,
-    }),
-    204,
-    'remove member'
-  );
-  await h.pool.query('UPDATE agents SET active=false,revoked_at=now() WHERE id=$1', [
-    seeded.agent.id,
-  ]);
-  archive = await ownerExport(h, a, owner.cookie, TENANCY_PASSWORD);
+  archive = versionOneExport();
+  versionTwo = await ownerExportArchive(h, host.communityId, host.cookie, TENANCY_PASSWORD);
   source = readArchive(archive);
   CommunityExportManifestV1Schema.parse(source.manifest);
 });
@@ -470,11 +400,12 @@ it('restores an owner export exactly, and the claimant adopts the owner’s hist
   );
   expect((await notice.json()).importedAt).toEqual(expect.any(String));
 
-  // A re-export of the imported community parses and keeps every historical author.
-  const again = readArchive(await ownerExport(h, communityId, claimant.cookie, TENANCY_PASSWORD));
-  const reparsed = CommunityExportManifestV1Schema.parse(again.manifest);
-  expect(reparsed.members.length).toBe(manifest.members.length);
-  expect(reparsed.members.filter((member) => member.email === null)).toHaveLength(
+  // A re-export of the imported community (this server writes version 2) keeps every
+  // historical author, with no email: only the claimant has an account.
+  const again = await ownerExport(h, communityId, claimant.cookie, TENANCY_PASSWORD);
+  const members = again.rows('members').map((row) => CommunityExportMemberRowSchema.parse(row));
+  expect(members.length).toBe(manifest.members.length);
+  expect(members.filter((member) => member.email === null)).toHaveLength(
     manifest.members.length - 1
   );
 });
@@ -497,7 +428,11 @@ it('gives two imports of one archive disjoint IDs', async () => {
   const two = await ids(second.communityId);
   expect(two.length).toBe(one.size);
   expect(two.filter((id) => one.has(id))).toEqual([]);
-  const sourceIds = new Set(await ids(a));
+  const sourceIds = new Set([
+    ...source.manifest.entries.map((entry) => entry.id),
+    ...source.manifest.channels.map((channel) => channel.id),
+    ...source.manifest.members.map((member) => member.id),
+  ]);
   expect([...one].filter((id) => sourceIds.has(id))).toEqual([]);
 });
 
@@ -683,6 +618,13 @@ describe('a tampered export fails with its named code and leaves nothing', () =>
       'IMPORT_VERSION_UNSUPPORTED',
     ],
     [
+      // Its layout (data files, manifest last) breaks every version 1 rule; it is still named
+      // as a version this host cannot read, not as a damaged file.
+      'a version 2 export from this server',
+      () => versionTwo,
+      'IMPORT_VERSION_UNSUPPORTED',
+    ],
+    [
       'a file that inflates past its declared size',
       () => inflatingArchive(),
       'IMPORT_ARCHIVE_INVALID',
@@ -828,6 +770,63 @@ it('abandons a ready, unclaimed import with all of its content', async () => {
   expect(abandoned.status).toBe(202);
   await expectNothingLeft(communityId);
   expect((await readImport(h, importId, key)).state).toBe('cancelled');
+});
+
+// Purpose: a host legal hold stops every permanent deletion (ADR 260924-215422). Abandoning a
+// ready, unclaimed import is refused while one stands, and an import that fails under one keeps
+// its community and the uploaded file; both are removed once the hold is released.
+it('keeps a ready or failed import’s community under a legal hold until it is released', async () => {
+  const legalHold = (method: 'PUT' | 'DELETE', communityId: string) =>
+    h.call(`/api/v1/host/communities/${communityId}/legal-hold`, {
+      method,
+      cookie: hostCookie,
+      ...(method === 'PUT' ? { body: { reference: null } } : {}),
+    });
+  const ready = await importArchive(archive, { autoCommit: true });
+  expect((await readImport(h, ready.importId, key)).state).toBe('ready');
+  await expectStatus(await legalHold('PUT', ready.communityId), 200, 'hold the ready import');
+  const abandon = () =>
+    h.call(`/api/v1/host/communities/${ready.communityId}`, { method: 'DELETE', bearer: key });
+  const refused = await abandon();
+  expect(refused.status).toBe(409);
+  expect((await refused.json()).code).toBe('LEGAL_HOLD_ACTIVE');
+  expect(await count('SELECT 1 FROM entries WHERE community_id=$1', [ready.communityId])).toBe(
+    source.manifest.entries.length
+  );
+
+  // An export whose file does not match fails in the worker; the hold keeps what it left.
+  const created = await createImport(h, { bearer: key }, { autoCommit: true });
+  await expectStatus(
+    await uploadArchive(
+      h,
+      created.importId,
+      tampered((manifest) => {
+        manifest.attachments[0].checksum = sha256('something else');
+      }),
+      { bearer: created.uploadToken }
+    ),
+    200,
+    'upload'
+  );
+  await expectStatus(await legalHold('PUT', created.communityId), 200, 'hold the failing import');
+  await runImports();
+  expect(await readImport(h, created.importId, key)).toMatchObject({
+    state: 'failed',
+    failureCode: 'IMPORT_CHECKSUM_MISMATCH',
+  });
+  expect(await count('SELECT 1 FROM communities WHERE id=$1', [created.communityId])).toBe(1);
+  expect(
+    await count(
+      "SELECT 1 FROM managed_blobs WHERE community_id=$1 AND purpose='import_staging' AND state<>'pending_delete'",
+      [created.communityId]
+    )
+  ).toBe(1);
+
+  await expectStatus(await legalHold('DELETE', ready.communityId), 200, 'release');
+  await expectStatus(await legalHold('DELETE', created.communityId), 200, 'release');
+  expect((await abandon()).status).toBe(202);
+  await expectNothingLeft(ready.communityId);
+  await expectNothingLeft(created.communityId);
 });
 
 /** A hand-built owner export: one owner, one channel, and whatever `change` adds. */
