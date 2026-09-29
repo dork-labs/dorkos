@@ -9,6 +9,8 @@ import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { rememberCommunity } from './remembered-community.js';
 import { ErasureBanner } from './components/Erasure.js';
+import { ConnectDorkOS } from './connect/ConnectDorkOS.js';
+import { communityLink } from './connect/community-link.js';
 import {
   communityBasePath,
   describeError,
@@ -296,13 +298,14 @@ export function CommunityApp() {
           >
             Open community
           </Button>
-          <Notice tone="info" className="mt-4">
-            <strong>Connect this DorkOS installation</strong>
-            <p className="small muted mb-0">
-              In the DorkOS app, open Connections, then Messaging, then Communities. Each
-              installation needs its own approval.
-            </p>
-          </Notice>
+          <ConnectDorkOS
+            link={communityLink(
+              window.location.origin,
+              community.id,
+              // Not read yet for someone who just joined; the name they arrived by, if any.
+              communityShortName ?? shortNameBasePath()?.slice(1)
+            )}
+          />
         </section>
       </main>
     );
@@ -479,7 +482,11 @@ export function CommunityApp() {
           <Manage
             communityId={community!.id}
             communityName={community!.name}
-            communityAddress={`${window.location.origin}${communityShortName ? `/${communityShortName}` : `/c/${community!.id}`}`}
+            communityAddress={communityLink(
+              window.location.origin,
+              community!.id,
+              communityShortName
+            )}
             me={me.member}
             channels={channels}
             initialSection={settingsRoute?.section ?? null}
