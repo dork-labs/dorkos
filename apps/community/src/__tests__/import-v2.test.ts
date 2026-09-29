@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { strToU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import type { CommunityExportManifestV2 } from '@dorkos/shared/community-wire';
@@ -468,5 +468,41 @@ describe('opening a version 2 export', () => {
         })()
       )
     ).toBe('IMPORT_ARCHIVE_INVALID');
+  });
+});
+
+describe('the inflation cap', () => {
+  /**
+   * An export whose one data file claims to inflate `ratio` times its compressed size: the
+   * central directory is edited, so the claim is checked before a byte is inflated.
+   */
+  function claiming(ratio: number): Buffer {
+    // Random bytes do not compress, so the archive is about as large as the file.
+    const noise = randomBytes(100 * 1024);
+    const bytes = build((p) => {
+      p.entries[0] = ['entries/000001.ndjson', noise];
+    });
+    const name = Buffer.from('entries/000001.ndjson');
+    for (let at = bytes.length - 22; at >= 0; at--) {
+      if (
+        bytes.readUInt32LE(at) === 0x02014b50 &&
+        bytes.subarray(at + 46, at + 46 + name.length).equals(name)
+      ) {
+        bytes.writeUInt32LE(Math.floor(bytes.readUInt32LE(at + 20) * ratio), at + 24);
+        return bytes;
+      }
+    }
+    throw new Error('central directory record not found');
+  }
+
+  // Purpose: data near deflate's limit (here 1,000:1, a bomb) is refused as too large before it
+  // is read, while 200:1 (the most repetitive agent output measured was about 164:1) is not.
+  it('refuses a bomb before reading it, and not repetitive agent output', async () => {
+    expect(await failure(openExportV2(bufferReader(claiming(1_000)), limits))).toBe(
+      'IMPORT_TOO_LARGE'
+    );
+    expect(await failure(openExportV2(bufferReader(claiming(200)), limits))).not.toBe(
+      'IMPORT_TOO_LARGE'
+    );
   });
 });

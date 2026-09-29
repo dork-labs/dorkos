@@ -62,3 +62,15 @@ ALTER TABLE community_import_files
     purpose IN ('attachment','icon')
     AND (purpose = 'icon') = (source_attachment_id = '00000000-0000-0000-0000-000000000000')
   );
+
+-- Deleting a message checks that no reply or thread still points at it, through two foreign keys
+-- each (entries(id), and the tenant pair (community_id, id)). Nothing indexed those columns
+-- first (entries_thread_idx leads with channel_id), so every deleted message scanned its
+-- community: tearing down an import of 40,000 messages took ten minutes, holding the
+-- community's lock. Leading with the referencing column serves both keys' checks; only replies
+-- have these set, so the indexes are partial. This runs inside the migration transaction, so
+-- not CONCURRENTLY: entries is locked against writes while they build.
+CREATE INDEX entries_parent_ref_idx ON entries(parent_entry_id, community_id)
+  WHERE parent_entry_id IS NOT NULL;
+CREATE INDEX entries_thread_root_ref_idx ON entries(thread_root_entry_id, community_id)
+  WHERE thread_root_entry_id IS NOT NULL;

@@ -39,13 +39,13 @@ export const MAX_V2_NDJSON_BYTES = 1024 * 1024 * 1024;
 export const MAX_V2_NDJSON_FILES = 100_000;
 /**
  * The most the data files of one export may inflate to in all: a floor for small exports, plus
- * a multiple of the archive's own size (real NDJSON compresses a few times over, never near
- * deflate's 1032:1), and never more than an absolute ceiling. A small archive that claims to
- * hold far more rows than its size allows is a decompression bomb.
+ * a multiple of the archive's own size, and never more than an absolute ceiling. The multiple is
+ * generous on purpose: agents' repetitive output really compresses 80 to 160 times over (human
+ * chat about 8), so only data near deflate's 1032:1 limit, a decompression bomb, passes it.
  */
 export const V2_NDJSON_FLOOR_BYTES = 64 * 1024 * 1024;
 /** See {@link V2_NDJSON_FLOOR_BYTES}. */
-export const V2_NDJSON_RATIO = 32;
+export const V2_NDJSON_RATIO = 256;
 /** See {@link V2_NDJSON_FLOOR_BYTES}. */
 export const V2_NDJSON_CEILING_BYTES = 128 * 1024 * 1024 * 1024;
 

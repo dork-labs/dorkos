@@ -57,6 +57,7 @@ const MAX_IMPORT_BYTES = 8 * MIB;
 let beforeCompleteHash: (importId: string) => Promise<void> = async () => undefined;
 
 let h: TenancyHarness;
+let operatorCookie = '';
 let key = '';
 let source: ExportCommunity;
 let pat: TenancyMember;
@@ -182,7 +183,7 @@ async function rawPart(
 
 /** Wait until the database shows `n` part uploads in flight. */
 async function partUploadsInFlight(n: number): Promise<void> {
-  for (let attempt = 0; attempt < 250; attempt++) {
+  for (let attempt = 0; attempt < 3_000; attempt++) {
     if ((await count('SELECT 1 FROM community_import_part_uploads')) >= n) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
@@ -332,7 +333,7 @@ beforeAll(async () => {
     },
     hooks: { beforeCompleteHash: (importId) => beforeCompleteHash(importId) },
   });
-  const operatorCookie = (await bootstrapHost(h, 'Vera Host', 'vera@import-v2.test')).cookie;
+  operatorCookie = (await bootstrapHost(h, 'Vera Host', 'vera@import-v2.test')).cookie;
   key = await issueKey(h, ['communities:import', 'communities:read', 'communities:write']);
 
   // Community A: public, private, and a channel its owner is not in; 12,000 messages, a thread,
@@ -872,7 +873,7 @@ it('limits part uploads in flight per import and per replica', async () => {
 
   for (const upload of held) upload.close();
   await Promise.all(held.map((upload) => upload.answer));
-  for (let attempt = 0; attempt < 250; attempt++) {
+  for (let attempt = 0; attempt < 3_000; attempt++) {
     if (!(await count('SELECT 1 FROM community_import_part_uploads'))) break;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
@@ -990,7 +991,7 @@ it('finishes a complete whose caller disconnected, and answers the retry', async
     expect(early.headers.get('retry-after')).toBe('5');
     await new Promise((resolve) => setTimeout(resolve, 100));
     release();
-    for (let attempt = 0; attempt < 250; attempt++) {
+    for (let attempt = 0; attempt < 3_000; attempt++) {
       const row = await h.pool.query(
         'SELECT upload_lease_token FROM community_imports WHERE id=$1',
         [importId]
@@ -1030,9 +1031,10 @@ it('counts parts still arriving toward the largest import', async () => {
   await expectNothingLeft(created.communityId);
 });
 
-// Purpose (review): a small archive whose data files inflate hundreds of times over (here 256
-// MiB of agent memberships from a few MiB) is refused before a row is read, as too large.
-it('refuses a data-file bomb as too large before reading it', async () => {
+// Purpose (review): a small archive whose data files inflate a hundred times over into rows
+// that cannot exist (256 MiB of memberships for agents the export does not hold) is refused
+// before a row is read. The inflation cap itself is pinned in `import-v2.test.ts`.
+it('refuses a membership bomb before reading it', async () => {
   const line = Buffer.from(
     `${JSON.stringify({ channel_id: channels.general, agent_id: randomUUID(), joined_at: '2026-01-01T00:00:00.000Z' })}\n`
   );
@@ -1055,10 +1057,93 @@ it('refuses a data-file bomb as too large before reading it', async () => {
   await runImports();
   expect(await readImport(h, importId, key)).toMatchObject({
     state: 'failed',
-    failureCode: 'IMPORT_TOO_LARGE',
+    failureCode: 'IMPORT_ARCHIVE_INVALID',
   });
   await expectNothingLeft(communityId);
 }, 300_000);
+
+// Purpose (review): agents' repetitive output is the core use case and compresses far more than
+// people's chat (here about 80 times over), so a real export of it, written by this server's own
+// exporter, must pass the inflation cap. Then a restore of it that fails after every message is
+// in must tear down in bounded time: each deleted message's reply checks use the reply indexes
+// rather than scanning the community (before them, 10,000 messages took 77 s and 40,000 took
+// ten minutes).
+it('imports an agent log that compresses far over, and tears a failed one down fast', async () => {
+  const messages = 20_000;
+  const community = await exportCommunity(h, operatorCookie, 'Agent Logs');
+  const line = `[info] health ok: queue=0 workers=4 uptime stable ${'z'.repeat(40)}\n`;
+  for (let done = 0; done < messages; done += 10_000)
+    await seedEntries(h, community, {
+      authorMemberId: community.owner.memberId,
+      count: 10_000,
+      textOf: (n) => `heartbeat ${n}\n${line.repeat(80)}`,
+    });
+  const requested = await requestOwnerExport(h, community);
+  await runExport(h, { segmentBytes: 64 * MIB });
+  const log = await downloadArchive(h, community, requested.export.id);
+  const read = await openArchive(log);
+  const inflated = read.names
+    .filter((name) => name.endsWith('.ndjson'))
+    .reduce((sum, name) => sum + read.files.get(name)!.length, 0);
+  // Far over the 32 times an earlier cap allowed, past its 64 MiB floor.
+  expect(inflated).toBeGreaterThan(64 * MIB + 32 * log.length);
+
+  const ok = await importInParts(log, 4 * MIB, { autoCommit: true });
+  await runImports();
+  expect(await readImport(h, ok.importId, key)).toMatchObject({ state: 'ready' });
+  expect(await count('SELECT 1 FROM entries WHERE community_id=$1', [ok.communityId])).toBe(
+    messages
+  );
+
+  // The same export again, failing once every message is restored.
+  const doomed = await importInParts(log, 4 * MIB, { autoCommit: true });
+  // One step at a time, stopping at the failure, before the teardown that would follow.
+  const stopWhenFull = {
+    afterBatch: async () => {
+      if (
+        (await count('SELECT 1 FROM entries WHERE community_id=$1', [doomed.communityId])) >=
+        messages
+      )
+        throw new Error('stop');
+    },
+  };
+  for (let round = 0; round < 200; round++) {
+    await h.pool.query('UPDATE community_imports SET next_attempt_at=now() WHERE id=$1', [
+      doomed.importId,
+    ]);
+    await sweepImports(h.pool, h.blobStore, h.config.limits, new Date(), stopWhenFull);
+    if ((await readImport(h, doomed.importId, key)).state === 'failed') break;
+  }
+  expect(await readImport(h, doomed.importId, key)).toMatchObject({ state: 'failed' });
+  expect(await count('SELECT 1 FROM entries WHERE community_id=$1', [doomed.communityId])).toBe(
+    messages
+  );
+  const started = performance.now();
+  await expectNothingLeft(doomed.communityId);
+  const teardownMs = performance.now() - started;
+  // About 2 s with the reply indexes; without them each deleted message scans the community,
+  // and this took 200 s.
+  expect(teardownMs).toBeLessThan(60_000);
+  // The checks both reply foreign keys run for each deleted message, as Postgres writes them.
+  await h.pool.query('ANALYZE entries');
+  const planOf = async (sql: string, params: unknown[]) =>
+    (await h.pool.query<{ 'QUERY PLAN': string }>(`EXPLAIN ${sql}`, params)).rows
+      .map((row) => row['QUERY PLAN'])
+      .join('\n');
+  const reply = randomUUID();
+  expect(
+    await planOf(
+      'SELECT 1 FROM ONLY entries x WHERE $1::uuid=community_id AND $2::uuid=parent_entry_id FOR KEY SHARE OF x',
+      [doomed.communityId, reply]
+    )
+  ).toContain('entries_parent_ref_idx');
+  expect(
+    await planOf(
+      'SELECT 1 FROM ONLY entries x WHERE $1::uuid=thread_root_entry_id FOR KEY SHARE OF x',
+      [reply]
+    )
+  ).toContain('entries_thread_root_ref_idx');
+}, 1_200_000);
 
 describe('a tampered version 2 export fails with its named code and leaves nothing', () => {
   const firstFile = () => opened.names.find((name) => name.startsWith('files/'))!;

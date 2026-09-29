@@ -385,17 +385,31 @@ export function registerImportPartRoutes(
 
     // A `complete` already checking these parts (one whose caller gave up waiting, say behind a
     // proxy timeout) carries on without its caller; a retry is told to ask again shortly.
-    const checking = await pool.query(
-      `SELECT 1 FROM community_imports i
-       WHERE i.id=$1 AND i.upload_lease_until>=now()
-         AND EXISTS(SELECT 1 FROM community_import_parts p WHERE p.import_id=i.id)`,
-      [importId]
-    );
-    if (checking.rowCount) {
+    const stillChecking = async () =>
+      Boolean(
+        (
+          await pool.query(
+            `SELECT 1 FROM community_imports i
+             WHERE i.id=$1 AND i.upload_lease_until>=now()
+               AND EXISTS(SELECT 1 FROM community_import_parts p WHERE p.import_id=i.id)`,
+            [importId]
+          )
+        ).rowCount
+      );
+    const askAgain = () => {
       c.header('Retry-After', String(PART_RETRY_AFTER_SECONDS));
       return json(c, CommunityAdminImportSchema, projectImport(row, deps.singleMaxBytes), 202);
+    };
+    if (await stillChecking()) return askAgain();
+    let lease: string;
+    try {
+      lease = await acquireUploadLease(pool, importId, 'complete');
+    } catch (error) {
+      // Another `complete` took the lease between the look above and this one.
+      if (error instanceof ApiError && error.status === 409 && (await stillChecking()))
+        return askAgain();
+      throw error;
     }
-    const lease = await acquireUploadLease(pool, importId, 'complete');
     try {
       const parts = await listParts(pool, importId);
       if (
@@ -432,14 +446,10 @@ export function registerImportPartRoutes(
         const current = await loadImport(client, importId, 'FOR UPDATE');
         if (!current) throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
         if (uploader.kind === 'host') await assertHostActor(client, uploader.actor, now());
+        // The window was open when this check began, and an import whose lease is held does
+        // not expire (see `expireImports`), so a long check finishes even past the window.
         if (current.state !== 'awaiting_upload' || current.upload_lease_token !== lease)
           throw leaseLost();
-        if (current.upload_expires_at <= now())
-          throw new ApiError(
-            401,
-            'UNAUTHENTICATED',
-            'The upload window for this import has closed.'
-          );
         // Belt and braces: no part can change while this request holds the upload lease (a part
         // upload refuses to start under it), but the parts checked must be the parts committed.
         if (partFingerprint(await listParts(client, importId)) !== fingerprint) throw leaseLost();

@@ -149,7 +149,6 @@ const writeAgents: BatchWriter<'agents'> = async (client, rows, scope) => {
   );
 };
 
-/** Only the adopted owner's own memberships: everyone else's member row is historical. */
 /**
  * Refuse unless every id in `ids` (derived) is a row of `table` in this import's community: a
  * membership that names a channel, member, or agent the export does not hold is tampering.
@@ -169,6 +168,10 @@ async function allRestored(
   invalid(found.rows[0].n !== distinct.length);
 }
 
+/**
+ * Only the adopted owner's own memberships are restored: everyone else's member row is
+ * historical. Every membership must still name a channel and a member of this export.
+ */
 const writeChannelMembers: BatchWriter<'channelMembers'> = async (client, rows, scope) => {
   const derive = (id: string) => scope.derive(id);
   await allRestored(

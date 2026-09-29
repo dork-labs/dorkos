@@ -75,6 +75,22 @@ async function lockTarget(
   return job.rowCount ? communityId : null;
 }
 
+/**
+ * The batched teardown's passes, children before parents: every table an import writes, with
+ * messages in two passes, replies first, so no message goes while a reply still points at it (a
+ * reply's parent is always a top-level message). Deleting a message checks its replies through
+ * `entries_parent_ref_idx` and `entries_thread_root_ref_idx`.
+ */
+const TEARDOWN_PASSES: readonly (readonly [string, string])[] = IMPORTED_TABLES.flatMap(
+  (table): (readonly [string, string])[] =>
+    table === 'entries'
+      ? [
+          [table, 'AND parent_entry_id IS NOT NULL'],
+          [table, 'AND parent_entry_id IS NULL'],
+        ]
+      : [[table, '']]
+);
+
 /** Rows one teardown transaction deletes at most, so a large import never holds its lock long. */
 export const TEARDOWN_BATCH_ROWS = 5_000;
 
@@ -98,13 +114,11 @@ async function deleteRestoredRows(
         [communityId]
       );
       if (community.rows[0]?.lifecycle !== 'pending_owner') return 'done' as const;
-      for (const table of IMPORTED_TABLES) {
-        // Replies first, so no message is deleted while a reply still points at it.
-        const order = table === 'entries' ? 'ORDER BY (parent_entry_id IS NULL)' : '';
+      for (const [table, only] of TEARDOWN_PASSES) {
         const deleted = await client.query(
           // content-change: import-teardown
           `DELETE FROM ${table} WHERE ctid IN (
-             SELECT ctid FROM ${table} WHERE community_id=$1 ${order} LIMIT $2)`,
+             SELECT ctid FROM ${table} WHERE community_id=$1 ${only} LIMIT $2)`,
           [communityId, TEARDOWN_BATCH_ROWS]
         );
         if (deleted.rowCount) return 'more' as const;

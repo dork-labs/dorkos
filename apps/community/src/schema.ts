@@ -813,6 +813,13 @@ export const entries = pgTable(
       sql`(${table.authorMemberId} IS NULL) <> (${table.authorAgentId} IS NULL)`
     ),
     index('entries_thread_idx').on(table.channelId, table.threadRootEntryId, table.seq),
+    // Serve the reply and thread-root foreign key checks when a message is deleted.
+    index('entries_parent_ref_idx')
+      .on(table.parentEntryId, table.communityId)
+      .where(sql`${table.parentEntryId} IS NOT NULL`),
+    index('entries_thread_root_ref_idx')
+      .on(table.threadRootEntryId, table.communityId)
+      .where(sql`${table.threadRootEntryId} IS NOT NULL`),
     index('entries_community_idx').on(table.communityId),
     index('entries_community_created_idx').on(table.communityId, table.createdAt.desc()),
     foreignKey({
