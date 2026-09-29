@@ -542,6 +542,10 @@ import {
   traceRelay,
 } from './services/observability/index.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
+import { applyTrackerItems } from './services/session/fleet/flow-run-link.js';
+import { KnownProjectsStore } from './services/projects/known-projects-store.js';
+import { startProjectRegistry } from './services/projects/project-feeds.js';
+import { projectRegistry } from './services/projects/project-registry.js';
 import {
   MessageQueueStore,
   SessionEventStore,
@@ -2967,6 +2971,9 @@ async function start() {
     // `agent-permissions`). Read from the permission history in the same
     // database, when each card is read.
     suggestAlways: createAlwaysSuggestion(db),
+    // The project the asking session's folder belongs to, when the registry
+    // already knows it (spec `flow-multiproject` §6.2); a card never waits on git.
+    projectForFolder: (cwd) => projectRegistry.peek(cwd),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
       if (capability) return { title: capability.title, tier: capability.tier };
@@ -4131,6 +4138,19 @@ async function start() {
   app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
     roomStore.resolveRoomOrigins(sessionIds);
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
+  // Live session upserts carry the flow items a chat works on, exactly as
+  // `GET /api/sessions` does, so the first upsert after a list read no longer
+  // wipes them from the client's cache (spec `flow-multiproject` §6.8, D10).
+  sessionListBroadcaster.setTrackerItemsOverlay(applyTrackerItems);
+
+  // The project registry (spec `flow-multiproject` §6.1): every git main
+  // checkout this machine has seen, each with one stable short name. Seeded
+  // from agents, workspaces and installs, then fed by every live session.
+  startProjectRegistry(projectRegistry, new KnownProjectsStore(db), {
+    dorkHome,
+    agentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
+    workspaceSources: () => managedWorkspaces?.list().map((workspace) => workspace.source) ?? [],
+  });
 
   // Which room an Ask came from, for the two surfaces that answer that question:
   // the live fan-out of `interaction_pending`, and the list a window reads on

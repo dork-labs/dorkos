@@ -62,7 +62,7 @@ vi.mock('../extension-server-api-factory.js', () => ({
       extensionDir: '/fake/extensions/my-ext',
     },
     getScheduledCleanups: () => [],
-    releaseAccounts: () => {},
+    releaseListeners: () => {},
   }),
 }));
 

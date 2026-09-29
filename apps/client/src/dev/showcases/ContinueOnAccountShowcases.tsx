@@ -154,16 +154,28 @@ function variantTransport(answer: ContinueOptionsResponse, continueError?: Error
   });
 }
 
+/** The one flow item the flow-run variants serve. */
+const FLOW_ITEMS: readonly SessionTrackerItem[] = [
+  {
+    id: 'DOR-2353',
+    stage: 'execute',
+    runStatus: 'running',
+    startedAt: '2026-09-27T16:00:00.000Z',
+    via: 'this-chat',
+    ownChatSessionId: null,
+  },
+];
+
 /** One labelled variant: a button that opens the real picker over its own transport. */
 function Variant({
   label,
   answer,
-  trackerItem = null,
+  trackerItems = [],
   continueError,
 }: {
   label: string;
   answer: ContinueOptionsResponse;
-  trackerItem?: SessionTrackerItem | null;
+  trackerItems?: readonly SessionTrackerItem[];
   continueError?: Error;
 }) {
   const [open, setOpen] = useState(false);
@@ -184,7 +196,7 @@ function Variant({
               open={open}
               onOpenChange={setOpen}
               sessionId="playground-limited-session"
-              account={{ runtime: 'claude-code', accountId: 'acct-3', limit: null, trackerItem }}
+              account={{ runtime: 'claude-code', accountId: 'acct-3', limit: null, trackerItems }}
             />
           </TransportProvider>
         </QueryClientProvider>
@@ -207,7 +219,7 @@ export function ContinueOnAccountShowcases() {
       <Variant
         label="Advisor, flow run — recommended pill, Main reserved (dimmed, still selectable), Acct 4 kept out"
         answer={ADVISED}
-        trackerItem={{ id: 'DOR-2353', stage: 'execute' }}
+        trackerItems={FLOW_ITEMS}
       />
       <Variant
         label="Advisor, not a flow run — new-chat wording without the sort sentence"
@@ -218,7 +230,7 @@ export function ContinueOnAccountShowcases() {
       <Variant
         label="Server error — Continue is refused and the reason shows inline"
         answer={ADVISED}
-        trackerItem={{ id: 'DOR-2353', stage: 'execute' }}
+        trackerItems={FLOW_ITEMS}
         continueError={refusal('Flow could not be reached, so this was not changed.', 503)}
       />
     </PlaygroundSection>

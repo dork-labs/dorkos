@@ -197,6 +197,8 @@ describe('Database Migrations', () => {
       'connector_usage_attempts',
       'connector_usage_terminal_receipts',
       'handle_tombstones',
+      // The project registry (spec flow-multiproject §6.1, migration 0125).
+      'known_projects',
       'mesh_namespace_rules',
       // The message-search index and its frontier: a derived, rebuildable
       // projection of what was said, never a store (ADR 260728-214214,

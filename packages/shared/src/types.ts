@@ -10,6 +10,7 @@ export type {
   PermissionMode,
   PermissionModeId,
   Session,
+  TrackerItemRef,
   SessionOrigin,
   SessionListWarning,
   SessionListResponse,

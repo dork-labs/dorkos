@@ -49,6 +49,7 @@ import { resolveStanding } from '../services/notifications/notification-service.
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
+import { projectsOfFolders } from '../services/projects/project-registry.js';
 import {
   clampSchedulePermissionMode,
   taskWorkOf,
@@ -247,14 +248,34 @@ export function createTasksRouter(
     return { ...task, nextRuns, nextRun: live ?? nextRuns[0] ?? null };
   }
 
-  /** One task, ready to send: run times attached and its proposer named. */
+  /** The folder a task's runs start in: its agent's, or none for a task with no agent. */
+  function runFolderOf(task: Task): string | undefined {
+    return task.agentId ? meshCore?.getProjectPath(task.agentId) : undefined;
+  }
+
+  /**
+   * Stamp each task's project (spec `flow-multiproject` §6.2): the project of
+   * the folder its runs start in, resolved once per distinct folder. `null`
+   * for a task with no agent folder, or one in no repository.
+   */
+  async function withProjects(tasks: Task[]): Promise<Task[]> {
+    const folders = tasks.map(runFolderOf);
+    const projects = await projectsOfFolders(folders.flatMap((dir) => (dir ? [dir] : [])));
+    return tasks.map((task, i) => {
+      const folder = folders[i];
+      return { ...task, project: folder ? (projects.get(folder) ?? null) : null };
+    });
+  }
+
+  /** One task, ready to send: run times attached, its proposer named, its project stamped. */
   async function present(task: Task): Promise<Task> {
-    return withRunTimes(await withProposerName(task));
+    const [withProject] = await withProjects([withRunTimes(await withProposerName(task))]);
+    return withProject as Task;
   }
 
   /** {@link present} for a whole list, with one identity lookup per distinct agent. */
   async function presentAll(tasks: Task[]): Promise<Task[]> {
-    return (await withProposerNames(tasks)).map(withRunTimes);
+    return withProjects((await withProposerNames(tasks)).map(withRunTimes));
   }
 
   // === Template endpoints ===

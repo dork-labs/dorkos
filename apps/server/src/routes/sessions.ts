@@ -59,6 +59,7 @@ import {
   peekProjector,
 } from '../services/session/index.js';
 import { accountUsageForSession } from '../services/session/fleet/session-account.js';
+import { projectsOfFolders } from '../services/projects/project-registry.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import {
@@ -331,10 +332,14 @@ router.get('/daily-counts', async (req, res) => {
 // An unentitled caller gets `200` with an empty array, never `403`. That is the
 // rooms domain's own rule — "not a member answers exactly as no such room" — so
 // the response never tells a machine that Asks exist.
-router.get('/pending-interactions', (req, res) => {
+router.get('/pending-interactions', async (req, res) => {
   const bindings = req.app.locals.roomSessionBindings as RoomBindingsPort | undefined;
   const principal = readCallerPrincipal(req, res);
-  const interactions = listPendingInteractionsAcrossSessions().flatMap((row) => {
+  const rows = listPendingInteractionsAcrossSessions();
+  // Each row's project (spec `flow-multiproject` §6.2), resolved once per
+  // distinct folder; cached by the registry, so a warm server runs no git.
+  const projects = await projectsOfFolders(rows.map((row) => row.cwd));
+  const interactions = rows.flatMap((row) => {
     const binding = bindings?.bindingForSession(row.sessionId);
     // No `approvers`: nothing on a chat platform reaches this route, so a
     // `bridged` principal is unreachable here. See `AskSubject.approvers`.
@@ -349,6 +354,7 @@ router.get('/pending-interactions', (req, res) => {
         cwd: row.cwd,
         interaction: row.interaction,
         ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
+        project: projects.get(row.cwd) ?? null,
       },
     ];
   });

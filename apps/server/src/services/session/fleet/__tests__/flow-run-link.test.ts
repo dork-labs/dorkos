@@ -14,6 +14,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@dorkos/shared/types';
 
+import { createProjectRootResolver } from '../../../projects/resolve-project-root.js';
 import { runGit } from '../../../workspace/providers/git.js';
 import { createFlowRunLink, parseFlowRunState, type FlowRunLinkDeps } from '../flow-run-link.js';
 
@@ -67,16 +68,19 @@ function writeState(state: unknown): void {
   );
 }
 
-/** Spied deps over the real git runner and filesystem. */
+/**
+ * Spied deps over the real git runner and filesystem. The root comes from the
+ * one project-root rule, built fresh with the spied git so its calls count.
+ */
 function spiedDeps(now: () => number = () => 0) {
   const warn = vi.fn();
+  const spiedGit = vi.fn(runGit);
   const deps = {
-    runGit: vi.fn(runGit),
+    resolveRoot: createProjectRootResolver({ runGit: spiedGit, now }).resolve,
     readText: vi.fn((file: string) => readFile(file, 'utf8')),
     log: { warn },
-    now,
   } satisfies FlowRunLinkDeps;
-  return { ...deps, warn };
+  return { ...deps, runGit: spiedGit, warn };
 }
 
 beforeAll(() => {
@@ -111,14 +115,23 @@ describe('flowRunsFor', () => {
     writeState({ 'issue-1': run({}) });
     const link = createFlowRunLink(spiedDeps());
     const runs = await link.flowRunsFor(main);
-    expect(runs.get('s-1')).toEqual({ identifier: 'DOR-1', stage: 'execute', status: 'running' });
+    expect(runs.get('s-1')).toEqual([
+      {
+        identifier: 'DOR-1',
+        stage: 'execute',
+        status: 'running',
+        startedAt: '2026-09-26T16:00:00.000Z',
+        via: 'this-chat',
+        ownChatSessionId: null,
+      },
+    ]);
   });
 
   it('resolves a worktree cwd to the main checkout file', async () => {
     writeState({ 'issue-1': run({ sessionId: 's-wt', identifier: 'DOR-9' }) });
     const link = createFlowRunLink(spiedDeps());
     const runs = await link.flowRunsFor(worktree);
-    expect(runs.get('s-wt')?.identifier).toBe('DOR-9');
+    expect(runs.get('s-wt')?.[0]?.identifier).toBe('DOR-9');
   });
 
   it('reads a corrupt file as no runs and logs once per mtime', async () => {
@@ -167,7 +180,7 @@ describe('flowRunsFor', () => {
     writeState({ 'issue-1': run({ stage: 'verify' }) });
     const later = new Date(Date.now() + 5_000);
     utimesSync(path.join(main, '.dork', 'flow', 'flow-state.json'), later, later);
-    expect((await link.flowRunsFor(main)).get('s-1')?.stage).toBe('verify');
+    expect((await link.flowRunsFor(main)).get('s-1')?.[0]?.stage).toBe('verify');
     expect(deps.readText).toHaveBeenCalledTimes(2);
   });
   it('shares one git lookup between concurrent calls for one cwd', async () => {
@@ -180,7 +193,7 @@ describe('flowRunsFor', () => {
       link.flowRunsFor(worktree),
     ]);
     expect(deps.runGit).toHaveBeenCalledTimes(1);
-    expect(all.every((runs) => runs.get('s-1')?.identifier === 'DOR-1')).toBe(true);
+    expect(all.every((runs) => runs.get('s-1')?.[0]?.identifier === 'DOR-1')).toBe(true);
   });
 
   it('sees a same-size rewrite by rename at the same mtime', async () => {
@@ -189,20 +202,20 @@ describe('flowRunsFor', () => {
     writeState({ 'issue-1': run({ stage: 'execute' }) });
     utimesSync(file, pinned, pinned);
     const link = createFlowRunLink(spiedDeps());
-    expect((await link.flowRunsFor(main)).get('s-1')?.stage).toBe('execute');
+    expect((await link.flowRunsFor(main)).get('s-1')?.[0]?.stage).toBe('execute');
     // Same byte length ("execute" and "decompo" are both 7), same mtime, new inode.
     const next = `${file}.tmp`;
     writeFileSync(next, JSON.stringify({ 'issue-1': run({ stage: 'decompo' }) }));
     utimesSync(next, pinned, pinned);
     renameSync(next, file);
-    expect((await link.flowRunsFor(main)).get('s-1')?.stage).toBe('decompo');
+    expect((await link.flowRunsFor(main)).get('s-1')?.[0]?.stage).toBe('decompo');
   });
 
   it('reads through the real 1 MB capped reader, and a larger file reads as no runs', async () => {
     writeState({ 'issue-1': run({}) });
     const warn = vi.fn();
-    const link = createFlowRunLink({ log: { warn } });
-    expect((await link.flowRunsFor(main)).get('s-1')?.identifier).toBe('DOR-1');
+    const link = createFlowRunLink({ log: { warn }, resolveRoot: spiedDeps().resolveRoot });
+    expect((await link.flowRunsFor(main)).get('s-1')?.[0]?.identifier).toBe('DOR-1');
     writeState({ 'issue-1': run({ padding: 'x'.repeat(1024 * 1024) }) });
     expect((await link.flowRunsFor(main)).size).toBe(0);
     expect(warn).toHaveBeenCalledTimes(1);
@@ -210,10 +223,20 @@ describe('flowRunsFor', () => {
 });
 
 describe('applyTrackerItems', () => {
-  it('sets trackerItem on a session a run names (validation 1)', async () => {
+  it('sets trackerItems and the deprecated trackerItem on a session a run names (validation 1)', async () => {
     writeState({ 'issue-1': run({ stage: 'verify', status: 'waiting_for_review' }) });
     const page = [session('s-1', worktree)];
     await createFlowRunLink(spiedDeps()).applyTrackerItems(page);
+    expect(page[0].trackerItems).toEqual([
+      {
+        id: 'DOR-1',
+        stage: 'verify',
+        runStatus: 'waiting_for_review',
+        startedAt: '2026-09-26T16:00:00.000Z',
+        via: 'this-chat',
+        ownChatSessionId: null,
+      },
+    ]);
     expect(page[0].trackerItem).toEqual({
       id: 'DOR-1',
       stage: 'verify',
@@ -236,10 +259,10 @@ describe('applyTrackerItems', () => {
     const snapshot = structuredClone(page);
     await createFlowRunLink(spiedDeps()).applyTrackerItems(page);
     expect(page).toEqual(snapshot);
-    expect(page.every((s) => !('trackerItem' in s))).toBe(true);
+    expect(page.every((s) => !('trackerItem' in s) && !('trackerItems' in s))).toBe(true);
   });
 
-  it('prefers the most recently started run when two name one session', async () => {
+  it('keeps every run that names one session, newest first (N9)', async () => {
     writeState({
       'issue-1': run({ startedAt: '2026-09-26T16:00:00.000Z' }),
       'issue-2': run({
@@ -247,10 +270,89 @@ describe('applyTrackerItems', () => {
         identifier: 'DOR-2',
         startedAt: '2026-09-26T17:00:00.000Z',
       }),
+      'issue-3': run({
+        issueId: 'issue-3',
+        identifier: 'DOR-3',
+        startedAt: '2026-09-26T16:30:00.000Z',
+      }),
     });
     const page = [session('s-1', main)];
     await createFlowRunLink(spiedDeps()).applyTrackerItems(page);
+    expect(page[0].trackerItems?.map((item) => item.id)).toEqual(['DOR-2', 'DOR-3', 'DOR-1']);
     expect(page[0].trackerItem?.id).toBe('DOR-2');
+  });
+
+  it('orders by parsed time, not by string, and breaks a tie by file order', async () => {
+    writeState({
+      // The same instant written two ways: string order would put the offset
+      // form first; as dates they tie, and the later record in the file wins.
+      'issue-1': run({ identifier: 'DOR-1', startedAt: '2026-09-26T18:00:00+02:00' }),
+      'issue-2': run({
+        issueId: 'issue-2',
+        identifier: 'DOR-2',
+        startedAt: '2026-09-26T16:00:00.000Z',
+      }),
+      // Later by time, earlier by string.
+      'issue-3': run({
+        issueId: 'issue-3',
+        identifier: 'DOR-3',
+        startedAt: '2026-09-26T19:00:00+02:00',
+      }),
+    });
+    const page = [session('s-1', main)];
+    await createFlowRunLink(spiedDeps()).applyTrackerItems(page);
+    expect(page[0].trackerItems?.map((item) => item.id)).toEqual(['DOR-3', 'DOR-2', 'DOR-1']);
+  });
+
+  it('lists work a chat dispatched into chats of their own, as own-chat', async () => {
+    writeState({
+      'issue-1': run({
+        sessionId: 'lead',
+        identifier: 'DOR-1',
+        startedAt: '2026-09-26T15:00:00.000Z',
+      }),
+      'issue-2': run({
+        issueId: 'issue-2',
+        identifier: 'DOR-2',
+        sessionId: 'worker-dorkos',
+        dispatchedBy: 'lead',
+        host: 'dorkos',
+        startedAt: '2026-09-26T16:00:00.000Z',
+      }),
+      'issue-3': run({
+        issueId: 'issue-3',
+        identifier: 'DOR-3',
+        sessionId: 'worker-cli',
+        dispatchedBy: 'lead',
+        host: 'cli',
+        startedAt: '2026-09-26T17:00:00.000Z',
+      }),
+    });
+    const page = [session('lead', main), session('worker-dorkos', main)];
+    await createFlowRunLink(spiedDeps()).applyTrackerItems(page);
+    expect(
+      page[0].trackerItems?.map(({ id, via, ownChatSessionId }) => ({ id, via, ownChatSessionId }))
+    ).toEqual([
+      // A chat outside DorkOS has no page to open, so it names no chat.
+      { id: 'DOR-3', via: 'own-chat', ownChatSessionId: null },
+      { id: 'DOR-2', via: 'own-chat', ownChatSessionId: 'worker-dorkos' },
+      { id: 'DOR-1', via: 'this-chat', ownChatSessionId: null },
+    ]);
+    // The deprecated field is the newest item, whichever way it belongs.
+    expect(page[0].trackerItem?.id).toBe('DOR-3');
+    // The worker's own chat sees its run as its own.
+    expect(page[1].trackerItems).toEqual([
+      expect.objectContaining({ id: 'DOR-2', via: 'this-chat', ownChatSessionId: null }),
+    ]);
+  });
+
+  it('counts a run dispatched by its own chat once, as this-chat', async () => {
+    writeState({ 'issue-1': run({ dispatchedBy: 's-1', host: 'dorkos' }) });
+    const page = [session('s-1', main)];
+    await createFlowRunLink(spiedDeps()).applyTrackerItems(page);
+    expect(page[0].trackerItems).toEqual([
+      expect.objectContaining({ id: 'DOR-1', via: 'this-chat', ownChatSessionId: null }),
+    ]);
   });
 
   it('asks git once per distinct cwd and reads the file once', async () => {
@@ -285,6 +387,7 @@ describe('parseFlowRunState', () => {
     ['a non-string runtime', { runtime: 7 }],
     ['a missing sessionId', { sessionId: undefined }],
     ['a negative attemptCount', { attemptCount: -1 }],
+    ['a non-string dispatchedBy', { dispatchedBy: 42 }],
   ])('rejects the whole file for %s', (_name, over) => {
     expect(parseFlowRunState(JSON.stringify({ 'issue-1': run(over) }))).toBeNull();
   });

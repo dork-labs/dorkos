@@ -214,14 +214,14 @@ export class ExtensionServerLifecycle {
       }
 
       const router = Router();
-      const { ctx, getScheduledCleanups, releaseAccounts } = createDataProviderContext({
+      const { ctx, getScheduledCleanups, releaseListeners } = createDataProviderContext({
         extensionId: id,
         extensionDir: record.path,
         dorkHome: this.dorkHome,
       });
       // A register() that throws after adding an account listener or advisor
       // must not leave it behind: this instance never becomes active.
-      registered = releaseAccounts;
+      registered = releaseListeners;
 
       const result = await registerFn(router, ctx);
       const cleanup = typeof result === 'function' ? result : null;
@@ -237,7 +237,7 @@ export class ExtensionServerLifecycle {
         router,
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
-        releaseAccounts,
+        releaseListeners,
         sourceKey,
       });
       registered = undefined;
@@ -283,7 +283,7 @@ export class ExtensionServerLifecycle {
 
     // After the extension's own cleanup, so it can still unregister gracefully;
     // whatever it left behind goes now.
-    active.releaseAccounts?.();
+    active.releaseListeners?.();
 
     this.serverExtensions.delete(id);
     logger.info(`[Extensions] Server shutdown for ${id}`);

@@ -18,6 +18,7 @@ import {
   createMockAccountUsage,
   createMockSession,
   createMockSessionLimit,
+  createMockTrackerItem,
   createMockTransport,
 } from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
@@ -388,11 +389,15 @@ describe('useSessionAccount', () => {
         runtime: 'claude-code',
         accountId: 'acct-2',
         trackerItem: { id: 'DOR-2353', stage: 'execute' },
+        trackerItems: [
+          createMockTrackerItem(),
+          createMockTrackerItem({ id: 'DOR-2400', via: 'own-chat', ownChatSessionId: 'other' }),
+        ],
       }),
     ];
     const { result } = renderAccount(transportWith(2));
     await waitFor(() =>
-      expect(result.current.trackerItem).toEqual({ id: 'DOR-2353', stage: 'execute' })
+      expect(result.current.trackerItems.map((item) => item.id)).toEqual(['DOR-2353', 'DOR-2400'])
     );
   });
 });

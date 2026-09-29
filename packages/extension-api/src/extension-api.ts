@@ -18,6 +18,33 @@ export type ExtensionPointId =
   | 'settings.tabs'
   | 'right-panel';
 
+/** A project as core knows it: a git main checkout. */
+export interface ProjectRef {
+  /** Absolute, canonical path of the main checkout. */
+  readonly root: string;
+  /**
+   * Short display name: URL-safe, unique among known projects, and stable once
+   * assigned (basename, or "basename~parent" on a clash). Safe in URLs as-is.
+   */
+  readonly name: string;
+}
+
+/** One tracker item a chat is working on, newest first in lists. */
+export interface TrackerItemRef {
+  /** The tracker identifier, e.g. `DOR-2387`. */
+  readonly id: string;
+  /** The flow stage the run is in, or null when it reports none. */
+  readonly stage: string | null;
+  /** The run's own status, or null when it reports none. */
+  readonly runStatus: string | null;
+  /** ISO-8601 time the run started. */
+  readonly startedAt: string;
+  /** 'this-chat': this chat works on it. 'own-chat': this chat started it and it runs in its own chat. */
+  readonly via: 'this-chat' | 'own-chat';
+  /** That chat's session id: the "Open its chat" target. Null for 'this-chat', or when it is not a DorkOS chat. */
+  readonly ownChatSessionId: string | null;
+}
+
 /** Read-only projection of host state. */
 export interface ExtensionReadableState {
   currentCwd: string | null;

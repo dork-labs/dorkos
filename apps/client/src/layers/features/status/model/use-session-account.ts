@@ -9,6 +9,7 @@
  */
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
+import type { TrackerItemRef } from '@dorkos/shared/types';
 import { useAccountIdentityGate, useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useSessions, useSessionStreamStatus } from '@/layers/entities/session';
 import {
@@ -22,6 +23,9 @@ import { withExpiredWindows } from '../lib/account-usage-status';
 import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from './use-account-switch';
 import { useResolvedSessionRuntime } from './use-runtime-chip';
 import type { AccountPromotionState } from './status-bar-registry';
+
+/** Shared empty list, so a session with no flow items never mints a fresh array. */
+const NO_TRACKER_ITEMS: readonly SessionTrackerItem[] = [];
 
 /** The registry id every runtime without an account registry bills (S4 N9). */
 const IMPLICIT_ACCOUNT_ID = 'default';
@@ -46,15 +50,12 @@ function newerReading(
   return updatedAtMs(fromStatus) > updatedAtMs(cached) ? fromStatus : cached;
 }
 
-/** The flow work item a session serves, as `Session.trackerItem` carries it. */
-export interface SessionTrackerItem {
-  /** The item identifier, such as `DOR-2353`. */
-  id: string;
-  /** The flow run's stage, when it reports one. */
-  stage?: string;
-  /** The flow run's own status, when it reports one. */
-  runStatus?: string;
-}
+/**
+ * One flow work item a session works on, as `Session.trackerItems` carries it
+ * (spec `flow-multiproject` §6.8): `via: 'own-chat'` for work this chat
+ * started that runs in a chat of its own.
+ */
+export type SessionTrackerItem = TrackerItemRef;
 
 /** What {@link useSessionAccount} knows about a session's account. */
 export interface SessionAccount {
@@ -81,8 +82,8 @@ export interface SessionAccount {
   limit: SessionLimitView | null;
   /** How the chip reads the account (see `chipState`). */
   chipState: ChipState;
-  /** The flow work item this session serves, or `null`. */
-  trackerItem: SessionTrackerItem | null;
+  /** The flow work items this session works on, newest first; empty when none. */
+  trackerItems: readonly SessionTrackerItem[];
   /** The session's lifecycle, or `null` before it has launched. */
   lifecycle: SessionLifecycle | null;
   /**
@@ -112,7 +113,7 @@ export function accountChipPromotion(account: SessionAccount): AccountPromotionS
  * Which account a session spends and how that account is doing.
  *
  * Reads only data already on the client: the session row (its `accountId`,
- * `account` path, `status` and `trackerItem`), the session stream's live
+ * `account` path, `status` and `trackerItems`), the session stream's live
  * status (its `limit` and `lifecycle` win over the row's, which is only as
  * fresh as the last list read, and its `accountUsage` stands in until the
  * shared cache has a newer reading), and the account usage the session list
@@ -212,7 +213,7 @@ export function useSessionAccount(
     usage,
     limit,
     chipState: chipState(usage, limit),
-    trackerItem: row?.trackerItem ?? null,
+    trackerItems: row?.trackerItems ?? NO_TRACKER_ITEMS,
     lifecycle,
     pending,
   };
