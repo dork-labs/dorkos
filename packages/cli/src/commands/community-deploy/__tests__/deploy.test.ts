@@ -68,7 +68,7 @@ const runtime = {
       version: 1,
     },
   ],
-  addresses: [{ id: 'address-id', address: '203.0.113.1', type: 'v4', region: '' }],
+  addresses: [{ address: '203.0.113.1', type: 'v4', region: '' }],
 };
 
 function harness(initial = journal()) {
@@ -136,9 +136,9 @@ describe('Community deploy phase', () => {
       resources: {
         flyMachineId: 'machine-id',
         flyReleaseId: 'release-id',
-        flyAddressId: 'address-id',
       },
     });
+    expect(result.journal.resources).not.toHaveProperty('flyAddressId');
     expect(JSON.stringify(result.journal)).not.toContain('postgresql://');
   });
 

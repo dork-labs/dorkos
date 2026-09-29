@@ -32,9 +32,19 @@ const NeonBranchSchema = z
     default: z.boolean(),
   })
   .passthrough();
+/**
+ * Neon issues database ids as integers (`Database.id: number` in the Neon API), unlike its string
+ * project, branch and endpoint ids; a live launch stopped on this (DOR-2536). A string is still
+ * accepted in case the API ever changes. Either way the id leaves this module as a digit string,
+ * so journals and comparisons downstream only ever see one type.
+ */
+const NeonDatabaseIdSchema = z.union([
+  ExternalIdentifierSchema,
+  z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).transform(String),
+]);
 const NeonDatabaseSchema = z
   .object({
-    id: ExternalIdentifierSchema,
+    id: NeonDatabaseIdSchema,
     branch_id: ExternalIdentifierSchema,
     name: ExternalLabelSchema,
     owner_name: ExternalLabelSchema,

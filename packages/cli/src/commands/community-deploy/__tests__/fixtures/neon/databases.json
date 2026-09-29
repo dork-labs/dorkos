@@ -1,8 +1,10 @@
 [
   {
-    "id": "db_fixture_01",
+    "id": 4821907,
     "branch_id": "br-fixture-01",
     "name": "community",
-    "owner_name": "community_owner"
+    "owner_name": "community_owner",
+    "created_at": "2026-09-21T00:00:00Z",
+    "updated_at": "2026-09-21T00:00:00Z"
   }
 ]

@@ -203,7 +203,7 @@ case "$1 $2" in
     ;;
   "ips list")
     test "$3 $4 $5" = "--app community-space --json" || exit 9
-    printf '%s' '[{"ID":"ip_01","Address":"203.0.113.1","Type":"shared_v4","Region":"global"}]'
+    printf '%s' '[{"ID":"","Address":"203.0.113.1","Type":"shared_v4","Region":"global","CreatedAt":"2026-09-21T00:00:00Z","ServiceName":"","Network":null}]'
     ;;
   *) exit 9 ;;
 esac
@@ -230,9 +230,37 @@ esac
           version: 1,
         },
       ],
-      addresses: [{ id: 'ip_01', address: '203.0.113.1', type: 'shared_v4', region: 'global' }],
+      // flyctl reports every address with an empty ID, so the address is the identity.
+      addresses: [{ address: '203.0.113.1', type: 'shared_v4', region: 'global' }],
     });
     expect(JSON.stringify(result)).not.toContain('CANARY_HEALTH_OUTPUT');
+  });
+
+  // flyctl v0.4.104 builds `ips list --json` from the Machines API, which has no address id, so
+  // every row's ID is empty. An app normally has an IPv4 and an IPv6 address.
+  it('reads the address list flyctl really prints, with an empty ID on every row', async () => {
+    const fixture = JSON.parse(
+      await readFile(new URL('./fixtures/fly/addresses.json', import.meta.url), 'utf8')
+    ) as Array<Record<string, unknown>>;
+    const addresses = [
+      ...fixture,
+      { ...fixture[0], Address: '2001:db8::1', Type: 'v6', Region: '' },
+    ];
+    const executable = await fakeFlyctl(`
+case "$1 $2" in
+  "machine list"|"releases --app") printf '%s' '[]' ;;
+  "ips list") printf '%s' '${JSON.stringify(addresses)}' ;;
+  *) exit 9 ;;
+esac
+`);
+    await expect(
+      readFlyRuntimeInventory(options(executable), 'community-space')
+    ).resolves.toMatchObject({
+      addresses: [
+        { address: '203.0.113.1', type: 'shared_v4', region: 'global' },
+        { address: '2001:db8::1', type: 'v6', region: '' },
+      ],
+    });
   });
 
   it.each([
@@ -264,7 +292,7 @@ esac
       'duplicate address',
       '[]',
       '[]',
-      '[{"ID":"ip_01","Address":"203.0.113.1","Type":"shared_v4","Region":"global"},{"ID":"ip_01","Address":"2001:db8::1","Type":"v6","Region":"global"}]',
+      '[{"ID":"","Address":"203.0.113.1","Type":"shared_v4","Region":"global"},{"ID":"","Address":"203.0.113.1","Type":"shared_v4","Region":"global"}]',
     ],
   ])('fails closed on invalid runtime %s', async (_label, machines, releases, addresses) => {
     const executable = await fakeFlyctl(`
