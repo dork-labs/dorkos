@@ -285,8 +285,9 @@ export class SessionListBroadcaster {
    * reason {@link setOriginResolvers} gives: it must survive a restart of
    * discovery after a live Claude account switch.
    *
-   * @param overlay - Sets both fields in place on a page of sessions
-   *   (`applyTrackerItems` in `fleet/flow-run-link.ts`).
+   * @param overlay - Sets both fields in place on a page of sessions. The
+   *   composition root passes `applyTrackerItemsLive` (`fleet/flow-run-link.ts`),
+   *   which never runs git on this path.
    */
   setTrackerItemsOverlay(overlay: TrackerItemsOverlay): void {
     this.trackerItems = overlay;
@@ -671,9 +672,15 @@ export class SessionListBroadcaster {
     // stringly-typed drift: clients filter on the same `type` values.
     const outgoing = this.withOverlays(validated);
     if (outgoing.type === 'session_upserted' && this.trackerItems) {
-      return this.withTrackerItems(outgoing, this.trackerItems).then((withItems) =>
-        this.send(withItems)
-      );
+      return this.withTrackerItems(outgoing, this.trackerItems).then((withItems) => {
+        // The overlay awaited a file read; the runtime may have retired the id
+        // meanwhile, and the drop above has to hold after the wait too.
+        if (runtime && withItems.type === 'session_upserted') {
+          const canonical = runtime.getInternalSessionId(withItems.session.id);
+          if (canonical !== undefined && canonical !== withItems.session.id) return;
+        }
+        this.send(withItems);
+      });
     }
     this.send(outgoing);
   }

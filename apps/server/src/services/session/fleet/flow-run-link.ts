@@ -43,7 +43,7 @@ import { readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { Session } from '@dorkos/shared/types';
 
 import { logger } from '../../../lib/logger.js';
-import { resolveProjectRoot } from '../../projects/resolve-project-root.js';
+import { peekProjectRoot, resolveProjectRoot } from '../../projects/resolve-project-root.js';
 
 /** The largest `flow-state.json` read, in bytes. */
 const FLOW_STATE_MAX_BYTES = 1024 * 1024;
@@ -76,6 +76,8 @@ const FlowRunSchema = z.looseObject({
    */
   dispatchedBy: z.string().optional(),
   heartbeatAt: z.string().optional(),
+  /** Fleet contract 4.1.0: when flow last wrote the record. A non-string makes the file invalid. */
+  updatedAt: z.string().optional(),
   completedAt: z.string().optional(),
   account: z.string().optional(),
   host: z.string().optional(),
@@ -190,6 +192,11 @@ function indexBySession(state: Record<string, FlowRunRecord>): Map<string, FlowR
 export interface FlowRunLinkDeps {
   /** The main checkout a cwd belongs to (`services/projects/resolve-project-root.ts`). */
   resolveRoot: (cwd: string) => Promise<string | null>;
+  /**
+   * The cached main checkout of a cwd without running git: the root, `null`
+   * for no project, or `undefined` when not resolved yet.
+   */
+  peekRoot: (cwd: string) => string | null | undefined;
   /** Read a file's text with the size cap applied. */
   readText: (filePath: string) => Promise<string>;
   /** Where a file that cannot be read or parsed is reported. */
@@ -208,17 +215,26 @@ export interface FlowRunLinkReader {
   flowRunsFor(cwd: string): Promise<Map<string, FlowRunLink[]>>;
   /**
    * Set `trackerItems` (every run, newest first) and the deprecated
-   * `trackerItem` (the newest) on every session a flow run names, in place. A
-   * session no run names is left exactly as it was. Each distinct cwd is
-   * resolved once.
+   * `trackerItem` (the newest run in THIS chat) on every session a flow run
+   * names, in place. A session no run names is left exactly as it was. Each
+   * distinct cwd is resolved once.
    *
    * @param page - The sessions about to be returned.
    */
   applyTrackerItems(page: Session[]): Promise<void>;
+  /**
+   * {@link applyTrackerItems} for a live event: it never runs git. A cwd whose
+   * project is not resolved yet is resolved in the background and its
+   * sessions are left as they are; the next event or list read carries them.
+   *
+   * @param page - The sessions about to be broadcast.
+   */
+  applyTrackerItemsLive(page: Session[]): Promise<void>;
 }
 
 const defaultDeps: FlowRunLinkDeps = {
   resolveRoot: resolveProjectRoot,
+  peekRoot: peekProjectRoot,
   readText: (filePath) =>
     readTextFileWithin(filePath, FLOW_STATE_MAX_BYTES, 'The flow run file (flow-state.json)'),
   log: logger,
@@ -290,15 +306,33 @@ export function createFlowRunLink(overrides: Partial<FlowRunLinkDeps> = {}): Flo
     return file === null ? new Map() : runsIn(file);
   }
 
-  async function applyTrackerItems(page: Session[]): Promise<void> {
+  /** The runs of one cwd without git: `undefined` when its root is not known yet. */
+  function flowRunsForLive(cwd: string): Promise<Map<string, FlowRunLink[]>> | undefined {
+    const root = deps.peekRoot(cwd);
+    if (root === undefined) {
+      void deps.resolveRoot(cwd).catch(() => null);
+      return undefined;
+    }
+    return root === null
+      ? Promise.resolve(new Map())
+      : runsIn(path.join(root, FLOW_STATE_RELATIVE_PATH));
+  }
+
+  async function overlay(
+    page: Session[],
+    runsOf: (cwd: string) => Promise<Map<string, FlowRunLink[]>> | undefined
+  ): Promise<void> {
     const cwds = [...new Set(page.flatMap((s) => (s.cwd ? [s.cwd] : [])))];
-    const runsByCwd = new Map(
-      await Promise.all(cwds.map(async (cwd) => [cwd, await flowRunsFor(cwd)] as const))
+    const runsByCwd = new Map<string, Map<string, FlowRunLink[]>>();
+    await Promise.all(
+      cwds.map(async (cwd) => {
+        const runs = runsOf(cwd);
+        if (runs) runsByCwd.set(cwd, await runs);
+      })
     );
     for (const session of page) {
       const links = session.cwd ? runsByCwd.get(session.cwd)?.get(session.id) : undefined;
-      const newest = links?.[0];
-      if (!links || !newest) continue;
+      if (!links || links.length === 0) continue;
       session.trackerItems = links.map((link) => ({
         id: link.identifier,
         stage: link.stage,
@@ -308,16 +342,25 @@ export function createFlowRunLink(overrides: Partial<FlowRunLinkDeps> = {}): Flo
         ownChatSessionId: link.ownChatSessionId,
       }));
       // Deprecated, kept for older flow installs until spec §6.8's removal
-      // condition holds: the newest item, in the shape it always had.
-      session.trackerItem = {
-        id: newest.identifier,
-        stage: newest.stage,
-        runStatus: newest.status,
-      };
+      // condition holds, with the meaning it always had: the newest run IN
+      // this chat. Work this chat started in chats of their own is only in
+      // `trackerItems`, so an older reader never mistakes it for this chat's.
+      const own = links.find((link) => link.via === 'this-chat');
+      if (own) {
+        session.trackerItem = { id: own.identifier, stage: own.stage, runStatus: own.status };
+      }
     }
   }
 
-  return { flowRunsFor, applyTrackerItems };
+  function applyTrackerItems(page: Session[]): Promise<void> {
+    return overlay(page, flowRunsFor);
+  }
+
+  function applyTrackerItemsLive(page: Session[]): Promise<void> {
+    return overlay(page, flowRunsForLive);
+  }
+
+  return { flowRunsFor, applyTrackerItems, applyTrackerItemsLive };
 }
 
 const defaultReader = createFlowRunLink();
@@ -342,4 +385,14 @@ export function flowRunsFor(cwd: string): Promise<Map<string, FlowRunLink[]>> {
  */
 export function applyTrackerItems(page: Session[]): Promise<void> {
   return defaultReader.applyTrackerItems(page);
+}
+
+/**
+ * {@link applyTrackerItems} for a live event, never running git. See
+ * {@link FlowRunLinkReader.applyTrackerItemsLive}.
+ *
+ * @param page - The sessions about to be broadcast.
+ */
+export function applyTrackerItemsLive(page: Session[]): Promise<void> {
+  return defaultReader.applyTrackerItemsLive(page);
 }

@@ -151,7 +151,7 @@ export function cwdOf(stored: StoredSessionLimit): string | undefined {
 
 /**
  * The tracker items a limited session works on, newest first, in the shape the
- * account advisor sees them, plus the deprecated newest one.
+ * account advisor sees them, plus the deprecated newest one in this chat.
  */
 async function trackerItemsOf(
   sessionId: string,
@@ -160,10 +160,11 @@ async function trackerItemsOf(
   if (!cwd) return { trackerItems: [] };
   try {
     const links = (await flowRunsFor(cwd)).get(sessionId) ?? [];
-    const newest = links[0];
+    // The deprecated field keeps its meaning: the newest run in this chat.
+    const own = links.find((link) => link.via === 'this-chat');
     return {
       trackerItems: links.map((link) => ({ id: link.identifier, via: link.via })),
-      ...(newest ? { trackerItem: { id: newest.identifier } } : {}),
+      ...(own ? { trackerItem: { id: own.identifier } } : {}),
     };
   } catch {
     return { trackerItems: [] };

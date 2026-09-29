@@ -382,6 +382,30 @@ describe('useSessionAccount', () => {
     expect(result.current.accountId).toBe('acct-1');
   });
 
+  it('reads an older server that sends only the deprecated trackerItem as that one item', async () => {
+    mockSessions = [
+      createMockSession({
+        id: SID,
+        runtime: 'claude-code',
+        accountId: 'acct-2',
+        trackerItem: { id: 'DOR-2001', stage: 'execute' },
+      }),
+    ];
+    const { result } = renderAccount(transportWith(2));
+    await waitFor(() =>
+      expect(result.current.trackerItems).toEqual([
+        {
+          id: 'DOR-2001',
+          stage: 'execute',
+          runStatus: null,
+          startedAt: '',
+          via: 'this-chat',
+          ownChatSessionId: null,
+        },
+      ])
+    );
+  });
+
   it('carries the flow item the session serves', async () => {
     mockSessions = [
       createMockSession({

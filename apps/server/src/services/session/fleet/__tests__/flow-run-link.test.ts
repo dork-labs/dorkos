@@ -68,6 +68,10 @@ function writeState(state: unknown): void {
   );
 }
 
+function rootDeps(resolver: ReturnType<typeof createProjectRootResolver>) {
+  return { resolveRoot: resolver.resolve, peekRoot: resolver.peek };
+}
+
 /**
  * Spied deps over the real git runner and filesystem. The root comes from the
  * one project-root rule, built fresh with the spied git so its calls count.
@@ -76,7 +80,7 @@ function spiedDeps(now: () => number = () => 0) {
   const warn = vi.fn();
   const spiedGit = vi.fn(runGit);
   const deps = {
-    resolveRoot: createProjectRootResolver({ runGit: spiedGit, now }).resolve,
+    ...rootDeps(createProjectRootResolver({ runGit: spiedGit, now })),
     readText: vi.fn((file: string) => readFile(file, 'utf8')),
     log: { warn },
   } satisfies FlowRunLinkDeps;
@@ -214,7 +218,8 @@ describe('flowRunsFor', () => {
   it('reads through the real 1 MB capped reader, and a larger file reads as no runs', async () => {
     writeState({ 'issue-1': run({}) });
     const warn = vi.fn();
-    const link = createFlowRunLink({ log: { warn }, resolveRoot: spiedDeps().resolveRoot });
+    const { resolveRoot, peekRoot } = spiedDeps();
+    const link = createFlowRunLink({ log: { warn }, resolveRoot, peekRoot });
     expect((await link.flowRunsFor(main)).get('s-1')?.[0]?.identifier).toBe('DOR-1');
     writeState({ 'issue-1': run({ padding: 'x'.repeat(1024 * 1024) }) });
     expect((await link.flowRunsFor(main)).size).toBe(0);
@@ -338,12 +343,23 @@ describe('applyTrackerItems', () => {
       { id: 'DOR-2', via: 'own-chat', ownChatSessionId: 'worker-dorkos' },
       { id: 'DOR-1', via: 'this-chat', ownChatSessionId: null },
     ]);
-    // The deprecated field is the newest item, whichever way it belongs.
-    expect(page[0].trackerItem?.id).toBe('DOR-3');
+    // The deprecated field keeps its meaning: the newest run IN this chat,
+    // never work it started in chats of their own.
+    expect(page[0].trackerItem?.id).toBe('DOR-1');
     // The worker's own chat sees its run as its own.
     expect(page[1].trackerItems).toEqual([
       expect.objectContaining({ id: 'DOR-2', via: 'this-chat', ownChatSessionId: null }),
     ]);
+  });
+
+  it('leaves the deprecated trackerItem off a chat whose only items run in other chats', async () => {
+    writeState({
+      'issue-1': run({ sessionId: 'worker', dispatchedBy: 'lead', host: 'dorkos' }),
+    });
+    const page = [session('lead', main)];
+    await createFlowRunLink(spiedDeps()).applyTrackerItems(page);
+    expect(page[0].trackerItems).toEqual([expect.objectContaining({ via: 'own-chat' })]);
+    expect('trackerItem' in page[0]).toBe(false);
   });
 
   it('counts a run dispatched by its own chat once, as this-chat', async () => {
@@ -375,7 +391,49 @@ describe('applyTrackerItems', () => {
   });
 });
 
+describe('applyTrackerItemsLive', () => {
+  it('never runs git for a cold folder: it resolves in the background and the next event carries the items', async () => {
+    writeState({ 'issue-1': run({}) });
+    const deps = spiedDeps();
+    const link = createFlowRunLink(deps);
+    const first = [session('s-1', worktree)];
+    await link.applyTrackerItemsLive(first);
+    // Nothing waited on git: the row went out as it was.
+    expect('trackerItems' in first[0]).toBe(false);
+    // The background resolve lands, and the next live event reads the items.
+    await vi.waitFor(() => expect(deps.runGit).toHaveBeenCalledTimes(1));
+    await vi.waitFor(async () => {
+      const next = [session('s-1', worktree)];
+      await link.applyTrackerItemsLive(next);
+      expect(next[0].trackerItems?.[0]?.id).toBe('DOR-1');
+    });
+    expect(deps.runGit).toHaveBeenCalledTimes(1);
+  });
+
+  it('awaits no git call while it waits: peek, not resolve, decides', async () => {
+    writeState({ 'issue-1': run({}) });
+    let release!: () => void;
+    const stalled = new Promise<string | null>((resolve) => (release = () => resolve(main)));
+    const link = createFlowRunLink({
+      resolveRoot: () => stalled,
+      peekRoot: () => undefined,
+      readText: (file) => readFile(file, 'utf8'),
+      log: { warn: vi.fn() },
+    });
+    const page = [session('s-1', main)];
+    // Resolves even though git never answers.
+    await link.applyTrackerItemsLive(page);
+    expect('trackerItems' in page[0]).toBe(false);
+    release();
+  });
+});
+
 describe('parseFlowRunState', () => {
+  it('accepts a string updatedAt (fleet contract 4.1.0)', () => {
+    const state = { 'issue-1': run({ updatedAt: '2026-09-28T10:00:00.000Z' }) };
+    expect(parseFlowRunState(JSON.stringify(state))).toEqual(state);
+  });
+
   it('returns records unchanged, unknown fields included', () => {
     const state = { 'issue-1': run({ checkpoint: { ref: 'abc' }, host: 'future' }) };
     expect(parseFlowRunState(JSON.stringify(state))).toEqual(state);
@@ -388,6 +446,7 @@ describe('parseFlowRunState', () => {
     ['a missing sessionId', { sessionId: undefined }],
     ['a negative attemptCount', { attemptCount: -1 }],
     ['a non-string dispatchedBy', { dispatchedBy: 42 }],
+    ['a non-string updatedAt (fleet contract 4.1.0)', { updatedAt: 1790000000 }],
   ])('rejects the whole file for %s', (_name, over) => {
     expect(parseFlowRunState(JSON.stringify({ 'issue-1': run(over) }))).toBeNull();
   });

@@ -644,7 +644,9 @@ export const SessionSchema = z
       .optional(),
     /**
      * The work item a flow run serves, read from flow's `flow-state.json`
-     * (shared contract §1.3): the newest of {@link SessionSchema.shape.trackerItems}.
+     * (shared contract §1.3): the newest run in THIS chat (a `this-chat` item of
+     * {@link SessionSchema.shape.trackerItems}); work the chat started in chats of
+     * their own never appears here.
      * `id` is the item identifier; `stage` and `runStatus` are the run's own.
      * ABSENT when no run names this session.
      *
@@ -664,7 +666,7 @@ export const SessionSchema = z
       .openapi({
         deprecated: true,
         description:
-          'Deprecated: the newest of `trackerItems`, kept for older flow installs. Read `trackerItems`.',
+          'Deprecated: the newest run in this chat (the newest `this-chat` item of `trackerItems`), kept for older flow installs. Read `trackerItems`.',
       }),
     /**
      * Every tracker item this chat is working on, newest first (spec

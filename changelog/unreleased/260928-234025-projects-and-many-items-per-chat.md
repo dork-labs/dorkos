@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(server): know every project by one short name, and every item a chat works on (DOR-2522)'
+  - "fix(server): keep the live session stream off git, and trackerItem to this chat's own run (DOR-2522)"
+  - 'fix(server): keep outside repositories and extension-named folders out of the project list (DOR-2522)'
 ---
 
 ### Added

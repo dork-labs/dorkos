@@ -9,7 +9,7 @@
  */
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { TrackerItemRef } from '@dorkos/shared/types';
+import type { Session, TrackerItemRef } from '@dorkos/shared/types';
 import { useAccountIdentityGate, useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useSessions, useSessionStreamStatus } from '@/layers/entities/session';
 import {
@@ -26,6 +26,31 @@ import type { AccountPromotionState } from './status-bar-registry';
 
 /** Shared empty list, so a session with no flow items never mints a fresh array. */
 const NO_TRACKER_ITEMS: readonly SessionTrackerItem[] = [];
+
+/**
+ * A session row's flow items. An older server sends only the deprecated
+ * `trackerItem` (the newest run in this chat), which reads as that one item.
+ *
+ * @param row - The session row.
+ */
+export function trackerItemsOf(
+  row: Pick<Session, 'trackerItems' | 'trackerItem'>
+): readonly SessionTrackerItem[] {
+  if (row.trackerItems) return row.trackerItems;
+  const legacy = row.trackerItem;
+  if (!legacy) return NO_TRACKER_ITEMS;
+  return [
+    {
+      id: legacy.id,
+      stage: legacy.stage ?? null,
+      runStatus: legacy.runStatus ?? null,
+      // The older wire carries no start time; nothing orders a single item.
+      startedAt: '',
+      via: 'this-chat',
+      ownChatSessionId: null,
+    },
+  ];
+}
 
 /** The registry id every runtime without an account registry bills (S4 N9). */
 const IMPLICIT_ACCOUNT_ID = 'default';
@@ -213,7 +238,7 @@ export function useSessionAccount(
     usage,
     limit,
     chipState: chipState(usage, limit),
-    trackerItems: row?.trackerItems ?? NO_TRACKER_ITEMS,
+    trackerItems: row ? trackerItemsOf(row) : NO_TRACKER_ITEMS,
     lifecycle,
     pending,
   };
