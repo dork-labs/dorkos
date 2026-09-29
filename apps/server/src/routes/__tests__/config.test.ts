@@ -1711,6 +1711,9 @@ describe('GET /api/config', () => {
         // Nobody registered the inherited folder and Main never follows the
         // env (contract rev 6d), so no row is named; the override says where.
         launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/tmp/inherited-claude' },
+        // No account rules: Main works anywhere and no project limits accounts.
+        defaultAccountOnlyProjects: null,
+        projectAccounts: [],
         // Warm agents default on, exposed here for the Control Center switch.
         persistentSession: true,
       });
@@ -1761,6 +1764,7 @@ describe('GET /api/config', () => {
             color: '#12ab9f',
             colorIsDefault: false,
             isAccountRoot: true,
+            onlyProjects: null,
           },
           {
             id: 'gone',
@@ -1770,8 +1774,11 @@ describe('GET /api/config', () => {
             color: DEFAULT_ACCOUNT_COLORS[1],
             colorIsDefault: true,
             isAccountRoot: false,
+            onlyProjects: null,
           },
         ],
+        defaultAccountOnlyProjects: null,
+        projectAccounts: [],
         // The warm-agents value flows through from config to the Control Center.
         persistentSession: false,
       });
