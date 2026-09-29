@@ -391,6 +391,19 @@ describe('refusals launch nothing', () => {
     await expect(service.start('flow', INPUT, 'ctx')).resolves.toBeTruthy();
   });
 
+  it('refuses as account_not_allowed_here when the launch’s own account check refuses', async () => {
+    nextLaunch.refused = {
+      refused: 'ACCOUNT_NOT_ALLOWED',
+      message: "dorkos isn't set to use Work. Pick another account.",
+    };
+    const err = await refusal(service.start('flow', INPUT, 'ctx'));
+    expect(err).toMatchObject({
+      code: 'account_not_allowed_here',
+      message: "dorkos isn't set to use Work. Pick another account.",
+    });
+    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
+  });
+
   it('refuses a launch the machine-wide cap refused, and forgets it', async () => {
     nextLaunch.refused = { refused: 'LAUNCH_CAP_FULL', message: 'full' };
     const err = await refusal(service.start('flow', INPUT, 'ctx'));

@@ -247,6 +247,11 @@ export class StartWorkService {
       if (result.refused === 'LAUNCH_CAP_FULL') {
         throw new StartWorkError('start_limit', AGENT_LAUNCH_CAP_MESSAGE);
       }
+      // The launch asked the account rule again; one that changed since the
+      // check above is refused the same way.
+      if (result.refused === 'ACCOUNT_NOT_ALLOWED') {
+        throw new StartWorkError('account_not_allowed_here', result.message);
+      }
       throw new Error(result.message);
     }
     if (!result.accepted) {
