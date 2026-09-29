@@ -19,6 +19,12 @@ export interface ExtensionAPIDeps {
   /** Phase 2 registry — register contributions into slots. */
   registry: {
     register: (slotId: string, contribution: unknown) => () => void;
+    /** The raw contributions in a slot, read at call time. */
+    getContributions: (slotId: string) => ReadonlyArray<{ id: string }>;
+    /** Mark or clear one right-panel tab (namespaced contribution id). */
+    setTabMarker: (contributionId: string, marker: 'attention' | null) => void;
+    /** Clear every tab mark an extension set. */
+    clearTabMarkers: (extensionId: string) => void;
   };
   /**
    * Curated event bridge (features layer) powering `api.events.subscribe`. The
@@ -33,7 +39,11 @@ export interface ExtensionAPIDeps {
   };
   /** Phase 1 dispatcher context for executing UI commands. */
   dispatcherContext: DispatcherContext;
-  /** TanStack Router navigate function. */
+  /**
+   * The router's navigate. `to` is a validated in-app path, query and hash
+   * included (e.g. `/x/hello/p/one?x=1`), so the host hands it to the router as
+   * an href. Read at call time, so the app can bind it once the router exists.
+   */
   navigate: (opts: { to: string }) => void;
   /** Zustand app store for state access outside React. */
   appStore: {

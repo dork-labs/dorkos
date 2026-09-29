@@ -71,7 +71,6 @@ export function ConnectionsPage() {
   const deferredQuery = useDeferredValue(query);
   const [connectService, setConnectService] = useState<ConnectorCatalogService | null>(null);
   const [connectOpen, setConnectOpen] = useState(Boolean(search.flow));
-  const [connectingForRequest, setConnectingForRequest] = useState(false);
   const [accessConnectionId, setAccessConnectionId] = useState<string | null>(null);
   const [useChoice, setUseChoice] = useState<ConnectorCatalogService | null>(null);
   const chatAppSetup = useChatAppSetup();
@@ -289,24 +288,12 @@ export function ConnectionsPage() {
           key={search.flow ?? connectService?.serviceSlug ?? 'idle'}
           service={connectService}
           flowId={search.flow ?? null}
-          agentRequestId={
-            search.request && (connectingForRequest || search.flow) ? search.request : null
-          }
           onFlowIdChange={(next) => setSearch({ flow: next ?? undefined })}
           onClose={() => {
             setConnectOpen(false);
             setConnectService(null);
-            if (!search.flow) setConnectingForRequest(false);
           }}
-          onChooseAccess={(connectionId) => {
-            if (connectingForRequest) {
-              setConnectingForRequest(false);
-              setConnectOpen(false);
-              setConnectService(null);
-              return;
-            }
-            setAccessConnectionId(connectionId);
-          }}
+          onChooseAccess={setAccessConnectionId}
           onConnected={(connectionId) => setSearch({ app: connectionId })}
         />
       )}
@@ -317,9 +304,10 @@ export function ConnectionsPage() {
         onOpenChange={(open) => {
           if (!open) setSearch({ request: undefined });
         }}
-        onConnectService={(service) => {
-          setConnectingForRequest(true);
-          startAccount(service);
+        onEditExactActions={(connectionId) => {
+          // One dialog at a time: the request stays open under Needs you.
+          setSearch({ request: undefined });
+          setAccessConnectionId(connectionId);
         }}
         onCloseAutoFocus={returnDecisionFocus}
       />

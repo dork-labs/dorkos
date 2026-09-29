@@ -126,6 +126,12 @@ const fixture = vi.hoisted(() => {
       },
     ]),
     listRooms: vi.fn(async () => [room]),
+    readRedactions: vi.fn<
+      (
+        roomId: string,
+        opts?: { cursor?: string; from?: 'end' }
+      ) => Promise<{ items: unknown[]; nextCursor: string; hasMore: boolean }>
+    >(async () => ({ items: [], nextCursor: 'redactions-end', hasMore: false })),
     revokeAgent: vi.fn(async () => undefined),
     removeMember: vi.fn(async () => undefined),
   };
@@ -227,6 +233,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
       : null,
 }));
 vi.mock('../../services/communities/remote/remote-community-adapter.js', () => ({
+  RemoteRedactionFeedUnsupportedError: class RemoteRedactionFeedUnsupportedError extends Error {},
   remoteSequenceOf: () => 1,
   remoteAuthorOf: (entry: { id: string }) =>
     entry.id === 'agent-wire-a' || entry.id === 'agent-echo-a'
@@ -237,6 +244,11 @@ vi.mock('../../services/communities/remote/remote-community-adapter.js', () => (
   remoteRoomAccessOf: () => ({ visibility: 'public', joined: true }),
   remoteThreadReplySeqOf: (entry: { id: string }) =>
     entry.id === 'root-with-replies' ? 9 : undefined,
+}));
+// Poll the redaction feed every few milliseconds rather than every 30 seconds.
+vi.mock('../../services/communities/remote/native-redaction-follower.js', async (original) => ({
+  ...(await original<object>()),
+  NATIVE_REDACTION_POLL_MS: 5,
 }));
 vi.mock('../../services/rooms/index.js', () => ({
   getRoomService: () => ({
@@ -663,6 +675,150 @@ describe('qualified remote community writes and live projections', () => {
       releaseEntry();
       await reader.cancel();
     }
+  });
+
+  // DOR-2544. Purpose: a message deleted or erased on the Community while its native room view is
+  // open reaches that view as a `revision` frame carrying the tombstone, read from THIS owner's
+  // adapter for THIS room, after the snapshot; a change for another Community is never sent.
+  // It fails if the route stops following the feed or forwards the wrong owner's or room's data.
+  it('forwards a changed message as a revision frame, tombstone only', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fixture.adapter.subscribeRoom.mockImplementationOnce(() =>
+      (async function* () {
+        yield {
+          type: 'snapshot' as const,
+          room: fixture.room,
+          entries: [{ ...fixture.entry, text: 'zqxerasedcanary said once' }],
+          cursor: 'cursor-a',
+        };
+        await held;
+      })()
+    );
+    const tombstone = { ...fixture.entry, text: 'This message was erased.' };
+    fixture.adapter.readRedactions
+      .mockResolvedValueOnce({ items: [], nextCursor: 'end-1', hasMore: false })
+      .mockResolvedValueOnce({
+        items: [
+          { entry: { ...tombstone, community: 'remote_other' }, remoteSeq: 1, author: {} },
+          { entry: tombstone, remoteSeq: 1, author: {} },
+        ],
+        nextCursor: 'end-2',
+        hasMore: false,
+      });
+    const address = testServer.address();
+    if (!address || typeof address === 'string') throw new Error('Local test server has no port');
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/communities/${fixture.ref}/rooms/room-a/events`
+    );
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    try {
+      while (!text.includes('event: revision')) {
+        const part = await reader.read();
+        if (part.done) throw new Error('Stream ended before a revision');
+        text += decoder.decode(part.value);
+      }
+      // Read the rest of the revision frame.
+      while (!text.slice(text.indexOf('event: revision')).includes('\n\n')) {
+        const part = await reader.read();
+        if (part.done) break;
+        text += decoder.decode(part.value);
+      }
+    } finally {
+      release();
+      await reader.cancel();
+    }
+    const frames = text.split('\n\n').filter((frame) => frame.startsWith('event: revision'));
+    expect(frames).toHaveLength(1);
+    const data = JSON.parse(frames[0]!.split('\n')[1]!.slice('data: '.length));
+    expect(data).toMatchObject({
+      type: 'revision',
+      entry: {
+        community: fixture.ref,
+        roomId: 'room-a',
+        id: 'entry-a',
+        text: 'This message was erased.',
+      },
+    });
+    expect(frames[0]).not.toContain('zqxerasedcanary');
+    expect(text.indexOf('event: snapshot')).toBeLessThan(text.indexOf('event: revision'));
+    expect(fixture.adapterOwners).toEqual(['owner-a']);
+    const calls = fixture.adapter.readRedactions.mock.calls;
+    expect(calls[0]).toEqual(['room-a', expect.objectContaining({ from: 'end' })]);
+    expect(calls[1]).toEqual(['room-a', expect.objectContaining({ cursor: 'end-1' })]);
+    // The feed's end is read before the snapshot, so nothing between the two is lost.
+    expect(fixture.adapter.readRedactions.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.adapter.subscribeRoom.mock.invocationCallOrder[0]!
+    );
+  });
+
+  // DOR-2544. Purpose: a view that resumes sends back its feed position, and the route reads the
+  // feed from there instead of its end, so a message erased while the view was disconnected (which
+  // a resumed snapshot does not carry: it holds only newer entries) still reaches it. The snapshot
+  // and the revision carry the position to resume from next time. It fails if the route ignores
+  // the resumed position.
+  it('reads the feed from a resumed position, so a change made during the gap arrives', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fixture.adapter.subscribeRoom.mockImplementationOnce(() =>
+      (async function* () {
+        yield { type: 'snapshot' as const, room: fixture.room, entries: [], cursor: 'cursor-a' };
+        await held;
+      })()
+    );
+    const tombstone = { ...fixture.entry, text: 'This message was erased.' };
+    fixture.adapter.readRedactions.mockImplementation(async (_roomId, opts = {}) =>
+      opts.cursor === 'feed-before-drop'
+        ? {
+            items: [{ entry: tombstone, remoteSeq: 1, author: {} }],
+            nextCursor: 'feed-after-gap',
+            hasMore: false,
+          }
+        : { items: [], nextCursor: opts.cursor ?? 'feed-end', hasMore: false }
+    );
+    const address = testServer.address();
+    if (!address || typeof address === 'string') throw new Error('Local test server has no port');
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/communities/${fixture.ref}/rooms/room-a/events?since=cursor-a&redactions=feed-before-drop`
+    );
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    try {
+      while (!/event: revision\n[^\n]*\n\n/.test(text)) {
+        const part = await reader.read();
+        if (part.done) throw new Error('Stream ended before a revision');
+        text += decoder.decode(part.value);
+      }
+    } finally {
+      release();
+      await reader.cancel();
+      fixture.adapter.readRedactions.mockReset();
+      fixture.adapter.readRedactions.mockResolvedValue({
+        items: [],
+        nextCursor: 'redactions-end',
+        hasMore: false,
+      });
+    }
+    const frame = (type: string) =>
+      JSON.parse(
+        text
+          .split('\n\n')
+          .find((block) => block.startsWith(`event: ${type}`))!
+          .split('\n')[1]!
+          .slice('data: '.length)
+      );
+    expect(frame('snapshot').redactionCursor).toBe('feed-before-drop');
+    expect(frame('revision')).toMatchObject({
+      entry: { id: 'entry-a', text: 'This message was erased.' },
+      redactionCursor: 'feed-after-gap',
+    });
+    // Never the end: that would skip the gap.
+    expect(fixture.adapter.readRedactions.mock.calls.some(([, opts]) => opts?.from === 'end')).toBe(
+      false
+    );
   });
 
   it('closes a stream as revoked when its personal grant is authoritatively rejected', async () => {

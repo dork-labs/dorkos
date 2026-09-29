@@ -38,3 +38,35 @@ describe('deriveWaitingItems — extensions waiting to be turned on', () => {
     expect(deriveWaitingItems({ approvals: [], asks: [], schedules: [] })).toEqual([]);
   });
 });
+
+describe('deriveWaitingItems — what extensions ask (spec flow-multiproject §7.5)', () => {
+  it('adds one extension-decision item per open decision, after everything else', () => {
+    const decision = {
+      id: '01J0000000000000000000000D',
+      extensionId: 'flow',
+      extensionName: 'Flow',
+      key: 'ship',
+      title: 'Ship it?',
+      why: 'It is ready.',
+      detail: null,
+      project: null,
+      projectLabel: null,
+      since: null,
+      actions: { kind: 'word' as const, label: 'Open' },
+      link: null,
+      raisedAt: '2026-09-29T09:00:00.000Z',
+      needsYou: false,
+      watch: null,
+      revision: 0,
+    };
+    const items = deriveWaitingItems({
+      approvals: [],
+      asks: [],
+      schedules: [],
+      extensionApprovals: [FLOW],
+      extensionDecisions: [decision],
+    });
+    expect(items.map((item) => item.kind)).toEqual(['extension-approval', 'extension-decision']);
+    expect(items[1].id).toBe('extension-decision:01J0000000000000000000000D');
+  });
+});

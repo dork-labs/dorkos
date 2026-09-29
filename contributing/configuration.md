@@ -651,7 +651,7 @@ The one subscriber today is `applyAndWatchConfiguredDefaultRuntime` (`services/c
 
 ### Future work
 
-`~/.dork/marketplaces.json` is currently owned by a hand-rolled `MarketplaceSourceManager` (in `apps/server/src/services/marketplace/marketplace-source-manager.ts`) rather than `conf`. A pending refactor will unify it onto the same pattern. When it lands, the `adding-config-fields` skill and the `/system:release` drift check both extend to cover it — no parallel system.
+`~/.dork/marketplaces.json` is currently owned by a hand-rolled `MarketplaceSourceManager` (in `apps/server/src/services/marketplace/sources/marketplace-source-manager.ts`) rather than `conf`. A pending refactor will unify it onto the same pattern. When it lands, the `adding-config-fields` skill and the `/system:release` drift check both extend to cover it — no parallel system.
 
 ### server.port
 

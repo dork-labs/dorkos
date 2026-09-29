@@ -308,7 +308,7 @@ describe('every agent mutation entry point broadcasts agents_changed exactly onc
 
   it('a marketplace agent uninstall — the registry surface index.ts hands UninstallFlow', async () => {
     const { id, dir } = await registerAndReset('uninstalled-package');
-    // `UninstallFlow.removeAgent` parks the manifest BEFORE it unregisters, so
+    // `UninstallSideEffects.removeAgent` parks the manifest BEFORE it unregisters, so
     // no live agent.json is left for a scan to adopt again. Do the same here, so
     // the case proves the removal still reaches the wire with the manifest gone.
     await fs.rename(

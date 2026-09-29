@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import type { StatusBarSlotContext } from '@dorkos/extension-api';
 import type { SessionStatusEvent, ConnectionState } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import {
@@ -11,6 +12,7 @@ import {
   useModeBeforePlan,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
+import { useProjectForCwd } from '@/layers/entities/project';
 import {
   useCapabilitiesForRuntime,
   useRuntimeCapabilities,
@@ -40,14 +42,16 @@ import {
   MakeDefaultStopLine,
   type StatusPromotionContext,
   showsStaleMark,
+  useExtensionStatusItems,
 } from '@/layers/features/status';
 import { findWorkingMode, needsConsentRitual } from '@/layers/shared/lib';
 import { useAutonomyAcknowledgement } from '@/layers/entities/config';
-import { useNow } from '@/layers/shared/model';
+import { useMediaQuery, useNow } from '@/layers/shared/model';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
 import { buildStatusItemNodes } from './status-item-nodes';
+import { ExtensionStatusRows } from './ExtensionStatusItems';
 
 /**
  * The stable stand-in for "this runtime's capability profile has not arrived".
@@ -55,6 +59,12 @@ import { buildStatusItemNodes } from './status-item-nodes';
  * Module-level so its identity never changes. See its one use site below.
  */
 const NO_DECLARED_MODES: readonly PermissionModeDescriptor[] = [];
+
+/**
+ * Below Tailwind's `sm` breakpoint: where an extension's status item is asked
+ * for its short form (`StatusBarSlotContext.compact`, spec §6.6).
+ */
+const PHONE_WIDTH_QUERY = '(max-width: 639px)';
 
 interface ChatStatusSectionProps {
   sessionId: string;
@@ -134,6 +144,23 @@ export function ChatStatusSection({
 
   const { data: gitStatus } = useGitStatus(status.cwd);
   const workspace = useWorkspaceForSession(status.cwd);
+
+  // What an extension's status item is told about this chat (spec
+  // `flow-multiproject` §6.6). Memoized so the items' rules re-run only when
+  // one of these facts changes, not on every tick of the line.
+  const { project } = useProjectForCwd(status.cwd);
+  const compactWidth = useMediaQuery(PHONE_WIDTH_QUERY);
+  const extensionCtx = useMemo<StatusBarSlotContext>(
+    () => ({
+      sessionId,
+      cwd: status.cwd,
+      project,
+      trackerItems: account.trackerItems,
+      compact: compactWidth,
+    }),
+    [sessionId, status.cwd, project, account.trackerItems, compactWidth]
+  );
+  const extensionItems = useExtensionStatusItems(extensionCtx);
   const { data: runtimeCaps } = useRuntimeCapabilities();
 
   // Running, not available: the fold keeps a row per subagent for the whole turn,
@@ -458,6 +485,7 @@ export function ChatStatusSection({
     usage,
     usageStale,
     subagentsInFlight: liveSubagentCount,
+    extensionItems: extensionItems.promotion,
   };
 
   // The inline Compact action is the one thing the line gives up first: it costs a
@@ -510,6 +538,7 @@ export function ChatStatusSection({
     waitingOnSubagents: diagnostics.lifecycle === 'idle',
     connectionState: syncConnectionState,
     density: budget.density,
+    extensions: { ctx: extensionCtx, items: extensionItems.visible },
   });
 
   const { items, overflow } = applyStatusBudget(
@@ -543,6 +572,11 @@ export function ChatStatusSection({
             }}
             promotionContext={promotionContext}
             overflowCount={overflow}
+            addOns={
+              extensionItems.visible.length > 0 ? (
+                <ExtensionStatusRows ctx={extensionCtx} items={extensionItems.visible} />
+              ) : undefined
+            }
             urgentAction={
               promotedCompactAction
                 ? {

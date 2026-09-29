@@ -43,6 +43,13 @@ export interface AskListProps {
   onOpenSession?: (sessionId: string) => void;
   /** Rendered when nothing is waiting. Omit for a list that simply draws nothing. */
   emptyState?: React.ReactNode;
+  /**
+   * Which answered prompts, still saying how they ended, belong in THIS list.
+   * For a surface that splits the queue into several lists (the Inbox's
+   * project groups, spec `flow-multiproject` §6.3), so a receipt is drawn in
+   * its own group once rather than in every one. Omit to draw them all.
+   */
+  holds?: (ask: InteractionPendingEvent) => boolean;
 }
 
 /**
@@ -55,7 +62,7 @@ export interface AskListProps {
  * Long queues are capped rather than endless, but the cap is STATED: a hidden
  * seventh prompt is an agent parked with no way for anyone to know.
  */
-export function AskList({ asks, agentNames, onOpenSession, emptyState }: AskListProps) {
+export function AskList({ asks, agentNames, onOpenSession, emptyState, holds }: AskListProps) {
   const { answerAll, isAnswering, error } = useAnswerAsk();
   // The answered ones are still drawn for a beat, saying how they ended. They
   // are NOT part of what is waiting — the count belongs to `asks` alone.
@@ -67,10 +74,12 @@ export function AskList({ asks, agentNames, onOpenSession, emptyState }: AskList
     // below a fresh one whose envelope is simply newer.
     const soonestFirst = [...asks].sort((a, b) => askDeadline(a) - askDeadline(b));
     const held = settling.filter(
-      (ask) => !asks.some((waiting) => waiting.interaction.id === ask.interaction.id)
+      (ask) =>
+        !asks.some((waiting) => waiting.interaction.id === ask.interaction.id) &&
+        (holds === undefined || holds(ask))
     );
     return groupAsks([...soonestFirst, ...held]);
-  }, [asks, settling]);
+  }, [asks, settling, holds]);
 
   if (groups.length === 0) return <>{emptyState ?? null}</>;
 

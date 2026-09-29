@@ -21,7 +21,12 @@ import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 
 function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
   return {
-    registry: { register: vi.fn().mockReturnValue(vi.fn()) },
+    registry: {
+      register: vi.fn().mockReturnValue(vi.fn()),
+      getContributions: vi.fn().mockReturnValue([]),
+      setTabMarker: vi.fn(),
+      clearTabMarkers: vi.fn(),
+    },
     dispatcherContext: {
       getStore: () => ({}) as ReturnType<ExtensionAPIDeps['dispatcherContext']['getStore']>,
       setTheme: vi.fn(),
@@ -740,7 +745,14 @@ describe('ExtensionLoader auto-register config tab', () => {
 
   it('cleanup function from register is tracked in cleanups array', () => {
     const unsubFn = vi.fn();
-    const deps = makeDeps({ registry: { register: vi.fn().mockReturnValue(unsubFn) } });
+    const deps = makeDeps({
+      registry: {
+        register: vi.fn().mockReturnValue(unsubFn),
+        getContributions: vi.fn().mockReturnValue([]),
+        setTabMarker: vi.fn(),
+        clearTabMarkers: vi.fn(),
+      },
+    });
     const rec = makeRecord({
       manifest: {
         id: 'tracked',

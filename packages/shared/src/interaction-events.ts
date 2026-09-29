@@ -33,6 +33,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+import { ProjectRefSchema } from './project-schemas.js';
 import { PendingInteractionDTOSchema } from './schemas.js';
 
 extendZodWithOpenApiOnce();
@@ -57,6 +58,12 @@ export const InteractionPendingEventSchema = z
     roomId: z.string().min(1).optional(),
     /** The agent's author id in that room, for correlating with the presence line. */
     roomAuthorId: z.string().min(1).optional(),
+    /**
+     * The project `cwd` belongs to, stamped by the server (spec
+     * `flow-multiproject` §6.2): null when the folder is in no repository.
+     * ABSENT when the server has not resolved it yet, or is older.
+     */
+    project: ProjectRefSchema.nullable().optional(),
   })
   .openapi('InteractionPendingEvent');
 

@@ -20,8 +20,19 @@ export type {
   InboxDecisionRowProps,
   InboxDecisionYesNo,
   InboxDecisionWord,
+  InboxDecisionChoice,
 } from './ui/InboxDecisionRow';
+export { InboxProjectHeading } from './ui/InboxProjectHeading';
+export type { InboxProjectHeadingProps } from './ui/InboxProjectHeading';
+export { groupByProject } from './lib/group-by-project';
+export type { ProjectGroup } from './lib/group-by-project';
+export { deadlineLine, sinceLine, decisionHistoryTrail } from './lib/decision-copy';
 export type { InboxGroupRowProps } from './ui/InboxGroupRow';
 export { useOpenNotification } from './model/use-open-notification';
 export { groupActivityRows, MIN_BURST_SIZE } from './lib/group-activity-rows';
-export type { InboxListItem, InboxRowItem, InboxGroupItem } from './lib/group-activity-rows';
+export type {
+  InboxListItem,
+  InboxRowItem,
+  InboxGroupItem,
+  InboxAwayItem,
+} from './lib/group-activity-rows';

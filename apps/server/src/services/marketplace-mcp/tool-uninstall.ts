@@ -22,7 +22,8 @@ import { z } from 'zod';
 import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import { PackageNameSchema } from '@dorkos/marketplace';
 
-import { PackageNotInstalledError, type UninstallResult } from '../marketplace/flows/uninstall.js';
+import { PackageNotInstalledError } from '../marketplace/flows/uninstall/support.js';
+import { type UninstallResult } from '../marketplace/flows/uninstall/support.js';
 import { BoundaryError, validateBoundary } from '../../lib/boundary.js';
 import { locateInstallRoot } from '../marketplace/lib/locate-install.js';
 

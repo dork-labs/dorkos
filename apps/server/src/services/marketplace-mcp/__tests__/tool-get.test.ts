@@ -8,7 +8,7 @@ import type {
   MarketplacePackageManifest,
 } from '@dorkos/marketplace';
 import type { MarketplaceSource } from '../../marketplace/types.js';
-import type { PreviewResult } from '../../marketplace/marketplace-installer.js';
+import type { PreviewResult } from '../../marketplace/installer/marketplace-installer.js';
 import { createGetHandler, GetInputSchema } from '../tool-get.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 

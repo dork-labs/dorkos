@@ -222,4 +222,38 @@ describe('groupActivityRows', () => {
     expect(secondPass).toHaveLength(1);
     expect((secondPass[0] as { id: string }).id).toBe(originalId);
   });
+
+  describe('decisions made while the person was away (spec flow-multiproject §7.9)', () => {
+    const decided = (resolvedBy: 'person' | 'agent' | 'rule' | 'deadline' | 'extension') =>
+      build({
+        kind: 'extension.decision',
+        tier: 'blocking',
+        agentId: undefined,
+        subject: { type: 'system', id: `dec-${counter}` },
+        decision: {
+          extensionId: 'flow',
+          resolvedBy,
+          resolvedByLabel: null,
+          recorded: resolvedBy === 'rule',
+          watch: null,
+        },
+      });
+
+    it('folds three or more into one "while you were away" item', () => {
+      const rows = [decided('rule'), decided('agent'), decided('deadline')];
+      expect(groupActivityRows(rows)).toEqual([
+        { type: 'away', id: rows[2].id, stateKey: 'away#0', notifications: rows },
+      ]);
+    });
+
+    it('never folds the person’s own answers, and leaves two flat', () => {
+      const rows = [decided('rule'), decided('person'), decided('agent'), decided('rule')];
+      expect(groupActivityRows(rows).map((item) => item.type)).toEqual([
+        'row',
+        'row',
+        'row',
+        'row',
+      ]);
+    });
+  });
 });

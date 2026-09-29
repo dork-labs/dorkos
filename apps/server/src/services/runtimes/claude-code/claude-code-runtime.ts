@@ -716,7 +716,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
       const { listConsentedPluginNames } =
-        await import('../../marketplace/global-plugin-consent.js');
+        await import('../../marketplace/consent/global-plugin-consent.js');
       const { buildClaudeAgentSdkPluginsArray } = await import('./messaging/plugin-activation.js');
       const { logger } = await import('../../../lib/logger.js');
       const dorkHome = resolveDorkHome();

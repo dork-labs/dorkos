@@ -7,10 +7,12 @@
  * browser-safe (no Node.js imports).
  *
  * Server-side source of truth:
- *   - `apps/server/src/routes/marketplace.ts` — AggregatedPackage, InstalledPackage, AddSourceInput
+ *   - `apps/server/src/routes/marketplace.ts` — AggregatedPackage
+ *   - `apps/server/src/services/marketplace/installed-scanner.ts` — InstalledPackage
+ *   - `apps/server/src/routes/marketplace/sources.ts` — AddSourceInput (as `AddSourceBodySchema`)
  *   - `apps/server/src/services/marketplace/types.ts` — PermissionPreview, InstallResult,
  *     InstallRequest, MarketplaceSource, ConflictReport
- *   - `apps/server/src/services/marketplace/flows/uninstall.ts` — UninstallResult
+ *   - `apps/server/src/services/marketplace/flows/uninstall/support.ts` — UninstallResult
  *   - `apps/server/src/services/marketplace/flows/update.ts` — UpdateResult, UpdateCheckResult,
  *     InstallationUpdateCheck, InstallationUpdatesResult
  *   - `apps/server/src/services/shapes/apply-shape.ts` — ApplyShapeResult, AppliedShape,
@@ -687,7 +689,7 @@ export interface DisclosedProgram {
  * else is sorted, so the value does not move when a directory listing does.
  *
  * Built only by the server (`disclosedEffectsOf` in
- * `apps/server/src/services/marketplace/disclosed-effects.ts`). A client shows
+ * `apps/server/src/services/marketplace/preview/disclosed-effects.ts`). A client shows
  * it and sends it back untouched as what the person was shown (DOR-2306); the
  * server compares it with the version it resolves now and refuses any other.
  */
@@ -768,7 +770,7 @@ export interface ConflictReport {
  * Options for `POST /api/marketplace/packages/:name/install`.
  *
  * Mirrors the body of `InstallRequestBodySchema` in
- * `apps/server/src/routes/marketplace.ts`.
+ * `apps/server/src/routes/marketplace/shared.ts`.
  */
 export interface InstallOptions {
   /** Restrict lookup to a specific marketplace source. */
@@ -924,7 +926,7 @@ export interface ListInstalledOptions {
 /**
  * The outcome of a successful uninstall.
  *
- * Mirrors `UninstallResult` in `apps/server/src/services/marketplace/flows/uninstall.ts`.
+ * Mirrors `UninstallResult` in `apps/server/src/services/marketplace/flows/uninstall/support.ts`.
  */
 export interface UninstallResult {
   ok: boolean;
@@ -1141,7 +1143,7 @@ export interface PackageProvides {
  * PER INSTALLATION — a package installed globally and on two agents yields
  * three entries — so consumers can show and manage each scope independently.
  *
- * Mirrors `InstalledPackage` in `apps/server/src/routes/marketplace.ts`.
+ * Mirrors `InstalledPackage` in `apps/server/src/services/marketplace/installed-scanner.ts`.
  */
 export interface InstalledPackage {
   name: string;
@@ -1382,7 +1384,7 @@ export interface ListedMarketplaceSource extends MarketplaceSource {
 /**
  * Request body for `POST /api/marketplace/sources`.
  *
- * Mirrors `AddSourceBodySchema` in `apps/server/src/routes/marketplace.ts`.
+ * Mirrors `AddSourceBodySchema` in `apps/server/src/routes/marketplace/sources.ts`.
  */
 export interface AddSourceInput {
   name: string;
@@ -1480,7 +1482,7 @@ export const MARKETPLACE_UNINSTALL_DIR_MARKER = '.dorkos-uninstall-';
  * installed package, agent, plugin or skill — whatever it contains (a backup
  * holds the previous install's valid manifest). A new kind of sibling is added
  * here and in the recovery policy table in
- * `apps/server/src/services/marketplace/install-recovery.ts`.
+ * `apps/server/src/services/marketplace/recovery/install-recovery.ts`.
  */
 export const MARKETPLACE_INSTALL_SIBLING_MARKERS: readonly string[] = [
   MARKETPLACE_BACKUP_DIR_MARKER,

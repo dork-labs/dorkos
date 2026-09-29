@@ -121,12 +121,29 @@ describe('MockExtensionAPI', () => {
     expect(contributions['settings.tabs']).toBe(1);
   });
 
-  it('returns zero counts for all 6 slots when nothing is registered', () => {
+  it('tracks registerPage under pages and registerStatusBarItem under status-bar', () => {
+    const api = new MockExtensionAPI('test-ext');
+
+    api.registerPage('', () => null, { title: 'Home' });
+    api.registerPage('p/:name', () => null, { title: 'Project' });
+    api.registerStatusBarItem('chip', () => null, { label: 'Chip' });
+    api.setTabMarker();
+
+    const contributions = api.getContributions();
+    expect(contributions['pages']).toBe(2);
+    expect(contributions['status-bar']).toBe(1);
+  });
+
+  it('reports no current project headless', () => {
+    expect(new MockExtensionAPI('test-ext').getState().currentProject).toBeNull();
+  });
+
+  it('returns zero counts for all 8 kinds when nothing is registered', () => {
     const api = new MockExtensionAPI('test-ext');
 
     const contributions = api.getContributions();
 
-    expect(Object.keys(contributions)).toHaveLength(6);
+    expect(Object.keys(contributions)).toHaveLength(8);
     for (const count of Object.values(contributions)) {
       expect(count).toBe(0);
     }

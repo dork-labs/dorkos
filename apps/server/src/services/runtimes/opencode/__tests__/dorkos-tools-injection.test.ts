@@ -24,6 +24,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
+import { CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS } from '../../connector-tools.js';
+import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../connectors/runtime-capability-scope.js';
 
 const configState = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
@@ -267,7 +269,11 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
           'X-DorkOS-Connector-Cwd': encodeURIComponent('/canonical/repo'),
         },
         enabled: true,
+        // Each tool call's ceiling: longer than an access request holds for
+        // the person's answer, or the agent sees a timeout while they decide.
+        timeout: CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
       });
+      expect(CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS).toBeGreaterThan(CONNECTOR_REQUEST_LIVE_HOLD_MS);
       expect(client.mcp.add).toHaveBeenCalledWith(
         expect.objectContaining({ query: { directory: '/canonical/repo' } })
       );

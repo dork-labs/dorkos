@@ -46,7 +46,10 @@ import type {
   ConfirmationRequest,
   ConfirmationResult,
 } from '../confirmation-provider.js';
-import type { UninstallRequest, UninstallResult } from '../../marketplace/flows/uninstall.js';
+import type {
+  UninstallRequest,
+  UninstallResult,
+} from '../../marketplace/flows/uninstall/support.js';
 
 /** The one `destructive` marketplace capability, and the one this file drives. */
 const uninstall = marketplaceDomain.capabilities.find((c) => c.id === 'marketplace.uninstall')!;

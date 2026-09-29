@@ -32,7 +32,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
-import type { MarketplaceInstaller } from '../marketplace-installer.js';
+import type { MarketplaceInstaller } from '../installer/marketplace-installer.js';
 import { ADAPTER_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-adapter.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-shape.js';
 import {
@@ -42,7 +42,7 @@ import {
   scanInstalledPackages,
 } from '../installed-scanner.js';
 import { buildInstallerForTests } from './installer-harness.js';
-import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
+import { MarketplaceSourceManager } from '../sources/marketplace-source-manager.js';
 import { UpdateFlow } from '../flows/update.js';
 import { pickInstallation } from '../flows/update-selection.js';
 import type { UpdateCheckResult } from '../flows/update-types.js';
@@ -205,7 +205,7 @@ describe('marketplace install pipeline — integration', () => {
   it('warns (but still installs globally) when a shape install request carries a projectPath (DOR-386)', async () => {
     // Shapes are global-only. A caller that requests an agent-scoped install
     // (MCP tool, HTTP route, CLI --project) must be told their scope choice
-    // was ignored — via `installer.dispatchFlow` → `ShapeInstallFlow.install`
+    // was ignored — via `InstallDispatcher.dispatchFlow` → `ShapeInstallFlow.install`
     // — rather than have it silently dropped.
     const { installer } = buildInstallerForTests(dorkHome);
     const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-shape-scoped-project-'));
@@ -339,7 +339,7 @@ describe('marketplace install pipeline — integration', () => {
     // Adapters are global-only (the relay's `relay-adapters.json` registry has
     // no per-project dimension). A caller that requests a project-scoped install
     // (MCP tool, HTTP route, CLI --project) must be told their scope choice was
-    // ignored — via `installer.dispatchFlow` → `AdapterInstallFlow.install` —
+    // ignored — via `InstallDispatcher.dispatchFlow` → `AdapterInstallFlow.install` —
     // rather than have it silently dropped. Mirrors DOR-386 for Shapes.
     const { installer } = buildInstallerForTests(dorkHome);
     const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-adapter-scoped-project-'));

@@ -95,16 +95,16 @@
     "src/services/marketplace-mcp/__tests__/tool-install.test.ts", // 3
     "src/services/marketplace-mcp/__tests__/tool-search.test.ts", // 1
     "src/services/marketplace-mcp/__tests__/tool-uninstall.test.ts", // 1
-    "src/services/marketplace/__tests__/flows/install-agent.test.ts", // 5
-    "src/services/marketplace/__tests__/flows/install-plugin.test.ts", // 9
-    "src/services/marketplace/__tests__/flows/install-shape.test.ts", // 5
-    "src/services/marketplace/__tests__/flows/install-skill-pack.test.ts", // 1
-    "src/services/marketplace/__tests__/flows/uninstall.test.ts", // 13
-    "src/services/marketplace/__tests__/flows/update.test.ts", // 1
-    "src/services/marketplace/__tests__/marketplace-installer.test.ts", // 8
-    "src/services/marketplace/__tests__/telemetry-hook.test.ts", // 1
-    "src/services/marketplace/__tests__/telemetry-privacy.test.ts", // 1
-    "src/services/marketplace/__tests__/telemetry-reporter.test.ts", // 1
+    "src/services/marketplace/flows/__tests__/install-agent.test.ts", // 5
+    "src/services/marketplace/flows/__tests__/install-plugin.test.ts", // 9
+    "src/services/marketplace/flows/__tests__/install-shape.test.ts", // 5
+    "src/services/marketplace/flows/__tests__/install-skill-pack.test.ts", // 1
+    "src/services/marketplace/flows/__tests__/update.test.ts", // 1
+    "src/services/marketplace/flows/uninstall/__tests__/uninstall.test.ts", // 13
+    "src/services/marketplace/installer/__tests__/marketplace-installer.test.ts", // 8
+    "src/services/marketplace/telemetry/__tests__/telemetry-hook.test.ts", // 1
+    "src/services/marketplace/telemetry/__tests__/telemetry-privacy.test.ts", // 1
+    "src/services/marketplace/telemetry/__tests__/telemetry-reporter.test.ts", // 1
     "src/services/mesh/__tests__/ensure-dorkbot.test.ts", // 2
     "src/services/observability/__tests__/file-span-processor.test.ts", // 1
     "src/services/observability/__tests__/trace-proxies.test.ts", // 1

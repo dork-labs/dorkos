@@ -22,10 +22,12 @@ import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { Task } from '@dorkos/shared/types';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
+import type { ExtensionDecisionDTO } from '@dorkos/shared/extension-decision-schemas';
 import type { AttentionSignalKind } from './attention-signal';
 import {
   approvalSignalId,
   extensionApprovalSignalId,
+  extensionDecisionSignalId,
   interactionSignalId,
   interactionSignalKind,
   scheduleSignalId,
@@ -66,6 +68,11 @@ export interface WaitingQueueSources {
    * agreement check against {@link deriveAttentionSignals} — can leave it out.
    */
   extensionApprovals?: readonly PendingExtensionApproval[];
+  /**
+   * Decisions extensions asked a person about (spec `flow-multiproject`
+   * §7.5). Optional for the same reason as {@link extensionApprovals}.
+   */
+  extensionDecisions?: readonly ExtensionDecisionDTO[];
 }
 
 /**
@@ -93,6 +100,10 @@ export function deriveWaitingItems(sources: WaitingQueueSources): WaitingItem[] 
 
   for (const approval of sources.extensionApprovals ?? []) {
     items.push({ id: extensionApprovalSignalId(approval), kind: 'extension-approval' });
+  }
+
+  for (const decision of sources.extensionDecisions ?? []) {
+    items.push({ id: extensionDecisionSignalId(decision.id), kind: 'extension-decision' });
   }
 
   return items;

@@ -127,6 +127,16 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     adds: 'It adds a Flow tab',
     added: 'Flow tab added',
   },
+  'extension.decision': {
+    decisionId: '01J0000000000000000000000D',
+    extensionId: 'flow',
+    extensionName: 'Flow',
+    key: 'ship:DOR-2387',
+    title: 'Ship the new out-of-usage banner?',
+    why: "It's built, tests pass, and the reviewer agent found nothing.",
+    link: '/x/flow/p/dorkos',
+    openProjects: 2,
+  },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -150,6 +160,9 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // Waiting on a person, but nothing is stuck: it badges the bell and never
   // reaches a phone (DOR-2517).
   'extension.approval': 'notable',
+  // Somebody's work waits on the answer, so it may reach a phone, with
+  // generic text (spec flow-multiproject §7.4).
+  'extension.decision': 'blocking',
 };
 
 /**
@@ -168,6 +181,7 @@ const STANDING: NotificationKind[] = [
   'session.error',
   'signin.required',
   'extension.approval',
+  'extension.decision',
 ];
 
 describe('notification registry', () => {
@@ -233,6 +247,7 @@ describe('notification registry', () => {
       'dead-letter.created',
       'dm.received',
       'extension.approval',
+      'extension.decision',
       'mention.received',
       'report.daily',
       'run.completed',
@@ -442,6 +457,74 @@ describe('notification registry', () => {
     it('never puts the path on screen', () => {
       expect(entry.title(waiting)).not.toContain(waiting.path);
       expect(entry.body?.(waiting) ?? '').not.toContain(waiting.path);
+    });
+  });
+
+  describe("an extension's decision (DOR-2523)", () => {
+    const entry = notificationEntry('extension.decision');
+    const open = PAYLOADS['extension.decision'];
+    const resolved = (resolution: Partial<NonNullable<typeof open.resolution>>): typeof open => ({
+      ...open,
+      resolution: {
+        outcome: 'approved',
+        resolvedBy: 'person',
+        resolvedByLabel: null,
+        choiceLabel: 'Ship it',
+        recorded: false,
+        watch: null,
+        ...resolution,
+      },
+    });
+
+    it('asks in its own words while it is open, and says why', () => {
+      expect(entry.title(open)).toBe('Ship the new out-of-usage banner?');
+      expect(entry.body?.(open)).toBe(open.why);
+    });
+
+    it('says who decided once it is settled', () => {
+      expect(entry.body?.(resolved({}))).toBe('Ship it · you');
+      expect(entry.body?.(resolved({ resolvedBy: 'deadline', choiceLabel: 'Keep it' }))).toBe(
+        'Keep it · decided by the agent'
+      );
+      expect(
+        entry.body?.(resolved({ resolvedBy: 'agent', resolvedByLabel: 'the reviewer agent' }))
+      ).toBe('Ship it · the reviewer agent');
+      expect(
+        entry.body?.(
+          resolved({ resolvedBy: 'rule', resolvedByLabel: "your 'Tell me after' setting" })
+        )
+      ).toBe("Ship it · your 'Tell me after' setting");
+      expect(entry.body?.(resolved({ resolvedBy: 'extension', resolvedByLabel: 'in Flow' }))).toBe(
+        'Ship it · answered in Flow'
+      );
+      expect(entry.body?.(resolved({ outcome: 'cleared', resolvedBy: 'extension' }))).toBe(
+        'Resolved on its own'
+      );
+      expect(entry.body?.(resolved({ outcome: 'cancelled', resolvedBy: 'extension' }))).toBe(
+        'No longer needed'
+      );
+    });
+
+    it('pushes a generic line that never carries the title, key or project', () => {
+      const said = entry.escalation?.(open);
+      expect(said).toEqual({ title: 'Flow needs you in 2 projects' });
+      expect(JSON.stringify(said)).not.toContain(open.title);
+      expect(JSON.stringify(said)).not.toContain(open.key);
+      expect(JSON.stringify(said)).not.toContain('dorkos');
+      expect(entry.escalation?.({ ...open, openProjects: 1 })).toEqual({
+        title: 'Flow needs you in 1 project',
+      });
+      expect(entry.escalation?.({ ...open, openProjects: 0 })).toEqual({
+        title: 'Flow needs you',
+      });
+    });
+
+    it('is one condition per row, so a later episode of a key can still push', () => {
+      expect(entry.dedupeKey(resolved({}))).toBe(entry.dedupeKey(open));
+      expect(entry.dedupeKey({ ...open, decisionId: '01J0000000000000000000000E' })).not.toBe(
+        entry.dedupeKey(open)
+      );
+      expect(entry.locate(open).subjectId).toBe(open.decisionId);
     });
   });
 

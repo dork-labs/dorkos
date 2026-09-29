@@ -217,7 +217,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -407,7 +407,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
     expect(
       (
         await db.query(
@@ -1429,6 +1429,69 @@ it('upgrades existing archives to ready version 1 exports and constrains the job
     // Deleting the job deletes its segment rows with it.
     await db.query('DELETE FROM export_archives WHERE id=$1', [queued]);
     expect((await db.query('SELECT 1 FROM export_segments')).rowCount).toBe(0);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});
+
+// Purpose: the import migration on a populated database marks every existing member native,
+// keeps refusing a member without an account unless it is an imported, inactive author or an
+// erased husk, and still accepts the member and file writes code from before it makes.
+it('upgrades a populated database to imports without changing what old code does', async () => {
+  const name = `community_import_upgrade_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    await applyBefore(db, '0019_imports.sql');
+    await db.query(
+      `INSERT INTO "user"(id,name,email,"emailVerified") VALUES ('u-owner','Owner','o@up.test',true)`
+    );
+    const community = (
+      await db.query<{ id: string }>(
+        "INSERT INTO communities(name,lifecycle) VALUES('Before','pending_owner') RETURNING id"
+      )
+    ).rows[0].id;
+    const owner = (
+      await db.query<{ id: string }>(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role,active)
+         VALUES($1,'u-owner','Owner','owner','owner',false) RETURNING id`,
+        [community]
+      )
+    ).rows[0].id;
+
+    await migrate(url.toString());
+
+    expect((await db.query('SELECT origin FROM members WHERE id=$1', [owner])).rows).toEqual([
+      { origin: 'native' },
+    ]);
+    const member = (userId: string | null, active: boolean, origin?: string) =>
+      db.query(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role,active${origin ? ',origin' : ''})
+         VALUES($1,$2,'X',$3,'member',$4${origin ? ',$5' : ''})`,
+        [community, userId, `h-${randomUUID().slice(0, 8)}`, active, ...(origin ? [origin] : [])]
+      );
+    // Old code names no origin: a linked member still inserts, an unlinked one still fails.
+    await db.query(
+      `INSERT INTO "user"(id,name,email,"emailVerified") VALUES ('u-two','Two','t@up.test',true)`
+    );
+    await member('u-two', true);
+    await expect(member(null, false)).rejects.toThrow(/members_user_presence/);
+    await member(null, false, 'imported');
+    await expect(member(null, true, 'imported')).rejects.toThrow(/members_user_presence/);
+    // Old code's file inventory writes are unchanged, and the new purpose is accepted.
+    for (const [key, purpose] of [
+      ['a'.repeat(64), 'attachment'],
+      ['b'.repeat(64), 'import_staging'],
+    ] as const) {
+      await db.query(
+        `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state)
+         VALUES($1,$2,$3,1,'reserved')`,
+        [key, community, purpose]
+      );
+    }
   } finally {
     await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);

@@ -17,7 +17,7 @@ import {
   computeInstalledFiles,
   readInstalledFiles,
   writeInstalledFiles,
-} from '../../marketplace/lib/installed-files.js';
+} from '../../marketplace/lib/records/installed-files.js';
 
 // Mocked wholesale rather than spied on, matching `task-file-watcher.test.ts`:
 // one case here reads the watcher's own failure lines to tell a broken watch

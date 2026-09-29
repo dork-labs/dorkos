@@ -31,6 +31,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     usage: null,
     usageStale: false,
     subagentsInFlight: 0,
+    extensionItems: [],
     ...overrides,
   };
 }

@@ -140,3 +140,15 @@ export function popoverWindowLabel(key: string, serverLabel: string): string {
   if (key === 'seven_day') return 'This week';
   return serverLabel;
 }
+
+/**
+ * The popover's line about the flow work a chat is on (spec
+ * `flow-multiproject` §6.8): the item's id when there is one ("Working on
+ * DOR-2387"), else how many ("Working on 3 items").
+ *
+ * @param items - The chat's tracker items, newest first; never empty here.
+ */
+export function workingOnLine(items: readonly { id: string }[]): string {
+  const [only] = items;
+  return items.length === 1 && only ? `Working on ${only.id}` : `Working on ${items.length} items`;
+}

@@ -1,30 +1,28 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
+import type {
+  ConnectorAgentRequestItem,
+  ConnectorReconciliationPreview,
+} from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
+import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { gmailFilterSchema } from './event-filter-fixtures';
 import { AgentRequestDialog } from '../ui/AgentRequestDialog';
-
-Element.prototype.hasPointerCapture = () => false;
-Element.prototype.setPointerCapture = () => {};
-Element.prototype.releasePointerCapture = () => {};
 
 afterEach(cleanup);
 
 const REQUEST: ConnectorAgentRequestItem = {
   requestId: 'request-1',
-  reviewUrl: '/connections?request=request-1',
   serviceSlug: 'gmail',
   reason: 'Summarize new mail and prepare replies.',
-  requestedOperations: ['gmail.messages.list', 'gmail.messages.send', 'gmail.messages.delete'],
+  access: 'read-write',
   requestedEvents: [],
   createdAt: '2026-09-07T12:00:00.000Z',
   expiresAt: '2099-09-07T14:00:00.000Z',
+  note: 'The person hasn’t answered yet.',
   status: 'awaiting_owner',
   sessionId: 'session-1',
   agent: { id: 'agent-1', displayName: 'Researcher' },
@@ -40,9 +38,9 @@ const CONNECTION = {
   authenticationStatus: 'active' as const,
   reconciliationStatus: 'ready' as const,
   authoritySync: { status: 'ready' as const },
-  mode: 'managed' as const,
+  mode: 'byo' as const,
   custody: 'managed' as const,
-  payer: 'dorkos_managed' as const,
+  payer: 'operator_byo' as const,
   agentCount: 0,
   everyAgent: null,
   subscriptionCount: 0,
@@ -50,75 +48,10 @@ const CONNECTION = {
   readiness: createMockConnectionReadiness(),
 };
 
-function transportFor(request: ConnectorAgentRequestItem = REQUEST): Transport {
-  const transport = createMockTransport();
-  vi.mocked(transport.getConnectorAgentRequests).mockResolvedValue([request]);
-  vi.mocked(transport.getConnectorAgentRequest).mockResolvedValue(request);
-  vi.mocked(transport.getConnectorConnections).mockResolvedValue({ connections: [CONNECTION] });
-  vi.mocked(transport.getConnectorConnection).mockResolvedValue({
-    connection: CONNECTION,
-    provider: {
-      providerInstanceId: 'provider-1' as never,
-      displayName: 'DorkOS managed',
-      mode: 'managed',
-      custody: 'managed',
-      payer: 'dorkos_managed',
-      capabilities: {
-        catalog: { status: 'available' },
-        authentication: { status: 'available' },
-        accounts: { status: 'available' },
-        operations: { status: 'available' },
-        execution: { status: 'available' },
-        triggers: { status: 'available' },
-      },
-      disclosure: 'DorkOS stores login access with its managed provider.',
-    },
-    agents: [],
-    sessions: { affectedCount: 0 },
-    subscriptions: {
-      totalCount: 0,
-      activeCount: 0,
-      capability: { status: 'available' },
-    },
-  });
-  vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
-    services: [
-      {
-        serviceSlug: 'gmail',
-        displayName: 'Gmail',
-        iconKey: 'gmail',
-        intents: [
-          {
-            kind: 'account',
-            displayName: 'Use a Gmail account',
-            routes: [],
-          },
-        ],
-      },
-    ],
-    warnings: [],
-  });
-  vi.mocked(transport.getConnectionEventSource).mockResolvedValue({
-    setupMode: 'managed',
-    configured: false,
-    endpoint: null,
-    reason: null,
-  });
-  vi.mocked(transport.listConnectionEventDefinitions).mockResolvedValue({
-    definitions: request.requestedEvents.map((eventType, index) => ({
-      id: `definition-${index + 1}`,
-      eventType,
-      displayName: eventType === 'gmail.message_received' ? 'New email' : 'Mailbox changed',
-      toolkit: 'gmail',
-      toolkitVersion: '2026-09-01',
-      definitionHash: `sha256:${String(index + 1).repeat(64)}`,
-      filterSchema: {},
-      payloadSchema: {},
-      deliveryMode: 'webhook' as const,
-      expectedCadenceSeconds: null,
-    })),
-  });
-  vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
+function preview(
+  currentGrants: ConnectorReconciliationPreview['currentGrants'] = []
+): ConnectorReconciliationPreview {
+  return {
     previewId: 'preview-1',
     connection: {
       connectionId: 'connection-1' as never,
@@ -129,453 +62,157 @@ function transportFor(request: ConnectorAgentRequestItem = REQUEST): Transport {
       reconciliationStatus: 'ready',
     },
     candidates: [
-      {
-        operationRevisionId: 'read-v1',
-        toolkit: 'gmail',
-        operationSlug: 'gmail.messages.list',
-        toolkitVersion: '1',
-        capabilityClassification: 'read',
-        retryPolicy: 'never',
-        inputSchema: {},
-        supported: true,
-      },
-      {
-        operationRevisionId: 'write-v1',
-        toolkit: 'gmail',
-        operationSlug: 'gmail.messages.send',
-        toolkitVersion: '1',
-        capabilityClassification: 'write',
-        retryPolicy: 'never',
-        inputSchema: {},
-        supported: true,
-      },
-      {
-        operationRevisionId: 'delete-v1',
-        toolkit: 'gmail',
-        operationSlug: 'gmail.messages.delete',
-        toolkitVersion: '1',
-        capabilityClassification: 'destructive',
-        retryPolicy: 'never',
-        inputSchema: {},
-        supported: true,
-      },
-    ],
+      ['read-v1', 'gmail.messages.list', 'read'],
+      ['write-v1', 'gmail.messages.send', 'write'],
+      ['delete-v1', 'gmail.messages.delete', 'destructive'],
+    ].map(([operationRevisionId, operationSlug, capabilityClassification]) => ({
+      operationRevisionId: operationRevisionId!,
+      toolkit: 'gmail',
+      operationSlug: operationSlug!,
+      toolkitVersion: '1',
+      capabilityClassification: capabilityClassification as 'read' | 'write' | 'destructive',
+      retryPolicy: 'never' as const,
+      inputSchema: {},
+      supported: true,
+    })),
     agents: [{ agentId: 'agent-1', displayName: 'Researcher' }],
-    currentGrants: [],
+    currentGrants,
     everyAgent: { available: false, operationRevisionIds: [] },
     catalogComplete: true,
     createdAt: '2026-09-07T12:00:00.000Z',
     expiresAt: '2099-09-07T12:05:00.000Z',
+  };
+}
+
+function transportFor(request: ConnectorAgentRequestItem = REQUEST): Transport {
+  const transport = createMockTransport();
+  vi.mocked(transport.getConnectorAgentRequest).mockResolvedValue(request);
+  vi.mocked(transport.getConnectorConnections).mockResolvedValue({ connections: [CONNECTION] });
+  vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+    services: [
+      {
+        serviceSlug: 'gmail',
+        displayName: 'Gmail',
+        iconKey: 'gmail',
+        intents: [{ kind: 'account', displayName: 'Use a Gmail account', routes: [] }],
+      },
+    ],
+    warnings: [],
   });
-  vi.mocked(transport.resolveConnectorAgentRequest).mockImplementation(async (_id, decision) => ({
-    ...request,
-    ...(decision.decision === 'approved'
-      ? {
-          status: 'granted' as const,
-          connectionId: decision.connectionId,
-          grantedOperationRevisionIds: decision.operationRevisionIds,
-          grantedEvents: [],
-        }
-      : { status: 'denied' as const }),
-  }));
+  vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
+  vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+    connectionId: 'connection-1' as never,
+    reconciliationStatus: 'ready',
+    authoritySync: { status: 'ready' },
+    grants: [{ agentId: 'agent-1', operationRevisionIds: ['read-v1', 'write-v1'] }],
+  });
+  vi.mocked(transport.resolveConnectorAgentRequest).mockImplementation(
+    async (_id, decision): Promise<ConnectorAgentRequestItem> =>
+      decision.decision === 'denied'
+        ? { ...REQUEST, status: 'denied' }
+        : {
+            ...REQUEST,
+            status: 'granted',
+            connectionId: decision.connectionId as never,
+            grantedOperationRevisionIds: ['read-v1', 'write-v1'],
+            grantedEvents: [],
+            notGranted: [],
+          }
+  );
   return transport;
 }
 
-function renderRequests(transport: Transport, selectedRequestId: string | null = 'request-1') {
-  const queryClient = new QueryClient({
+function renderDialog(transport: Transport, onEditExactActions?: (id: string) => void) {
+  const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const view = render(
-    <QueryClientProvider client={queryClient}>
+  render(
+    <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
         <AgentRequestDialog
-          requestId={selectedRequestId}
-          open={selectedRequestId !== null}
+          requestId="request-1"
+          open
           onOpenChange={() => undefined}
-          onConnectService={() => undefined}
+          {...(onEditExactActions ? { onEditExactActions } : {})}
         />
       </TransportProvider>
     </QueryClientProvider>
   );
-  return {
-    ...view,
-    rerenderSelected(nextRequestId: string | null) {
-      view.rerender(
-        <QueryClientProvider client={queryClient}>
-          <TransportProvider transport={transport}>
-            <AgentRequestDialog
-              requestId={nextRequestId}
-              open={nextRequestId !== null}
-              onOpenChange={() => undefined}
-              onConnectService={() => undefined}
-            />
-          </TransportProvider>
-        </QueryClientProvider>
-      );
-    },
-  };
 }
 
 describe('AgentRequestDialog', () => {
-  it('defaults to requested read/write revisions and requires a separate destructive choice', async () => {
+  it('is the chat’s own card, starting on the level the agent asked for', async () => {
     const user = userEvent.setup();
     const transport = transportFor();
-    renderRequests(transport);
+    renderDialog(transport);
 
-    expect(await screen.findByRole('heading', { name: 'Review agent access' })).toBeVisible();
-    expect(await screen.findByTestId('agent-request-custody')).toHaveTextContent(
-      'DorkOS stores login access'
+    const dialog = await screen.findByTestId('agent-request-dialog');
+    expect(
+      await within(dialog).findByRole('heading', { name: 'Let Researcher use Gmail?' })
+    ).toBeVisible();
+    expect(within(dialog).getByTestId('requested-access')).toHaveTextContent(
+      'It wants to read and change things in Gmail.'
     );
-    expect(await screen.findByRole('checkbox', { name: 'List' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Send' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Delete' })).not.toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: 'Read and write' })).toBeChecked();
+    // No per-action checklist, raw badges or a second set of buttons.
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Grant access' })).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Grant access' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Allow' }));
     await waitFor(() =>
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
-        decision: 'approved',
+        decision: 'current_access',
         connectionId: 'connection-1',
-        operationRevisionIds: ['read-v1', 'write-v1'],
         eventScopes: [],
       })
     );
-    expect(await screen.findByTestId('agent-request-outcome')).toHaveTextContent('Granted');
-  });
-
-  it('sends one exact event scope with the single owner decision and no pre-grant subscription', async () => {
-    const user = userEvent.setup();
-    const transport = transportFor({
-      ...REQUEST,
-      requestedEvents: ['gmail.message_received'],
+    expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
+      previewId: 'preview-1',
+      grants: [{ agentId: 'agent-1', operationRevisionIds: ['read-v1', 'write-v1'] }],
     });
-    vi.mocked(transport.listConnectionEventDefinitions).mockResolvedValue({
-      definitions: [
-        {
-          id: 'definition-1',
-          eventType: 'gmail.message_received',
-          displayName: 'New email',
-          toolkit: 'gmail',
-          toolkitVersion: '2026-09-01',
-          definitionHash: `sha256:${'1'.repeat(64)}`,
-          filterSchema: {
-            type: 'object',
-            properties: { folder: { type: 'string', title: 'Folder' } },
-            required: ['folder'],
-          },
-          payloadSchema: {},
-          deliveryMode: 'webhook',
-          expectedCadenceSeconds: null,
-        },
-      ],
-    });
-    renderRequests(transport);
-
-    expect(await screen.findByText('Notifications')).toBeVisible();
-    const grant = screen.getByRole('button', { name: 'Grant access' });
-    expect(grant).toBeDisabled();
-    await user.click(screen.getByRole('combobox', { name: 'Account activity' }));
-    await user.click(await screen.findByRole('option', { name: 'New email' }));
-    expect(grant).toBeDisabled();
-    await user.type(screen.getByRole('textbox', { name: 'Folder' }), 'inbox');
-    expect(grant).toBeEnabled();
-    await user.click(grant);
-
-    await waitFor(() =>
-      expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
-        decision: 'approved',
-        connectionId: 'connection-1',
-        operationRevisionIds: ['read-v1', 'write-v1'],
-        eventScopes: [
-          {
-            connectionId: 'connection-1',
-            definitionId: 'definition-1',
-            filter: { folder: 'inbox' },
-            agentId: 'agent-1',
-            destination: { kind: 'agent', id: 'agent-1' },
-          },
-        ],
-      })
-    );
-    expect(transport.createConnectionEventSubscription).not.toHaveBeenCalled();
   });
 
-  it('includes defaults and an explicit blank in the exact owner-approved event scope', async () => {
-    const user = userEvent.setup();
-    const transport = transportFor({ ...REQUEST, requestedEvents: ['gmail.message_received'] });
-    vi.mocked(transport.listConnectionEventDefinitions).mockResolvedValue({
-      definitions: [
-        {
-          id: 'definition-defaults',
-          eventType: 'gmail.message_received',
-          displayName: 'New email',
-          toolkit: 'gmail',
-          toolkitVersion: '2026-09-01',
-          definitionHash: `sha256:${'1'.repeat(64)}`,
-          filterSchema: gmailFilterSchema,
-          payloadSchema: {},
-          deliveryMode: 'polling',
-          expectedCadenceSeconds: null,
-        },
-      ],
-    });
-    renderRequests(transport);
-    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
-    await user.click(await screen.findByRole('option', { name: 'New email' }));
-    expect(screen.getByRole('textbox', { name: 'Labels' })).toHaveValue('INBOX');
-    expect(screen.getByRole('textbox', { name: 'Query' })).toHaveValue('');
-    expect(screen.getByRole('spinbutton', { name: 'Interval' })).toHaveValue(1.5);
-    await user.clear(screen.getByRole('textbox', { name: 'Labels' }));
-    await user.type(screen.getByRole('textbox', { name: 'Labels' }), 'owner-label');
-    const grant = screen.getByRole('button', { name: 'Grant access' });
-    await waitFor(() => expect(grant).toBeEnabled());
-    await user.click(grant);
-    await waitFor(() =>
-      expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
-        decision: 'approved',
-        connectionId: 'connection-1',
-        operationRevisionIds: ['read-v1', 'write-v1'],
-        eventScopes: [
-          {
-            connectionId: 'connection-1',
-            definitionId: 'definition-defaults',
-            filter: { interval: 1.5, labelIds: 'owner-label', query: '', userId: 'me' },
-            agentId: 'agent-1',
-            destination: { kind: 'agent', id: 'agent-1' },
-          },
-        ],
-      })
-    );
-    expect(transport.createConnectionEventSubscription).not.toHaveBeenCalled();
-  });
-
-  it('requires one complete exact scope for every requested event', async () => {
-    const user = userEvent.setup();
-    const transport = transportFor({
-      ...REQUEST,
-      requestedEvents: ['gmail.message_received', 'gmail.mailbox_changed'],
-    });
-    renderRequests(transport);
-
-    const grant = await screen.findByRole('button', { name: 'Grant access' });
-    const activity = await screen.findAllByRole('combobox', { name: 'Account activity' });
-    await user.click(activity[0]!);
-    await user.click(await screen.findByRole('option', { name: 'New email' }));
-    expect(grant).toBeDisabled();
-    await user.click(activity[1]!);
-    await user.click(await screen.findByRole('option', { name: 'Mailbox changed' }));
-    expect(grant).toBeEnabled();
-  });
-
-  it('refuses an event definition whose filter cannot be represented safely', async () => {
-    const user = userEvent.setup();
-    const request = { ...REQUEST, requestedEvents: ['gmail.message_received'] };
-    const transport = transportFor(request);
-    vi.mocked(transport.listConnectionEventDefinitions).mockResolvedValue({
-      definitions: [
-        {
-          id: 'definition-unsupported',
-          eventType: 'gmail.message_received',
-          displayName: 'New email',
-          toolkit: 'gmail',
-          toolkitVersion: '2026-09-01',
-          definitionHash: `sha256:${'a'.repeat(64)}`,
-          filterSchema: {
-            type: 'object',
-            properties: {},
-            patternProperties: { '.*': { type: 'string' } },
-          },
-          payloadSchema: {},
-          deliveryMode: 'webhook',
-          expectedCadenceSeconds: null,
-        },
-      ],
-    });
-    renderRequests(transport);
-
-    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
-    await user.click(await screen.findByRole('option', { name: 'New email' }));
-    expect(
-      screen.getByText('This notification needs filter controls this app cannot safely show yet.')
-    ).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Grant access' })).toBeDisabled();
-    expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
-  });
-
-  it('uses server source authority and never offers definitions for unrequested activity', async () => {
-    const user = userEvent.setup();
-    const request = { ...REQUEST, requestedEvents: ['gmail.message_received'] };
-    const transport = transportFor(request);
-    vi.mocked(transport.getConnectionEventSource).mockResolvedValue({
-      setupMode: 'unavailable',
-      configured: false,
-      endpoint: null,
-      reason: 'Notifications are unavailable for this account.',
-    });
-    vi.mocked(transport.listConnectionEventDefinitions).mockResolvedValue({
-      definitions: [
-        {
-          id: 'definition-requested',
-          eventType: 'gmail.message_received',
-          displayName: 'New email',
-          toolkit: 'gmail',
-          toolkitVersion: '2026-09-01',
-          definitionHash: `sha256:${'c'.repeat(64)}`,
-          filterSchema: {},
-          payloadSchema: {},
-          deliveryMode: 'webhook',
-          expectedCadenceSeconds: null,
-        },
-        {
-          id: 'definition-unrequested',
-          eventType: 'gmail.draft_created',
-          displayName: 'Draft created',
-          toolkit: 'gmail',
-          toolkitVersion: '2026-09-01',
-          definitionHash: `sha256:${'d'.repeat(64)}`,
-          filterSchema: {},
-          payloadSchema: {},
-          deliveryMode: 'webhook',
-          expectedCadenceSeconds: null,
-        },
-      ],
-    });
-    renderRequests(transport);
-
-    expect(
-      await screen.findByText('Notifications are unavailable for this account.')
-    ).toBeVisible();
-    await user.click(screen.getByRole('combobox', { name: 'Account activity' }));
-    expect(await screen.findByRole('option', { name: 'New email' })).toBeVisible();
-    expect(screen.queryByRole('option', { name: 'Draft created' })).toBeNull();
-    await user.click(screen.getByRole('option', { name: 'New email' }));
-    expect(screen.getByRole('button', { name: 'Grant access' })).toBeDisabled();
-  });
-
-  it('loads later definition pages before deciding requested activity is unavailable', async () => {
-    const user = userEvent.setup();
-    const request = { ...REQUEST, requestedEvents: ['gmail.message_received'] };
-    const transport = transportFor(request);
-    vi.mocked(transport.listConnectionEventDefinitions)
-      .mockResolvedValueOnce({ definitions: [], nextCursor: 'definitions-2' })
-      .mockResolvedValueOnce({
-        definitions: [
-          {
-            id: 'definition-later',
-            eventType: 'gmail.message_received',
-            displayName: 'New email',
-            toolkit: 'gmail',
-            toolkitVersion: '2026-09-01',
-            definitionHash: `sha256:${'b'.repeat(64)}`,
-            filterSchema: {},
-            payloadSchema: {},
-            deliveryMode: 'unknown',
-            expectedCadenceSeconds: null,
-          },
-        ],
-      });
-    renderRequests(transport);
-
-    expect(
-      await screen.findByText('Load more notification options to finish this request.')
-    ).toBeVisible();
-    expect(screen.queryByText('This account does not currently offer this activity.')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Load more notification options' }));
-    expect(await screen.findByRole('combobox', { name: 'Account activity' })).toBeVisible();
-    expect(transport.listConnectionEventDefinitions).toHaveBeenNthCalledWith(
-      2,
-      'connection-1',
-      'definitions-2'
-    );
-  });
-
-  it('discards completed event scopes when the owner changes accounts', async () => {
-    const user = userEvent.setup();
-    const request = { ...REQUEST, requestedEvents: ['gmail.message_received'] };
-    const transport = transportFor(request);
-    const secondConnection = {
-      ...CONNECTION,
-      connectionId: 'connection-2' as never,
-      label: 'Personal mail',
-      identityHint: 'p•••@example.com',
-    };
-    vi.mocked(transport.getConnectorConnections).mockResolvedValue({
-      connections: [CONNECTION, secondConnection],
-    });
-    vi.mocked(transport.getConnectorConnection).mockImplementation(async (connectionId) => ({
-      connection: connectionId === 'connection-2' ? secondConnection : CONNECTION,
-      provider: {
-        providerInstanceId: 'provider-1' as never,
-        displayName: 'DorkOS managed',
-        mode: 'managed',
-        custody: 'managed',
-        payer: 'dorkos_managed',
-        capabilities: {
-          catalog: { status: 'available' },
-          authentication: { status: 'available' },
-          accounts: { status: 'available' },
-          operations: { status: 'available' },
-          execution: { status: 'available' },
-          triggers: { status: 'available' },
-        },
-        disclosure: 'DorkOS stores login access with its managed provider.',
-      },
-      agents: [],
-      sessions: { affectedCount: 0 },
-      subscriptions: {
-        totalCount: 0,
-        activeCount: 0,
-        capability: { status: 'available' },
-      },
-    }));
-    renderRequests(transport);
-
-    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
-    await user.click(await screen.findByRole('option', { name: 'New email' }));
-    expect(screen.getByRole('button', { name: 'Grant access' })).toBeEnabled();
-
-    await user.click(screen.getByRole('combobox', { name: 'Account' }));
-    await user.click(await screen.findByRole('option', { name: /Personal mail/ }));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Grant access' })).toBeDisabled()
-    );
-    expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
-  });
-
-  it('discards completed event scopes when the selected request changes', async () => {
-    const user = userEvent.setup();
-    const firstRequest = { ...REQUEST, requestedEvents: ['gmail.message_received'] };
-    const secondRequest = {
-      ...firstRequest,
-      requestId: 'request-2',
-      reviewUrl: '/connections?request=request-2',
-      reason: 'Notify me about a different task.',
-    };
-    const transport = transportFor(firstRequest);
-    vi.mocked(transport.getConnectorAgentRequest).mockImplementation(async (requestId) =>
-      requestId === 'request-2' ? secondRequest : firstRequest
-    );
-    const view = renderRequests(transport);
-
-    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
-    await user.click(await screen.findByRole('option', { name: 'New email' }));
-    expect(screen.getByRole('button', { name: 'Grant access' })).toBeEnabled();
-
-    view.rerenderSelected('request-2');
-    expect(await screen.findByText('Notify me about a different task.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Grant access' })).toBeDisabled();
-    expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
-  });
-
-  it('denies without sending an account or service action selection', async () => {
+  it('answers "Not now" as a no, sending no account', async () => {
     const user = userEvent.setup();
     const transport = transportFor();
-    renderRequests(transport);
+    renderDialog(transport);
 
-    await user.click(await screen.findByRole('button', { name: 'Deny' }));
+    await user.click(await screen.findByRole('button', { name: 'Not now' }));
     await waitFor(() =>
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
         decision: 'denied',
       })
     );
+  });
+
+  it('shows an answered request as the same one-line record the chat keeps', async () => {
+    renderDialog(transportFor({ ...REQUEST, status: 'denied' }));
+    expect(await screen.findByTestId('agent-request-receipt')).toHaveTextContent(
+      'Researcher wasn’t given Gmail'
+    );
+  });
+
+  it('hands exact actions the agent already holds to the page’s editor', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor();
+    // Only the send action: a set neither level describes.
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([{ agentId: 'agent-1', operationRevisionIds: ['write-v1'] }])
+    );
+    const edit = vi.fn();
+    renderDialog(transport, edit);
+
+    expect(
+      await screen.findByText(/Researcher already has exact actions chosen for this account\./)
+    ).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Choose exact actions' }));
+    expect(edit).toHaveBeenCalledWith('connection-1');
+  });
+
+  it('offers a retry when the request cannot be read', async () => {
+    const transport = transportFor();
+    vi.mocked(transport.getConnectorAgentRequest).mockRejectedValue(new Error('offline'));
+    renderDialog(transport);
+    expect(await screen.findByText('Couldn’t load this request')).toBeVisible();
   });
 });

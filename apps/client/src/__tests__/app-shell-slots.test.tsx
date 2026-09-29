@@ -290,6 +290,8 @@ vi.mock('@/layers/entities/attention', () => ({
     asks: [],
     schedules: [],
     extensionApprovals: [],
+    extensionDecisions: [],
+    decisionOffers: [],
     items: mockPendingApprovals.map((a) => ({
       id: `approval:${a.approvalId}`,
       kind: 'permission-prompt' as const,

@@ -19,7 +19,11 @@ import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { Task } from '@dorkos/shared/types';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
-import { usePendingExtensionApprovals } from '@/layers/entities/extension';
+import type {
+  ExtensionDecisionDTO,
+  PendingDecisionOffer,
+} from '@dorkos/shared/extension-decision-schemas';
+import { useExtensionDecisions, usePendingExtensionApprovals } from '@/layers/entities/extension';
 import { deriveWaitingItems, type WaitingItem } from './derive-waiting-items';
 import { usePendingApprovals } from './use-pending-approvals';
 import { usePendingInteractions } from './use-pending-interactions';
@@ -45,6 +49,16 @@ export interface WaitingQueueState {
    * nothing is stopped while one waits.
    */
   extensionApprovals: readonly PendingExtensionApproval[];
+  /**
+   * Decisions extensions asked a person about, oldest first (spec
+   * `flow-multiproject` §7.5): of running extensions, in folders that exist.
+   */
+  extensionDecisions: readonly ExtensionDecisionDTO[];
+  /**
+   * One-time "next time, on its own?" offers a person has not answered yet.
+   * Not waiting items: they are drawn under the answered row in Activity.
+   */
+  decisionOffers: readonly PendingDecisionOffer[];
   /**
    * The same four queues, flattened to one id/kind per item — what an
    * agreement check against {@link deriveAttentionSignals} compares against.
@@ -77,11 +91,23 @@ export function useWaitingQueue(): WaitingQueueState {
   const { interactions: asks } = usePendingInteractions();
   const { schedules } = usePendingScheduleApprovals();
   const { approvals: extensionApprovals } = usePendingExtensionApprovals();
+  const { decisions: extensionDecisions, offers: decisionOffers } = useExtensionDecisions();
 
   const items = useMemo(
-    () => deriveWaitingItems({ approvals, asks, schedules, extensionApprovals }),
-    [approvals, asks, schedules, extensionApprovals]
+    () =>
+      deriveWaitingItems({ approvals, asks, schedules, extensionApprovals, extensionDecisions }),
+    [approvals, asks, schedules, extensionApprovals, extensionDecisions]
   );
 
-  return { approvals, asks, schedules, extensionApprovals, items, isError, retry };
+  return {
+    approvals,
+    asks,
+    schedules,
+    extensionApprovals,
+    extensionDecisions,
+    decisionOffers,
+    items,
+    isError,
+    retry,
+  };
 }

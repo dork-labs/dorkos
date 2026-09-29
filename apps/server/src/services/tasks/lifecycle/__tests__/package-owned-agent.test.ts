@@ -44,7 +44,7 @@ import { createScheduledTask } from '../create-task.js';
 import {
   computeInstalledFiles,
   writeInstalledFiles,
-} from '../../../marketplace/lib/installed-files.js';
+} from '../../../marketplace/lib/records/installed-files.js';
 
 let db: Db;
 let store: TaskStore;

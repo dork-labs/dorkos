@@ -352,6 +352,8 @@ export type { FocusPageHeadingOptions, PageHeadingProps } from './page-heading';
 export { PathInput } from './path-input';
 export type { PathInputProps } from './path-input';
 export { Skeleton } from './skeleton';
+export { ContributedIcon, isRenderableIcon } from './contributed-icon';
+export type { ContributedIconProps } from './contributed-icon';
 export { Textarea } from './textarea';
 export { Toaster } from './sonner';
 export {

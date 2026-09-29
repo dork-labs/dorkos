@@ -165,7 +165,7 @@ These exclusions are enforced by three complementary tests, all of which are req
 
 2. **Receive-side test** — `apps/site/src/app/api/telemetry/install/__tests__/route.test.ts`. Constructs a request to `/api/telemetry/install` with PII-shaped headers (`x-forwarded-for: 1.2.3.4`, `cookie: session=abc`, `user-agent: SuperSecretAgent/1.0`) and a valid event body. After the route handler runs, the test inspects the values that were passed into `db.insert(marketplaceInstallEvents).values(...)` and asserts that none of the PII strings (`1.2.3.4`, `abc`, `SuperSecretAgent`) appear anywhere in the inserted row. If the route handler ever starts copying request headers into the row, this test fails. A second case in the same file covers the rate limiter specifically: it sends a request whose `x-real-ip` the throttle definitely meters, then asserts that address is absent from the insert — so "read for counting" can never quietly become "read for storing".
 
-3. **Client-side test** — `apps/server/src/services/marketplace/__tests__/telemetry-privacy.test.ts`. Stubs `global.fetch`, registers the dorkos.ai reporter with `consent: true`, triggers `reportInstallEvent`, and inspects the captured `fetch` body. Asserts (a) the JSON has only allow-listed keys, (b) the raw body string does not contain `os.hostname()`, `os.userInfo().username`, or `process.cwd()` — read at test time, so any future field that leaks the local environment fails immediately, and (c) the opt-out path (`consent: false`) makes zero `fetch` calls.
+3. **Client-side test** — `apps/server/src/services/marketplace/telemetry/__tests__/telemetry-privacy.test.ts`. Stubs `global.fetch`, registers the dorkos.ai reporter with `consent: true`, triggers `reportInstallEvent`, and inspects the captured `fetch` body. Asserts (a) the JSON has only allow-listed keys, (b) the raw body string does not contain `os.hostname()`, `os.userInfo().username`, or `process.cwd()` — read at test time, so any future field that leaks the local environment fails immediately, and (c) the opt-out path (`consent: false`) makes zero `fetch` calls.
 
 The three tests together form defense in depth: the client test guards the send layer, the route test guards the receive layer, the schema test guards the storage layer. Bypassing any one is a gate failure.
 
@@ -251,7 +251,7 @@ ALTER TABLE "marketplace_install_events" ALTER COLUMN "source_type" SET NOT NULL
 
 ### Wire format
 
-The telemetry reporter on the server (`services/marketplace/telemetry-reporter.ts`)
+The telemetry reporter on the server (`services/marketplace/telemetry/telemetry-reporter.ts`)
 derives `sourceType` from the resolved `PluginSource` discriminator and
 includes it in every POST to `/api/telemetry/install`. The Edge Function
 validates the field via the Zod `enum(['relative-path', 'github', 'url', 'git-subdir', 'npm'])`

@@ -22,8 +22,11 @@ import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { createTestDb } from '@dorkos/test-utils/db';
 
 import { ApprovalService } from '../../core/approvals/index.js';
-import { PermissionPreviewBuilder } from '../../marketplace/permission-preview.js';
-import type { InstallerLike, PreviewResult } from '../../marketplace/marketplace-installer.js';
+import { PermissionPreviewBuilder } from '../../marketplace/preview/permission-preview.js';
+import type {
+  InstallerLike,
+  PreviewResult,
+} from '../../marketplace/installer/marketplace-installer.js';
 import type { InstallResult } from '../../marketplace/types.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import { createInstallHandler } from '../tool-install.js';

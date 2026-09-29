@@ -28,12 +28,11 @@ import { stableStringify } from '@dorkos/shared/capabilities';
 import { readInstallMetadata } from '../../installed-metadata.js';
 import { withInstallTargetLock } from '../../transaction.js';
 import {
-  hashFile,
-  lstatChain,
   readInstalledFiles,
   writeInstalledFiles,
   type InstalledFiles,
-} from '../installed-files.js';
+} from '../records/installed-files.js';
+import { hashFile, lstatChain } from '../records/tree-scan.js';
 import { runningUnproven } from './unproven.js';
 
 /** What {@link keepUnprovenFiles} did. */

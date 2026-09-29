@@ -11,15 +11,16 @@ import type {
   ConnectorReconciliationCandidate,
   ConnectorReconciliationGrantSelection,
   ConnectorReconciliationPreview,
+  ConnectorRequestAccess,
 } from '@dorkos/shared/connector-schemas';
-import {
-  levelIncludes,
-  revisionIdsForAccessLevel,
-  selectionsFromPreview,
-} from './reconciliation-selection';
+import { revisionIdsForAccessLevel, selectionsFromPreview } from './reconciliation-selection';
 
-/** The two levels the card offers. Exact per-action picks stay in the exact access editor. */
-export type CardAccessLevel = 'read' | 'read-write';
+/**
+ * The two levels the card offers, the same two an agent asks for
+ * (`ConnectorRequestAccess`), so a request and its answer are one vocabulary.
+ * Exact per-action picks stay in the exact access editor.
+ */
+export type CardAccessLevel = ConnectorRequestAccess;
 
 /** What an agent holds today, read against the card's presets. */
 export type HeldAccess = 'none' | CardAccessLevel | 'custom';
@@ -182,41 +183,6 @@ export function cardDecision(
     }
   }
   return { changes, removedAgentIds, downgradedAgentIds, needsLevel };
-}
-
-/** What an agent's request for an app asks of the card's two levels. */
-export interface RequestedLevel {
-  /** The lowest level that covers everything asked for that a level can cover. */
-  level: CardAccessLevel;
-  /** Operations asked for that no level covers (destructive, or not available on this account). */
-  uncovered: string[];
-  /** Operations asked for that only Read and write covers. */
-  needsWrite: string[];
-}
-
-/**
- * Read an agent's requested operations against one account's snapshot, so the
- * chat card starts on the level the agent actually asked for rather than on
- * Read, and can say plainly what a lower level, or either level, leaves out.
- *
- * @param candidates - The account's complete operation snapshot.
- * @param requestedOperations - The operation slugs the agent asked for.
- */
-export function levelForRequest(
-  candidates: ConnectorReconciliationCandidate[],
-  requestedOperations: readonly string[]
-): RequestedLevel {
-  const uncovered: string[] = [];
-  const needsWrite: string[] = [];
-  for (const operation of requestedOperations) {
-    const candidate = candidates.find((item) => item.operationSlug === operation && item.supported);
-    if (!candidate || !levelIncludes(candidate.capabilityClassification, 'read-write')) {
-      uncovered.push(operation);
-    } else if (!levelIncludes(candidate.capabilityClassification, 'read')) {
-      needsWrite.push(operation);
-    }
-  }
-  return { level: needsWrite.length > 0 ? 'read-write' : 'read', uncovered, needsWrite };
 }
 
 /** The page card's two answers to "Who can use it?" (DOR-2420). */

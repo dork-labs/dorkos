@@ -29,6 +29,8 @@ import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-ope
 import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
+import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
+import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -276,7 +278,7 @@ import {
   FoundClaudeFolderSchema,
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
-import { DisclosedEffectsSchema } from '../marketplace/disclosed-effects.js';
+import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
 
 /**
  * Simplified documentation mirror of `@dorkos/marketplace`'s
@@ -555,8 +557,8 @@ const LocalInstallationUpdatesResultSchema = z.object({
 });
 
 /**
- * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
- * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall.ts`.
+ * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall/support.js').UninstallResult}.
+ * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall/support.ts`.
  */
 const LocalUninstallResultSchema = z.object({
   ok: z.boolean(),
@@ -570,6 +572,7 @@ const LocalUninstallResultSchema = z.object({
 const registry = new OpenAPIRegistry();
 registerConnectorEventOpenApi(registry);
 registerSessionContinueOpenApi(registry);
+registerProjectsOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -622,7 +625,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'List all sessions',
   description:
-    'Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle) and its flow `trackerItem`; the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.',
+    'Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle), and its flow `trackerItems` (every item it works on, newest first, including work it started in chats of their own) beside the deprecated `trackerItem` (the newest); the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.',
   request: {
     query: ListSessionsQuerySchema,
   },
@@ -2933,7 +2936,7 @@ registry.registerPath({
             disclosed: DisclosedEffectsSchema,
             contentHash: z.string(),
             // Raw README markdown read from the staged clone; omitted when the
-            // package ships no README (see routes/marketplace.ts readPackageReadme).
+            // package ships no README (see routes/marketplace/packages.ts readPackageReadme).
             readme: z.string().optional(),
           }),
         },
@@ -7563,6 +7566,9 @@ registry.registerPath({
 
 // projection throws if a capability path shadows a hand-registered one.
 registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
+
+// Extension decisions and per-project settings (spec `flow-multiproject` §7).
+registerExtensionDecisionsOpenApi(registry);
 
 // --- Generator ---
 
