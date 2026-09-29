@@ -10,6 +10,7 @@ import {
   WIRED_NOTIFICATION_KINDS,
   type NotificationPayloads,
 } from '../notification-registry.js';
+import { parseExtensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
 
 /**
  * One payload per kind, so every entry can be exercised. Typed against the
@@ -424,8 +425,18 @@ describe('notification registry', () => {
       );
     });
 
-    it('files its subject as this version of this extension', () => {
-      expect(entry.locate(waiting).subjectId).toBe('flow@1.2.0');
+    it('files its subject as this exact copy: id, path, plugin and version', () => {
+      expect(parseExtensionApprovalSubjectId(entry.locate(waiting).subjectId)).toEqual({
+        id: 'flow',
+        path: waiting.path,
+        plugin: 'flow',
+        version: '1.2.0',
+      });
+    });
+
+    it('never folds a second answer about the same copy into the first', () => {
+      // "Not now", then "Turn it on" a minute later, are two answers.
+      expect(entry.dedupeWindowMs).toBe(0);
     });
 
     it('never puts the path on screen', () => {

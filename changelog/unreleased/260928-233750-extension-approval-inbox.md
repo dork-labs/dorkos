@@ -1,5 +1,7 @@
 ---
 covers:
+  - 'fix(extensions): approve only the copy a row showed, and keep the history honest (DOR-2517)'
+  - 'fix(inbox): send the exact copy with every answer, and say who added an extension (DOR-2517)'
   - 'feat(server): list extensions waiting to be turned on and raise extension.approval (DOR-2517)'
   - 'feat(extensions): ask in the Activity inbox to turn on an installed extension (DOR-2517)'
 ---

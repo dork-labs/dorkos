@@ -29,8 +29,13 @@ export const PendingExtensionApprovalSchema = z
     name: z.string().min(1),
     /** Manifest version of the copy that would run. */
     version: z.string().min(1),
-    /** Resolved path of that copy; part of the source it would be bound to. */
-    path: z.string().min(1),
+    /**
+     * Resolved path of that copy; part of the source it would be bound to.
+     * Present only for the person: a caller DorkOS cannot show is a person
+     * (an agent) gets the list without it, so no absolute path or home folder
+     * leaves the machine's owner.
+     */
+    path: z.string().min(1).optional(),
     /** Plugin folder it came inside, when plugin-carried. */
     plugin: z.string().min(1).nullable(),
     /** The mono source line, e.g. "flow plugin · dork-labs/marketplace". Display only. */
@@ -75,6 +80,8 @@ export const DismissExtensionApprovalRequestSchema = z
     path: z.string().min(1),
     /** The manifest version of the copy the row showed. */
     version: z.string().min(1),
+    /** The plugin that carried it, or `null` for a direct install. Compared when sent. */
+    plugin: z.string().min(1).nullable().optional(),
   })
   .openapi('DismissExtensionApprovalRequest');
 
@@ -83,3 +90,80 @@ export type DismissExtensionApprovalRequest = z.infer<typeof DismissExtensionApp
 
 /** The code a "Not now" answer to an out-of-date row is refused with. */
 export const STALE_APPROVAL_CODE = 'stale_approval';
+
+/**
+ * Which copy of an extension a person was asked about: its id, the resolved
+ * path of that copy, the plugin that carried it (or `null`), and its version.
+ * Everything an answer has to match before DorkOS acts on it (DOR-2517).
+ */
+export interface ExtensionCopyIdentity {
+  /** Extension id. */
+  id: string;
+  /** Resolved path of the copy. */
+  path: string;
+  /** The plugin it came inside, or `null` for a direct install. */
+  plugin: string | null;
+  /** Manifest version of the copy. */
+  version: string;
+}
+
+/**
+ * Optional body of `POST /api/extensions/:id/approve`: the copy the person was
+ * shown. When present, the approval is refused with `409 stale_approval` unless
+ * the copy on disk is still exactly that one, so a click on an old row can
+ * never approve a copy that took its place (another plugin, or a project folder
+ * reusing the id).
+ */
+export const ApproveExtensionRequestSchema = z
+  .object({
+    /** The resolved path of the copy the row showed. */
+    path: z.string().min(1),
+    /** The manifest version of the copy the row showed. */
+    version: z.string().min(1),
+    /** The plugin that carried it, or `null` for a direct install. Compared when sent. */
+    plugin: z.string().min(1).nullable().optional(),
+  })
+  .openapi('ApproveExtensionRequest');
+
+/** Optional body of `POST /api/extensions/:id/approve`. */
+export type ApproveExtensionRequest = z.infer<typeof ApproveExtensionRequestSchema>;
+
+/**
+ * The subject id an `extension.approval` notification is filed under: the full
+ * copy identity, as JSON, so a history row can name exactly the copy it was
+ * about. Notifications are read only by the person they are for, so the path is
+ * safe here.
+ *
+ * @param copy - The copy the person was asked about.
+ * @returns A stable string for `subject.id`.
+ */
+export function extensionApprovalSubjectId(copy: ExtensionCopyIdentity): string {
+  return JSON.stringify({
+    id: copy.id,
+    path: copy.path,
+    plugin: copy.plugin,
+    version: copy.version,
+  });
+}
+
+/**
+ * Read an `extension.approval` subject id back into the copy it names.
+ *
+ * @param subjectId - A notification's `subject.id`.
+ * @returns The copy, or `null` when the id is not in that form.
+ */
+export function parseExtensionApprovalSubjectId(subjectId: string): ExtensionCopyIdentity | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(subjectId);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const { id, path, plugin, version } = parsed as Record<string, unknown>;
+  if (typeof id !== 'string' || !id) return null;
+  if (typeof path !== 'string' || !path) return null;
+  if (typeof version !== 'string' || !version) return null;
+  if (plugin !== null && typeof plugin !== 'string') return null;
+  return { id, path, plugin, version };
+}

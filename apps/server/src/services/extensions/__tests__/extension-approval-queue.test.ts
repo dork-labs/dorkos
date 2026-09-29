@@ -78,6 +78,7 @@ import {
   type ExtensionApprovalQueue,
 } from '../extension-approval-queue.js';
 import { createExtensionsRouter } from '../../../routes/extensions.js';
+import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_FIXTURE = path.resolve(HERE, '../../marketplace/fixtures/valid-plugin');
@@ -130,20 +131,23 @@ function writeManifest(plugin: string, fields: Record<string, unknown>): void {
  */
 async function installPlugin(
   plugin = 'flow',
-  manifest: Record<string, unknown> = { name: 'Flow', contributions: { 'right-panel': true } }
+  manifest: Record<string, unknown> = { name: 'Flow', contributions: { 'right-panel': true } },
+  options: { throughInstaller: boolean } = { throughInstaller: true }
 ): Promise<void> {
   const root = path.join(dorkHome, 'plugins', plugin);
   fs.cpSync(PLUGIN_FIXTURE, root, { recursive: true });
-  fs.writeFileSync(
-    path.join(root, '.dork', 'install-metadata.json'),
-    JSON.stringify({
-      name: plugin,
-      version: '1.0.0',
-      type: 'plugin',
-      installedAt: '2026-09-28T00:00:00.000Z',
-      sourceRepo: 'dork-labs/marketplace',
-    })
-  );
+  if (options.throughInstaller) {
+    fs.writeFileSync(
+      path.join(root, '.dork', 'install-metadata.json'),
+      JSON.stringify({
+        name: plugin,
+        version: '1.0.0',
+        type: 'plugin',
+        installedAt: '2026-09-28T00:00:00.000Z',
+        sourceRepo: 'dork-labs/marketplace',
+      })
+    );
+  }
   writeManifest(plugin, manifest);
   await manager.enable(EXT_ID);
   await queue.sync();
@@ -209,7 +213,7 @@ describe('an extension waiting to run asks in the inbox', () => {
       path: extensionDir('flow'),
       sourceLabel: 'flow plugin · dork-labs/marketplace',
       adds: 'It adds a Flow tab',
-      why: 'You installed the flow plugin. This adds a Flow tab. It runs as you.',
+      why: 'You installed the flow plugin from dork-labs/marketplace. This adds a Flow tab. It runs as you.',
       runsInServer: false,
     });
     expect(approvalArrivals()).toHaveLength(1);
@@ -235,7 +239,15 @@ describe('an extension waiting to run asks in the inbox', () => {
       outcome: 'approved',
       title: 'You turned on Flow',
       body: 'Flow tab added',
-      subject: { type: 'system', id: `${EXT_ID}@1.0.0` },
+      subject: {
+        type: 'system',
+        id: extensionApprovalSubjectId({
+          id: EXT_ID,
+          path: extensionDir('flow'),
+          plugin: 'flow',
+          version: '1.0.0',
+        }),
+      },
     });
     // The person answered it themselves, so it is not news to them.
     expect(rows[0].readAt).toBeDefined();
@@ -353,19 +365,121 @@ describe('an extension waiting to run asks in the inbox', () => {
       expect(res.status).toBe(404);
     });
 
-    it('is cleared by a later approval, so a withdrawal plus a reinstall asks again', async () => {
+    it('is cleared by a later approval', async () => {
+      await installPlugin();
+      const [shown] = await pending();
+      await request(server)
+        .post(`/api/extensions/${EXT_ID}/dismiss-approval`)
+        .send({ path: shown.path, version: shown.version });
+      expect(Object.keys(state.extensions.dismissedApprovals)).toEqual([EXT_ID]);
+
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      expect(state.extensions.dismissedApprovals).toEqual({});
+    });
+
+    it('turning a put-off copy on later records that it is on (history tells the truth)', async () => {
+      await installPlugin();
+      const [shown] = await pending();
+      await request(server)
+        .post(`/api/extensions/${EXT_ID}/dismiss-approval`)
+        .send({ path: shown.path, version: shown.version });
+      await queue.sync();
+      expect(historyRows().map((row) => row.outcome)).toEqual(['dismissed']);
+
+      // The history row's "Turn it on", naming the copy it was about.
+      const res = await request(server)
+        .post(`/api/extensions/${EXT_ID}/approve`)
+        .send({ path: shown.path, version: shown.version, plugin: shown.plugin });
+      expect(res.status).toBe(200);
+      await queue.sync();
+
+      const rows = historyRows();
+      expect(rows.map((row) => row.outcome).sort()).toEqual(['approved', 'dismissed']);
+      expect(rows.find((row) => row.outcome === 'approved')?.title).toBe('You turned on Flow');
+    });
+  });
+
+  describe('"Stop it"', () => {
+    it('puts that copy off: the ask does not come back until the version changes', async () => {
+      await installPlugin();
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await queue.sync();
+      const arrivalsBefore = approvalArrivals().length;
+
+      const res = await request(server).post(`/api/extensions/${EXT_ID}/revoke`).send({});
+      expect(res.status).toBe(200);
+      await queue.sync();
+
+      expect(state.extensions.approvedToRun).not.toContain(EXT_ID);
+      expect(await pending()).toEqual([]);
+      expect(approvalArrivals()).toHaveLength(arrivalsBefore);
+
+      writeManifest('flow', { version: '1.1.0' });
+      await manager.reload();
+      await queue.sync();
+      expect(await pending()).toEqual([expect.objectContaining({ version: '1.1.0' })]);
+    });
+
+    it('writes "You turned on" when the stopped copy is turned on again', async () => {
+      await installPlugin();
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await queue.sync();
+      await request(server).post(`/api/extensions/${EXT_ID}/revoke`).send({});
+      await queue.sync();
+
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await queue.sync();
+
+      expect(historyRows().map((row) => row.outcome)).toEqual(['approved', 'approved']);
+    });
+  });
+
+  describe('approving from a row binds only the copy the row showed', () => {
+    it('refuses when another copy took its place, and turns nothing on', async () => {
       await installPlugin();
       const [shown] = await pending();
       await request(server)
         .post(`/api/extensions/${EXT_ID}/dismiss-approval`)
         .send({ path: shown.path, version: shown.version });
 
-      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
-      expect(state.extensions.dismissedApprovals).toEqual({});
+      // An agent drops a project copy with the same id and version; discovery
+      // lets a project copy stand in for an unapproved global one.
+      const project = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-ext-project-'));
+      const agentCopy = path.join(project, '.dork', 'extensions', EXT_ID);
+      fs.cpSync(extensionDir('flow'), agentCopy, { recursive: true });
+      await manager.updateCwd(project);
+      expect(manager.get(EXT_ID)?.path).toBe(agentCopy);
 
-      await request(server).post(`/api/extensions/${EXT_ID}/revoke`).send({});
-      await queue.sync();
-      expect(await pending()).toHaveLength(1);
+      const res = await request(server)
+        .post(`/api/extensions/${EXT_ID}/approve`)
+        .send({ path: shown.path, version: shown.version, plugin: shown.plugin });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('stale_approval');
+      expect(state.extensions.approvedToRun).not.toContain(EXT_ID);
+      expect(state.extensions.approvedSources).toEqual({});
+      fs.rmSync(project, { recursive: true, force: true });
+    });
+
+    it('refuses a different plugin or version, and approves the exact copy', async () => {
+      await installPlugin();
+      const [shown] = await pending();
+
+      const wrongPlugin = await request(server)
+        .post(`/api/extensions/${EXT_ID}/approve`)
+        .send({ path: shown.path, version: shown.version, plugin: 'other' });
+      expect(wrongPlugin.status).toBe(409);
+      const wrongVersion = await request(server)
+        .post(`/api/extensions/${EXT_ID}/approve`)
+        .send({ path: shown.path, version: '9.9.9', plugin: shown.plugin });
+      expect(wrongVersion.status).toBe(409);
+      expect(state.extensions.approvedToRun).toEqual([]);
+
+      const exact = await request(server)
+        .post(`/api/extensions/${EXT_ID}/approve`)
+        .send({ path: shown.path, version: shown.version, plugin: shown.plugin });
+      expect(exact.status).toBe(200);
+      expect(state.extensions.approvedToRun).toEqual([EXT_ID]);
     });
   });
 
@@ -389,6 +503,58 @@ describe('an extension waiting to run asks in the inbox', () => {
     expect(await pending()).toEqual([]);
   });
 
+  it('does not re-announce what is already waiting when the server restarts', async () => {
+    await installPlugin();
+    expect(approvalArrivals()).toHaveLength(1);
+
+    // A fresh process: a new queue over the same manager and config.
+    stopQueue();
+    ({ queue, stop: stopQueue } = startExtensionApprovalQueue(manager));
+    await queue.sync();
+    await manager.reload();
+    await queue.sync();
+
+    expect(approvalArrivals()).toHaveLength(1);
+    // …and it still knows the copy, so answering it records the answer.
+    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+    await queue.sync();
+    expect(historyRows().map((row) => row.outcome)).toEqual(['approved']);
+  });
+
+  it('gives an agent the list without any absolute path or home folder', async () => {
+    const dir = path.join(dorkHome, 'extensions', 'solo');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'extension.json'),
+      JSON.stringify({ id: 'solo', name: 'Solo', version: '2.0.0' })
+    );
+    fs.writeFileSync(path.join(dir, 'index.ts'), 'export function activate() {}\n');
+    await manager.enable('solo');
+
+    const asAgent = await request(server)
+      .get('/api/extensions/pending-approvals')
+      .set('x-dorkos-agent', 'agent-token-abc');
+    expect(asAgent.status).toBe(200);
+    const body = JSON.stringify(asAgent.body);
+    expect(asAgent.body.approvals).toHaveLength(1);
+    expect(asAgent.body.approvals[0].path).toBeUndefined();
+    expect(body).not.toContain(dorkHome);
+    expect(body).not.toContain('~/');
+
+    const [asPerson] = await pending();
+    expect(asPerson.path).toBe(dir);
+  });
+
+  it('caps a long name in the title', async () => {
+    await installPlugin('flow', { name: 'F'.repeat(200) });
+    await request(server).get('/api/extensions/pending-approvals');
+
+    const [approval] = await pending();
+    expect((approval.name as string).length).toBeLessThanOrEqual(60);
+    const title = approvalArrivals()[0].title as string;
+    expect(title.length).toBeLessThanOrEqual('Turn on ?'.length + 60);
+  });
+
   it('keeps one row per copy across repeated re-scans', async () => {
     await installPlugin();
     await manager.reload();
@@ -410,7 +576,8 @@ describe('the why line', () => {
     const [approval] = await pending();
     expect(approval.adds).toBe('It adds a Flow tab and a Flow settings page');
     expect(approval.why).toBe(
-      'You installed the flow plugin. This adds a Flow tab and a Flow settings page that ' +
+      'You installed the flow plugin from dork-labs/marketplace. This adds a Flow tab and a ' +
+        'Flow settings page that ' +
         'shows what your agents are working on. It runs as you.'
     );
   });
@@ -421,7 +588,7 @@ describe('the why line', () => {
     const [approval] = await pending();
     expect(approval.adds).toBeNull();
     expect(approval.why).toBe(
-      'You installed the flow plugin. Tracks your work items. It runs as you.'
+      'You installed the flow plugin from dork-labs/marketplace. Tracks your work items. It runs as you.'
     );
   });
 
@@ -429,7 +596,17 @@ describe('the why line', () => {
     await installPlugin('flow', { name: 'Flow' });
 
     const [approval] = await pending();
-    expect(approval.why).toBe('You installed the flow plugin. It runs as you.');
+    expect(approval.why).toBe(
+      'You installed the flow plugin from dork-labs/marketplace. It runs as you.'
+    );
+  });
+
+  it('never claims you installed a plugin the installer has no record of', async () => {
+    await installPlugin('flow', { name: 'Flow' }, { throughInstaller: false });
+
+    const [approval] = await pending();
+    expect(approval.why).toBe('An agent added the flow plugin to DorkOS. It runs as you.');
+    expect(approval.sourceLabel).toBe('flow plugin · not from the installer');
   });
 
   it('names the extension itself for a direct install', async () => {
@@ -445,15 +622,17 @@ describe('the why line', () => {
 
     const [approval] = await pending();
     expect(approval).toMatchObject({ id: 'solo', plugin: null });
-    expect(approval.why).toBe('You installed Solo. It runs as you.');
-    expect(approval.sourceLabel).toMatch(/^installed in /);
+    expect(approval.why).toBe('An agent added Solo to DorkOS. It runs as you.');
+    expect(approval.sourceLabel).toMatch(/^added in /);
   });
 
   it('is cut at 300 characters, whatever the manifest says', async () => {
     await installPlugin('flow', { name: 'Flow', description: 'x'.repeat(400) });
 
     const [approval] = await pending();
-    expect((approval.why as string).length).toBe(APPROVAL_WHY_MAX_LENGTH);
-    expect(approval.why).toMatch(/…$/);
+    expect((approval.why as string).length).toBeLessThanOrEqual(APPROVAL_WHY_MAX_LENGTH);
+    // The author's part is what gets cut; DorkOS's own words always survive.
+    expect(approval.why).toMatch(/^You installed the flow plugin from dork-labs\/marketplace\. /);
+    expect(approval.why).toMatch(/… It runs as you\.$/);
   });
 });

@@ -41,6 +41,8 @@ import {
   mayRunExtensionCode,
 } from './extension-load-policy.js';
 
+import { logger } from '../../lib/logger.js';
+
 /**
  * Why {@link ExtensionManager.dismissApproval} refused, when it did.
  *
@@ -49,7 +51,35 @@ import {
  * - `stale` — the copy on disk is no longer the one the person was shown.
  */
 export type DismissApprovalRefusal = 'not_found' | 'core' | 'stale';
-import { logger } from '../../lib/logger.js';
+
+/**
+ * The copy a person was shown when they answered: its path and version, and
+ * the plugin that carried it when the caller knows it (`null` for a direct
+ * install; absent means "not compared").
+ */
+export interface ExpectedCopy {
+  path: string;
+  version: string;
+  plugin?: string | null;
+}
+
+/**
+ * Whether the record on disk is still exactly the copy a person was shown
+ * (DOR-2517). An answer to an out-of-date row must never land on a copy that
+ * took that one's place — another plugin, a project folder reusing the id, or
+ * a newer version.
+ *
+ * @param record - The extension record now.
+ * @param expected - The copy the person's row showed.
+ */
+export function isExpectedCopy(record: ExtensionRecord, expected: ExpectedCopy): boolean {
+  if (path.resolve(expected.path) !== path.resolve(record.path)) return false;
+  if (expected.version !== record.manifest.version) return false;
+  if (expected.plugin !== undefined && expected.plugin !== (record.sourcePlugin ?? null)) {
+    return false;
+  }
+  return true;
+}
 
 export type { CreateExtensionResult, ReloadExtensionResult, TestExtensionResult };
 
@@ -91,7 +121,8 @@ function applyCompileResult(
  * Facade for the extension system.
  */
 export class ExtensionManager {
-  private dorkHome: string;
+  /** DorkOS's data directory, which every extension root is read relative to. */
+  readonly dorkHome: string;
   private discovery: ExtensionDiscovery;
   private compiler: ExtensionCompiler;
   private serverLifecycle: ExtensionServerLifecycle;
@@ -510,18 +541,28 @@ export class ExtensionManager {
    */
   dismissApproval(
     id: string,
-    expected: { path: string; version: string }
+    expected: ExpectedCopy
   ): { ok: true } | { ok: false; reason: DismissApprovalRefusal } {
     const record = this.extensions.get(id);
     if (!record) return { ok: false, reason: 'not_found' };
     if (record.origin === 'core') return { ok: false, reason: 'core' };
-    if (
-      path.resolve(expected.path) !== path.resolve(record.path) ||
-      expected.version !== record.manifest.version
-    ) {
-      return { ok: false, reason: 'stale' };
-    }
+    if (!isExpectedCopy(record, expected)) return { ok: false, reason: 'stale' };
 
+    this.recordDismissal(record, 'declining an extension for now');
+    this.emitChanged();
+    return { ok: true };
+  }
+
+  /**
+   * Record that the person put this exact copy off, so the Activity inbox does
+   * not ask about it again until its path, plugin or version changes. Shared
+   * by "Not now" and by "Stop it", which is the same answer given later.
+   *
+   * @param record - The copy.
+   * @param subsystem - What the config log names as the writer.
+   */
+  private recordDismissal(record: ExtensionRecord, subsystem: string): void {
+    const id = record.id;
     const before = configManager.get('extensions');
     configManager.set('extensions', {
       ...before,
@@ -535,23 +576,21 @@ export class ExtensionManager {
         },
       },
     });
-    logConfigWrite(
-      'declining an extension for now',
-      'extensions',
-      before,
-      configManager.get('extensions')
-    );
-
-    this.emitChanged();
-    return { ok: true };
+    logConfigWrite(subsystem, 'extensions', before, configManager.get('extensions'));
   }
 
   /**
    * Withdraw a person's approval for this extension to run code in the server, and
    * stop it immediately.
    *
-   * Withdrawing is not the same as disabling: the extension stays on and its client
-   * bundle still loads in the browser, but DorkOS stops executing its code in-process.
+   * Withdrawing is not the same as disabling: the extension stays on, but none of
+   * its code runs until a person turns it on again.
+   *
+   * "Stop it" is also an answer to the Activity inbox's question (DOR-2517), so it
+   * records a "Not now" for this exact copy first: the ask does not come straight
+   * back to the bell, and returns only when the copy's source or version changes.
+   * Written before the approval is dropped, so no change listener ever sees the
+   * copy unapproved and not yet put off.
    *
    * @param id - Extension id to revoke.
    * @returns The updated public record, or `null` when no such extension exists.
@@ -560,6 +599,7 @@ export class ExtensionManager {
     const record = this.extensions.get(id);
     if (!record) return null;
 
+    if (record.origin === 'user') this.recordDismissal(record, 'stopping an extension');
     await this.forgetRunApproval(id);
 
     return toPublic(record, configManager.get('extensions'));

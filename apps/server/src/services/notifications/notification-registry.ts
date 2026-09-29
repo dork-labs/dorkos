@@ -27,6 +27,7 @@
  * @module services/notifications/notification-registry
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
 import { windowLabel } from '@dorkos/shared/account-usage';
 import {
   NOTIFICATION_KINDS,
@@ -578,6 +579,22 @@ function limitWindowPhrase(window: string): string {
   return label.charAt(0).toLowerCase() + label.slice(1);
 }
 
+/**
+ * Where an `extension.approval` row files itself: the exact copy.
+ *
+ * @param p - That kind's payload.
+ */
+function subjectIdForCopy(p: NotificationPayload<'extension.approval'>): NotificationLocation {
+  return {
+    subjectId: extensionApprovalSubjectId({
+      id: p.id,
+      path: p.path,
+      plugin: p.plugin,
+      version: p.version,
+    }),
+  };
+}
+
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
 
@@ -1009,10 +1026,12 @@ const ENTRIES: NotificationRegistryMap = {
     // `system`: the answer lives in the bell and in Settings → Extensions, not
     // in any one session or room.
     subjectType: 'system',
-    // The subject is this version of this extension, which is exactly what the
-    // question is about: a "Not now" holds until the version changes. The
-    // history row's "Turn it on" reads both halves back off it.
-    locate: (p) => ({ subjectId: `${p.id}@${p.version}` }),
+    // The subject is this exact copy — id, path, plugin and version — which is
+    // what the question is about: a "Not now" holds until any of them changes,
+    // and the history row's "Turn it on" sends all four back so the server can
+    // refuse a copy that took this one's place. Notifications are read only by
+    // the person they are for, so the path is safe here.
+    locate: (p) => subjectIdForCopy(p),
     title: (p) =>
       p.answer === 'approved'
         ? `You turned on ${p.name}`
@@ -1029,6 +1048,10 @@ const ENTRIES: NotificationRegistryMap = {
     // question, and the escalation ledger would otherwise answer it with the
     // old one's history.
     dedupeKey: (p) => `ext-approval:${p.id}:${p.path}:${p.version}`,
+    // No dedupe window. The queue diffs by copy, so it never resolves one
+    // answer twice, and a copy put off with "Not now" and turned on a minute
+    // later is two answers: the second row is the one that says it is on.
+    dedupeWindowMs: 0,
     relay: 'never',
   },
 

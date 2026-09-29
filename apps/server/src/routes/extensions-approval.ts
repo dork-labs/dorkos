@@ -30,10 +30,13 @@
  */
 import type { Router } from 'express';
 import {
+  ApproveExtensionRequestSchema,
   DismissExtensionApprovalRequestSchema,
   STALE_APPROVAL_CODE,
 } from '@dorkos/shared/extension-approval-schemas';
-import type { ExtensionManager } from '../services/extensions/extension-manager.js';
+import { isExpectedCopy, type ExtensionManager } from '../services/extensions/extension-manager.js';
+import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { logger } from '../lib/logger.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
@@ -86,10 +89,16 @@ export function registerExtensionApprovalRoutes(
   // GET /api/extensions/pending-approvals -- Every installed extension waiting
   // for a person to let it run, oldest first (DOR-2517). A read, so it carries
   // no person bar: the list names ids and display text the extensions list
-  // already exposes, and the Activity inbox draws one row per item.
-  router.get('/pending-approvals', async (_req, res) => {
+  // already exposes, and the Activity inbox draws one row per item. A caller
+  // the notification pipeline would not show the person's inbox to (an agent)
+  // gets it without absolute paths or the home folder, the same rule the
+  // inbox itself answers by.
+  router.get('/pending-approvals', async (req, res) => {
     try {
-      return res.json({ approvals: await listPendingExtensionApprovals(extensionManager) });
+      const forPerson = notificationEntitlement(readCallerPrincipal(req, res)) !== 'none';
+      return res.json({
+        approvals: await listPendingExtensionApprovals(extensionManager, { forPerson }),
+      });
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions waiting for approval', err);
       return res.status(500).json({ error: 'Failed to list extensions waiting for approval' });
@@ -113,6 +122,27 @@ export function registerExtensionApprovalRoutes(
         return res.status(409).json({
           error: `Extension '${id}' ships with DorkOS and does not need approving`,
         });
+      }
+
+      // The copy the person was shown, when the click came from a row that
+      // named one (the Activity inbox, DOR-2517). The approval binds whatever
+      // copy is on disk NOW, so a row that went out of date — another plugin
+      // took the id, a project folder reused it, the version moved — must
+      // not approve the newcomer on the strength of a decision about the old.
+      const hasBody = req.body !== undefined && Object.keys(req.body as object).length > 0;
+      if (hasBody) {
+        const expected = ApproveExtensionRequestSchema.safeParse(req.body);
+        if (!expected.success) {
+          return res
+            .status(400)
+            .json({ error: 'Send the path and version of the extension you were shown' });
+        }
+        if (!isExpectedCopy(record, expected.data)) {
+          return res.status(409).json({
+            error: 'This extension changed since you saw it. Nothing was turned on.',
+            code: STALE_APPROVAL_CODE,
+          });
+        }
       }
 
       const extension = await extensionManager.approveToRun(id);
