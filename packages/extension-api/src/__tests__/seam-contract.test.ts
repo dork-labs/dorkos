@@ -87,4 +87,9 @@ describe('extension seam contract', () => {
     expectTypeOf<InboxApi>().toEqualTypeOf<Contract.InboxApi>();
     expectTypeOf<ProjectSettingsReader>().toEqualTypeOf<Contract.ProjectSettingsReader>();
   });
+
+  it('gives the server half no way to write per-project settings (§7.10)', () => {
+    expectTypeOf<ProjectSettingsReader>().not.toHaveProperty('set');
+    expectTypeOf<DataProviderContext['projectSettings']>().not.toHaveProperty('set');
+  });
 });
