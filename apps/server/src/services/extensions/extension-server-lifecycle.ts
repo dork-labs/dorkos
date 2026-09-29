@@ -61,6 +61,20 @@ function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null
 }
 
 /**
+ * How long an extension's server `register()` may take to finish.
+ *
+ * Every re-scan runs one at a time (`ExtensionManager`), and starting a server
+ * half is part of one. A `register()` that never settles would hold the queue
+ * forever: installs would hang, and a copy that should have been stopped
+ * would keep running. So DorkOS stops waiting, marks the extension as one
+ * that couldn't start, releases everything it set up, and moves on.
+ */
+export const REGISTER_TIMEOUT_MS = 15_000;
+
+/** Why a server half did not start in time, as its card shows it. */
+const REGISTER_TIMEOUT_ERROR = 'server_start_timeout';
+
+/**
  * Manages the lifecycle of server-side extensions: compile, load, route, and teardown.
  *
  * Each active extension gets an Express Router mounted at `/api/ext/{id}/*`.
@@ -70,9 +84,18 @@ function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null
 export class ExtensionServerLifecycle {
   private serverExtensions = new Map<string, ActiveServerExtension>();
 
+  /**
+   * Build the lifecycle for one DorkOS data directory.
+   *
+   * @param dorkHome - DorkOS's data directory.
+   * @param compiler - The shared extension compiler.
+   * @param registerTimeoutMs - How long an extension's `register()` may take
+   *   before DorkOS stops waiting ({@link REGISTER_TIMEOUT_MS}).
+   */
   constructor(
     private readonly dorkHome: string,
-    private readonly compiler: ExtensionCompiler
+    private readonly compiler: ExtensionCompiler,
+    private readonly registerTimeoutMs: number = REGISTER_TIMEOUT_MS
   ) {}
 
   /**
@@ -223,7 +246,37 @@ export class ExtensionServerLifecycle {
       // must not leave it behind: this instance never becomes active.
       registered = releaseListeners;
 
-      const result = await registerFn(router, ctx);
+      const outcome = await settleWithin(
+        Promise.resolve(registerFn(router, ctx)),
+        this.registerTimeoutMs
+      );
+      if (outcome.timedOut) {
+        // It may still finish later. Whatever it hands back then is cleaned up
+        // and never mounted: this instance is not active.
+        void outcome.late.then(
+          (late) => {
+            if (typeof late === 'function') (late as () => void)();
+          },
+          () => undefined
+        );
+        for (const cancel of getScheduledCleanups()) {
+          try {
+            cancel();
+          } catch {
+            /* swallow cancellation errors */
+          }
+        }
+        registered?.();
+        registered = undefined;
+        const seconds = Math.round(this.registerTimeoutMs / 1000);
+        const message =
+          `${record.manifest.name} couldn't start: its server side didn't finish starting within ` +
+          `${seconds} seconds, so DorkOS stopped waiting and left it off. Reload it to try again.`;
+        record.serverError = { code: REGISTER_TIMEOUT_ERROR, message };
+        logger.warn(`[Extensions] Server init timed out for ${id} after ${seconds}s`);
+        return { ok: false, error: message };
+      }
+      const result = outcome.value;
       const cleanup = typeof result === 'function' ? result : null;
 
       // Mount proxy routes alongside custom routes for hybrid extensions
@@ -297,5 +350,31 @@ export class ExtensionServerLifecycle {
    */
   getRouter(id: string): Router | null {
     return this.serverExtensions.get(id)?.router ?? null;
+  }
+}
+
+/**
+ * Wait for `promise`, but no longer than `ms`.
+ *
+ * @param promise - What to wait for.
+ * @param ms - The longest to wait.
+ * @returns Its value, or that it did not settle in time (with the promise, so
+ *   the caller can clean up whatever it resolves to later).
+ */
+async function settleWithin<T>(
+  promise: Promise<T>,
+  ms: number
+): Promise<{ timedOut: false; value: T } | { timedOut: true; late: Promise<T> }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), ms);
+    timer.unref?.();
+  });
+  try {
+    const first = await Promise.race([promise.then((value) => ({ value })), timeout]);
+    if (first === 'timeout') return { timedOut: true, late: promise };
+    return { timedOut: false, value: first.value };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

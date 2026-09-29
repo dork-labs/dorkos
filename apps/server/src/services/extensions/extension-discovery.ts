@@ -126,9 +126,19 @@ export class ExtensionDiscovery {
     // machine's own install records, never from a file inside the project.
     const installs = await readTrustedInstalls(this.dorkHome);
     for (const rec of pluginRecords) {
-      const proof = proveOrigin(rec, installs, await inspectCopy(rec));
-      if (proof.origin) rec.trustedOrigin = proof.origin;
-      if (proof.changedSinceInstall) rec.changedSinceInstall = true;
+      const onDisk = await inspectCopy(rec);
+      const proof = proveOrigin(rec, installs, onDisk);
+      if (proof.origin) {
+        rec.trustedOrigin = proof.origin;
+        if (proof.pinnedDigest) rec.pinnedDigest = proof.pinnedDigest;
+      }
+      if (proof.problem) rec.originProblem = proof.problem;
+      if (proof.problem === 'changed' && onDisk.folder.kind === 'digest') {
+        rec.currentDigest = onDisk.folder.digest;
+        // A person said yes to these exact files: the compile holds them to it.
+        const approved = config.approvedSources?.[rec.id];
+        if (approved?.digest === rec.currentDigest) rec.pinnedDigest = rec.currentDigest;
+      }
     }
 
     // Ids a plugin copy from a trusted source already speaks for: a project's
@@ -142,6 +152,17 @@ export class ExtensionDiscovery {
     const approvedElsewhere = (rec: DiscoveredRecord): boolean => {
       const copy = { ...rec, origin: 'user' as const };
       if (isApprovedCopy(copy, config) || isFromTrustedSource(copy, config)) return false;
+      // The approval names THIS folder, but its files changed since: not
+      // another copy's, so it stays listed and asks for a fresh yes rather
+      // than vanishing (security review of DOR-2527).
+      const named = config.approvedSources?.[rec.id];
+      if (
+        named &&
+        path.resolve(named.path) === path.resolve(rec.path) &&
+        (named.plugin ?? null) === (rec.sourcePlugin ?? null)
+      ) {
+        return false;
+      }
       return config.approvedToRun.includes(rec.id) || trustedIds.has(rec.id);
     };
 

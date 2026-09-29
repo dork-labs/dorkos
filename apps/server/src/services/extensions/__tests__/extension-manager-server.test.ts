@@ -790,4 +790,45 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(manager.getServerRouter('startup-throws')).toBeNull();
     });
   });
+
+  describe('a register() that never finishes (security review, DOR-2527)', () => {
+    it('stops waiting, marks it as unable to start, and lets every later scan run', async () => {
+      const hung = makeRecord('hangs', {
+        status: 'enabled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/hangs/server.ts',
+      });
+      const fine = makeRecord('fine', {
+        status: 'enabled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/fine/server.ts',
+      });
+      mockConfigGet.mockReturnValue({
+        enabled: ['hangs', 'fine'],
+        disabled: [],
+        ...approved(['hangs', 'fine']),
+      });
+      mockDiscover.mockResolvedValue([hung, fine]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockImplementation(async (record: ExtensionRecord) => ({
+        code:
+          record.id === 'hangs'
+            ? 'module.exports = function register() { return new Promise(function () {}); };'
+            : makeCjsModule(),
+        sourceHash: `srv-${record.id}`,
+      }));
+      const timed = new ExtensionManager('/fake/dork-home', [], { registerTimeoutMs: 50 });
+
+      await timed.initialize('/my/project');
+
+      expect(timed.getServerRouter('hangs')).toBeNull();
+      expect(timed.get('hangs')?.serverError).toMatchObject({ code: 'server_start_timeout' });
+      expect(timed.get('hangs')?.serverError?.message).toContain("couldn't start");
+      expect(mockReleaseListeners).toHaveBeenCalled();
+      expect(mockScheduledCleanup).toHaveBeenCalled();
+      // The one after it still started, and the next scan is not held up.
+      expect(timed.getServerRouter('fine')).not.toBeNull();
+      await expect(timed.reload()).resolves.toEqual(expect.any(Array));
+    });
+  });
 });

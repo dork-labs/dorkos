@@ -165,12 +165,29 @@ export class ExtensionManager {
   /** Tells connected clients which extensions changed under them. */
   private announceReloaded: ((ids: string[]) => void) | null = null;
 
-  constructor(dorkHome: string, coreExtensions: CoreExtensionInfo[] = []) {
+  /**
+   * Build the extension system rooted at one DorkOS data directory.
+   *
+   * @param dorkHome - DorkOS's data directory.
+   * @param coreExtensions - Tier metadata for the bundled core extensions.
+   * @param options.registerTimeoutMs - How long a server `register()` may take
+   *   (default `REGISTER_TIMEOUT_MS` in `extension-server-lifecycle.ts`); tests
+   *   shorten it.
+   */
+  constructor(
+    dorkHome: string,
+    coreExtensions: CoreExtensionInfo[] = [],
+    options: { registerTimeoutMs?: number } = {}
+  ) {
     this.dorkHome = dorkHome;
     this.coreExtensions = new Map(coreExtensions.map((info) => [info.id, info]));
     this.discovery = new ExtensionDiscovery(dorkHome);
     this.compiler = new ExtensionCompiler(dorkHome);
-    this.serverLifecycle = new ExtensionServerLifecycle(dorkHome, this.compiler);
+    this.serverLifecycle = new ExtensionServerLifecycle(
+      dorkHome,
+      this.compiler,
+      options.registerTimeoutMs
+    );
   }
 
   /**
@@ -762,6 +779,11 @@ export class ExtensionManager {
     // plugin beside the id, replacing whatever copy an earlier approval named.
     const extensions = configManager.get('extensions');
     const source = approvedSourceOf(record);
+    // A copy whose plugin changed after DorkOS installed it is approved as its
+    // files are now, and every compile holds it to exactly those files.
+    if (record.originProblem === 'changed' && record.currentDigest) {
+      record.pinnedDigest = record.currentDigest;
+    }
     const dismissed = extensions.dismissedApprovals ?? {};
     if (!isApprovedCopy(record, extensions) || dismissed[id]) {
       // A "Not now" for this id is answered by the approval, so it goes too

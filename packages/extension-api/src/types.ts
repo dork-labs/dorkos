@@ -54,12 +54,24 @@ export interface ExtensionRecord {
    */
   trustedOrigin?: ExtensionOrigin;
   /**
-   * DorkOS's installer put this project copy here, but its folder no longer
-   * holds what was installed (an agent, a `git pull` or a re-clone changed
-   * it). It has no trusted origin, so it runs only if a person approves this
-   * exact copy.
+   * Why a copy the installer recorded has no trusted origin: `changed` (a
+   * project copy whose plugin folder no longer holds what DorkOS installed,
+   * or now holds a symbolic link) or `linked` (a global plugin holding a
+   * symbolic link). A `changed` copy runs only while a person's yes names its
+   * files exactly as they are now.
    */
-  changedSinceInstall?: boolean;
+  originProblem?: 'changed' | 'linked';
+  /**
+   * The whole plugin folder's digest now, for a `changed` copy: what a
+   * person's approval of it is pinned to.
+   */
+  currentDigest?: string;
+  /**
+   * The plugin folder digest this copy was judged against. Every compile
+   * checks the folder still has it, before and after bundling, so files
+   * swapped after the scan never run (`extension-compiler.ts`).
+   */
+  pinnedDigest?: string;
   /**
    * The path of the copy that runs instead of this one, when both came from
    * the same trusted origin and that copy is newer (spec `flow-multiproject`
@@ -135,11 +147,13 @@ export interface ExtensionRecordPublic {
    */
   shadowedBy: string | null;
   /**
-   * `true` when DorkOS installed this copy into a project but its files
-   * changed afterwards, so it no longer counts as coming from where it was
-   * installed from and needs its own OK. Absent otherwise.
+   * Why DorkOS can't vouch for where this copy came from, although its
+   * installer recorded it: `changed` (its plugin's files changed after DorkOS
+   * installed it) or `linked` (its plugin holds a shortcut to files
+   * elsewhere). Settings says so on its card. Absent otherwise. A changed
+   * copy of an id a person approved for another copy is not listed at all.
    */
-  changedSinceInstall?: true;
+  originProblem?: 'changed' | 'linked';
 }
 
 /** The interface an extension module must export. */

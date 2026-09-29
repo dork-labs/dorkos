@@ -21,14 +21,17 @@
  * - **Neither the plugin folder nor the extension folder is a link.** A linked
  *   install is a developer's own tree, and its sidecar lives in that tree; it
  *   proves nothing (the same rule as `global-plugin-consent.ts`).
- * - **A project copy's folder still holds exactly what the installer put
- *   there.** The record keeps each carried extension folder's digest
- *   (`extensionDigestsOf`); anything that writes inside the project — an
- *   agent, a `git pull`, a re-clone — can put other code at the same path,
- *   and a changed folder has no origin. Discovery reports it
- *   (`changedSinceInstall`) so Settings can say so. Global plugins are not
- *   re-hashed: `{dorkHome}` is DorkOS's own, and editing a file on this
- *   machine is outside what an install hash guards (`content-hash.ts`).
+ * - **A project copy's whole plugin folder still holds exactly what the
+ *   installer staged.** The record keeps the staged folder's digest
+ *   (`installFolderDigest`), because an extension's bundle can import any
+ *   file in its plugin; anything that writes inside the project — an agent, a
+ *   `git pull`, a re-clone — can put other code at the same path, and a
+ *   changed folder has no origin. Discovery reports it (`originProblem`) so
+ *   Settings can say so. The digest found at the scan is pinned on the record
+ *   and checked again before and after every bundle (`extension-compiler.ts`),
+ *   so a swap between the scan and the load is caught too.
+ * - **No symbolic link anywhere in the plugin folder.** The installer strips
+ *   every link, and a loader follows one that a hash of files skips.
  * - **The install was fetched from a branch or tag** of the source
  *   repository, never a pull-request head or a bare commit a fork could have
  *   supplied (`isTrustableRef`).
@@ -45,9 +48,9 @@ import path from 'path';
 import type { ExtensionOrigin, ExtensionRecord } from '@dorkos/extension-api';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { readInstallMetadata } from '../marketplace/installed-metadata.js';
-import { readProjectInstalls } from '../marketplace/lib/provenance/project-install-index.js';
-import { trustedSourceOfInstall } from '../marketplace/lib/provenance/trusted-source.js';
-import { extensionFolderDigest } from '../marketplace/lib/provenance/extension-digest.js';
+import { readProjectInstalls } from '../marketplace/lib/project-install-index.js';
+import { trustedSourceOfInstall } from '../marketplace/lib/trusted-source.js';
+import { installFolderDigest, type InstallDigest } from '../marketplace/lib/install-digest.js';
 import { logger } from '../../lib/logger.js';
 
 /** One install DorkOS's installer recorded, reduced to what proves an origin. */
@@ -56,27 +59,39 @@ export interface TrustedInstall {
   installRoot: string;
   /** The normalized `owner/repo`, when the installer recorded one. */
   source?: string;
-  /** Project installs only: each carried extension folder's digest at install. */
-  extensionDigests?: Record<string, string>;
+  /** Project installs only: the whole install folder's digest, as staged. */
+  installDigest?: string;
 }
 
-/** What a copy looks like on disk right now, read by {@link inspectCopy}. */
+/** What a copy's plugin folder looks like on disk now, read by {@link inspectCopy}. */
 export interface CopyOnDisk {
-  /** The plugin folder or the extension folder is a symbolic link. */
-  linked: boolean;
-  /** The extension folder's digest now; project copies only, else null. */
-  digest: string | null;
+  /** The whole install folder's digest, or why there is none. */
+  folder: InstallDigest;
 }
+
+/**
+ * Why a plugin-carried copy has no trusted origin although the installer
+ * recorded where it came from.
+ *
+ * - `changed` — a project copy whose install folder no longer hashes to what
+ *   the installer staged, or now holds a symbolic link: someone changed it
+ *   after DorkOS installed it.
+ * - `linked` — a global plugin that is, or holds, a symbolic link (a linked
+ *   developer install): its files live somewhere DorkOS never checked.
+ */
+export type OriginProblem = 'changed' | 'linked';
 
 /** Where a copy provably came from, and why not when it cannot say. */
 export interface OriginProof {
   /** The trusted origin, or null. */
   origin: ExtensionOrigin | null;
+  /** Why a recorded copy has none, or null. */
+  problem: OriginProblem | null;
   /**
-   * The installer recorded this project copy, but its folder no longer holds
-   * what was installed (or became a link): someone changed it afterwards.
+   * The digest the origin was proved against: the one every compile of this
+   * copy must still find (`pinnedDigest`). Null without an origin.
    */
-  changedSinceInstall: boolean;
+  pinnedDigest: string | null;
 }
 
 /** The installs an origin may be proved from, split by where they live. */
@@ -101,39 +116,42 @@ export function installRootOf(copyPath: string): string {
 }
 
 /**
- * Where this copy provably came from, and whether a recorded project copy
- * changed after the installer put it there.
+ * Where this copy provably came from, and, when the installer recorded it but
+ * the folder cannot be vouched for, why.
  *
  * Pure: the caller reads the installs once per discovery pass
  * ({@link readTrustedInstalls}) and each copy once ({@link inspectCopy}).
  *
  * @param copy - A discovered copy.
  * @param installs - The installs this machine's installer recorded.
- * @param onDisk - The copy as it is on disk now.
+ * @param onDisk - The copy's plugin folder as it is on disk now.
  */
 export function proveOrigin(
   copy: OriginCopy,
   installs: TrustedInstalls,
   onDisk: CopyOnDisk
 ): OriginProof {
-  const none: OriginProof = { origin: null, changedSinceInstall: false };
+  const none: OriginProof = { origin: null, problem: null, pinnedDigest: null };
   if (!copy.sourcePlugin) return none;
   const root = installRootOf(copy.path);
   const pool = copy.scope === 'global' ? installs.global : installs.project;
   const install = pool.find((candidate) => path.resolve(candidate.installRoot) === root);
   if (!install?.source) return none;
+  const { folder } = onDisk;
   if (copy.scope === 'local') {
-    const recorded = install.extensionDigests?.[path.basename(copy.path)];
-    if (!recorded) return none;
-    if (onDisk.linked || onDisk.digest !== recorded) {
-      return { origin: null, changedSinceInstall: true };
+    if (!install.installDigest) return none;
+    if (folder.kind !== 'digest' || folder.digest !== install.installDigest) {
+      return { ...none, problem: 'changed' };
     }
-  } else if (onDisk.linked) {
+  } else if (folder.kind === 'linked') {
+    return { ...none, problem: 'linked' };
+  } else if (folder.kind !== 'digest') {
     return none;
   }
   return {
     origin: { plugin: copy.sourcePlugin, source: install.source },
-    changedSinceInstall: false,
+    problem: null,
+    pinnedDigest: folder.digest,
   };
 }
 
@@ -142,7 +160,7 @@ export function proveOrigin(
  *
  * @param copy - A discovered copy.
  * @param installs - The installs this machine's installer recorded.
- * @param onDisk - The copy as it is on disk now.
+ * @param onDisk - The copy's plugin folder as it is on disk now.
  */
 export function trustedOriginOf(
   copy: OriginCopy,
@@ -153,22 +171,13 @@ export function trustedOriginOf(
 }
 
 /**
- * Read what {@link proveOrigin} needs from disk: whether the copy or its
- * plugin folder is a link, and, for a project copy, its folder's digest.
+ * Read what {@link proveOrigin} needs from disk: the digest of the whole
+ * plugin folder that carries the copy, or that it holds a link.
  *
  * @param copy - A discovered plugin-carried copy.
  */
 export async function inspectCopy(copy: OriginCopy): Promise<CopyOnDisk> {
-  const isLink = async (target: string): Promise<boolean> => {
-    try {
-      return (await fs.lstat(target)).isSymbolicLink();
-    } catch {
-      return true;
-    }
-  };
-  const linked = (await isLink(installRootOf(copy.path))) || (await isLink(copy.path));
-  const digest = copy.scope === 'local' && !linked ? await extensionFolderDigest(copy.path) : null;
-  return { linked, digest };
+  return { folder: await installFolderDigest(installRootOf(copy.path)) };
 }
 
 /**
@@ -224,7 +233,7 @@ export async function readTrustedInstalls(dorkHome: string): Promise<TrustedInst
     project = (await readProjectInstalls(dorkHome)).map((install) => ({
       installRoot: path.resolve(install.installRoot),
       ...(install.source ? { source: install.source } : {}),
-      ...(install.extensionDigests ? { extensionDigests: install.extensionDigests } : {}),
+      ...(install.installDigest ? { installDigest: install.installDigest } : {}),
     }));
   } catch (err) {
     logger.warn(

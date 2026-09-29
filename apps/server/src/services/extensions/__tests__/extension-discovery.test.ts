@@ -4,16 +4,16 @@ import path from 'path';
 import os from 'os';
 import { ExtensionDiscovery } from '../extension-discovery.js';
 import type { HostVersion } from '../extension-host-version.js';
-import { mayRunExtensionCode } from '../extension-load-policy.js';
+import { approvedSourceOf, mayRunExtensionCode } from '../extension-load-policy.js';
 import {
   inspectCopy,
   readTrustedInstalls,
   trustedOriginOf,
   type TrustedInstalls,
 } from '../extension-trusted-origin.js';
-import { extensionDigestsOf } from '../../marketplace/lib/provenance/extension-digest.js';
-import { recordProjectInstall } from '../../marketplace/lib/provenance/project-install-index.js';
-import { normalizeTrustedSource } from '../../marketplace/lib/provenance/trusted-source.js';
+import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
+import { recordProjectInstall } from '../../marketplace/lib/project-install-index.js';
+import { normalizeTrustedSource } from '../../marketplace/lib/trusted-source.js';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
 import { logger } from '../../../lib/logger.js';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
@@ -40,6 +40,13 @@ async function createTempDir(): Promise<string> {
 async function writeManifest(dir: string, manifest: Record<string, unknown>): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(manifest));
+}
+
+/** The whole-folder digest the installer records, as a string. */
+async function digestOf(root: string): Promise<string> {
+  const found = await installFolderDigest(root);
+  if (found.kind !== 'digest') throw new Error(`no digest for ${root}: ${found.kind}`);
+  return found.digest;
 }
 
 describe('ExtensionDiscovery', () => {
@@ -998,7 +1005,7 @@ describe('ExtensionDiscovery', () => {
         name: 'flow',
         ...(normalized ? { source: normalized } : {}),
         // What the installer records: each carried folder's digest.
-        extensionDigests: await extensionDigestsOf(installRoot),
+        installDigest: await digestOf(installRoot),
       });
       return { root, dir };
     }
@@ -1336,9 +1343,83 @@ describe('ExtensionDiscovery', () => {
 
         const [record] = await discovery.discover(null, trusting, EMPTY_CORE, [b.root]);
 
-        expect(record).toMatchObject({ path: b.dir, changedSinceInstall: true });
+        expect(record).toMatchObject({ path: b.dir, originProblem: 'changed' });
         expect(record?.trustedOrigin).toBeUndefined();
         expect(mayRunExtensionCode(record!, trusting)).toBe(false);
+      });
+
+      it('an edit to plugin-level code the extension imports takes the origin away (N1)', async () => {
+        const a = await installedProject('a', '1.0.0');
+        const b = await installedProject('b', '1.1.0');
+        // Flow's extension imports `../../../../scripts/*`: outside its own folder.
+        const scripts = path.join(b.root, '.dork', 'plugins', 'flow', 'scripts');
+        await fs.mkdir(scripts, { recursive: true });
+        await fs.writeFile(path.join(scripts, 'errors.ts'), 'export const x = 1;\n');
+        const config = approve({ path: a.dir, sourcePlugin: 'flow', trustedOrigin: ORIGIN });
+
+        const results = await discovery.discover(null, config, EMPTY_CORE, [a.root, b.root]);
+
+        expect(results.find((r) => r.id === 'flow' && !r.shadowedBy)?.path).toBe(a.dir);
+        expect(results.some((r) => r.path === b.dir && r.trustedOrigin)).toBe(false);
+      });
+
+      it('a symbolic link anywhere in a recorded plugin folder takes the origin away (N2)', async () => {
+        const b = await installedProject('b', '1.1.0');
+        await fs.writeFile(path.join(tmpDir, 'evil.js'), 'export {};\n');
+        await fs.symlink(path.join(tmpDir, 'evil.js'), path.join(b.dir, 'index.js'));
+        const trusting: ExtensionsConfig = {
+          ...EMPTY_CONFIG,
+          trustedSources: [{ source: SOURCE, trustedAt: '2026-09-29T00:00:00.000Z' }],
+        };
+
+        const [record] = await discovery.discover(null, trusting, EMPTY_CORE, [b.root]);
+
+        expect(record?.trustedOrigin).toBeUndefined();
+        expect(record?.originProblem).toBe('changed');
+        expect(mayRunExtensionCode(record!, trusting)).toBe(false);
+      });
+
+      it('a symbolic link inside a global plugin takes the origin away and says so (N2)', async () => {
+        const dir = await globalPlugin('1.0.0', {
+          sourceRepo: 'https://github.com/dork-labs/marketplace',
+        });
+        await fs.writeFile(path.join(tmpDir, 'evil.js'), 'export {};\n');
+        await fs.symlink(path.join(tmpDir, 'evil.js'), path.join(dir, 'index.js'));
+        const trusting: ExtensionsConfig = {
+          ...EMPTY_CONFIG,
+          trustedSources: [{ source: SOURCE, trustedAt: '2026-09-29T00:00:00.000Z' }],
+        };
+
+        const [record] = await discovery.discover(null, trusting, EMPTY_CORE);
+
+        expect(record?.trustedOrigin).toBeUndefined();
+        expect(record?.originProblem).toBe('linked');
+        expect(mayRunExtensionCode(record!, trusting)).toBe(false);
+      });
+
+      it('a changed copy approved by path does not keep running; a yes to its files as they are does', async () => {
+        const b = await installedProject('b', '1.1.0');
+        const pathApproved = approve({ path: b.dir, sourcePlugin: 'flow' });
+        await fs.writeFile(path.join(b.dir, 'index.ts'), 'export function activate() {}\n');
+
+        const [changed] = await discovery.discover(null, pathApproved, EMPTY_CORE, [b.root]);
+        expect(changed?.originProblem).toBe('changed');
+        expect(mayRunExtensionCode(changed!, pathApproved)).toBe(false);
+
+        // A fresh yes records the files as they are now, and pins the copy to them.
+        const freshYes: ExtensionsConfig = {
+          ...pathApproved,
+          approvedSources: { flow: approvedSourceOf({ ...changed!, origin: 'user' }) },
+        };
+        expect(freshYes.approvedSources?.flow?.digest).toBe(changed?.currentDigest);
+        const [again] = await discovery.discover(null, freshYes, EMPTY_CORE, [b.root]);
+        expect(mayRunExtensionCode(again!, freshYes)).toBe(true);
+        expect(again?.pinnedDigest).toBe(changed?.currentDigest);
+
+        // Any further change asks again.
+        await fs.writeFile(path.join(b.dir, 'index.ts'), 'export function activate() { 1; }\n');
+        const [later] = await discovery.discover(null, freshYes, EMPTY_CORE, [b.root]);
+        expect(mayRunExtensionCode(later!, freshYes)).toBe(false);
       });
 
       it('gives a symlinked global plugin no origin, whatever its linked sidecar says', async () => {

@@ -115,6 +115,12 @@ export const ExtensionApprovedSourceSchema = z.object({
    * from DorkOS's own install records.
    */
   origin: ExtensionOriginSchema.optional(),
+  /**
+   * For a copy whose plugin files changed after DorkOS installed it: the
+   * whole plugin folder's digest the person said yes to. Any further change
+   * asks again, because a path alone no longer says what is there.
+   */
+  digest: z.string().min(1).optional(),
 });
 
 /** The one copy of an extension a person approved to run code. */

@@ -180,7 +180,7 @@ import type { ExtensionsConfig } from './extension-enable-resolution.js';
  * plus where it provably came from when this machine can say (§9.1).
  */
 export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'sourcePlugin'> &
-  Partial<Pick<ExtensionRecord, 'trustedOrigin'>>;
+  Partial<Pick<ExtensionRecord, 'trustedOrigin' | 'originProblem' | 'currentDigest'>>;
 
 /**
  * The stored halves of a person's approvals: the ids, the copy each is for,
@@ -210,6 +210,9 @@ export function approvedSourceOf(copy: ExtensionCopy): ExtensionApprovedSource {
   const source: ExtensionApprovedSource = { path: path.resolve(copy.path) };
   if (copy.sourcePlugin) source.plugin = copy.sourcePlugin;
   if (copy.trustedOrigin) source.origin = { ...copy.trustedOrigin };
+  // A copy that changed after DorkOS installed it is approved as its files
+  // are now, and any further change asks again (security review, DOR-2527).
+  if (copy.originProblem === 'changed' && copy.currentDigest) source.digest = copy.currentDigest;
   return source;
 }
 
@@ -224,10 +227,17 @@ export function isApprovedByPath(copy: ExtensionCopy, approvals: ExtensionApprov
   if (!approvals.approvedToRun.includes(copy.id)) return false;
   const source = approvals.approvedSources?.[copy.id];
   if (!source) return false;
-  return (
+  const samePath =
     path.resolve(source.path) === path.resolve(copy.path) &&
-    (source.plugin ?? null) === (copy.sourcePlugin ?? null)
-  );
+    (source.plugin ?? null) === (copy.sourcePlugin ?? null);
+  if (!samePath) return false;
+  // A project copy whose plugin changed after DorkOS installed it never keeps
+  // running silently on a path approval: the yes must name its files as they
+  // are now (security review of DOR-2527).
+  if (copy.originProblem === 'changed') {
+    return !!source.digest && source.digest === copy.currentDigest;
+  }
+  return true;
 }
 
 /**
