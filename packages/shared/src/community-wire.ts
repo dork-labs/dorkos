@@ -917,7 +917,7 @@ export const CommunityExportAuditEventRowSchema = z.strictObject({
   id,
   community_id: id,
   actor_member_id: nullableId,
-  actor_kind: z.enum(['member', 'system']),
+  actor_kind: z.enum(['member', 'system', 'host']),
   action: z.string().min(1),
   subject_id: z.string().nullable(),
   prior_state: z.string().nullable(),
@@ -1043,7 +1043,7 @@ export const CommunityExportManifestV1Schema = z.strictObject({
         id: exportId,
         community_id: exportId,
         actor_member_id: exportId.nullable(),
-        actor_kind: z.enum(['member', 'system']),
+        actor_kind: z.enum(['member', 'system', 'host']),
         action: z.string().regex(/^[a-z][a-z0-9_.]{0,79}$/),
         subject_id: z.string().min(1).max(200).nullable(),
         prior_state: z.string().max(64).nullable(),
@@ -1208,6 +1208,42 @@ export const CommunityWireOwnerErasureSchema = z.strictObject({
 /** Completed self-erasures in one community, newest first. */
 export const CommunityWireOwnerErasureListResponseSchema = z.strictObject({
   erasures: z.array(CommunityWireOwnerErasureSchema),
+});
+
+/** Why the host removed something, as the takedown categories name it. */
+export const CommunityWireTakedownCategorySchema = z.enum([
+  'child_safety',
+  'illegal_content',
+  'legal_order',
+  'terms_violation',
+]);
+/** The one plain sentence each takedown category shows the owner and the author. */
+export const COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES: Record<
+  z.infer<typeof CommunityWireTakedownCategorySchema>,
+  string
+> = {
+  child_safety: 'It was removed to protect children.',
+  illegal_content: 'It was reported to the host as illegal.',
+  legal_order: 'The host received a legal order to remove it.',
+  terms_violation: "It broke the host's terms.",
+};
+/**
+ * One thing the host removed from this community, as the owner, an admin, or its author sees
+ * it. Ids, the reason, and when: never what it said.
+ */
+export const CommunityWireTakedownNoticeSchema = z.strictObject({
+  id,
+  targetKind: z.enum(['entry', 'attachment', 'icon']),
+  entryId: id.nullable(),
+  attachmentId: id.nullable(),
+  channelId: id.nullable(),
+  category: CommunityWireTakedownCategorySchema,
+  reference: z.string().nullable(),
+  createdAt: timestamp,
+});
+/** The host's takedowns in this community the caller may see, newest first. */
+export const CommunityWireTakedownNoticeListResponseSchema = z.strictObject({
+  takedowns: z.array(CommunityWireTakedownNoticeSchema),
 });
 
 /** Stable error codes for expected authorization, state and quota refusals. */
