@@ -28,7 +28,7 @@ export function createRemoteCommunityStream(
       const path = `/communities/${encodeURIComponent(ref)}/rooms/${encodeURIComponent(roomId)}/events`;
       const response = await fetchResponse(
         baseUrl,
-        path + buildQueryString({ since: options?.since }),
+        path + buildQueryString({ since: options?.since, redactions: options?.redactions }),
         {
           headers: { Accept: 'text/event-stream' },
           signal,

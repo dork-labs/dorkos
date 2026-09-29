@@ -10,6 +10,7 @@ import {
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
 import { describe, expect, it, vi } from 'vitest';
+import { logger } from '../../../../lib/logger.js';
 import { followNativeRedactions } from '../native-redaction-follower.js';
 import {
   RemoteRedactionFeedUnsupportedError,
@@ -123,5 +124,71 @@ describe('followNativeRedactions', () => {
     await new Promise((r) => setTimeout(r, 30));
     controller.abort();
     expect(reader.readRedactions).toHaveBeenCalledOnce();
+  });
+
+  // Purpose: an end read that lands after the stream stopped waiting for it is ignored, so the
+  // first poll reads from the start rather than skipping what changed in between.
+  it('ignores an end read that lands after the wait ran out', async () => {
+    vi.useFakeTimers();
+    try {
+      let answerEnd!: (page: RemoteRedactionPage) => void;
+      const asked: Array<{ cursor?: string; from?: string }> = [];
+      const readRedactions = vi.fn(
+        (
+          _roomId: string,
+          opts: { cursor?: string; from?: 'end' }
+        ): Promise<RemoteRedactionPage> => {
+          asked.push({ cursor: opts.cursor, from: opts.from });
+          if (opts.from === 'end') return new Promise((resolve) => (answerEnd = resolve));
+          return Promise.resolve({ items: [], nextCursor: 'after', hasMore: false });
+        }
+      );
+      const controller = new AbortController();
+      const follower = followNativeRedactions({ readRedactions }, 'room-a', {
+        signal: controller.signal,
+        intervalMs: 10,
+        onChanged: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await follower.ready;
+      expect(follower.position()).toBeUndefined();
+      answerEnd({ items: [], nextCursor: 'late-end', hasMore: false });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(follower.position()).toBeUndefined();
+      follower.start();
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+      expect(asked[1]).toEqual({ cursor: undefined, from: undefined });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Purpose: repeated transient failures wait longer each time and warn once, not every poll.
+  it('backs off after repeated failures and warns once', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const readRedactions = vi.fn(async (_roomId: string, opts: { from?: 'end' }) => {
+        if (opts.from === 'end') return { items: [], nextCursor: 'end', hasMore: false };
+        throw new Error('temporary outage');
+      });
+      const controller = new AbortController();
+      const follower = followNativeRedactions({ readRedactions }, 'room-a', {
+        signal: controller.signal,
+        intervalMs: 100,
+        onChanged: () => undefined,
+      });
+      await follower.ready;
+      follower.start();
+      // Polls at 100, then +200, +400, +800: four failures within 1500ms, not fifteen.
+      await vi.advanceTimersByTimeAsync(1_500);
+      controller.abort();
+      expect(readRedactions.mock.calls.length - 1).toBe(4);
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

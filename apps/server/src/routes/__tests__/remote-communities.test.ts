@@ -754,6 +754,73 @@ describe('qualified remote community writes and live projections', () => {
     );
   });
 
+  // DOR-2544. Purpose: a view that resumes sends back its feed position, and the route reads the
+  // feed from there instead of its end, so a message erased while the view was disconnected (which
+  // a resumed snapshot does not carry: it holds only newer entries) still reaches it. The snapshot
+  // and the revision carry the position to resume from next time. It fails if the route ignores
+  // the resumed position.
+  it('reads the feed from a resumed position, so a change made during the gap arrives', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    fixture.adapter.subscribeRoom.mockImplementationOnce(() =>
+      (async function* () {
+        yield { type: 'snapshot' as const, room: fixture.room, entries: [], cursor: 'cursor-a' };
+        await held;
+      })()
+    );
+    const tombstone = { ...fixture.entry, text: 'This message was erased.' };
+    fixture.adapter.readRedactions.mockImplementation(async (_roomId, opts = {}) =>
+      opts.cursor === 'feed-before-drop'
+        ? {
+            items: [{ entry: tombstone, remoteSeq: 1, author: {} }],
+            nextCursor: 'feed-after-gap',
+            hasMore: false,
+          }
+        : { items: [], nextCursor: opts.cursor ?? 'feed-end', hasMore: false }
+    );
+    const address = testServer.address();
+    if (!address || typeof address === 'string') throw new Error('Local test server has no port');
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/communities/${fixture.ref}/rooms/room-a/events?since=cursor-a&redactions=feed-before-drop`
+    );
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    try {
+      while (!/event: revision\n[^\n]*\n\n/.test(text)) {
+        const part = await reader.read();
+        if (part.done) throw new Error('Stream ended before a revision');
+        text += decoder.decode(part.value);
+      }
+    } finally {
+      release();
+      await reader.cancel();
+      fixture.adapter.readRedactions.mockReset();
+      fixture.adapter.readRedactions.mockResolvedValue({
+        items: [],
+        nextCursor: 'redactions-end',
+        hasMore: false,
+      });
+    }
+    const frame = (type: string) =>
+      JSON.parse(
+        text
+          .split('\n\n')
+          .find((block) => block.startsWith(`event: ${type}`))!
+          .split('\n')[1]!
+          .slice('data: '.length)
+      );
+    expect(frame('snapshot').redactionCursor).toBe('feed-before-drop');
+    expect(frame('revision')).toMatchObject({
+      entry: { id: 'entry-a', text: 'This message was erased.' },
+      redactionCursor: 'feed-after-gap',
+    });
+    // Never the end: that would skip the gap.
+    expect(fixture.adapter.readRedactions.mock.calls.some(([, opts]) => opts?.from === 'end')).toBe(
+      false
+    );
+  });
+
   it('closes a stream as revoked when its personal grant is authoritatively rejected', async () => {
     fixture.adapter.subscribeRoom.mockImplementationOnce(() =>
       failingRoomStream(new RemoteConnectionAuthorizationError())

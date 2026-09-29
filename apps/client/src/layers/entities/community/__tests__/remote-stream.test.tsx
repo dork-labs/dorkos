@@ -69,7 +69,7 @@ const entry = (community = 'a', remoteSeq = 1) =>
     authorKind: 'human',
     remoteSeq,
   });
-const snapshot = (community = 'a'): RemoteCommunityEvent => ({
+const snapshot = (community = 'a'): Extract<RemoteCommunityEvent, { type: 'snapshot' }> => ({
   type: 'snapshot',
   room: room(community),
   entries: [entry(community)],
@@ -262,6 +262,9 @@ describe('remote room stream lifecycle', () => {
       remoteSeq: 1,
     });
     expect(second?.text).toBe('a only');
+    // A change to a message this view cannot show is not remembered: a replay of the whole feed
+    // must not crowd out the ones that matter.
+    expect([...hook.result.current.revisions.keys()]).toEqual(['entry-1']);
     const cached = client.getQueryData<{ pages: Array<{ entries: unknown[] }> }>(
       communityKeys.entries(authority, 'a', 'same')
     );
@@ -275,6 +278,27 @@ describe('remote room stream lifecycle', () => {
     expect(
       applyRemoteCommunityRevisions([root], hook.result.current.revisions).map((item) => item.text)
     ).toEqual(['This message was erased.']);
+  });
+
+  // DOR-2544. Purpose: the feed position from the snapshot and each revision is sent back on a
+  // resume, so a message deleted or erased while disconnected still arrives.
+  it('sends the last feed position back when it resumes', async () => {
+    const { streams, subscribe, wrapper } = setup();
+    renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
+    act(() => streams[0].emit({ ...snapshot(), redactionCursor: 'feed-1' }));
+    act(() =>
+      streams[0].emit({
+        type: 'revision',
+        entry: RemoteCommunityEntrySchema.parse({ ...entry('a', 1), text: 'deleted' }),
+        redactionCursor: 'feed-2',
+      })
+    );
+    act(() => streams[0].reject(Object.assign(new Error('Unavailable'), { status: 503 })));
+    await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2), { timeout: 3_000 });
+    expect(subscribe.mock.calls[1]![3]).toMatchObject({
+      since: entry('a', 1).cursor,
+      redactions: 'feed-2',
+    });
   });
 
   // DOR-2544. Purpose: a revision from a previous connection generation must never reach the view

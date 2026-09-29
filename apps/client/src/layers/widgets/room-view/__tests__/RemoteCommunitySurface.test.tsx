@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -66,7 +66,8 @@ const ownerEntry = RemoteCommunityEntrySchema.parse({
 function mount(
   connectionAccess: CommunityConnectionAccess = access,
   history: RemoteCommunityEntry[] = [],
-  threadId?: string
+  threadId?: string,
+  historyGate?: Promise<void>
 ) {
   const transport = createMockTransport();
   vi.mocked(transport.listCommunityConnections).mockResolvedValue([
@@ -87,13 +88,16 @@ function mount(
   });
   let emit!: (event: RemoteCommunityEvent) => void;
   vi.mocked(transport.getRemoteCommunityRoom).mockResolvedValue(room);
-  vi.mocked(transport.listRemoteCommunityEntries).mockResolvedValue({
-    community: room.community,
-    roomId: room.roomId,
-    entries: history,
-    nextCursor: null,
-    lastRemoteSeq: history.at(-1)?.remoteSeq ?? 0,
-    stale: false,
+  vi.mocked(transport.listRemoteCommunityEntries).mockImplementation(async () => {
+    await historyGate;
+    return {
+      community: room.community,
+      roomId: room.roomId,
+      entries: history,
+      nextCursor: null,
+      lastRemoteSeq: history.at(-1)?.remoteSeq ?? 0,
+      stale: false,
+    };
   });
   vi.mocked(transport.listRemoteCommunityMembers).mockResolvedValue({
     community: room.community,
@@ -522,6 +526,57 @@ describe('remote community surface', () => {
       expect(await screen.findByText('This message was deleted.')).toBeInTheDocument();
       expect(screen.queryByText(reply.text)).not.toBeInTheDocument();
       expect(screen.getByText(root.text)).toBeInTheDocument();
+    });
+
+    // Purpose: a change that arrives while the history page is still loading is remembered and
+    // applied when the page lands with the old words. It fails if the view drops the stream's
+    // remembered changes, or if the stream does not remember changes during a load.
+    it('shows the tombstone on a history page that was still loading when the change arrived', async () => {
+      let open!: () => void;
+      const gate = new Promise<void>((resolve) => (open = resolve));
+      const view = mount(access, [root], undefined, gate);
+      await waitFor(() => expect(view.transport.listRemoteCommunityEntries).toHaveBeenCalled());
+
+      act(() =>
+        view.emit({ type: 'revision', entry: tombstone(root, 'This message was erased.') })
+      );
+      await act(async () => open());
+
+      expect(await screen.findByText('This message was erased.')).toBeInTheDocument();
+      expect(screen.queryByText(root.text)).not.toBeInTheDocument();
+    });
+
+    // Purpose: the person's own confirmed post is held outside the stream (merged after it), so a
+    // later erasure of it must still win. It fails if the view drops the remembered changes or the
+    // stream does not count the view's own posts as held.
+    it('shows the tombstone on your own confirmed post when it is erased later', async () => {
+      // jsdom has no scrolling; a confirmed post scrolls the timeline to it.
+      const original = HTMLElement.prototype.scrollTo;
+      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+        configurable: true,
+        value: vi.fn(),
+      });
+      onTestFinished(() => {
+        Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+          configurable: true,
+          value: original,
+        });
+      });
+      const view = mount();
+      await waitFor(() => expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalled());
+      vi.mocked(view.transport.postRemoteCommunityEntry).mockResolvedValue(ownerEntry);
+      const input = await screen.findByRole('combobox');
+      fireEvent.change(input, { target: { value: ownerEntry.text } });
+      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+      await waitFor(() => expect(view.transport.postRemoteCommunityEntry).toHaveBeenCalled());
+      expect(await screen.findByText(ownerEntry.text, { exact: true })).toBeInTheDocument();
+
+      act(() =>
+        view.emit({ type: 'revision', entry: tombstone(ownerEntry, 'This message was erased.') })
+      );
+
+      expect(await screen.findByText('This message was erased.')).toBeInTheDocument();
+      expect(screen.queryByText(ownerEntry.text, { exact: true })).not.toBeInTheDocument();
     });
 
     it('adds no row for a message it does not hold', async () => {

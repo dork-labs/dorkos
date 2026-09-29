@@ -206,6 +206,9 @@ function remoteEntry(entry: CommunityEntry, ownerAuthorId?: string) {
   };
 }
 
+/** A redaction-feed position a resuming view sends back; opaque and bounded. */
+const RedactionPositionSchema = z.string().min(1).max(1024).optional();
+
 /** Build routes for remote community discovery and read-only qualified views. */
 export function createRemoteCommunitiesRouter(): Router {
   const router = Router();
@@ -460,15 +463,27 @@ export function createRemoteCommunitiesRouter(): Router {
       // Deletions, removals and erasures do not travel on the live stream, so the channel's
       // redaction feed is followed beside it (DOR-2544). Its end is read BEFORE the snapshot, so
       // a change between the two reaches the first poll; changes go out only after the snapshot.
+      // A resuming view sends back the last position it was given, so a change made while it
+      // was disconnected is read too; the Community snapshot on a resume holds only newer
+      // entries, so nothing else would carry it.
+      const resumeFrom = RedactionPositionSchema.safeParse(req.query.redactions);
       const redactions = followNativeRedactions(adapter, req.params.roomId, {
         signal: abort.signal,
         intervalMs: NATIVE_REDACTION_POLL_MS,
-        onChanged: (items) => {
+        ...(resumeFrom.success && resumeFrom.data !== undefined
+          ? { resumeFrom: resumeFrom.data }
+          : {}),
+        onChanged: (items, position) => {
           if (!sawSnapshot || abort.signal.aborted || res.writableEnded) return;
-          for (const item of items) {
-            if (item.entry.community !== ref.data) continue;
-            writeEvent(res, { type: 'revision', entry: remoteEntry(item.entry, owner) });
-          }
+          const mine = items.filter((item) => item.entry.community === ref.data);
+          mine.forEach((item, index) =>
+            writeEvent(res, {
+              type: 'revision',
+              entry: remoteEntry(item.entry, owner),
+              // On the page's last frame: every change before it has been written.
+              ...(index === mine.length - 1 ? { redactionCursor: position } : {}),
+            })
+          );
         },
       });
       await redactions.ready;
@@ -486,6 +501,7 @@ export function createRemoteCommunitiesRouter(): Router {
             cursor: event.cursor,
             lastRemoteSeq: entries.at(-1)?.remoteSeq ?? 0,
             stale: false,
+            ...(redactions.position() ? { redactionCursor: redactions.position() } : {}),
           });
           sawSnapshot = true;
           writeDeliveries();

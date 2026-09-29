@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CommunityDelivery } from '@dorkos/shared/community-deliveries';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import type {
@@ -120,9 +120,15 @@ export function useRemoteCommunityStream(
   enabled = true,
   reconnectKey = 0,
   accessFingerprint = 'legacy',
-  cacheReadable = false
+  cacheReadable = false,
+  holds?: (entryId: string) => boolean
 ) {
   const transport = useTransport();
+  // Read when a change arrives, so the caller's latest answer is used without reconnecting.
+  const holdsRef = useRef(holds);
+  useEffect(() => {
+    holdsRef.current = holds;
+  }, [holds]);
   const queries = useQueryClient();
   const authority = useCommunityContentAuthority(true, accessFingerprint, ref);
   const address = JSON.stringify([
@@ -150,6 +156,9 @@ export function useRemoteCommunityStream(
     let retry: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     let since: string | undefined;
+    // Where this view reads changed messages from, sent back on a resume so a message deleted
+    // or erased while it was disconnected still arrives (DOR-2544).
+    let redactions: string | undefined;
     let denied = false;
     setState({
       address,
@@ -163,6 +172,7 @@ export function useRemoteCommunityStream(
     function removeAccess() {
       denied = true;
       since = undefined;
+      redactions = undefined;
       queries.removeQueries({ queryKey: communityKeys.remote(currentAuthority, ref) });
       setState({
         address,
@@ -193,6 +203,7 @@ export function useRemoteCommunityStream(
             failures = 0;
             if (event.type === 'snapshot') {
               since = event.cursor ?? undefined;
+              if (event.redactionCursor) redactions = event.redactionCursor;
               queries.setQueryData(communityKeys.room(currentAuthority, ref, roomId), event.room);
               setState((current) => ({
                 address,
@@ -221,10 +232,25 @@ export function useRemoteCommunityStream(
               // route; the frame names this room (the transport checks it). The cached history
               // pages are patched too, so reopening the room never shows the old words first.
               const revised = event.entry;
+              if (event.redactionCursor) redactions = event.redactionCursor;
+              const history = [...communityKeys.room(currentAuthority, ref, roomId), 'entries'];
+              // Remembered only for a message this view could show: one it holds, one in a
+              // cached history page, one the caller holds (a confirmed post of its own), or
+              // anything while a history page is still loading. A replay of the whole feed after
+              // a restore would otherwise crowd the ones that matter out of the bounded memory.
+              const inHistory = queries
+                .getQueriesData<InfiniteData<RemoteCommunityHistoryResponse>>({
+                  queryKey: history,
+                })
+                .some(([, data]) =>
+                  data?.pages.some((page) => page.entries.some((item) => item.id === revised.id))
+                );
+              const relevant =
+                inHistory ||
+                queries.isFetching({ queryKey: history }) > 0 ||
+                holdsRef.current?.(revised.id) === true;
               queries.setQueriesData<InfiniteData<RemoteCommunityHistoryResponse>>(
-                {
-                  queryKey: [...communityKeys.room(currentAuthority, ref, roomId), 'entries'],
-                },
+                { queryKey: history },
                 (data) => {
                   if (!data) return data;
                   let changed = false;
@@ -242,6 +268,8 @@ export function useRemoteCommunityStream(
                 }
               );
               setState((current) => {
+                if (!relevant && !current.entries.some((item) => item.id === revised.id))
+                  return current;
                 const revisions = new Map(current.revisions);
                 revisions.delete(revised.id);
                 revisions.set(revised.id, revised);
@@ -277,7 +305,7 @@ export function useRemoteCommunityStream(
               }));
             }
           },
-          { since, signal: controller.signal }
+          { since, redactions, signal: controller.signal }
         );
       } catch (error) {
         if (controller.signal.aborted || !isCommunityContentAuthorityCurrent(currentAuthority))

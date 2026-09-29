@@ -182,6 +182,8 @@ export type RemoteCommunityEjectionResponse = z.infer<typeof RemoteCommunityEjec
 
 /** A bounded upload returns only authorized attachment metadata. */
 export const RemoteCommunityAttachmentResponseSchema = z.strictObject({ attachment });
+/** An opaque redaction-feed position, as the Community server signed it. */
+const redactionCursor = z.string().min(1).max(1024);
 /** The local API emits one validated payload per SSE event. */
 export const RemoteCommunityEventSchema = z
   .discriminatedUnion('type', [
@@ -192,6 +194,13 @@ export const RemoteCommunityEventSchema = z
       cursor: CommunityCursorSchema.nullable(),
       lastRemoteSeq: sequence,
       stale: z.boolean(),
+      /**
+       * Where this stream reads the channel's changed messages from: opaque, server-signed. A
+       * view sends it back as `redactions` when it resumes, so a message deleted or erased while
+       * it was disconnected still reaches it (DOR-2544). Absent when the Community server has no
+       * redaction feed, or its position could not be read in time.
+       */
+      redactionCursor: redactionCursor.optional(),
     }),
     z.strictObject({ type: z.literal('entry'), entry: RemoteCommunityEntrySchema }),
     /**
@@ -201,7 +210,12 @@ export const RemoteCommunityEventSchema = z
      * not; it never adds a row. Named after the local room stream's `revision` frame, which means
      * the same thing for a mirrored room.
      */
-    z.strictObject({ type: z.literal('revision'), entry: RemoteCommunityEntrySchema }),
+    z.strictObject({
+      type: z.literal('revision'),
+      entry: RemoteCommunityEntrySchema,
+      /** The feed position after this change; see the snapshot's `redactionCursor`. */
+      redactionCursor: redactionCursor.optional(),
+    }),
     CommunityDeliverySnapshotSchema.safeExtend({ type: z.literal('deliveries') }),
     RoomAddressSchema.extend({
       type: z.literal('closed'),
@@ -241,7 +255,12 @@ export interface RemoteCommunityTransport {
     ref: string,
     roomId: string,
     onEvent: (event: RemoteCommunityEvent) => void,
-    options?: { since?: string; signal?: AbortSignal }
+    options?: {
+      since?: string;
+      /** The last `redactionCursor` this view received, sent back when it resumes. */
+      redactions?: string;
+      signal?: AbortSignal;
+    }
   ): Promise<void>;
   /** Read the roster with explicit freshness, including agent ownership. */
   listRemoteCommunityMembers(ref: string, roomId: string): Promise<RemoteCommunityMembersResponse>;

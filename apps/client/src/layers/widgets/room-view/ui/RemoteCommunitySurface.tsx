@@ -115,13 +115,21 @@ export function RemoteCommunitySurface({
     access.fingerprint
   );
   const [streamRevision, setStreamRevision] = useState(0);
+  // The confirmed posts this view holds outside the stream, so a change to one of them (a post
+  // of the person's own, erased later) is remembered by the stream (DOR-2544).
+  const heldReceipts = useRef<RemoteCommunityEntry[]>([]);
+  const holdsReceipt = useCallback(
+    (entryId: string) => heldReceipts.current.some((entry) => entry.id === entryId),
+    []
+  );
   const stream = useRemoteCommunityStream(
     community,
     roomId,
     access.capabilities.stream,
     streamRevision,
     access.fingerprint,
-    access.cacheReadable
+    access.cacheReadable,
+    holdsReceipt
   );
   const removed = stream.status === 'removed';
   const room = removed ? null : (stream.room ?? roomQuery.data);
@@ -146,6 +154,9 @@ export function RemoteCommunitySurface({
     () => (receiptState.address === contextAddress ? receiptState.entries : []),
     [contextAddress, receiptState]
   );
+  useEffect(() => {
+    heldReceipts.current = receipts;
+  }, [receipts]);
   const [receiptRevision, setReceiptRevision] = useState(0);
   const [showMembers, setShowMembers] = useState(false);
   const [actionState, setActionState] = useState<{

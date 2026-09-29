@@ -25,6 +25,9 @@ import {
 /** How often an open native room view reads its channel's changes: 30 seconds. */
 export const NATIVE_REDACTION_POLL_MS = 30_000;
 
+/** The longest a follower waits between polls after repeated failures: 10 minutes. */
+const MAX_BACKOFF_MS = 10 * 60_000;
+
 /** How long the stream waits for the feed's end before opening without it. */
 const READY_TIMEOUT_MS = 5_000;
 
@@ -37,13 +40,18 @@ export type NativeRedactionReader = Pick<RemoteCommunityAdapter, 'readRedactions
 /** A running follower: where it starts, and how it is stopped. */
 export interface NativeRedactionFollower {
   /**
-   * Read the feed's current end. Call it BEFORE the view's snapshot is read, so a change made
-   * between the two is read by the first poll rather than lost. Never throws; resolves once the
-   * start is known or the feed turned out to be unavailable.
+   * Resolves once the start is known: at once for a resumed position, otherwise when the feed's
+   * end was read (call it BEFORE the view's snapshot is read, so a change between the two reaches
+   * the first poll), the feed turned out to be unavailable, or the wait ran out. Never rejects.
    */
   ready: Promise<void>;
   /** Start polling. Changes are only handed on after this, so they never precede a snapshot. */
   start(): void;
+  /**
+   * Where the next poll reads from, for the view to send back when it resumes; `undefined`
+   * when no position is known yet (the first poll then reads from the start).
+   */
+  position(): string | undefined;
 }
 
 /** Whether an error means this channel's feed cannot be read by this connection at all. */
@@ -58,17 +66,26 @@ function isFinal(error: unknown): boolean {
 /**
  * Follow one channel's redaction feed until `signal` aborts.
  *
+ * Each poll is one feed read per page, and on the Community server each read takes the same
+ * `FOR UPDATE` lock on the channel row that a history read takes (`lockChannel`); that is why
+ * polls are 30 seconds apart, back off after failures, and read at most
+ * {@link MAX_PAGES_PER_POLL} pages.
+ *
  * A server without the feed, a channel this connection may no longer read, or a refused
  * credential stops the follower quietly; the room's own stream reports the last two. Any other
- * failure is logged and the next poll retries from the same cursor. A stale cursor (the server
- * restored a backup) reads the feed again from its start; the view ignores changes to messages
- * it does not hold.
+ * failure waits longer before the next poll (doubling up to {@link MAX_BACKOFF_MS}) and is
+ * logged once per run of failures, not once per poll. A stale position (the server restored a
+ * backup, or a resumed position no longer applies) reads the feed again from its start; the
+ * view ignores changes to messages it does not hold.
  *
  * @param reader - The owner's adapter for this Community.
  * @param roomId - The channel.
  * @param opts.signal - Ends the follower; aborted when the view's stream closes.
  * @param opts.intervalMs - Time between polls.
- * @param opts.onChanged - Receives each non-empty batch of changed entries, as they stand now.
+ * @param opts.resumeFrom - The position a resuming view last received. Read from there instead
+ *   of the feed's end, so a change made while it was disconnected is not lost.
+ * @param opts.onChanged - Receives each non-empty batch of changed entries, as they stand now,
+ *   and the feed position after them.
  */
 export function followNativeRedactions(
   reader: NativeRedactionReader,
@@ -76,30 +93,45 @@ export function followNativeRedactions(
   opts: {
     signal: AbortSignal;
     intervalMs?: number;
-    onChanged: (items: NativeMirrorEntry[]) => void;
+    resumeFrom?: string;
+    onChanged: (items: NativeMirrorEntry[], position: string) => void;
   }
 ): NativeRedactionFollower {
   const { signal } = opts;
-  let cursor: string | undefined;
+  const interval = opts.intervalMs ?? NATIVE_REDACTION_POLL_MS;
+  let cursor: string | undefined = opts.resumeFrom;
   let stopped = false;
+  let failures = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
 
-  const end = reader
-    .readRedactions(roomId, { from: 'end', signal })
-    .then((page) => {
-      cursor ??= page.nextCursor;
-    })
-    .catch((error: unknown) => {
-      // Without a known end the first poll reads from the start: slower, still correct.
-      if (isFinal(error)) stopped = true;
-    });
-  // Never hold the room's stream open waiting on the feed: past this, the first poll reads
-  // from the start instead.
-  const ready = Promise.race([
-    end,
-    new Promise<void>((resolve) => setTimeout(resolve, READY_TIMEOUT_MS).unref?.()),
-  ]);
+  let ready: Promise<void>;
+  if (opts.resumeFrom !== undefined) {
+    ready = Promise.resolve();
+  } else {
+    let waited = false;
+    const end = reader
+      .readRedactions(roomId, { from: 'end', signal })
+      .then((page) => {
+        // An end read that lands after the wait ran out is ignored: the snapshot went out
+        // without it, and starting there would skip whatever changed in between. The first
+        // poll reads from the start instead.
+        if (!waited) cursor = page.nextCursor;
+      })
+      .catch((error: unknown) => {
+        if (isFinal(error)) stopped = true;
+      });
+    // Never hold the room's stream open waiting on the feed.
+    ready = Promise.race([
+      end,
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          waited = true;
+          resolve();
+        }, READY_TIMEOUT_MS).unref?.();
+      }),
+    ]);
+  }
 
   const poll = async (): Promise<void> => {
     let restarted = false;
@@ -118,16 +150,21 @@ export function followNativeRedactions(
           stopped = true;
           return;
         }
-        logger.warn('[communities] reading changed messages for an open room failed; retrying', {
-          error: error instanceof Error ? error.message : String(error),
-        });
+        failures += 1;
+        if (failures === 1) {
+          logger.warn(
+            '[communities] reading changed messages for an open room failed; retrying less often',
+            { error: error instanceof Error ? error.message : String(error) }
+          );
+        }
         return;
       }
+      failures = 0;
       cursor = result.nextCursor;
       const items = result.items.filter((item) => item.entry.roomId === roomId);
       if (items.length && !signal.aborted) {
         try {
-          opts.onChanged(items);
+          opts.onChanged(items, result.nextCursor);
         } catch (error) {
           logger.warn('[communities] could not pass on changed messages to an open room', {
             error: error instanceof Error ? error.message : String(error),
@@ -140,9 +177,10 @@ export function followNativeRedactions(
 
   const schedule = () => {
     if (stopped || signal.aborted) return;
+    const delay = Math.min(MAX_BACKOFF_MS, interval * 2 ** Math.min(failures, 10));
     timer = setTimeout(() => {
       void poll().finally(schedule);
-    }, opts.intervalMs ?? NATIVE_REDACTION_POLL_MS);
+    }, delay);
   };
 
   return {
@@ -150,5 +188,6 @@ export function followNativeRedactions(
     start: () => {
       void ready.then(schedule);
     },
+    position: () => cursor,
   };
 }
