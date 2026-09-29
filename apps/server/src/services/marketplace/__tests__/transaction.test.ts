@@ -22,7 +22,10 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runTransaction, withInstallTargetLock, _internal } from '../transaction.js';
-import { _internal as recoveryInternal, recoverInterruptedInstall } from '../install-recovery.js';
+import {
+  _internal as recoveryInternal,
+  recoverInterruptedInstall,
+} from '../recovery/install-recovery.js';
 import { currentRecordOwner, formatRecordOwner, type RecordOwner } from '../lib/record-owner.js';
 import { randomUUID } from 'node:crypto';
 

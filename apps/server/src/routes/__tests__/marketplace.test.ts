@@ -58,9 +58,9 @@ import {
   InvalidPackageNameError,
   PathEscapeError,
 } from '../../services/marketplace/lib/package-paths.js';
-import { MarketplaceSourceManager } from '../../services/marketplace/marketplace-source-manager.js';
-import { MarketplaceCache } from '../../services/marketplace/marketplace-cache.js';
-import { PackageCacheRetention } from '../../services/marketplace/package-cache-retention.js';
+import { MarketplaceSourceManager } from '../../services/marketplace/sources/marketplace-source-manager.js';
+import { MarketplaceCache } from '../../services/marketplace/cache/marketplace-cache.js';
+import { PackageCacheRetention } from '../../services/marketplace/cache/package-cache-retention.js';
 import {
   MARKETPLACE_JSON_TIMEOUT_MS,
   PackageFetcher,
@@ -71,11 +71,11 @@ import {
   DisclosureChangedError,
   InvalidPackageError,
   type InstallerLike,
-} from '../../services/marketplace/marketplace-installer.js';
+} from '../../services/marketplace/installer/marketplace-installer.js';
 import {
   UNSUPPORTED_GIT_REMOTE_MESSAGE,
   UnsupportedSourceUrlError,
-} from '../../services/marketplace/source-url-policy.js';
+} from '../../services/marketplace/sources/source-url-policy.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/flows/install-shape.js';
 import {
   PackageNotInstalledError,
@@ -106,7 +106,7 @@ import {
 } from '../../services/marketplace/lib/content-hash.js';
 import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confirmation-provider.js';
-import type { DisclosedEffects } from '../../services/marketplace/disclosed-effects.js';
+import type { DisclosedEffects } from '../../services/marketplace/preview/disclosed-effects.js';
 import type { CapabilityRegistry } from '../../services/core/capabilities/index.js';
 
 const fixtureTarget = swappableServer();

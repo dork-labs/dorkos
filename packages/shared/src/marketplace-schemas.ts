@@ -687,7 +687,7 @@ export interface DisclosedProgram {
  * else is sorted, so the value does not move when a directory listing does.
  *
  * Built only by the server (`disclosedEffectsOf` in
- * `apps/server/src/services/marketplace/disclosed-effects.ts`). A client shows
+ * `apps/server/src/services/marketplace/preview/disclosed-effects.ts`). A client shows
  * it and sends it back untouched as what the person was shown (DOR-2306); the
  * server compares it with the version it resolves now and refuses any other.
  */
@@ -1480,7 +1480,7 @@ export const MARKETPLACE_UNINSTALL_DIR_MARKER = '.dorkos-uninstall-';
  * installed package, agent, plugin or skill — whatever it contains (a backup
  * holds the previous install's valid manifest). A new kind of sibling is added
  * here and in the recovery policy table in
- * `apps/server/src/services/marketplace/install-recovery.ts`.
+ * `apps/server/src/services/marketplace/recovery/install-recovery.ts`.
  */
 export const MARKETPLACE_INSTALL_SIBLING_MARKERS: readonly string[] = [
   MARKETPLACE_BACKUP_DIR_MARKER,

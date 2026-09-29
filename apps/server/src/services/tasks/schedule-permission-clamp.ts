@@ -51,7 +51,7 @@ const CLAMPED_PERMISSION_MODE = 'acceptEdits' as const;
  * call, in the cockpit, on a task they can see.
  *
  * Exported because the install permission preview
- * (`services/marketplace/permission-preview.ts`) has to disclose the mode a
+ * (`services/marketplace/preview/permission-preview.ts`) has to disclose the mode a
  * schedule will ACTUALLY get, not the one it asked for.
  *
  * @param declared - The mode the content asked for.

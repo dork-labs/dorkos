@@ -23,27 +23,27 @@ import {
 } from '@dorkos/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../lib/logger.js';
-import type { MarketplaceCache } from '../services/marketplace/marketplace-cache.js';
+import type { MarketplaceCache } from '../services/marketplace/cache/marketplace-cache.js';
 import {
   UnreadableInstallsError,
   type PackageCacheRetention,
-} from '../services/marketplace/package-cache-retention.js';
+} from '../services/marketplace/cache/package-cache-retention.js';
 import { directorySize } from '../services/marketplace/lib/directory-size.js';
 import {
   InvalidSourceNameError,
   type MarketplaceSourceManager,
-} from '../services/marketplace/marketplace-source-manager.js';
+} from '../services/marketplace/sources/marketplace-source-manager.js';
 import type { PackageFetcher } from '../services/marketplace/package-fetcher.js';
-import type { InstallerLike } from '../services/marketplace/marketplace-installer.js';
+import type { InstallerLike } from '../services/marketplace/installer/marketplace-installer.js';
 import {
   ConflictError,
   DisclosureChangedError,
   InvalidPackageError,
-} from '../services/marketplace/marketplace-installer.js';
+} from '../services/marketplace/installer/marketplace-installer.js';
 import {
   DisclosedEffectsSchema,
   disclosedEffectsOf,
-} from '../services/marketplace/disclosed-effects.js';
+} from '../services/marketplace/preview/disclosed-effects.js';
 import {
   activationEffectsOf,
   globalPackageDir,
@@ -51,7 +51,7 @@ import {
   GLOBALLY_ACTIVATED_TYPES,
   type ApprovedPackage,
   type GlobalConsentRecorder,
-} from '../services/marketplace/global-plugin-consent.js';
+} from '../services/marketplace/consent/global-plugin-consent.js';
 import {
   packageContentHash,
   ShipsRuntimeStateError,
@@ -64,7 +64,7 @@ import {
   listHeldBackPackages,
   reviewHeldBackPackage,
   type AskAboutWithheldGlobalPluginsOptions,
-} from '../services/marketplace/ask-withheld-global-plugins.js';
+} from '../services/marketplace/consent/ask-withheld-global-plugins.js';
 import { disclosesAnything, type DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
 import type {
   ConfirmationProvider,
@@ -78,12 +78,12 @@ import {
   PackageNotInstalledError,
   type UninstallFlow,
 } from '../services/marketplace/flows/uninstall.js';
-import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
+import { UnsupportedSourceUrlError } from '../services/marketplace/sources/source-url-policy.js';
 import {
   describeLastFetch,
   fetchNewSourceListing,
   refreshSourceListing,
-} from '../services/marketplace/source-listing.js';
+} from '../services/marketplace/sources/source-listing.js';
 import {
   GitCommitNotFoundError,
   GitFetchError,
@@ -120,8 +120,11 @@ import {
 import {
   installCountsProvider,
   enrichWithInstallCounts,
-} from '../services/marketplace/install-counts.js';
-import { updatedAtProvider, enrichWithUpdatedAt } from '../services/marketplace/updated-at.js';
+} from '../services/marketplace/telemetry/install-counts.js';
+import {
+  updatedAtProvider,
+  enrichWithUpdatedAt,
+} from '../services/marketplace/telemetry/updated-at.js';
 import type { MarketplaceSource, NotifyPluginsChanged } from '../services/marketplace/types.js';
 import {
   scanInstallationRecords,
@@ -145,7 +148,7 @@ import {
   describeMarketplaceSourceRefusal,
   marketplaceSourceRefusalError,
   type MarketplaceSourceAction,
-} from '../services/marketplace/source-write-policy.js';
+} from '../services/marketplace/sources/source-write-policy.js';
 import { withIntegrity } from '../services/marketplace/lib/integrity/verify-install.js';
 import {
   describeStrictRebuild,
@@ -754,7 +757,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
    * no card. Changing which feeds this install fetches code from is the person's,
    * the same way `CONFIG_WRITE_POLICY` makes the hosts DorkOS reaches the person's.
    * The full reasoning, including why the `PATCH /api/config` cookie bar is not
-   * copied here, lives in `services/marketplace/source-write-policy.ts`.
+   * copied here, lives in `services/marketplace/sources/source-write-policy.ts`.
    *
    * ## Why this reads the resolver directly instead of asking for a marker
    *

@@ -171,7 +171,7 @@ import {
   rollBackInstallRecord,
   settleableBy,
   type InstallRecord,
-} from './install-recovery.js';
+} from './recovery/install-recovery.js';
 
 /** Staging directory prefix passed to `mkdtemp`. */
 const STAGING_DIR_PREFIX = 'dorkos-install-';

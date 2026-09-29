@@ -277,7 +277,7 @@ import {
   FoundClaudeFolderSchema,
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
-import { DisclosedEffectsSchema } from '../marketplace/disclosed-effects.js';
+import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
 
 /**
  * Simplified documentation mirror of `@dorkos/marketplace`'s

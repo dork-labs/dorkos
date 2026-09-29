@@ -31,7 +31,7 @@ import {
   globalActivationEntry,
   partitionGlobalPlugins,
   readActivationState,
-} from '../../../global-plugin-consent.js';
+} from '../../../consent/global-plugin-consent.js';
 import { packageContentHash } from '../../content-hash.js';
 import { computeInstalledFiles, writeInstalledFiles } from '../../installed-files.js';
 import { migrateSavedCopies } from '../migrate-saved-copies.js';

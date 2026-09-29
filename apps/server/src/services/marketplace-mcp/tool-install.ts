@@ -33,8 +33,8 @@ import {
   DisclosureChangedError,
   InvalidPackageError,
   type PreviewResult,
-} from '../marketplace/marketplace-installer.js';
-import { disclosedEffectsOf } from '../marketplace/disclosed-effects.js';
+} from '../marketplace/installer/marketplace-installer.js';
+import { disclosedEffectsOf } from '../marketplace/preview/disclosed-effects.js';
 import type { InstallResult } from '../marketplace/types.js';
 import { BoundaryError, validateBoundary } from '../../lib/boundary.js';
 

@@ -48,12 +48,12 @@ import {
   type ResolvedSourceDescriptor,
   type SourceKey,
 } from '@dorkos/marketplace';
-import type { MarketplaceCache } from './marketplace-cache.js';
+import type { MarketplaceCache } from './cache/marketplace-cache.js';
 import type { MarketplaceSource } from './types.js';
 import { relativePathResolver } from './source-resolvers/relative-path.js';
 import { gitResolver } from './source-resolvers/git.js';
 import { npmResolver } from './source-resolvers/npm.js';
-import { assertSafeGitRemote } from './source-url-policy.js';
+import { assertSafeGitRemote } from './sources/source-url-policy.js';
 import { validateBoundary } from '../../lib/boundary.js';
 import {
   GitRefNotFoundError,

@@ -44,7 +44,7 @@ import type {
   PermissionPreview,
   ResolveLatestOptions,
 } from '../../types.js';
-import { disclosedEffectsOf } from '../../disclosed-effects.js';
+import { disclosedEffectsOf } from '../../preview/disclosed-effects.js';
 
 const SHA_A = 'a'.repeat(40);
 const SHA_B = 'b'.repeat(40);

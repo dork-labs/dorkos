@@ -334,7 +334,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the cockpit + CLI REST route — runs the tier gate via authorizeCapability first (DOR-467)',
       'services/marketplace-mcp/tool-uninstall.ts':
         'the marketplace.uninstall capability handler — reached only through registry.invoke, which gates',
-      'services/marketplace/marketplace-installer.ts':
+      'services/marketplace/installer/marketplace-installer.ts':
         'the first half of an in-place update (uninstall then install); its callers are gated, not this',
     },
   },

@@ -35,7 +35,7 @@ import {
   type AgentScopeRef,
   type InstallationRecord,
 } from '../installed-scanner.js';
-import { sameDisclosedEffects, type DisclosedEffects } from '../disclosed-effects.js';
+import { sameDisclosedEffects, type DisclosedEffects } from '../preview/disclosed-effects.js';
 import type { PackageScope } from '../installed-scanner.js';
 import type { PackageType } from '@dorkos/marketplace';
 import type { UpdateFlow } from './update.js';

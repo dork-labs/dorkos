@@ -38,8 +38,11 @@ import type { Logger } from '@dorkos/shared/logger';
 import { PackageFetcher, type FetcherDeps } from '../package-fetcher.js';
 import { gitResolver } from '../source-resolvers/git.js';
 import type { GitTreeSource } from '../lib/git/git-tree.js';
-import { UNSUPPORTED_GIT_REMOTE_MESSAGE, UnsupportedSourceUrlError } from '../source-url-policy.js';
-import type { MarketplaceCache } from '../marketplace-cache.js';
+import {
+  UNSUPPORTED_GIT_REMOTE_MESSAGE,
+  UnsupportedSourceUrlError,
+} from '../sources/source-url-policy.js';
+import type { MarketplaceCache } from '../cache/marketplace-cache.js';
 import { BoundaryError, initBoundary } from '../../../lib/boundary.js';
 import { buildInstallerForTests } from './installer-harness.js';
 

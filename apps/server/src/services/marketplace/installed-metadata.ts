@@ -2,7 +2,7 @@
  * Installed-package metadata sidecar.
  *
  * Each successfully installed package gets a `.dork/install-metadata.json`
- * file written by the {@link import('./marketplace-installer.js').MarketplaceInstaller}
+ * file written by the {@link import('./installer/marketplace-installer.js').MarketplaceInstaller}
  * after the install flow completes. The sidecar is intentionally separate
  * from `.dork/manifest.json` (which is the immutable source manifest copied
  * from the package archive) so install-time provenance — which marketplace

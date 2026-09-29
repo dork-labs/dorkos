@@ -33,7 +33,7 @@ import {
 } from '../../lib/installed-files.js';
 import * as journalModule from '../../lib/uninstall-journal.js';
 import { migrateSavedCopies } from '../../lib/saved-copies/migrate-saved-copies.js';
-import { recoverInterruptedInstall } from '../../install-recovery.js';
+import { recoverInterruptedInstall } from '../../recovery/install-recovery.js';
 
 const dirs: string[] = [];
 afterEach(async () => {

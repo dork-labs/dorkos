@@ -14,7 +14,7 @@ import {
   InvalidPackageError,
   type InstallerLike,
   type PreviewResult,
-} from '../../marketplace/marketplace-installer.js';
+} from '../../marketplace/installer/marketplace-installer.js';
 import type {
   ConflictReport,
   InstallRequest,

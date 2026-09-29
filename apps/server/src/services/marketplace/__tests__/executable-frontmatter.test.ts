@@ -17,13 +17,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
-import { ConflictDetector } from '../conflict-detector.js';
+import { ConflictDetector } from '../preview/conflict-detector.js';
 import {
   InvalidPackageError,
   MarketplaceInstaller,
   type InstallerDeps,
-} from '../marketplace-installer.js';
-import { PermissionPreviewBuilder } from '../permission-preview.js';
+} from '../installer/marketplace-installer.js';
+import { PermissionPreviewBuilder } from '../preview/permission-preview.js';
 
 const SENTINEL = '__dorkosPackagePwned';
 

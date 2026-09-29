@@ -70,7 +70,7 @@ import {
   writeJournal,
   type UninstallJournal,
 } from '../lib/uninstall-journal.js';
-import { hasInstallRecords, type InstallRecord } from '../install-recovery.js';
+import { hasInstallRecords, type InstallRecord } from '../recovery/install-recovery.js';
 import {
   releaseSupersededRecords,
   settleInterruptedInstall,

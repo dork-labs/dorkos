@@ -161,7 +161,7 @@
       "reason": "The marketplace search and list tools enumerate the package TYPES an author writes in a manifest (agent/plugin/skill-pack/adapter). ADR 260804-021140's scoped-word registry keeps `adapter` in the marketplace-author domain; a filter value that stopped matching the manifest key would simply not work."
     },
     {
-      "path": "apps/server/src/services/marketplace/conflict-detector.ts",
+      "path": "apps/server/src/services/marketplace/preview/conflict-detector.ts",
       "terms": ["adapter"],
       "reason": "\"An adapter of type X is already configured\" is the install-time collision between two marketplace packages, named with the package type the author declared — the same marketplace-author domain the ADR's registry keeps the word in."
     },

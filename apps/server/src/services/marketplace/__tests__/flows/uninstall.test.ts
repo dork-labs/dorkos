@@ -29,7 +29,7 @@ import {
 import { InvalidPackageNameError } from '../../lib/package-paths.js';
 import { computeInstalledFiles, writeInstalledFiles } from '../../lib/installed-files.js';
 import { currentRecordOwner, formatRecordOwner } from '../../lib/record-owner.js';
-import { _internal as recoveryInternal } from '../../install-recovery.js';
+import { _internal as recoveryInternal } from '../../recovery/install-recovery.js';
 import { randomUUID } from 'node:crypto';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */

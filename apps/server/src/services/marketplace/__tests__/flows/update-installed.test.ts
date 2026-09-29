@@ -16,7 +16,7 @@ import {
   type ApprovableUpdate,
   type InstalledUpdatesDeps,
 } from '../../flows/update-installed.js';
-import type { DisclosedEffects } from '../../disclosed-effects.js';
+import type { DisclosedEffects } from '../../preview/disclosed-effects.js';
 import type { InstallationRecord } from '../../installed-scanner.js';
 
 /** Write a minimal plugin install at `root`. */
