@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import {
+  agentHeldAccess,
   cardDecision,
   everyAgentCanDelete,
   everyAgentCanWrite,
@@ -72,8 +73,9 @@ describe('heldAccess', () => {
   it('keeps saying Read after the app changes its actions (DOR-2506)', () => {
     // The set no longer matches today's Read actions; the level is still Read.
     expect(heldAccess({ operationRevisionIds: ['old-read'], level: 'read' })).toBe('read');
-    // A level with nothing in it yet is still the level the owner chose.
-    expect(heldAccess({ operationRevisionIds: [], level: 'read' })).toBe('read');
+    // A level that holds nothing it can use yet (the service refused it, or
+    // has not applied it) is never shown as access the agent has.
+    expect(heldAccess({ operationRevisionIds: [], level: 'read-write' })).toBe('none');
   });
 });
 
@@ -217,7 +219,9 @@ describe('cardDecision', () => {
 
   it('saves Read as the level again after the app changed its actions, not as exact actions', () => {
     // Ada holds Read from before the app added its current read action.
-    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: [], level: 'read' }]);
+    const snapshot = preview([
+      { agentId: 'ada', operationRevisionIds: ['old-read'], level: 'read' },
+    ]);
     const decision = cardDecision(snapshot, {
       scope: ALL,
       picked: new Set(['ada']),
@@ -378,5 +382,38 @@ describe('everyAgentDecision (DOR-2420)', () => {
         withEvery({ available: true, operationRevisionIds: ['read', 'send'], level: 'read-write' })
       )
     ).toBe('read-write');
+  });
+});
+
+describe('a level the service refused (DOR-2506)', () => {
+  // The service refused the widening, so the level holds nothing usable.
+  const refused = (): ConnectorReconciliationPreview => ({
+    ...preview([{ agentId: 'ada', operationRevisionIds: [], level: 'read-write' }]),
+    everyAgent: { available: true, operationRevisionIds: [], level: 'read-write' },
+  });
+
+  it('never reads as access the agent has, alone or through every agent', () => {
+    expect(heldAccess(refused().currentGrants[0])).toBe('none');
+    expect(heldAccess(refused().everyAgent)).toBe('none');
+    // The chat card's "covered" reads this: nothing is covered.
+    expect(agentHeldAccess(refused(), 'ada')).toBe('none');
+    expect(agentHeldAccess(refused(), 'bo')).toBe('none');
+  });
+
+  it('sends the same level again when the owner picks it again', () => {
+    expect(
+      everyAgentDecision(refused(), { who: 'every', level: 'read-write', levelTouched: true })
+    ).toEqual({
+      everyAgent: { operationRevisionIds: ['read', 'send'], level: 'read-write' },
+      needsLevel: false,
+    });
+    expect(
+      cardDecision(refused(), {
+        scope: ['ada'],
+        picked: new Set(['ada']),
+        level: 'read-write',
+        levelTouched: true,
+      }).changes
+    ).toEqual([{ agentId: 'ada', operationRevisionIds: ['read', 'send'], level: 'read-write' }]);
   });
 });

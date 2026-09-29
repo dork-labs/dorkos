@@ -36,16 +36,18 @@ export type HeldAccess = 'none' | CardAccessLevel | 'custom';
 export const VISIBLE_AGENT_LIMIT = 5;
 
 /**
- * What one grant is: the level the owner chose when it has one, `'custom'`
- * for exact actions, `'none'` for nothing. A level is never guessed from
- * which actions happen to match today, so an app that adds or reclassifies an
- * action never turns "Read" into exact actions.
+ * What one grant is: `'none'` when it holds no action it can use now, else
+ * the level the owner chose when it has one, and `'custom'` for exact
+ * actions. A level is never guessed from which actions happen to match
+ * today, so an app that adds or reclassifies an action never turns "Read"
+ * into exact actions; and a level that holds nothing yet (a change the
+ * service has not applied) never reads as access the agent has.
  *
  * @param grant - The agent's (or every agent's) current revisions and level.
  */
 export function heldAccess(grant: Partial<AgentAccessSelection> | undefined): HeldAccess {
-  if (grant?.level) return grant.level;
-  return (grant?.operationRevisionIds?.length ?? 0) === 0 ? 'none' : 'custom';
+  if ((grant?.operationRevisionIds?.length ?? 0) === 0) return 'none';
+  return grant?.level ?? 'custom';
 }
 
 /**

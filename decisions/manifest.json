@@ -14,6 +14,7 @@
       "affects": [
         "apps/server/src/services/connectors/execution/access-levels.ts",
         "apps/server/src/services/connectors/reconciliation-service.ts",
+        "apps/server/src/services/connectors/resources/level-follower.ts",
         "packages/db/src/schema/connectors/connections.ts",
         "packages/shared/src/connector-schemas.ts",
         "apps/client/src/layers/features/connections/lib/access-card-selection.ts"

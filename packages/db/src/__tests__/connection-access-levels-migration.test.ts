@@ -33,12 +33,12 @@ function foldersBefore(tag: string): string {
 
 const NOW = '2026-09-29T00:00:00.000Z';
 
-describe('levels become intent (0129)', () => {
+describe('levels become intent (0130)', () => {
   it('turns grants matching a level in the last review into that level, and leaves the rest exact', () => {
     const sqlite = new Database(':memory:');
     try {
       const db = drizzle(sqlite);
-      migrate(db, { migrationsFolder: foldersBefore('0129_connection_access_levels') });
+      migrate(db, { migrationsFolder: foldersBefore('0130_connection_access_levels') });
       sqlite
         .prepare(
           `INSERT INTO connector_provider_instances

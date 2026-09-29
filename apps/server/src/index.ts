@@ -141,6 +141,7 @@ import {
   ConnectorProviderBootstrapper,
   TEST_CONNECTOR_PROVIDER_TYPE,
 } from './services/connectors/bootstrap.js';
+import { LevelFollower } from './services/connectors/resources/level-follower.js';
 import { SignInRefresher } from './services/connectors/resources/sign-in-refresh.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
@@ -3291,6 +3292,16 @@ async function start() {
         ? { actorType: 'user', actorLabel: 'Your signed-in account' }
         : { actorType: 'user', actorLabel: 'Someone on this computer' },
   });
+  // A level ("Read") follows its app's actions (ADR 260929-071355): read each
+  // leveled app's catalog now, which also carries a classification change this
+  // release shipped, and every 12 hours after.
+  const connectorLevels = new LevelFollower({ reconciliation: connectorReconciliation });
+  connectorLevels.start();
+  const stopSignInFreshness = stopConnectorFreshness;
+  stopConnectorFreshness = () => {
+    stopSignInFreshness?.();
+    connectorLevels.stop();
+  };
   const connectorUsage = new ConnectorUsageStore(db);
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
   if (recoveredConnectorAttempts > 0) {

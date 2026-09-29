@@ -911,6 +911,13 @@
       "when": 1790665320090,
       "tag": "0129_known_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "6",
+      "when": 1790670823761,
+      "tag": "0130_connection_access_levels",
+      "breakpoints": true
     }
   ]
 }

@@ -630,6 +630,22 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     expect(screen.getByLabelText('Now: Exact actions')).toBeInTheDocument();
   });
 
+  it('never shows a level the agent can use nothing of (DOR-2506)', async () => {
+    const transport = createMockTransport();
+    // Cy's "Read and write" was refused by the service: it holds no action.
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' },
+        { agentId: 'agent-cy', operationRevisionIds: [], level: 'read-write' },
+      ])
+    );
+    renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
+
+    expect(await screen.findByLabelText('Now: Read')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Now: Read and write')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Cy' })).not.toBeChecked();
+  });
+
   it('will not save a removal alone while a newly ticked agent still has no level', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
