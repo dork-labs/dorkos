@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(communities): keep a held community's files from the cleanup sweep, and settle two lock orders (DOR-2553, DOR-2330)"
+  - 'fix(communities): skip a locked community in the pending-deletion sweep instead of waiting (DOR-2553 review)'
 ---
 
 ### Fixed
