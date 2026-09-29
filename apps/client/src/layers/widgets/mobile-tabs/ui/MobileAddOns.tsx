@@ -10,10 +10,9 @@
  * @module widgets/mobile-tabs/ui/MobileAddOns
  */
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { Puzzle } from 'lucide-react';
 import { cn, extensionPageHref } from '@/layers/shared/lib';
 import { useMenuExtensionPages } from '@/layers/shared/model';
-import { TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
+import { ContributedIcon, TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
 
 /** The "Add-ons" list, or nothing when no extension added a page. */
 export function MobileAddOns() {
@@ -34,7 +33,6 @@ export function MobileAddOns() {
       <ul className="bg-sidebar-accent/60 flex flex-col gap-0.5 rounded-lg p-1">
         {pages.map((page) => {
           const href = extensionPageHref(page.extensionId, page.path);
-          const Icon = page.icon ?? Puzzle;
           const current = pathname === href;
           return (
             <li key={page.id}>
@@ -50,7 +48,7 @@ export function MobileAddOns() {
                     : 'text-sidebar-foreground/80 hover:bg-sidebar-accent'
                 )}
               >
-                <Icon className="size-4 shrink-0" />
+                <ContributedIcon icon={page.icon} className="size-4 shrink-0" />
                 <span className="truncate">{page.title}</span>
               </button>
             </li>

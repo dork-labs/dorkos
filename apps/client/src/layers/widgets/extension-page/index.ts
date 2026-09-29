@@ -7,3 +7,4 @@
  */
 export { ExtensionPageRoute } from './ui/ExtensionPageRoute';
 export { extensionPageState, type ExtensionPageState } from './model/extension-page-state';
+export { createPageSearchWriter, pageSearchFrom } from './model/page-search';

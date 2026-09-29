@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useMemo } from 'react';
+import { useLocation, useRouter } from '@tanstack/react-router';
 import { ErrorBoundary } from 'react-error-boundary';
 import { AlertTriangle, PackageX, Puzzle } from 'lucide-react';
 import { useExtensionPageAtPath } from '@/layers/shared/model';
@@ -7,14 +7,10 @@ import { openLink } from '@/layers/shared/lib';
 import { EmptyState, PageContainer, Skeleton } from '@/layers/shared/ui';
 import { useExtensions } from '@/layers/features/extensions';
 import { extensionPageState, type ExtensionPageState } from '../model/extension-page-state';
+import { createPageSearchWriter, pageSearchFrom } from '../model/page-search';
 
 /** Where a person turns an extension on, or lets it run: Settings → Extensions. */
 const EXTENSIONS_SETTINGS_LINK = '?settings=extensions';
-
-/** The URL's query, flat: every value a string, as extension pages receive it. */
-function flatSearch(searchStr: string): Record<string, string> {
-  return Object.fromEntries(new URLSearchParams(searchStr));
-}
 
 /**
  * The route at `/x/<extensionId>/<path>`: one extension page, or the honest
@@ -29,23 +25,17 @@ function flatSearch(searchStr: string): Record<string, string> {
  */
 export function ExtensionPageRoute() {
   const location = useLocation();
-  const navigate = useNavigate();
+  const router = useRouter();
   const at = useExtensionPageAtPath(location.pathname);
   const { extensions, ready } = useExtensions();
 
-  const search = useMemo(() => flatSearch(location.searchStr), [location.searchStr]);
-
-  const setSearch = useCallback(
-    (next: Record<string, string | null>) => {
-      const params = new URLSearchParams(location.searchStr);
-      for (const [key, value] of Object.entries(next)) {
-        if (value === null) params.delete(key);
-        else params.set(key, value);
-      }
-      const query = params.toString();
-      void navigate({ href: `${location.pathname}${query ? `?${query}` : ''}` });
-    },
-    [location.pathname, location.searchStr, navigate]
+  const search = useMemo(() => pageSearchFrom(location.searchStr), [location.searchStr]);
+  // One writer per router: it remembers what it last wrote, so two calls in a
+  // row compose instead of the second undoing the first.
+  const writer = useMemo(() => createPageSearchWriter(router), [router]);
+  const setSearch = useMemo(
+    () => (next: Record<string, string | null>) => void writer(next),
+    [writer]
   );
 
   // The router only mounts this component on `/x/…`, so `at` is null only for
@@ -58,8 +48,13 @@ export function ExtensionPageRoute() {
     const { page, params } = state.at.match;
     const Page = page.component;
     return (
-      // Keyed on the page, so an error in one page never follows you to the next.
-      <ErrorBoundary key={page.id} fallback={<PageFailed name={page.title} />}>
+      // Keyed on the page, and reset when the address under it changes, so an
+      // error on one page — or on one project's lens — never follows you on.
+      <ErrorBoundary
+        key={page.id}
+        resetKeys={[location.pathname]}
+        fallback={<PageFailed name={page.title} />}
+      >
         {/* The whole content area, scrolled here. Layout and padding are the
             page's own: a lens page and a settings form want different ones. */}
         <div data-testid="extension-page" className="h-full min-h-0 overflow-y-auto">

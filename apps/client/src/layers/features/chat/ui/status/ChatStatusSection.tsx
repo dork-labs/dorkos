@@ -51,6 +51,7 @@ import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
 import { buildStatusItemNodes } from './status-item-nodes';
+import { ExtensionStatusRows } from './ExtensionStatusItems';
 
 /**
  * The stable stand-in for "this runtime's capability profile has not arrived".
@@ -571,6 +572,11 @@ export function ChatStatusSection({
             }}
             promotionContext={promotionContext}
             overflowCount={overflow}
+            addOns={
+              extensionItems.visible.length > 0 ? (
+                <ExtensionStatusRows ctx={extensionCtx} items={extensionItems.visible} />
+              ) : undefined
+            }
             urgentAction={
               promotedCompactAction
                 ? {

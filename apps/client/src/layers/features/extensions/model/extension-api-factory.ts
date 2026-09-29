@@ -163,6 +163,17 @@ export function createExtensionAPI(
             "lowercase segments and ':param' placeholders, e.g. 'p/:name'"
         );
       }
+      // The title names the page in its bar, its tab, the palette and the phone
+      // menu, and the menus sort by it. An untyped extension can hand anything
+      // here, so a page with no usable title is refused rather than drawn blank
+      // (or crashing a sort) in four places.
+      const title = typeof options?.title === 'string' ? options.title.trim() : '';
+      if (!title) {
+        console.warn(
+          `[extensions] ${extId}: registerPage('${path}') needs options.title, a non-empty string; the page was not added`
+        );
+        return () => {};
+      }
       const id = `${extId}:${path}`;
       if (deps.registry.getContributions('pages').some((page) => page.id === id)) {
         console.warn(
@@ -174,7 +185,9 @@ export function createExtensionAPI(
         extensionId: extId,
         path,
         component,
-        title: options.title,
+        title,
+        // Kept as given: every surface draws it through `ContributedIcon`, which
+        // falls back to a puzzle piece for anything it cannot render.
         icon: options.icon,
         menu: options.menu !== false,
       };

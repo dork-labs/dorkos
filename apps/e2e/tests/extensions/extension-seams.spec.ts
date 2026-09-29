@@ -66,12 +66,31 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await expect(page).toHaveURL(/\/x\/hello-world\?name=Kai$/);
 
     // Reload: the address arrives before the extension has loaded, so the
-    // route shows a skeleton — never a "not found" — and then the page. The
-    // skeleton can be gone before a locator looks on a fast machine, so the
-    // assertion is that nothing but the skeleton or the page is ever drawn.
+    // route must draw a skeleton — never "not available" — and then the page.
+    // Both are transient, so a recorder installed before the app boots watches
+    // every frame of the load instead of hoping a locator looks at the right
+    // moment.
+    await page.addInitScript(() => {
+      const seen = { skeleton: false, unavailable: false };
+      (window as Window & { __pageLoadSeen?: typeof seen }).__pageLoadSeen = seen;
+      new MutationObserver(() => {
+        if (document.querySelector('[data-testid="extension-page-skeleton"]')) seen.skeleton = true;
+        if (document.body?.textContent?.includes("This page isn't available")) {
+          seen.unavailable = true;
+        }
+      }).observe(document, { childList: true, subtree: true, characterData: true });
+    });
     await page.reload();
-    await expect(page.getByText("This page isn't available")).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Hello, Kai' })).toBeVisible();
+    const seen = await page.evaluate(
+      () =>
+        (window as Window & { __pageLoadSeen?: { skeleton: boolean; unavailable: boolean } })
+          .__pageLoadSeen
+    );
+    expect(seen, 'the reload drew the loading skeleton first').toMatchObject({ skeleton: true });
+    expect(seen, 'the reload never said the page was unavailable').toMatchObject({
+      unavailable: false,
+    });
     await expect(page.getByTestId('extension-page-skeleton')).toHaveCount(0);
   });
 

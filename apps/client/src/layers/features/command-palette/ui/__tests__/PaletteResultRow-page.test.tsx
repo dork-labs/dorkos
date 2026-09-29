@@ -21,7 +21,7 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-function pageRow(): RankedRow<SearchResult> {
+function pageRow(icon?: unknown): RankedRow<SearchResult> {
   return {
     key: 'flow:',
     item: {
@@ -34,7 +34,7 @@ function pageRow(): RankedRow<SearchResult> {
         waiting: false,
         demoted: false,
         scopes: [],
-        data: { id: 'flow:', label: 'Flow', href: '/x/flow' },
+        data: { id: 'flow:', label: 'Flow', href: '/x/flow', icon },
       },
       matches: undefined,
     },
@@ -47,6 +47,41 @@ function pageRow(): RankedRow<SearchResult> {
 describe('PaletteResultRow — an extension page', () => {
   it('is headed "Add-ons" in the ranked list', () => {
     expect(RESULT_GROUP_LABEL.page).toBe('Add-ons');
+  });
+
+  function renderRow(row: RankedRow<SearchResult>, onPageSelect = vi.fn()) {
+    return render(
+      <Command>
+        <CommandList>
+          <PaletteResultRow
+            row={row}
+            selectedCwd={null}
+            selectedValue=""
+            onFeatureAction={vi.fn()}
+            onQuickAction={vi.fn()}
+            onGoToAgentActions={vi.fn()}
+            onRoomSelect={vi.fn()}
+            onSessionSelect={vi.fn()}
+            onCommandSelect={vi.fn()}
+            onPageSelect={onPageSelect}
+          />
+        </CommandList>
+      </Command>
+    );
+  }
+
+  it.each([
+    ['not a component', { name: 'flow' }],
+    [
+      'a component that throws',
+      () => {
+        throw new Error('boom');
+      },
+    ],
+  ])('still draws the row when the icon is %s', (_label, icon) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderRow(pageRow(icon));
+    expect(screen.getByRole('option', { name: 'Flow' })).toBeTruthy();
   });
 
   it('shows the page title and hands its address over when chosen', () => {

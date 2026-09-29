@@ -17,12 +17,6 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  createMemoryHistory,
-  createRootRoute,
-  createRoute,
-  createRouter,
-} from '@tanstack/react-router';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { StatusBarSlotContext } from '@dorkos/extension-api';
@@ -42,6 +36,7 @@ import {
   selectPromotedItems,
   type StatusPromotionContext,
 } from '@/layers/features/status';
+import { createAppRouter } from '@/router';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import type { ExtensionAPIDeps } from '../model/types';
 
@@ -107,6 +102,20 @@ describe('registerPage (§6.5)', () => {
     expect(useExtensionRegistry.getState().slots.pages).toEqual([]);
   });
 
+  it.each([
+    ['a blank title', { title: '  ' }],
+    ['a title that is not text', { title: 42 }],
+    ['no options at all', undefined],
+  ])('refuses a page with %s, out loud', (_label, options) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { api } = createExtensionAPI('flow', realDeps());
+    const unregister = api.registerPage('', Page, options as never);
+
+    expect(useExtensionRegistry.getState().slots.pages).toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(() => unregister()).not.toThrow();
+  });
+
   it('replaces a page registered twice, and says so', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { api } = createExtensionAPI('flow', realDeps());
@@ -127,28 +136,14 @@ describe('registerPage (§6.5)', () => {
 });
 
 describe('navigate (§6.5, D4, invariant 11)', () => {
+  // The app's own router, as `main.tsx` builds it: the query rules that decide
+  // whether `?page=3` survives live in its configuration, not in a test double.
   function appRouter() {
-    const root = createRootRoute({ staticData: { header: null } });
-    const router = createRouter({
-      routeTree: root.addChildren([
-        createRoute({ staticData: { header: null }, getParentRoute: () => root, path: '/team' }),
-        createRoute({
-          staticData: { header: null },
-          getParentRoute: () => root,
-          path: '/x/$extensionId',
-        }),
-        createRoute({
-          staticData: { header: null },
-          getParentRoute: () => root,
-          path: '/x/$extensionId/$',
-        }),
-      ]),
-      history: createMemoryHistory({ initialEntries: ['/team'] }),
-    });
-    return router;
+    return createAppRouter(new QueryClient(), createMockTransport() as Transport);
   }
 
-  it('reaches the real router with an own page and its query', async () => {
+  it('reaches the real router with an own page, its query text unchanged', async () => {
+    window.history.replaceState(null, '', '/team');
     const router = appRouter();
     await router.load();
     const { api } = createExtensionAPI(
@@ -156,10 +151,12 @@ describe('navigate (§6.5, D4, invariant 11)', () => {
       realDeps((opts) => void router.navigate({ href: opts.to }))
     );
 
-    api.navigate('/x/hello/p/one?x=1');
+    api.navigate('/x/hello/p/one?page=3&v=1.10&project=2024');
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/x/hello/p/one'));
-    expect(router.state.location.searchStr).toBe('?x=1');
+    expect(router.state.location.searchStr).toBe('?page=3&v=1.10&project=2024');
+    expect(window.location.search).toBe('?page=3&v=1.10&project=2024');
+    window.history.replaceState(null, '', '/');
   });
 
   it.each([

@@ -24,8 +24,31 @@ export interface EvaluatedExtensionStatusItems {
   visible: StatusBarContribution[];
 }
 
-/** Rule failures already reported, so a throwing rule logs once, not every render. */
-const reportedFailures = new Set<string>();
+/**
+ * What was already said about each registered item, so a broken rule logs once
+ * rather than on every render. Keyed by the contribution object itself: an
+ * extension that reloads registers new ones, so a fix that still fails — or a
+ * new failure — is reported again rather than lost behind the old report.
+ */
+const reported = new WeakMap<StatusBarContribution, Set<string>>();
+
+/**
+ * Report one thing about an item, once per registration.
+ *
+ * @param item - The contribution it is about.
+ * @param kind - What is being reported, for the once-only check.
+ * @param say - The report.
+ */
+function reportOnce(item: StatusBarContribution, kind: string, say: () => void): void {
+  let said = reported.get(item);
+  if (!said) {
+    said = new Set();
+    reported.set(item, said);
+  }
+  if (said.has(kind)) return;
+  said.add(kind);
+  say();
+}
 
 /**
  * Run one of an item's rules, treating a throw as `false`.
@@ -39,20 +62,40 @@ function guarded(
   rule: 'when' | 'urgent',
   run: () => boolean
 ): boolean {
+  let answer: unknown;
   try {
-    return run() === true;
+    answer = run();
   } catch (error) {
-    const key = `${item.id}:${rule}`;
-    if (!reportedFailures.has(key)) {
-      reportedFailures.add(key);
+    reportOnce(item, `${rule}:throw`, () =>
       console.warn(
         `[extensions] ${item.extensionId}'s status-bar item "${item.id}" threw in ${rule}(); ` +
           'it is hidden until it stops throwing.',
         error
-      );
-    }
+      )
+    );
     return false;
   }
+  // `true` and `false` only. A Promise or a truthy object is the sign of a rule
+  // that fetches or reads state it must not (the rules run in the bar's budget
+  // pass), so it reads as `false` and says why once.
+  if (typeof answer !== 'boolean') {
+    reportOnce(item, `${rule}:type`, () =>
+      console.warn(
+        `[extensions] ${item.extensionId}'s status-bar item "${item.id}": ${rule}() must return ` +
+          `true or false, synchronously, reading only its ctx; it returned ${describe(answer)}, ` +
+          'read as false.'
+      )
+    );
+    return false;
+  }
+  return answer;
+}
+
+/** A short name for what a rule returned, for the warning. */
+function describe(value: unknown): string {
+  if (value instanceof Promise) return 'a Promise';
+  if (value === null) return 'null';
+  return typeof value === 'object' ? 'an object' : `a ${typeof value}`;
 }
 
 /**
@@ -89,14 +132,4 @@ export function evaluateExtensionStatusItems(
 export function useExtensionStatusItems(ctx: StatusBarSlotContext): EvaluatedExtensionStatusItems {
   const items = useSlotContributions('status-bar');
   return useMemo(() => evaluateExtensionStatusItems(items, ctx), [items, ctx]);
-}
-
-/**
- * Forget which rule failures were already reported, so a test can see the
- * first report again.
- *
- * @internal For tests only.
- */
-export function resetExtensionStatusFailuresForTests(): void {
-  reportedFailures.clear();
 }

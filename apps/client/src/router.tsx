@@ -47,6 +47,8 @@ import {
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
 import { createCommunityRouteMemory } from './app/community-route-memory';
+// Off the `shared/lib` barrel on purpose — see the note there.
+import { parseAppSearch, stringifyAppSearch } from '@/layers/shared/lib/router-search';
 
 // ── Router context ──────────────────────────────────────────
 interface RouterContext {
@@ -571,34 +573,21 @@ const feedbackRequestsRoute = createRoute({
 });
 
 // ── Extension pages at /x/<extensionId>/<path> ──────────────
-/**
- * The query an extension page receives: flat, every value a string (spec
- * `flow-multiproject` §6.5). The router's own parser turns `?n=1` into a
- * number and `?a=b&a=c` into an array; a page was promised
- * `Record<string, string>`, so everything is written back as the text the URL
- * holds, and anything that is not a single value is dropped.
- *
- * @internal Exported for testing only.
- */
-export function extensionPageSearch(search: Record<string, unknown>): Record<string, string> {
-  const flat: Record<string, string> = {};
-  for (const [key, value] of Object.entries(search)) {
-    if (typeof value === 'string') flat[key] = value;
-    else if (typeof value === 'number' || typeof value === 'boolean') flat[key] = String(value);
-  }
-  return flat;
-}
-
 // Two routes, one page component: an extension's home (`/x/flow`) and every
 // page under it (`/x/flow/p/dorkos`). The `x/` prefix is what means no core
 // route can ever collide with a page an extension registers. Which page (if
 // any) answers is decided against the registry at render time, because a deep
 // link on reload arrives before the extension has registered anything.
+//
+// No `validateSearch`: a page is handed its query as the text the address holds
+// (`pageSearchFrom`), and a validator here would be applied as a middleware to
+// every navigation and write its output back into the URL. The router's own
+// read/write rule (`parseAppSearch`/`stringifyAppSearch`) is what keeps that text
+// exact.
 const extensionHomeRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/x/$extensionId',
   staticData: { header: ExtensionPageBar },
-  validateSearch: extensionPageSearch,
   component: ExtensionPageRoute,
 });
 
@@ -606,7 +595,6 @@ const extensionPageRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/x/$extensionId/$',
   staticData: { header: ExtensionPageBar },
-  validateSearch: extensionPageSearch,
   component: ExtensionPageRoute,
 });
 
@@ -638,6 +626,10 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
     routeTree,
     context: { queryClient, transport },
     defaultPreload: 'intent',
+    // Exact where TanStack's default is lossy (`?v=1.10` read as 1.1); see
+    // `router-search.ts`. The app's own typed params read the same as before.
+    parseSearch: parseAppSearch,
+    stringifySearch: stringifyAppSearch,
     defaultErrorComponent: RouteErrorFallback,
     defaultNotFoundComponent: NotFoundFallback,
   });

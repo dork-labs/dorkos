@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(extensions): let extensions add a page, a status-bar item and a tab dot (DOR-2525)'
+  - "fix(extensions): keep an extension page's address exactly as written, and harden its title, icon and status items (DOR-2525 review)"
 ---
 
 ### Added
@@ -10,3 +11,4 @@ covers:
 ### Fixed
 
 - When an extension asks DorkOS to take you somewhere in the app, it now goes there. Before, the request was quietly ignored (DOR-2525)
+- A link whose address holds a value like `1.10` or `-0` no longer has it changed to `1.1` or `0` when DorkOS opens it (DOR-2525)

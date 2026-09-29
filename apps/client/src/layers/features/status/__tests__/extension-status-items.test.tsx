@@ -1,14 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import type { StatusBarSlotContext } from '@dorkos/extension-api';
 import type { StatusBarContribution } from '@/layers/shared/model';
-import {
-  evaluateExtensionStatusItems,
-  resetExtensionStatusFailuresForTests,
-} from '../model/extension-status-items';
+import { evaluateExtensionStatusItems } from '../model/extension-status-items';
 import { getStatusBarItem, isPinnable } from '../model/status-bar-registry';
 
 const CTX: StatusBarSlotContext = {
@@ -30,7 +27,6 @@ function item(id: string, overrides: Partial<StatusBarContribution> = {}): Statu
   };
 }
 
-beforeEach(() => resetExtensionStatusFailuresForTests());
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -72,6 +68,39 @@ describe('evaluateExtensionStatusItems (spec flow-multiproject §6.6)', () => {
 
     expect(result.visible.map((i) => i.label)).toEqual(['fine']);
     expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('reports a broken rule again after the extension reloads (a new registration)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const when = () => {
+      throw new Error('boom');
+    };
+    evaluateExtensionStatusItems([item('broken', { when })], CTX);
+    evaluateExtensionStatusItems([item('broken', { when })], CTX);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['a Promise', () => Promise.resolve(true)],
+    ['a truthy object', () => ({ show: true })],
+    ['a string', () => 'yes'],
+  ])('reads a when() that returns %s as hidden, and says why once', (_label, when) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const bad = item('bad', { when: when as unknown as () => boolean });
+    evaluateExtensionStatusItems([bad], CTX);
+    const result = evaluateExtensionStatusItems([bad], CTX);
+    expect(result.visible).toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(String(warn.mock.calls[0]![0])).toMatch(/must return true or false/);
+  });
+
+  it('reads an urgent() that returns a non-boolean as not urgent', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = evaluateExtensionStatusItems(
+      [item('a', { urgent: (() => 'very') as unknown as () => boolean })],
+      CTX
+    );
+    expect(result.promotion).toEqual([{ id: 'ext:a', visible: true, urgent: false }]);
   });
 
   it('reads a throwing urgent() as not urgent, and keeps the item', () => {

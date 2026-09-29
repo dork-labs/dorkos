@@ -12,7 +12,6 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import type { ComponentType } from 'react';
 import { parseExtensionPagePath } from '@/layers/shared/lib';
 import type { ExtensionPageAtPath } from '@/layers/shared/model';
 
@@ -187,8 +186,10 @@ export function fallbackTabLabel(target: TabTarget): string {
  */
 export function extensionPageTab(
   at: ExtensionPageAtPath | null
-): { label: string; icon: ComponentType<{ className?: string }> } | null {
+): { label: string; icon: unknown } | null {
   if (at === null) return null;
   const page = at.match?.page;
+  // `unknown`, not a component type: it is the extension's value, and the tab
+  // draws it through `ContributedIcon`, which checks it.
   return { label: page?.title ?? EXTENSION_PAGE_FALLBACK_LABEL, icon: page?.icon ?? Puzzle };
 }

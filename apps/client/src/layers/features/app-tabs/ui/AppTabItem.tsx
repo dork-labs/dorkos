@@ -3,6 +3,7 @@ import { MessageSquare, X } from 'lucide-react';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { useExtensionPageAtPath, type AppTab } from '@/layers/shared/model';
 import {
+  ContributedIcon,
   statusDotClass,
   type RovingTabProps,
   type StatusSignal,
@@ -101,7 +102,7 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
     : room
       ? roomDisplayTitle(room)
       : (extensionTab?.label ?? fallbackTabLabel(target));
-  const Icon = extensionTab?.icon ?? ROUTE_ICONS[target.pathname] ?? MessageSquare;
+  const Icon = ROUTE_ICONS[target.pathname] ?? MessageSquare;
   const signal = isSession ? DOT_SIGNAL[status.kind] : undefined;
 
   // Keep the tab you switched to on screen once the strip overflows. Arrow-key
@@ -138,6 +139,9 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
           <span aria-hidden="true" className="shrink-0 text-sm leading-none">
             {visual.emoji}
           </span>
+        ) : extensionTab ? (
+          // An extension's icon, guarded: a bad one costs the glyph, not the strip.
+          <ContributedIcon icon={extensionTab.icon} className="size-3.5 shrink-0" />
         ) : (
           <Icon className="size-3.5 shrink-0" />
         )}

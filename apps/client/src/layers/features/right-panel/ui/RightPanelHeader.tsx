@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { X, Puzzle } from 'lucide-react';
+import { X } from 'lucide-react';
 import {
   Button,
   Tabs,
@@ -8,6 +8,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
+  ContributedIcon,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib/utils';
 import {
@@ -25,45 +26,6 @@ export const RIGHT_PANEL_PANEL_ID = 'right-panel-content';
 /** Stable DOM id for a right-panel contribution's tab — links panel `aria-labelledby` to it. */
 export function rightPanelTabDomId(contributionId: string): string {
   return `right-panel-tab-${contributionId}`;
-}
-
-/**
- * Whether React can render `raw` as a component.
- *
- * A bare `typeof raw === 'function'` is too narrow: every `lucide-react` icon is
- * a `forwardRef` result, which is an OBJECT. React renders it happily, but the
- * function-only check rejected it — so all six built-in tabs fell back to the
- * puzzle-piece and became visually indistinguishable from each other. Accept a
- * function or a React element type (identified by its `$$typeof` symbol), which
- * still rejects the garbage the guard exists for: a string, a number, a plain
- * object.
- *
- * @param raw - The registered `icon` value, from typed or untyped code.
- */
-function isRenderableIcon(raw: unknown): raw is NonNullable<RightPanelContribution['icon']> {
-  if (typeof raw === 'function') return true;
-  return (
-    typeof raw === 'object' &&
-    raw !== null &&
-    typeof (raw as { $$typeof?: unknown }).$$typeof === 'symbol'
-  );
-}
-
-/**
- * Render a contribution's tab icon, guarding a garbage value.
- *
- * Extension-contributed tabs register no icon (the registry API allows one but
- * doesn't require it), and an untyped JS extension can pass a non-component (e.g.
- * `icon: 'foo'`) that a nullish `?? Puzzle` would wave through to render
- * `<'foo' />` and kill the whole header — which lives OUTSIDE PanelErrorBoundary.
- * So require something renderable, else fall back to the puzzle-piece. Shared by
- * the tab strip and the single-tab title so both are equally hardened.
- *
- * @param props - The raw `icon` value and an optional className.
- */
-function TabIcon({ raw, className }: { raw: RightPanelContribution['icon']; className?: string }) {
-  const Icon = isRenderableIcon(raw) ? raw : Puzzle;
-  return <Icon className={className} />;
 }
 
 interface RightPanelHeaderProps {
@@ -104,7 +66,10 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
         // tab/tablist — a quiet title — so the "no tab strip with one
         // contribution" contract holds.
         <div className="text-foreground flex items-center gap-1.5 px-1 text-xs font-medium">
-          <TabIcon raw={contributions[0]!.icon} className="text-muted-foreground size-3.5" />
+          <ContributedIcon
+            icon={contributions[0]!.icon}
+            className="text-muted-foreground size-3.5"
+          />
           <span>{contributions[0]!.title}</span>
         </div>
       ) : (
@@ -284,7 +249,7 @@ function TabStrip({
                         isActive && 'bg-background text-foreground shadow-sm'
                       )}
                     >
-                      <TabIcon raw={contribution.icon} className="size-3.5" />
+                      <ContributedIcon icon={contribution.icon} className="size-3.5" />
                       <span>{contribution.title}</span>
                       <TabUnreadDot contributionId={contribution.id} />
                     </TabsTrigger>

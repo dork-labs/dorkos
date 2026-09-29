@@ -9,8 +9,7 @@
  * @module features/command-palette/ui/PaletteResultRow
  */
 import { motion } from 'motion/react';
-import { Puzzle } from 'lucide-react';
-import { CommandItem } from '@/layers/shared/ui';
+import { CommandItem, ContributedIcon } from '@/layers/shared/ui';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import type { RoomSummary } from '@/layers/entities/room';
 import { AgentCommandItem } from './AgentCommandItem';
@@ -130,7 +129,6 @@ export function PaletteResultRow({
     }
 
     case 'page': {
-      const Icon = item.data.icon ?? Puzzle;
       return (
         <CommandItem value={item.data.id} onSelect={() => onPageSelect(item.data.href)}>
           <motion.div
@@ -138,7 +136,7 @@ export function PaletteResultRow({
             transition={{ duration: 0.1, ease: EASE_OUT }}
             className="flex w-full items-center gap-2"
           >
-            <Icon className="size-4" />
+            <ContributedIcon icon={item.data.icon} className="size-4" />
             <span>{item.data.label}</span>
           </motion.div>
         </CommandItem>

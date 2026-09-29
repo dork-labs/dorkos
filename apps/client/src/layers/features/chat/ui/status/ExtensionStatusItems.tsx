@@ -57,3 +57,37 @@ function reportItemError(item: StatusBarContribution, error: unknown): void {
     error
   );
 }
+
+/**
+ * The same items as rows, for the Session panel behind the `⋯`: each item's
+ * name, then the item itself. This is where an item is still reachable when the
+ * bar's width budget had no room for the Add-ons slot and counted it in `+N`.
+ *
+ * @param props - The chat's slot context and the items to draw.
+ */
+export function ExtensionStatusRows({ ctx, items }: ExtensionStatusItemsProps) {
+  return (
+    <>
+      {items.map((item) => {
+        const Item = item.component;
+        return (
+          <div
+            key={item.id}
+            role="group"
+            aria-label={item.label}
+            data-testid={`session-row-extension-${item.id}`}
+            className="flex items-center gap-2 px-1 py-1 text-sm"
+          >
+            <span className="shrink-0">{item.label}</span>
+            <span className="min-w-0 flex-1" />
+            <span className="text-muted-foreground inline-flex min-w-0 items-center text-xs">
+              <ErrorBoundary fallback={null} onError={(error) => reportItemError(item, error)}>
+                <Item {...ctx} />
+              </ErrorBoundary>
+            </span>
+          </div>
+        );
+      })}
+    </>
+  );
+}

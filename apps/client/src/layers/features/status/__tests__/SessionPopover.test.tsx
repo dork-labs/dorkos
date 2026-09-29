@@ -140,6 +140,18 @@ describe('SessionPopover — the trigger', () => {
 });
 
 describe('SessionPopover — rows', () => {
+  it('keeps what extensions show reachable under Add-ons, even when the bar counted it in +N', () => {
+    renderPanel({ overflowCount: 1, addOns: <span>DOR-2387 · Building</span> });
+    const section = screen.getByTestId('session-add-ons');
+    expect(section).toHaveTextContent('Add-ons');
+    expect(section).toHaveTextContent('DOR-2387 · Building');
+  });
+
+  it('draws no Add-ons section when no extension item is shown', () => {
+    renderPanel();
+    expect(screen.queryByTestId('session-add-ons')).not.toBeInTheDocument();
+  });
+
   it('groups rows under Session and Diagnostics', () => {
     renderPanel();
     expect(screen.getByText('Session', { selector: 'h3' })).toBeInTheDocument();

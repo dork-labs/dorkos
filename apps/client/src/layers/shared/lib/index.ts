@@ -58,6 +58,10 @@ export {
   normalizeTeamView,
   type TeamViewMode,
 } from './team-view';
+// `router-search` is deliberately OFF this barrel: it builds the router's
+// search functions from `@tanstack/react-router` at import time, and dozens of
+// tests mock that package wholesale. Its one reader, `router.tsx`, imports it
+// directly.
 export {
   EXTENSION_PAGE_PREFIX,
   EXTENSION_PAGE_ROUTE_PATHS,

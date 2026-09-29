@@ -53,8 +53,8 @@ export interface PaletteAddOnPage {
   label: string;
   /** Where choosing it goes, e.g. `/x/flow`. */
   href: string;
-  /** The page's icon, when the extension gave one. */
-  icon?: React.ComponentType<{ className?: string }>;
+  /** The page's icon as the extension gave it; drawn through `ContributedIcon`. */
+  icon?: unknown;
 }
 
 export interface CommandItemData {

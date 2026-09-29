@@ -6,7 +6,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { StatusBarSlotContext } from '@dorkos/extension-api';
 import type { StatusBarContribution } from '@/layers/shared/model';
-import { ExtensionStatusItems } from '../ExtensionStatusItems';
+import { ExtensionStatusItems, ExtensionStatusRows } from '../ExtensionStatusItems';
 
 const CTX: StatusBarSlotContext = {
   sessionId: 's1',
@@ -50,5 +50,24 @@ describe('ExtensionStatusItems', () => {
     );
     expect(screen.getByRole('group', { name: 'ok' })).toHaveTextContent('ok in repo');
     expect(screen.getByRole('group', { name: 'broken' })).toBeEmptyDOMElement();
+  });
+});
+
+describe('ExtensionStatusRows (the Session panel)', () => {
+  it('lists every shown item by its name, with the item itself beside it', () => {
+    render(<ExtensionStatusRows ctx={CTX} items={[item('run chip')]} />);
+    const row = screen.getByRole('group', { name: 'run chip' });
+    expect(row).toHaveTextContent('run chip');
+    expect(row).toHaveTextContent('run chip in repo');
+  });
+
+  it('keeps the row when the item throws while drawing', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const Broken = () => {
+      throw new Error('boom');
+    };
+    render(<ExtensionStatusRows ctx={CTX} items={[item('broken', { component: Broken })]} />);
+    expect(screen.getByRole('group', { name: 'broken' })).toHaveTextContent('broken');
   });
 });

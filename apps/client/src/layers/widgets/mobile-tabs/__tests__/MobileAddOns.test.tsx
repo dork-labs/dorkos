@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import {
@@ -32,7 +32,7 @@ async function renderOnPhone() {
   return router;
 }
 
-function registerPage(path: string, title: string, menu = true) {
+function registerPage(path: string, title: string, menu = true, icon?: unknown) {
   useExtensionRegistry.getState().register('pages', {
     id: `flow:${path}`,
     extensionId: 'flow',
@@ -40,6 +40,7 @@ function registerPage(path: string, title: string, menu = true) {
     component: () => null,
     title,
     menu,
+    icon: icon as never,
   });
 }
 
@@ -64,5 +65,16 @@ describe('MobileAddOns (spec flow-multiproject §6.5)', () => {
     act(() => screen.getByRole('button', { name: 'Flow' }).click());
     await waitFor(() => expect(router.state.location.pathname).toBe('/x/flow'));
     expect(screen.getByRole('button', { name: 'Flow' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('keeps the list when a page’s icon is not something it can draw', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    registerPage('', 'Flow', true, { name: 'flow' });
+    registerPage('broken', 'Broken', true, () => {
+      throw new Error('boom');
+    });
+    await renderOnPhone();
+    expect(screen.getByRole('button', { name: 'Flow' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Broken' })).toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 import { useLocation } from '@tanstack/react-router';
-import { Puzzle } from 'lucide-react';
 import { useExtensionPageAtPath } from '@/layers/shared/model';
 import { useExtensions } from '@/layers/features/extensions';
+import { ContributedIcon } from '@/layers/shared/ui';
 import { BarTitle, OneBar } from './OneBar';
 
 /**
@@ -16,7 +16,6 @@ export function ExtensionPageBar() {
   const { extensions } = useExtensions();
 
   const page = at?.match?.page ?? null;
-  const Icon = page?.icon ?? Puzzle;
   const title =
     page?.title ??
     extensions.find((extension) => extension.id === at?.extensionId)?.manifest.name ??
@@ -26,7 +25,7 @@ export function ExtensionPageBar() {
     <OneBar
       identity={
         <span className="flex min-w-0 items-center gap-2">
-          <Icon className="text-muted-foreground size-4 shrink-0" />
+          <ContributedIcon icon={page?.icon} className="text-muted-foreground size-4 shrink-0" />
           <BarTitle>{title}</BarTitle>
         </span>
       }
