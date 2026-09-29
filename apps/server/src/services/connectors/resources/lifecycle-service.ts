@@ -1,5 +1,24 @@
-/** Owner lifecycle mutations with local close-first connector authority. */
-import { and, connections, connectorProviderInstances, eq, isNull, sql, type Db } from '@dorkos/db';
+/**
+ * Owner lifecycle mutations with local close-first connector authority.
+ *
+ * The person's choice is final here the moment they make it: disconnecting
+ * closes the account locally at once, and removing a disconnected account
+ * always works. Whatever is still owed at the service (ending the account's
+ * access there) is DorkOS's job, retried in the background
+ * ({@link ConnectorLifecycleService.finishOwedCleanups} for an own key, the
+ * durable authority outbox for the DorkOS account), and never blocks either.
+ */
+import {
+  and,
+  connections,
+  connectorProviderInstances,
+  eq,
+  isNull,
+  lte,
+  or,
+  sql,
+  type Db,
+} from '@dorkos/db';
 import {
   ConnectorLifecycleResultSchema,
   type ConnectorAuthoritySyncState,
@@ -16,6 +35,12 @@ import type { ConnectorAuthorityCleanupPort } from '../authority-cleanup-port.js
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAuthenticationFlowService } from './authentication-flow-service.js';
+import {
+  CLEANUP_RETRY_DELAYS_MS,
+  holdsSignInAtService,
+  inFlight,
+  publicCleanup,
+} from './owed-cleanup.js';
 
 /** Result of synchronizing one close-first managed lifecycle command. */
 export interface ConnectorManagedLifecycleSyncResult {
@@ -45,10 +70,7 @@ export interface ConnectorManagedLifecyclePort {
 export class ConnectorLifecycleError extends Error {
   /** Stable machine-readable refusal. */
   readonly code:
-    | 'connection_not_found'
-    | 'managed_sync_unavailable'
-    | 'connection_not_disconnected'
-    | 'connection_cleanup_pending';
+    'connection_not_found' | 'managed_sync_unavailable' | 'connection_not_disconnected';
 
   /** Construct one safe lifecycle refusal. */
   constructor(code: ConnectorLifecycleError['code'], message: string) {
@@ -70,6 +92,8 @@ export interface ConnectorLifecycleServiceOptions {
   readonly authorityCleanup: ConnectorAuthorityCleanupPort;
   /** Durable hosted synchronizer when managed connectors are configured. */
   readonly managed?: ConnectorManagedLifecyclePort;
+  /** Deterministic clock seam. */
+  readonly now?: () => Date;
 }
 
 // Share the pending operation across service instances using the same database.
@@ -87,8 +111,12 @@ function ownerColumns(owner: ConnectorOwnerAuthority): {
 
 /** Canonical local lifecycle writer for owner resource routes. */
 export class ConnectorLifecycleService {
+  private readonly now: () => Date;
+
   /** Construct lifecycle mutations over stable local authority. */
-  constructor(private readonly options: ConnectorLifecycleServiceOptions) {}
+  constructor(private readonly options: ConnectorLifecycleServiceOptions) {
+    this.now = options.now ?? (() => new Date());
+  }
 
   /** Rename one owned connection locally. */
   rename(
@@ -101,7 +129,14 @@ export class ConnectorLifecycleService {
     return this.result(row.connectionId, 'not_required');
   }
 
-  /** Remove one disconnected account from inventory without deleting history or cleanup. */
+  /**
+   * Remove one disconnected account from inventory without deleting history.
+   * It always works: anything still owed at the service stays DorkOS's job,
+   * for both kinds of account. An own-key cleanup keeps its background tries
+   * ({@link finishOwedCleanups}); a DorkOS-account one keeps its hosted
+   * command, which is sent again when the account is linked again if the old
+   * link refused it (`restageAfterRelink` includes removed accounts).
+   */
   remove(owner: ConnectorOwnerAuthority, connectionId: string): void {
     const parsed = ConnectionIdSchema.parse(connectionId);
     this.options.db.transaction((tx) => {
@@ -114,18 +149,17 @@ export class ConnectorLifecycleService {
           'Disconnect this account before removing it.'
         );
       }
-      if (row.externalCleanupState !== 'complete' && row.externalCleanupState !== 'not_required') {
-        throw new ConnectorLifecycleError(
-          'connection_cleanup_pending',
-          'Finish disconnecting this account before removing it.'
-        );
-      }
+      const owed =
+        row.externalCleanupState !== 'complete' && row.externalCleanupState !== 'not_required';
       this.options.authenticationFlows.invalidateConnectionFlows(owner, parsed);
       tx.update(connections)
         .set({
-          removedAt: new Date().toISOString(),
+          removedAt: this.now().toISOString(),
           enabled: false,
-          cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+          // A new generation stops any sign-in claimed against this account
+          // before it was removed. Cleanup still owed keeps its generation, so
+          // the background try that finishes it is still the current one.
+          ...(!owed && { cleanupGeneration: sql`${connections.cleanupGeneration} + 1` }),
         })
         .where(
           and(
@@ -220,64 +254,205 @@ export class ConnectorLifecycleService {
     signal: AbortSignal
   ): Promise<ConnectorLifecycleResult> {
     this.options.authenticationFlows.invalidateConnectionFlows(owner, row.connectionId);
-    const provider = this.options.registry.resolveProviderInstance(row.providerInstanceId);
-    // Managed staging closes authority and captures its cleanup generation in the outbox.
-    const managedSync =
-      row.mode === 'managed' && this.options.managed
-        ? this.syncManaged(owner, row, 'disconnected', signal)
-        : undefined;
-    const generation = managedSync
-      ? undefined
-      : this.options.db.transaction((tx) => {
-          this.options.registry.recordDisconnect(row.connectionId);
-          return tx
-            .update(connections)
-            .set({ enabled: false, externalCleanupState: 'pending' })
-            .where(eq(connections.id, row.connectionId))
-            .returning({ generation: connections.cleanupGeneration })
-            .get()!.generation;
-        });
+    // Managed staging closes authority and captures its cleanup generation in
+    // the outbox; asked again, it reads the pending disconnect's receipt.
+    if (row.mode === 'managed' && this.options.managed) {
+      const managedSync = this.syncManaged(owner, row, 'disconnected', signal);
+      this.options.authorityCleanup.revokeConnection({
+        connectionId: row.connectionId,
+        reason: 'connection_removed',
+      });
+      const sync = await managedSync;
+      return this.result(row.connectionId, sync.externalCleanup, sync.authoritySync);
+    }
+    const alreadyClosed = row.lifecycleState === 'disconnected';
+    let unconfirmed = false;
+    if (!alreadyClosed) {
+      // Only the key the account was last seen under can end its access. Not
+      // the key set up now (changed, or never seen under it): no try could
+      // prove anything, so the end is unconfirmed from the start.
+      const currentKey = this.options.registry.storedExecutionConfigDigest(row.providerInstanceId);
+      unconfirmed =
+        holdsSignInAtService(row) && (row.accountKey === null || row.accountKey !== currentKey);
+      this.options.db.transaction((tx) => {
+        this.options.registry.recordDisconnect(row.connectionId);
+        tx.update(connections)
+          .set({
+            enabled: false,
+            pausedBy: null,
+            externalCleanupState: unconfirmed ? 'unknown' : 'pending',
+            externalCleanupAttempts: 0,
+            externalCleanupRetryAt: null,
+            externalCleanupKey: row.accountKey,
+          })
+          .where(eq(connections.id, row.connectionId))
+          .run();
+      });
+    }
     this.options.authorityCleanup.revokeConnection({
       connectionId: row.connectionId,
       reason: 'connection_removed',
     });
-    if (managedSync) {
-      const sync = await managedSync;
-      return this.result(row.connectionId, sync.externalCleanup, sync.authoritySync);
-    }
+    if (unconfirmed) return this.result(row.connectionId, 'failed');
     if (row.mode === 'managed')
       return this.result(row.connectionId, 'pending', {
         status: 'failed',
         reason: 'Link this installation before finishing account disconnection.',
       });
-    const acknowledge = (state: 'complete' | 'failed') =>
-      this.options.db
-        .update(connections)
-        .set({ externalCleanupState: state, updatedAt: new Date().toISOString() })
-        .where(
-          and(
-            eq(connections.id, row.connectionId),
-            eq(connections.externalAccountRef, row.externalAccountRef),
-            eq(connections.cleanupGeneration, generation!),
-            eq(connections.lifecycleState, 'disconnected')
+    // Asked again ("Try again now") for an account already closed: try the
+    // cleanup DorkOS still owes, and nothing else. One DorkOS couldn't confirm
+    // (`unknown`, e.g. its key changed) or gave up on is not tried again: the
+    // person is shown where to end the access themselves.
+    if (alreadyClosed && row.externalCleanupState !== 'pending') {
+      return this.result(row.connectionId, publicCleanup(row.externalCleanupState));
+    }
+    return this.result(row.connectionId, await this.tryCleanup(row.connectionId));
+  }
+
+  /**
+   * Try, in the background, every own-key cleanup that is due: removing a
+   * disconnected (or removed) account's access at the service. A way that
+   * isn't answering is skipped without counting against the account; it is
+   * tried again once the way answers.
+   *
+   * @param signal - Stops the pass between accounts.
+   * @param limit - The most accounts tried in one pass.
+   * @returns How many accounts were tried.
+   */
+  async finishOwedCleanups(signal: AbortSignal, limit = 20): Promise<number> {
+    const now = this.now().toISOString();
+    const due = this.options.db
+      .select({
+        connectionId: connections.id,
+        providerInstanceId: connections.providerInstanceId,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          eq(connectorProviderInstances.mode, 'byo'),
+          eq(connections.lifecycleState, 'disconnected'),
+          eq(connections.externalCleanupState, 'pending'),
+          or(
+            isNull(connections.externalCleanupRetryAt),
+            lte(connections.externalCleanupRetryAt, now)
           )
         )
-        .run();
+      )
+      .limit(Math.max(1, Math.min(limit, 100)))
+      .all();
+    let tried = 0;
+    for (const row of due) {
+      if (signal.aborted) break;
+      if (
+        !this.options.registry.resolveProviderInstance(
+          ConnectorProviderInstanceIdSchema.parse(row.providerInstanceId)
+        )
+      ) {
+        continue;
+      }
+      await this.tryCleanup(ConnectionIdSchema.parse(row.connectionId));
+      tried += 1;
+    }
+    return tried;
+  }
+
+  /**
+   * One try at removing a disconnected own-key account's access at the
+   * service. Success settles it; a failure is scheduled to be tried again
+   * ({@link CLEANUP_RETRY_DELAYS_MS}), and after the last try DorkOS stops
+   * trying on its own. Every write is bound to the generation the try began
+   * under, so a newer sign-in or removal is never overwritten.
+   */
+  private async tryCleanup(
+    connectionId: ConnectionId
+  ): Promise<ConnectorLifecycleResult['externalCleanup']> {
+    const running = inFlight(this.options.db);
+    if (running.has(connectionId)) return 'pending';
+    const row = this.options.db
+      .select({
+        providerInstanceId: connections.providerInstanceId,
+        externalAccountRef: connections.externalAccountRef,
+        generation: connections.cleanupGeneration,
+        attempts: connections.externalCleanupAttempts,
+        state: connections.externalCleanupState,
+        lifecycleState: connections.lifecycleState,
+        key: connections.externalCleanupKey,
+        custody: connectorProviderInstances.custody,
+        mode: connectorProviderInstances.mode,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(eq(connections.id, connectionId))
+      .get();
+    if (!row || row.lifecycleState !== 'disconnected' || row.state !== 'pending') {
+      return row ? publicCleanup(row.state) : 'pending';
+    }
+    const current = and(
+      eq(connections.id, connectionId),
+      eq(connections.externalAccountRef, row.externalAccountRef),
+      eq(connections.cleanupGeneration, row.generation),
+      eq(connections.lifecycleState, 'disconnected'),
+      eq(connections.externalCleanupState, 'pending')
+    );
+    running.add(connectionId);
     try {
-      if (!provider) throw new Error('Service unavailable for disconnection.');
-      await provider.disconnect(row.externalAccountRef);
-      const current = acknowledge('complete').changes === 1;
-      return this.result(row.connectionId, current ? 'complete' : 'pending');
+      const provider = this.options.registry.resolveProviderInstance(
+        ConnectorProviderInstanceIdSchema.parse(row.providerInstanceId)
+      );
+      if (!provider) return 'pending';
+      // Another key can't see this account: its "not found" would read as
+      // done while the sign-in lives on. DorkOS can't confirm the end, and
+      // says so.
+      const key = this.options.registry.storedExecutionConfigDigest(provider.instanceId);
+      if (holdsSignInAtService(row) && row.key !== null && key !== row.key) {
+        this.options.db
+          .update(connections)
+          .set({
+            externalCleanupState: 'unknown',
+            externalCleanupRetryAt: null,
+            updatedAt: this.now().toISOString(),
+          })
+          .where(current)
+          .run();
+        return 'failed';
+      }
+      await provider.disconnect(ConnectorExternalAccountRefSchema.parse(row.externalAccountRef));
+      const settled = this.options.db
+        .update(connections)
+        .set({
+          externalCleanupState: 'complete',
+          externalCleanupRetryAt: null,
+          updatedAt: this.now().toISOString(),
+        })
+        .where(current)
+        .run();
+      return settled.changes === 1 ? 'complete' : 'pending';
     } catch {
-      if (acknowledge('failed').changes !== 1) return this.result(row.connectionId, 'pending');
-      return ConnectorLifecycleResultSchema.parse({
-        ...this.result(row.connectionId, 'failed'),
-        warning: {
-          code: 'external_cleanup_failed',
-          message:
-            'Agent access is closed. Try disconnecting again to finish removing access at the service.',
-        },
-      });
+      const attempts = row.attempts + 1;
+      const delay = CLEANUP_RETRY_DELAYS_MS[attempts - 1];
+      const now = this.now();
+      this.options.db
+        .update(connections)
+        .set({
+          externalCleanupAttempts: attempts,
+          // Out of tries: DorkOS stops trying on its own, and says so.
+          ...(delay === undefined
+            ? { externalCleanupState: 'failed' as const, externalCleanupRetryAt: null }
+            : { externalCleanupRetryAt: new Date(now.getTime() + delay).toISOString() }),
+          updatedAt: now.toISOString(),
+        })
+        .where(current)
+        .run();
+      return delay === undefined ? 'failed' : 'pending';
+    } finally {
+      running.delete(connectionId);
     }
   }
 
@@ -373,10 +548,12 @@ export class ConnectorLifecycleService {
         lifecycleState: connections.lifecycleState,
         removedAt: connections.removedAt,
         externalCleanupState: connections.externalCleanupState,
+        accountKey: connections.accountKey,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,
         mode: connectorProviderInstances.mode,
+        custody: connectorProviderInstances.custody,
       })
       .from(connections)
       .innerJoin(

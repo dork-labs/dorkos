@@ -65,6 +65,35 @@ export const connections = sqliteTable(
     cleanupGeneration: integer('cleanup_generation').notNull().default(0),
     /** Operator pause, kept separate from provider-reported authentication status. */
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * Who paused a connected account: `owner` for a pause the person (or a
+     * program they approved) chose, `sign_in` while a "Sign in again" holds it
+     * paused. A sign-in that fails or is abandoned lifts only its own pause.
+     * `null` when the account isn't paused.
+     */
+    pausedBy: text('paused_by', { enum: ['owner', 'sign_in'] }),
+    /**
+     * Why a disconnected account was closed when the person didn't close it:
+     * `service_gone` when the service said the account no longer exists.
+     */
+    closedBecause: text('closed_because', { enum: ['service_gone'] }),
+    /** Failed tries at removing a disconnected account's access at the service. */
+    externalCleanupAttempts: integer('external_cleanup_attempts').notNull().default(0),
+    /** When DorkOS next tries removing its access at the service on its own. */
+    externalCleanupRetryAt: text('external_cleanup_retry_at'),
+    /**
+     * The setup fingerprint (own key) the account was reached through when it
+     * was disconnected. Its access at the service is ended only through that
+     * same key: a different key can't see it, so its "not found" proves nothing.
+     */
+    externalCleanupKey: text('external_cleanup_key'),
+    /**
+     * The setup fingerprint (own key) this account was last seen under: when
+     * it was connected, or when a listing under that key included it. A key
+     * from another project never sees the account, so this says which key can
+     * end its access at the service.
+     */
+    accountKey: text('account_key'),
     authConfigRef: text('auth_config_ref'),
     grantReconciliationStatus: text('grant_reconciliation_status', {
       enum: ['ready', 'migration_needs_reconcile'],

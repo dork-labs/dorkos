@@ -206,6 +206,7 @@ describe('runMarketplaceInstalled', () => {
                 files: ['a.md', 'skills/b/SKILL.md'],
                 running: ['skills/b/SKILL.md'],
                 check: { source: 'fetchable' },
+                keepKey: 'sha256:kept',
               },
             },
           },

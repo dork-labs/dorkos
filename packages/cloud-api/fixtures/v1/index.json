@@ -30,6 +30,7 @@
     "billing/balance-denominated.json": "BalanceSchema",
     "billing/usage-by-model.json": "UsageResponseSchema",
     "billing/usage-denominated.json": "UsageResponseSchema",
+    "billing/usage-with-other-charges.json": "UsageResponseSchema",
     "billing/price-list.json": "PriceListResponseSchema",
     "billing/price-list-cache-rates.json": "PriceListResponseSchema",
     "billing/nudge.json": "NudgeSchema",

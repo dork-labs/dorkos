@@ -36,6 +36,7 @@ import {
   writeInstalledFiles,
   type InstalledFiles,
 } from './installed-files.js';
+import { freeSavedFileName, freeSavedFolderName, makeInert } from './saved-copies/saved-copies.js';
 
 /** The journal's file name, inside the uninstall sibling. */
 export const UNINSTALL_JOURNAL_FILE = '.dorkos-journal.json';
@@ -148,12 +149,15 @@ export async function journaledMove(opts: {
   await rename(fsPath(opts.root, opts.move.path), dest);
 }
 
-/** The first free `<p>.dork-old[.n]` in `root`. */
-async function freeSavedName(root: string, p: string): Promise<string> {
-  for (let n = 1; ; n++) {
-    const candidate = n === 1 ? `${p}.dork-old` : `${p}.dork-old.${n}`;
-    if (!(await exists(fsPath(root, candidate)))) return candidate;
-  }
+/**
+ * Where an entry coming back from the sibling is saved when its path is taken
+ * in the root: a folder under `.dork/saved`, where no loader looks, a file
+ * beside itself (DOR-2340). Decided by what the entry in the sibling is.
+ */
+async function savedNameFor(sibling: string, root: string, p: string): Promise<string> {
+  const rel = p.replace(/\/$/, '');
+  const stats = await lstat(fsPath(sibling, rel)).catch(() => undefined);
+  return stats?.isDirectory() ? freeSavedFolderName(root, rel) : freeSavedFileName(root, rel);
 }
 
 /** Every non-directory entry under `dir`, root-relative POSIX paths. */
@@ -210,9 +214,12 @@ export async function returnStrays(opts: {
     if (p === UNINSTALL_JOURNAL_FILE || p.startsWith(`${UNINSTALL_JOURNAL_FILE}.`)) continue;
     if (accounted.has(p)) continue;
     if (plainRoots.some((r) => p === r || p.startsWith(`${r}/`))) continue;
-    const landedAt = (await exists(fsPath(opts.root, p))) ? await freeSavedName(opts.root, p) : p;
+    const occupied = await exists(fsPath(opts.root, p));
+    const landedAt = occupied ? await savedNameFor(opts.sibling, opts.root, p) : p;
     await mkdir(path.dirname(fsPath(opts.root, landedAt)), { recursive: true });
     await rename(fsPath(opts.sibling, p), fsPath(opts.root, landedAt));
+    // Saved aside, kept to read, never to run (DOR-2340).
+    if (occupied) await makeInert(fsPath(opts.root, landedAt));
     returned.push({ path: p, landedAt });
   }
   return returned;
@@ -233,9 +240,12 @@ export async function rollBackUninstall(sibling: string, journal: UninstallJourn
     const from = fsPath(sibling, move.path);
     if (!(await exists(from))) continue; // Logged but never moved, or already back.
     let to = fsPath(journal.root, move.path);
-    if (await exists(to)) to = fsPath(journal.root, await freeSavedName(journal.root, move.path));
+    const occupied = await exists(to);
+    if (occupied) to = fsPath(journal.root, await savedNameFor(sibling, journal.root, move.path));
     await mkdir(path.dirname(to), { recursive: true });
     await rename(from, to);
+    // Saved aside, kept to read, never to run (DOR-2340).
+    if (occupied) await makeInert(to);
   }
   for (const copy of journal.savedCopies ?? []) {
     await rm(fsPath(journal.root, copy), { force: true });

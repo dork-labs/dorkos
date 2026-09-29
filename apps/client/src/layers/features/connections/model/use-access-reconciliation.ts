@@ -108,12 +108,15 @@ export function useAccessReconciliation({
   /**
    * Write exactly these replacement sets against the loaded snapshot, and the
    * complete every-agent set when one is given (an empty set stops sharing).
+   * With `confirm`, nothing changed is still written: the owner confirms the
+   * access as it stands, which is what a review or a refused change needs.
    */
   const apply = (
     changed: ConnectorReconciliationGrantSelection[],
-    everyAgent?: ConnectorReconciliationEveryAgentSelection
+    everyAgent?: ConnectorReconciliationEveryAgentSelection,
+    options: { readonly confirm?: boolean } = {}
   ) => {
-    if (!preview || (changed.length === 0 && !everyAgent)) return;
+    if (!preview || (changed.length === 0 && !everyAgent && !options.confirm)) return;
     if (Date.parse(preview.expiresAt) <= Date.now()) {
       setNeedsRefresh(true);
       return;

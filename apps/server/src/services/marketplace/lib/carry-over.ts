@@ -35,6 +35,7 @@ import {
   type InstalledFiles,
   type StagedFacts,
 } from './installed-files.js';
+import { freeSavedFileName, freeSavedFolderName, makeInert } from './saved-copies/saved-copies.js';
 
 /** The `lstat` identities the late-write pass compares against. */
 export interface CarrySnapshot {
@@ -103,7 +104,11 @@ async function stagedFactsFor(stagingDir: string, paths: Iterable<string>): Prom
  * at `dst`, and return the clone's stat after its timestamps are restored.
  * Special files are never passed here.
  */
-async function cloneEntry(src: string, dst: string): Promise<EntryStat> {
+async function cloneEntry(
+  src: string,
+  dst: string,
+  opts: { saved?: boolean } = {}
+): Promise<EntryStat> {
   const stats = await lstat(src);
   await mkdir(path.dirname(dst), { recursive: true });
   await rm(dst, { recursive: true, force: true });
@@ -111,6 +116,9 @@ async function cloneEntry(src: string, dst: string): Promise<EntryStat> {
     await symlink(await readlink(src), dst);
   } else {
     await copyFile(src, dst, fsConstants.COPYFILE_FICLONE);
+    // A saved copy is kept to read, never to run (DOR-2340). Cleared before
+    // the stat below, so the late-write pass compares the clone as saved.
+    if (opts.saved) await makeInert(dst);
     await utimes(dst, stats.atime, stats.mtime);
   }
   return entryStatOf(await lstat(dst));
@@ -126,7 +134,8 @@ async function cloneTree(
   relSrc: string,
   relDst: string,
   clones: Map<string, EntryStat>,
-  skipped: string[]
+  skipped: string[],
+  opts: { saved?: boolean } = {}
 ): Promise<void> {
   const scan = await scanTree(fsPath(srcRoot, relSrc));
   await mkdir(fsPath(dstRoot, relDst), { recursive: true });
@@ -139,7 +148,7 @@ async function cloneTree(
     }
     clones.set(
       `${relDst}/${p}`,
-      await cloneEntry(fsPath(srcRoot, `${relSrc}/${p}`), fsPath(dstRoot, `${relDst}/${p}`))
+      await cloneEntry(fsPath(srcRoot, `${relSrc}/${p}`), fsPath(dstRoot, `${relDst}/${p}`), opts)
     );
   }
 }
@@ -193,20 +202,26 @@ export async function carryPersonFiles(opts: {
       case 'carry-as':
         clones.set(
           action.savedAs,
-          await cloneEntry(fsPath(liveRoot, action.path), fsPath(stagingDir, action.savedAs))
+          await cloneEntry(fsPath(liveRoot, action.path), fsPath(stagingDir, action.savedAs), {
+            saved: true,
+          })
         );
         break;
       case 'carry-dir':
         await cloneTree(liveRoot, stagingDir, action.path, action.path, clones, skipped);
         break;
       case 'carry-dir-as':
-        await cloneTree(liveRoot, stagingDir, action.path, action.savedAs, clones, skipped);
+        await cloneTree(liveRoot, stagingDir, action.path, action.savedAs, clones, skipped, {
+          saved: true,
+        });
         break;
       case 'save-new-as': {
         const savedAs = fsPath(stagingDir, action.savedAs);
         await mkdir(path.dirname(savedAs), { recursive: true });
         await rm(savedAs, { force: true });
         await rename(fsPath(stagingDir, action.path), savedAs);
+        // The new version's default, kept to compare, never to run (DOR-2340).
+        await makeInert(savedAs);
         clones.set(
           action.path,
           await cloneEntry(fsPath(liveRoot, action.path), fsPath(stagingDir, action.path))
@@ -226,18 +241,14 @@ export async function carryPersonFiles(opts: {
   // what tells the next update the person deleted it (row 3a).
   Object.assign(rNew.files, plan.addedFiles);
   rNew.pendingDefaults = plan.pendingDefaults;
+  // Copies an earlier version saved in the live root were carried over as
+  // they are: the new record is inert only if the old one was (DOR-2340), so
+  // an unmigrated root stays on the boot migration's list.
+  if (rOld && rOld.savedCopies === undefined) delete rNew.savedCopies;
 
   const source = new Map<string, EntryStat>();
   for (const [p, entry] of live.entries) if (entry.stat) source.set(p, entry.stat);
   return { plan, snapshot: { source, clones } };
-}
-
-/** The first free `<p>.dork-old[.n]` in `root`, by `lstat`. */
-async function freeSavedName(root: string, p: string): Promise<string> {
-  for (let n = 1; ; n++) {
-    const candidate = n === 1 ? `${p}.dork-old` : `${p}.dork-old.${n}`;
-    if ((await lstatOrUndefined(fsPath(root, candidate))) === undefined) return candidate;
-  }
 }
 
 /** The nearest ancestor of `p` in `root` that exists as something other than a directory. */
@@ -291,6 +302,16 @@ export async function lateWritePass(opts: {
     return clone !== undefined && now !== undefined && sameEntryStat(clone, entryStatOf(now));
   };
 
+  // One saved folder per blocked ancestor, shared by every late write under it.
+  const savedFolders = new Map<string, string>();
+  const savedFolderFor = async (ancestor: string): Promise<string> => {
+    let saved = savedFolders.get(ancestor);
+    if (saved === undefined) {
+      saved = await freeSavedFolderName(targetRoot, ancestor);
+      savedFolders.set(ancestor, saved);
+    }
+    return saved;
+  };
   for (const [p, entry] of backup.entries) {
     if (entry.kind === 'special' || entry.stat === undefined) continue;
     const before = snapshot.source.get(p);
@@ -306,9 +327,9 @@ export async function lateWritePass(opts: {
     // Saved aside: under a renamed copy of the blocking ancestor, or beside itself.
     const savedAs =
       blocked === undefined
-        ? await freeSavedName(targetRoot, p)
-        : `${await freeSavedName(targetRoot, blocked)}${p.slice(blocked.length)}`;
-    await cloneEntry(src, fsPath(targetRoot, savedAs));
+        ? await freeSavedFileName(targetRoot, p)
+        : `${await savedFolderFor(blocked)}${p.slice(blocked.length)}`;
+    await cloneEntry(src, fsPath(targetRoot, savedAs), { saved: true });
     notices.push({ path: p, outcome: 'late-write', savedAs });
   }
 

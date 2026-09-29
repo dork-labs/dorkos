@@ -4,6 +4,7 @@ import {
   actionNameFromSlug,
   type ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
+import { useConnectorConnections } from '@/layers/entities/connectors';
 import {
   Badge,
   Button,
@@ -50,12 +51,21 @@ export function ConnectionAccessDialog({
     onPreview: (nextPreview) => setSelections(selectionsFromPreview(nextPreview)),
   });
   const { preview, saveOutcome, saved, needsReconciliation, needsRefresh } = access;
+  // Why the owner is here, in the server's words, when the account is waiting
+  // on them: a review, or a change the service refused. Either one is settled
+  // by confirming the access as it stands, so that needs no edit.
+  const readiness = useConnectorConnections().data?.connections.find(
+    (connection) => connection.connectionId === connectionId
+  )?.readiness;
+  const confirmable =
+    readiness?.reason === 'needs_review' || readiness?.reason === 'access_update_failed';
 
   const changed = useMemo(
     () => (preview ? changedGrantSelections(preview, selections) : []),
     [preview, selections]
   );
   const outcome = needsRefresh || saveOutcome !== null;
+  const confirming = confirmable && changed.length === 0;
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -86,13 +96,23 @@ export function ConnectionAccessDialog({
           ) : outcome ? (
             <AccessOutcome access={access} />
           ) : preview ? (
-            <ReconciliationEditor
-              preview={preview}
-              selections={selections}
-              setSelections={setSelections}
-              advancedAgentId={advancedAgentId}
-              setAdvancedAgentId={setAdvancedAgentId}
-            />
+            <>
+              {confirmable && readiness && (
+                <p
+                  data-testid="access-dialog-cause"
+                  className="bg-status-warning-bg text-status-warning-fg rounded-lg p-3 text-sm"
+                >
+                  {readiness.copy.owner} If what you see below is right, confirm it.
+                </p>
+              )}
+              <ReconciliationEditor
+                preview={preview}
+                selections={selections}
+                setSelections={setSelections}
+                advancedAgentId={advancedAgentId}
+                setAdvancedAgentId={setAdvancedAgentId}
+              />
+            </>
           ) : null}
         </ResponsiveDialogBody>
         <ResponsiveDialogFooter>
@@ -110,10 +130,10 @@ export function ConnectionAccessDialog({
             </Button>
           ) : !needsRefresh && preview && !saved ? (
             <Button
-              onClick={() => access.apply(changed)}
-              disabled={changed.length === 0 || access.isSaving}
+              onClick={() => access.apply(changed, undefined, { confirm: confirming })}
+              disabled={(changed.length === 0 && !confirmable) || access.isSaving}
             >
-              {access.isSaving ? 'Saving…' : 'Save access'}
+              {access.isSaving ? 'Saving…' : confirming ? 'Confirm access' : 'Save access'}
             </Button>
           ) : null}
         </ResponsiveDialogFooter>

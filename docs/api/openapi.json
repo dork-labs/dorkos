@@ -6836,6 +6836,14 @@
                       "type": "null"
                     }
                   ]
+                },
+                "via": {
+                  "type": "string",
+                  "enum": [
+                    "schedule",
+                    "agent"
+                  ],
+                  "default": "schedule"
                 }
               },
               "required": [
@@ -6845,7 +6853,7 @@
               ]
             },
             "default": [],
-            "description": "For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to)."
+            "description": "For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to). via 'agent' marks a change to the agent's own runtime, model or effort that this schedule follows."
           },
           "agentId": {
             "type": [
@@ -9017,6 +9025,124 @@
         },
         "required": [
           "approvals"
+        ]
+      },
+      "PendingExtensionApprovalsResponse": {
+        "type": "object",
+        "properties": {
+          "approvals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingExtensionApproval"
+            }
+          }
+        },
+        "required": [
+          "approvals"
+        ]
+      },
+      "PendingExtensionApproval": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "plugin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "runsInServer": {
+            "type": "boolean"
+          },
+          "adds": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "plugin",
+          "sourceLabel",
+          "runsInServer",
+          "adds",
+          "since",
+          "why"
+        ]
+      },
+      "ApproveExtensionRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "plugin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "DismissExtensionApprovalRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "plugin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path",
+          "version"
         ]
       },
       "ApprovalDecisionResponse": {
@@ -12975,6 +13101,31 @@
           "documentId"
         ]
       },
+      "RoomRevisionEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "revision"
+            ]
+          },
+          "entry": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomEntry"
+              },
+              {
+                "description": "The entry as it stands now. Matches a held entry by `id`; replaces it in place."
+              }
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "entry"
+        ]
+      },
       "ReadCursor": {
         "type": "object",
         "properties": {
@@ -13547,7 +13698,8 @@
           "update.installed",
           "report.daily",
           "account.limited",
-          "account.reset"
+          "account.reset",
+          "extension.approval"
         ]
       },
       "NotificationTier": {
@@ -13622,7 +13774,8 @@
           "cancelled",
           "approved",
           "rejected",
-          "cleared"
+          "cleared",
+          "dismissed"
         ]
       },
       "MarkNotificationsReadResponse": {
@@ -24543,6 +24696,383 @@
         }
       }
     },
+    "/api/marketplace/packages/{name}/keep-files": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Keep the files an update couldn't sort as the person's",
+        "description": "Make the files an update kept, because it could not tell whether they were the person's or left over from the earlier version, the person's: the record stops listing them, and nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused (`operator_only`), and under login so is anything but a signed-in session (`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a kept file or the installed version changed since, the answer is 409 `kept_files_changed` and nothing is written. For a global package held back from sessions, `review` (exactly as `GET /held-back` listed it) also approves what the package discloses now, like a Review.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectPath": {
+                    "type": "string"
+                  },
+                  "installRoot": {
+                    "type": "string"
+                  },
+                  "keepKey": {
+                    "type": "string",
+                    "description": "`integrity.unproven.keepKey` from `GET /installed?verify=true`."
+                  },
+                  "review": {
+                    "type": "object",
+                    "properties": {
+                      "effects": {
+                        "type": "object",
+                        "properties": {
+                          "hooks": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "event": {
+                                  "type": "string"
+                                },
+                                "matcher": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "event",
+                                "matcher",
+                                "command",
+                                "source"
+                              ]
+                            }
+                          },
+                          "schedules": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "cron": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "permissionMode": {
+                                  "type": "string"
+                                },
+                                "startsEnabled": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "cron",
+                                "permissionMode",
+                                "startsEnabled"
+                              ]
+                            }
+                          },
+                          "mcpServers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "transport": {
+                                  "type": "string"
+                                },
+                                "command": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "args": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "url": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "transport",
+                                "command",
+                                "args",
+                                "url"
+                              ]
+                            }
+                          },
+                          "lspServers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "command": {
+                                  "type": "string"
+                                },
+                                "args": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "when": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "command",
+                                "args",
+                                "when"
+                              ]
+                            }
+                          },
+                          "monitors": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "command": {
+                                  "type": "string"
+                                },
+                                "args": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "when": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "command",
+                                "args",
+                                "when"
+                              ]
+                            }
+                          },
+                          "executables": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "skillTools": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "skill": {
+                                  "type": "string"
+                                },
+                                "tools": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "skill",
+                                "tools"
+                              ]
+                            }
+                          },
+                          "skillCommands": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "skill": {
+                                  "type": "string"
+                                },
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "inline",
+                                    "block"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                },
+                                "usesArguments": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "skill",
+                                "form",
+                                "command",
+                                "usesArguments"
+                              ]
+                            },
+                            "default": []
+                          }
+                        },
+                        "required": [
+                          "hooks",
+                          "schedules",
+                          "mcpServers",
+                          "lspServers",
+                          "monitors",
+                          "executables",
+                          "skillTools"
+                        ]
+                      },
+                      "bindsTo": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "effects",
+                      "bindsTo"
+                    ],
+                    "description": "For a held-back global package: what it runs and what a decision binds."
+                  }
+                },
+                "required": [
+                  "keepKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was kept, and one sentence saying so",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "kept",
+                        "not-needed"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "approved": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "outcome",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or an invalid package name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person (`operator_only`, `operator_cookie_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Package not installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The kept files changed since they were shown (`kept_files_changed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/marketplace/packages/{name}/uninstall": {
       "post": {
         "tags": [
@@ -29164,6 +29694,7 @@
                                   "own_key_cannot_run_actions",
                                   "cannot_run_actions",
                                   "paused",
+                                  "signing_in",
                                   "signed_out",
                                   "sign_in_unfinished",
                                   "needs_review",
@@ -29171,8 +29702,8 @@
                                   "access_updating",
                                   "disconnected",
                                   "disconnect_finishing",
-                                  "disconnect_failed",
-                                  "disconnect_stuck"
+                                  "disconnect_stuck",
+                                  "gone_at_service"
                                 ]
                               },
                               "fix": {
@@ -29188,6 +29719,7 @@
                                       "review_access",
                                       "fix_key",
                                       "retry",
+                                      "remove",
                                       "wait",
                                       "turn_on_for_this_chat"
                                     ]
@@ -29207,6 +29739,25 @@
                                 "required": [
                                   "action",
                                   "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "serviceAccessPage": {
+                                "type": "object",
+                                "properties": {
+                                  "service": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  }
+                                },
+                                "required": [
+                                  "service",
+                                  "url"
                                 ],
                                 "additionalProperties": false
                               },
@@ -30292,6 +30843,7 @@
                                 "own_key_cannot_run_actions",
                                 "cannot_run_actions",
                                 "paused",
+                                "signing_in",
                                 "signed_out",
                                 "sign_in_unfinished",
                                 "needs_review",
@@ -30299,8 +30851,8 @@
                                 "access_updating",
                                 "disconnected",
                                 "disconnect_finishing",
-                                "disconnect_failed",
-                                "disconnect_stuck"
+                                "disconnect_stuck",
+                                "gone_at_service"
                               ]
                             },
                             "fix": {
@@ -30316,6 +30868,7 @@
                                     "review_access",
                                     "fix_key",
                                     "retry",
+                                    "remove",
                                     "wait",
                                     "turn_on_for_this_chat"
                                   ]
@@ -30335,6 +30888,25 @@
                               "required": [
                                 "action",
                                 "fixableBy"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "serviceAccessPage": {
+                              "type": "object",
+                              "properties": {
+                                "service": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 100
+                                },
+                                "url": {
+                                  "type": "string",
+                                  "format": "uri"
+                                }
+                              },
+                              "required": [
+                                "service",
+                                "url"
                               ],
                               "additionalProperties": false
                             },
@@ -31025,26 +31597,6 @@
                         "complete",
                         "failed"
                       ]
-                    },
-                    "warning": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 100
-                        },
-                        "message": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 1000
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message"
-                      ],
-                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -31189,26 +31741,6 @@
                         "complete",
                         "failed"
                       ]
-                    },
-                    "warning": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 100
-                        },
-                        "message": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 1000
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message"
-                      ],
-                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -32020,26 +32552,6 @@
                         "complete",
                         "failed"
                       ]
-                    },
-                    "warning": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 100
-                        },
-                        "message": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 1000
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message"
-                      ],
-                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -32185,26 +32697,6 @@
                         "complete",
                         "failed"
                       ]
-                    },
-                    "warning": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 100
-                        },
-                        "message": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 1000
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message"
-                      ],
-                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -32407,6 +32899,7 @@
                                   "own_key_cannot_run_actions",
                                   "cannot_run_actions",
                                   "paused",
+                                  "signing_in",
                                   "signed_out",
                                   "sign_in_unfinished",
                                   "needs_review",
@@ -32414,8 +32907,8 @@
                                   "access_updating",
                                   "disconnected",
                                   "disconnect_finishing",
-                                  "disconnect_failed",
-                                  "disconnect_stuck"
+                                  "disconnect_stuck",
+                                  "gone_at_service"
                                 ]
                               },
                               "fix": {
@@ -32431,6 +32924,7 @@
                                       "review_access",
                                       "fix_key",
                                       "retry",
+                                      "remove",
                                       "wait",
                                       "turn_on_for_this_chat"
                                     ]
@@ -32450,6 +32944,25 @@
                                 "required": [
                                   "action",
                                   "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "serviceAccessPage": {
+                                "type": "object",
+                                "properties": {
+                                  "service": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  }
+                                },
+                                "required": [
+                                  "service",
+                                  "url"
                                 ],
                                 "additionalProperties": false
                               },
@@ -32715,6 +33228,7 @@
                                   "own_key_cannot_run_actions",
                                   "cannot_run_actions",
                                   "paused",
+                                  "signing_in",
                                   "signed_out",
                                   "sign_in_unfinished",
                                   "needs_review",
@@ -32722,8 +33236,8 @@
                                   "access_updating",
                                   "disconnected",
                                   "disconnect_finishing",
-                                  "disconnect_failed",
-                                  "disconnect_stuck"
+                                  "disconnect_stuck",
+                                  "gone_at_service"
                                 ]
                               },
                               "fix": {
@@ -32739,6 +33253,7 @@
                                       "review_access",
                                       "fix_key",
                                       "retry",
+                                      "remove",
                                       "wait",
                                       "turn_on_for_this_chat"
                                     ]
@@ -32758,6 +33273,25 @@
                                 "required": [
                                   "action",
                                   "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "serviceAccessPage": {
+                                "type": "object",
+                                "properties": {
+                                  "service": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  }
+                                },
+                                "required": [
+                                  "service",
+                                  "url"
                                 ],
                                 "additionalProperties": false
                               },
@@ -32957,6 +33491,7 @@
                                   "own_key_cannot_run_actions",
                                   "cannot_run_actions",
                                   "paused",
+                                  "signing_in",
                                   "signed_out",
                                   "sign_in_unfinished",
                                   "needs_review",
@@ -32964,8 +33499,8 @@
                                   "access_updating",
                                   "disconnected",
                                   "disconnect_finishing",
-                                  "disconnect_failed",
-                                  "disconnect_stuck"
+                                  "disconnect_stuck",
+                                  "gone_at_service"
                                 ]
                               },
                               "fix": {
@@ -32981,6 +33516,7 @@
                                       "review_access",
                                       "fix_key",
                                       "retry",
+                                      "remove",
                                       "wait",
                                       "turn_on_for_this_chat"
                                     ]
@@ -33000,6 +33536,25 @@
                                 "required": [
                                   "action",
                                   "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "serviceAccessPage": {
+                                "type": "object",
+                                "properties": {
+                                  "service": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  }
+                                },
+                                "required": [
+                                  "service",
+                                  "url"
                                 ],
                                 "additionalProperties": false
                               },
@@ -58273,6 +58828,7 @@
                               "own_key_cannot_run_actions",
                               "cannot_run_actions",
                               "paused",
+                              "signing_in",
                               "signed_out",
                               "sign_in_unfinished",
                               "needs_review",
@@ -58280,8 +58836,8 @@
                               "access_updating",
                               "disconnected",
                               "disconnect_finishing",
-                              "disconnect_failed",
-                              "disconnect_stuck"
+                              "disconnect_stuck",
+                              "gone_at_service"
                             ]
                           },
                           "note": {
@@ -59410,6 +59966,194 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PendingApprovalsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/pending-approvals": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List extensions waiting to be turned on",
+        "description": "Every installed extension that is waiting for a person to let it run, oldest first (DOR-2517). An extension is listed when it was installed by a person or the marketplace (DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined with \"Not now\" at its current path, plugin and version. The Activity inbox draws one row per item. `sourceLabel` and `why` are display text and are never used to decide trust. A caller that may not read the person’s inbox (an agent) gets the list without `path` and without any folder in `sourceLabel`.",
+        "responses": {
+          "200": {
+            "description": "Extensions waiting to be turned on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingExtensionApprovalsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/approve": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Turn on an extension waiting to run",
+        "description": "Records that a person allowed this extension to run code inside DorkOS, bound to the copy on disk (its folder and the plugin that carried it), and starts it. The body is optional: send the path, version and plugin of the copy the person was shown (the Activity inbox always does), and the approval is refused with `stale_approval` unless the copy on disk is still exactly that one, so an old row can never turn on a copy that took its place. Clears any \"Not now\" for this id. A caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveExtensionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Turned on; the updated extension record"
+          },
+          "400": {
+            "description": "Invalid extension id or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent or another site cannot turn an extension on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The extension ships with DorkOS, or the copy changed since the person saw it (`stale_approval`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/dismiss-approval": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Say \"Not now\" to an extension waiting to be turned on",
+        "description": "Records that a person declined this copy of the extension at this version, so the Activity inbox stops asking until its path, plugin or version changes. Never destructive: nothing is uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body names the copy the person was shown; if the copy on disk is no longer that one the answer is refused with `stale_approval`. The same person bar as approving applies: a caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissExtensionApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Declined for now"
+          },
+          "400": {
+            "description": "Invalid extension id or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent or another site cannot answer this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The extension ships with DorkOS, or the copy changed since the person saw it (`stale_approval`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -65846,7 +66590,7 @@
           "Rooms"
         ],
         "summary": "Durable room event stream (SSE, or WebSocket at the same path)",
-        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
+        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again.",
         "parameters": [
           {
             "schema": {
@@ -65903,6 +66647,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/RoomCanvasEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RoomRevisionEvent"
                     }
                   ]
                 }

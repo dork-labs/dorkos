@@ -17,6 +17,9 @@ import type {
   ListInstalledOptions,
   CheckFilesOptions,
   CheckFilesResult,
+  KeepFilesOptions,
+  KeepFilesResult,
+  HeldBackPackage,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -157,6 +160,20 @@ export function createMarketplaceMethods(baseUrl: string) {
         baseUrl,
         `/marketplace/packages/${encodeURIComponent(name)}/check-files`,
         { method: 'POST', body: JSON.stringify(opts ?? {}) }
+      );
+    },
+
+    keepPackageFiles(name: string, opts: KeepFilesOptions): Promise<KeepFilesResult> {
+      return fetchJSON<KeepFilesResult>(
+        baseUrl,
+        `/marketplace/packages/${encodeURIComponent(name)}/keep-files`,
+        { method: 'POST', body: JSON.stringify(opts) }
+      );
+    },
+
+    listHeldBackPackages(): Promise<HeldBackPackage[]> {
+      return fetchJSON<{ packages: HeldBackPackage[] }>(baseUrl, '/marketplace/held-back').then(
+        (r) => r.packages
       );
     },
 

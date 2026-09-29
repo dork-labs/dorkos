@@ -198,7 +198,7 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     expect(payload.schedule as Task).toMatchObject({
       status: 'pending_approval',
       reason: AGENT_SETTINGS_CHANGE_REASON,
-      approvalChanges: [{ field: 'model', from: null, to: 'claude-opus-4' }],
+      approvalChanges: [{ field: 'model', from: null, to: 'claude-opus-4', via: 'schedule' }],
     });
     await reconcile();
     expect(store.getTask(id)).toMatchObject({
@@ -218,7 +218,7 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     expect(payload.schedule as Task).toMatchObject({
       status: 'pending_approval',
       account: 'work',
-      approvalChanges: [{ field: 'account', from: null, to: 'work' }],
+      approvalChanges: [{ field: 'account', from: null, to: 'work', via: 'schedule' }],
     });
     expect(await fs.readFile(skillPath(), 'utf-8')).toMatch(/^ {2}account: work$/m);
     await reconcile();

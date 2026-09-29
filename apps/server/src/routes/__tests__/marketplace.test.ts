@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   existsSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   mkdirSync,
@@ -3488,6 +3489,183 @@ describe('Marketplace Routes', () => {
 
       signedInUser = { userId: 'user_owner', credential: 'cookie' };
       expect((await decide()).status).toBe(204);
+    });
+  });
+
+  describe('POST /packages/:name/keep-files (DOR-2341)', () => {
+    const KEPT_SKILL = '---\nname: kept\ndescription: Kept.\n---\n\nKept.\n';
+
+    /**
+     * A global plugin installed from a folder on this computer, whose update
+     * kept a skill nothing could sort. It runs a hook nobody approved, and the
+     * kept skill runs too, so it is held back from sessions.
+     */
+    async function installWithKeptSkill(name = 'flow'): Promise<string> {
+      const root = join(dorkHome, 'plugins', name);
+      writePackageManifest(root, { ...buildSamplePluginManifest(), name });
+      mkdirSync(join(root, 'hooks'), { recursive: true });
+      writeFileSync(
+        join(root, 'hooks', 'hooks.json'),
+        JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo hi' }] }] } })
+      );
+      writeFileSync(
+        join(root, '.dork', 'install-metadata.json'),
+        JSON.stringify({
+          name,
+          version: '1.0.0',
+          type: 'plugin',
+          installedAt: '2026-09-24T00:00:00Z',
+          contentHash: await packageContentHash(root),
+        })
+      );
+      const { computeInstalledFiles, writeInstalledFiles } =
+        await import('../../services/marketplace/lib/installed-files.js');
+      const record = await computeInstalledFiles(root, {
+        identity: { name, type: 'plugin' },
+        userEditable: [],
+        npmRan: false,
+      });
+      mkdirSync(join(root, 'skills', 'old'), { recursive: true });
+      writeFileSync(join(root, 'skills', 'old', 'SKILL.md'), KEPT_SKILL);
+      await writeInstalledFiles(root, {
+        ...record,
+        unproven: { why: 'no-source', files: { 'skills/old/SKILL.md': 'skills/old/SKILL.md' } },
+      });
+      return root;
+    }
+
+    /** What the Installed row shows about the kept files. */
+    async function shownKept(name = 'flow') {
+      const installed = await request(fixtureServer).get('/api/marketplace/installed?verify=true');
+      const row = installed.body.packages.find((p: { name: string }) => p.name === name);
+      return row.integrity.unproven as { files: string[]; running: string[]; keepKey: string };
+    }
+
+    /** What the held-back listing shows about the package. */
+    async function shownHeldBack(name = 'flow') {
+      const listed = await request(fixtureServer).get('/api/marketplace/held-back');
+      return listed.body.packages.find((p: { name: string }) => p.name === name) as {
+        effects: object;
+        bindsTo: string;
+      };
+    }
+
+    const keep = (body: object, name = 'flow') =>
+      request(fixtureServer).post(`/api/marketplace/packages/${name}/keep-files`).send(body);
+
+    async function unprovenOnDisk(root: string) {
+      const { readInstalledFiles } =
+        await import('../../services/marketplace/lib/installed-files.js');
+      return (await readInstalledFiles(root))?.unproven;
+    }
+
+    // Purpose: claiming files decides what every later update keeps, so an
+    // agent cannot do it, and nothing is written when one tries.
+    it('refuses an agent, writing nothing', async () => {
+      const root = await installWithKeptSkill();
+      const { keepKey } = await shownKept();
+
+      agentHeader = 'agent-token';
+      const res = await keep({ keepKey });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_only');
+      expect(await unprovenOnDisk(root)).toBeDefined();
+    });
+
+    it('with login on, takes it only from a signed-in session', async () => {
+      const root = await installWithKeptSkill();
+      const { keepKey } = await shownKept();
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+
+      signedInUser = { userId: 'user_cli', credential: 'api-key' };
+      const byKey = await keep({ keepKey });
+      expect(byKey.status).toBe(403);
+      expect(byKey.body.code).toBe('operator_cookie_required');
+      expect(byKey.body.error).toContain('Keep these as mine');
+      expect(await unprovenOnDisk(root)).toBeDefined();
+
+      signedInUser = { userId: 'user_owner', credential: 'cookie' };
+      expect((await keep({ keepKey })).status).toBe(200);
+    });
+
+    // Purpose: the yes covers exactly the bytes shown; a later edit is refused.
+    it('refuses a key that no longer matches what is on disk', async () => {
+      const root = await installWithKeptSkill();
+      const { keepKey } = await shownKept();
+      writeFileSync(join(root, 'skills', 'old', 'SKILL.md'), `${KEPT_SKILL}edited`);
+
+      const res = await keep({ keepKey });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('kept_files_changed');
+      expect(await unprovenOnDisk(root)).toBeDefined();
+    });
+
+    // Purpose: for a global package held back because a kept file runs, the
+    // person's yes, made after seeing what it runs, also approves it as it is
+    // now, exactly as a Review would; and nothing on disk is touched.
+    it('keeps the files, deletes nothing, and approves what the person was shown', async () => {
+      const root = await installWithKeptSkill();
+      const { keepKey } = await shownKept();
+      const shown = await shownHeldBack();
+
+      const res = await keep({
+        keepKey,
+        review: { effects: shown.effects, bindsTo: shown.bindsTo },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ outcome: 'kept', approved: true });
+      expect(res.body.message).toBe(
+        'The file flow kept is yours now. Nothing was moved or deleted. flow loads into sessions from the next message on.'
+      );
+      expect(await unprovenOnDisk(root)).toBeUndefined();
+      expect(readFileSync(join(root, 'skills', 'old', 'SKILL.md'), 'utf8')).toBe(KEPT_SKILL);
+      expect(
+        (await request(fixtureServer).get('/api/marketplace/held-back')).body.packages
+      ).toEqual([]);
+    });
+
+    it('keeps the files but approves nothing it was not shown, and says it still waits', async () => {
+      const root = await installWithKeptSkill();
+      const { keepKey } = await shownKept();
+      const shown = await shownHeldBack();
+
+      const unshown = await keep({ keepKey });
+      expect(unshown.status).toBe(200);
+      expect(unshown.body).toMatchObject({ outcome: 'kept', approved: false });
+      expect(unshown.body.message).toBe(
+        'The file flow kept is yours now. Nothing was moved or deleted. flow still waits for your Review before it runs in sessions.'
+      );
+      expect(await unprovenOnDisk(root)).toBeUndefined();
+
+      const other = await installWithKeptSkill('other');
+      const otherKey = (await shownKept('other')).keepKey;
+      const stale = await keep(
+        { keepKey: otherKey, review: { effects: shown.effects, bindsTo: 'sha256:other' } },
+        'other'
+      );
+      expect(stale.body).toMatchObject({ outcome: 'kept', approved: false });
+      expect(await unprovenOnDisk(other)).toBeUndefined();
+      expect(
+        (await request(fixtureServer).get('/api/marketplace/held-back')).body.packages.map(
+          (p: { name: string }) => p.name
+        )
+      ).toEqual(expect.arrayContaining(['flow', 'other']));
+    });
+
+    it('answers not-needed when nothing is kept, and 404 for a package not installed', async () => {
+      await installWithKeptSkill();
+      const { keepKey } = await shownKept();
+      await keep({ keepKey });
+
+      const again = await keep({ keepKey });
+      expect(again.status).toBe(200);
+      expect(again.body.outcome).toBe('not-needed');
+
+      expect((await keep({ keepKey }, 'nowhere')).status).toBe(404);
     });
   });
 

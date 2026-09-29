@@ -241,6 +241,11 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // §7.4). Ships EMPTY, so every found folder is offered; a hidden one only
   // stops being suggested. Nothing is registered, sent or granted either way.
   'runtimes.claudeCode.dismissedFolders',
+  // The extension copies a person said "Not now" to in the Activity inbox
+  // (DOR-2517). Ships EMPTY, so every extension waiting to run is asked about;
+  // an entry only stops the inbox asking again. It approves, runs and grants
+  // nothing either way, and losing it only means being asked once more.
+  'extensions.dismissedApprovals',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,

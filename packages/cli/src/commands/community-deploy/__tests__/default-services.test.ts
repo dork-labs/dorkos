@@ -187,7 +187,7 @@ function appProvenance(update: Record<string, unknown> = {}) {
 function neonTopology(roleName: string) {
   return {
     databases: [
-      { id: 'db_fixture_01', branchId: 'br-fixture-01', name: 'community', ownerName: roleName },
+      { id: '4821907', branchId: 'br-fixture-01', name: 'community', ownerName: roleName },
     ],
     roles: [{ branchId: 'br-fixture-01', name: roleName }],
   };

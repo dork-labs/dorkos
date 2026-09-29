@@ -57,6 +57,7 @@ export const notifications = sqliteTable(
         'report.daily',
         'account.limited',
         'account.reset',
+        'extension.approval',
       ],
     }).notNull(),
 
@@ -121,7 +122,7 @@ export const notifications = sqliteTable(
 
     /** How it ended. Set exactly when {@link notifications.resolvedAt} is. */
     outcome: text('outcome', {
-      enum: ['answered', 'expired', 'cancelled', 'approved', 'rejected', 'cleared'],
+      enum: ['answered', 'expired', 'cancelled', 'approved', 'rejected', 'cleared', 'dismissed'],
     }),
   },
   (table) => [

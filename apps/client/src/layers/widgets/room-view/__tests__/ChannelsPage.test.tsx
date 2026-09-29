@@ -1336,3 +1336,149 @@ describe('ChannelsPage — following somebody, and leaving', () => {
     expect(useRoomFollowStore.getState().intent['room-1']).toBeUndefined();
   });
 });
+
+/**
+ * A mirrored Community message deleted or erased on its server, reaching a room
+ * that is already open (DOR-2336). The server rewrites its copy and sends a
+ * `revision` frame; the page has to swap the words in place, with no refetch,
+ * and leave everything else about the row — its thread, its place — alone.
+ */
+describe('ChannelsPage — a Community message changed while the room is open', () => {
+  const reply: RoomEntry = {
+    roomId: 'room-1',
+    seq: 2,
+    id: 'entry-2',
+    authorId: 'ana',
+    kind: 'post',
+    body: { text: 'zqxreplycanary in the thread' },
+    mentions: [],
+    sessionId: null,
+    cascadeRoot: 'entry-1',
+    cascadeDepth: 1,
+    parentEntryId: 'entry-1',
+    threadRootEntryId: 'entry-1',
+    signature: null,
+    createdAt: '2026-07-26T10:01:00.000Z',
+  };
+  const root: RoomEntry = {
+    ...reply,
+    seq: 1,
+    id: 'entry-1',
+    authorId: 'dorian',
+    body: { text: 'zqxrootcanary said once' },
+    cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
+    createdAt: '2026-07-26T10:00:00.000Z',
+  };
+
+  /** A room stream the test feeds frame by frame, open until the page leaves. */
+  function feedableStream() {
+    const queue: RoomEvent[] = [];
+    let wake: (() => void) | null = null;
+    const push = (event: RoomEvent) => {
+      queue.push(event);
+      wake?.();
+    };
+    const open = (signal: AbortSignal): AsyncIterable<RoomEvent> =>
+      (async function* () {
+        while (!signal.aborted) {
+          const next = queue.shift();
+          if (next) {
+            yield next;
+            continue;
+          }
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+            signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+          wake = null;
+        }
+      })();
+    return { push, open };
+  }
+
+  function renderRoom() {
+    const stream = feedableStream();
+    const transport = createMockTransport({
+      getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'community'))),
+      listRoomEntries: vi.fn(() => Promise.resolve(mockRoomEntryPage([root, reply]))),
+      subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
+        stream.open(signal)
+      ),
+    });
+    render(
+      <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
+        <EventStreamProvider>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
+      </QueryClientProvider>
+    );
+    return { transport, push: stream.push };
+  }
+
+  it('replaces the words with the tombstone in place, without reading the room again', async () => {
+    const { transport, push } = renderRoom();
+    await screen.findByText('zqxrootcanary said once');
+    await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(1));
+
+    push({ type: 'revision', entry: { ...root, body: { text: 'This message was erased.' } } });
+
+    await screen.findByText('This message was erased.');
+    expect(screen.queryByText('zqxrootcanary said once')).not.toBeInTheDocument();
+    // Still one row in the flow, still heading its thread with its one reply.
+    const timeline = screen.getByTestId('room-timeline');
+    expect(timeline.querySelectorAll('[data-testid="room-entry"]')).toHaveLength(1);
+    expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('1 reply');
+    // In place: the history was read once, and no second stream was opened.
+    expect(transport.listRoomEntries).toHaveBeenCalledTimes(1);
+    expect(transport.subscribeRoom).toHaveBeenCalledTimes(1);
+  });
+
+  it('rewrites a thread reply in the open thread', async () => {
+    const user = userEvent.setup();
+    const { push } = renderRoom();
+    await user.click(await screen.findByTestId('room-thread-replies'));
+    const panel = screen.getByTestId('room-thread-panel');
+    expect(within(panel).getByText('zqxreplycanary in the thread')).toBeInTheDocument();
+
+    push({ type: 'revision', entry: { ...reply, body: { text: 'This message was deleted.' } } });
+
+    await within(panel).findByText('This message was deleted.');
+    expect(within(panel).queryByText('zqxreplycanary in the thread')).not.toBeInTheDocument();
+  });
+
+  it('adds nothing for a message it does not hold, and ignores a frame about another room', async () => {
+    const { push } = renderRoom();
+    await screen.findByText('zqxrootcanary said once');
+
+    push({
+      type: 'revision',
+      entry: { ...root, roomId: 'room-2', body: { text: 'from another room' } },
+    });
+    push({
+      type: 'revision',
+      entry: { ...root, id: 'entry-9', seq: 9, body: { text: 'never loaded here' } },
+    });
+    // A new post after them, so the two above have certainly been read.
+    const marker: RoomEntry = {
+      ...root,
+      seq: 3,
+      id: 'entry-3',
+      cascadeRoot: 'entry-3',
+      body: { text: 'a later post' },
+    };
+    push({ type: 'entry', seq: 3, entry: marker });
+
+    await screen.findByText('a later post');
+    expect(screen.getByText('zqxrootcanary said once')).toBeInTheDocument();
+    expect(screen.queryByText('from another room')).not.toBeInTheDocument();
+    expect(screen.queryByText('never loaded here')).not.toBeInTheDocument();
+    const timeline = screen.getByTestId('room-timeline');
+    expect(timeline.querySelectorAll('[data-testid="room-entry"]')).toHaveLength(2);
+  });
+});

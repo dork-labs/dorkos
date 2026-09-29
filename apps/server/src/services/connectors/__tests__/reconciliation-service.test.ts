@@ -500,6 +500,129 @@ describe('ConnectorReconciliationService', () => {
     expect(db.select().from(connectorReconciliationPreviews).all()).toEqual([]);
   });
 
+  it('confirms the access as it stands without an edit, clearing the review', async () => {
+    const preview = await service.preview(
+      OWNER,
+      { connectionId: CONNECTION_ID },
+      new AbortController().signal
+    );
+    await expect(
+      service.apply(OWNER, { previewId: preview.previewId, grants: [] })
+    ).resolves.toMatchObject({ reconciliationStatus: 'ready', authoritySync: { status: 'ready' } });
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .all()
+        .every((grant) => grant.revokedAt === null)
+    ).toBe(true);
+  });
+
+  it('sends a refused change again when the owner confirms, so the refusal clears', async () => {
+    const readRef = '10000000-0000-4000-8000-000000000001';
+    const oldRevision = db
+      .select()
+      .from(connectorOperationRevisions)
+      .where(eq(connectorOperationRevisions.id, 'old-read-v1'))
+      .get()!;
+    db.insert(connectorOperationRevisions)
+      .values({ ...oldRevision, id: 'managed-old-read-v1', providerRevisionRef: readRef })
+      .run();
+    db.update(connectionOperationGrants)
+      .set({ operationRevisionId: 'managed-old-read-v1' })
+      .where(eq(connectionOperationGrants.operationRevisionId, 'old-read-v1'))
+      .run();
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed', custody: 'managed' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+    db.update(connections)
+      .set({ grantReconciliationStatus: 'ready' })
+      .where(eq(connections.id, CONNECTION_ID))
+      .run();
+    let refuse = true;
+    const submitted: ManagedConnectorAuthorityCommand[] = [];
+    const managedAuthority = new ManagedAuthoritySyncService({
+      db,
+      cloud: {
+        submitConnectorAuthorityCommand: async (command) => {
+          submitted.push(command);
+          const base = {
+            version: 1 as const,
+            commandId: command.commandId,
+            managedConnectionId: command.managedConnectionId,
+            scopeVersion: command.scopeVersion,
+          };
+          return refuse
+            ? { ...base, state: 'rejected', rejectionCode: 'scope_conflict' }
+            : { ...base, state: 'applied', externalCleanup: 'not_required' };
+        },
+        readConnectorAuthorityCommand: async () => {
+          throw Object.assign(new Error('absent'), { code: 'not_found' });
+        },
+      },
+      now: () => NOW,
+      createId: (() => {
+        let id = 0;
+        return () => `managed-${++id}`;
+      })(),
+    });
+    // The owner took agent-b's access away; the hosted side refused the change.
+    await managedAuthority.replaceAgentGrants({
+      connectionId: CONNECTION_ID,
+      managedConnectionId: 'external-a',
+      agentId: 'agent-b',
+      revisions: [],
+      operationRevisionIds: [],
+      providerInstanceId: provider.instanceId,
+      executionConfigGeneration: 1,
+      owner: OWNER,
+      signal: new AbortController().signal,
+    });
+    expect(db.select().from(connectorManagedAuthorityOutbox).get()?.state).toBe('rejected');
+    service = new ConnectorReconciliationService({
+      db,
+      registry,
+      bootEpoch: 'boot-a',
+      listAgents: () => agents,
+      now: () => NOW,
+      createId: () => `generated-${++nextId}`,
+      pageSize: 10,
+      managedAuthority,
+    });
+    refuse = false;
+    const preview = await service.preview(
+      OWNER,
+      { connectionId: CONNECTION_ID },
+      new AbortController().signal
+    );
+
+    await expect(
+      service.apply(OWNER, { previewId: preview.previewId, grants: [] })
+    ).resolves.toMatchObject({ authoritySync: { status: 'ready' } });
+    // The owner's refused choice went again, and this time it applied.
+    expect(submitted.at(-1)).toMatchObject({
+      kind: 'replace_agent_grants',
+      agentId: 'agent-b',
+      revisions: [],
+      scopeVersion: 2,
+    });
+    expect(
+      db
+        .select({
+          commandId: connectorManagedAuthorityOutbox.commandId,
+          state: connectorManagedAuthorityOutbox.state,
+        })
+        .from(connectorManagedAuthorityOutbox)
+        .all()
+        .sort((left, right) => left.commandId.localeCompare(right.commandId))
+    ).toEqual([
+      { commandId: 'managed-1', state: 'rejected' },
+      { commandId: expect.any(String), state: 'applied' },
+    ]);
+  });
+
   it('treats an explicit empty named-agent set as revocation and leaves omitted agents intact', async () => {
     const preview = await service.preview(
       OWNER,

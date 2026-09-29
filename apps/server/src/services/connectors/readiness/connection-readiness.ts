@@ -13,43 +13,58 @@
  *
  * The first matching row wins, top to bottom. "Cleanup owed" is any external
  * cleanup other than complete or not required. "Another way works" means a
- * different way DorkOS reaches apps answers and can run actions.
+ * different way DorkOS reaches apps answers, can run actions and reaches this
+ * app. "Checked again soon" means DorkOS is checking the way right now or has
+ * a check of it scheduled (`checking` / `nextCheckAt`). From row 4 on, the
+ * cleanup owed is one DorkOS will still try: `pending`, or a DorkOS-account
+ * `failed` that linking again sends again. No line promises DorkOS finishes
+ * a cleanup it will never try (row 3b).
  *
- * | #  | Facts                                                                  | state         | reason                       | fix (by)                           |
- * | -- | ---------------------------------------------------------------------- | ------------- | ---------------------------- | ---------------------------------- |
- * | 1  | disconnected, nothing owed, way up                                     | `gone`        | `disconnected`               | `connect_again` (person)           |
- * | 2  | disconnected, nothing owed, way down                                   | `gone`        | `disconnected`               | `connect_new` (person)             |
- * | 3  | disconnected, cleanup owed, access sync pending, way up                | `gone`        | `disconnect_finishing`       | `retry` (dorkos, retryAt)          |
- * | 4  | disconnected, cleanup owed, access sync pending, DorkOS account can't reach apps | `gone` | `disconnect_finishing` | `wait` (dorkos, retryAt)           |
- * | 5  | disconnected, cleanup owed, way down: own key refused (no re-check due) | `gone`       | `disconnect_stuck`           | `fix_key` (person)                 |
- * | 6  | disconnected, cleanup owed, way down: anything else                    | `gone`        | `disconnect_stuck`           | none                               |
- * | 7  | disconnected, cleanup unknown, DorkOS account                          | `gone`        | `disconnect_stuck`           | none                               |
- * | 8  | disconnected, cleanup owed, way up                                     | `gone`        | `disconnect_failed`          | `retry` (person)                   |
- * | 9  | turned off for this chat, the owner's chat view can turn it on         | `unavailable` | `off_for_this_chat`          | `turn_on_for_this_chat` (person)   |
- * | 9b | turned off for this chat, anything else (agent views, nothing to put back) | `unavailable` | `off_for_this_chat`      | none                               |
- * | 10 | way down: DorkOS account not linked                                    | `needs_you`   | `dorkos_account_unlinked`    | `connect_new` (person)             |
- * | 11 | way down: DorkOS account can't reach apps                              | `unavailable` | `dorkos_account_unavailable` | `retry` (dorkos, retryAt if a re-check is due) |
- * | 12 | way down: own key, DorkOS checks it again on its own (a timeout, an outage) | `unavailable` | `own_key_unavailable` | `wait` (dorkos, retryAt)           |
- * | 12b | way down: own key refused, removed or not set up                      | `needs_you`   | `own_key_unavailable`        | `fix_key` (person)                 |
- * | 13 | way down: nothing DorkOS can name                                      | `unavailable` | `way_unreachable`            | `connect_new` if another way works |
- * | 14 | way up but can't run actions, a key would fix it                       | `needs_you`   | `own_key_cannot_run_actions` | `fix_key` (person)                 |
- * | 15 | way up but can't run actions, nothing would fix it                     | `unavailable` | `cannot_run_actions`         | `connect_new` if another way works |
- * | 16 | sign-in expired or revoked (paused or not)                             | `needs_you`   | `signed_out`                 | `sign_in_again` (person)           |
- * | 17 | sign-in pending (paused or not)                                        | `needs_you`   | `sign_in_unfinished`         | `sign_in_again` (person)           |
- * | 18 | paused                                                                 | `paused`      | `paused`                     | `resume` (person)                  |
- * | 19 | needs review                                                           | `needs_you`   | `needs_review`               | `review_access` (person)           |
- * | 20 | access sync failed                                                     | `needs_you`   | `access_update_failed`       | `review_access` (person)           |
- * | 21 | access sync pending                                                    | `finishing`   | `access_updating`            | `wait` (dorkos, retryAt)           |
- * | 22 | everything else                                                        | `ready`       | `usable`                     | none                               |
+ * | #  | Facts                                                                    | state         | reason                       | fix (by)                                      |
+ * | -- | ------------------------------------------------------------------------ | ------------- | ---------------------------- | --------------------------------------------- |
+ * | 1  | disconnected, the DorkOS account's service has no such account anymore  | `gone`        | `gone_at_service`            | `connect_new` (person), with the service's page |
+ * | 2  | disconnected, nothing owed, way up                                       | `gone`        | `disconnected`               | `connect_again` (person)                      |
+ * | 3  | disconnected, nothing owed, way down                                     | `gone`        | `disconnected`               | `connect_new` (person)                        |
+ * | 3b | disconnected, cleanup DorkOS never tries again (own key out of tries or unknown; DorkOS account unknown), any way | `gone` | `disconnect_stuck` | `remove` (person), with the service's page |
+ * | 4  | disconnected, cleanup owed, way up, DorkOS still trying                  | `gone`        | `disconnect_finishing`       | `retry` (dorkos, retryAt)                     |
+ * | 5  | disconnected, cleanup owed, way down but checked again soon              | `gone`        | `disconnect_finishing`       | `wait` (dorkos, retryAt)                      |
+ * | 6  | disconnected, cleanup owed, way down: own key refused                    | `gone`        | `disconnect_stuck`           | `fix_key` (person)                            |
+ * | 7  | disconnected, cleanup owed, anything else (link ended, refused, unknown) | `gone`        | `disconnect_stuck`           | `remove` (person), with the service's page    |
+ * | 8  | turned off for this chat, the owner's chat view can turn it on           | `unavailable` | `off_for_this_chat`          | `turn_on_for_this_chat` (person)              |
+ * | 8b | turned off for this chat, anything else (agent views, nothing to put back) | `unavailable` | `off_for_this_chat`        | none                                          |
+ * | 9  | way down: DorkOS account not linked                                      | `needs_you`   | `dorkos_account_unlinked`    | `connect_new` (person)                        |
+ * | 10 | way down, DorkOS is checking it right now                                | `unavailable` | the way's reason             | `wait` (dorkos)                               |
+ * | 11 | way down: DorkOS account can't reach apps, re-check scheduled            | `unavailable` | `dorkos_account_unavailable` | `retry` (dorkos, retryAt)                     |
+ * | 12 | way down: DorkOS account can't reach apps, DorkOS stopped re-checking    | `unavailable` | `dorkos_account_unavailable` | `retry` (person)                              |
+ * | 13 | way down: own key, re-check scheduled (a timeout, an outage)             | `unavailable` | `own_key_unavailable`        | `wait` (dorkos, retryAt)                      |
+ * | 14 | way down: own key refused, removed, not set up, or re-checks gave up     | `needs_you`   | `own_key_unavailable`        | `fix_key` (person)                            |
+ * | 15 | way down: nothing DorkOS can name, re-check scheduled                    | `unavailable` | `way_unreachable`            | `wait` (dorkos, retryAt)                      |
+ * | 16 | way down: nothing DorkOS can name                                        | `unavailable` | `way_unreachable`            | `connect_new` if another way works            |
+ * | 17 | way up but can't run actions, a key would fix it                         | `needs_you`   | `own_key_cannot_run_actions` | `fix_key` (person)                            |
+ * | 18 | way up but can't run actions, nothing would fix it                       | `unavailable` | `cannot_run_actions`         | `connect_new` if another way works            |
+ * | 19 | sign-in expired or revoked (paused or not)                               | `needs_you`   | `signed_out`                 | `sign_in_again` (person)                      |
+ * | 20 | sign-in pending (paused or not)                                          | `needs_you`   | `sign_in_unfinished`         | `sign_in_again` (person)                      |
+ * | 21 | paused by a "Sign in again" that hasn't finished                         | `needs_you`   | `signing_in`                 | `sign_in_again` (person)                      |
+ * | 22 | paused (by the owner)                                                    | `paused`      | `paused`                     | `resume` (person)                             |
+ * | 23 | needs review (how DorkOS reaches it changed)                             | `needs_you`   | `needs_review`               | `review_access` (person)                      |
+ * | 24 | access sync failed                                                       | `needs_you`   | `access_update_failed`       | `review_access` (person)                      |
+ * | 25 | access sync pending                                                      | `finishing`   | `access_updating`            | `wait` (dorkos, retryAt)                      |
+ * | 26 | everything else                                                          | `ready`       | `usable`                     | none                                          |
  *
  * Why the way comes before paused and signed out: while it is down, resuming
  * or signing in again cannot make the account usable, so those would be
- * buttons that can't work. Why signed out comes before paused: a sign-in
- * again that completes also resumes the account, while resuming a signed-out
- * account still leaves it unusable. Access sync is the caller's to choose:
- * the owner's account view passes the account-wide state, an agent's or a
- * chat's view passes that agent's own (`managedAgentAccess`), and execution
- * checks the agent's own.
+ * buttons that can't work. Why signed out comes before paused: resuming a
+ * signed-out account still leaves it unusable, so signing in again is the fix
+ * that has to come first. When it completes it lifts only its own pause; a
+ * pause the owner chose stays, and readiness then offers Resume. Why a disconnected account never offers
+ * "try disconnecting again": the person's disconnect already took effect here,
+ * and what is owed at the service is DorkOS's to retry on its own; the person
+ * is shown it only when they can do something DorkOS can't (fix the key, or
+ * end the access in the service's own settings) and can always remove the
+ * account from their apps. Access sync is the caller's to choose: the owner's
+ * account view passes the account-wide state, an agent's or a chat's view
+ * passes that agent's own (`managedAgentAccess`), and execution checks the
+ * agent's own.
  *
  * @module services/connectors/connection-readiness
  */
@@ -59,7 +74,9 @@ import {
   CONNECTION_READINESS_COPY,
   ConnectionReadinessSchema,
   disconnectStuckOwnerLine,
+  serviceAccessPageFor,
   TELL_THE_PERSON_AGENT_COPY,
+  WAY_CHECKING_COPY,
   TURN_ON_FOR_THIS_CHAT_COPY,
   WAY_RECHECK_COPY,
   type ConnectionDisconnectStuckCause,
@@ -84,7 +101,8 @@ import type { ConnectorRegistry } from '../registry.js';
  *   or `unreachable` when DorkOS can't name one.
  *
  * `anotherWayWorks` says whether connecting the app again another way could
- * help, when nothing fixes this one.
+ * help, when nothing fixes this one: only a way that answers, can run actions
+ * and reaches this very app counts.
  */
 export type ConnectionWayHealth =
   | { readonly status: 'up'; readonly canRunActions: true }
@@ -92,24 +110,33 @@ export type ConnectionWayHealth =
       readonly status: 'up';
       readonly canRunActions: false;
       readonly keyCanFix: boolean;
-      /** Another way DorkOS reaches apps answers and can run actions. */
+      /** Another way DorkOS reaches apps answers, can run actions and reaches this app. */
       readonly anotherWayWorks: boolean;
     }
   | {
       readonly status: 'down';
       readonly problem: ConnectorWayProblem | 'unreachable';
-      /** Another way DorkOS reaches apps answers and can run actions. */
+      /** Another way DorkOS reaches apps answers, can run actions and reaches this app. */
       readonly anotherWayWorks: boolean;
+      /**
+       * DorkOS is checking this way right now (a key just saved, a link just
+       * made, an automatic re-check), so whether it answers isn't known yet.
+       */
+      readonly checking?: boolean;
       /**
        * When DorkOS checks this way again on its own, after it failed for a
        * reason that may pass (a timeout, an outage). Absent when it waits for
-       * the person (a refused key, a refused link) or nothing is scheduled.
+       * the person (a refused key, a refused link), when its re-checks gave up,
+       * or when nothing is scheduled.
        */
       readonly nextCheckAt?: string;
     };
 
-/** Reads the live health of the way behind one provider instance. */
-export type ConnectionWayHealthPort = (providerInstanceId: string) => ConnectionWayHealth;
+/** Reads the live health of the way behind one provider instance, for one app. */
+export type ConnectionWayHealthPort = (
+  providerInstanceId: string,
+  toolkit: string
+) => ConnectionWayHealth;
 
 /**
  * The health of one way from its live route: down (with the fix `problem`
@@ -119,22 +146,24 @@ export type ConnectionWayHealthPort = (providerInstanceId: string) => Connection
  *
  * @param live - The registered route, if any.
  * @param problem - Why the way is down, when a known way is.
- * @param anotherWayWorks - Whether a different way answers and can run actions.
- * @param nextCheckAt - When DorkOS checks a way that is down again on its own, if it will.
+ * @param anotherWayWorks - Whether a different way answers, can run actions and reaches the app.
+ * @param recheck - Whether DorkOS is checking a way that is down right now, and when it
+ *   checks it again on its own, if it will.
  */
 export function wayHealthOf(
   live: ConnectorProvider | undefined,
   problem: () => ConnectorWayProblem | undefined,
   anotherWayWorks: () => boolean = () => false,
-  nextCheckAt: () => string | undefined = () => undefined
+  recheck: () => { readonly checking?: boolean; readonly nextCheckAt?: string } = () => ({})
 ): ConnectionWayHealth {
   if (!live) {
-    const checkAt = nextCheckAt();
+    const { checking, nextCheckAt } = recheck();
     return {
       status: 'down',
       problem: problem() ?? 'unreachable',
       anotherWayWorks: anotherWayWorks(),
-      ...(checkAt !== undefined && { nextCheckAt: checkAt }),
+      ...(checking === true && { checking }),
+      ...(nextCheckAt !== undefined && { nextCheckAt }),
     };
   }
   if (live.getCapabilities().capabilities.execution.status === 'available') {
@@ -175,8 +204,13 @@ export function registryWayHealth(registry: ConnectorRegistry): ConnectionWayHea
 
 /** Everything readiness is decided from, as other parts of the server store it. */
 export interface ConnectionReadinessFacts {
-  /** `connected`, `paused` (the owner turned it off) or `disconnected`. */
+  /** `connected`, `paused` (turned off) or `disconnected`. */
   readonly lifecycle: 'connected' | 'paused' | 'disconnected';
+  /**
+   * Who paused a paused account: the owner, or a "Sign in again" that holds it
+   * paused until it finishes. Absent or `null` reads as the owner's.
+   */
+  readonly pausedBy?: 'owner' | 'sign_in' | null;
   /** The stored sign-in status. */
   readonly authenticationStatus: 'active' | 'expired' | 'revoked' | 'pending';
   /** Whether who can use it has to be checked again. */
@@ -188,8 +222,18 @@ export interface ConnectionReadinessFacts {
   readonly authoritySync?: ConnectorAuthoritySyncState;
   /** What is still owed at the service after a disconnect. */
   readonly externalCleanup?: 'not_required' | 'pending' | 'complete' | 'failed' | 'unknown';
+  /**
+   * When DorkOS next tries, on its own, removing a disconnected own-key
+   * account's access at the service. Absent for an account connected through
+   * the DorkOS account, whose tries the access sync carries.
+   */
+  readonly cleanupRetryAt?: string | null;
+  /** Why the account was closed when the person didn't close it. */
+  readonly closedBecause?: 'service_gone' | null;
   /** `managed` for an account connected through the DorkOS account. */
   readonly mode: 'managed' | 'byo';
+  /** The app's slug, for the page where the person can end its access themselves. */
+  readonly toolkit?: string;
   /** The live health of the way it was connected through. */
   readonly way: ConnectionWayHealth;
   /** True when this chat turned the account off for its agent. */
@@ -219,12 +263,35 @@ function readiness(
   });
 }
 
-/** A disconnect DorkOS can't finish right now, and the one thing the person can do. */
-function stuck(cause: ConnectionDisconnectStuckCause, fix?: ConnectionFix): ConnectionReadiness {
+/** A way DorkOS is checking right now: nothing to press until it knows. */
+function checking(
+  reason: 'own_key_unavailable' | 'dorkos_account_unavailable' | 'way_unreachable'
+) {
+  return ConnectionReadinessSchema.parse({
+    state: 'unavailable',
+    reason,
+    fix: { action: 'wait', fixableBy: 'dorkos' },
+    copy: WAY_CHECKING_COPY,
+  });
+}
+
+/**
+ * A disconnect DorkOS can't finish on its own right now, and the one thing
+ * the person can do: fix the key when that lets DorkOS finish, otherwise
+ * remove the account from their apps, with the service's own page where they
+ * can end the access themselves when it is known.
+ */
+function stuck(
+  cause: ConnectionDisconnectStuckCause,
+  toolkit: string | undefined,
+  fix: ConnectionFix = { action: 'remove', fixableBy: 'person' }
+): ConnectionReadiness {
+  const page = fix.action === 'remove' && toolkit ? serviceAccessPageFor(toolkit) : undefined;
   return ConnectionReadinessSchema.parse({
     state: 'gone',
     reason: 'disconnect_stuck',
-    ...(fix && { fix }),
+    fix,
+    ...(page && { serviceAccessPage: page }),
     copy: { owner: disconnectStuckOwnerLine(cause), agent: CONNECTION_GONE_AGENT_COPY },
   });
 }
@@ -253,44 +320,124 @@ function retryAtOf(sync: ConnectorAuthoritySyncState | undefined): { retryAt?: s
   return sync?.status === 'pending' && sync.retryAt ? { retryAt: sync.retryAt } : {};
 }
 
+/** Whether DorkOS is checking a way that is down, or will check it again on its own. */
+function rechecking(way: Extract<ConnectionWayHealth, { status: 'down' }>): boolean {
+  return way.checking === true || way.nextCheckAt !== undefined;
+}
+
 function disconnectedReadiness(facts: ConnectionReadinessFacts): ConnectionReadiness {
   const { way, externalCleanup: cleanup } = facts;
-  const wayUp = way.status === 'up';
+  if (facts.closedBecause === 'service_gone') {
+    // Whether the sign-in still lives at the service isn't known: the
+    // service's own page is where the person can be sure it ended.
+    const page = facts.toolkit ? serviceAccessPageFor(facts.toolkit) : undefined;
+    return ConnectionReadinessSchema.parse({
+      ...readiness('gone', 'gone_at_service', { action: 'connect_new', fixableBy: 'person' }),
+      ...(page && { serviceAccessPage: page }),
+    });
+  }
   if (cleanup === undefined || cleanup === 'complete' || cleanup === 'not_required') {
     return readiness('gone', 'disconnected', {
-      action: wayUp ? 'connect_again' : 'connect_new',
+      action: way.status === 'up' ? 'connect_again' : 'connect_new',
       fixableBy: 'person',
     });
   }
-  if (facts.authoritySync?.status === 'pending') {
-    // DorkOS keeps trying on its own. "Try again now" only helps while the way
-    // answers; otherwise there is nothing to press.
-    if (wayUp) {
+  // A cleanup DorkOS will never try again, whatever the way does: an own-key
+  // one that ran out of tries, or one whose end can't be confirmed (another
+  // key, a closed or gone account). Nothing may promise DorkOS finishes it.
+  // A DorkOS-account `failed` is different: linking again re-sends it.
+  if (cleanup === 'unknown' || (facts.mode === 'byo' && cleanup === 'failed')) {
+    return stuck('unconfirmed', facts.toolkit);
+  }
+  if (way.status === 'up') {
+    // DorkOS keeps trying on its own while the way answers: an own-key cleanup
+    // on its retry schedule, a DorkOS-account one while its change is pending.
+    // "Try again now" only hurries it along. `failed` means the tries ran out
+    // (or the service said its own cleanup failed), and `unknown` that the
+    // end can't be confirmed from here.
+    const trying =
+      cleanup === 'pending' && (facts.mode === 'byo' || facts.authoritySync?.status === 'pending');
+    if (trying) {
+      const retryAt =
+        facts.mode === 'byo'
+          ? (facts.cleanupRetryAt ?? undefined)
+          : retryAtOf(facts.authoritySync).retryAt;
       return readiness('gone', 'disconnect_finishing', {
         action: 'retry',
         fixableBy: 'dorkos',
-        ...retryAtOf(facts.authoritySync),
+        ...(retryAt && { retryAt }),
       });
     }
-    if (way.problem === 'dorkos_account_unavailable') {
-      return readiness('gone', 'disconnect_finishing', {
-        action: 'wait',
-        fixableBy: 'dorkos',
-        ...retryAtOf(facts.authoritySync),
-      });
-    }
+    // A DorkOS-account change the service refused, or an account closed
+    // because a new link couldn't reach it: nothing here can confirm the end.
+    return stuck('unconfirmed', facts.toolkit);
   }
-  if (way.status === 'down') {
-    // Fixing the key helps only when the key was refused, not when DorkOS is
-    // still waiting to check it again.
-    return way.problem === 'own_key_unavailable' && !way.nextCheckAt
-      ? stuck(way.problem, { action: 'fix_key', fixableBy: 'person' })
-      : stuck(way.problem === 'own_key_unavailable' ? 'unreachable' : way.problem);
+  if (rechecking(way)) {
+    // The way may come back on its own; DorkOS finishes the cleanup when it does.
+    return readiness('gone', 'disconnect_finishing', {
+      action: 'wait',
+      fixableBy: 'dorkos',
+      ...(way.nextCheckAt && { retryAt: way.nextCheckAt }),
+    });
   }
-  // An account closed because a new DorkOS account link couldn't reach it:
-  // disconnecting again goes to a link that doesn't know it, so it can't work.
-  if (cleanup === 'unknown' && facts.mode === 'managed') return stuck('unconfirmed');
-  return readiness('gone', 'disconnect_failed', { action: 'retry', fixableBy: 'person' });
+  if (way.problem === 'own_key_unavailable') {
+    return stuck('own_key_unavailable', facts.toolkit, { action: 'fix_key', fixableBy: 'person' });
+  }
+  return stuck(way.problem, facts.toolkit);
+}
+
+/** A way that is down, and its one fix. */
+function wayDownReadiness(
+  way: Extract<ConnectionWayHealth, { status: 'down' }>
+): ConnectionReadiness {
+  if (way.problem === 'dorkos_account_unlinked') {
+    return readiness('needs_you', 'dorkos_account_unlinked', {
+      action: 'connect_new',
+      fixableBy: 'person',
+    });
+  }
+  if (way.checking) {
+    return checking(way.problem === 'unreachable' ? 'way_unreachable' : way.problem);
+  }
+  switch (way.problem) {
+    case 'dorkos_account_unavailable':
+      // While a re-check is scheduled it is DorkOS's; once DorkOS stops
+      // re-checking on its own, "Check again" is the person's.
+      return readiness(
+        'unavailable',
+        'dorkos_account_unavailable',
+        way.nextCheckAt
+          ? { action: 'retry', fixableBy: 'dorkos', retryAt: way.nextCheckAt }
+          : { action: 'retry', fixableBy: 'person' }
+      );
+    case 'own_key_unavailable':
+      // A key that failed for a reason that may pass is DorkOS's to check
+      // again; one the service refused, or one whose re-checks gave up, waits
+      // for the person to fix it.
+      return way.nextCheckAt
+        ? ConnectionReadinessSchema.parse({
+            state: 'unavailable',
+            reason: 'own_key_unavailable',
+            fix: { action: 'wait', fixableBy: 'dorkos', retryAt: way.nextCheckAt },
+            copy: WAY_RECHECK_COPY,
+          })
+        : readiness('needs_you', 'own_key_unavailable', {
+            action: 'fix_key',
+            fixableBy: 'person',
+          });
+    case 'unreachable':
+      return way.nextCheckAt
+        ? readiness(
+            'unavailable',
+            'way_unreachable',
+            { action: 'wait', fixableBy: 'dorkos', retryAt: way.nextCheckAt },
+            {
+              owner: 'DorkOS checks again on its own.',
+              agent: 'DorkOS checks again on its own, so try again in a few minutes.',
+            }
+          )
+        : unfixable('way_unreachable', way.anotherWayWorks);
+  }
 }
 
 /**
@@ -312,37 +459,7 @@ export function deriveConnectionReadiness(facts: ConnectionReadinessFacts): Conn
       : readiness('unavailable', 'off_for_this_chat');
   }
   const { way } = facts;
-  if (way.status === 'down') {
-    switch (way.problem) {
-      case 'dorkos_account_unlinked':
-        return readiness('needs_you', 'dorkos_account_unlinked', {
-          action: 'connect_new',
-          fixableBy: 'person',
-        });
-      case 'dorkos_account_unavailable':
-        return readiness('unavailable', 'dorkos_account_unavailable', {
-          action: 'retry',
-          fixableBy: 'dorkos',
-          ...(way.nextCheckAt && { retryAt: way.nextCheckAt }),
-        });
-      case 'own_key_unavailable':
-        // A key that failed for a reason that may pass is DorkOS's to check
-        // again; one the service refused waits for the person to fix it.
-        return way.nextCheckAt
-          ? ConnectionReadinessSchema.parse({
-              state: 'unavailable',
-              reason: 'own_key_unavailable',
-              fix: { action: 'wait', fixableBy: 'dorkos', retryAt: way.nextCheckAt },
-              copy: WAY_RECHECK_COPY,
-            })
-          : readiness('needs_you', 'own_key_unavailable', {
-              action: 'fix_key',
-              fixableBy: 'person',
-            });
-      case 'unreachable':
-        return unfixable('way_unreachable', way.anotherWayWorks);
-    }
-  }
+  if (way.status === 'down') return wayDownReadiness(way);
   if (!way.canRunActions) {
     return way.keyCanFix
       ? readiness('needs_you', 'own_key_cannot_run_actions', {
@@ -351,8 +468,9 @@ export function deriveConnectionReadiness(facts: ConnectionReadinessFacts): Conn
         })
       : unfixable('cannot_run_actions', way.anotherWayWorks);
   }
-  // Signing in again resumes the account when it completes; resuming a
-  // signed-out account would still leave it unusable.
+  // Resuming a signed-out account would still leave it unusable, so signing
+  // in again comes first. It lifts only its own pause; the owner's stays, and
+  // Resume is offered next.
   if (facts.authenticationStatus === 'expired' || facts.authenticationStatus === 'revoked') {
     return readiness('needs_you', 'signed_out', { action: 'sign_in_again', fixableBy: 'person' });
   }
@@ -363,7 +481,11 @@ export function deriveConnectionReadiness(facts: ConnectionReadinessFacts): Conn
     });
   }
   if (facts.lifecycle === 'paused') {
-    return readiness('paused', 'paused', { action: 'resume', fixableBy: 'person' });
+    // A sign-in again pauses the account only until it finishes; starting it
+    // again is the one fix. Resuming would undo nothing the person chose.
+    return facts.pausedBy === 'sign_in'
+      ? readiness('needs_you', 'signing_in', { action: 'sign_in_again', fixableBy: 'person' })
+      : readiness('paused', 'paused', { action: 'resume', fixableBy: 'person' });
   }
   if (facts.reconciliationStatus !== 'ready') {
     return readiness('needs_you', 'needs_review', { action: 'review_access', fixableBy: 'person' });

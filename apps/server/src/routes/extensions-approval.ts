@@ -1,6 +1,8 @@
 /**
- * The two routes a PERSON uses to allow, or stop, one extension running its code
- * inside the DorkOS server process (DOR-516).
+ * The routes a PERSON uses to allow, or stop, one extension running its code
+ * inside the DorkOS server process (DOR-516), plus the two the Activity inbox
+ * asks with (DOR-2517): the list of extensions waiting for that decision, and
+ * "Not now".
  *
  * Extracted from {@link module:routes/extensions} to keep route files under 500
  * lines, and because these two are a different KIND of route from the rest of
@@ -20,16 +22,26 @@
  *
  * There is deliberately no MCP tool twin for these. Every other extension
  * operation has one; approving does not, because the agent surface is exactly the
- * surface that must not be able to approve its own code.
+ * surface that must not be able to approve its own code. "Not now" has none
+ * either: it answers the same consent question, and an agent that could answer
+ * it could hide the question from the person.
  *
  * @module routes/extensions-approval
  */
 import type { Router } from 'express';
-import type { ExtensionManager } from '../services/extensions/extension-manager.js';
+import {
+  ApproveExtensionRequestSchema,
+  DismissExtensionApprovalRequestSchema,
+  STALE_APPROVAL_CODE,
+} from '@dorkos/shared/extension-approval-schemas';
+import { isExpectedCopy, type ExtensionManager } from '../services/extensions/extension-manager.js';
+import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { logger } from '../lib/logger.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { broadcastExtensionReloaded } from './extensions.js';
+import { listPendingExtensionApprovals } from '../services/extensions/extension-approval-queue.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
@@ -74,6 +86,25 @@ export function registerExtensionApprovalRoutes(
   extensionManager: ExtensionManager,
   safeExtId: RegExp
 ): void {
+  // GET /api/extensions/pending-approvals -- Every installed extension waiting
+  // for a person to let it run, oldest first (DOR-2517). A read, so it carries
+  // no person bar: the list names ids and display text the extensions list
+  // already exposes, and the Activity inbox draws one row per item. A caller
+  // the notification pipeline would not show the person's inbox to (an agent)
+  // gets it without absolute paths or the home folder, the same rule the
+  // inbox itself answers by.
+  router.get('/pending-approvals', async (req, res) => {
+    try {
+      const forPerson = notificationEntitlement(readCallerPrincipal(req, res)) !== 'none';
+      return res.json({
+        approvals: await listPendingExtensionApprovals(extensionManager, { forPerson }),
+      });
+    } catch (err) {
+      logger.error('[Extensions] Failed to list extensions waiting for approval', err);
+      return res.status(500).json({ error: 'Failed to list extensions waiting for approval' });
+    }
+  });
+
   // POST /api/extensions/:id/approve -- Record that a person approved this
   // extension to run code inside the DorkOS server process, and start it.
   router.post('/:id/approve', async (req, res) => {
@@ -91,6 +122,27 @@ export function registerExtensionApprovalRoutes(
         return res.status(409).json({
           error: `Extension '${id}' ships with DorkOS and does not need approving`,
         });
+      }
+
+      // The copy the person was shown, when the click came from a row that
+      // named one (the Activity inbox, DOR-2517). The approval binds whatever
+      // copy is on disk NOW, so a row that went out of date — another plugin
+      // took the id, a project folder reused it, the version moved — must
+      // not approve the newcomer on the strength of a decision about the old.
+      const hasBody = req.body !== undefined && Object.keys(req.body as object).length > 0;
+      if (hasBody) {
+        const expected = ApproveExtensionRequestSchema.safeParse(req.body);
+        if (!expected.success) {
+          return res
+            .status(400)
+            .json({ error: 'Send the path and version of the extension you were shown' });
+        }
+        if (!isExpectedCopy(record, expected.data)) {
+          return res.status(409).json({
+            error: 'This extension changed since you saw it. Nothing was turned on.',
+            code: STALE_APPROVAL_CODE,
+          });
+        }
       }
 
       const extension = await extensionManager.approveToRun(id);
@@ -120,6 +172,47 @@ export function registerExtensionApprovalRoutes(
     } catch (err) {
       logger.error(`[Extensions] Failed to approve ${req.params.id}`, err);
       return res.status(500).json({ error: 'Failed to approve extension' });
+    }
+  });
+
+  // POST /api/extensions/:id/dismiss-approval -- "Not now" (DOR-2517). Records
+  // that the person declined THIS copy at THIS version, so the inbox stops
+  // asking until either changes. Never destructive: nothing is uninstalled,
+  // turned off or revoked. Same person bar as approving, because it answers the
+  // same question.
+  router.post('/:id/dismiss-approval', async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!safeExtId.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      if (refuseIfNotAPerson(req, res, APPROVAL_BAR)) return undefined;
+
+      const body = DismissExtensionApprovalRequestSchema.safeParse(req.body ?? {});
+      if (!body.success) {
+        return res
+          .status(400)
+          .json({ error: 'Send the path and version of the extension you were shown' });
+      }
+
+      const result = extensionManager.dismissApproval(id, body.data);
+      if (!result.ok) {
+        if (result.reason === 'not_found') {
+          return res.status(404).json({ error: `Extension '${id}' not found` });
+        }
+        if (result.reason === 'core') {
+          return res.status(409).json({
+            error: `Extension '${id}' ships with DorkOS and never asks to be turned on`,
+          });
+        }
+        return res.status(409).json({
+          error: 'This extension changed since you saw it. Nothing was changed.',
+          code: STALE_APPROVAL_CODE,
+        });
+      }
+
+      return res.status(204).end();
+    } catch (err) {
+      logger.error(`[Extensions] Failed to dismiss the approval for ${req.params.id}`, err);
+      return res.status(500).json({ error: 'Failed to dismiss extension approval' });
     }
   });
 
